@@ -46,14 +46,17 @@ export type HostAnswer = (input: unknown) => unknown;
 const hostContracts: Readonly<
   Record<string, Readonly<Record<string, number | null>>>
 > = {
-  'claude.login/v1': { login: 0 },
+  'claude.login/v1': { start: 0, finish: 0 },
   'host-config/v1': { current: 0, replace: null },
   'models/v1': { kinds: 0, kind: 1, catalog: null },
   'tools/v1': { catalog: 0 },
   'secrets/v1': { list: 0, create: null, update: 2, delete: null },
 };
 
-const hostCandidate: CatalogCandidate = {
+/** The host bundle, staging every host contract but the `absent` ones. */
+const hostCandidateWithout = (
+  absent: ReadonlySet<string>,
+): CatalogCandidate => ({
   id: 'host',
   source: { kind: 'installed', dir: 'host@1.0.0' },
   manifest: {
@@ -65,11 +68,11 @@ const hostCandidate: CatalogCandidate = {
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
       'host-config/v1@1.0.0',
-      // The settings bundle's manifest requires this one; the host answers
+      // The settings part takes this one when it is there; the host answers
       // it behind the bridge, so the window harness stages it here the way
       // the real composition enables the bundle that provides it.
       'claude.login/v1@1.0.0',
-    ],
+    ].filter((entry) => !absent.has(entry.split('@')[0] ?? '')),
     requires: [],
   },
   descriptor: {
@@ -80,18 +83,20 @@ const hostCandidate: CatalogCandidate = {
       'secrets.backend/v1',
       'host-config/v1',
       'claude.login/v1',
-    ].map((id) => ({
-      id,
-      version: '1.0.0',
-      kind: 'service' as const,
-      environment: 'host' as const,
-      cardinality: 'one' as const,
-      local: false,
-      schema: `schemas/${id}.json`,
-    })),
+    ]
+      .filter((id) => !absent.has(id))
+      .map((id) => ({
+        id,
+        version: '1.0.0',
+        kind: 'service' as const,
+        environment: 'host' as const,
+        cardinality: 'one' as const,
+        local: false,
+        schema: `schemas/${id}.json`,
+      })),
   },
   errors: [],
-};
+});
 
 /** The core's desktopMain contracts as main routes them to a window. */
 const coreRemote = async (
@@ -137,21 +142,23 @@ const coreRemote = async (
   return remote;
 };
 
-const hostRemote = (): RemoteContract[] =>
-  Object.entries(hostContracts).map(([id, methods]) => ({
-    id,
-    environment: 'host',
-    bundleId: id === 'host-config/v1' ? 'host' : 'core',
-    version: '1.0.0',
-    contractVersion: '1.0.0',
-    cardinality: 'one',
-    methods: Object.fromEntries(
-      Object.entries(methods).map(([name, tuple]) => [
-        name,
-        { tuple, local: false, stream: false },
-      ]),
-    ),
-  }));
+const hostRemote = (absent: ReadonlySet<string>): RemoteContract[] =>
+  Object.entries(hostContracts)
+    .filter(([id]) => !absent.has(id))
+    .map(([id, methods]) => ({
+      id,
+      environment: 'host',
+      bundleId: id === 'host-config/v1' ? 'host' : 'core',
+      version: '1.0.0',
+      contractVersion: '1.0.0',
+      cardinality: 'one',
+      methods: Object.fromEntries(
+        Object.entries(methods).map(([name, tuple]) => [
+          name,
+          { tuple, local: false, stream: false },
+        ]),
+      ),
+    }));
 
 const partUrl = (id: string, version: string): string =>
   `doric://app/bundles/${id}@${version}/client/index.js`;
@@ -220,7 +227,10 @@ export const openSettingsWindow = async (input: {
   readonly url?: string;
   readonly host: Readonly<Record<string, HostAnswer>>;
   readonly probe?: ProbeBundle;
+  /** Host contracts no provider answers in this composition. */
+  readonly absent?: readonly string[];
 }): Promise<SettingsWindow> => {
+  const absent = new Set(input.absent ?? []);
   const window = new Window({
     url: input.url ?? 'doric://app/settings',
     width: 1280,
@@ -280,7 +290,7 @@ export const openSettingsWindow = async (input: {
           descriptor: coreDescriptor,
           errors: [],
         },
-        hostCandidate,
+        hostCandidateWithout(absent),
         {
           id: 'settings',
           source: {
@@ -344,7 +354,7 @@ export const openSettingsWindow = async (input: {
     },
     remote: [
       ...(await coreRemote(coreManifest, coreDescriptor)),
-      ...hostRemote(),
+      ...hostRemote(absent),
     ],
     hostId: 'host-1',
     storageGeneration: 1,

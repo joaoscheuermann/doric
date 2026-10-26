@@ -1,9 +1,11 @@
 // Public contract of the `claude-login` bundle: the in-app Claude Code sign-in
-// behind the settings window's provider page. `login()` answers the stored
-// `API_TOKEN` credential's public view — never the authorization value — so the
-// provider screen can reuse an existing Claude Code login or open a fresh one
-// in the browser, and then name the answered credential as the `claude` kind's
-// `token` field.
+// behind the settings window's provider page. The host prepares the browser
+// authorization and answers its URL; the window opens that URL in the system
+// browser (`doric.browser/v1`), because the host may run where no browser
+// does, and then waits on `finish()` for the host to receive the callback.
+// `finish()` answers the stored `API_TOKEN` credential's public view — never
+// the authorization value — so the provider screen can name it as the
+// `claude` kind's `token` field.
 
 import {
   type CallArg,
@@ -16,20 +18,39 @@ import { z } from 'zod';
 
 export type { CredentialDescription };
 
+/** A started sign-in: the authorization page the browser opens. */
+export interface ClaudeLoginStart {
+  /** The `https:` authorization URL; it carries the sign-in's state. */
+  readonly url: string;
+}
+
 /** `claude.login/v1` (host): sign in with a Claude Code subscription. */
 export interface ClaudeLogin {
   /**
-   * Signs in to Claude: an existing Claude Code login is reused when one is
-   * present, otherwise the browser opens a fresh authorization. Answers the
-   * stored credential's public view; `claude_login_busy` while one is already
-   * running, `claude_login_aborted` when the caller cancels.
+   * Prepares a fresh browser sign-in: binds the loopback callback and
+   * answers the authorization URL to open. A sign-in already waiting is
+   * cancelled and replaced; one nobody finishes ends on its own after a
+   * deadline.
    */
-  login(call?: CallArg): Promise<CredentialDescription>;
+  start(call?: CallArg): Promise<ClaudeLoginStart>;
+  /**
+   * Waits for the browser to answer the started sign-in, stores its
+   * authorization and answers the stored credential's public view.
+   * `claude_login_not_started` with no sign-in waiting,
+   * `claude_login_busy` while another `finish()` waits on it,
+   * `claude_login_aborted` when the caller cancels (or a newer `start()`
+   * replaced it), `claude_login_failed` when the authorization failed.
+   */
+  finish(call?: CallArg): Promise<CredentialDescription>;
 }
 
-/** The wire shapes of `claude.login/v1`: no input, the credential view out. */
+/** The wire shapes of `claude.login/v1`. */
 export const claudeLoginMethods = {
-  login: { input: z.tuple([]), output: credentialDescriptionSchema },
+  start: {
+    input: z.tuple([]),
+    output: z.object({ url: z.string() }).strict(),
+  },
+  finish: { input: z.tuple([]), output: credentialDescriptionSchema },
 } as const satisfies MethodSpecs;
 
 /** `claude.login/v1`, provided by the `claude-login` bundle. */

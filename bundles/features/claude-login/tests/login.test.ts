@@ -1,22 +1,23 @@
-// The host flow of `claude.login/v1`: a stored Claude authorization is
-// reused before any fresh sign-in, a resolve that fails falls through to a
-// fresh sign-in on the loopback callback server, an aborted call answers
-// `claude_login_aborted` and stores nothing, and one sign-in runs at a time.
-// The answer is always the public credential view, never the secret.
+// The host flow of `claude.login/v1`: `start()` binds Claude Code's loopback
+// callback and answers the authorization URL without opening any browser;
+// `finish()` waits for the browser's callback, stores the authorization and
+// answers the public credential view, never the secret. A cancelled or
+// replaced sign-in answers `claude_login_aborted` and stores nothing, and
+// the callback server never outlives its sign-in.
+//
+// The OAuth client and the callback server are the real ones on a free
+// port; only the token endpoint is faked, so a test "is the browser" by
+// requesting the redirect URI the authorization URL names.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { isContractError } from 'bundle/contracts';
-import type {
-  ClaudeCredential,
-  CreateClaudeOAuthOptions,
-  LocalCallbackServer,
-  LocalCallbackServerOptions,
-  OAuthBrowserOpener,
-  OAuthClient,
-  OAuthTokenRecord,
-  ResolveClaudeAuthOptions,
+import {
+  createLocalCallbackServer,
+  type LocalCallbackServerOptions,
+  type OAuthHttpRequest,
+  type OAuthTransport,
 } from 'oauth';
 
 import {
@@ -25,404 +26,312 @@ import {
 } from '../src/host/login.js';
 import { loginWorld } from './support/world.js';
 
-/** A stored Claude login, as `resolveClaudeAuth` answers one. */
-const credential = (authorization: string): ClaudeCredential => ({
-  source: 'claude',
-  kind: 'authorization',
-  token: authorization,
-  authorization,
-});
-
 /** Whether a rejection carries one contract refusal code; never `instanceof`. */
 const refusal =
   (code: string) =>
   (error: unknown): boolean =>
     isContractError(error) && error.code === code;
 
-/** One macrotask, so a login's own promises have reached the seam under test. */
-const tick = (): Promise<void> =>
-  new Promise((done) => {
-    setImmediate(done);
+/** A token endpoint that answers every exchange with the given access token. */
+const tokenEndpoint = (
+  accessToken: string,
+  exchanges: OAuthHttpRequest[] = [],
+): (() => OAuthTransport) => {
+  return () => ({
+    request: async (request) => {
+      exchanges.push(request);
+      return {
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          access_token: accessToken,
+          refresh_token: 'refresh',
+          token_type: 'Bearer',
+          expires_in: 31536000,
+        }),
+      };
+    },
   });
-
-/** A promise the test settles from outside. */
-const gate = <T>(): {
-  readonly promise: Promise<T>;
-  readonly answer: (value: T) => void;
-} => {
-  let resolve: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((settled) => {
-    resolve = settled;
-  });
-  return { promise, answer: (value) => resolve?.(value) };
 };
 
-/** The authorize options the flow handed the OAuth client, one per call. */
-type AskedAuthorize = ({ readonly signal?: AbortSignal } | undefined)[];
-
-/** An OAuth client whose `authorize` the test controls, recording each call. */
-const fakeClient = (
-  authorize: (options: {
-    readonly signal?: AbortSignal;
-  }) => Promise<OAuthTokenRecord>,
-  authorization: string,
-  asked: AskedAuthorize,
-): OAuthClient => ({
-  profile: {
-    provider: 'anthropic',
-    profile: 'claude-code',
-    authorizationEndpoint: 'https://claude.com/cai/oauth/authorize',
-    tokenEndpoint: 'https://platform.claude.com/v1/oauth/token',
-  },
-  authorize: async (options) => {
+/** The real callback server on a free port, recording the options asked for. */
+const freePort =
+  (asked: LocalCallbackServerOptions[] = []): ClaudeLoginDeps['createServer'] =>
+  (options) => {
     asked.push(options);
-    return authorize(options ?? {});
-  },
-  refresh: async () => {
-    throw new Error('A fresh sign-in never refreshes.');
-  },
-  credential: async () => ({
-    source: 'oauth' as const,
-    scheme: 'Bearer',
-    token: authorization,
-    authorization,
-  }),
-});
+    return createLocalCallbackServer({ ...options, port: 0 });
+  };
 
-/** A loopback callback server that records its closes; nothing calls back. */
-const callbackServer = (
-  redirectUri: string,
-  closes: boolean[],
-): LocalCallbackServer => ({
-  redirectUri,
-  waitForCallback: async () => {
-    throw new Error('The fake server never receives a callback.');
-  },
-  close: async () => {
-    closes.push(true);
-  },
-});
+/** What the browser does once the user approves: request the redirect URI. */
+const approve = async (
+  authorizeUrl: string,
+  answer: Readonly<Record<string, string>> = { code: 'code-1' },
+): Promise<number> => {
+  const url = new URL(authorizeUrl);
+  const callback = new URL(url.searchParams.get('redirect_uri') ?? '');
+  callback.searchParams.set('state', url.searchParams.get('state') ?? '');
+  for (const [key, value] of Object.entries(answer)) {
+    callback.searchParams.set(key, value);
+  }
+  return (await fetch(callback)).status;
+};
 
-/** A browser the flow must never open in these tests. */
-const noBrowser: OAuthBrowserOpener = () => {
-  throw new Error('No test opens a browser.');
+/** Whether the redirect URI an authorization URL names still answers. */
+const callbackListening = async (authorizeUrl: string): Promise<boolean> => {
+  const redirect = new URL(authorizeUrl).searchParams.get('redirect_uri');
+  try {
+    await fetch(redirect ?? '');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const stored = {
+  id: '00000000-0000-4000-8000-90000000001',
+  kind: 'API_TOKEN',
+  name: CLAUDE_CREDENTIAL_NAME,
+  hasSecret: true,
 };
 
 describe('claude.login/v1', () => {
-  test('reuses a stored Claude authorization without a fresh sign-in', async () => {
-    const controller = new AbortController();
-    let resolveSignal: AbortSignal | undefined;
-    const serverOptions: LocalCallbackServerOptions[] = [];
-    const opened: string[] = [];
-    const deps: ClaudeLoginDeps = {
-      resolveAuth: async (options: ResolveClaudeAuthOptions) => {
-        resolveSignal = options.signal;
-        return credential('claude-existing');
-      },
-      createServer: (options: LocalCallbackServerOptions) => {
-        serverOptions.push(options);
-        throw new Error('A stored login never starts a callback server.');
-      },
-      browserOpener: (url: string) => {
-        opened.push(url);
-      },
-    };
-    const { world, secrets, providers } = await loginWorld(deps);
+  test('a started sign-in answers the authorization URL, and the browser callback stores the login', async () => {
+    const asked: LocalCallbackServerOptions[] = [];
+    const exchanges: OAuthHttpRequest[] = [];
+    const { world, secrets, providers } = await loginWorld({
+      createServer: freePort(asked),
+      transport: tokenEndpoint('fresh-token', exchanges),
+    });
 
     try {
-      const answered = await providers.login(
-        world.call(undefined, controller.signal),
-      );
+      const { url } = await providers.start();
+      const authorize = new URL(url);
 
-      // The call's own signal reaches the resolver, unchanged.
-      assert.equal(resolveSignal, controller.signal);
-      assert.deepEqual(answered, {
-        id: '00000000-0000-4000-8000-90000000001',
-        kind: 'API_TOKEN',
-        name: CLAUDE_CREDENTIAL_NAME,
-        hasSecret: true,
-      });
-      assert.equal('secret' in answered, false);
-      assert.deepEqual(secrets.created, [
-        {
-          kind: 'API_TOKEN',
-          name: CLAUDE_CREDENTIAL_NAME,
-          secret: 'claude-existing',
-        },
-      ]);
-      assert.deepEqual(secrets.updated, []);
-      assert.deepEqual(serverOptions, []);
-      assert.deepEqual(opened, []);
-    } finally {
-      await world.dispose();
-    }
-  });
-
-  test('falls through to a fresh sign-in when no login is stored', async () => {
-    const serverOptions: LocalCallbackServerOptions[] = [];
-    const closes: boolean[] = [];
-    const oauthOptions: CreateClaudeOAuthOptions[] = [];
-    const asked: AskedAuthorize = [];
-    const deps: ClaudeLoginDeps = {
-      resolveAuth: async () => {
-        throw new Error('No stored Claude login.');
-      },
-      createServer: async (options: LocalCallbackServerOptions) => {
-        serverOptions.push(options);
-        return callbackServer('http://localhost:54545/callback', closes);
-      },
-      createOAuth: (options: CreateClaudeOAuthOptions) => {
-        oauthOptions.push(options);
-        return fakeClient(
-          async () => ({ accessToken: 'fresh' }),
-          'claude-fresh',
-          asked,
-        );
-      },
-      browserOpener: noBrowser,
-    };
-    const { world, secrets, providers } = await loginWorld(deps);
-
-    try {
-      const answered = await providers.login();
-
-      assert.deepEqual(serverOptions, [
+      assert.equal(authorize.origin, 'https://claude.com');
+      assert.deepEqual(asked, [
         { host: 'localhost', port: 54545, path: '/callback' },
       ]);
-      assert.equal(oauthOptions.length, 1);
       assert.equal(
-        oauthOptions[0]?.redirectUri,
-        'http://localhost:54545/callback',
+        new URL(authorize.searchParams.get('redirect_uri') ?? '').pathname,
+        '/callback',
       );
-      assert.equal(asked.length, 1);
-      assert.equal(secrets.listed, 0);
+
+      const finished = providers.finish();
+      assert.equal(await approve(url), 200);
+      const answered = await finished;
+
+      assert.deepEqual(answered, stored);
+      assert.equal('secret' in answered, false);
+      assert.equal(exchanges.length, 1);
+      assert.equal(JSON.parse(exchanges[0]?.body ?? '{}').code, 'code-1');
       assert.deepEqual(secrets.created, [
         {
           kind: 'API_TOKEN',
           name: CLAUDE_CREDENTIAL_NAME,
-          secret: 'claude-fresh',
+          secret: 'Bearer fresh-token',
         },
       ]);
-      assert.equal(answered.hasSecret, true);
-      assert.deepEqual(closes, [true]);
+      assert.equal(await callbackListening(url), false);
     } finally {
       await world.dispose();
     }
   });
 
-  test('answers the cancellation when the resolve is aborted, storing nothing', async () => {
-    const controller = new AbortController();
-    const serverOptions: LocalCallbackServerOptions[] = [];
-    const deps: ClaudeLoginDeps = {
-      resolveAuth: (options: ResolveClaudeAuthOptions) =>
-        new Promise((_resolve, reject) => {
-          options.signal?.addEventListener(
-            'abort',
-            () => {
-              reject(new Error('aborted'));
-            },
-            { once: true },
-          );
-        }),
-      createServer: (options: LocalCallbackServerOptions) => {
-        serverOptions.push(options);
-        throw new Error('An aborted resolve never starts a server.');
+  test('a second sign-in replaces the secret of the stored Claude credential', async () => {
+    let issued = 0;
+    const { world, secrets, providers } = await loginWorld({
+      createServer: freePort(),
+      transport: () => {
+        issued += 1;
+        return tokenEndpoint(`token-${issued}`)();
       },
-    };
-    const { world, secrets, providers } = await loginWorld(deps);
+    });
 
     try {
-      const login = providers.login(world.call(undefined, controller.signal));
-      await tick();
+      for (let round = 0; round < 2; round += 1) {
+        const { url } = await providers.start();
+        const finished = providers.finish();
+        await approve(url);
+        assert.deepEqual(await finished, stored);
+      }
+
+      assert.deepEqual(secrets.updated, [
+        { ref: { id: stored.id }, input: { secret: 'Bearer token-2' } },
+      ]);
+    } finally {
+      await world.dispose();
+    }
+  });
+
+  test('finishing with no sign-in started answers claude_login_not_started', async () => {
+    const { world, providers } = await loginWorld({
+      createServer: freePort(),
+      transport: tokenEndpoint('unused'),
+    });
+
+    try {
+      await assert.rejects(
+        providers.finish(),
+        refusal('claude_login_not_started'),
+      );
+    } finally {
+      await world.dispose();
+    }
+  });
+
+  test('a cancelled finish answers claude_login_aborted, stores nothing and closes the callback', async () => {
+    const controller = new AbortController();
+    const { world, secrets, providers } = await loginWorld({
+      createServer: freePort(),
+      transport: tokenEndpoint('never'),
+    });
+
+    try {
+      const { url } = await providers.start();
+      const finished = providers.finish(
+        world.call(undefined, controller.signal),
+      );
       controller.abort();
 
-      await assert.rejects(login, refusal('claude_login_aborted'));
+      await assert.rejects(finished, refusal('claude_login_aborted'));
+      assert.equal(await callbackListening(url), false);
       assert.deepEqual(secrets.created, []);
-      assert.deepEqual(serverOptions, []);
+      await assert.rejects(
+        providers.finish(),
+        refusal('claude_login_not_started'),
+      );
     } finally {
       await world.dispose();
     }
   });
 
-  test('answers the cancellation when the fresh sign-in is aborted, closing the server', async () => {
-    const controller = new AbortController();
-    const closes: boolean[] = [];
-    const asked: AskedAuthorize = [];
-    const deps: ClaudeLoginDeps = {
-      resolveAuth: async () => {
-        throw new Error('No stored Claude login.');
-      },
-      createServer: async () =>
-        callbackServer('http://localhost:54545/callback', closes),
-      createOAuth: () =>
-        fakeClient(
-          (options) =>
-            new Promise((_resolve, reject) => {
-              options?.signal?.addEventListener(
-                'abort',
-                () => {
-                  reject(new Error('aborted'));
-                },
-                { once: true },
-              );
-            }),
-          'claude-fresh',
-          asked,
-        ),
-      browserOpener: noBrowser,
-    };
-    const { world, secrets, providers } = await loginWorld(deps);
+  test('a new start replaces the waiting sign-in, whose finish answers claude_login_aborted', async () => {
+    const { world, secrets, providers } = await loginWorld({
+      createServer: freePort(),
+      transport: tokenEndpoint('second'),
+    });
 
     try {
-      const login = providers.login(world.call(undefined, controller.signal));
-      await tick();
-      controller.abort();
+      const first = await providers.start();
+      // Asserted from the start: it rejects while the second start runs.
+      const abandoned = assert.rejects(
+        providers.finish(),
+        refusal('claude_login_aborted'),
+      );
+      const second = await providers.start();
 
-      await assert.rejects(login, refusal('claude_login_aborted'));
-      assert.deepEqual(closes, [true]);
+      await abandoned;
+      assert.equal(await callbackListening(first.url), false);
+
+      const finished = providers.finish();
+      await approve(second.url);
+      assert.deepEqual(await finished, stored);
+      assert.equal(secrets.created.length, 1);
+    } finally {
+      await world.dispose();
+    }
+  });
+
+  test('a refused authorization answers claude_login_failed and stores nothing', async () => {
+    const { world, secrets, providers } = await loginWorld({
+      createServer: freePort(),
+      transport: tokenEndpoint('never'),
+    });
+
+    try {
+      const { url } = await providers.start();
+      const finished = assert.rejects(
+        providers.finish(),
+        refusal('claude_login_failed'),
+      );
+      await approve(url, { error: 'access_denied' });
+
+      await finished;
       assert.deepEqual(secrets.created, []);
     } finally {
       await world.dispose();
     }
   });
 
-  test('propagates a fresh sign-in failure that is not an abort', async () => {
-    const closes: boolean[] = [];
-    const deps: ClaudeLoginDeps = {
-      resolveAuth: async () => {
-        throw new Error('No stored Claude login.');
-      },
-      createServer: async () =>
-        callbackServer('http://localhost:54545/callback', closes),
-      createOAuth: () =>
-        fakeClient(
-          async () => {
-            throw new Error('no browser');
-          },
-          'claude-fresh',
-          [],
-        ),
-      browserOpener: noBrowser,
-    };
-    const { world, secrets, providers } = await loginWorld(deps);
+  test('a second finish while one waits answers claude_login_busy', async () => {
+    const { world, providers } = await loginWorld({
+      createServer: freePort(),
+      transport: tokenEndpoint('once'),
+    });
 
     try {
-      await assert.rejects(providers.login(), { message: 'no browser' });
-      assert.deepEqual(closes, [true]);
-      assert.deepEqual(secrets.created, []);
+      const { url } = await providers.start();
+      const finished = providers.finish();
+
+      await assert.rejects(providers.finish(), refusal('claude_login_busy'));
+      await approve(url);
+      assert.deepEqual(await finished, stored);
     } finally {
       await world.dispose();
     }
   });
 
   test('falls back to the spare port when the default one is in use', async () => {
-    const serverOptions: LocalCallbackServerOptions[] = [];
-    const oauthOptions: CreateClaudeOAuthOptions[] = [];
-    const deps: ClaudeLoginDeps = {
-      resolveAuth: async () => {
-        throw new Error('No stored Claude login.');
-      },
-      createServer: (options: LocalCallbackServerOptions) => {
-        serverOptions.push(options);
-        // The caller awaits this seam, so the in-use port surfaces as a
-        // refusal thrown here, exactly as the real listener would answer it.
-        if (serverOptions.length === 1) {
-          throw Object.assign(new Error('address already in use'), {
+    const asked: LocalCallbackServerOptions[] = [];
+    const { world, providers } = await loginWorld({
+      createServer: async (options) => {
+        asked.push(options);
+        if (options.port === 54545) {
+          throw Object.assign(new Error('listen EADDRINUSE'), {
             code: 'EADDRINUSE',
           });
         }
-        return Promise.resolve(
-          callbackServer('http://localhost:54546/callback', []),
-        );
+        return createLocalCallbackServer({ ...options, port: 0 });
       },
-      createOAuth: (options: CreateClaudeOAuthOptions) => {
-        oauthOptions.push(options);
-        return fakeClient(
-          async () => ({ accessToken: 'fresh' }),
-          'claude-fresh',
-          [],
-        );
-      },
-      browserOpener: noBrowser,
-    };
-    const { world, providers } = await loginWorld(deps);
+      transport: tokenEndpoint('spare'),
+    });
 
     try {
-      await providers.login();
+      const { url } = await providers.start();
 
-      assert.deepEqual(serverOptions, [
-        { host: 'localhost', port: 54545, path: '/callback' },
-        { host: 'localhost', port: 54546, path: '/callback' },
-      ]);
-      assert.equal(oauthOptions.length, 1);
-      assert.equal(
-        oauthOptions[0]?.redirectUri,
-        'http://localhost:54546/callback',
+      assert.deepEqual(
+        asked.map((options) => options.port),
+        [54545, 54546],
       );
+      const finished = providers.finish();
+      await approve(url);
+      assert.deepEqual(await finished, stored);
     } finally {
       await world.dispose();
     }
   });
 
-  test('updates the stored credential when a second login finds its name taken', async () => {
-    const answers = ['claude-one', 'claude-two'];
-    const deps: ClaudeLoginDeps = {
-      resolveAuth: async () => credential(answers.shift() ?? 'unanswered'),
-    };
-    const { world, secrets, providers } = await loginWorld(deps);
+  test('a sign-in nobody finishes in time is cancelled and closes its callback', async () => {
+    const { world, providers } = await loginWorld({
+      createServer: freePort(),
+      transport: tokenEndpoint('late'),
+      timeoutMs: 20,
+    });
 
     try {
-      await providers.login();
-      assert.equal(secrets.listed, 0);
+      const { url } = await providers.start();
+      const finished = providers.finish();
 
-      const second = await providers.login();
-
-      // The refused create makes the login read the store and move the
-      // secret of the credential the first login stored.
-      assert.equal(secrets.listed, 1);
-      assert.deepEqual(secrets.updated, [
-        {
-          ref: { id: '00000000-0000-4000-8000-90000000001' },
-          input: { secret: 'claude-two' },
-        },
-      ]);
-      assert.deepEqual(second, {
-        id: '00000000-0000-4000-8000-90000000001',
-        kind: 'API_TOKEN',
-        name: CLAUDE_CREDENTIAL_NAME,
-        hasSecret: true,
-      });
+      await assert.rejects(finished, refusal('claude_login_aborted'));
+      assert.equal(await callbackListening(url), false);
     } finally {
       await world.dispose();
     }
   });
 
-  test('refuses a second sign-in while the first is still running', async () => {
-    const first = gate<string>();
-    const deps: ClaudeLoginDeps = {
-      resolveAuth: () => first.promise.then(credential),
-    };
-    const { world, secrets, providers } = await loginWorld(deps);
+  test('deactivating the bundle closes a waiting sign-in', async () => {
+    const { world, providers, deactivate } = await loginWorld({
+      createServer: freePort(),
+      transport: tokenEndpoint('gone'),
+    });
 
     try {
-      const login = providers.login();
-      await tick();
-      await assert.rejects(providers.login(), refusal('claude_login_busy'));
-      assert.deepEqual(secrets.created, []);
+      const { url } = await providers.start();
+      await deactivate();
 
-      first.answer('claude-first');
-      assert.deepEqual(await login, {
-        id: '00000000-0000-4000-8000-90000000001',
-        kind: 'API_TOKEN',
-        name: CLAUDE_CREDENTIAL_NAME,
-        hasSecret: true,
-      });
-
-      // The guard is cleared once the first sign-in settles, so a third
-      // login runs — and lands on the update path the name it stored holds.
-      const third = await providers.login();
-      assert.equal(third.hasSecret, true);
-      assert.equal(secrets.updated.length, 1);
+      // The server closes as the aborted authorization unwinds.
+      await new Promise((done) => setTimeout(done, 20));
+      assert.equal(await callbackListening(url), false);
     } finally {
       await world.dispose();
     }

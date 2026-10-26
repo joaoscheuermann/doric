@@ -119,13 +119,23 @@ const provider = createClaudeProvider({
 
 Set `baseUrl` to point the provider at another Anthropic Messages endpoint
 (default: `https://api.anthropic.com`). The provider sends the Claude Code
-OAuth beta headers and the Claude Code CLI user agent, sends no thinking or
-effort controls (a request `effort` is ignored, not forwarded), and answers a
-stream's thinking deltas as `reasoning.delta` events. `embedding` and
+OAuth beta headers and the Claude Code CLI user agent; a stored value that is
+a Console API key goes as `x-api-key`, any other bare token under `Bearer`. It
+maps a request `effort` to `output_config.effort` where the model takes one,
+keeps thinking on (with drop-on-mismatch block binding) only on models that
+think by default, replays Claude's own signed thinking blocks, marks the system
+prompt and the conversation for prompt caching, and never sends `temperature`.
+A stream's thinking deltas are `reasoning.delta` events. `embedding` and
 `rerank` are rejected: Claude serves neither in this integration. `models()`
-lists the model ids and display names Anthropic's models endpoint serves,
-which is a listing only — it says nothing about a model's capabilities, so
-model names are typed by hand.
+lists every page of Anthropic's catalog with each model's context window, which
+a stream's `response.started` reports. The `claude` kind keeps `models` and
+`reasonings` lists and sets `modelsFromCatalog`: those lists are the catalog
+itself, never typed by hand, and `claudeCatalogModel` turns a listed model into
+its catalog entry (the efforts its `capabilities.effort` marks supported, or
+the ones its id names when the listing carries no capabilities, and its default
+effort: `medium` on Opus 5.5 and Haiku 5.5, `high` elsewhere). See
+[MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md#the-claude-kind) for the
+wire details.
 
 ### Internal Codex integration
 

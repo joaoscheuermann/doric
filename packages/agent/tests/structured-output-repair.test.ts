@@ -55,13 +55,19 @@ const malformedCall = (name: string): ToolCallRequest => ({
   arguments: '{"answer":',
 });
 
+/** The correction a request delivers: its last message, a stored user turn. */
 const correctionFrom = (
   request: ProviderRequest<unknown> | undefined,
-): string | undefined =>
-  request?.messages
-    .filter(({ role }) => role === 'system')
-    .map(({ content }) => (typeof content === 'string' ? content : ''))
-    .find((content) => content.startsWith('# Structured output correction'));
+): string | undefined => {
+  const last = request?.messages.at(-1);
+  const content =
+    last?.role === 'user' && typeof last.content === 'string'
+      ? last.content
+      : '';
+  return content.startsWith('# Structured output correction')
+    ? content
+    : undefined;
+};
 
 const invoke = async (agent: Agent, mode: Mode) => {
   if (mode === 'complete') {

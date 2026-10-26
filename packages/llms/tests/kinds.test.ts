@@ -141,8 +141,8 @@ const cases: readonly Case[] = [
         ],
       }),
     metadata: { id: 'claude', name: 'Claude' },
-    // Claude sends the stored authorization value verbatim, like Codex.
-    requiredAuth: tokenValue,
+    // Claude sends a bare stored token under its Bearer scheme.
+    requiredAuth: `Bearer ${tokenValue}`,
     extraHeaders: {
       'anthropic-version': '2023-06-01',
       'anthropic-beta': 'oauth-2025-04-20,claude-code-20250219',
@@ -169,9 +169,7 @@ const completionRequest = (transport: FakeTransport, entry: Case) => {
 
 /** The one value a completion carries when only the required fields are set. */
 const completionAuth = (entry: Case): string | undefined =>
-  entry.kind === 'codex' || entry.kind === 'claude'
-    ? tokenValue
-    : `Bearer ${tokenValue}`;
+  entry.kind === 'codex' ? tokenValue : `Bearer ${tokenValue}`;
 
 const complete = async (
   kind: ProviderKind,
@@ -236,6 +234,19 @@ void test('advertises OpenAI, OpenRouter and Claude while keeping Codex internal
       );
     }
   }
+});
+
+void test('only a kind that keeps models may list its catalog as its models, and Claude does', () => {
+  for (const kind of providerKinds) {
+    if (kind.modelsFromCatalog === true) {
+      assert.ok(
+        kind.lists.includes('models'),
+        `${kind.id} lists its catalog without keeping models`,
+      );
+    }
+  }
+  assert.equal(providerKind('claude')?.modelsFromCatalog, true);
+  assert.notEqual(providerKind('openrouter')?.modelsFromCatalog, true);
 });
 
 void test('uses the configured OpenRouter catalog for execution and model listing', async () => {

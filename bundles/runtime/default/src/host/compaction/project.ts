@@ -89,6 +89,31 @@ export const projection = (input: ProjectionInput): Projection => {
  * does today, no worse.
  */
 export const isContextOverflow = (message: string): boolean =>
-  /context (window|length)|context_length|too many tokens|maximum context|input tokens exceed|prompt is too long/i.test(
+  /context[ _](window|length|overflow)|too many tokens|maximum context|input tokens exceed|prompt is too long/i.test(
     message,
   );
+
+/** The strings a provider failure names itself by: message, code, diagnostic. */
+const failureTexts = (failure: unknown): readonly string[] => {
+  if (typeof failure !== 'object' || failure === null) return [String(failure)];
+  const texts: string[] = [];
+  const read = (value: unknown): void => {
+    if (typeof value !== 'object' || value === null) return;
+    for (const key of ['message', 'code', 'diagnostic'] as const) {
+      const text = (value as Record<string, unknown>)[key];
+      if (typeof text === 'string') texts.push(text);
+    }
+  };
+  read(failure);
+  read((failure as { readonly data?: unknown }).data);
+  return texts;
+};
+
+/**
+ * Whether a thrown provider error, or the `error` a stream event carries,
+ * reads as a context-window overflow. Its message, code and diagnostic are
+ * all read: a provider may report the overflow in its body excerpt alone
+ * (`diagnostic`) under a generic HTTP message.
+ */
+export const isContextOverflowError = (failure: unknown): boolean =>
+  failureTexts(failure).some(isContextOverflow);

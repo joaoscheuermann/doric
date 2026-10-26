@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -521,6 +528,9 @@ void test('exchanges and refreshes with JSON token bodies when the profile asks 
 
   assert.equal(exchangeBody.state, authUrl.searchParams.get('state'));
 
+  // The state is 32 random bytes, base64url: the length Claude Code sends.
+  assert.equal(authUrl.searchParams.get('state')?.length, 43);
+
   await client.refresh();
 
   const refreshBody = JSON.parse(transport.requests[1]?.body ?? '{}') as Record<
@@ -793,6 +803,184 @@ void test('refreshes an expiring Claude login and writes the rotated token back'
     assert.equal(credential.authorization, 'Bearer next');
 
     assert.deepEqual(credential.scopes, ['user:inference']);
+  });
+});
+
+void test('refuses an expired Claude login that cannot be refreshed', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: { accessToken: 'claude-expired', expiresAt: 999_000 },
+    });
+    const transport = fakeTransport({});
+
+    await assert.rejects(
+      resolveClaudeAuth({
+        claudeHome: dir,
+        env: {},
+        now: () => 1_000_000,
+        transport,
+      }),
+      hasCode('claude_refresh_token_missing'),
+    );
+    assert.equal(transport.requests.length, 0);
+  });
+});
+
+void test('answers a still-valid Claude login inside the refresh window when it cannot be refreshed', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: { accessToken: 'claude-soon', expiresAt: 1_060_000 },
+    });
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport: fakeTransport({}),
+    });
+
+    assert.equal(credential.authorization, 'Bearer claude-soon');
+  });
+});
+
+void test('keeps what Claude Code wrote during a refresh and replaces the file whole', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: {
+        accessToken: 'claude-access',
+        refreshToken: 'claude-refresh',
+        expiresAt: 1_060_000,
+      },
+    });
+    const transport = {
+      async request() {
+        // Claude Code writes the file while the refresh is in flight.
+        await writeClaudeCredentials(dir, {
+          claudeAiOauth: {
+            accessToken: 'claude-access',
+            refreshToken: 'claude-refresh',
+            expiresAt: 1_060_000,
+          },
+          mcpOAuth: { server: 'kept' },
+        });
+        return {
+          status: 200,
+          headers: {},
+          body: JSON.stringify({
+            access_token: 'next',
+            refresh_token: 'rotated',
+            expires_in: 3600,
+          }),
+        };
+      },
+    };
+
+    await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport,
+    });
+
+    const path = join(dir, '.credentials.json');
+    const saved = JSON.parse(await readFile(path, 'utf8')) as {
+      claudeAiOauth: { accessToken?: string };
+      mcpOAuth?: unknown;
+    };
+
+    assert.equal(saved.claudeAiOauth.accessToken, 'next');
+    assert.deepEqual(saved.mcpOAuth, { server: 'kept' });
+    assert.deepEqual(await readdir(dir), ['.credentials.json']);
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+  });
+});
+
+void test('reads an expiring Claude login as it is when asked not to refresh', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: {
+        accessToken: 'claude-access',
+        refreshToken: 'claude-refresh',
+        expiresAt: 1_060_000,
+      },
+    });
+    const transport = fakeTransport({});
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport,
+      refresh: false,
+    });
+
+    assert.equal(credential.authorization, 'Bearer claude-access');
+    assert.equal(credential.expiresAt, 1_060_000);
+    assert.equal(transport.requests.length, 0);
+  });
+});
+
+void test("reads Claude Code's Keychain login before the file, and never refreshes it", async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: { accessToken: 'file-access', expiresAt: 9_000_000 },
+    });
+    const transport = fakeTransport({});
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport,
+      keychain: async () =>
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: 'keychain-access',
+            refreshToken: 'keychain-refresh',
+            expiresAt: 1_060_000,
+          },
+        }),
+    });
+
+    assert.equal(credential.authorization, 'Bearer keychain-access');
+    assert.equal(transport.requests.length, 0);
+  });
+});
+
+void test('refuses an expired Keychain login with a stable code', async () => {
+  await assert.rejects(
+    resolveClaudeAuth({
+      env: {},
+      now: () => 1_000_000,
+      transport: fakeTransport({}),
+      keychain: async () =>
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: 'keychain-access',
+            refreshToken: 'keychain-refresh',
+            expiresAt: 999_000,
+          },
+        }),
+    }),
+    hasCode('claude_keychain_login_expired'),
+  );
+});
+
+void test('falls back to the credentials file when the Keychain has no login', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: { accessToken: 'file-access', expiresAt: 9_000_000 },
+    });
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport: fakeTransport({}),
+      keychain: async () => undefined,
+    });
+
+    assert.equal(credential.authorization, 'Bearer file-access');
   });
 });
 

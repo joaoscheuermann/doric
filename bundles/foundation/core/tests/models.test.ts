@@ -478,6 +478,86 @@ void test('the catalog fill writes each listed model as the catalog describes it
   });
 });
 
+void test('a provider whose model list is its catalog takes every listed model, and keeps its list when the read fails', async () => {
+  const catalogModels = [
+    {
+      id: 'claude-opus-5-5',
+      reasonings: ['low', 'medium', 'high'],
+      parameters: [],
+      defaultEffort: 'medium',
+      mandatory: false,
+    },
+    {
+      id: 'claude-haiku-4-5',
+      reasonings: [],
+      parameters: [],
+      mandatory: false,
+    },
+    // A repeated or blank id names no second model.
+    { id: 'claude-opus-5-5', reasonings: [], parameters: [], mandatory: false },
+    { id: ' ', reasonings: [], parameters: [], mandatory: false },
+  ];
+  const reads: string[] = [];
+  const filled = await readModelProperties(
+    {
+      providers: [
+        { id: 'claude', kind: 'claude', configuration: {}, models: [] },
+        {
+          id: 'offline',
+          kind: 'claude',
+          configuration: {},
+          models: [{ name: 'claude-opus-5', reasonings: ['high'] }],
+        },
+        // Not catalog-listed, with no models: never read.
+        { id: 'router', kind: 'openrouter', configuration: {}, models: [] },
+      ],
+      models: { execution: { providerId: 'claude', model: 'claude-opus-5-5' } },
+      execution: { maxTurns: 10 },
+    },
+    (provider) => {
+      reads.push(provider.id);
+      return Promise.resolve(
+        provider.id === 'offline'
+          ? { status: 'failed' }
+          : { status: 'read', models: catalogModels },
+      );
+    },
+    (provider) => provider.kind === 'claude',
+  );
+
+  assert.deepEqual(reads, ['claude', 'offline']);
+  assert.deepEqual(filled.providers, [
+    {
+      id: 'claude',
+      kind: 'claude',
+      configuration: {},
+      models: [
+        {
+          name: 'claude-opus-5-5',
+          reasonings: ['low', 'medium', 'high'],
+          defaultEffort: 'medium',
+        },
+        { name: 'claude-haiku-4-5', reasonings: [] },
+      ],
+    },
+    {
+      id: 'offline',
+      kind: 'claude',
+      configuration: {},
+      models: [{ name: 'claude-opus-5', reasonings: ['high'] }],
+    },
+    { id: 'router', kind: 'openrouter', configuration: {}, models: [] },
+  ]);
+  // The execution profile resolves against the list the catalog wrote.
+  assert.deepEqual(filled.models, {
+    execution: {
+      providerId: 'claude',
+      model: 'claude-opus-5-5',
+      effort: 'medium',
+    },
+  });
+});
+
 // R-6.3: models/v1.contextWindow, the context capacity fill moved from the
 // runtime's usage-context.ts onto the live, cached providers.
 

@@ -2,9 +2,8 @@
 
 `claude-login` signs the settings window in to a Claude Code subscription.
 The provider page of the `claude` kind offers a sign-in no other kind draws:
-one that reuses an existing Claude Code login when one is present and opens a
-fresh browser authorization otherwise, and then names the credential it
-stored as the provider's `token` field.
+the browser opens Claude's authorization page, and the credential the sign-in
+stores becomes the provider's `token` field.
 
 It is a feature bundle with a host part only, loaded by the `bundle` platform.
 See the [main README](../../../README.md) for Doric as a whole and
@@ -12,49 +11,52 @@ See the [main README](../../../README.md) for Doric as a whole and
 
 ## What it provides
 
-- **Contract:** `claude.login/v1`, with `login`.
+- **Contract:** `claude.login/v1`, with `start` and `finish`.
 
 ## Host
 
-`claude.login/v1.login()` signs in to Claude, one at a time:
+The host may run where no browser does (a container, another machine), so it
+never opens one; the window does, through `doric.browser/v1`.
 
-- **Reuse first.** A working Claude Code login — `~/.claude` (or
-  `CLAUDE_CONFIG_DIR`), or `CLAUDE_AUTHORIZATION` — answers the call by itself
-  through `resolveClaudeAuth`, and no browser opens. A resolve failure that is
-  not an aborted call falls through to the fresh flow, because a broken
-  `~/.claude` login must never block a fresh sign-in.
-- **Fresh flow.** The loopback callback server binds Claude Code's own
+- **`start()`.** Binds Claude Code's own loopback callback,
   `localhost:54545/callback` (falling back to `:54546` when the port is busy),
-  the browser opens the authorization URL, and the code is exchanged for
-  tokens. The flow keeps its token record in an in-memory store — the durable
-  copy is the credential this bundle writes after the flow answers — and the
-  callback server is closed however the flow ends, in a `finally`.
-- **Storage.** The authorization value — only its `authorization` header
-  form, never a rendered token — is stored through `secrets/v1` as the
+  prepares the authorization and answers its `https:` URL. A new `start()`
+  cancels and replaces a sign-in still waiting; one nobody finishes is
+  cancelled after ten minutes, and when the bundle deactivates.
+- **`finish()`.** Waits for the browser's callback, exchanges the code for the
+  long login (`expires_in` of a year) and stores the authorization value —
+  only its `authorization` header form — through `secrets/v1` as the
   `API_TOKEN` credential named `Claude`. A `credential_name_taken` refusal
-  (another bundle stored one under that name) re-reads the store and replaces
-  the secret of the same-name credential. The value is never logged, and
-  `login()` answers the credential's public view, never the secret.
-- **One at a time.** A second `login()` while one is running answers
-  `claude_login_busy`. A cancelled call answers `claude_login_aborted` on
-  every path (reuse, fresh flow, storage) and stores nothing.
+  re-reads the store and replaces the secret of the same-name credential. The
+  value is never logged, and `finish()` answers the credential's public view,
+  never the secret.
+- **Refusals.** `claude_login_not_started` with no sign-in waiting,
+  `claude_login_busy` while another `finish()` waits on it,
+  `claude_login_aborted` when the call is cancelled or a newer `start()`
+  replaced it (nothing is stored), and `claude_login_failed` when the
+  authorization itself fails (for example, the user denied it).
+- **No reuse.** An existing Claude Code login (`~/.claude`) is never reused:
+  its access token expires within hours, and nothing would refresh a stored
+  copy. The callback server is closed however the sign-in ends.
 
 ## Settings integration
 
 The `settings` bundle imports this package (`claude-login/contracts`), its
-manifest requires `claude.login/v1`, and its API exposes the answer as
-`SettingsApi.claude.login`. The provider page of the `claude` kind draws a
-"Sign in with Claude" row that drives the `useClaudeLogin` hook: the hook
-settles the answered credential into the `credentials` query cache before it
-publishes it, so the page's auto-select effect commits a `token` value the
-configuration already accepts, and the sign-in toast names the result. The
-hook's own cancel aborts the call without a failure toast.
+manifest requires `claude.login/v1`, and its API exposes the two calls as
+`SettingsApi.claude.start` and `SettingsApi.claude.finish`. The provider page
+of the `claude` kind draws a "Sign in with Claude" row that drives the
+`useClaudeLogin` hook: it starts the sign-in, opens the URL in the system
+browser, shows that URL while it waits, and settles the answered credential
+into the `credentials` query cache before it publishes it, so the page's
+auto-select effect commits a `token` value the configuration already accepts.
+The hook's own cancel aborts the call without a failure toast.
 
 ## Limits
 
-The fresh flow opens the browser on the machine the host runs on; a remote
-host needs a reachable browser, and the `npm run claude:oauth` CLI flow writes
-the authorization value into the environment for such hosts instead.
+The callback reaches the host only where the browser's `localhost` is the
+host's: a host on the same machine, natively or in Docker with
+`network_mode: host`. For a remote host, the `npm run claude:oauth` CLI flow
+writes the authorization value into the environment instead.
 
 ## Development
 

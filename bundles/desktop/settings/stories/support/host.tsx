@@ -20,6 +20,7 @@ import type {
 import { sectionPath } from '../../src/client/domain/section-route.js';
 import { queryKeys } from '../../src/client/queries/keys.js';
 import {
+  claudeCatalog,
   claudeCredential,
   credentials as credentialFixtures,
   openRouterCatalog,
@@ -151,8 +152,11 @@ export const createStoryServices = (host: StoryHost = {}): StoryServices => {
 
   const contracts: Record<string, unknown> = {
     'claude.login/v1': {
-      login: () => answer(host.claudeLogin ?? claudeCredential),
+      start: () =>
+        Promise.resolve({ url: 'https://claude.com/cai/oauth/authorize' }),
+      finish: () => answer(host.claudeLogin ?? claudeCredential),
     },
+    'doric.browser/v1': { open: () => Promise.resolve() },
     'host-config/v1': {
       current: () => answer(config),
       replace: (input: unknown) => {
@@ -173,12 +177,15 @@ export const createStoryServices = (host: StoryHost = {}): StoryServices => {
       kind: async (id: string) =>
         (settled(kinds) ?? []).find((kind) => kind.id === id),
       // A refusal is the endpoint's: the host read it and could not list it.
-      catalog: async () =>
+      catalog: async (input: { readonly kind: string }) =>
         host.catalog instanceof Error
           ? { status: 'unreadable' }
           : {
               status: 'read',
-              models: await answer(host.catalog ?? openRouterCatalog),
+              models: await answer(
+                host.catalog ??
+                  (input.kind === 'claude' ? claudeCatalog : openRouterCatalog),
+              ),
             },
     },
     'tools/v1': { catalog: () => answer(host.tools ?? toolCatalog) },

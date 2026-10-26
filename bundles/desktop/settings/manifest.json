@@ -7,6 +7,7 @@
   },
   "description": "The settings window and the footer execution picker.",
   "provides": ["settings.config/v1@1.0.0"],
+  "optional": ["claude.login/v1"],
   "requires": [
     "hooks/v1@^1.0.0",
     "ui/v1@^1.0.0",
@@ -15,7 +16,6 @@
     "host-config/v1@^1.0.0",
     "secrets/v1@^1.0.0",
     "models/v1@^1.0.0",
-    "tools/v1@^1.0.0",
-    "claude.login/v1@^1.0.0"
+    "tools/v1@^1.0.0"
   ]
 }

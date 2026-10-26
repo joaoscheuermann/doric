@@ -83,13 +83,15 @@ export interface LoginWorld {
   readonly world: TestServices;
   readonly secrets: SecretCalls;
   readonly providers: ClaudeLogin;
+  /** Runs the bundle's deactivation cleanup, as the platform would. */
+  readonly deactivate: () => Promise<void>;
 }
 
 /**
  * Activates the bundle beside a fake `secrets/v1` that records every call,
  * with the given OAuth seams injected. The fake store refuses a `create`
  * whose name and kind an existing credential holds, with the contract's own
- * `credential_name_taken`, so the name-taken path is a second `login()` away.
+ * `credential_name_taken`, so the name-taken path is a second sign-in away.
  */
 export const loginWorld = async (
   deps: ClaudeLoginDeps = {},
@@ -151,7 +153,7 @@ export const loginWorld = async (
   });
 
   try {
-    createActivate({ deps })({ services: world.services });
+    const cleanup = createActivate({ deps })({ services: world.services });
     let login: ClaudeLogin | undefined;
     world.services.whenAvailable(ClaudeLoginV1, (api) => {
       login = api;
@@ -166,13 +168,16 @@ export const loginWorld = async (
       secrets: {
         created,
         updated,
-        // Live by getter: the count grows as later logins list the store,
+        // Live by getter: the count grows as later sign-ins list the store,
         // where a copied number would stay the one this return saw.
         get listed() {
           return listed;
         },
       },
       providers: login,
+      deactivate: async () => {
+        await cleanup();
+      },
     };
   } catch (error) {
     await world.dispose();

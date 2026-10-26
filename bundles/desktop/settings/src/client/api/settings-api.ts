@@ -16,6 +16,7 @@ import {
   type CallArg,
   type CredentialDescription,
   credentialFieldsSatisfied,
+  DoricBrowserV1,
   isContractError,
   type ModelField,
   type ModelKindDescriptor,
@@ -514,18 +515,11 @@ const credentialWriteFailure = (error: unknown): never => {
 };
 
 /**
- * The failures `claude.login` answers: its own busy text, the contract's
- * message, or the generic one.
+ * The failures `claude.login/v1` answers: the contract's own message, or the
+ * generic one.
  */
-const claudeLoginFailure = (error: unknown): never => {
-  if (isContractError(error)) {
-    if (error.code === 'claude_login_busy') {
-      return fail('A Claude sign-in is already in progress.');
-    }
-    return fail(error.message);
-  }
-  return unexpected(error);
-};
+const claudeLoginFailure = (error: unknown): never =>
+  isContractError(error) ? fail(error.message) : unexpected(error);
 
 /** Whether one declared value is one the field's kind accepts. */
 const fieldAccepts = (field: ModelField, value: string): boolean => {
@@ -806,6 +800,7 @@ const providerKindFrom = (value: unknown): ProviderKind => {
     description: value.description,
     fields: value.fields.map(providerFieldFrom),
     lists: value.lists as readonly ProviderListId[],
+    ...(value.modelsFromCatalog === true ? { modelsFromCatalog: true } : {}),
   };
 };
 
@@ -827,11 +822,21 @@ const catalogFrom = (value: unknown): readonly CatalogModel[] => {
       return invalidResponse();
     }
 
+    // The default is kept only when it is an effort the model lists, the
+    // rule the host's configuration applies to a stored model.
+    const defaultEffort =
+      typeof entry.defaultEffort === 'string' &&
+      reasonings.includes(entry.defaultEffort as ReasoningEffort)
+        ? (entry.defaultEffort as ReasoningEffort)
+        : undefined;
+
     return {
       id: entry.id,
       ...(entry.name === undefined ? {} : { name: entry.name }),
       reasonings,
       parameters,
+      ...(defaultEffort === undefined ? {} : { defaultEffort }),
+      ...(entry.mandatory === true ? { mandatory: true } : {}),
     };
   });
 };
@@ -951,8 +956,13 @@ export interface SettingsApi {
     remove(id: string): Promise<void>;
   };
   readonly claude: {
-    login(options?: CallArg): Promise<Credential>;
+    /** Prepares a browser sign-in and answers the authorization URL. */
+    start(options?: CallArg): Promise<string>;
+    /** Waits for the browser's answer and answers the stored credential. */
+    finish(options?: CallArg): Promise<Credential>;
   };
+  /** Opens an https page in the system browser, outside the app. */
+  openBrowser(url: string): Promise<void>;
 }
 
 const replaced = (result: ConfigReplaceResult): DoricConfiguration => {
@@ -1049,21 +1059,34 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
     },
   },
   claude: {
-    login: async (options) => {
-      let answered: CredentialDescription;
+    start: async (options) => {
       // A tuple method takes the call as its only argument, so an absent call
       // is no argument at all: `undefined` would be read as an input item.
-      const login =
-        options === undefined
-          ? () => services.use(ClaudeLoginV1).login()
-          : () => services.use(ClaudeLoginV1).login(options);
+      const login = services.use(ClaudeLoginV1);
       try {
-        answered = await login();
+        const started = await (options === undefined
+          ? login.start()
+          : login.start(options));
+        return started.url;
+      } catch (error) {
+        return claudeLoginFailure(error);
+      }
+    },
+    finish: async (options) => {
+      const login = services.use(ClaudeLoginV1);
+      let answered: CredentialDescription;
+      try {
+        answered = await (options === undefined
+          ? login.finish()
+          : login.finish(options));
       } catch (error) {
         return claudeLoginFailure(error);
       }
       return credentialFrom(answered);
     },
+  },
+  openBrowser: async (url) => {
+    await services.use(DoricBrowserV1).open(url);
   },
 });
 

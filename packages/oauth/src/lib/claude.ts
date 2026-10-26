@@ -1,6 +1,8 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { OAuthErrorObject } from './classes/oauth-error.js';
 import { CLAUDE_OAUTH_CLIENT_ID, claudeOAuthProfile } from './claude-oauth.js';
@@ -32,7 +34,24 @@ export interface ResolveClaudeAuthOptions {
   readonly now?: () => number;
   readonly transport?: OAuthTransport;
   readonly signal?: AbortSignal;
+  /**
+   * Whether an expiring login is refreshed (and written back). `false` reads
+   * the login as it is, expired or not, so a caller can judge its
+   * `expiresAt` before deciding to touch it; a refresh rotates the refresh
+   * token Claude Code itself holds. Defaults to `true`.
+   */
+  readonly refresh?: boolean;
+  /**
+   * Reads Claude Code's macOS Keychain login, the JSON Claude Code stores
+   * under the `Claude Code-credentials` service. Defaults to the `security`
+   * CLI on macOS when neither `claudeHome` nor `CLAUDE_CONFIG_DIR` names
+   * another configuration; `false` skips the Keychain.
+   */
+  readonly keychain?: false | (() => Promise<string | undefined>);
 }
+
+/** The Keychain service Claude Code keeps its macOS login under. */
+export const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials';
 
 interface ClaudeAiOauth {
   readonly accessToken?: string;
@@ -71,6 +90,15 @@ export const resolveClaudeAuth = async (
     return oauthCredential(accessToken);
   }
 
+  const now = options.now ?? Date.now;
+  // On macOS Claude Code keeps its login in the Keychain and writes the file
+  // only when the Keychain refuses; the Keychain copy is read-only here.
+  const keychain = await readKeychainLogin(keychainReader(options, env));
+
+  if (keychain !== undefined) {
+    return credentialFromKeychain(keychain.claudeAiOauth ?? {}, now(), options);
+  }
+
   const credentialsPath = join(claudeHome(options, env), '.credentials.json');
   const file = await readCredentialsFile(credentialsPath);
 
@@ -83,26 +111,104 @@ export const resolveClaudeAuth = async (
 
   return credentialFromLogin(file.claudeAiOauth ?? {}, {
     ...options,
-    file,
     credentialsPath,
     transport: options.transport ?? createFetchTransport(),
-    now: options.now ?? Date.now,
+    now,
   });
 };
 
-/** A login that is close to expiry becomes the refreshed login written back. */
+/**
+ * A Keychain login as a credential, never refreshed: refreshing rotates the
+ * refresh token Claude Code holds there, and writing the Keychain back is
+ * Claude Code's alone. An expired one is refused; running `claude` renews it.
+ */
+const credentialFromKeychain = (
+  login: ClaudeAiOauth,
+  now: number,
+  options: ResolveClaudeAuthOptions,
+): ClaudeCredential => {
+  if (
+    options.refresh !== false &&
+    (expiresAtMs(login.expiresAt) ?? Infinity) <= now
+  ) {
+    return error(
+      'claude_keychain_login_expired',
+      'The Claude Code login in the macOS Keychain has expired; run `claude` to renew it.',
+    );
+  }
+
+  return credential(login);
+};
+
+/** The Keychain reader these options name, or `undefined` for none. */
+const keychainReader = (
+  options: ResolveClaudeAuthOptions,
+  env: Readonly<Record<string, string | undefined>>,
+): (() => Promise<string | undefined>) | undefined => {
+  if (options.keychain === false) return undefined;
+  if (options.keychain !== undefined) return options.keychain;
+  // Another configuration directory is another login, under another
+  // Keychain entry this reader does not name.
+  if (
+    process.platform !== 'darwin' ||
+    options.claudeHome !== undefined ||
+    clean(env.CLAUDE_CONFIG_DIR) !== undefined
+  ) {
+    return undefined;
+  }
+  return securityKeychain;
+};
+
+/** The `security` CLI's copy of Claude Code's Keychain login, when there is one. */
+const securityKeychain = (): Promise<string | undefined> =>
+  new Promise((resolve) => {
+    execFile(
+      'security',
+      ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE, '-w'],
+      // The user may be asked to allow the read; a refusal or no entry is
+      // answered by the file.
+      { timeout: 60_000 },
+      (failure, stdout) => {
+        resolve(failure === null ? stdout.trim() || undefined : undefined);
+      },
+    );
+  });
+
+/** The Keychain login, parsed; an absent or unreadable entry is `undefined`. */
+const readKeychainLogin = async (
+  read: (() => Promise<string | undefined>) | undefined,
+): Promise<ClaudeCredentialsFile | undefined> => {
+  const raw = read === undefined ? undefined : await read();
+
+  if (raw === undefined) return undefined;
+
+  try {
+    return asRecord(JSON.parse(raw));
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A login that is close to expiry becomes the refreshed login written back.
+ * One that already expired and carries no refresh token is refused rather
+ * than answered: its access token no longer works.
+ */
 const credentialFromLogin = async (
   login: ClaudeAiOauth,
   options: ResolveClaudeAuthOptions & {
-    readonly file: ClaudeCredentialsFile;
     readonly credentialsPath: string;
     readonly transport: OAuthTransport;
     readonly now: () => number;
   },
 ): Promise<ClaudeCredential> => {
+  const now = options.now();
+  const expired = (expiresAtMs(login.expiresAt) ?? Infinity) <= now;
   const nextLogin =
-    shouldRefresh(login, options.now()) && login.refreshToken !== undefined
-      ? await refreshClaudeLogin(options.file, login, options)
+    options.refresh !== false &&
+    shouldRefresh(login, now) &&
+    (login.refreshToken !== undefined || expired)
+      ? await refreshClaudeLogin(login, options)
       : login;
 
   return credential(nextLogin);
@@ -110,7 +216,6 @@ const credentialFromLogin = async (
 
 /** Refreshes an expiring login through the JSON refresh grant and writes it back. */
 const refreshClaudeLogin = async (
-  file: ClaudeCredentialsFile,
   login: ClaudeAiOauth,
   options: {
     readonly credentialsPath: string;
@@ -124,7 +229,7 @@ const refreshClaudeLogin = async (
   if (refreshToken === undefined) {
     return error(
       'claude_refresh_token_missing',
-      'Claude access token is expiring and no refresh token is available.',
+      'Claude access token has expired and no refresh token is available.',
     );
   }
 
@@ -165,13 +270,38 @@ const refreshClaudeLogin = async (
     ...(refreshed.scopes === undefined ? {} : { scopes: refreshed.scopes }),
   };
 
-  await writeFile(
-    options.credentialsPath,
-    `${JSON.stringify({ ...file, claudeAiOauth: nextLogin }, null, 2)}\n`,
-    { mode: 0o600 },
-  );
+  await writeCredentialsFile(options.credentialsPath, nextLogin);
 
   return nextLogin;
+};
+
+/**
+ * Writes the refreshed login back without losing what Claude Code wrote
+ * meanwhile: the file is read again just before the write, only
+ * `claudeAiOauth` is replaced, and the new contents land in a private temp
+ * file renamed over the old one, so no reader ever sees half a file.
+ */
+const writeCredentialsFile = async (
+  path: string,
+  login: ClaudeAiOauth,
+): Promise<void> => {
+  const latest = (await readCredentialsFile(path).catch(() => undefined)) ?? {};
+  const temp = join(
+    dirname(path),
+    `.credentials.${process.pid}.${randomBytes(6).toString('hex')}.tmp`,
+  );
+
+  try {
+    await writeFile(
+      temp,
+      `${JSON.stringify({ ...latest, claudeAiOauth: login }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+    await rename(temp, path);
+  } catch (cause) {
+    await rm(temp, { force: true });
+    throw cause;
+  }
 };
 
 const parseRefreshResponse = (

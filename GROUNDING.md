@@ -560,7 +560,13 @@ per parameter, and a column menu. A model the catalog does not list can still be
 named, and is drawn marked. Each
 model carries the reasoning efforts it accepts, which the host reads from the
 same catalog when it saves, so a kind that declares a models URL
-takes them from the endpoint rather than from an operator's typing.
+takes them from the endpoint rather than from an operator's typing. A kind
+whose models are its catalog (`modelsFromCatalog`, the `claude` kind) offers no
+choice at all: the page reads the catalog once the provider can authenticate
+(for Claude, once signed in), writes every listed model with its efforts and
+default into the draft, and shows that list read-only with a reload, so no
+model is ever named by hand; before the sign-in it says the models appear
+then.
 The renderer learns those kinds, fields and models from the host rather than
 carrying a list of its own, so a kind added to the library becomes configurable
 without a renderer change. A field the kind calls `secret` names a stored
@@ -765,6 +771,11 @@ payload)` to the same bundle in every other live generation. The kernel names
   unavailable. The exposed set is pinned by a permanent snapshot test,
   `app/backend/doric-host/tests/bridge-exposure.snapshot.json`, so a change to what
   windows may reach is an explicit change in review.
+- **System browser.** `doric.browser/v1.open(url)` (client only) is a
+  window's one way out of the app: main opens an absolute `https:` URL, which
+  it validates again, in the operating system's browser through
+  `doric.shell/v1.openExternal`; every other scheme is refused with
+  `invalid_input`, and a window still may not open windows of its own.
 - **Windows.** A window descriptor names one of two contents: an app route
   (`path`) the window's shell renders, or a page on the host (`view`, naming the
   path main resolves against the host origin and the session partition the
@@ -1375,7 +1386,8 @@ histories as `runtime.project/v1`, `runtime.thread/v1` and
 `runtime.attachment/v1` records over `storage/v1` blobs, and each Thread's events in the
 `runtime.thread.events/<threadId>` stream of `storage/v1`, folding the
 `pending` queue projection and the usage aggregate into the same commit as
-the event. `/bundles/runtime/default` provides the local `executor/v1`, whose `run`
+the event (every provider's calls count with their tokens and context; a call
+without an OpenRouter `credits` cost counts as unpriced). `/bundles/runtime/default` provides the local `executor/v1`, whose `run`
 receives the runtime's `PromptSession` and writes its streamed deltas to that
 stream coalesced: consecutive `text.delta`, `reasoning.delta` or
 `refusal.delta` events of one kind, or `tool_call.delta` events of one call
@@ -1399,9 +1411,12 @@ is neutralized to `<\/…`; older history keeps its `# User request` text. The
 system prompt describes the envelope, the chat's `<comments>`, `<target>`,
 `<comment>` and `<message>` parts and the `comment_reply` tool. Its `compact` condenses an
 idle Thread's history into one marked summary message: the automatic trigger
-runs between provider turns of a run (after `usage`/`response.finished`, and
-before a resumed run's first call) when the projected next call crosses the
-configured `execution.contextCompaction` pressure, and `POST /threads/:id/compact`
+runs between provider turns of a run (after `response.finished`, never on a
+mid-stream `usage`, and before a resumed run's first call) when the projected
+next call crosses the configured `execution.contextCompaction` pressure; a
+provider error that names a context overflow in its message, code or
+diagnostic forces one condensation per run, and a condensation drops bound
+reasoning replay (`thinking`, `redacted_thinking`) from every message it keeps; and `POST /threads/:id/compact`
 condenses on demand. Both record the bracket events `compaction.started`,
 `compaction.finished` and `compaction.failed` on the Thread log, using a
 UUID prompt identifier compatible with event storage. The
@@ -1565,7 +1580,10 @@ switch) moves each feature into its own bundle. The composition enables
 `openai`, `openrouter`, `codex` and `claude` (provider kinds come from their
 `models.provider/v1` registrations; codex is resolvable but not advertised by
 `GET /providers/kinds`, while claude is advertised alongside OpenAI and
-OpenRouter), `docker` as the one `sandbox/v1` provider
+OpenRouter; the `claude` kind reports `catalogCapacity()`, so
+`models/v1.contextWindow` reads its `models()`, its `lists` are the `llms`
+`claude` kind's own, and it sets `modelsFromCatalog`: its `catalog()` lists the
+login's models from Anthropic's `/v1/models`, `absent` without a login), `docker` as the one `sandbox/v1` provider
 (`firecracker` is staged; with no `DORIC_COMPOSITION`,
 `DORIC_SANDBOX_PROVIDER=firecracker` boots the shipped composition with
 `firecracker` in its place; the libraries are `docker-sandbox` and
@@ -1781,7 +1799,13 @@ default, and whether that catalog pins reasoning on; a kind that keeps only
 a models URL, and the host reads it on every configuration write — and, for a
 provider page, through `POST /providers/models`: each listed model takes the
 reasoning that catalog describes, a model the catalog does not name takes none,
-and a catalog that cannot be read leaves that provider exactly as it was. An
+and a catalog that cannot be read leaves that provider exactly as it was. A kind
+whose descriptor sets `modelsFromCatalog` (from `models/v1.kind`, the
+`claude` kind) has its catalog as its model list: the host reads that catalog
+on every configuration write even when the provider lists no models, and the
+list becomes every model the catalog lists, in the catalog's order, each with
+its efforts and default; a catalog that cannot be read (no login yet, or a
+refused one) keeps the list the provider had. An
 execution profile carries an effort exactly when its model lists one, and the
 host writes it on every save: the effort that model's own catalog names as its
 default when it names one, and its first effort other than `none` otherwise. A
@@ -2158,11 +2182,19 @@ calls use a disabled Pino logger.
 Doric advertises OpenAI, OpenRouter and Claude in its provider catalog. OpenAI is
 the Responses-compatible adapter with caller-configured identity and endpoint.
 Claude is Anthropic Messages through a Claude Code subscription login: it sends
-the Claude Code OAuth beta headers with a stored authorization value read
-verbatim, so there is no live credential flow behind a configured provider; it
-keeps no live model catalog (model names are typed by hand), sends no thinking
-controls (a request effort is ignored, not forwarded), and serves neither
-embeddings nor reranking in v1.
+the Claude Code OAuth beta headers with the stored value under the header it
+names (a `Bearer` value as is, a Console `sk-ant-api…` key as `x-api-key`, any
+other token under `Bearer`), so there is no live credential flow behind a
+configured provider. It keeps `models` and `reasonings` lists filled from
+Anthropic's own catalog (`modelsFromCatalog`: each listed model with the
+efforts its `capabilities.effort` marks supported, or the ones its id names,
+and a default of `medium` on Opus 5.5 and Haiku 5.5, `high` elsewhere), maps a
+request effort to
+`output_config.effort` where the model takes one, keeps thinking on with
+drop-on-mismatch block binding only on models that think by default, replays
+its own signed thinking blocks, marks the system prompt and conversation for
+prompt caching, never sends `temperature`, and serves neither embeddings nor
+reranking in v1.
 Codex remains available internally, including existing configuration, but is
 excluded from the advertised catalog. LM Studio's native and Chat Completions
 adapters, the separate OpenAI-compatible kind, and the raw OpenRouter public
@@ -2278,8 +2310,10 @@ If composition fails, the whole retry follows normal validation and becomes a
 new baseline only when all new issues are repairable leaves. Malformed JSON,
 root or collection errors, and cross-field refinements clear the baseline and
 regenerate the whole object. Ordinary tool turns, success, exhaustion, and run
-termination also clear it. Each next request receives one transient system
-correction naming the terminal tool, explaining the failure, stating when only
+termination also clear it. Each correction is stored as a user turn after the
+invalid response and its `incomplete` results (append-only, never a system
+message), so the next request ends on it and the system prompt stays the same
+on every request; it names the terminal tool, explaining the failure, stating when only
 listed paths will be applied, and including at most ten normalized Zod issues
 with their field path, issue kind, expected type when available, and safe
 message; rejected arguments are never copied into the correction. The
@@ -2304,6 +2338,16 @@ Agent runs validate an entire provider tool-call batch before any handler
 executes. Invalid JSON, unknown tools, invalid payloads, and invalid terminal
 submissions share a default two-repair budget, append `incomplete` tool results,
 and may be observed through the safe `onToolCallRepair` counter callback.
+The tool-call correction is likewise a stored user turn. A turn that finished
+on `length` with a call that fails validation, or with a cut terminal
+submission, throws `output_truncated` instead of repairing. A `content_filter`
+turn drops its calls, is stored without them, and throws `provider_refusal`. A
+stream that ends on a provider `error` event throws that provider error. A
+provider failure marked `retryable`, thrown or streamed before any output, is
+asked again up to `retry.retries` (2) times; the wait is the provider's
+`retryAfterMs` or `retry.baseDelayMs` (1000) doubled, capped by
+`retry.maxDelayMs` (30000), and the abort signal ends it. A turn that already
+streamed output is never retried.
 Handler failures are never retried by this protocol repair path. Structured
 runs require a terminal tool call at the runtime validation boundary and
 disable parallel tool calls. They do not force provider `tool_choice`, because
@@ -2341,7 +2385,10 @@ Agent runs may set `resume: true` to continue their supplied history without
 appending the input again, in both complete and stream modes. The default executor uses this
 when a persisted checkpoint shows that the input is already stored, preserving
 the original message order across repeated resumptions. It supplies incomplete
-results only for unanswered calls in an interrupted tool batch.
+results only for unanswered calls in an interrupted tool batch. A resumed run
+whose history already ends in a tool-less assistant answer, with no steering
+taken, finishes with that answer without a provider call (a trailing assistant
+turn is a prefill current Claude models refuse); structured runs are excluded.
 Agent runs may pass a `steering` callback that takes the messages a caller sent
 the running loop. The loop calls it before the first turn of a resumed run,
 after every executed tool batch, and once more before an ordinary run would
@@ -2358,10 +2405,11 @@ structured-output repair attempts identically in `complete` and `stream`.
 Tools from the last permitted turn execute and their results are stored before
 the next invocation is rejected with `turn_limit_exceeded`. Exhausted streams
 preserve emitted events and do not emit `agent.finished`.
-OpenAI, Codex, and OpenRouter send resolved effort through `reasoning.effort`. Claude
-sends no reasoning controls: a request effort is ignored, not sent. The Claude
-provider uses the existing provider token
-field for the Claude authorization value, sent verbatim, never re-rendered. The Codex provider uses the existing provider token
+OpenAI, Codex, and OpenRouter send resolved effort through `reasoning.effort`;
+Claude sends it as `output_config.effort` (`none`/`minimal` as `low`, a level
+the model lacks as `high`, omitted for Haiku 4.5, Sonnet 4.5 and older). The
+Claude provider uses the existing provider token field for the Claude
+authorization value, sent under the auth header that value names. The Codex provider uses the existing provider token
 field for the Codex authorization value and derives Codex-compatible account
 headers from that credential when available. OpenAI provider
 configs may omit or blank the token for compatible local endpoints; in that
@@ -2388,33 +2436,66 @@ client id, a `localhost` callback on port 54545 falling back to 54546, the
 `user:inference` scope, `code=true` on the authorize request, JSON token
 request bodies instead of urlencoded forms, and a long-login `expires_in` request
 (31536000). Host scripts should require only `CLAUDE_AUTHORIZATION` for normal
-runtime use and let the OAuth package provide the rest. The credential resolver
-also reads Claude Code's own `~/.claude/.credentials.json` (or
-`CLAUDE_CONFIG_DIR`), refreshing an expiring login in place through the same
-JSON refresh grant and writing the rotated access and refresh tokens and expiry
-back before returning the credential.
+runtime use and let the OAuth package provide the rest. The authorize request
+carries a 32-byte `state`, as Claude Code's does (claude.ai refuses a shorter
+one). The credential resolver reads Claude Code's own login: on macOS, with no
+`claudeHome` and no `CLAUDE_CONFIG_DIR`, first the Keychain entry
+`Claude Code-credentials`, which is never refreshed or written back (an expired
+one answers `claude_keychain_login_expired`); otherwise, or when the Keychain
+has none, `~/.claude/.credentials.json` (or `CLAUDE_CONFIG_DIR`). An expiring
+file login is refreshed through the same JSON refresh grant and written back
+atomically: the file is re-read just before the write, only `claudeAiOauth` is
+replaced, and a private temp file is renamed over it. `refresh: false` reads a
+login as it is, so a caller can judge its expiry before touching it. The
+loopback callback server settles a sign-in only for the pending `state`; any
+other request to the callback path answers 400 and leaves the sign-in waiting.
+The CLI flow's paste mode requires `code#state` and writes `.env` with mode 0600.
+
+A Claude stream that ends without `message_stop` is a retryable
+`incomplete_stream` error, a refusal keeps no text, calls or replay, a tool
+block a `max_tokens` stop cut off is never a call, and a refused request's
+error message carries Anthropic's own text, with `retryAfterMs` and `requestId`
+when the response names them. Replay items are tagged by provider, and each
+provider replays only its own.
 
 - **The bundle flow.** The `claude-login` bundle turns that profile into the
-  in-app sign-in behind the settings window's provider page.
-  `claude.login/v1.login()` reuses a working Claude Code login first
-  (`~/.claude`, `CLAUDE_CONFIG_DIR` or `CLAUDE_AUTHORIZATION`); any other
-  resolve failure falls through to the fresh browser flow, which binds the
-  same loopback callback (`localhost:54545/callback`, falling back to
-  `:54546` when the port is busy), keeps its token record in memory and closes
-  the callback server however the flow ends. The authorization value alone is
-  stored, through `secrets/v1`, as the `API_TOKEN` credential named `Claude`
-  (a taken name moves the secret of the same-name credential), never logged,
-  and `login()` answers the credential's public view. One sign-in runs at a
-  time (`claude_login_busy`), and a cancelled call answers
-  `claude_login_aborted` and stores nothing.
+  in-app sign-in behind the settings window's provider page. The host never
+  opens a browser — it may run in a container or on another machine — and
+  never reuses an existing Claude Code login, whose access token expires
+  within hours with nothing to refresh the stored copy.
+  `claude.login/v1.start()` binds the loopback callback
+  (`localhost:54545/callback`, falling back to `:54546` when the port is
+  busy), prepares the authorization and answers its `https:` URL; a new
+  `start()` cancels and replaces a waiting sign-in, and one nobody finishes is
+  cancelled after ten minutes or when the bundle deactivates.
+  `claude.login/v1.finish()` waits for the browser's callback, exchanges the
+  code for the long login, stores the authorization value alone through
+  `secrets/v1` as the `API_TOKEN` credential named `Claude` (a taken name
+  moves the secret of the same-name credential), never logs it, and answers
+  the credential's public view. It answers `claude_login_not_started` with no
+  sign-in waiting, `claude_login_busy` while another `finish()` waits,
+  `claude_login_aborted` (storing nothing) when cancelled or replaced, and
+  `claude_login_failed` when the authorization fails. The callback server is
+  closed however the sign-in ends. The callback reaches the host only where
+  the browser's `localhost` is the host's (a native host, or the Docker host
+  on `network_mode: host`).
 - **The settings integration.** The `settings` bundle imports
-  `claude-login/contracts`, requires `claude.login/v1`, and offers the
-  `claude` provider kind a sign-in row: the `useClaudeLogin` hook settles the
-  answered credential into the `credentials` query cache _before_ it
-  publishes it, so the view's auto-select effect commits a `token` value the
-  configuration already accepts; a failure toasts, except the hook's own
-  cancel, which stays silent. A host without a reachable browser can run
-  `npm run claude:oauth` and set `CLAUDE_AUTHORIZATION` instead.
+  `claude-login/contracts`, lists `claude.login/v1` as optional, and offers
+  the `claude` provider kind a sign-in row only while a provider answers it
+  (`whenAvailable`): a composition without `claude-login` keeps a working
+  settings window, with the kind's token chosen by hand. While the row is
+  offered it takes the token field's place — no credential is picked by hand,
+  an unsigned provider asks to sign in, and a signed-in one names its
+  credential and offers to sign in again. The `useClaudeLogin` hook calls
+  `start()`, opens the answered URL in the system browser through
+  `doric.browser/v1` (the row also shows the URL while the sign-in waits),
+  then waits on `finish()`. It settles the answered credential into the
+  `credentials` query cache _before_ it publishes it, so the view's
+  auto-select effect commits a `token` value the configuration already
+  accepts, and only on an open `claude` provider page; a failure toasts,
+  except the hook's own cancel, which stays silent. A host whose callback the
+  browser cannot reach can run `npm run claude:oauth` and set
+  `CLAUDE_AUTHORIZATION` instead.
 
 `packages/state-machine` owns reusable, process-local typed transition
 execution. A definition stores only its exhaustive handler map and infers its

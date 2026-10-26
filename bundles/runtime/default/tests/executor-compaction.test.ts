@@ -350,3 +350,137 @@ void test('the on-demand compact keeps a standing instruction verbatim and out o
   );
   assert.ok(transcripts.every((text) => !text.includes('Rules.')));
 });
+
+/** Whether a request is the summarizer's: its system prompt and one transcript. */
+const summarizing = (request: ProviderRequest): boolean =>
+  request.messages.length === 2;
+
+const summaryAnswer = async function* () {
+  yield {
+    type: 'response.finished' as const,
+    finish: { text: 'summary', finishReason: 'stop' as const, toolCalls: [] },
+  };
+};
+
+/** The Claude shape: a generic HTTP message, the overflow in the body excerpt. */
+const overflowDiagnostic =
+  '{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 210000 tokens > 200000 maximum"}}';
+
+const eventTypes = (state: ReturnType<typeof fakeThreadState>) =>
+  state.events.map((event) => (event.event as { type?: string }).type);
+
+for (const [shape, failing] of [
+  [
+    'a thrown error',
+    (): AsyncIterable<never> => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () =>
+          Promise.reject(
+            Object.assign(new Error('claude request failed with HTTP 400.'), {
+              data: {
+                provider: 'claude',
+                code: 'provider_error',
+                message: 'claude request failed with HTTP 400.',
+                status: 400,
+                diagnostic: overflowDiagnostic,
+              },
+            }),
+          ),
+      }),
+    }),
+  ],
+  [
+    'a stream error event',
+    async function* () {
+      yield {
+        type: 'error' as const,
+        error: {
+          provider: 'claude',
+          code: 'provider_error',
+          message: 'Claude stream error.',
+          diagnostic: overflowDiagnostic,
+        },
+      };
+    },
+  ],
+] as const) {
+  void test(`an overflow named only in the diagnostic of ${shape} condenses the history once`, async () => {
+    const state = fakeThreadState();
+    seedHistory(state, {
+      messages: [
+        ...longHistory(20),
+        { role: 'user' as const, content: 'recent' },
+      ],
+      checkpoints: { 'old-prompt': 20 },
+    });
+    const services = bundleServices({
+      // A budget the projection never reaches: only the overflow condenses.
+      configuration: compactionConfiguration({ charBudget: 100_000_000 }),
+      provider: {
+        metadata: { id: 'provider', name: 'provider' },
+        stream: (request: ProviderRequest) =>
+          summarizing(request) ? summaryAnswer() : failing(),
+      },
+    });
+    await services.activate();
+
+    await assert.rejects(runPrompt(services, state, 'continue'));
+
+    const types = eventTypes(state);
+    assert.equal(
+      types.filter((type) => type === 'compaction.started').length,
+      1,
+    );
+    assert.equal(types.includes('compaction.finished'), true);
+  });
+}
+
+void test('a usage event that arrives mid-stream does not condense before the turn finishes', async () => {
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(20),
+      { role: 'user' as const, content: 'recent' },
+    ],
+    checkpoints: { 'old-prompt': 20 },
+  });
+  const services = bundleServices({
+    configuration: compactionConfiguration({ charBudget: 100_000_000 }),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: (request: ProviderRequest) =>
+        summarizing(request)
+          ? summaryAnswer()
+          : (async function* () {
+              yield {
+                type: 'response.started' as const,
+                provider: 'claude',
+                model: 'model',
+                contextWindow: 1000,
+              };
+              // Claude reports usage at `message_start`, before any output.
+              yield {
+                type: 'usage' as const,
+                usage: { inputTokens: 900, outputTokens: 1 },
+              };
+              yield { type: 'text.delta' as const, delta: 'done' };
+              yield {
+                type: 'response.finished' as const,
+                finish: {
+                  text: 'done',
+                  finishReason: 'stop' as const,
+                  toolCalls: [],
+                },
+              };
+            })(),
+    },
+  });
+  await services.activate();
+
+  assert.equal(await runPrompt(services, state, 'continue'), 'done');
+
+  const types = eventTypes(state);
+  const started = types.indexOf('compaction.started');
+  assert.notEqual(started, -1);
+  assert.ok(started > types.indexOf('response.finished'));
+});

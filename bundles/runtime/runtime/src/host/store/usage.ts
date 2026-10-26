@@ -76,16 +76,17 @@ const count = (value: unknown): number | undefined =>
     ? value
     : undefined;
 
-/** Repeated usage/finish snapshots replace one call rather than charging twice. */
+/**
+ * Repeated usage/finish snapshots replace one call rather than charging twice.
+ * Every provider's call is counted with its tokens; only OpenRouter reports a
+ * price (its `credits` cost), so another provider's call counts as unpriced
+ * rather than free, and the total says its cost is partial.
+ */
 export const projectUsage = (state: UsageState, value: unknown): UsageState => {
   const event = record(value);
   if (event.type === 'response.started') {
     const completed = usageTotals(state);
-    if (
-      (event.provider !== 'openrouter' && event.provider !== 'unified') ||
-      typeof event.model !== 'string'
-    )
-      return { completed };
+    if (typeof event.model !== 'string') return { completed };
     const contextWindow = count(event.contextWindow);
     const providerId =
       typeof event.providerId === 'string' ? event.providerId : undefined;

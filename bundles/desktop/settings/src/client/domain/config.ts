@@ -38,6 +38,10 @@ export type CatalogModel = {
   readonly name?: string;
   readonly reasonings: readonly ReasoningEffort[];
   readonly parameters: readonly string[];
+  /** The effort the catalog names as the model's own, when it names one it lists. */
+  readonly defaultEffort?: ReasoningEffort;
+  /** Whether the catalog pins the model's reasoning on. */
+  readonly mandatory?: boolean;
 };
 
 /** The values one provider carries, as a catalog read names it. */
@@ -85,6 +89,12 @@ export type ProviderKind = {
   readonly description: string;
   readonly fields: readonly ProviderField[];
   readonly lists: readonly ProviderListId[];
+  /**
+   * Whether the provider's model list is its live catalog: the host writes
+   * every model the catalog lists, so the surface shows them and never asks
+   * for one by hand.
+   */
+  readonly modelsFromCatalog?: boolean;
 };
 
 /** The value kinds a tool configuration field can carry. */
@@ -1320,6 +1330,54 @@ export const addModel = (
     ? models
     : [...models, { ...model, name }];
 };
+
+/**
+ * The model list a catalog-listed provider carries: every model the catalog
+ * lists, in its order, with the efforts and default the catalog names when
+ * the kind keeps reasonings — the list the host's own fill writes.
+ */
+export const catalogProviderModels = (
+  catalog: readonly CatalogModel[],
+  kind: ProviderKind,
+): readonly ProviderModel[] => {
+  const keepsReasonings = kind.lists.includes('reasonings');
+  const seen = new Set<string>();
+
+  return catalog.flatMap((entry) => {
+    const name = entry.id.trim();
+    if (name === '' || seen.has(name)) return [];
+    seen.add(name);
+    if (!keepsReasonings) return [{ name }];
+    return [
+      {
+        name,
+        reasonings: [...entry.reasonings],
+        ...(entry.defaultEffort === undefined
+          ? {}
+          : { defaultEffort: entry.defaultEffort }),
+        ...(entry.mandatory === true ? { mandatory: true } : {}),
+      },
+    ];
+  });
+};
+
+/** Whether two model lists name the same models, efforts and defaults, in order. */
+export const isSameCatalogModels = (
+  left: readonly ProviderModel[],
+  right: readonly ProviderModel[],
+): boolean =>
+  left.length === right.length &&
+  left.every((model, index) => {
+    const other = right[index];
+    return (
+      other !== undefined &&
+      model.name === other.name &&
+      (model.reasonings ?? []).join(',') ===
+        (other.reasonings ?? []).join(',') &&
+      model.defaultEffort === other.defaultEffort &&
+      (model.mandatory === true) === (other.mandatory === true)
+    );
+  });
 
 /** The provider's model list without one model, in the order the rest keep. */
 export const removeModel = (

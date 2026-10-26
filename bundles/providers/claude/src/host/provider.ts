@@ -35,13 +35,13 @@ export interface KindDefinition {
   /** Whether the built provider's `models()` reports context capacity. */
   readonly catalogCapacity: boolean;
   readonly build: (values: KindValues, deps: KindDeps) => LlmProvider;
-  /** The models URL read; a kind without a `modelsUrl` field has none. */
+  /** The live catalog read; a kind without one answers `absent`. */
   readonly catalog?: (
     input: {
       readonly configuration: Readonly<Record<string, string>>;
       readonly secret?: string;
     },
-    transport: HttpTransport,
+    deps: { readonly transport: HttpTransport; readonly logger: Logger },
   ) => Promise<CatalogResult>;
 }
 
@@ -119,7 +119,10 @@ export const createKindProvider = (
         execute: (input) =>
           definition.catalog === undefined
             ? Promise.resolve({ status: 'absent' as const })
-            : definition.catalog(input, transport()),
+            : definition.catalog(input, {
+                transport: transport(),
+                logger: options.logger(),
+              }),
       }),
       create: defineMethod({
         ...modelsProviderMethods.create,

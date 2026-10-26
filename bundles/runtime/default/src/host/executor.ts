@@ -30,7 +30,7 @@ import {
 import type { DefaultHooksV1 } from '../contracts/index.js';
 import { withAttachments } from './attachments.js';
 import { compactionConfig, maybeCompactRun } from './compact.js';
-import { isContextOverflow } from './compaction/project.js';
+import { isContextOverflowError } from './compaction/project.js';
 import { coalesced } from './deltas.js';
 import { readMessages, readMeta, saved } from './history.js';
 import { systemPrompt } from './prompts/system.js';
@@ -320,6 +320,13 @@ export const runPrompt = async (
    * runs. The pre-run call projects the pending prompt on top of the
    * resumed history; the between-turn calls project with real usage.
    */
+  /** Set once an overflow forced a condensation, so the run forces only one. */
+  let overflowCondensed = false;
+  const condenseOverflow = async () => {
+    if (overflowCondensed) return;
+    overflowCondensed = true;
+    await compactIfUnderPressure(0, true);
+  };
   const compactIfUnderPressure = async (promptChars: number, force = false) => {
     settle();
     const result = await maybeCompactRun({
@@ -413,28 +420,27 @@ export const runPrompt = async (
       await log.record(
         addedMessages(value) ? { history: history(), event } : { event },
       );
-      // The pressure only moves where usage lands: the provider window grew
-      // by this turn's tokens, so the check rides the usage and finished
-      // events, before the agent builds its next request from the storage.
-      if (value.type === 'usage' || value.type === 'response.finished') {
+      // The pressure only moves once a turn has finished: its usage is final
+      // then, and the check runs before the agent builds its next request
+      // from the storage. A `usage` event can arrive while the provider is
+      // still streaming (Claude reports one at `message_start`), and a
+      // condensation then would rewrite the history the turn was answering.
+      if (value.type === 'response.finished') {
         await compactIfUnderPressure(0);
       }
-      if (
-        value.type === 'error' &&
-        isContextOverflow(String(value.error.message ?? ''))
-      ) {
+      if (value.type === 'error' && isContextOverflowError(value.error)) {
         // The window the provider refused is proof the pressure exists. The
         // emergency condensation prepares the next resume; this run still
         // fails with the provider's error, as it does without the check.
-        await compactIfUnderPressure(0, true);
+        await condenseOverflow();
       }
       signal.throwIfAborted();
       if (value.type === 'agent.finished') text = value.response.text;
     }
     return { text };
   } catch (error) {
-    if (isContextOverflow(String((error as Error)?.message ?? error))) {
-      await compactIfUnderPressure(0, true).catch(() => undefined);
+    if (isContextOverflowError(error)) {
+      await condenseOverflow().catch(() => undefined);
     }
     throw error;
   } finally {

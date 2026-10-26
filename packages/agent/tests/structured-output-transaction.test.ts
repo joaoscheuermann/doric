@@ -21,12 +21,15 @@ type Mode = 'complete' | 'stream';
 const terminal = (request: ProviderRequest<unknown>): string =>
   request.tools?.at(-1)?.name ?? 'missing-terminal';
 
-const correction = (request: ProviderRequest<unknown>): string =>
-  request.messages
-    .filter(({ role }) => role === 'system')
-    .map(({ content }) => (typeof content === 'string' ? content : ''))
-    .find((content) => content.startsWith('# Structured output correction')) ??
-  '';
+/** The correction a request delivers: its last message, a stored user turn. */
+const correction = (request: ProviderRequest<unknown>): string => {
+  const last = request.messages.at(-1);
+  const content =
+    last?.role === 'user' && typeof last.content === 'string'
+      ? last.content
+      : '';
+  return content.startsWith('# Structured output correction') ? content : '';
+};
 
 const invoke = async <Output>(
   agent: Agent,

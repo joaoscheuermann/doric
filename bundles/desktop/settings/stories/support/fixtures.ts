@@ -174,7 +174,9 @@ export const claudeKind: ProviderKind = {
         'Names the stored API_TOKEN credential that carries the Claude authorization value.',
     },
   ],
-  lists: [],
+  lists: ['models', 'reasonings'],
+  // Anthropic lists every model the login may call: none is added by hand.
+  modelsFromCatalog: true,
 };
 
 export const providerKinds: readonly ProviderKind[] = [
@@ -295,6 +297,30 @@ export const toolCatalog: readonly ToolCatalogEntry[] = [
 ];
 
 /** The models the OpenRouter endpoint lists, as the host read them. */
+/** The models Anthropic lists for a Claude login, with the efforts each takes. */
+export const claudeCatalog: readonly CatalogModel[] = [
+  {
+    id: 'claude-opus-5-5',
+    name: 'Claude Opus 5.5',
+    reasonings: ['low', 'medium', 'high', 'xhigh', 'max'],
+    parameters: [],
+    defaultEffort: 'medium',
+  },
+  {
+    id: 'claude-sonnet-5-5',
+    name: 'Claude Sonnet 5.5',
+    reasonings: ['low', 'medium', 'high', 'xhigh', 'max'],
+    parameters: [],
+    defaultEffort: 'high',
+  },
+  {
+    id: 'claude-haiku-4-5',
+    name: 'Claude Haiku 4.5',
+    reasonings: [],
+    parameters: [],
+  },
+];
+
 export const openRouterCatalog: readonly CatalogModel[] = [
   {
     id: 'anthropic/claude-sonnet-4.5',

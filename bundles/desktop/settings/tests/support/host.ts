@@ -37,7 +37,8 @@ import {
 } from '../../src/client/api/settings-api.js';
 
 export interface FakeHost {
-  claudeLogin?: () => CredentialDescription;
+  claudeStart?: () => { readonly url: string };
+  claudeFinish?: () => CredentialDescription;
   current?: () => DoricConfiguration | Promise<DoricConfiguration>;
   replace?: (
     input: unknown,
@@ -94,7 +95,8 @@ export const settingsOver = async (
 ): Promise<void> => {
   const provide: AnyServiceDefinition[] = [
     fake(ClaudeLoginV1.id, claudeLoginMethods, {
-      login: () => (host.claudeLogin ?? unanswered)(),
+      start: () => (host.claudeStart ?? unanswered)(),
+      finish: () => (host.claudeFinish ?? unanswered)(),
     }),
     fake(HostConfigurationV1.id, configurationMethods, {
       current: () => (host.current ?? unanswered)(),

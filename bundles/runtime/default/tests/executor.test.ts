@@ -454,22 +454,36 @@ void test('keeps the original input and every assistant turn across successive r
     if ((event as { type: string }).type === 'response.finished')
       controller.abort();
   });
+  // A run stopped after a tool batch: its next turn is still owed.
   const history: readonly ProviderMessage[] = [
     { role: 'user', content: '<user-request>\ncontinue\n</user-request>' },
-    { role: 'assistant', content: 'Work before the first restart.' },
+    {
+      role: 'assistant',
+      content: 'Work before the first restart.',
+      toolCalls: [{ id: 'first', name: 'inspect', arguments: '{}' }],
+    },
+    { role: 'tool', toolCallId: 'first', content: 'continue' },
   ];
   seedHistory(harness.state, {
     messages: history,
     checkpoints: { [promptId]: 0 },
   });
+  // The first resumption answers, and is stopped right after its answer.
   await assert.rejects(harness.run('continue', controller.signal), {
     name: 'AbortError',
   });
-  await harness.run('continue');
   const sent = harness.requests.at(-1)?.messages.slice(1) ?? [];
-  assert.deepEqual(sent.slice(0, history.length), history);
-  assert.equal(sent.filter(({ role }) => role === 'user').length, 1);
-  assert.equal(sent.filter(({ role }) => role === 'assistant').length, 2);
+  assert.deepEqual(sent, history);
+
+  // The second finds the answer already stored and asks the model nothing:
+  // sending it again would end the request on an assistant turn.
+  assert.equal(await harness.run('continue'), 'answer-continue');
+  assert.equal(harness.requests.length, 1);
+  const stored = harness.state.parts().messages as ProviderMessage[];
+  assert.deepEqual(stored.slice(0, history.length), history);
+  assert.equal(stored.filter(({ role }) => role === 'user').length, 1);
+  assert.equal(stored.filter(({ role }) => role === 'assistant').length, 2);
+  assert.equal(stored.at(-1)?.content, 'answer-continue');
 });
 
 void test('repairs only unanswered calls after a partially completed tool batch', async () => {

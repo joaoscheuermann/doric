@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
@@ -16,7 +16,6 @@ import {
   createClaudeOAuth,
   createFetchTransport,
   createLocalCallbackServer,
-  OAuthErrorObject,
   openBrowser,
   resolveClaudeAuth,
 } from 'oauth';
@@ -38,9 +37,11 @@ Configuration:
   CLAUDE_OAUTH_OUTPUT_KEY         Optional .env output key. Defaults to ${CLAUDE_AUTHORIZATION_ENV_KEY}.
   CLAUDE_OAUTH_NO_BROWSER         Set to 1 to paste the authorization code by hand.
 
-An existing Claude Code login is used when one is present; a fresh login
-replaces the stored value. The script never prints the token or existing .env
-contents.`;
+An existing long-lived Claude Code login (CLAUDE_CODE_OAUTH_TOKEN, or a
+~/.claude login good for 30 more days) is used when one is present; otherwise
+a fresh login replaces the stored value. The value already stored under the
+output key is never what is reused. The script never prints the token or
+existing .env contents.`;
 const hasHelpFlag = (args) =>
   args.some((arg) => arg === '--help' || arg === '-h');
 
@@ -184,7 +185,10 @@ const writeEnvKey = async (contents, key, value) => {
 
   const nextContents = `${nextLines.join(lineEnding)}${hasTrailingNewline ? lineEnding : ''}`;
 
-  await writeFile(ENV_PATH, nextContents, 'utf8');
+  // The file holds a year-long bearer token: private on creation, and
+  // tightened when it already existed.
+  await writeFile(ENV_PATH, nextContents, { encoding: 'utf8', mode: 0o600 });
+  await chmod(ENV_PATH, 0o600);
 };
 
 const tokenStore = () => {
@@ -223,9 +227,11 @@ const log = (message) => {
 const isAddressInUse = (error) =>
   error instanceof Error && error.code === 'EADDRINUSE';
 
-const isCredentialsMissing = (error) =>
-  error instanceof OAuthErrorObject &&
-  error.data.code === 'claude_credentials_missing';
+/**
+ * How long a reused login must still be good for: Claude Code's own access
+ * tokens expire within hours, and nothing refreshes the copy in .env.
+ */
+const REUSE_MIN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
 const createClaudeCallbackServer = async (env) => {
   const configuredPort = parsePort(env.CLAUDE_OAUTH_CALLBACK_PORT);
@@ -257,21 +263,66 @@ const createClaudeCallbackServer = async (env) => {
  * the one pasted here, with the state the flow expects.
  */
 const pasteCallbackServer = {
-  async waitForCallback(expectedState) {
-    const code = await prompt('Paste the authorization code: ');
+  async waitForCallback() {
+    // Claude's hosted page shows `code#state`. The state is required: the
+    // flow checks it against the one it sent, so a code from another
+    // sign-in is refused.
+    const [code, state] = (await prompt('Paste the authorization code: '))
+      .trim()
+      .split('#');
 
-    return { code, state: expectedState };
+    if (code === '' || state === undefined || state === '') {
+      throw new Error(
+        'Paste the whole code the page shows, including the part after #.',
+      );
+    }
+
+    return { code, state };
   },
 };
 
+/**
+ * Saves an existing long-lived Claude Code login and answers whether it did.
+ * The output key's own value is hidden from the resolver, so a stored (and
+ * maybe expired) value never stands in for a fresh login, and any resolve
+ * failure is a reason to sign in fresh rather than to stop.
+ */
 const saveExistingLogin = async (env, envContents, outputKey) => {
-  const existing = await resolveClaudeAuth({ env });
+  const resolverEnv = Object.fromEntries(
+    Object.entries(env).filter(([key]) => key !== outputKey),
+  );
+  let existing;
+
+  try {
+    // Read without refreshing: a refresh rotates the refresh token Claude
+    // Code holds, which is only worth it for a login this script keeps. The
+    // macOS Keychain is skipped: Claude Code's own login there lives hours,
+    // never the 30 days a reuse needs, so asking to read it is a wasted prompt.
+    existing = await resolveClaudeAuth({
+      env: resolverEnv,
+      refresh: false,
+      keychain: false,
+    });
+  } catch {
+    return false;
+  }
+
+  if (
+    existing.expiresAt !== undefined &&
+    existing.expiresAt - Date.now() < REUSE_MIN_LIFETIME_MS
+  ) {
+    log('The existing Claude Code login expires soon; signing in fresh.');
+
+    return false;
+  }
 
   log('Using existing Claude Code login.');
 
   await writeEnvKey(envContents, outputKey, existing.authorization);
 
   log(`Saved authorization to .env key ${outputKey}.`);
+
+  return true;
 };
 
 const authorize = async () => {
@@ -282,14 +333,8 @@ const authorize = async () => {
     optional(env.CLAUDE_OAUTH_OUTPUT_KEY) ?? CLAUDE_AUTHORIZATION_ENV_KEY,
   );
 
-  try {
-    await saveExistingLogin(env, envContents, outputKey);
-
+  if (await saveExistingLogin(env, envContents, outputKey)) {
     return;
-  } catch (error) {
-    if (!isCredentialsMissing(error)) {
-      throw error;
-    }
   }
 
   const noBrowser =
@@ -321,7 +366,11 @@ const authorize = async () => {
 
         log(`Opening browser. If it does not open, visit:\n${url}`);
 
-        await openBrowser(url);
+        // The URL above is the way in when no browser opens (a headless
+        // machine): the flow keeps waiting for the callback either way.
+        await openBrowser(url).catch(() =>
+          log('Could not open a browser; visit the URL above.'),
+        );
 
         log('Waiting for authorization...');
       },

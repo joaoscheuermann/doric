@@ -66,6 +66,26 @@ void test('regions/v1 adds items(region) and subscribe(region, listener)', () =>
   assert.equal(accepts(methods.subscribe.input, ['layout.footer']), false);
 });
 
+void test('doric.browser/v1 is client only and opens https URLs alone', () => {
+  assert.deepEqual(platformContracts['doric.browser/v1'].environments, [
+    'client',
+  ]);
+
+  const { open } = platformContracts['doric.browser/v1'].methods;
+
+  assert.equal(accepts(open.input, 'https://claude.com/authorize?x=1'), true);
+  for (const refused of [
+    'http://example.test/',
+    'file:///etc/hosts',
+    'doric://app/settings',
+    'javascript:alert(1)',
+    '/relative/path',
+    '',
+  ]) {
+    assert.equal(accepts(open.input, refused), false, refused);
+  }
+});
+
 void test('the stage-9 platform contracts and their environments', () => {
   assert.deepEqual(platformContracts['doric.elements/v1'].environments, [
     'client',

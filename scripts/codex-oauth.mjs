@@ -251,7 +251,11 @@ const authorize = async () => {
       async browserOpener(url) {
         log(`Opening browser. If it does not open, visit:\n${url}`);
 
-        await openBrowser(url);
+        // The URL above is the way in when no browser opens (a headless
+        // machine): the flow keeps waiting for the callback either way.
+        await openBrowser(url).catch(() =>
+          log('Could not open a browser; visit the URL above.'),
+        );
 
         log('Waiting for authorization...');
       },

@@ -14,16 +14,29 @@ record, which the core's `models/v1` resolves. See the
 
 The kind sends Anthropic Messages requests with the Claude Code OAuth beta
 headers, authenticated with a stored Claude authorization value. To log in,
-run `npm run claude:oauth` once: it starts a Claude Code OAuth flow in your
-browser and saves the resulting authorization header to the root `.env`
-under `CLAUDE_AUTHORIZATION`. Create an `API_TOKEN` credential whose secret
-is that value, and name that credential in the kind's `token` field.
+use "Sign in with Claude" on the provider page, or run `npm run claude:oauth`
+once: it starts a Claude Code OAuth flow in your browser and saves the
+resulting authorization header to the root `.env` under
+`CLAUDE_AUTHORIZATION`. Create an `API_TOKEN` credential whose secret is that
+value, and name that credential in the kind's `token` field. Models are never
+added by hand: once the provider can sign in, its model list is every model
+Anthropic lists for the login.
 
 - `advertised()` is true, so `models/v1.kinds()` lists it.
-  `catalogCapacity()` is false.
-- `catalog()` is always `absent`. The kind keeps no live catalog: model names
-  are typed by hand, because Anthropic's models endpoint lists ids and
-  display names but says nothing about a model's capabilities.
+  `catalogCapacity()` is true: the built provider's `models()` reports each
+  model's context window, which `models/v1.contextWindow` reads.
+- The kind's `lists` are the `llms` `claude` kind's own, so a list the
+  provider learns to take (models, their efforts) reaches the settings
+  tables without a second copy here.
+- The kind sets `modelsFromCatalog`, so the configuration fill writes every
+  model `catalog()` lists into the provider's models on each save, and the
+  settings page shows that list instead of a model editor.
+- `catalog()` reads Anthropic's `/v1/models` through the provider itself
+  (the same auth headers and endpoint a request uses): each model with the
+  efforts its capabilities mark supported and its default effort
+  (`claudeCatalogModel`). Without a login it is `absent` and sends nothing;
+  a refused or failed read is `failed` and names nothing of the endpoint, the
+  credential or the response.
 - `create` checks the required `token` (the stored `API_TOKEN` credential
   that carries the Claude authorization value), then builds the `llms`
   Claude provider. The optional field is the endpoint.

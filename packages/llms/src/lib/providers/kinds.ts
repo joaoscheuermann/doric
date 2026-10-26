@@ -52,6 +52,12 @@ export interface ProviderKind {
   readonly fields: readonly ProviderField[];
   /** Which per-provider lists this kind keeps. */
   readonly lists: readonly ProviderListId[];
+  /**
+   * Whether the provider's model list is its live catalog: every model the
+   * catalog lists is offered, with the efforts the catalog names, so no model
+   * is named by hand. Only a kind that keeps `models` sets it.
+   */
+  readonly modelsFromCatalog?: boolean;
 }
 
 /**
@@ -192,10 +198,13 @@ const supportedKinds: readonly ProviderKind[] = [
       token({
         required: true,
         description:
-          'Names the stored API_TOKEN credential that carries the Claude authorization value.',
+          'Names the stored API_TOKEN credential that carries the Claude authorization value: a Claude sign-in, a `claude setup-token` value, or a Console API key.',
       }),
     ],
-    lists: [],
+    // Anthropic's catalog lists every model the login may call, with the
+    // efforts each accepts, so the provider's models are that catalog.
+    lists: openAiLists,
+    modelsFromCatalog: true,
   },
 ];
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn as nodeSpawn } from 'node:child_process';
 import { Agent, request } from 'node:http';
 import test from 'node:test';
 
@@ -56,6 +57,59 @@ void test('closes local OAuth callback connections after a completed callback', 
   }
 });
 
+void test('refuses a callback with a foreign state and keeps the sign-in waiting', async () => {
+  const server = await createLocalCallbackServer();
+  const waiting = server.waitForCallback('state-123');
+  let settled = false;
+  void waiting.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+
+  try {
+    // A stray or hostile request: no state, a wrong one, an error with a
+    // wrong state. None of them may end the sign-in.
+    for (const query of [
+      '?code=evil',
+      '?code=evil&state=other',
+      '?error=access_denied&state=other',
+    ]) {
+      const refused = await fetch(`${server.redirectUri}${query}`);
+      assert.equal(refused.status, 400, query);
+    }
+    await new Promise((done) => setImmediate(done));
+    assert.equal(settled, false);
+
+    const answered = await fetch(
+      `${server.redirectUri}?code=code-123&state=state-123`,
+    );
+    assert.equal(answered.status, 200);
+    assert.equal((await waiting).code, 'code-123');
+  } finally {
+    await server.close();
+  }
+});
+
+void test('settles the wait with an error the authorization server sent under the pending state', async () => {
+  const server = await createLocalCallbackServer();
+  const waiting = server.waitForCallback('state-123');
+
+  try {
+    const response = await fetch(
+      `${server.redirectUri}?error=access_denied&state=state-123`,
+    );
+
+    assert.equal(response.status, 400);
+    assert.equal((await waiting).error, 'access_denied');
+  } finally {
+    await server.close();
+  }
+});
+
 void test('rejects pending local OAuth callbacks when the server closes', async () => {
   const server = await createLocalCallbackServer();
   const waiting = server.waitForCallback('state-123');
@@ -107,6 +161,29 @@ void test('selects browser opener commands by platform', async () => {
     { command: 'open', args: [url] },
     { command: 'xdg-open', args: [url] },
   ]);
+});
+
+void test('answers a missing browser opener as oauth_browser_unavailable instead of an unhandled error', async () => {
+  // A headless host has no `xdg-open`: the real spawn reports ENOENT as an
+  // `error` event, which ends the process when nothing listens for it.
+  const spawn: BrowserSpawn = (_command, args, options) =>
+    nodeSpawn('doric-test-missing-browser-opener', [...args], options);
+
+  await assert.rejects(
+    openBrowser('https://example.test/authorize', { platform: 'linux', spawn }),
+    hasCode('oauth_browser_unavailable'),
+  );
+});
+
+void test('answers a spawn that throws as oauth_browser_unavailable', async () => {
+  const spawn: BrowserSpawn = () => {
+    throw new Error('spawn refused');
+  };
+
+  await assert.rejects(
+    openBrowser('https://example.test/authorize', { platform: 'linux', spawn }),
+    hasCode('oauth_browser_unavailable'),
+  );
 });
 
 const hasCode =

@@ -34,6 +34,11 @@ export const modelKindDescriptorSchema = z
     description: z.string(),
     fields: z.array(modelFieldSchema),
     lists: z.array(z.enum(['models', 'reasonings'])),
+    /**
+     * Whether the kind's model list is its live catalog: the configuration
+     * fill writes every model the catalog lists, so none is named by hand.
+     */
+    modelsFromCatalog: z.boolean().optional(),
   })
   .strict();
 

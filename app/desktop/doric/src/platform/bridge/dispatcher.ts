@@ -5,6 +5,7 @@
 // published JSON Schemas and routes to the generation process or the host.
 
 import {
+  browserUrlSchema,
   ContractError,
   type JsonObject,
   toContractError,
@@ -98,6 +99,8 @@ export interface DispatcherDeps {
   readonly diagnostic: (entry: WindowEntry, diagnostic: unknown) => void;
   /** Stage 9: the host connection status every window follows (D9-5). */
   readonly connection: ConnectionSource;
+  /** `doric.browser/v1`: hands an already checked https URL to the OS browser. */
+  readonly openExternal: (url: string) => Promise<void>;
   readonly now?: () => number;
 }
 
@@ -839,6 +842,17 @@ export class Dispatcher {
           );
 
           return ok(undefined);
+        case 'openExternal': {
+          // Checked again here: the window's own validation is the window's.
+          const { url } = z
+            .object({ url: browserUrlSchema })
+            .strict()
+            .parse(envelope.input);
+
+          await this.#deps.openExternal(url);
+
+          return ok(undefined);
+        }
         default:
           throw new ContractError(
             'invalid_input',

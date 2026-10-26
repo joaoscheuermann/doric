@@ -1,7 +1,8 @@
 // The Claude sign-in as the settings window meets it: the provider page of
-// the `claude` kind offers the sign-in no other kind draws, a running sign-in
-// waits on the browser until cancelled, and a finished one settles the
-// credential into the provider's token field and announces itself.
+// the `claude` kind offers the sign-in no other kind draws, a sign-in opens
+// the host's authorization page in the system browser and waits on it until
+// cancelled, and a finished one settles the credential into the provider's
+// token field and announces itself.
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
@@ -71,11 +72,14 @@ const configuration = {
   execution: { maxTurns: 32 },
 };
 
+/** The authorization page the host's `start` answers. */
+const authorizeUrl = 'https://claude.com/cai/oauth/authorize?state=s';
+
 /**
- * A host answering the sign-in with `login` and storing every replace, with
- * the `claude` kind first so the add-provider page is its own.
+ * A host answering the sign-in's `finish` with `finish` and storing every
+ * replace, with the `claude` kind first so the add-provider page is its own.
  */
-const claudeHost = (login: HostAnswer) => {
+const claudeHost = (finish: HostAnswer) => {
   let revision = 1;
   const replaces: unknown[] = [];
 
@@ -102,7 +106,8 @@ const claudeHost = (login: HostAnswer) => {
       'models/v1.kinds': () => [claude, openrouter],
       'secrets/v1.list': () => [openrouterToken],
       'tools/v1.catalog': () => [],
-      'claude.login/v1.login': login,
+      'claude.login/v1.start': () => ({ url: authorizeUrl }),
+      'claude.login/v1.finish': finish,
     } satisfies Record<string, HostAnswer>,
   };
 };
@@ -134,16 +139,18 @@ const buttonOf = (
 const fieldDescriptionOf = (
   window: SettingsWindow,
   label: string,
+  index = 0,
 ): string | undefined =>
-  [...window.document.querySelectorAll('[data-slot="field"]')]
-    .find(
-      (field) =>
-        field
-          .querySelector('[data-slot="field-label"]')
-          ?.textContent?.trim() === label,
-    )
-    ?.querySelector('[data-slot="field-description"]')?.textContent ??
-  undefined;
+  [
+    ...([...window.document.querySelectorAll('[data-slot="field"]')]
+      .find(
+        (field) =>
+          field
+            .querySelector('[data-slot="field-label"]')
+            ?.textContent?.trim() === label,
+      )
+      ?.querySelectorAll('[data-slot="field-description"]') ?? []),
+  ][index]?.textContent ?? undefined;
 
 /** The text of every toast the window carries, one line each. */
 const toastsOf = (window: SettingsWindow): string =>
@@ -163,8 +170,9 @@ const type = (input: HTMLInputElement, value: string): void => {
 /** Opens the window and its add-provider page, where the sign-in lives. */
 const addProviderPage = async (
   host: Readonly<Record<string, HostAnswer>>,
+  absent: readonly string[] = [],
 ): Promise<SettingsWindow> => {
-  const opened = await openSettingsWindow({ host });
+  const opened = await openSettingsWindow({ host, absent });
   await settle(20);
   const add = opened.document.querySelector(
     'button[aria-label="Add provider"]',
@@ -190,8 +198,23 @@ test('the claude provider page offers the sign-in its own kind draws', async () 
 
   const description = fieldDescriptionOf(opened, 'Claude login');
   assert.ok(description !== undefined, 'The sign-in has no description.');
-  assert.match(description, /reuse/);
+  assert.match(description, /browser/);
   assert.match(description, /stored|storage/);
+  // The sign-in is how the token is filled: no credential is picked by hand,
+  // and a named provider waits on the sign-in alone.
+  assert.ok(
+    opened.document.getElementById('provider-token') === null,
+    'The claude page still asks for a token by hand.',
+  );
+  type(
+    opened.document.getElementById('provider-name') as HTMLInputElement,
+    'Claude',
+  );
+  await settle(20);
+  assert.match(
+    opened.document.body.textContent ?? '',
+    /Sign in with Claude to finish this provider\./,
+  );
 
   // A kind that is not the claude one draws none of it.
   await opened.close();
@@ -216,7 +239,17 @@ test('a running sign-in waits on the browser until it is cancelled', async () =>
   assert.equal(waiting.disabled, true);
   const cancel = buttonOf(opened, 'Cancel');
   assert.ok(cancel !== undefined, 'A running sign-in offers no cancel.');
-  assert.equal(opened.received('claude.login/v1.login').length, 1);
+  // The host's authorization page went to the system browser, and stays
+  // on the row for a browser that did not come up.
+  assert.deepEqual(
+    opened.received('doric.shell/v1.openExternal').map((call) => call.input),
+    [{ url: authorizeUrl }],
+  );
+  assert.match(
+    fieldDescriptionOf(opened, 'Claude login', 1) ?? '',
+    /If the browser did not open, visit https:\/\/claude\.com\//,
+  );
+  assert.equal(opened.received('claude.login/v1.finish').length, 1);
 
   cancel.click();
   await settle();
@@ -230,9 +263,9 @@ test('a running sign-in waits on the browser until it is cancelled', async () =>
   assert.equal(again.disabled, false);
 
   // The cancelled call's signal crossed the bridge as its cancellation.
-  const login = opened.received('claude.login/v1.login')[0]?.id;
+  const finish = opened.received('claude.login/v1.finish')[0]?.id;
   assert.ok(
-    login !== undefined && opened.canceled().includes(login),
+    finish !== undefined && opened.canceled().includes(finish),
     'Cancelling did not abort the sign-in call.',
   );
 });
@@ -249,14 +282,14 @@ test('a finished sign-in settles the credential into the token field', async () 
   await settle(30);
 
   assert.match(toastsOf(opened), /Claude is signed in\./);
-  const trigger = opened.document.getElementById('provider-token');
-  const chosen = trigger?.textContent?.trim();
-  // The platform's Select appends its own chevron to the trigger's text,
-  // so what the auto-select proves is the answered credential's name
-  // leading it, not the trigger's whole text.
+  // The row names the credential the sign-in stored and offers a new one.
+  assert.match(
+    fieldDescriptionOf(opened, 'Claude login') ?? '',
+    /this provider uses the 'Claude' credential/,
+  );
   assert.ok(
-    chosen?.startsWith('Claude'),
-    'The token trigger does not name the signed-in credential.',
+    buttonOf(opened, 'Sign in again') !== undefined,
+    'A signed-in provider offers no fresh sign-in.',
   );
 
   // The autosave carries the provider draft the sign-in completed.
@@ -273,11 +306,11 @@ test('a finished sign-in settles the credential into the token field', async () 
   assert.equal(provider?.configuration.token, signedIn.id);
 });
 
-test('a sign-in the host refuses as busy announces its own message', async () => {
+test('a sign-in the authorization refuses announces its own message', async () => {
   const { host } = claudeHost(() => {
     throw new ContractError(
-      'claude_login_busy',
-      'A Claude sign-in is already in progress.',
+      'claude_login_failed',
+      'The Claude sign-in failed: access_denied',
     );
   });
   opened = await addProviderPage(host);
@@ -285,8 +318,131 @@ test('a sign-in the host refuses as busy announces its own message', async () =>
   buttonOf(opened, 'Sign in with Claude')?.click();
   await settle(30);
 
-  assert.match(toastsOf(opened), /A Claude sign-in is already in progress\./);
+  assert.match(toastsOf(opened), /The Claude sign-in failed: access_denied/);
   const again = buttonOf(opened, 'Sign in with Claude');
   assert.ok(again !== undefined, 'A refused sign-in stays busy.');
   assert.equal(again.disabled, false);
+});
+
+test('a composition without the Claude sign-in still configures the claude kind, drawing no sign-in', async () => {
+  opened = await addProviderPage(claudeHost(() => signedIn).host, [
+    'claude.login/v1',
+  ]);
+
+  assert.ok(
+    buttonOf(opened, 'Sign in with Claude') === undefined,
+    'The sign-in shows with no provider to answer it.',
+  );
+  assert.equal(fieldDescriptionOf(opened, 'Claude login'), undefined);
+  assert.ok(
+    opened.document.getElementById('provider-token') !== null,
+    'The claude kind lost its token field.',
+  );
+});
+
+test('a claude kind that keeps models and efforts offers both beside the sign-in', async () => {
+  const { host } = claudeHost(() => signedIn);
+  opened = await addProviderPage({
+    ...host,
+    'models/v1.kinds': () => [
+      { ...claude, lists: ['models', 'reasonings'] },
+      openrouter,
+    ],
+  });
+
+  assert.ok(
+    buttonOf(opened, 'Sign in with Claude') !== undefined,
+    'The sign-in is missing.',
+  );
+  buttonOf(opened, 'Add model')?.click();
+  await settle(20);
+
+  const efforts = [
+    ...opened.document.querySelectorAll('[aria-label$=" for model 1"]'),
+  ];
+  assert.ok(efforts.length > 0, 'A claude model offers no efforts.');
+});
+
+test('a claude kind whose models are its catalog fills them from the catalog once signed in, never by hand', async () => {
+  const listed = {
+    ...claude,
+    lists: ['models', 'reasonings'],
+    modelsFromCatalog: true,
+  };
+  const catalogReads: unknown[] = [];
+  const { replaces, host } = claudeHost(() => signedIn);
+  opened = await addProviderPage({
+    ...host,
+    'models/v1.kinds': () => [listed, openrouter],
+    'models/v1.kind': () => listed,
+    'models/v1.catalog': (input: unknown) => {
+      catalogReads.push(input);
+      return {
+        status: 'read',
+        models: [
+          {
+            id: 'claude-opus-5-5',
+            name: 'Claude Opus 5.5',
+            reasonings: ['low', 'medium', 'high'],
+            parameters: [],
+            defaultEffort: 'medium',
+            mandatory: false,
+          },
+          {
+            id: 'claude-haiku-4-5',
+            reasonings: [],
+            parameters: [],
+            mandatory: false,
+          },
+        ],
+      };
+    },
+  });
+
+  // Before the sign-in there is nothing to read and nothing to add.
+  assert.ok(
+    buttonOf(opened, 'Add model') === undefined,
+    'A catalog-listed kind asks for a model by hand.',
+  );
+  assert.match(
+    fieldDescriptionOf(opened, 'Models') ?? '',
+    /appear here once it is signed in/,
+  );
+  assert.equal(catalogReads.length, 0);
+
+  type(
+    opened.document.getElementById('provider-name') as HTMLInputElement,
+    'Claude',
+  );
+  buttonOf(opened, 'Sign in with Claude')?.click();
+  await settle(60);
+
+  // The sign-in's credential reads the catalog, and the list shows its models.
+  assert.equal(catalogReads.length, 1);
+  const text = opened.document.body.textContent ?? '';
+  assert.match(text, /claude-opus-5-5/);
+  assert.match(text, /Medium \(default\)/);
+  assert.match(text, /claude-haiku-4-5/);
+
+  // The save carries the catalog's models, so the execution section offers them.
+  await settle(700);
+  const sent = replaces.at(-1) as
+    | {
+        readonly providers: readonly {
+          readonly kind: string;
+          readonly models?: readonly {
+            readonly name: string;
+            readonly reasonings?: readonly string[];
+          }[];
+        }[];
+      }
+    | undefined;
+  const provider = sent?.providers.find((entry) => entry.kind === 'claude');
+  assert.deepEqual(
+    provider?.models?.map(({ name, reasonings }) => ({ name, reasonings })),
+    [
+      { name: 'claude-opus-5-5', reasonings: ['low', 'medium', 'high'] },
+      { name: 'claude-haiku-4-5', reasonings: [] },
+    ],
+  );
 });

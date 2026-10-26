@@ -17,8 +17,9 @@
       "label": "Token",
       "kind": "secret",
       "required": true,
-      "description": "Names the stored API_TOKEN credential that carries the Claude authorization value."
+      "description": "Names the stored API_TOKEN credential that carries the Claude authorization value: a Claude sign-in, a `claude setup-token` value, or a Console API key."
     }
   ],
-  "lists": []
+  "lists": [],
+  "modelsFromCatalog": true
 }

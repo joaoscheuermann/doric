@@ -44,6 +44,7 @@ import {
 } from '../../domain/config.js';
 import type { ClaudeLogin } from '../../hooks/use-claude-login.js';
 import { ProviderModelsEditor } from '../molecules/provider-models-editor.js';
+import { ProviderCatalogModels } from './provider-catalog-models.js';
 import { ProviderModelPicker } from './provider-model-picker.js';
 
 /**
@@ -189,11 +190,31 @@ export function SettingsProviderScreen({
   readonly onChange: (next: ProviderDraft) => void;
 }) {
   const kind = kindOf(kinds, draft.kind);
-  const issue =
+  const tokens = credentialsOfKind(credentials, 'API_TOKEN');
+  // The `claude` kind's token is what its sign-in stores: while the sign-in
+  // is offered, the row takes the token field's place, and the operator never
+  // picks a credential by hand.
+  const signInField =
+    kind?.id === 'claude' && claudeLogin !== undefined
+      ? kind.fields.find((field) => field.kind === 'secret')
+      : undefined;
+  const signedIn =
+    signInField === undefined
+      ? undefined
+      : tokens.find(
+          (token) => token.id === draft.configuration[signInField.key],
+        );
+  const draftIssue =
     kind === undefined
       ? 'Choose a provider kind.'
       : providerIssue(draft, kind, credentials);
-  const tokens = credentialsOfKind(credentials, 'API_TOKEN');
+  const issue =
+    signInField !== undefined &&
+    signedIn === undefined &&
+    draft.id.trim() !== '' &&
+    draftIssue !== undefined
+      ? 'Sign in with Claude to finish this provider.'
+      : draftIssue;
 
   const setValue = (key: string, value: string): void =>
     onChange({
@@ -204,7 +225,7 @@ export function SettingsProviderScreen({
   // A kind decides which of its fields an operator rarely needs, so the screen
   // draws the necessary ones in the open and shelves the rest behind the last
   // section: an endpoint is the kind's own until someone points it elsewhere.
-  const fields = kind?.fields ?? [];
+  const fields = (kind?.fields ?? []).filter((field) => field !== signInField);
   const necessary = fields.filter(({ advanced }) => advanced !== true);
   const advanced = fields.filter(({ advanced }) => advanced === true);
 
@@ -262,7 +283,7 @@ export function SettingsProviderScreen({
         />
       ))}
 
-      {kind?.id === 'claude' && claudeLogin !== undefined && (
+      {signInField !== undefined && claudeLogin !== undefined && (
         <Field>
           <FieldLabel>Claude login</FieldLabel>
           <div className="flex flex-wrap items-center gap-2">
@@ -275,7 +296,9 @@ export function SettingsProviderScreen({
               <LogInIcon data-icon="inline-start" />
               {claudeLogin.busy
                 ? 'Waiting for the browser…'
-                : 'Sign in with Claude'}
+                : signedIn === undefined
+                  ? 'Sign in with Claude'
+                  : 'Sign in again'}
             </Button>
             {claudeLogin.busy && (
               <Button
@@ -288,17 +311,28 @@ export function SettingsProviderScreen({
             )}
           </div>
           <FieldDescription>
-            Signs in with a Claude Code subscription. An existing Claude Code
-            login is reused when one is present; otherwise the browser opens to
-            sign in. The token is stored as the 'Claude' API token credential
-            and selected here.
+            {signedIn === undefined
+              ? 'Signs in with a Claude Code subscription: the browser opens, and the login is stored as a credential this provider uses.'
+              : `Signed in: this provider uses the '${signedIn.name}' credential. When Claude requests fail with an authentication error, the login expired or was revoked: sign in again.`}
           </FieldDescription>
+          {claudeLogin.busy && claudeLogin.url !== undefined && (
+            <FieldDescription>
+              If the browser did not open, visit{' '}
+              <span className="break-all select-all">{claudeLogin.url}</span>
+            </FieldDescription>
+          )}
         </Field>
       )}
 
       {kind !== undefined &&
         (kind.lists.includes('models') ? (
-          kindFillsModelEfforts(kind) ? (
+          kind.modelsFromCatalog === true ? (
+            <ProviderCatalogModels
+              draft={draft}
+              kind={kind}
+              onChange={onChange}
+            />
+          ) : kindFillsModelEfforts(kind) ? (
             <ProviderModelPicker
               draft={draft}
               kind={kind}

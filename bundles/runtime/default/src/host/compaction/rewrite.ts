@@ -167,6 +167,35 @@ export const condensation = (
   };
 };
 
+/** Replay block types bound to the exact conversation that produced them. */
+const boundReplay = new Set(['thinking', 'redacted_thinking']);
+
+/** Whether one replay item is a reasoning block bound to its conversation. */
+const isBoundReplay = (item: Readonly<Record<string, unknown>>): boolean => {
+  const block = item.block;
+  return (
+    boundReplay.has(String(item.type)) ||
+    (typeof block === 'object' &&
+      block !== null &&
+      boundReplay.has(String((block as Record<string, unknown>).type)))
+  );
+};
+
+/**
+ * A kept message without its bound reasoning replay. Claude signs a
+ * `thinking` block against the whole conversation before it, so a block
+ * kept behind a summary that replaced that conversation is refused as
+ * bound to a different one (preserved thinking). Other replay items, which
+ * are not bound that way, are kept.
+ */
+export const unbound = (message: ProviderMessage): ProviderMessage => {
+  if (message.replay === undefined || !message.replay.some(isBoundReplay))
+    return message;
+  const { replay, ...rest } = message;
+  const kept = replay.filter((item) => !isBoundReplay(item));
+  return kept.length === 0 ? rest : { ...rest, replay: kept };
+};
+
 /** A history rewrite result: the next messages plus the meta that matches. */
 export interface Rewritten {
   readonly messages: readonly ProviderMessage[];
@@ -192,8 +221,8 @@ export const replacement = (
 
 /**
  * The rewritten history: the summary and the span's retained messages in the
- * span's place, the tail unchanged, checkpoints and retained indexes
- * re-based. The caller passes the summary already built (marker line
+ * span's place, the tail in its order without its bound reasoning replay
+ * (`unbound`), checkpoints and retained indexes re-based. The caller passes the summary already built (marker line
  * included), so this stays a pure shape transform.
  */
 export const rewritten = (
@@ -208,7 +237,7 @@ export const rewritten = (
     messages: [
       ...messages.slice(0, start),
       ...inserted,
-      ...messages.slice(end),
+      ...messages.slice(end).map(unbound),
     ],
     meta: {
       checkpoints: rebasedCheckpoints(meta, start, end),

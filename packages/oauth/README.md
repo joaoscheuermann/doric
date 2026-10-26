@@ -66,18 +66,18 @@ storage appropriate for OAuth credentials and must not log or commit tokens.
 
 ## API
 
-| Export                               | Purpose                                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `createOAuthClient(options)`         | Authorization-code + PKCE client for any `OAuthProfile`.                                    |
-| `createCodexOAuth(options)`          | The same client with Codex defaults (`codexOAuthProfile`, `CODEX_OAUTH_CLIENT_ID`).         |
-| `createLocalCallbackServer(options)` | Starts a localhost redirect listener (`127.0.0.1`, `/callback`, ephemeral port by default). |
-| `openBrowser(url, options)`          | Opens a URL in the platform browser through an injectable spawn.                            |
-| `createFetchTransport(fetch?)`       | Production `OAuthTransport` over Fetch.                                                     |
-| `renderCredential(profile, record)`  | Renders a token record as an `OAuthCredential` with its `authorization` header.             |
-| `resolveCodexAuth(options)`          | Resolves existing Codex CLI credentials without a browser flow.                             |
-| `createClaudeOAuth(options)`         | The same client with Claude Code defaults (`claudeOAuthProfile`, `CLAUDE_OAUTH_CLIENT_ID`). |
-| `resolveClaudeAuth(options)`         | Resolves existing Claude Code credentials without a browser flow.                           |
-| `OAuthErrorObject`                   | Error carrying an `OAuthError` with a stable `code`.                                        |
+| Export                               | Purpose                                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `createOAuthClient(options)`         | Authorization-code + PKCE client for any `OAuthProfile`.                                                                                         |
+| `createCodexOAuth(options)`          | The same client with Codex defaults (`codexOAuthProfile`, `CODEX_OAUTH_CLIENT_ID`).                                                              |
+| `createLocalCallbackServer(options)` | Starts a localhost redirect listener (`127.0.0.1`, `/callback`, ephemeral port by default).                                                      |
+| `openBrowser(url, options)`          | Opens a URL in the platform browser through an injectable spawn; rejects with `oauth_browser_unavailable` when no opener runs (a headless host). |
+| `createFetchTransport(fetch?)`       | Production `OAuthTransport` over Fetch.                                                                                                          |
+| `renderCredential(profile, record)`  | Renders a token record as an `OAuthCredential` with its `authorization` header.                                                                  |
+| `resolveCodexAuth(options)`          | Resolves existing Codex CLI credentials without a browser flow.                                                                                  |
+| `createClaudeOAuth(options)`         | The same client with Claude Code defaults (`claudeOAuthProfile`, `CLAUDE_OAUTH_CLIENT_ID`).                                                      |
+| `resolveClaudeAuth(options)`         | Resolves existing Claude Code credentials without a browser flow.                                                                                |
+| `OAuthErrorObject`                   | Error carrying an `OAuthError` with a stable `code`.                                                                                             |
 
 An `OAuthClient` exposes:
 

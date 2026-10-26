@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { CatalogResult } from 'bundle/contracts';
+import type { CatalogResult, ModelKindDescriptor } from 'bundle/contracts';
 import { type ProviderKind, providerKinds } from 'llms';
 import type { BoundTool } from 'tool';
 
@@ -549,6 +549,93 @@ void test('fills the listed models from the catalog models/v1 reads for their ki
   });
 });
 
+void test('a kind whose catalog is its model list stores every model the catalog lists, in its order', async () => {
+  const harness = configHarness({
+    catalogListed: ['openrouter'],
+    catalog: async () =>
+      ({
+        status: 'read',
+        models: [
+          {
+            id: 'listed/new',
+            reasonings: ['low', 'medium', 'high'],
+            parameters: [],
+            defaultEffort: 'medium',
+            mandatory: false,
+          },
+          {
+            id: 'listed/plain',
+            reasonings: [],
+            parameters: [],
+            mandatory: false,
+          },
+        ],
+      }) as CatalogResult,
+  });
+  const configuration: ConfigInput = {
+    ...structuredClone(defaultConfig),
+    providers: [
+      {
+        ...providerOf(),
+        // A model the catalog no longer lists is not kept: the list is the
+        // catalog's, not an operator's.
+        models: [{ name: 'listed/retired', reasonings: ['low'] }],
+      },
+    ],
+    models: { execution: { providerId: 'openrouter', model: 'listed/new' } },
+  };
+
+  const result = await harness.service.replace(configuration);
+
+  assert.ok(result.status === 'replaced');
+  assert.deepEqual(result.config.configuration.providers[0]?.models, [
+    {
+      name: 'listed/new',
+      reasonings: ['low', 'medium', 'high'],
+      defaultEffort: 'medium',
+    },
+    { name: 'listed/plain', reasonings: [] },
+  ]);
+  assert.deepEqual(result.config.configuration.models.execution, {
+    providerId: 'openrouter',
+    model: 'listed/new',
+    effort: 'medium',
+  });
+});
+
+void test('a catalog-listed provider with no models yet is read, and a failed read keeps its list', async () => {
+  let answer: CatalogResult = { status: 'failed' };
+  const harness = configHarness({
+    catalogListed: ['openrouter'],
+    catalog: async () => answer,
+  });
+  const configuration = (models: ConfigInput['providers'][number]['models']) =>
+    ({
+      ...structuredClone(defaultConfig),
+      providers: [{ ...providerOf(), models }],
+    }) as ConfigInput;
+
+  const failed = await harness.service.replace(
+    configuration([{ name: 'kept/model', reasonings: [] }]),
+  );
+  assert.ok(failed.status === 'replaced');
+  assert.deepEqual(failed.config.configuration.providers[0]?.models, [
+    { name: 'kept/model', reasonings: [] },
+  ]);
+
+  answer = {
+    status: 'read',
+    models: [
+      { id: 'first/model', reasonings: [], parameters: [], mandatory: false },
+    ],
+  };
+  const read = await harness.service.replace(configuration([]));
+  assert.ok(read.status === 'replaced');
+  assert.deepEqual(read.config.configuration.providers[0]?.models, [
+    { name: 'first/model', reasonings: [] },
+  ]);
+});
+
 void test('builds the candidate providers before storing, then activates the stored revision', async () => {
   const harness = configHarness();
 
@@ -635,6 +722,7 @@ void test('loads the stored configuration once, and again after a failed load', 
     tools: () => [],
     models: {
       catalog: async () => ({ status: 'absent' }),
+      kind: async () => undefined,
       prepare: async () => undefined,
     },
   });
@@ -653,6 +741,8 @@ interface ConfigHarnessOptions {
     kind: string;
     configuration: Record<string, string>;
   }) => Promise<CatalogResult>;
+  /** The kinds `models/v1.kind` describes as listing their catalog. */
+  readonly catalogListed?: readonly string[];
   readonly blockedBuild?: string;
   readonly failedBuild?: string;
   readonly failedWrite?: string;
@@ -662,6 +752,7 @@ const configHarness = ({
   credentials = [providerCredential],
   tools = [],
   catalog = async () => ({ status: 'absent' }),
+  catalogListed = [],
   blockedBuild,
   failedBuild,
   failedWrite,
@@ -699,7 +790,22 @@ const configHarness = ({
     store,
     credentials: async () => credentialResolver(() => stored),
     tools: () => tools,
-    models: { catalog, prepare },
+    models: {
+      catalog,
+      // The llms kinds as models/v1 describes them, each flagged when the test
+      // says its catalog is its model list.
+      kind: async (id: string) => {
+        const kind = providerKinds.find((candidate) => candidate.id === id);
+        if (kind === undefined) return undefined;
+        return {
+          ...kind,
+          fields: [...kind.fields],
+          lists: [...kind.lists],
+          modelsFromCatalog: catalogListed.includes(id),
+        } as unknown as ModelKindDescriptor;
+      },
+      prepare,
+    },
   });
   return {
     service,

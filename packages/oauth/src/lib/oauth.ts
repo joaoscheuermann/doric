@@ -116,7 +116,9 @@ export const createOAuthClient = (
 
     async authorize(authorizeOptions = {}): Promise<OAuthTokenRecord> {
       const verifier = token(random, 32);
-      const state = token(random, 16);
+      // 32 random bytes, as Claude Code sends: claude.ai's authorize page
+      // refuses a shorter state with "Invalid request format".
+      const state = token(random, 32);
       const url = authorizationUrl(options, state, verifier);
 
       await options.browserOpener(url.toString());
