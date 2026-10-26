@@ -70,7 +70,9 @@ All host calls go through one adapter, `src/client/api/settings-api.ts`:
 
 - `host-config/v1` reads and replaces the configuration;
 - `models/v1` lists provider kinds and reads a provider's model catalog from
-  its endpoint;
+  its endpoint; a kind that sets `modelsFromCatalog` (Claude) has no model
+  editor: its models are that catalog, read once the provider can sign in and
+  shown read-only;
 - `secrets/v1` lists, creates, updates and removes credentials;
 - `tools/v1` reads the tool catalog and each tool's declared fields.
 

@@ -69,17 +69,35 @@ void test('distinguishes missing prices from free calls and ignores upstream cos
   assert.equal(usageTotals(state).calls, 2);
 });
 
-void test('keeps charged usage after interruption and keeps providers outside OpenRouter out of the total', () => {
+void test('keeps charged usage after interruption', () => {
+  const state = fold([started(), usage(0.5), { type: 'agent.cancelled' }]);
+  assert.equal(usageTotals(state).cost, 0.5);
+  assert.equal(usageTotals(state).calls, 1);
+});
+
+void test('counts a provider that reports no price as an unpriced call with its tokens and context', () => {
   const state = fold([
     started(),
     usage(0.5),
-    { type: 'agent.cancelled' },
-    { type: 'response.started', provider: 'openai', model: 'other' },
-    usage(3),
+    {
+      type: 'response.started',
+      provider: 'claude',
+      model: 'claude-opus-5-5',
+      contextWindow: 1000000,
+    },
+    { type: 'usage', usage: { inputTokens: 1200, outputTokens: 300 } },
   ]);
-  assert.equal(usageTotals(state).cost, 0.5);
-  assert.equal(usageTotals(state).calls, 1);
-  assert.equal(state.context, undefined);
+  const totals = usageTotals(state);
+  assert.equal(totals.calls, 2);
+  assert.equal(totals.unpricedCalls, 1);
+  assert.equal(totals.cost, 0.5);
+  assert.equal(totals.inputTokens, 48000 + 1200);
+  assert.equal(totals.outputTokens, 2000 + 300);
+  assert.deepEqual(state.context, {
+    model: 'claude-opus-5-5',
+    contextWindow: 1000000,
+    inputTokens: 1200,
+  });
 });
 
 void test('keeps capacity unknown when absent and does not count cache twice', () => {

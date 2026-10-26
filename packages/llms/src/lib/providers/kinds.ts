@@ -2,6 +2,7 @@ import type { Logger } from 'pino';
 
 import type { HttpTransport } from '../types/http.js';
 import type { LlmProvider } from '../types/provider.js';
+import { claudeMetadata, createClaudeProvider } from './claude.js';
 import { codexMetadata, createCodexProvider } from './codex.js';
 import {
   createOpenAiProvider,
@@ -15,7 +16,7 @@ import {
 } from './openrouter.js';
 
 /** Every provider integration this package can configure. */
-export type ProviderKindId = 'openai' | 'openrouter' | 'codex';
+export type ProviderKindId = 'openai' | 'openrouter' | 'codex' | 'claude';
 
 export type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
 
@@ -51,6 +52,12 @@ export interface ProviderKind {
   readonly fields: readonly ProviderField[];
   /** Which per-provider lists this kind keeps. */
   readonly lists: readonly ProviderListId[];
+  /**
+   * Whether the provider's model list is its live catalog: every model the
+   * catalog lists is offered, with the efforts the catalog names, so no model
+   * is named by hand. Only a kind that keeps `models` sets it.
+   */
+  readonly modelsFromCatalog?: boolean;
 }
 
 /**
@@ -180,6 +187,24 @@ const supportedKinds: readonly ProviderKind[] = [
       },
     ],
     lists: [],
+  },
+  {
+    id: 'claude',
+    label: 'Claude',
+    description:
+      'Anthropic Messages through a Claude Code subscription login, authenticated with a Claude authorization value.',
+    fields: [
+      endpoint(claudeMetadata.baseUrl),
+      token({
+        required: true,
+        description:
+          'Names the stored API_TOKEN credential that carries the Claude authorization value: a Claude sign-in, a `claude setup-token` value, or a Console API key.',
+      }),
+    ],
+    // Anthropic's catalog lists every model the login may call, with the
+    // efforts each accepts, so the provider's models are that catalog.
+    lists: openAiLists,
+    modelsFromCatalog: true,
   },
 ];
 
@@ -324,6 +349,14 @@ const builders: Record<ProviderKindId, ProviderBuilder> = {
       ...baseUrl(values),
     });
   },
+
+  claude: (values, deps) =>
+    createClaudeProvider({
+      transport: deps.transport,
+      logger: deps.logger,
+      authorization: values.token ?? '',
+      ...baseUrl(values),
+    }),
 };
 
 /** A declared value the factory can use: a source, or a literal with something in it. */

@@ -1,4 +1,4 @@
-import type { CatalogResult } from 'bundle/contracts';
+import type { CatalogModel, CatalogResult } from 'bundle/contracts';
 
 /** One model a provider lists, with what its catalog says about it. */
 export interface FillModel {
@@ -32,21 +32,31 @@ export interface FillConfiguration {
 export type CatalogReader = (provider: FillProvider) => Promise<CatalogResult>;
 
 /**
+ * Whether a provider's model list is its catalog (its kind's
+ * `modelsFromCatalog`): the fill then writes every model the catalog lists.
+ */
+export type CatalogListed = (provider: FillProvider) => boolean;
+
+/**
  * Writes what each provider's model catalog says about the models an operator
  * listed: the reasoning efforts each one accepts, the effort the catalog names
  * as the model's default, whether it pins reasoning on, and no efforts for a
- * model the catalog does not name. A catalog that cannot be read leaves that
- * provider exactly as it was, and a provider that lists no models is never
- * read. The execution profile is then resolved against the model it names
- * (`executionProfile`).
+ * model the catalog does not name. A provider whose model list is its catalog
+ * (`listed`) is read even with no models, and its list becomes every model
+ * the catalog lists, in the catalog's order. A catalog that cannot be read
+ * leaves that provider exactly as it was, and any other provider that lists
+ * no models is never read. The execution profile is then resolved against
+ * the model it names (`executionProfile`).
  */
 export const readModelProperties = async <C extends FillConfiguration>(
   configuration: C,
   read: CatalogReader,
+  listed: CatalogListed = () => false,
 ): Promise<C> => {
   const providers = await Promise.all(
     configuration.providers.map(
-      async (provider) => (await withCatalog(provider, read)) ?? provider,
+      async (provider) =>
+        (await withCatalog(provider, read, listed(provider))) ?? provider,
     ),
   );
 
@@ -57,33 +67,52 @@ export const readModelProperties = async <C extends FillConfiguration>(
   };
 };
 
+/** One model as the fill writes it, described by its catalog entry when there is one. */
+const filledModel = (
+  name: string,
+  entry: CatalogModel | undefined,
+): FillModel => ({
+  name,
+  reasonings: [...(entry?.reasonings ?? [])],
+  ...(entry?.defaultEffort === undefined
+    ? {}
+    : { defaultEffort: entry.defaultEffort }),
+  ...(entry?.mandatory === true ? { mandatory: true } : {}),
+});
+
 /** One provider's models as its catalog describes them, or `undefined` keeping it. */
 const withCatalog = async <P extends FillProvider>(
   provider: P,
   read: CatalogReader,
+  listed: boolean,
 ): Promise<P | undefined> => {
-  if ((provider.models?.length ?? 0) === 0) return undefined;
+  if (!listed && (provider.models?.length ?? 0) === 0) return undefined;
 
   const result = await read(provider);
 
   if (result.status !== 'read') return undefined;
 
+  if (listed) {
+    const seen = new Set<string>();
+
+    return {
+      ...provider,
+      models: result.models.flatMap((entry) => {
+        const name = entry.id.trim();
+        if (name === '' || seen.has(name)) return [];
+        seen.add(name);
+        return [filledModel(name, entry)];
+      }),
+    };
+  }
+
   const catalog = new Map(result.models.map((model) => [model.id, model]));
 
   return {
     ...provider,
-    models: provider.models?.map((model) => {
-      const entry = catalog.get(model.name.trim());
-
-      return {
-        name: model.name,
-        reasonings: [...(entry?.reasonings ?? [])],
-        ...(entry?.defaultEffort === undefined
-          ? {}
-          : { defaultEffort: entry.defaultEffort }),
-        ...(entry?.mandatory === true ? { mandatory: true } : {}),
-      };
-    }),
+    models: provider.models?.map((model) =>
+      filledModel(model.name, catalog.get(model.name.trim())),
+    ),
   };
 };
 

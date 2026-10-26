@@ -1,4 +1,9 @@
-import type { JsonValue, ProviderFinished } from 'llms';
+import type {
+  JsonValue,
+  ProviderError,
+  ProviderFinished,
+  ProviderMessage,
+} from 'llms';
 
 import { AgentErrorObject } from '../classes/agent-error.js';
 import type {
@@ -55,6 +60,143 @@ export const repairLimit = (value: number | undefined): number => {
     'Agent maxToolCallRepairs must be a non-negative safe integer.',
   );
 };
+
+/** How often, and how patiently, a failed provider turn is asked again. */
+export interface RetryPolicy {
+  readonly retries: number;
+  readonly baseDelayMs: number;
+  readonly maxDelayMs: number;
+}
+
+const defaultRetry: RetryPolicy = {
+  retries: 2,
+  baseDelayMs: 1000,
+  maxDelayMs: 30_000,
+};
+
+export const retryPolicy = (
+  value: Partial<RetryPolicy> | undefined,
+): RetryPolicy => {
+  const policy = { ...defaultRetry, ...value };
+  if (
+    !Number.isSafeInteger(policy.retries) ||
+    policy.retries < 0 ||
+    !(policy.baseDelayMs >= 0) ||
+    !(policy.maxDelayMs >= 0)
+  ) {
+    throw new TypeError('Agent retry needs non-negative retries and delays.');
+  }
+  return policy;
+};
+
+/**
+ * The provider error a thrown value carries, read by shape rather than by
+ * class: a provider built against another copy of `llms` still throws one.
+ */
+const providerErrorOf = (
+  error: unknown,
+): Partial<ProviderError> | undefined => {
+  const data =
+    typeof error === 'object' && error !== null && 'data' in error
+      ? (error as { readonly data: unknown }).data
+      : undefined;
+  return typeof data === 'object' && data !== null
+    ? (data as Partial<ProviderError>)
+    : undefined;
+};
+
+/** The provider error a thrown value or a stream `error` event carries. */
+const errorData = (
+  error: unknown,
+): (Partial<ProviderError> & { readonly retryAfterMs?: unknown }) | undefined =>
+  providerErrorOf(error) ??
+  (typeof error === 'object' && error !== null
+    ? (error as Partial<ProviderError>)
+    : undefined);
+
+/** Whether a provider failure says that asking again may succeed. */
+export const isRetryable = (error: unknown): boolean =>
+  errorData(error)?.retryable === true;
+
+/**
+ * How long to wait before attempt `attempt + 1`: the provider's own
+ * `retryAfterMs` when it named one, else an exponential backoff, both capped.
+ */
+export const retryDelay = (
+  error: unknown,
+  attempt: number,
+  policy: RetryPolicy,
+): number => {
+  const named = errorData(error)?.retryAfterMs;
+  const delay =
+    typeof named === 'number' && Number.isFinite(named) && named >= 0
+      ? named
+      : policy.baseDelayMs * 2 ** attempt;
+  return Math.min(delay, policy.maxDelayMs);
+};
+
+/** Waits, or rejects with the signal's reason as soon as it aborts. */
+export const pause = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
+/** The text of a stored message, its text parts joined. */
+const messageText = (message: ProviderMessage): string =>
+  typeof message.content === 'string'
+    ? message.content
+    : (message.content ?? [])
+        .map((part) => (part.type === 'text' ? part.text : ''))
+        .join('');
+
+/**
+ * The answer a history already ends with: a final assistant turn that calls
+ * no tool. A resumed run that finds one is finished, and asking the model
+ * again would send that turn last, which current models refuse as prefill.
+ */
+export const answeredTurn = (
+  messages: readonly ProviderMessage[],
+): ProviderFinished | undefined => {
+  const last = messages.at(-1);
+  if (last?.role !== 'assistant' || (last.toolCalls?.length ?? 0) > 0)
+    return undefined;
+  return { text: messageText(last), finishReason: 'stop', toolCalls: [] };
+};
+
+/** The refusal of a turn the model declined, never one to repair or run. */
+export const refusalError = (
+  finish: ProviderFinished<unknown>,
+): AgentErrorObject =>
+  new AgentErrorObject({
+    code: 'provider_refusal',
+    message:
+      finish.refusal === undefined || finish.refusal === ''
+        ? 'The model declined to answer.'
+        : `The model declined to answer: ${finish.refusal}`,
+  });
+
+/** The failure of a turn whose tool call the output limit cut short. */
+export const truncatedError = (cause: unknown): AgentErrorObject =>
+  new AgentErrorObject(
+    {
+      code: 'output_truncated',
+      message:
+        'The model reached its output limit in the middle of a tool call, so the call was not run.',
+    },
+    { cause },
+  );
 
 export const toolCallCorrection = [
   '# Tool call correction',

@@ -46,13 +46,17 @@ export type HostAnswer = (input: unknown) => unknown;
 const hostContracts: Readonly<
   Record<string, Readonly<Record<string, number | null>>>
 > = {
+  'claude.login/v1': { start: 0, finish: 0 },
   'host-config/v1': { current: 0, replace: null },
   'models/v1': { kinds: 0, kind: 1, catalog: null },
   'tools/v1': { catalog: 0 },
   'secrets/v1': { list: 0, create: null, update: 2, delete: null },
 };
 
-const hostCandidate: CatalogCandidate = {
+/** The host bundle, staging every host contract but the `absent` ones. */
+const hostCandidateWithout = (
+  absent: ReadonlySet<string>,
+): CatalogCandidate => ({
   id: 'host',
   source: { kind: 'installed', dir: 'host@1.0.0' },
   manifest: {
@@ -64,7 +68,11 @@ const hostCandidate: CatalogCandidate = {
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
       'host-config/v1@1.0.0',
-    ],
+      // The settings part takes this one when it is there; the host answers
+      // it behind the bridge, so the window harness stages it here the way
+      // the real composition enables the bundle that provides it.
+      'claude.login/v1@1.0.0',
+    ].filter((entry) => !absent.has(entry.split('@')[0] ?? '')),
     requires: [],
   },
   descriptor: {
@@ -74,18 +82,21 @@ const hostCandidate: CatalogCandidate = {
       'storage.backend/v1',
       'secrets.backend/v1',
       'host-config/v1',
-    ].map((id) => ({
-      id,
-      version: '1.0.0',
-      kind: 'service' as const,
-      environment: 'host' as const,
-      cardinality: 'one' as const,
-      local: false,
-      schema: `schemas/${id}.json`,
-    })),
+      'claude.login/v1',
+    ]
+      .filter((id) => !absent.has(id))
+      .map((id) => ({
+        id,
+        version: '1.0.0',
+        kind: 'service' as const,
+        environment: 'host' as const,
+        cardinality: 'one' as const,
+        local: false,
+        schema: `schemas/${id}.json`,
+      })),
   },
   errors: [],
-};
+});
 
 /** The core's desktopMain contracts as main routes them to a window. */
 const coreRemote = async (
@@ -131,21 +142,23 @@ const coreRemote = async (
   return remote;
 };
 
-const hostRemote = (): RemoteContract[] =>
-  Object.entries(hostContracts).map(([id, methods]) => ({
-    id,
-    environment: 'host',
-    bundleId: id === 'host-config/v1' ? 'host' : 'core',
-    version: '1.0.0',
-    contractVersion: '1.0.0',
-    cardinality: 'one',
-    methods: Object.fromEntries(
-      Object.entries(methods).map(([name, tuple]) => [
-        name,
-        { tuple, local: false, stream: false },
-      ]),
-    ),
-  }));
+const hostRemote = (absent: ReadonlySet<string>): RemoteContract[] =>
+  Object.entries(hostContracts)
+    .filter(([id]) => !absent.has(id))
+    .map(([id, methods]) => ({
+      id,
+      environment: 'host',
+      bundleId: id === 'host-config/v1' ? 'host' : 'core',
+      version: '1.0.0',
+      contractVersion: '1.0.0',
+      cardinality: 'one',
+      methods: Object.fromEntries(
+        Object.entries(methods).map(([name, tuple]) => [
+          name,
+          { tuple, local: false, stream: false },
+        ]),
+      ),
+    }));
 
 const partUrl = (id: string, version: string): string =>
   `doric://app/bundles/${id}@${version}/client/index.js`;
@@ -179,6 +192,12 @@ export interface SettingsWindow {
   readonly document: Document;
   /** Bridge calls of one `<contract>.<method>`, in order. */
   received(method: string): readonly BridgeCallEnvelope[];
+  /**
+   * The bridge call ids a window part canceled: the bridge's own expression
+   * of a call's signal aborting, which is the closest an answer faked behind
+   * `desktop.call` can come to observing the signal itself.
+   */
+  canceled(): readonly string[];
   /** Main asks the window to close (one phase). */
   requestClose(request: CloseRequest): Promise<CloseAnswer | undefined>;
   close(): Promise<void>;
@@ -208,7 +227,10 @@ export const openSettingsWindow = async (input: {
   readonly url?: string;
   readonly host: Readonly<Record<string, HostAnswer>>;
   readonly probe?: ProbeBundle;
+  /** Host contracts no provider answers in this composition. */
+  readonly absent?: readonly string[];
 }): Promise<SettingsWindow> => {
+  const absent = new Set(input.absent ?? []);
   const window = new Window({
     url: input.url ?? 'doric://app/settings',
     width: 1280,
@@ -268,7 +290,7 @@ export const openSettingsWindow = async (input: {
           descriptor: coreDescriptor,
           errors: [],
         },
-        hostCandidate,
+        hostCandidateWithout(absent),
         {
           id: 'settings',
           source: {
@@ -332,12 +354,19 @@ export const openSettingsWindow = async (input: {
     },
     remote: [
       ...(await coreRemote(coreManifest, coreDescriptor)),
-      ...hostRemote(),
+      ...hostRemote(absent),
     ],
     hostId: 'host-1',
     storageGeneration: 1,
   };
   const calls: BridgeCallEnvelope[] = [];
+  const cancels: string[] = [];
+  /**
+   * The bridge calls still unanswered, by id, so a `cancel` can refuse one:
+   * the second half of the real bridge's advisory abort, where the host
+   * provider decides how an aborted call ends.
+   */
+  const pending = new Map<string, (result: BridgeResultPayload) => void>();
   let closeHandler:
     | ((request: CloseRequest) => Promise<CloseAnswer | undefined>)
     | undefined;
@@ -393,11 +422,37 @@ export const openSettingsWindow = async (input: {
     call: async (envelope) => {
       calls.push(envelope);
 
-      return envelope.contract === 'doric.shell/v1'
-        ? { ok: true, output: undefined }
-        : answer(envelope);
+      if (envelope.contract === 'doric.shell/v1') {
+        return { ok: true, output: undefined };
+      }
+
+      // A hanging host answer never settles this promise on its own, so a
+      // later `cancel` can still refuse the call the window awaits.
+      return new Promise<BridgeResultPayload>((resolve) => {
+        pending.set(envelope.id, resolve);
+        void answer(envelope).then((result) => {
+          if (pending.delete(envelope.id)) resolve(result);
+        });
+      });
     },
-    cancel: () => undefined,
+    cancel: (id) => {
+      cancels.push(id);
+      // The bridge sends the cancel as advice only; the provider decides how
+      // an aborted call ends. The `claude.login/v1` host refuses one with
+      // `claude_login_aborted` — the same failure shape a throwing host answer
+      // carries home, which the settings part maps and the cancelled hook
+      // silences.
+      const refuse = pending.get(id);
+      if (refuse !== undefined && pending.delete(id)) {
+        refuse({
+          ok: false,
+          error: {
+            code: 'claude_login_aborted',
+            message: 'The Claude sign-in was cancelled.',
+          },
+        });
+      }
+    },
     subscribe: () => () => undefined,
   };
   const modules: Record<string, { activate?: Activate }> = {
@@ -436,6 +491,7 @@ export const openSettingsWindow = async (input: {
       calls.filter(
         (envelope) => `${envelope.contract}.${envelope.method}` === method,
       ),
+    canceled: () => [...cancels],
     requestClose: async (request) => {
       if (closeHandler === undefined) {
         throw new Error('The window registered no close handler.');

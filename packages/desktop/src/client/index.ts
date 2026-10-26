@@ -16,6 +16,7 @@ export {
   shellStream,
   withoutWindowKey,
 } from './bridge.js';
+export { provideBrowser } from './browser.js';
 export { applyChrome } from './chrome.js';
 export { answerClose, wireClose } from './close.js';
 export { serveShellCommands } from './commands.js';

@@ -3,6 +3,7 @@
 // helper: the host configuration runs it over `models/v1.catalog`.
 
 export {
+  type CatalogListed,
   type CatalogReader,
   executionProfile,
   type FillConfiguration,

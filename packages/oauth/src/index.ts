@@ -1,4 +1,6 @@
 export * from './lib/classes/oauth-error.js';
+export * from './lib/claude.js';
+export * from './lib/claude-oauth.js';
 export * from './lib/codex.js';
 export * from './lib/codex-oauth.js';
 export * from './lib/http.js';

@@ -7,6 +7,7 @@ import { CODEX_OAUTH_CLIENT_ID, codexOAuthProfile } from './codex-oauth.js';
 import { createFetchTransport, type OAuthTransport } from './http.js';
 import { asRecord, diagnosticExcerpt, stringField } from './utils/json.js';
 import { parseTokenClaims } from './utils/jwt.js';
+import { bearerToken, clean } from './utils/text.js';
 
 const DEFAULT_REFRESH_SKEW_MS = 5 * 60 * 1000;
 
@@ -399,17 +400,6 @@ const codexHome = (
   options: ResolveCodexAuthOptions,
   env: Readonly<Record<string, string | undefined>>,
 ): string => options.codexHome ?? env.CODEX_HOME ?? join(homedir(), '.codex');
-
-const clean = (value: string | undefined): string | undefined => {
-  const trimmed = value?.trim();
-
-  return trimmed === undefined || trimmed === '' ? undefined : trimmed;
-};
-
-const bearerToken = (value: string): string =>
-  value.toLowerCase().startsWith('bearer ')
-    ? value.slice('bearer '.length).trimStart()
-    : value;
 
 const error = (
   code: string,

@@ -491,6 +491,8 @@ export const shellMethods = {
   // Stage 9: the host connection status (D9-5). The D9-6 `notify` call is
   // gone since WP-10N (notifications are decided in desktopMain).
   connection: { stream: true },
+  // `doric.browser/v1`: an https URL main opens in the system browser.
+  openExternal: { stream: false },
 } as const;
 
 export type ShellMethod = keyof typeof shellMethods;

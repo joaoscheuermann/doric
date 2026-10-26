@@ -169,6 +169,10 @@ export interface ProviderError {
   readonly status?: number;
   readonly retryable?: boolean;
   readonly diagnostic?: string;
+  /** How long the provider asked a retry to wait (`retry-after`), in milliseconds. */
+  readonly retryAfterMs?: number;
+  /** The provider's id for the failed request, for its support. */
+  readonly requestId?: string;
 }
 
 export type ProviderStreamEvent<Output = JsonValue> =

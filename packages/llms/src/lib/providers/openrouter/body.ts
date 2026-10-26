@@ -9,6 +9,7 @@ import {
   messageText,
   requestReasoningEffort,
   requireRequestInput,
+  untaggedReplay,
 } from '../common.js';
 import {
   isStrictCompatible,
@@ -159,10 +160,9 @@ const replayItems = (
   message: ProviderMessage,
   policy: NonNullable<OpenRouterBodyOptions['replay']>,
 ) =>
-  message.replay === undefined ||
-  (policy === 'tool_calls' && (message.toolCalls?.length ?? 0) === 0)
+  policy === 'tool_calls' && (message.toolCalls?.length ?? 0) === 0
     ? undefined
-    : message.replay;
+    : untaggedReplay(message);
 
 const toolChoice = (
   choice: ProviderRequest<unknown>['toolChoice'],

@@ -745,6 +745,15 @@ export interface DoricConnection {
 }
 
 /**
+ * Opens a page in the system browser, outside the app (client only). A
+ * window may not open windows of its own; this is the one way out, and it
+ * takes only an `https:` URL, which main hands to the operating system.
+ */
+export interface DoricBrowser {
+  open(url: string, call?: CallArg): Promise<void>;
+}
+
+/**
  * A unit of work a generation keeps running until it is disposed. The owner
  * is the calling bundle (`call.caller.bundleId`), never part of the input; the
  * key is opaque to the platform.
@@ -840,6 +849,7 @@ export const DoricGenerationV1 = ref<DoricGeneration>('doric.generation/v1');
 export const DoricStartupV1 = ref<DoricStartup>('doric.startup/v1');
 export const DoricElementsV1 = ref<DoricElements>('doric.elements/v1');
 export const DoricConnectionV1 = ref<DoricConnection>('doric.connection/v1');
+export const DoricBrowserV1 = ref<DoricBrowser>('doric.browser/v1');
 
 const noInput = z.tuple([]);
 
@@ -849,6 +859,21 @@ const elementSchema = z.custom<object>(
 );
 
 export const connectionStatusSchema = z.enum(['connected', 'disconnected']);
+
+/** Whether a value is an absolute `https:` URL. */
+const isHttpsUrl = (value: string): boolean => {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+/** A URL the system browser may open: absolute and `https:` only. */
+export const browserUrlSchema = z
+  .string()
+  .max(8192)
+  .refine(isHttpsUrl, { message: 'Expected an https URL.' });
 
 /** A localStorage key a migration may copy: bounded, with no origin in it. */
 export const migrationKeyPattern = /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
@@ -1052,6 +1077,10 @@ export const platformContracts = Object.freeze({
         output: disposableSchema,
       },
     },
+  },
+  'doric.browser/v1': {
+    environments: ['client'],
+    methods: { open: { input: browserUrlSchema, output: z.void() } },
   },
 } satisfies Record<string, PlatformContractSpec>);
 

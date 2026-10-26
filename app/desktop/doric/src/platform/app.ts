@@ -36,6 +36,7 @@ import {
   nativeTheme,
   net,
   protocol,
+  shell,
   utilityProcess,
 } from 'electron';
 
@@ -119,6 +120,8 @@ export interface DesktopPlatformOptions {
   readonly runnerPath?: string;
   readonly flushDeadlineMs?: number;
   readonly platform?: NodeJS.Platform;
+  /** Opens an https URL in the system browser; Electron's `shell` by default. */
+  readonly openExternal?: (url: string) => Promise<void>;
 }
 
 interface Live {
@@ -358,6 +361,13 @@ export class DesktopPlatform {
           'Window diagnostic',
         ),
       connection: this.connection,
+      openExternal: (url) => {
+        // Only the origin is logged: the query may carry a login's state.
+        this.log.info({ origin: new URL(url).origin }, 'Opening the browser');
+        return options.openExternal === undefined
+          ? shell.openExternal(url)
+          : options.openExternal(url);
+      },
     });
     const host = this.host;
 

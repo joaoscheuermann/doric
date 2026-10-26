@@ -1,15 +1,28 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import {
+  CLAUDE_OAUTH_CALLBACK_HOST,
+  CLAUDE_OAUTH_CALLBACK_PATH,
+  CLAUDE_OAUTH_CALLBACK_PORT,
+  CLAUDE_OAUTH_CLIENT_ID,
   CODEX_OAUTH_CALLBACK_PATH,
   CODEX_OAUTH_CLIENT_ID,
   CODEX_OAUTH_ORIGINATOR,
+  claudeOAuthProfile,
   codexOAuthProfile,
+  createClaudeOAuth,
   createCodexOAuth,
   createOAuthClient,
   type OAuthCallbackServer,
@@ -20,6 +33,7 @@ import {
   type OAuthTokenRecord,
   type OAuthTokenStore,
   type OAuthTransport,
+  resolveClaudeAuth,
   resolveCodexAuth,
 } from '../src/index.js';
 
@@ -443,6 +457,567 @@ void test('refreshes expiring Codex ChatGPT auth.json tokens with Codex client i
   });
 });
 
+void test('exchanges and refreshes with JSON token bodies when the profile asks for them', async () => {
+  let opened = '';
+
+  const jsonProfile: OAuthProfile = {
+    provider: 'test-provider',
+    profile: 'json',
+    authorizationEndpoint: 'https://auth.example.test/oauth/authorize',
+    tokenEndpoint: 'https://auth.example.test/oauth/token',
+    defaultScope: 'openid email',
+    defaultTokenScheme: 'Bearer',
+    tokenRequest: 'json',
+    tokenExchangeParams: { expires_in: 999 },
+  };
+
+  const transport = fakeTransport({
+    responses: [
+      response({
+        access_token: 'json.token.value',
+        refresh_token: 'json-refresh',
+        token_type: 'Bearer',
+      }),
+      response({
+        access_token: 'refreshed.token.value',
+        refresh_token: 'rotated-refresh',
+        token_type: 'Bearer',
+      }),
+    ],
+  });
+
+  const client = createOAuthClient({
+    profile: jsonProfile,
+    transport,
+    tokenStore: memoryStore(),
+    clientId: 'client',
+    redirectUri: 'http://127.0.0.1/callback',
+    browserOpener(url) {
+      opened = url;
+    },
+    callbackServer: callbackServer((expectedState) => ({
+      code: 'code-123',
+      state: expectedState,
+    })),
+    random: sequentialRandom(),
+  });
+
+  await client.authorize();
+
+  const authUrl = new URL(opened);
+  const exchangeBody = JSON.parse(
+    transport.requests[0]?.body ?? '{}',
+  ) as Record<string, unknown>;
+
+  assert.equal(
+    transport.requests[0]?.headers?.['content-type'],
+    'application/json',
+  );
+
+  assert.equal(exchangeBody.grant_type, 'authorization_code');
+
+  assert.equal(exchangeBody.code, 'code-123');
+
+  assert.equal(exchangeBody.redirect_uri, 'http://127.0.0.1/callback');
+
+  assert.equal(exchangeBody.client_id, 'client');
+
+  assert.equal(exchangeBody.expires_in, 999);
+
+  assert.equal(typeof exchangeBody.code_verifier, 'string');
+
+  assert.equal(exchangeBody.state, authUrl.searchParams.get('state'));
+
+  // The state is 32 random bytes, base64url: the length Claude Code sends.
+  assert.equal(authUrl.searchParams.get('state')?.length, 43);
+
+  await client.refresh();
+
+  const refreshBody = JSON.parse(transport.requests[1]?.body ?? '{}') as Record<
+    string,
+    unknown
+  >;
+
+  assert.deepEqual(refreshBody, {
+    grant_type: 'refresh_token',
+    refresh_token: 'json-refresh',
+    client_id: 'client',
+  });
+});
+
+void test('keeps urlencoded form token bodies free of state', async () => {
+  const transport = fakeTransport({
+    responses: [response({ access_token: 'form.token.value' })],
+  });
+
+  await createOAuthClient({
+    profile: testProfile,
+    transport,
+    tokenStore: memoryStore(),
+    clientId: 'client',
+    redirectUri: 'http://127.0.0.1/callback',
+    browserOpener() {
+      return undefined;
+    },
+    callbackServer: callbackServer((expectedState) => ({
+      code: 'code-123',
+      state: expectedState,
+    })),
+    random: sequentialRandom(),
+  }).authorize();
+
+  const body = new URLSearchParams(transport.requests[0]?.body);
+
+  assert.equal(
+    transport.requests[0]?.headers?.['content-type'],
+    'application/x-www-form-urlencoded',
+  );
+
+  assert.equal(body.get('state'), null);
+});
+
+void test('uses Claude OAuth profile defaults', async () => {
+  let opened = '';
+
+  const transport = fakeTransport({
+    responses: [
+      response({
+        access_token: 'claude.token.value',
+        refresh_token: 'claude-refresh',
+        token_type: 'Bearer',
+      }),
+    ],
+  });
+
+  const client = createClaudeOAuth({
+    transport,
+    tokenStore: memoryStore(),
+    redirectUri: `http://${CLAUDE_OAUTH_CALLBACK_HOST}:${CLAUDE_OAUTH_CALLBACK_PORT}${CLAUDE_OAUTH_CALLBACK_PATH}`,
+    browserOpener(url: string) {
+      opened = url;
+    },
+    callbackServer: callbackServer((expectedState) => ({
+      code: 'code-123',
+      state: expectedState,
+    })),
+    random: sequentialRandom(),
+  });
+
+  await client.authorize();
+
+  const url = new URL(opened);
+  const body = JSON.parse(transport.requests[0]?.body ?? '{}') as Record<
+    string,
+    unknown
+  >;
+
+  assert.deepEqual(client.profile, claudeOAuthProfile);
+
+  assert.equal(
+    url.origin + url.pathname,
+    claudeOAuthProfile.authorizationEndpoint,
+  );
+
+  assert.equal(url.searchParams.get('client_id'), CLAUDE_OAUTH_CLIENT_ID);
+
+  assert.equal(url.searchParams.get('scope'), 'user:inference');
+
+  assert.equal(url.searchParams.get('code'), 'true');
+
+  assert.equal(
+    url.searchParams.get('redirect_uri'),
+    `http://${CLAUDE_OAUTH_CALLBACK_HOST}:${CLAUDE_OAUTH_CALLBACK_PORT}${CLAUDE_OAUTH_CALLBACK_PATH}`,
+  );
+
+  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+
+  assert.equal(
+    url.searchParams.get('code_challenge'),
+    pkceChallenge(String(body.code_verifier)),
+  );
+
+  assert.equal(
+    transport.requests[0]?.url,
+    'https://platform.claude.com/v1/oauth/token',
+  );
+
+  assert.equal(
+    transport.requests[0]?.headers?.['content-type'],
+    'application/json',
+  );
+
+  assert.equal(body.grant_type, 'authorization_code');
+
+  assert.equal(body.expires_in, 31536000);
+
+  const credential = await client.credential();
+
+  assert.equal(credential.authorization, 'Bearer claude.token.value');
+});
+
+void test('resolves Claude authorization from env', async () => {
+  const bearer = await resolveClaudeAuth({
+    env: { CLAUDE_AUTHORIZATION: 'Bearer abc' },
+  });
+
+  assert.equal(bearer.source, 'claude');
+
+  assert.equal(bearer.kind, 'authorization');
+
+  assert.equal(bearer.token, 'abc');
+
+  assert.equal(bearer.authorization, 'Bearer abc');
+
+  const bare = await resolveClaudeAuth({
+    env: { CLAUDE_AUTHORIZATION: 'abc' },
+  });
+
+  assert.equal(bare.kind, 'authorization');
+
+  assert.equal(bare.token, 'abc');
+
+  assert.equal(bare.authorization, 'Bearer abc');
+});
+
+void test('resolves a bare Claude Code override token from CLAUDE_CODE_OAUTH_TOKEN', async () => {
+  const credential = await resolveClaudeAuth({
+    env: { CLAUDE_CODE_OAUTH_TOKEN: 'override-token' },
+  });
+
+  assert.equal(credential.source, 'claude');
+
+  assert.equal(credential.kind, 'oauth');
+
+  assert.equal(credential.token, 'override-token');
+
+  assert.equal(credential.authorization, 'Bearer override-token');
+});
+
+void test('reads a fresh Claude Code login from credentials.json', async () => {
+  await withTempDir(async (dir) => {
+    const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
+
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: {
+        accessToken: 'claude-access',
+        refreshToken: 'claude-refresh',
+        expiresAt,
+        scopes: ['user:inference'],
+        subscriptionType: 'pro',
+      },
+    });
+
+    const transport = fakeTransport({ responses: [] });
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport,
+    });
+
+    assert.equal(credential.source, 'claude');
+
+    assert.equal(credential.kind, 'oauth');
+
+    assert.equal(credential.token, 'claude-access');
+
+    assert.equal(credential.authorization, 'Bearer claude-access');
+
+    assert.deepEqual(credential.scopes, ['user:inference']);
+
+    assert.equal(credential.subscriptionType, 'pro');
+
+    assert.equal(credential.expiresAt, Date.parse(expiresAt));
+
+    assert.equal(transport.requests.length, 0);
+  });
+});
+
+void test('refreshes an expiring Claude login and writes the rotated token back', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: {
+        accessToken: 'claude-access',
+        refreshToken: 'claude-refresh',
+        expiresAt: 1_060_000,
+        scopes: ['user:inference'],
+        subscriptionType: 'pro',
+      },
+    });
+
+    const transport = fakeTransport({
+      responses: [
+        response({
+          access_token: 'next',
+          refresh_token: 'rotated',
+          expires_in: 3600,
+          scope: 'user:inference',
+        }),
+      ],
+    });
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport,
+    });
+    const requestBody = JSON.parse(
+      transport.requests[0]?.body ?? '{}',
+    ) as Record<string, unknown>;
+    const saved = JSON.parse(
+      await readFile(join(dir, '.credentials.json'), 'utf8'),
+    ) as {
+      claudeAiOauth: {
+        accessToken?: string;
+        refreshToken?: string;
+        expiresAt?: number;
+      };
+    };
+
+    assert.equal(
+      transport.requests[0]?.url,
+      'https://platform.claude.com/v1/oauth/token',
+    );
+
+    assert.equal(
+      transport.requests[0]?.headers?.['content-type'],
+      'application/json',
+    );
+
+    assert.deepEqual(requestBody, {
+      grant_type: 'refresh_token',
+      refresh_token: 'claude-refresh',
+      client_id: CLAUDE_OAUTH_CLIENT_ID,
+    });
+
+    assert.equal(saved.claudeAiOauth.accessToken, 'next');
+
+    assert.equal(saved.claudeAiOauth.refreshToken, 'rotated');
+
+    assert.equal(saved.claudeAiOauth.expiresAt, 4_600_000);
+
+    assert.equal(credential.token, 'next');
+
+    assert.equal(credential.authorization, 'Bearer next');
+
+    assert.deepEqual(credential.scopes, ['user:inference']);
+  });
+});
+
+void test('refuses an expired Claude login that cannot be refreshed', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: { accessToken: 'claude-expired', expiresAt: 999_000 },
+    });
+    const transport = fakeTransport({});
+
+    await assert.rejects(
+      resolveClaudeAuth({
+        claudeHome: dir,
+        env: {},
+        now: () => 1_000_000,
+        transport,
+      }),
+      hasCode('claude_refresh_token_missing'),
+    );
+    assert.equal(transport.requests.length, 0);
+  });
+});
+
+void test('answers a still-valid Claude login inside the refresh window when it cannot be refreshed', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: { accessToken: 'claude-soon', expiresAt: 1_060_000 },
+    });
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport: fakeTransport({}),
+    });
+
+    assert.equal(credential.authorization, 'Bearer claude-soon');
+  });
+});
+
+void test('keeps what Claude Code wrote during a refresh and replaces the file whole', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: {
+        accessToken: 'claude-access',
+        refreshToken: 'claude-refresh',
+        expiresAt: 1_060_000,
+      },
+    });
+    const transport = {
+      async request() {
+        // Claude Code writes the file while the refresh is in flight.
+        await writeClaudeCredentials(dir, {
+          claudeAiOauth: {
+            accessToken: 'claude-access',
+            refreshToken: 'claude-refresh',
+            expiresAt: 1_060_000,
+          },
+          mcpOAuth: { server: 'kept' },
+        });
+        return {
+          status: 200,
+          headers: {},
+          body: JSON.stringify({
+            access_token: 'next',
+            refresh_token: 'rotated',
+            expires_in: 3600,
+          }),
+        };
+      },
+    };
+
+    await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport,
+    });
+
+    const path = join(dir, '.credentials.json');
+    const saved = JSON.parse(await readFile(path, 'utf8')) as {
+      claudeAiOauth: { accessToken?: string };
+      mcpOAuth?: unknown;
+    };
+
+    assert.equal(saved.claudeAiOauth.accessToken, 'next');
+    assert.deepEqual(saved.mcpOAuth, { server: 'kept' });
+    assert.deepEqual(await readdir(dir), ['.credentials.json']);
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+  });
+});
+
+void test('reads an expiring Claude login as it is when asked not to refresh', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: {
+        accessToken: 'claude-access',
+        refreshToken: 'claude-refresh',
+        expiresAt: 1_060_000,
+      },
+    });
+    const transport = fakeTransport({});
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport,
+      refresh: false,
+    });
+
+    assert.equal(credential.authorization, 'Bearer claude-access');
+    assert.equal(credential.expiresAt, 1_060_000);
+    assert.equal(transport.requests.length, 0);
+  });
+});
+
+void test("reads Claude Code's Keychain login before the file, and never refreshes it", async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: { accessToken: 'file-access', expiresAt: 9_000_000 },
+    });
+    const transport = fakeTransport({});
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport,
+      keychain: async () =>
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: 'keychain-access',
+            refreshToken: 'keychain-refresh',
+            expiresAt: 1_060_000,
+          },
+        }),
+    });
+
+    assert.equal(credential.authorization, 'Bearer keychain-access');
+    assert.equal(transport.requests.length, 0);
+  });
+});
+
+void test('refuses an expired Keychain login with a stable code', async () => {
+  await assert.rejects(
+    resolveClaudeAuth({
+      env: {},
+      now: () => 1_000_000,
+      transport: fakeTransport({}),
+      keychain: async () =>
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: 'keychain-access',
+            refreshToken: 'keychain-refresh',
+            expiresAt: 999_000,
+          },
+        }),
+    }),
+    hasCode('claude_keychain_login_expired'),
+  );
+});
+
+void test('falls back to the credentials file when the Keychain has no login', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: { accessToken: 'file-access', expiresAt: 9_000_000 },
+    });
+
+    const credential = await resolveClaudeAuth({
+      claudeHome: dir,
+      env: {},
+      now: () => 1_000_000,
+      transport: fakeTransport({}),
+      keychain: async () => undefined,
+    });
+
+    assert.equal(credential.authorization, 'Bearer file-access');
+  });
+});
+
+void test('fails with a stable code when the Claude credentials are missing', async () => {
+  await withTempDir(async (dir) => {
+    await assert.rejects(
+      resolveClaudeAuth({
+        claudeHome: dir,
+        env: {},
+        transport: fakeTransport({}),
+      }),
+      hasCode('claude_credentials_missing'),
+    );
+  });
+});
+
+void test('fails with a stable code when the stored login has no access token', async () => {
+  await withTempDir(async (dir) => {
+    await writeClaudeCredentials(dir, {
+      claudeAiOauth: {
+        refreshToken: 'claude-refresh',
+        expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+      },
+    });
+
+    await assert.rejects(
+      resolveClaudeAuth({
+        claudeHome: dir,
+        env: {},
+        now: () => 1_000_000,
+        transport: fakeTransport({}),
+      }),
+      hasCode('claude_access_token_missing'),
+    );
+  });
+});
+
 type MutableStore = OAuthTokenStore & {
   onSave?: (record: OAuthTokenRecord) => void;
 };
@@ -572,6 +1147,16 @@ const writeCodexAuth = async (
   auth: Record<string, unknown>,
 ): Promise<void> => {
   await writeFile(join(dir, 'auth.json'), `${JSON.stringify(auth, null, 2)}\n`);
+};
+
+const writeClaudeCredentials = async (
+  dir: string,
+  credentials: Record<string, unknown>,
+): Promise<void> => {
+  await writeFile(
+    join(dir, '.credentials.json'),
+    `${JSON.stringify(credentials, null, 2)}\n`,
+  );
 };
 
 const hasCode =

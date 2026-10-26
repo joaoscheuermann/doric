@@ -35,6 +35,10 @@ import { sectionIdOf } from '../domain/section-route.js';
 import { sections } from '../domain/sections.js';
 import { filterSettingsSections } from '../domain/settings-search.js';
 import { linkHosts, type SectionId, sectionHosts } from '../elements.js';
+import {
+  useClaudeLogin,
+  useClaudeLoginAvailable,
+} from '../hooks/use-claude-login.js';
 import { type Config, useConfig } from '../hooks/use-config.js';
 import { type Credentials, useCredentials } from '../hooks/use-credentials.js';
 import { useProviderKinds } from '../hooks/use-provider-kinds.js';
@@ -157,6 +161,8 @@ const isSectionId = (value: string | undefined): value is SectionId =>
  */
 export function Settings({ services }: { readonly services: Services }) {
   const credentials = useCredentials();
+  const claudeLogin = useClaudeLogin();
+  const claudeLoginAvailable = useClaudeLoginAvailable();
   const kinds = useProviderKinds();
   const config = useConfig(true, kinds.list);
   const route = useRoute(services);
@@ -316,6 +322,27 @@ export function Settings({ services }: { readonly services: Services }) {
     config.setDraft(applied.configuration);
   };
 
+  // A finished sign-in names its credential on the open `claude` provider
+  // page: the hook settled it into the credentials cache before it published
+  // it, so this render's `changeProvider` already sees it in
+  // `credentials.list` and the commit is one the host accepts. A `.then` on the login promise would close over
+  // the stale list the promise started with, which is why the answer travels
+  // as state through an effect instead.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the auto-select commits once, when a sign-in answers, never on the renders that recreate `changeProvider` and `provider`; the answer it commits is the live draft.
+  useEffect(() => {
+    const signed = claudeLogin.signedIn;
+    if (signed === undefined) return;
+    claudeLogin.acknowledge();
+    // Only a `claude` page takes the token: the sign-in may answer after the
+    // window moved to another provider, which would then send a Claude token.
+    if (provider?.kind === 'claude') {
+      changeProvider({
+        ...provider,
+        configuration: { ...provider.configuration, token: signed.id },
+      });
+    }
+  }, [claudeLogin.signedIn]);
+
   // The nav's footer states the save state alone: the revision line beside it
   // is wider than the nav column, so it stays in the content footer. Neither
   // footer offers a control, so no action is offered twice.
@@ -352,6 +379,7 @@ export function Settings({ services }: { readonly services: Services }) {
     provider !== undefined &&
     draft !== undefined ? (
       <SettingsProviderScreen
+        claudeLogin={claudeLoginAvailable ? claudeLogin : undefined}
         credentials={credentials.list}
         draft={provider}
         kinds={kinds.list}

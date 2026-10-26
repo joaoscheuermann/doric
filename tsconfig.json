@@ -124,6 +124,9 @@
       "path": "./bundles/providers/codex"
     },
     {
+      "path": "./bundles/providers/claude"
+    },
+    {
       "path": "./bundles/features/web"
     },
     {
@@ -158,6 +161,9 @@
     },
     {
       "path": "./bundles/features/comments"
+    },
+    {
+      "path": "./bundles/features/claude-login"
     }
   ]
 }

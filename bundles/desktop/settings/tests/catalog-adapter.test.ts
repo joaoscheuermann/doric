@@ -56,6 +56,49 @@ describe('a draft provider catalog', () => {
     );
   });
 
+  test('keeps the default effort a model lists, and drops one it does not', async () => {
+    await settingsOver(
+      {
+        kind: (id) => (id === 'openrouter' ? openrouter : undefined),
+        catalog: () => ({
+          status: 'read',
+          models: [
+            {
+              id: 'listed',
+              reasonings: ['low', 'medium'],
+              parameters: [],
+              defaultEffort: 'medium',
+              mandatory: false,
+            },
+            {
+              id: 'stray',
+              reasonings: ['low'],
+              parameters: [],
+              defaultEffort: 'max',
+              mandatory: true,
+            },
+          ],
+        }),
+      },
+      async (api) => {
+        assert.deepEqual(await api.providers.models(draft), [
+          {
+            id: 'listed',
+            reasonings: ['low', 'medium'],
+            parameters: [],
+            defaultEffort: 'medium',
+          },
+          {
+            id: 'stray',
+            reasonings: ['low'],
+            parameters: [],
+            mandatory: true,
+          },
+        ]);
+      },
+    );
+  });
+
   test('values the kind does not declare are refused before any read', async () => {
     let read = false;
 
@@ -123,6 +166,27 @@ describe('the host catalogs', () => {
           (await api.providers.kinds()).map((kind) => kind.id),
           ['openrouter', 'openai'],
         );
+      },
+    );
+  });
+
+  test('a kind whose models are its catalog says so; any other says nothing', async () => {
+    await settingsOver(
+      {
+        kinds: () => [
+          openrouter,
+          {
+            ...openrouter,
+            id: 'claude',
+            label: 'Claude',
+            modelsFromCatalog: true,
+          },
+        ],
+      },
+      async (api) => {
+        const kinds = await api.providers.kinds();
+        assert.equal(kinds[0]?.modelsFromCatalog, undefined);
+        assert.equal(kinds[1]?.modelsFromCatalog, true);
       },
     );
   });

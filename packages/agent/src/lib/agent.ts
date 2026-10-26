@@ -1,9 +1,11 @@
-import type {
-  JsonValue,
-  ProviderFinished,
-  ProviderMessage,
-  ProviderRequest,
-  ProviderStreamEvent,
+import {
+  type JsonValue,
+  type ProviderError,
+  ProviderErrorObject,
+  type ProviderFinished,
+  type ProviderMessage,
+  type ProviderRequest,
+  type ProviderStreamEvent,
 } from 'llms';
 import type { ToolCall } from 'tool';
 
@@ -16,15 +18,22 @@ import type {
 } from './types/agent.js';
 import type { ToolCallRecord } from './types/tool-call-storage.js';
 import {
+  answeredTurn,
+  isRetryable,
   notifyStructuredAttempt,
   notifyToolCallRepair,
+  pause,
   pushIncompleteToolResults,
+  refusalError,
   repairLimit,
   responseFromFinish,
+  retryDelay,
+  retryPolicy,
   type TurnGuard,
   toolCallCorrection,
   toolFailureEnvelope,
   toolResultEnvelope,
+  truncatedError,
   turnGuard,
 } from './utils/run.js';
 import { runTools } from './utils/run-tools.js';
@@ -43,6 +52,7 @@ import {
 export const createAgent = (options: AgentOptions): Agent => {
   /** One agent owns one mutable message history and therefore runs serially. */
   let running = false;
+  const retry = retryPolicy(options.retry);
   const pendingCalls = new Set<string>();
 
   const acquire = (): void => {
@@ -70,7 +80,6 @@ export const createAgent = (options: AgentOptions): Agent => {
   const buildRequest = async <Output = JsonValue>(
     runOptions: AgentRunOptions<Output>,
     outputTool?: StructuredOutputTool,
-    correction?: string,
   ): Promise<ProviderRequest<Output>> => {
     /** Executable definitions come from the caller-owned tool storage. */
     const definitions = options.tools.definitions();
@@ -95,9 +104,6 @@ export const createAgent = (options: AgentOptions): Agent => {
               content: structuredOutputInstruction(outputTool.name),
             },
           ]),
-      ...(correction === undefined
-        ? []
-        : [{ role: 'system' as const, content: correction }]),
     ];
     /** The terminal output definition is visible to the model but not executable. */
     const tools =
@@ -169,6 +175,88 @@ export const createAgent = (options: AgentOptions): Agent => {
       );
     };
 
+  /**
+   * Hands the model the correction for a rejected turn as a user turn that
+   * stays in the history. The request then never ends in that rejected
+   * assistant turn (current models refuse a trailing assistant turn), and the
+   * system prompt stays the same on every request, which keeps the provider's
+   * cache and its reasoning bound to the conversation.
+   */
+  const pushCorrection = (correction: string): void => {
+    options.messages.push({ role: 'user', content: correction });
+  };
+
+  /** Asks the provider for one finished turn, again when it failed retryably. */
+  const completeTurn = async <Output>(
+    request: ProviderRequest<Output>,
+    signal?: AbortSignal,
+  ): Promise<ProviderFinished<Output>> => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await options.provider.complete(request);
+      } catch (error) {
+        if (attempt >= retry.retries || !isRetryable(error) || signal?.aborted)
+          throw error;
+        await pause(retryDelay(error, attempt, retry), signal);
+      }
+    }
+  };
+
+  /**
+   * Streams one provider turn, asking again when it failed retryably before it
+   * produced anything. The `response.started` and `usage` events of an attempt
+   * are held until its first output, so a failed attempt leaves no trace; once
+   * output flowed, a failure is the caller's and is never retried.
+   */
+  async function* streamTurn<Output>(
+    request: ProviderRequest<Output>,
+    signal?: AbortSignal,
+  ): AsyncGenerator<ProviderStreamEvent<Output>> {
+    for (let attempt = 0; ; attempt += 1) {
+      const held: ProviderStreamEvent<Output>[] = [];
+      let flowing = false;
+      let failure: unknown;
+      try {
+        for await (const event of options.provider.stream(request)) {
+          if (!flowing) {
+            if (event.type === 'response.started' || event.type === 'usage') {
+              held.push(event);
+              continue;
+            }
+            if (
+              event.type === 'error' &&
+              attempt < retry.retries &&
+              isRetryable(event.error) &&
+              !signal?.aborted
+            ) {
+              failure = event.error;
+              break;
+            }
+            flowing = true;
+            yield* held.splice(0);
+          }
+          yield event;
+        }
+      } catch (error) {
+        if (
+          flowing ||
+          attempt >= retry.retries ||
+          !isRetryable(error) ||
+          signal?.aborted
+        ) {
+          yield* held;
+          throw error;
+        }
+        failure = error;
+      }
+      if (failure === undefined) {
+        yield* held;
+        return;
+      }
+      await pause(retryDelay(failure, attempt, retry), signal);
+    }
+  }
+
   const storeAssistant = (finish: ProviderFinished<unknown>): void => {
     /** Message storage preserves both semantic calls and opaque provider replay. */
     options.messages.push({
@@ -226,25 +314,41 @@ export const createAgent = (options: AgentOptions): Agent => {
         /** Steering that waited for the run is read before its first turn. */
         await takeSteering(runOptions, turns);
 
+        /** A resumed history that already holds its answer is finished. */
+        const answered =
+          runOptions.resume && runOptions.schema === undefined
+            ? answeredTurn(options.messages.list())
+            : undefined;
+        if (answered !== undefined)
+          return responseFromFinish(answered as ProviderFinished<Output>);
+
         /** This value remains stable across every provider turn in the run. */
         const terminal = outputTool(runOptions);
         const maxRepairs = repairLimit(runOptions.maxToolCallRepairs);
         let invalidSubmissions = 0;
         let structuredAttempts = 0;
-        let correction: string | undefined;
         let baseline: StructuredOutputBaseline | undefined;
 
         while (true) {
           /** Ask the provider for either executable calls or the terminal result. */
           runOptions.signal?.throwIfAborted();
           turns.begin();
-          const request = await buildRequest(runOptions, terminal, correction);
-          correction = undefined;
+          const request = await buildRequest(runOptions, terminal);
           runOptions.signal?.throwIfAborted();
-          const finish = await options.provider.complete(request);
+          const answer = await completeTurn(request, runOptions.signal);
+          /** A refused turn runs none of its calls, even half-formed ones. */
+          const finish =
+            answer.finishReason === 'content_filter'
+              ? { ...answer, toolCalls: [] }
+              : answer;
           if (runOptions.signal?.aborted) {
             storeAssistant(finish);
             runOptions.signal.throwIfAborted();
+          }
+
+          if (finish.finishReason === 'content_filter') {
+            storeAssistant(finish);
+            throw refusalError(finish);
           }
 
           /** Intercept and validate the reserved terminal call before normal tools. */
@@ -258,6 +362,8 @@ export const createAgent = (options: AgentOptions): Agent => {
             if (submission.type === 'invalid') {
               storeAssistant(finish);
               pushIncompleteToolResults(finish, pushToolResult);
+              if (finish.finishReason === 'length')
+                throw truncatedError(submission.error);
               let repair: StructuredOutputRepair;
               try {
                 repair = nextStructuredOutputRepair(
@@ -294,7 +400,7 @@ export const createAgent = (options: AgentOptions): Agent => {
                 attempt: invalidSubmissions,
                 maxAttempts: maxRepairs,
               });
-              correction = repair.correction;
+              pushCorrection(repair.correction);
               continue;
             }
 
@@ -334,13 +440,15 @@ export const createAgent = (options: AgentOptions): Agent => {
             calls = await validatedCalls(finish);
           } catch (error) {
             pushIncompleteToolResults(finish, pushToolResult);
+            /** A call the output limit cut short is no call to correct. */
+            if (finish.finishReason === 'length') throw truncatedError(error);
             if (invalidSubmissions >= maxRepairs) throw error;
             invalidSubmissions += 1;
             await notifyToolCallRepair(runOptions, {
               attempt: invalidSubmissions,
               maxAttempts: maxRepairs,
             });
-            correction = toolCallCorrection;
+            pushCorrection(toolCallCorrection);
             continue;
           }
 
@@ -378,7 +486,6 @@ export const createAgent = (options: AgentOptions): Agent => {
         const maxRepairs = repairLimit(runOptions.maxToolCallRepairs);
         let invalidSubmissions = 0;
         let structuredAttempts = 0;
-        let correction: string | undefined;
         let baseline: StructuredOutputBaseline | undefined;
         yield {
           type: 'agent.started',
@@ -390,24 +497,50 @@ export const createAgent = (options: AgentOptions): Agent => {
           yield { type: 'agent.steered', input: steered } as const;
         }
 
+        /** A resumed history that already holds its answer is finished. */
+        const answered =
+          runOptions.resume && terminal === undefined
+            ? answeredTurn(options.messages.list())
+            : undefined;
+        if (answered !== undefined) {
+          yield {
+            type: 'agent.finished',
+            response: responseFromFinish(answered as ProviderFinished<Output>),
+          } as const;
+          return;
+        }
+
         while (true) {
           runOptions.signal?.throwIfAborted();
           let finish: ProviderFinished<Output> | undefined;
+          /** The provider error the turn's stream ended on, when it did. */
+          let failed: ProviderError | undefined;
+          /** Whether the turn was rejected and its correction already stored. */
+          let corrected = false;
           const buffered: ProviderStreamEvent<Output>[] = [];
           turns.begin();
-          const request = await buildRequest(runOptions, terminal, correction);
-          correction = undefined;
+          const request = await buildRequest(runOptions, terminal);
 
           runOptions.signal?.throwIfAborted();
-          for await (const event of options.provider.stream(request)) {
+          for await (const received of streamTurn(request, runOptions.signal)) {
+            /** A refused turn runs none of its calls, even half-formed ones. */
+            const event =
+              received.type === 'response.finished' &&
+              received.finish.finishReason === 'content_filter'
+                ? { ...received, finish: { ...received.finish, toolCalls: [] } }
+                : received;
             if (runOptions.signal?.aborted) {
               if (event.type === 'response.finished')
                 storeAssistant(event.finish);
               runOptions.signal.throwIfAborted();
             }
+            if (event.type === 'error') failed = event.error;
             if (event.type === 'response.finished') {
               /** Normalize a terminal call before exposing the finished event. */
-              if (terminal !== undefined) {
+              if (
+                terminal !== undefined &&
+                event.finish.finishReason !== 'content_filter'
+              ) {
                 const submission = parseStructuredOutputTool<Output>(
                   event.finish,
                   terminal,
@@ -417,6 +550,8 @@ export const createAgent = (options: AgentOptions): Agent => {
                 if (submission.type === 'invalid') {
                   storeAssistant(event.finish);
                   pushIncompleteToolResults(event.finish, pushToolResult);
+                  if (event.finish.finishReason === 'length')
+                    throw truncatedError(submission.error);
                   let repair: StructuredOutputRepair;
                   try {
                     repair = nextStructuredOutputRepair(
@@ -453,7 +588,8 @@ export const createAgent = (options: AgentOptions): Agent => {
                     attempt: invalidSubmissions,
                     maxAttempts: maxRepairs,
                   });
-                  correction = repair.correction;
+                  pushCorrection(repair.correction);
+                  corrected = true;
                   finish = undefined;
                   break;
                 }
@@ -489,14 +625,24 @@ export const createAgent = (options: AgentOptions): Agent => {
           }
 
           runOptions.signal?.throwIfAborted();
-          if (finish === undefined && correction !== undefined) continue;
+          if (finish === undefined && corrected) continue;
 
           if (finish === undefined) {
+            /** The provider's own failure is the run's, not a missing finish. */
+            if (failed !== undefined) {
+              for (const event of buffered) yield event;
+              throw new ProviderErrorObject(failed);
+            }
             throw new AgentErrorObject({
               code: 'missing_provider_finish',
               message:
                 'Provider stream ended without a response.finished event.',
             });
+          }
+
+          if (finish.finishReason === 'content_filter') {
+            for (const event of buffered) yield event;
+            throw refusalError(finish);
           }
 
           /** Ordinary calls cannot inherit a prior structured repair baseline. */
@@ -508,13 +654,15 @@ export const createAgent = (options: AgentOptions): Agent => {
             calls = await validatedCalls(finish);
           } catch (error) {
             pushIncompleteToolResults(finish, pushToolResult);
+            /** A call the output limit cut short is no call to correct. */
+            if (finish.finishReason === 'length') throw truncatedError(error);
             if (invalidSubmissions >= maxRepairs) throw error;
             invalidSubmissions += 1;
             await notifyToolCallRepair(runOptions, {
               attempt: invalidSubmissions,
               maxAttempts: maxRepairs,
             });
-            correction = toolCallCorrection;
+            pushCorrection(toolCallCorrection);
             continue;
           }
 

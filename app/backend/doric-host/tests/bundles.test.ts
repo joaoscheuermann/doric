@@ -253,15 +253,17 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // The installed bundles: the `postgres` foundation is one of them, the
     // stage-9 desktop bundles (`layout`, `settings`, `chat`, `history`), which
     // have no host part, and since the stage-10 host switch the provider-kind
-    // bundles, the `docker` sandbox and the `terminal`, `usage`,
-    // `resources` and `screen` features, and since the desktop switch (WP-10N) the
+    // bundles, among them `claude` (the Claude Code OAuth provider), the
+    // `docker` sandbox and the `terminal`, `usage`,
+    // `resources` and `screen` features, the `claude-login` feature (the
+    // in-app Claude sign-in), and since the desktop switch (WP-10N) the
     // `notifications` bundle, which has no host part, and the `web` bundle. The
     // `screen-relay` bundle is one too: it is the resident half of the screen,
     // which serves the relay on the host's own listener, and the `artifacts`,
     // `comments` and `papercraft` features are the review registry, its
     // anchored comments and the live preview over them. No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 27);
+    assert.equal(host.bundleCount, 29);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -290,6 +292,8 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         openai: ['active', 'others'],
         openrouter: ['active', 'others'],
         codex: ['active', 'others'],
+        claude: ['active', 'others'],
+        'claude-login': ['active', 'others'],
         docker: ['active', 'others'],
         notifications: ['active', 'others'],
         layout: ['active', 'others'],
@@ -322,6 +326,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['runtime', 'resources'],
       ['runtime', 'screen'],
       ['screen-relay', 'screen'],
+      ['claude-login', 'settings'],
       ['artifacts', 'papercraft'],
       ['comments', 'papercraft'],
     ] as const)

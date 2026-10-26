@@ -32,6 +32,19 @@ export interface AgentOptions {
   readonly flags?: ProviderCallFlags;
   readonly temperature?: number;
   readonly maxOutputTokens?: number;
+  /**
+   * How a provider turn that failed before it produced anything is asked
+   * again: only a failure the provider marks `retryable` (rate limits,
+   * overload, a dropped stream), at most `retries` times (2), waiting the
+   * provider's `retryAfterMs` or `baseDelayMs` (1000) doubled per attempt,
+   * never longer than `maxDelayMs` (30000). A turn that already streamed
+   * output is never asked again.
+   */
+  readonly retry?: {
+    readonly retries?: number;
+    readonly baseDelayMs?: number;
+    readonly maxDelayMs?: number;
+  };
 }
 
 /** Safe runtime evidence for one terminal structured-output submission. */
@@ -172,6 +185,8 @@ export type AgentErrorCode =
   | 'concurrent_run'
   | 'invalid_structured_output'
   | 'missing_provider_finish'
+  | 'output_truncated'
+  | 'provider_refusal'
   | 'tool_call_id_collision'
   | 'tool_call_id_invalid'
   | 'tool_input_serialization_failed'

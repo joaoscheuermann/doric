@@ -4,7 +4,12 @@ import type {
   ProviderRequest,
   ProviderToolCall,
 } from '../../types/provider.js';
-import { messageImages, messageText, requireRequestInput } from '../common.js';
+import {
+  messageImages,
+  messageText,
+  requireRequestInput,
+  untaggedReplay,
+} from '../common.js';
 import {
   isStrictCompatible,
   messagesWithStructuredSchema,
@@ -82,8 +87,9 @@ const inputItems = (
   }
 
   if (message.role === 'assistant') {
-    if (message.replay !== undefined && message.replay.length > 0) {
-      return message.replay;
+    const replay = untaggedReplay(message);
+    if (replay !== undefined) {
+      return replay;
     }
 
     return message.toolCalls?.map(functionCallItem) ?? [];

@@ -96,6 +96,47 @@ Set `modelsUrl` to override OpenRouter's catalog; otherwise it uses
 See [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md) for the behavioral
 matrix, fallback rules, primary sources, and paid live-conformance command.
 
+### Claude integration
+
+`createClaudeProvider` sends Anthropic Messages requests through a Claude
+Code subscription login: authorize once (for example with the
+`claude:oauth` script), store the resulting authorization value, and pass it
+as the `authorization` dependency. `llms` never reads the credential store;
+the host resolves the value.
+
+```ts
+import pino from 'pino';
+import { createClaudeProvider, createFetchTransport } from 'llms';
+import { resolveClaudeAuth } from 'oauth';
+
+const credential = await resolveClaudeAuth();
+const provider = createClaudeProvider({
+  transport: createFetchTransport(),
+  authorization: credential.authorization,
+  logger: pino(),
+});
+```
+
+Set `baseUrl` to point the provider at another Anthropic Messages endpoint
+(default: `https://api.anthropic.com`). The provider sends the Claude Code
+OAuth beta headers and the Claude Code CLI user agent; a stored value that is
+a Console API key goes as `x-api-key`, any other bare token under `Bearer`. It
+maps a request `effort` to `output_config.effort` where the model takes one,
+keeps thinking on (with drop-on-mismatch block binding) only on models that
+think by default, replays Claude's own signed thinking blocks, marks the system
+prompt and the conversation for prompt caching, and never sends `temperature`.
+A stream's thinking deltas are `reasoning.delta` events. `embedding` and
+`rerank` are rejected: Claude serves neither in this integration. `models()`
+lists every page of Anthropic's catalog with each model's context window, which
+a stream's `response.started` reports. The `claude` kind keeps `models` and
+`reasonings` lists and sets `modelsFromCatalog`: those lists are the catalog
+itself, never typed by hand, and `claudeCatalogModel` turns a listed model into
+its catalog entry (the efforts its `capabilities.effort` marks supported, or
+the ones its id names when the listing carries no capabilities, and its default
+effort: `medium` on Opus 5.5 and Haiku 5.5, `high` elsewhere). See
+[MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md#the-claude-kind) for the
+wire details.
+
 ### Internal Codex integration
 
 `createCodexProvider` sends a rendered authorization header to ChatGPT's Codex
@@ -130,8 +171,8 @@ passing both is an error.
 
 ### Configuring providers from settings
 
-`providerKinds` lists the advertised kinds (`openai` and `openrouter`), each
-with the fields a settings surface should show. `providerKind(id)` looks up a
+`providerKinds` lists the advertised kinds (`openai`, `openrouter` and
+`claude`), each with the fields a settings surface should show. `providerKind(id)` looks up a
 kind, and `createProviderForKind(id, values, deps)` builds a provider from
 field values, rejecting missing required fields. The former `unified`,
 `openai-compatible`, LM Studio adapters and raw OpenRouter/Decisions API have

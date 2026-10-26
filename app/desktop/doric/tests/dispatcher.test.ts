@@ -215,6 +215,7 @@ let workspace: WindowEntry;
 let window: ReturnType<typeof fakeContents>;
 let hostConnected: boolean;
 let relay: ConnectionRelay;
+let opened: string[];
 
 /** The `/status` monitor's surface: a status and its change listeners. */
 const statusSource = (initial: 'connected' | 'disconnected') => {
@@ -255,6 +256,7 @@ beforeEach(() => {
   records = new ServiceDirectory();
   hostConnected = false;
   relay = new ConnectionRelay();
+  opened = [];
 
   const resolution = resolveDistribution(catalog, 1);
 
@@ -360,6 +362,9 @@ beforeEach(() => {
     dispatchCommand: async () => undefined,
     diagnostic: () => undefined,
     connection: relay,
+    openExternal: async (url) => {
+      opened.push(url);
+    },
   });
 });
 
@@ -602,6 +607,42 @@ describe('desktop IPC dispatcher', () => {
       'disconnected',
       'connected',
       'disconnected',
+    ]);
+  });
+
+  test('a window opens an https page in the system browser, and nothing else reaches it', async () => {
+    await describeWindow();
+
+    const open = (id: string, url: string) =>
+      dispatcher.handle(event(window.contents), {
+        op: 'call',
+        envelope: envelope({
+          id,
+          bundleId: null,
+          contract: 'doric.shell/v1',
+          method: 'openExternal',
+          input: { url },
+        }),
+      });
+    const answered = await open(
+      'w-open',
+      'https://claude.com/cai/oauth/authorize?state=s',
+    );
+    const refused = await Promise.all(
+      ['file:///etc/hosts', 'http://example.test/', 'doric://app/x'].map(
+        (url, index) => open(`w-refused-${index}`, url),
+      ),
+    );
+
+    assert.deepEqual(answered, { ok: true, output: undefined });
+    for (const result of refused) {
+      assert.equal(
+        (result as { error?: { code: string } }).error?.code,
+        'invalid_input',
+      );
+    }
+    assert.deepEqual(opened, [
+      'https://claude.com/cai/oauth/authorize?state=s',
     ]);
   });
 

@@ -9,11 +9,13 @@ import {
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
+import { ClaudeLoginV1 } from 'claude-login/contracts';
 
 import { initSettingsApi } from './api/settings-api.js';
 import { createSectionRoute, sectionPath } from './domain/section-route.js';
 import { sectionLink, sections } from './domain/sections.js';
 import { linkHosts, sectionHosts } from './elements.js';
+import { setClaudeLoginAvailable } from './hooks/use-claude-login.js';
 import { clearSettingsQueryClient } from './queries/client.js';
 import { createSettingsConfig } from './services/settings-config.js';
 import {
@@ -54,6 +56,12 @@ export function activate({ services }: ClientContext): () => void {
       order: 20,
     }),
     createSectionRoute().follow(navigation),
+    // `claude.login/v1` is optional: the provider page offers the sign-in
+    // only while a provider answers it.
+    services.whenAvailable(ClaudeLoginV1, () => {
+      setClaudeLoginAvailable(true);
+      return () => setClaudeLoginAvailable(false);
+    }),
   ];
 
   return () => {

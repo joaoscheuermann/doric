@@ -23,6 +23,7 @@ import {
 } from '../src/host/compaction/markers.js';
 import {
   isContextOverflow,
+  isContextOverflowError,
   projection,
 } from '../src/host/compaction/project.js';
 import {
@@ -210,6 +211,66 @@ void test("overflow recognition reads the provider's wording", () => {
     true,
   );
   assert.equal(isContextOverflow('server unavailable'), false);
+});
+
+void test('overflow recognition reads a provider error by its message, code and diagnostic', () => {
+  const failure = (data: Record<string, unknown>) =>
+    Object.assign(new Error(String(data.message)), { data });
+  // Claude over HTTP: a generic message, the overflow in the body excerpt.
+  assert.equal(
+    isContextOverflowError(
+      failure({
+        message: 'claude request failed with HTTP 400.',
+        diagnostic:
+          '{"error":{"message":"prompt is too long: 210000 tokens > 200000 maximum"}}',
+      }),
+    ),
+    true,
+  );
+  // A stream error event carries the provider error itself.
+  assert.equal(
+    isContextOverflowError({
+      message: 'Claude stream error.',
+      code: 'model_context_window_exceeded',
+    }),
+    true,
+  );
+  assert.equal(
+    isContextOverflowError(
+      failure({ message: 'Overloaded.', code: 'overloaded_error' }),
+    ),
+    false,
+  );
+  assert.equal(isContextOverflowError(undefined), false);
+});
+
+void test('a condensation drops the bound thinking replay of the messages it keeps, and only that', () => {
+  const thinking = { type: 'thinking', thinking: 'plan', signature: 'sig' };
+  const reasoning = { type: 'reasoning', encrypted_content: 'opaque' };
+  const messages: ProviderMessage[] = [
+    user('old question'),
+    { role: 'assistant', content: 'old answer', replay: [thinking] },
+    user('new question'),
+    {
+      role: 'assistant',
+      content: 'new answer',
+      replay: [thinking, { type: 'redacted_thinking', data: 'x' }],
+    },
+    { role: 'assistant', content: 'other provider', replay: [reasoning] },
+  ];
+  const result = rewritten(
+    messages,
+    { checkpoints: {}, messageCount: messages.length },
+    user('[Context summary]\n\nsummary'),
+    0,
+    2,
+  );
+
+  assert.deepEqual(result.messages.slice(1), [
+    user('new question'),
+    { role: 'assistant', content: 'new answer' },
+    { role: 'assistant', content: 'other provider', replay: [reasoning] },
+  ]);
 });
 
 void test('planning refuses an empty history and a history with no safe span', () => {

@@ -50,8 +50,8 @@ export interface ConfigServiceOptions {
   readonly credentials: () => Promise<CredentialService>;
   /** The tools of the active bundle generation (`tools/v1.list`). */
   readonly tools: () => readonly BoundTool[];
-  /** `models/v1`: catalog reads and the provider builds of a configuration. */
-  readonly models: Pick<Models, 'catalog' | 'prepare'>;
+  /** `models/v1`: kinds, catalog reads and the provider builds of a configuration. */
+  readonly models: Pick<Models, 'catalog' | 'kind' | 'prepare'>;
 }
 
 const invalidMessage = 'The Doric configuration is invalid.';
@@ -129,7 +129,10 @@ export const createConfigService = ({
 
           await load();
           requireCredentials(config, await credentials());
-          const filled = await readModelProperties(config, readCatalog);
+          const listed = await catalogListedKinds(config, models);
+          const filled = await readModelProperties(config, readCatalog, (p) =>
+            listed.has(p.kind),
+          );
 
           try {
             requireToolConfigs(filled, tools());
@@ -162,6 +165,33 @@ export const createConfigService = ({
       });
     },
   };
+};
+
+/**
+ * The kinds among a configuration's providers whose model list is their live
+ * catalog (`modelsFromCatalog`), as `models/v1.kind` describes them. A kind
+ * that cannot be described keeps the models an operator listed.
+ */
+const catalogListedKinds = async (
+  configuration: ConfigInput,
+  models: Pick<Models, 'kind'>,
+): Promise<ReadonlySet<string>> => {
+  const kinds = [
+    ...new Set(configuration.providers.map((provider) => provider.kind)),
+  ];
+  const described = await Promise.all(
+    kinds.map(async (kind) => ({
+      kind,
+      listed: await models
+        .kind(kind)
+        .then((descriptor) => descriptor?.modelsFromCatalog === true)
+        .catch(() => false),
+    })),
+  );
+
+  return new Set(
+    described.filter(({ listed }) => listed).map(({ kind }) => kind),
+  );
 };
 
 /**

@@ -10,6 +10,7 @@ import {
   type ContextCompactionConfig,
   type Credential,
   catalogFeatures,
+  catalogProviderModels,
   configurationIssue,
   credentialCreate,
   credentialDraftOf,
@@ -24,6 +25,7 @@ import {
   emptyProviderDraft,
   enableExecutionReasoning,
   isReasoningEffort,
+  isSameCatalogModels,
   isSameConfiguration,
   isUsableChoice,
   kindFillsModelEfforts,
@@ -587,6 +589,63 @@ describe('the catalog a provider page offers', () => {
       ['tools', 'reasoning_effort', 'logprobs', 'temperature'],
     );
     assert.deepEqual(catalogFeatures([]), []);
+  });
+
+  test('a catalog-listed provider carries every catalog model once, in the catalog order', () => {
+    const catalog: readonly CatalogModel[] = [
+      {
+        id: 'claude-opus-5-5',
+        reasonings: ['low', 'medium'],
+        parameters: [],
+        defaultEffort: 'medium',
+      },
+      { id: ' claude-haiku-4-5 ', reasonings: [], parameters: [] },
+      { id: 'claude-opus-5-5', reasonings: [], parameters: [] },
+      { id: '', reasonings: [], parameters: [] },
+    ];
+    const kind = (lists: ProviderKind['lists']): ProviderKind => ({
+      id: 'claude',
+      label: 'Claude',
+      description: '',
+      fields: [],
+      lists,
+      modelsFromCatalog: true,
+    });
+
+    assert.deepEqual(
+      catalogProviderModels(catalog, kind(['models', 'reasonings'])),
+      [
+        {
+          name: 'claude-opus-5-5',
+          reasonings: ['low', 'medium'],
+          defaultEffort: 'medium',
+        },
+        { name: 'claude-haiku-4-5', reasonings: [] },
+      ],
+    );
+    // A kind that keeps no reasonings carries the names alone.
+    assert.deepEqual(catalogProviderModels(catalog, kind(['models'])), [
+      { name: 'claude-opus-5-5' },
+      { name: 'claude-haiku-4-5' },
+    ]);
+  });
+
+  test('two catalog model lists match only with the same models, efforts and defaults in order', () => {
+    const listed = [
+      { name: 'a', reasonings: ['low'], defaultEffort: 'low' },
+      { name: 'b', reasonings: [] },
+    ];
+
+    assert.equal(isSameCatalogModels(listed, structuredClone(listed)), true);
+    assert.equal(isSameCatalogModels(listed, [...listed].reverse()), false);
+    assert.equal(
+      isSameCatalogModels(listed, [
+        { ...listed[0], defaultEffort: undefined },
+        listed[1],
+      ]),
+      false,
+    );
+    assert.equal(isSameCatalogModels(listed, listed.slice(0, 1)), false);
   });
 
   test('adds a chosen model at the end, and never twice', () => {

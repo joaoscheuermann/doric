@@ -25,7 +25,7 @@ import {
 function Cost({ total }: { readonly total: UsageTotals }) {
   const partial = total.unpricedCalls > 0;
   const note = partial
-    ? `Partial: ${total.unpricedCalls} calls have no reported cost yet.`
+    ? `Partial: ${total.unpricedCalls} calls have no reported cost.`
     : undefined;
   return (
     <span className="shrink-0 tabular-nums" title={note}>

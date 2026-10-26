@@ -38,7 +38,7 @@ types while using OpenRouter Chat Completions underneath.
 | Laboratory / family       | Documented divergence                                                                                                                                 | OpenRouter behavior                                                                                                                                                          |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OpenAI                    | Strict functions and JSON schemas require a supported schema subset; stateless reasoning models require opaque output/reasoning items to be replayed. | Marks only already-compatible schemas strict and replays ordered opaque items.                                                                                               |
-| Anthropic Claude          | Forced `any`/named tools are incompatible with manual extended thinking; strict tool use and JSON output have distinct controls.                      | Rejects forced choice plus requested reasoning before completion; preserves replay.                                                                                          |
+| Anthropic Claude          | Forced `any`/named tools are incompatible with manual extended thinking; strict tool use and JSON output have distinct controls.                      | Downgrades forced choice to `auto` where the model refuses it; replays its own signed thinking blocks.                                                                       |
 | Google Gemini             | Function calls may be parallel or sequential. Thought signatures must be returned exactly in their original parts during function calling.            | Replays ordered `reasoning_details`; sequential mode is reinforced and validated.                                                                                            |
 | Google Gemma              | Raw deployments use version-specific tool/control tokens and thought retention rules.                                                                 | Relies on the endpoint chat template, uses conservative choice controls, and replays only tool turns.                                                                        |
 | DeepSeek                  | JSON mode can return empty content; reasoning/tool responses expose provider-specific reasoning state.                                                | Validates locally, repairs boundedly, and preserves OpenRouter reasoning details.                                                                                            |
@@ -51,6 +51,115 @@ types while using OpenRouter Chat Completions underneath.
 | Cohere Command            | JSON output and strict tools use separate API controls and schema subsets.                                                                            | Uses OpenRouter-advertised structured mode plus local validation; tool strictness stays conservative.                                                                        |
 | MiniMax                   | Documented `tool_choice` supports only `auto`/`none`; structured output is model-specific.                                                            | Rejects forced choices and selects structured output per live model metadata.                                                                                                |
 | Unknown OpenRouter prefix | No curated behavioral evidence.                                                                                                                       | Plain chat works; tools require live `tools` support, forced choice requires live support, replay is limited to tool turns, and structured output falls back conservatively. |
+
+## The claude kind
+
+`createClaudeProvider` sends Anthropic Messages requests through a Claude Code
+subscription login, over the same `LlmProvider` types. The transport contract
+is the Messages API at `${baseUrl}/v1/messages?beta=true` with the OAuth beta
+headers (`anthropic-version: 2023-06-01`,
+`anthropic-beta: oauth-2025-04-20,claude-code-20250219`, `x-app: cli`) and the
+Claude Code CLI user agent. The stored value picks its own auth header: a value
+that names its `Bearer` scheme is sent as it is, a Console API key
+(`sk-ant-api…`) goes as `x-api-key`, and any other token (a `claude
+setup-token` value) is sent under `Bearer`. Every request's `system` opens with
+Claude Code's own identity block, "You are Claude Code, Anthropic's official
+CLI for Claude.", because a subscription login is accepted only when that block
+comes first; the caller's system text follows as a second block.
+
+Message and tool mapping follows Anthropic's Messages shapes, per the
+[tool-use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)
+and [structured-outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+documentation and the [Messages API](https://platform.claude.com/docs/en/api/messages)
+reference:
+
+- System messages join into the second `system` block, which carries a
+  `cache_control: ephemeral` marker (tools and system are cached together), and
+  the request carries the top-level automatic `cache_control` for the growing
+  conversation.
+- A user message is a content-block list whose images travel as `source`
+  blocks (`base64` for `data:` URLs, `url` otherwise). A run of tool messages
+  collapses into one user message of `tool_result` blocks whose content keeps a
+  result's images beside its text; an incomplete result carries
+  `is_error: true`.
+- An assistant turn Claude answered goes back as its own content blocks
+  (thinking with its signature, text, `tool_use`), byte-for-byte, when they
+  still name the same tool calls; otherwise it is its thinking blocks, a text
+  block and its `tool_use` blocks. Replay items are tagged
+  `{ provider: 'claude', block }`, and the OpenAI and OpenRouter bodies skip
+  tagged items, as Claude skips untagged ones.
+- No empty text block is sent, a turn left with no content is dropped,
+  consecutive turns of one role become one, and a history that ends on an
+  assistant answer (no `tool_use`) gets a continuation user turn, because a
+  final assistant message is a prefill every current model refuses.
+- Tool definitions map to `{ name, description, input_schema }`. Tool choice is
+  always Anthropic's object form: `{ type: 'auto' | 'none' | 'any' }`
+  (`required` is `any`) or `{ type: 'tool', name }`, and
+  `parallelToolCalls: false` adds `disable_parallel_tool_use: true`. Opus 5.5,
+  Sonnet 5.5, Fable 5.1 and Mythos 5.1 (and their successors) refuse forced
+  tool use, so `required` and a named tool become `auto` there.
+
+`temperature` is never sent: Opus 4.7 and later refuse any non-default value.
+The request effort becomes `output_config.effort` at a level the model takes:
+`none` and `minimal` are `low`; Opus 4.7+, every 5.x model, Fable and Mythos
+take `low`–`max` with `xhigh`; Opus 4.6 and Sonnet 4.6 take `low`, `medium`,
+`high` and `max` (an `xhigh` request is `high`); Opus 4.5 takes `low`–`high`;
+Haiku 4.5, Sonnet 4.5 and older take none, so the field is left out. Models
+that think by default (the 5.x families, Fable, Mythos) get
+`thinking: { type: 'adaptive', block_binding: { prefix_mismatch_behavior:
+'drop_block' } }` with the `thinking-binding-controls-2026-08-01` beta, so a
+history that compaction rewrote drops the thinking blocks it invalidated rather
+than being refused; no other model gets a `thinking` field. `max_tokens`
+defaults to 64000 for a stream and 16000 for a plain request. Structured output
+has no native mode on this transport: a schema request is parsed and validated
+locally, and the flag can put the JSON Schema into the system prompt.
+
+`stop_reason` maps back as:
+
+| Anthropic `stop_reason`         | `finishReason`   |
+| ------------------------------- | ---------------- |
+| `end_turn`                      | `stop`           |
+| `stop_sequence`                 | `stop`           |
+| `pause_turn`                    | `stop`           |
+| `max_tokens`                    | `length`         |
+| `model_context_window_exceeded` | `length`         |
+| `tool_use`                      | `tool_calls`     |
+| `refusal`                       | `content_filter` |
+| anything else                   | `unknown`        |
+
+A tool call is a call only when its block closed on JSON a tool can take, so a
+`max_tokens` stop never makes a call of the block it cut off. A refusal keeps
+no text, calls or replay, and `refusal` names its `stop_details` category and
+explanation. A stream that ends without `message_stop` is a retryable
+`incomplete_stream` error, never a finished answer; a mid-stream `error` event
+keeps Anthropic's type (as the code) and message, and `overloaded_error`,
+`api_error` and `rate_limit_error` are retryable. A refused request's error
+message carries Anthropic's own (`prompt is too long: …`), with
+`retryAfterMs` from `retry-after` and `requestId` from `request-id`; a spend
+cap (`enforced_spend_limit_reached`) is never retryable.
+
+Usage reports `inputTokens` as the whole prompt (`input_tokens`, which
+Anthropic counts without the cache, plus `cache_creation_input_tokens` and
+`cache_read_input_tokens`), with `cacheWriteTokens` and `cachedInputTokens` as
+its parts, `output_tokens` as `outputTokens`,
+`output_tokens_details.thinking_tokens` as `reasoningTokens`, and
+`totalTokens` as input plus output. Each stream `usage` event carries the
+counts merged so far.
+
+`models()` lists every page of Anthropic's catalog (`limit=1000`, then
+`after_id` while `has_more`), with each model's `max_input_tokens` as its
+`contextWindow`; a stream's `response.started` carries the window its model
+lists, read once per provider and never failing a request when the lookup
+fails. `validateModel` accepts an id with or without its date. The kind keeps
+`models` and `reasonings` lists and sets `modelsFromCatalog`, so a provider's
+models are the catalog: `claudeCatalogModel` gives each listed model the
+efforts its `capabilities.effort` marks supported (`low`, `medium`, `high`,
+`xhigh`, `max`, in that order), or the ones its id names when the listing
+carries no capabilities, and a default effort of `medium` on Opus 5.5 and
+Haiku 5.5 and their successors, `high` elsewhere, none for a model that takes
+no effort.
+`embedding` and `rerank` are rejected: Claude serves neither through this
+transport.
 
 ## Primary sources
 

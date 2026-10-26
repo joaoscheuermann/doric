@@ -18,6 +18,9 @@ export interface LocalCallbackServerOptions {
 
 export interface BrowserProcess {
   unref?(): void;
+  /** `spawn` once the command started; `error` when it could not (no such command). */
+  once?(event: 'spawn' | 'error', listener: (error?: Error) => void): unknown;
+  on?(event: 'error', listener: (error: Error) => void): unknown;
 }
 
 export type BrowserSpawn = (
@@ -87,12 +90,22 @@ export const createLocalCallbackServer = async (
       return;
     }
 
+    // Only the redirect carrying the pending state settles the wait: any
+    // other request to the path (a stray tab, a local process, a page
+    // probing localhost) is refused and leaves the sign-in waiting.
+    if (callback.value.state !== pending.expectedState) {
+      response.writeHead(400, HTML_HEADERS);
+
+      response.end(DEFAULT_ERROR_HTML);
+
+      return;
+    }
+
     const current = pending;
 
     pending = undefined;
 
-    const stateMatches = callback.value.state === current.expectedState;
-    const hasError = callback.value.error !== undefined || !stateMatches;
+    const hasError = callback.value.error !== undefined;
 
     response.writeHead(hasError ? 400 : 200, HTML_HEADERS);
 
@@ -170,7 +183,13 @@ export const createLocalCallbackServer = async (
   };
 };
 
-/** Opens a URL in the platform browser through an explicit spawn boundary. */
+/**
+ * Opens a URL in the platform browser through an explicit spawn boundary.
+ * Resolves once the opener command started and rejects with
+ * `oauth_browser_unavailable` when it could not, such as a headless host
+ * with no `xdg-open`: a spawn failure is an `error` event, which would end
+ * the whole process if nothing listened for it.
+ */
 export const openBrowser = (
   url: string,
   options: BrowserOpenOptions = {},
@@ -179,14 +198,48 @@ export const openBrowser = (
   const spawn = options.spawn ?? defaultSpawn;
   const command = commandFor(platform, url);
 
-  const child = spawn(command.command, command.args, {
-    detached: true,
-    stdio: 'ignore',
-  });
+  return new Promise((resolve, reject) => {
+    let child: BrowserProcess;
 
-  child.unref?.();
-  return Promise.resolve();
+    try {
+      child = spawn(command.command, command.args, {
+        detached: true,
+        stdio: 'ignore',
+      });
+    } catch (cause) {
+      reject(browserUnavailable(command.command, cause));
+
+      return;
+    }
+
+    // Stays attached after the spawn settles: a late `error` is dropped
+    // rather than thrown at the process.
+    child.on?.('error', (cause) =>
+      reject(browserUnavailable(command.command, cause)),
+    );
+    child.unref?.();
+
+    if (child.once === undefined) {
+      resolve();
+
+      return;
+    }
+
+    child.once('spawn', () => resolve());
+  });
 };
+
+const browserUnavailable = (
+  command: string,
+  cause: unknown,
+): OAuthErrorObject =>
+  new OAuthErrorObject(
+    {
+      code: 'oauth_browser_unavailable',
+      message: `Could not open a browser with ${command}.`,
+    },
+    { cause },
+  );
 
 const parseCallback = (
   request: IncomingMessage,

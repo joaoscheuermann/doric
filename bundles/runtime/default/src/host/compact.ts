@@ -291,7 +291,9 @@ export const maybeCompactRun = async (options: {
         summaryChars: applied.condensation.summaryChars,
       },
     });
-    options.messages.replaceRange(0, plan.end, applied.replacement);
+    // The whole rewrite, not only the span: the kept tail loses its bound
+    // reasoning replay too, exactly as the stored history above does.
+    options.messages.replaceRange(0, stored.length, applied.rewritten.messages);
     return {
       status: 'compacted',
       checkpoints: applied.rewritten.meta.checkpoints,

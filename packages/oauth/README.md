@@ -66,16 +66,18 @@ storage appropriate for OAuth credentials and must not log or commit tokens.
 
 ## API
 
-| Export                               | Purpose                                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `createOAuthClient(options)`         | Authorization-code + PKCE client for any `OAuthProfile`.                                    |
-| `createCodexOAuth(options)`          | The same client with Codex defaults (`codexOAuthProfile`, `CODEX_OAUTH_CLIENT_ID`).         |
-| `createLocalCallbackServer(options)` | Starts a localhost redirect listener (`127.0.0.1`, `/callback`, ephemeral port by default). |
-| `openBrowser(url, options)`          | Opens a URL in the platform browser through an injectable spawn.                            |
-| `createFetchTransport(fetch?)`       | Production `OAuthTransport` over Fetch.                                                     |
-| `renderCredential(profile, record)`  | Renders a token record as an `OAuthCredential` with its `authorization` header.             |
-| `resolveCodexAuth(options)`          | Resolves existing Codex CLI credentials without a browser flow.                             |
-| `OAuthErrorObject`                   | Error carrying an `OAuthError` with a stable `code`.                                        |
+| Export                               | Purpose                                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `createOAuthClient(options)`         | Authorization-code + PKCE client for any `OAuthProfile`.                                                                                         |
+| `createCodexOAuth(options)`          | The same client with Codex defaults (`codexOAuthProfile`, `CODEX_OAUTH_CLIENT_ID`).                                                              |
+| `createLocalCallbackServer(options)` | Starts a localhost redirect listener (`127.0.0.1`, `/callback`, ephemeral port by default).                                                      |
+| `openBrowser(url, options)`          | Opens a URL in the platform browser through an injectable spawn; rejects with `oauth_browser_unavailable` when no opener runs (a headless host). |
+| `createFetchTransport(fetch?)`       | Production `OAuthTransport` over Fetch.                                                                                                          |
+| `renderCredential(profile, record)`  | Renders a token record as an `OAuthCredential` with its `authorization` header.                                                                  |
+| `resolveCodexAuth(options)`          | Resolves existing Codex CLI credentials without a browser flow.                                                                                  |
+| `createClaudeOAuth(options)`         | The same client with Claude Code defaults (`claudeOAuthProfile`, `CLAUDE_OAUTH_CLIENT_ID`).                                                      |
+| `resolveClaudeAuth(options)`         | Resolves existing Claude Code credentials without a browser flow.                                                                                |
+| `OAuthErrorObject`                   | Error carrying an `OAuthError` with a stable `code`.                                                                                             |
 
 An `OAuthClient` exposes:
 
@@ -95,6 +97,21 @@ All three accept an `AbortSignal`.
 credentials without starting a browser flow. It checks, in order, the
 `CODEX_AUTHORIZATION`, `CODEX_API_KEY`, and `CODEX_ACCESS_TOKEN` environment
 variables, then `auth.json` under `codexHome`, `CODEX_HOME`, or `~/.codex`.
+
+## Existing Claude Code credentials
+
+`resolveClaudeAuth` resolves existing Claude Code credentials the same way. It
+checks, in order, the `CLAUDE_AUTHORIZATION` environment variable (the ready
+to send header, `Bearer …` or bare), then `CLAUDE_CODE_OAUTH_TOKEN` (a bare
+access token), then `.credentials.json` under `claudeHome`, `CLAUDE_CONFIG_DIR`,
+or `~/.claude`. A stored login whose access token expires within five minutes
+is refreshed first: the refresh grant goes to Claude Code's token endpoint, and
+the rotated access and refresh tokens and expiry are written back to
+`.credentials.json` before the credential is returned, so the next read starts
+from the rotated login. The refresh uses the same flow Claude Code's CLI uses,
+so the server may refuse the long-login request the login script makes; when
+requests start failing with `auth_failed`, run `npm run claude:oauth` again
+and replace the stored credential.
 
 ## Development
 

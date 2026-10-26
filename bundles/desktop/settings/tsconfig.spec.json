@@ -20,6 +20,9 @@
   "references": [
     {
       "path": "../../../packages/bundle/tsconfig.lib.json"
+    },
+    {
+      "path": "../../features/claude-login"
     }
   ]
 }

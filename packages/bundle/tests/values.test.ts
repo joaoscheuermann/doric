@@ -219,6 +219,7 @@ void test('every basic and platform method has a stated way across the envelope'
       release: 'refused',
     },
     'doric.connection/v1': { status: 'crosses', subscribe: 'refused' },
+    'doric.browser/v1': { open: 'crosses' },
   };
   const actual = Object.fromEntries(
     Object.entries({

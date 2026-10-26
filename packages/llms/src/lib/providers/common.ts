@@ -7,6 +7,7 @@ import type {
   ProviderId,
   ProviderImagePart,
   ProviderMessage,
+  ProviderReplayItem,
   ProviderRequest,
   ProviderRerankFinished,
   ProviderRerankRequest,
@@ -143,6 +144,21 @@ export const messageImages = (
     : message.content.filter(
         (part): part is ProviderImagePart => part.type === 'image',
       );
+
+/**
+ * The replay items a message carries that are not tagged for another
+ * provider. Claude tags its items with `provider`; OpenAI and OpenRouter
+ * items are untagged, so a history that switched providers replays only what
+ * the current one produced.
+ */
+export const untaggedReplay = (
+  message: ProviderMessage,
+): readonly ProviderReplayItem[] | undefined => {
+  const items = message.replay?.filter(
+    (item) => typeof item.provider !== 'string',
+  );
+  return items === undefined || items.length === 0 ? undefined : items;
+};
 
 export const httpError = (
   provider: ProviderId,

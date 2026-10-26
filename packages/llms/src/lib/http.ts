@@ -39,7 +39,11 @@ export const createFetchTransport = (
     });
 
     if (!response.ok) {
-      throw new HttpStreamError(response.status, await response.text());
+      throw new HttpStreamError(
+        response.status,
+        await response.text(),
+        headersToRecord(response.headers),
+      );
     }
 
     if (response.body === null) {

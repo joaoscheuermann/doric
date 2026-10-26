@@ -19,9 +19,19 @@ import {
 
 for (const mode of ['complete', 'stream'] as const) {
   void test(`${mode} resumes stored history without moving or repeating the input`, async () => {
+    // A run stopped after a tool batch: its next turn is still owed.
     const history = [
       { role: 'user' as const, content: 'Original request.' },
-      { role: 'assistant' as const, content: 'Already completed step.' },
+      {
+        role: 'assistant' as const,
+        content: 'Already completed step.',
+        toolCalls: [call('lookup', { query: 'doric' })],
+      },
+      {
+        role: 'tool' as const,
+        toolCallId: 'call_lookup',
+        content: 'Found.',
+      },
     ];
     const fake = createProvider({
       stream: () => streamEvents(completeFinish('done')),

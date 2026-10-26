@@ -49,6 +49,7 @@ const withHost = (name: string, run: (host: Host) => Promise<void>) =>
           tools: () => [],
           models: {
             catalog: async () => ({ status: 'absent' }),
+            kind: async () => undefined,
             // Building the candidate providers is the slow step between the
             // credential check and the write, which is where a delete can land.
             prepare: async (input) => {

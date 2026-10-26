@@ -31,6 +31,7 @@ export const createOAuthClient = (
   const exchange = async (
     callback: OAuthCallback,
     verifier: string,
+    state: string,
     signal?: AbortSignal,
   ): Promise<OAuthTokenRecord> => {
     const record = await exchangeToken(options.transport, {
@@ -40,6 +41,7 @@ export const createOAuthClient = (
       code: callback.code ?? '',
       codeVerifier: verifier,
       redirectUri: options.redirectUri,
+      state,
       now: clock,
       signal,
     });
@@ -114,7 +116,9 @@ export const createOAuthClient = (
 
     async authorize(authorizeOptions = {}): Promise<OAuthTokenRecord> {
       const verifier = token(random, 32);
-      const state = token(random, 16);
+      // 32 random bytes, as Claude Code sends: claude.ai's authorize page
+      // refuses a shorter state with "Invalid request format".
+      const state = token(random, 32);
       const url = authorizationUrl(options, state, verifier);
 
       await options.browserOpener(url.toString());
@@ -126,7 +130,7 @@ export const createOAuthClient = (
 
       assertCallback(options.profile, callback, state);
 
-      return exchange(callback, verifier, authorizeOptions.signal);
+      return exchange(callback, verifier, state, authorizeOptions.signal);
     },
 
     refresh(refreshOptions = {}): Promise<OAuthTokenRecord> {
@@ -214,6 +218,25 @@ const assertCallback = (
   }
 };
 
+/** The token request's headers and body, encoded as the profile asks. */
+const tokenRequest = (
+  profile: OAuthProfile,
+  params: Readonly<Record<string, string | undefined>>,
+  jsonParams: Readonly<Record<string, string | undefined>> = {},
+): { headers: Readonly<Record<string, string>>; body: string } => {
+  const json = profile.tokenRequest === 'json';
+
+  return {
+    headers: {
+      'content-type': json
+        ? 'application/json'
+        : 'application/x-www-form-urlencoded',
+      accept: 'application/json',
+    },
+    body: json ? JSON.stringify({ ...params, ...jsonParams }) : form(params),
+  };
+};
+
 const exchangeToken = async (
   transport: OAuthTransport,
   request: {
@@ -223,27 +246,26 @@ const exchangeToken = async (
     readonly code: string;
     readonly codeVerifier: string;
     readonly redirectUri: string;
+    readonly state: string;
     readonly now: () => number;
     readonly signal?: AbortSignal;
   },
 ): Promise<OAuthTokenRecord> => {
-  const body = form({
-    grant_type: 'authorization_code',
-    client_id: request.clientId,
-    client_secret: request.clientSecret,
-    code: request.code,
-    code_verifier: request.codeVerifier,
-    redirect_uri: request.redirectUri,
-  });
-
   const response = await transport.request({
     method: 'POST',
     url: request.profile.tokenEndpoint,
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded',
-      accept: 'application/json',
-    },
-    body,
+    ...tokenRequest(
+      request.profile,
+      {
+        grant_type: 'authorization_code',
+        client_id: request.clientId,
+        client_secret: request.clientSecret,
+        code: request.code,
+        code_verifier: request.codeVerifier,
+        redirect_uri: request.redirectUri,
+      },
+      { state: request.state, ...request.profile.tokenExchangeParams },
+    ),
     signal: request.signal,
   });
 
@@ -273,11 +295,7 @@ const refreshToken = async (
   const response = await transport.request({
     method: 'POST',
     url: request.profile.tokenEndpoint,
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded',
-      accept: 'application/json',
-    },
-    body: form({
+    ...tokenRequest(request.profile, {
       grant_type: 'refresh_token',
       refresh_token: request.refreshToken,
       client_id: request.clientId,
