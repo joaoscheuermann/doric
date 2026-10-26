@@ -19,13 +19,19 @@ import {
   buildSceneGraph,
   type Clip,
   clipBounds,
+  pseudoBoxOf,
   type SceneGraph,
 } from './scene-graph.js';
 
 /** One derivation of the rendered revision, with its measured bounds. */
 export interface Scene {
   readonly graph: SceneGraph;
-  /** The node bounds in content coordinates, measured once per node. */
+  /**
+   * The node bounds in content coordinates, measured once per node: the
+   * element's border box together with the boxes of its out-of-flow
+   * (`absolute` / `fixed`) `::before` / `::after` pseudo-elements, cut to what
+   * its clipping ancestors leave visible.
+   */
   readonly bounds: BoundsOf;
   /** The content element the bounds are measured from; the root when absent. */
   readonly content: HTMLElement | null;
@@ -73,6 +79,111 @@ const clipsOf = (
   return clips;
 };
 
+type StyleOf = (element: Element, pseudo?: string) => CSSStyleDeclaration;
+
+/** A resolved border width in CSS px; 0 when it does not resolve. */
+const borderOf = (value: string): number => Number.parseFloat(value) || 0;
+
+/** The viewport box of an element's padding box: its border box less its borders. */
+const paddingBoxOf = (
+  element: Element,
+  styleOf: StyleOf,
+  factor: number,
+): Bounds => {
+  const box = boxOf(element);
+  const style = styleOf(element);
+  const left = borderOf(style.borderLeftWidth) * factor;
+  const top = borderOf(style.borderTopWidth) * factor;
+
+  return {
+    x: box.x + left,
+    y: box.y + top,
+    width: box.width - left - borderOf(style.borderRightWidth) * factor,
+    height: box.height - top - borderOf(style.borderBottomWidth) * factor,
+  };
+};
+
+/**
+ * The containing block of an out-of-flow pseudo-element of `host`: the host
+ * itself, or the nearest positioned ancestor, when it is `absolute`; the
+ * content (or, without one, the document) when it is `fixed` or nothing
+ * below the content is positioned.
+ */
+const containingBlockOf = (
+  host: Element,
+  position: string,
+  content: Element | null,
+  styleOf: StyleOf,
+): Element => {
+  const root = content ?? host.ownerDocument.documentElement;
+
+  if (position === 'fixed') return root;
+
+  for (
+    let element: Element | null = host;
+    element !== null && element !== root;
+    element = element.parentElement
+  ) {
+    if (styleOf(element).position !== 'static') return element;
+  }
+
+  return root;
+};
+
+const hasArea = (bounds: Bounds): boolean =>
+  bounds.width >= 0 &&
+  bounds.height >= 0 &&
+  (bounds.width > 0 || bounds.height > 0);
+
+/**
+ * The viewport box of an element together with its out-of-flow `::before` /
+ * `::after` boxes — those its own overflow hides cut away — or its own box
+ * when none of them has area.
+ */
+const drawnBoxOf = (
+  element: Element,
+  content: Element | null,
+  styleOf: StyleOf,
+  factor: number,
+): Bounds => {
+  const own = boxOf(element);
+  const boxes = [own];
+
+  for (const pseudo of ['::before', '::after']) {
+    const style = styleOf(element, pseudo);
+
+    // In flow, it lies inside its host: no containing block to measure.
+    if (style.position !== 'absolute' && style.position !== 'fixed') continue;
+
+    const block = containingBlockOf(element, style.position, content, styleOf);
+    const padding = paddingBoxOf(block, styleOf, factor);
+    const box = pseudoBoxOf(style, padding, factor);
+
+    if (box === undefined) continue;
+
+    const host = styleOf(element);
+    const x = host.overflowX !== 'visible';
+    const y = host.overflowY !== 'visible';
+
+    boxes.push(
+      block === element && (x || y)
+        ? clipBounds(box, [{ box: padding, x, y }])
+        : box,
+    );
+  }
+
+  const drawn = boxes.filter(hasArea);
+
+  if (drawn.length === 0) return own;
+
+  const left = Math.min(...drawn.map((box) => box.x));
+  const top = Math.min(...drawn.map((box) => box.y));
+  const right = Math.max(...drawn.map((box) => box.x + box.width));
+  const bottom = Math.max(...drawn.map((box) => box.y + box.height));
+
+  return { x: left, y: top, width: right - left, height: bottom - top };
+};
+
 /**
  * A fresh, lazy cache of node bounds in content coordinates: the part of
  * each node its clipping ancestors leave visible (`clipBounds`). Each node is
@@ -84,32 +195,44 @@ const measured = (
   content: HTMLElement | null,
   scale: () => number,
 ): BoundsOf => {
-  const styles = new Map<Element, CSSStyleDeclaration>();
-  const styleOf = (element: Element): CSSStyleDeclaration => {
-    let style = styles.get(element);
+  const styles = new Map<Element, Map<string, CSSStyleDeclaration>>();
+  const styleOf: StyleOf = (element, pseudo = '') => {
+    let own = styles.get(element);
+
+    if (own === undefined) {
+      own = new Map();
+      styles.set(element, own);
+    }
+
+    let style = own.get(pseudo);
 
     if (style === undefined) {
-      // The element's own window: a frame without one clips nothing.
+      // The element's own window: a frame without one clips nothing and
+      // draws no pseudo-element.
       style =
-        element.ownerDocument.defaultView?.getComputedStyle(element) ??
+        element.ownerDocument.defaultView?.getComputedStyle(
+          element,
+          pseudo === '' ? null : pseudo,
+        ) ??
         ({
+          content: 'none',
           position: 'static',
           overflowX: 'visible',
           overflowY: 'visible',
         } as CSSStyleDeclaration);
-      styles.set(element, style);
+      own.set(pseudo, style);
     }
 
     return style;
   };
 
   return boundsIndex((node) => {
+    const factor = scale();
     const shown = clipBounds(
-      boxOf(node.element),
+      drawnBoxOf(node.element, content, styleOf, factor),
       clipsOf(node.element, content, styleOf),
     );
     const origin = content?.getBoundingClientRect() ?? { x: 0, y: 0 };
-    const factor = scale();
 
     return {
       x: (shown.x - origin.x) / factor,
@@ -120,7 +243,12 @@ const measured = (
   });
 };
 
-/** The scene of what a shadow root holds now. */
+/**
+ * The scene of what a shadow root holds now. Each node's bounds include its
+ * out-of-flow pseudo-element boxes, so a badge or decoration drawn by
+ * `::before` / `::after` outside its host counts toward the node's outline,
+ * hit area and the content box.
+ */
 export const sceneOf = (root: ShadowRoot, scale: () => number): Scene => {
   const content = root.querySelector(
     '.papercraft-content',

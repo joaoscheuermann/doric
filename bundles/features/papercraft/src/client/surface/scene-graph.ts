@@ -204,6 +204,74 @@ export const clipBounds = (bounds: Bounds, clips: readonly Clip[]): Bounds => {
 };
 
 /**
+ * The resolved style fields of a `::before` / `::after` pseudo-element that
+ * `pseudoBoxOf` reads — a `getComputedStyle(element, '::before')` result fits.
+ * Insets and margins are resolved values in CSS px (`'90px'`, `'-6px'`), or
+ * `'auto'` when the pseudo-element is not positioned or generates no box.
+ */
+export type PseudoStyle = Pick<
+  CSSStyleDeclaration,
+  | 'content'
+  | 'position'
+  | 'left'
+  | 'top'
+  | 'right'
+  | 'bottom'
+  | 'marginLeft'
+  | 'marginTop'
+  | 'marginRight'
+  | 'marginBottom'
+>;
+
+/** A resolved CSS px length as a number; NaN for anything else (`auto`). */
+const pxOf = (value: string): number =>
+  value.endsWith('px') ? Number(value.slice(0, -2)) : Number.NaN;
+
+/**
+ * The border box of an out-of-flow pseudo-element, in the same coordinates
+ * as `block` — the viewport box of its containing block's padding box —
+ * given `factor`, the viewport px per CSS px (the canvas scale).
+ *
+ * x = block.x + (left + marginLeft) · factor
+ * y = block.y + (top + marginTop) · factor
+ * width  = block.width  − (left + right + marginLeft + marginRight) · factor
+ * height = block.height − (top + bottom + marginTop + marginBottom) · factor
+ *
+ * Example: block {x:0, y:0, width:100, height:40}, left 90px, top -6px,
+ * right -14px, bottom 30px, margins 0, factor 1 → {x:90, y:-6, width:24, height:16}.
+ *
+ * Returns undefined when the pseudo-element generates no box (`content` is
+ * `none` or `normal`), is in flow (`position` is neither `absolute` nor
+ * `fixed`), or any inset or margin does not resolve to a finite px number
+ * (`auto`, which is also what a `display: none` pseudo resolves to). Never
+ * throws; pure — it reads only its arguments.
+ */
+export const pseudoBoxOf = (
+  style: PseudoStyle,
+  block: Bounds,
+  factor: number,
+): Bounds | undefined => {
+  if (style.content === 'none' || style.content === 'normal') return undefined;
+  if (style.position !== 'absolute' && style.position !== 'fixed') {
+    return undefined;
+  }
+
+  const left = pxOf(style.left) + pxOf(style.marginLeft);
+  const top = pxOf(style.top) + pxOf(style.marginTop);
+  const right = pxOf(style.right) + pxOf(style.marginRight);
+  const bottom = pxOf(style.bottom) + pxOf(style.marginBottom);
+
+  if (![left, top, right, bottom].every(Number.isFinite)) return undefined;
+
+  return {
+    x: block.x + left * factor,
+    y: block.y + top * factor,
+    width: block.width - (left + right) * factor,
+    height: block.height - (top + bottom) * factor,
+  };
+};
+
+/**
  * Whether a node takes up any room. An element that generates no box
  * (`display: contents`, as the module's own wrappers are, or `display: none`)
  * measures as an empty rect at the window's corner, far from the content: it
