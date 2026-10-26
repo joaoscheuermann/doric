@@ -47,7 +47,7 @@ export function DashboardProvidersGroup({
       <SidebarGroup>
         <SidebarGroupLabel
           render={<CollapsibleTrigger />}
-          className="gap-1 font-normal"
+          className="gap-1 pl-1.5 font-normal"
         >
           <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
           Providers
