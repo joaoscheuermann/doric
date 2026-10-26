@@ -8,6 +8,7 @@ import {
   type CommentAnchor,
   type CommentTarget,
 } from '../contracts/index.js';
+import type { PseudoKind } from './surface/scene-graph.js';
 
 /** The origin stamp the builder writes on the rendered markup. */
 export const STAMP_ATTRIBUTE = 'data-papercraft-source';
@@ -66,16 +67,27 @@ export const excerptOf = (text: string): string =>
  * goes with it, for a revision whose edited file moved its line: a `text`
  * excerpt and `index`, its ordinal among the elements of its selector (an
  * extra key, like `offset`).
+ *
+ * `pseudo` names the element's `::before` / `::after` as the thing commented
+ * on. The anchor then also carries `pseudo`, and its `label` is the tag plus
+ * the pseudo kind (`div::before`). `offset` must then be measured inside the
+ * pseudo box, not the host box. The form, `path`/`line`, `selector`, `text`
+ * and `index` stay the host element's, so the anchor resolves to the host
+ * first. Without `pseudo` the anchor is exactly what it is today, with no
+ * `pseudo` key. Never throws.
  */
 export const anchorOf = (
   element: Element,
   offset?: AnchorOffset,
   point?: { readonly x: number; readonly y: number },
   index?: number,
+  pseudo?: PseudoKind,
 ): CommentAnchor => {
   const stamp = element.getAttribute(STAMP_ATTRIBUTE);
   const text = excerptOf(element.textContent ?? '');
+  const label = `${element.tagName.toLowerCase()}${pseudo ?? ''}`;
   const at = {
+    ...(pseudo === undefined ? {} : { pseudo }),
     ...(text === '' ? {} : { text }),
     ...(index === undefined ? {} : { index }),
     ...(offset === undefined ? {} : { offset }),
@@ -90,7 +102,7 @@ export const anchorOf = (
       path,
       ...(line === undefined ? {} : { line }),
       selector: selectorOf(element),
-      label: element.tagName.toLowerCase(),
+      label,
       ...at,
     };
   }
@@ -98,7 +110,7 @@ export const anchorOf = (
   return {
     form: 'selector',
     selector: selectorOf(element),
-    label: element.tagName.toLowerCase(),
+    label,
     ...at,
   };
 };
@@ -121,6 +133,18 @@ export const indexOf = (anchor: CommentAnchor): number | undefined => {
   return typeof index === 'number' && Number.isInteger(index) && index >= 0
     ? index
     : undefined;
+};
+
+/**
+ * The pseudo-element an anchor recorded, when it is a valid one: exactly
+ * `'::before'` or `'::after'`. Undefined when the key is absent or holds
+ * anything else (an anchor from an older revision, or a foreign value).
+ * Never throws.
+ */
+export const pseudoOf = (anchor: CommentAnchor): PseudoKind | undefined => {
+  const pseudo: unknown = anchor.pseudo;
+
+  return pseudo === '::before' || pseudo === '::after' ? pseudo : undefined;
 };
 
 /** The anchored target of the preview revision a comment is written against. */

@@ -136,6 +136,87 @@ export const stampLabel = (node: SceneNode): string | undefined =>
       ? node.stamp.path
       : `${node.stamp.path}:${String(node.stamp.line)}`;
 
+/* Targets: a node, or one of its pseudo-elements ---------------------------- */
+
+/** The pseudo-elements that can be their own target: `::before` and `::after`. */
+export type PseudoKind = '::before' | '::after';
+
+/**
+ * The box of one pseudo-element of a node, in the same content coordinates as
+ * `BoundsOf`, cut to what the clipping ancestors (and the host's own overflow)
+ * leave visible.
+ *
+ * Returns undefined when that pseudo-element is not a target: it generates no
+ * box (`content` is `none`/`normal`), is in flow (`position` is neither
+ * `absolute` nor `fixed`), has an inset or margin that does not resolve to px
+ * (`auto`, `display: none`), or has no area after clipping. Never throws. It is
+ * stable for one derivation at one scale, like `BoundsOf`.
+ */
+export type PseudoBoundsOf = (
+  node: SceneNode,
+  pseudo: PseudoKind,
+) => Bounds | undefined;
+
+/**
+ * What the pointer, the selection and a comment point at: a derived node, or
+ * one of its out-of-flow pseudo-elements. A pseudo-element is never a
+ * `SceneNode`: the graph, the layers tree and `isolateHiddenIds` know only the
+ * host.
+ */
+export interface SceneTarget {
+  readonly node: SceneNode;
+  /** Absent for the node itself. */
+  readonly pseudo?: PseudoKind;
+}
+
+const PSEUDO_KINDS: readonly PseudoKind[] = ['::before', '::after'];
+
+/**
+ * The id of a target within one derivation: the node's id (`n4`), or the
+ * node's id followed by the pseudo kind (`n4::after`). Pure.
+ * Round-trip: `targetById(graph, targetIdOf(t))` gives `t`'s node and pseudo
+ * back for any target whose node is in `graph`.
+ */
+export const targetIdOf = (target: SceneTarget): string =>
+  `${target.node.id}${target.pseudo ?? ''}`;
+
+/**
+ * The target an id names in `graph`: `n4` is node `n4`, and `n4::before` /
+ * `n4::after` are that node's pseudo-element.
+ *
+ * Returns undefined when the node is not in `graph`, or the suffix is not
+ * exactly `::before` or `::after` (`n4::marker`, `n4::`). It does not check
+ * that the pseudo-element draws a box: that is `PseudoBoundsOf`'s job.
+ * Never throws.
+ */
+export const targetById = (
+  graph: SceneGraph,
+  id: string,
+): SceneTarget | undefined => {
+  const at = id.indexOf('::');
+
+  if (at === -1) {
+    const node = graph.byId.get(id);
+
+    return node === undefined ? undefined : { node };
+  }
+
+  const node = graph.byId.get(id.slice(0, at));
+  const pseudo = PSEUDO_KINDS.find((kind) => kind === id.slice(at));
+
+  return node === undefined || pseudo === undefined
+    ? undefined
+    : { node, pseudo };
+};
+
+/**
+ * The label of a target: `nodeLabel(node)` for the node itself, else
+ * `nodeLabel(node)` followed by the pseudo kind — `span.badge::after`,
+ * `div#card::before`. Pure.
+ */
+export const targetLabel = (target: SceneTarget): string =>
+  `${nodeLabel(target.node)}${target.pseudo ?? ''}`;
+
 /* Bounds and hit-testing ---------------------------------------------------- */
 
 export interface Bounds {
@@ -204,6 +285,74 @@ export const clipBounds = (bounds: Bounds, clips: readonly Clip[]): Bounds => {
 };
 
 /**
+ * The resolved style fields of a `::before` / `::after` pseudo-element that
+ * `pseudoBoxOf` reads — a `getComputedStyle(element, '::before')` result fits.
+ * Insets and margins are resolved values in CSS px (`'90px'`, `'-6px'`), or
+ * `'auto'` when the pseudo-element is not positioned or generates no box.
+ */
+export type PseudoStyle = Pick<
+  CSSStyleDeclaration,
+  | 'content'
+  | 'position'
+  | 'left'
+  | 'top'
+  | 'right'
+  | 'bottom'
+  | 'marginLeft'
+  | 'marginTop'
+  | 'marginRight'
+  | 'marginBottom'
+>;
+
+/** A resolved CSS px length as a number; NaN for anything else (`auto`). */
+const pxOf = (value: string): number =>
+  value.endsWith('px') ? Number(value.slice(0, -2)) : Number.NaN;
+
+/**
+ * The border box of an out-of-flow pseudo-element, in the same coordinates
+ * as `block` — the viewport box of its containing block's padding box —
+ * given `factor`, the viewport px per CSS px (the canvas scale).
+ *
+ * x = block.x + (left + marginLeft) · factor
+ * y = block.y + (top + marginTop) · factor
+ * width  = block.width  − (left + right + marginLeft + marginRight) · factor
+ * height = block.height − (top + bottom + marginTop + marginBottom) · factor
+ *
+ * Example: block {x:0, y:0, width:100, height:40}, left 90px, top -6px,
+ * right -14px, bottom 30px, margins 0, factor 1 → {x:90, y:-6, width:24, height:16}.
+ *
+ * Returns undefined when the pseudo-element generates no box (`content` is
+ * `none` or `normal`), is in flow (`position` is neither `absolute` nor
+ * `fixed`), or any inset or margin does not resolve to a finite px number
+ * (`auto`, which is also what a `display: none` pseudo resolves to). Never
+ * throws; pure — it reads only its arguments.
+ */
+export const pseudoBoxOf = (
+  style: PseudoStyle,
+  block: Bounds,
+  factor: number,
+): Bounds | undefined => {
+  if (style.content === 'none' || style.content === 'normal') return undefined;
+  if (style.position !== 'absolute' && style.position !== 'fixed') {
+    return undefined;
+  }
+
+  const left = pxOf(style.left) + pxOf(style.marginLeft);
+  const top = pxOf(style.top) + pxOf(style.marginTop);
+  const right = pxOf(style.right) + pxOf(style.marginRight);
+  const bottom = pxOf(style.bottom) + pxOf(style.marginBottom);
+
+  if (![left, top, right, bottom].every(Number.isFinite)) return undefined;
+
+  return {
+    x: block.x + left * factor,
+    y: block.y + top * factor,
+    width: block.width - (left + right) * factor,
+    height: block.height - (top + bottom) * factor,
+  };
+};
+
+/**
  * Whether a node takes up any room. An element that generates no box
  * (`display: contents`, as the module's own wrappers are, or `display: none`)
  * measures as an empty rect at the window's corner, far from the content: it
@@ -218,6 +367,42 @@ const contains = (bounds: Bounds, point: { x: number; y: number }): boolean =>
   point.y >= bounds.y &&
   point.x <= bounds.x + bounds.width &&
   point.y <= bounds.y + bounds.height;
+
+/**
+ * The box to outline, hit-test or pin against for a target. For a pseudo
+ * target this is `pseudoBounds(node, pseudo)`. It is `bounds(node)` (the host
+ * box) for the node itself, for a pseudo target when `pseudoBounds` is absent,
+ * or when `pseudoBounds` returns undefined (the pseudo box is gone in this
+ * derivation). Always returns a `Bounds`, which may be empty, as
+ * `BoundsOf` may.
+ */
+export const targetBounds = (
+  target: SceneTarget,
+  bounds: BoundsOf,
+  pseudoBounds?: PseudoBoundsOf,
+): Bounds =>
+  (target.pseudo === undefined
+    ? undefined
+    : pseudoBounds?.(target.node, target.pseudo)) ?? bounds(target.node);
+
+/**
+ * Which out-of-flow pseudo-element of `node` the content point lies on.
+ * `::after` is checked first, since it paints above `::before`. A box counts
+ * only when it has area, and its edges are inclusive, as in `hitTest`.
+ *
+ * Returns undefined when neither pseudo box contains the point, or neither is
+ * a target (`pseudoBounds` returns undefined). Pure.
+ */
+export const pseudoAt = (
+  node: SceneNode,
+  point: { readonly x: number; readonly y: number },
+  pseudoBounds: PseudoBoundsOf,
+): PseudoKind | undefined =>
+  (['::after', '::before'] as const).find((pseudo) => {
+    const box = pseudoBounds(node, pseudo);
+
+    return box !== undefined && contains(box, point);
+  });
 
 const distance = (bounds: Bounds, point: { x: number; y: number }): number => {
   const dx = Math.max(

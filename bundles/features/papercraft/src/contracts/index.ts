@@ -367,6 +367,12 @@ const anchorFields = {
   y: z.number().optional(),
   label: z.string().optional(),
   text: z.string().optional(),
+  /**
+   * The `::before` / `::after` of the anchored element that the comment is
+   * on; the anchor's `offset` is then relative to that pseudo box. Absent
+   * means the element itself. Any other value fails validation.
+   */
+  pseudo: z.enum(['::before', '::after']).optional(),
 };
 
 /**

@@ -20,14 +20,17 @@ import {
   excerptOf,
   indexOf,
   offsetOf,
+  pseudoOf,
   STAMP_ATTRIBUTE,
 } from '../anchor.js';
 import {
   type Bounds,
   type BoundsOf,
   nodeLabel,
+  type PseudoBoundsOf,
   type SceneGraph,
   type SceneNode,
+  targetBounds,
 } from './scene-graph.js';
 
 /** A point in content coordinates. */
@@ -236,12 +239,19 @@ export const offsetIn = (box: Bounds, point: ContentPoint): AnchorOffset => ({
  * offset (the element's corner without one), else the point the anchor
  * recorded — a free point's own, or where an element's comment was clicked
  * when the revision on screen no longer has that element — else `fallback`.
+ *
+ * When the anchor names a valid `pseudo` (`pseudoOf`) and `pseudoBounds`
+ * gives that pseudo-element of the resolved node a box, the box the offset
+ * applies to is that pseudo box. Otherwise it is the host's `bounds(node)`.
+ * The node is resolved exactly as before (`nodeOfAnchor`), so `pseudo` never
+ * changes which element an anchor means.
  */
 export const pinPointOf = (
   anchor: CommentAnchor,
   graph: SceneGraph | undefined,
   bounds: BoundsOf | undefined,
   fallback?: ContentPoint,
+  pseudoBounds?: PseudoBoundsOf,
 ): ContentPoint | undefined => {
   const node =
     anchor.form === 'point' || graph === undefined
@@ -249,7 +259,11 @@ export const pinPointOf = (
       : nodeOfAnchor(graph, anchor, bounds);
 
   if (node !== undefined && bounds !== undefined) {
-    const box = bounds(node);
+    const box = targetBounds(
+      { node, pseudo: pseudoOf(anchor) },
+      bounds,
+      pseudoBounds,
+    );
     const offset = offsetOf(anchor);
 
     return offset === undefined
@@ -268,10 +282,12 @@ export const pinPointOf = (
  * are laid again on every zoom and every reading of the threads and drafts,
  * and an anchor's element does not move between two readings of the same
  * derivation — only a new derivation, or new bounds, measure again.
+ * `pseudoBounds` places an anchor on a pseudo-element as `pinPointOf` does.
  */
 export const anchorResolver = (
   graph: SceneGraph | undefined,
   bounds: BoundsOf | undefined,
+  pseudoBounds?: PseudoBoundsOf,
 ): ((
   anchor: CommentAnchor,
   fallback?: ContentPoint,
@@ -280,7 +296,10 @@ export const anchorResolver = (
 
   return (anchor, fallback) => {
     if (!resolved.has(anchor)) {
-      resolved.set(anchor, pinPointOf(anchor, graph, bounds));
+      resolved.set(
+        anchor,
+        pinPointOf(anchor, graph, bounds, undefined, pseudoBounds),
+      );
     }
 
     return resolved.get(anchor) ?? fallback;

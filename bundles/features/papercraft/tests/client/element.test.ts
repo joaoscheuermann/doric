@@ -935,6 +935,264 @@ test('the element under the pointer is outlined in any mode, never while the can
   await mounted.unmount();
 });
 
+/* Pseudo-elements: their own targets ---------------------------------------- */
+
+/** `#pay`'s border box, in viewport (and, at the identity view, content) px. */
+const PAY = { x: 100, y: 50, width: 120, height: 40 } as const;
+/** Its `::after`: a strip 6px tall right below it (top 40, bottom -6). */
+const PAY_AFTER = { x: 100, y: 90, width: 120, height: 6 } as const;
+/** A point on the strip, at its centre, and one on `#pay` itself. */
+const ON_STRIP = { clientX: 160, clientY: 93 } as const;
+const ON_PAY = { clientX: 160, clientY: 70 } as const;
+
+const declarationOf = (values: Record<string, string>) => ({
+  ...values,
+  getPropertyValue: (name: string): string =>
+    values[
+      name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
+    ] ?? '',
+});
+
+/**
+ * Lays the preview out for the length of `run`: happy-dom lays nothing out
+ * and computes no pseudo-element, so the layout is the boundary faked — the
+ * content at the origin, `#pay` positioned at `PAY` with an absolute
+ * `::after` strip below it; every other element measures as happy-dom does.
+ * In place before the mount, which measures the scene as it fits the view.
+ * The frame `run` keeps is unmounted, and chat's composer turned off, even
+ * when an assertion fails, so nothing leaks into the next test.
+ */
+const withPayStrip = async (
+  run: (keep: (mounted: Mounted) => Mounted) => Promise<void>,
+): Promise<void> => {
+  const kept: Mounted[] = [];
+  const proto = window.HTMLElement.prototype as unknown as {
+    getBoundingClientRect: () => DOMRect;
+  };
+  const ownRect = Object.getOwnPropertyDescriptor(
+    proto,
+    'getBoundingClientRect',
+  );
+  const realRect = proto.getBoundingClientRect;
+  const ownStyle = Object.getOwnPropertyDescriptor(window, 'getComputedStyle');
+  const realStyle = window.getComputedStyle.bind(window) as unknown as (
+    element: unknown,
+    pseudo?: string | null,
+  ) => unknown;
+  const rectOf = ({
+    x,
+    y,
+    width,
+    height,
+  }: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => ({
+    x,
+    y,
+    width,
+    height,
+    left: x,
+    top: y,
+    right: x + width,
+    bottom: y + height,
+    toJSON: () => ({}),
+  });
+
+  Object.defineProperty(proto, 'getBoundingClientRect', {
+    configurable: true,
+    writable: true,
+    value(this: HTMLElement) {
+      if (this.id === 'pay') return rectOf(PAY);
+      if (this.classList.contains('papercraft-content'))
+        return rectOf({ x: 0, y: 0, width: 800, height: 600 });
+
+      return realRect.call(this);
+    },
+  });
+  Object.defineProperty(window, 'getComputedStyle', {
+    configurable: true,
+    writable: true,
+    value: (element: Element, pseudo?: string | null) => {
+      const kind = (pseudo ?? '').replace(/^:+/, '');
+
+      // The rest of the preview: static boxes that clip nothing and draw no
+      // pseudo-element (happy-dom computes neither).
+      if (element.id !== 'pay')
+        return element.closest('.papercraft-content') === null
+          ? realStyle(element, pseudo)
+          : declarationOf(
+              kind === ''
+                ? {
+                    display: 'block',
+                    position: 'static',
+                    overflowX: 'visible',
+                    overflowY: 'visible',
+                  }
+                : { content: 'none', position: 'static' },
+            );
+
+      if (kind === 'after')
+        return declarationOf({
+          display: 'block',
+          content: '""',
+          position: 'absolute',
+          left: '0px',
+          top: '40px',
+          right: '0px',
+          bottom: '-6px',
+          marginLeft: '0px',
+          marginTop: '0px',
+          marginRight: '0px',
+          marginBottom: '0px',
+        });
+      if (kind === 'before')
+        return declarationOf({ content: 'none', position: 'static' });
+
+      return declarationOf({
+        display: 'inline-block',
+        position: 'relative',
+        overflowX: 'visible',
+        overflowY: 'visible',
+        borderLeftWidth: '0px',
+        borderTopWidth: '0px',
+        borderRightWidth: '0px',
+        borderBottomWidth: '0px',
+      });
+    },
+  });
+
+  try {
+    await run((mounted) => {
+      kept.push(mounted);
+
+      return mounted;
+    });
+  } finally {
+    for (const mounted of kept) await mounted.unmount();
+    comment.setComposerAvailable(false);
+    if (ownRect === undefined)
+      delete (proto as { getBoundingClientRect?: unknown })
+        .getBoundingClientRect;
+    else Object.defineProperty(proto, 'getBoundingClientRect', ownRect);
+    if (ownStyle === undefined)
+      delete (window as { getComputedStyle?: unknown }).getComputedStyle;
+    else Object.defineProperty(window, 'getComputedStyle', ownStyle);
+  }
+};
+
+/** The surface box an outline draws, from its inline style. */
+const boxOfOutline = (outline: HTMLElement | null) => {
+  assert.ok(outline !== null, 'no outline drawn');
+
+  return {
+    x: Number.parseFloat(outline.style.left),
+    y: Number.parseFloat(outline.style.top),
+    width: Number.parseFloat(outline.style.width),
+    height: Number.parseFloat(outline.style.height),
+  };
+};
+
+const pointerOn = (
+  target: Element,
+  type: string,
+  init: Record<string, unknown>,
+) =>
+  react.act(async () => {
+    target.dispatchEvent(
+      new window.PointerEvent(type, {
+        bubbles: true,
+        composed: true,
+        ...init,
+      }) as never,
+    );
+  });
+
+test('the pointer on an absolute ::after outlines and names the pseudo-element, on its host the host', async () => {
+  await withPayStrip(async (keep) => {
+    const h = harness();
+    const mounted = keep(await h.mount('node', { blockRevision: 1 }));
+    const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+
+    // Nothing fits an area happy-dom measures as empty: the view stays the
+    // identity, so a content box is drawn at its own surface pixels.
+    await pointerOn(pay, 'pointermove', ON_STRIP);
+    assert.deepEqual(
+      boxOfOutline(query(mounted.frame, 'papercraft-hover')),
+      PAY_AFTER,
+    );
+    assert.equal(
+      query(mounted.frame, 'papercraft-hover-label')?.textContent,
+      'button#pay::after · checkout.html:42',
+    );
+
+    await pointerOn(pay, 'pointermove', ON_PAY);
+    assert.deepEqual(
+      boxOfOutline(query(mounted.frame, 'papercraft-hover')),
+      PAY,
+    );
+    assert.equal(
+      query(mounted.frame, 'papercraft-hover-label')?.textContent,
+      'button#pay · checkout.html:42',
+    );
+  });
+});
+
+test('a click with the select tool on an absolute ::after selects the pseudo-element box', async () => {
+  await withPayStrip(async (keep) => {
+    const h = harness();
+    const mounted = keep(await h.mount('node', { blockRevision: 1 }));
+    const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+
+    await focusNode(mounted.frame);
+    await press(pay, ON_STRIP);
+
+    assert.deepEqual(
+      boxOfOutline(query(mounted.frame, 'papercraft-selection')),
+      PAY_AFTER,
+    );
+  });
+});
+
+test('a comment on an absolute ::after anchors to the pseudo-element of its host, at an offset in its box', async () => {
+  await withPayStrip(async (keep) => {
+    const h = harness();
+    const { mounted, composer } = await commenting(h);
+    keep(mounted);
+    const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+
+    await clickIn(pay, ON_STRIP);
+    const field = inputOf(mounted.frame);
+    assert.ok(field !== null, 'the inline input never opened');
+    await react.act(async () => type(field, 'a faixa'));
+    await key(field, 'Enter');
+
+    await settle(
+      () => composer.added.length,
+      (length) => length === 1,
+      'the confirmed note never joined the stack',
+    );
+    const anchor = (
+      composer.added[0] as {
+        data: { target: { anchor: Record<string, unknown> } };
+      }
+    ).data.target.anchor;
+
+    assert.equal(anchor.form, 'source');
+    assert.equal(anchor.path, 'src/checkout.html');
+    assert.equal(anchor.line, 42);
+    assert.equal(anchor.selector, 'button#pay');
+    assert.equal(anchor.label, 'button::after');
+    assert.equal(anchor.pseudo, '::after');
+    // The centre of the strip, measured in the strip's box, not the host's.
+    assert.deepEqual(anchor.offset, { x: 0.5, y: 0.5 });
+    assert.equal(anchor.x, ON_STRIP.clientX);
+    assert.equal(anchor.y, ON_STRIP.clientY);
+  });
+});
+
 test('the new comment opens in a popover, and the hover label steps aside while it is open', async () => {
   const h = harness();
   const { mounted } = await commenting(h);

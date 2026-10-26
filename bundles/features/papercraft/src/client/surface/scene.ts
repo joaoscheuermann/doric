@@ -19,14 +19,31 @@ import {
   buildSceneGraph,
   type Clip,
   clipBounds,
+  type PseudoBoundsOf,
+  type PseudoKind,
+  pseudoBoxOf,
   type SceneGraph,
 } from './scene-graph.js';
 
 /** One derivation of the rendered revision, with its measured bounds. */
 export interface Scene {
   readonly graph: SceneGraph;
-  /** The node bounds in content coordinates, measured once per node. */
+  /**
+   * The node bounds in content coordinates, measured once per node: the
+   * element's own border box only, cut to what its clipping ancestors leave
+   * visible. A pseudo-element never widens its host's box.
+   */
   readonly bounds: BoundsOf;
+  /**
+   * The out-of-flow `::before` / `::after` boxes, in the same content
+   * coordinates and at the same scale as `bounds`, measured once per
+   * (node, pseudo). Each box is cut to the host's own overflow (when the host
+   * is its containing block) and the host's clipping ancestors.
+   * Undefined when the pseudo-element is in flow, has `content: none/normal`,
+   * has an `auto` inset or margin, or has no area once clipped. `remeasured`
+   * measures it again together with `bounds`.
+   */
+  readonly pseudoBounds: PseudoBoundsOf;
   /** The content element the bounds are measured from; the root when absent. */
   readonly content: HTMLElement | null;
 }
@@ -73,43 +90,141 @@ const clipsOf = (
   return clips;
 };
 
+type StyleOf = (element: Element, pseudo?: string) => CSSStyleDeclaration;
+
+/** A resolved border width in CSS px; 0 when it does not resolve. */
+const borderOf = (value: string): number => Number.parseFloat(value) || 0;
+
+/** The viewport box of an element's padding box: its border box less its borders. */
+const paddingBoxOf = (
+  element: Element,
+  styleOf: StyleOf,
+  factor: number,
+): Bounds => {
+  const box = boxOf(element);
+  const style = styleOf(element);
+  const left = borderOf(style.borderLeftWidth) * factor;
+  const top = borderOf(style.borderTopWidth) * factor;
+
+  return {
+    x: box.x + left,
+    y: box.y + top,
+    width: box.width - left - borderOf(style.borderRightWidth) * factor,
+    height: box.height - top - borderOf(style.borderBottomWidth) * factor,
+  };
+};
+
 /**
- * A fresh, lazy cache of node bounds in content coordinates: the part of
- * each node its clipping ancestors leave visible (`clipBounds`). Each node is
- * measured on its first reading, at the scale the canvas has then — its rect,
- * its clips and the divisor are read together, so a zoom between two
- * readings changes nothing.
+ * The containing block of an out-of-flow pseudo-element of `host`: the host
+ * itself, or the nearest positioned ancestor, when it is `absolute`; the
+ * content (or, without one, the document) when it is `fixed` or nothing
+ * below the content is positioned.
+ */
+const containingBlockOf = (
+  host: Element,
+  position: string,
+  content: Element | null,
+  styleOf: StyleOf,
+): Element => {
+  const root = content ?? host.ownerDocument.documentElement;
+
+  if (position === 'fixed') return root;
+
+  for (
+    let element: Element | null = host;
+    element !== null && element !== root;
+    element = element.parentElement
+  ) {
+    if (styleOf(element).position !== 'static') return element;
+  }
+
+  return root;
+};
+
+const hasArea = (bounds: Bounds): boolean =>
+  bounds.width >= 0 &&
+  bounds.height >= 0 &&
+  (bounds.width > 0 || bounds.height > 0);
+
+/**
+ * The viewport box of an out-of-flow `::before` / `::after` of `host`, cut to
+ * the host's own overflow when the host is its containing block; undefined
+ * when the pseudo-element draws no out-of-flow box.
+ */
+const pseudoViewportBoxOf = (
+  host: Element,
+  pseudo: PseudoKind,
+  content: Element | null,
+  styleOf: StyleOf,
+  factor: number,
+): Bounds | undefined => {
+  const style = styleOf(host, pseudo);
+
+  // In flow, it lies inside its host: no containing block to measure.
+  if (style.position !== 'absolute' && style.position !== 'fixed') {
+    return undefined;
+  }
+
+  const block = containingBlockOf(host, style.position, content, styleOf);
+  const padding = paddingBoxOf(block, styleOf, factor);
+  const box = pseudoBoxOf(style, padding, factor);
+
+  if (box === undefined || block !== host) return box;
+
+  const own = styleOf(host);
+  const x = own.overflowX !== 'visible';
+  const y = own.overflowY !== 'visible';
+
+  return x || y ? clipBounds(box, [{ box: padding, x, y }]) : box;
+};
+
+/**
+ * A fresh, lazy cache of node bounds and out-of-flow pseudo-element bounds in
+ * content coordinates: the part of each box its clipping ancestors leave
+ * visible (`clipBounds`). Each box is measured on its first reading, at the
+ * scale the canvas has then — its rect, its clips and the divisor are read
+ * together, so a zoom between two readings changes nothing. Both caches share
+ * one cache of computed styles.
  */
 const measured = (
   content: HTMLElement | null,
   scale: () => number,
-): BoundsOf => {
-  const styles = new Map<Element, CSSStyleDeclaration>();
-  const styleOf = (element: Element): CSSStyleDeclaration => {
-    let style = styles.get(element);
+): Pick<Scene, 'bounds' | 'pseudoBounds'> => {
+  const styles = new Map<Element, Map<string, CSSStyleDeclaration>>();
+  const styleOf: StyleOf = (element, pseudo = '') => {
+    let own = styles.get(element);
+
+    if (own === undefined) {
+      own = new Map();
+      styles.set(element, own);
+    }
+
+    let style = own.get(pseudo);
 
     if (style === undefined) {
-      // The element's own window: a frame without one clips nothing.
+      // The element's own window: a frame without one clips nothing and
+      // draws no pseudo-element.
       style =
-        element.ownerDocument.defaultView?.getComputedStyle(element) ??
+        element.ownerDocument.defaultView?.getComputedStyle(
+          element,
+          pseudo === '' ? null : pseudo,
+        ) ??
         ({
+          content: 'none',
           position: 'static',
           overflowX: 'visible',
           overflowY: 'visible',
         } as CSSStyleDeclaration);
-      styles.set(element, style);
+      own.set(pseudo, style);
     }
 
     return style;
   };
 
-  return boundsIndex((node) => {
-    const shown = clipBounds(
-      boxOf(node.element),
-      clipsOf(node.element, content, styleOf),
-    );
+  /** A viewport box, clipped by `host`'s clipping ancestors, in content units. */
+  const toContent = (box: Bounds, host: Element, factor: number): Bounds => {
+    const shown = clipBounds(box, clipsOf(host, content, styleOf));
     const origin = content?.getBoundingClientRect() ?? { x: 0, y: 0 };
-    const factor = scale();
 
     return {
       x: (shown.x - origin.x) / factor,
@@ -117,10 +232,41 @@ const measured = (
       width: shown.width / factor,
       height: shown.height / factor,
     };
-  });
+  };
+
+  const pseudos = new Map<string, Bounds | undefined>();
+
+  return {
+    bounds: boundsIndex((node) =>
+      toContent(boxOf(node.element), node.element, scale()),
+    ),
+    pseudoBounds: (node, pseudo) => {
+      const key = `${node.id}${pseudo}`;
+
+      if (pseudos.has(key)) return pseudos.get(key);
+
+      const factor = scale();
+      const box = pseudoViewportBoxOf(
+        node.element,
+        pseudo,
+        content,
+        styleOf,
+        factor,
+      );
+      const shown = box && toContent(box, node.element, factor);
+      const result = shown && hasArea(shown) ? shown : undefined;
+      pseudos.set(key, result);
+
+      return result;
+    },
+  };
 };
 
-/** The scene of what a shadow root holds now. */
+/**
+ * The scene of what a shadow root holds now. Each node's bounds are its own
+ * border box; its out-of-flow `::before` / `::after` boxes are measured apart
+ * (`pseudoBounds`), as targets of their own.
+ */
 export const sceneOf = (root: ShadowRoot, scale: () => number): Scene => {
   const content = root.querySelector(
     '.papercraft-content',
@@ -129,14 +275,14 @@ export const sceneOf = (root: ShadowRoot, scale: () => number): Scene => {
   return {
     graph: buildSceneGraph(content ?? root),
     content,
-    bounds: measured(content, scale),
+    ...measured(content, scale),
   };
 };
 
 /** The same derivation, measured again. */
 export const remeasured = (scene: Scene, scale: () => number): Scene => ({
   ...scene,
-  bounds: measured(scene.content, scale),
+  ...measured(scene.content, scale),
 });
 
 /**

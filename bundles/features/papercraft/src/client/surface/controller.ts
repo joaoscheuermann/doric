@@ -17,7 +17,7 @@ import {
   registerController,
 } from '../canvas-registry.js';
 import type { Scene } from './scene.js';
-import { isolateHiddenIds } from './scene-graph.js';
+import { isolateHiddenIds, targetById } from './scene-graph.js';
 import { IDENTITY, type Viewport, ZOOM_STEP, zoomAt } from './viewport.js';
 
 /** What the controller reads of the latest render when a command runs. */
@@ -91,7 +91,13 @@ export const usePreviewController = ({
 
         if (scene === undefined || selectedId === undefined) return;
 
-        setHidden(isolateHiddenIds(scene.graph, selectedId));
+        // A pseudo-element target isolates its host: it is no node of its own.
+        setHidden(
+          isolateHiddenIds(
+            scene.graph,
+            targetById(scene.graph, selectedId)?.node.id ?? selectedId,
+          ),
+        );
       },
       showAll: () => setHidden(new Set()),
       zoomOut: () => step(1 / ZOOM_STEP),
