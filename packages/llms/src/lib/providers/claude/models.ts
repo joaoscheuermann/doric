@@ -67,18 +67,9 @@ export const rejectsForcedToolChoice = (model: string): boolean => {
 const effortLevels = (model: string): readonly ReasoningEffort[] => {
   const id = parseModelId(model);
   if (id === undefined) return [];
-  const all: readonly ReasoningEffort[] = [
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-    'max',
-  ];
-  if (id.family === 'fable' || id.family === 'mythos' || id.major >= 5) {
-    return all;
-  }
+  if (thinksByDefault(model)) return claudeEffortOrder;
   if (id.major === 4 && id.family === 'opus') {
-    if (id.minor >= 7) return all;
+    if (id.minor >= 7) return claudeEffortOrder;
     if (id.minor === 6) return ['low', 'medium', 'high', 'max'];
     if (id.minor === 5) return ['low', 'medium', 'high'];
   }

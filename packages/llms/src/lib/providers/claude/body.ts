@@ -4,6 +4,7 @@ import type {
   ProviderReplayItem,
   ProviderRequest,
 } from '../../types/provider.js';
+import { asRecord } from '../../utils/json.js';
 import {
   messageImages,
   messageText,
@@ -25,7 +26,7 @@ import {
  * is accepted only when the first system block is this identity, so the
  * caller's own system text follows it rather than replacing it.
  */
-export const claudeDefaultInstructions =
+const claudeDefaultInstructions =
   "You are Claude Code, Anthropic's official CLI for Claude.";
 
 /**
@@ -33,11 +34,11 @@ export const claudeDefaultInstructions =
  * a request whose last message is the assistant's is a prefill, which every
  * current model refuses.
  */
-export const claudeContinuation =
+const claudeContinuation =
   'Continue from where your previous response ended.';
 
 /** The beta a request needs to set `thinking.block_binding`. */
-export const claudeThinkingBindingBeta = 'thinking-binding-controls-2026-08-01';
+const claudeThinkingBindingBeta = 'thinking-binding-controls-2026-08-01';
 
 /**
  * The default output cap; Anthropic requires one. A stream has room for a
@@ -208,7 +209,7 @@ const userContent = (
     return text === '' ? [] : [{ type: 'text', text }];
   }
 
-  return (message.content ?? []).flatMap<Record<string, unknown>>((part) =>
+  return message.content.flatMap<Record<string, unknown>>((part) =>
     part.type === 'text'
       ? part.text === ''
         ? []
@@ -253,7 +254,7 @@ const assistantContent = (
       type: 'tool_use',
       id: call.id,
       name: call.name,
-      input: toolInput(call.arguments),
+      input: parseObject(call.arguments) ?? {},
     });
   }
 
@@ -265,27 +266,20 @@ const claudeReplayBlocks = (
   replay: readonly ProviderReplayItem[] | undefined,
 ): readonly Record<string, unknown>[] =>
   (replay ?? []).flatMap((item) => {
-    const block = item.block;
-    return item.provider === claudeReplayProvider &&
-      block !== null &&
-      typeof block === 'object' &&
-      !Array.isArray(block)
-      ? [block as Record<string, unknown>]
+    const block = asRecord(item.block);
+    return item.provider === claudeReplayProvider && block !== undefined
+      ? [block]
       : [];
   });
 
-/** The arguments a `tool_use` block sends, as the object the call's string parsed to. */
-const toolInput = (arguments_: string): Record<string, unknown> => {
+/** The object a JSON string parses to; anything else, or no JSON, is `undefined`. */
+export const parseObject = (
+  json: string,
+): Record<string, unknown> | undefined => {
   try {
-    const parsed = JSON.parse(arguments_) as unknown;
-
-    return parsed !== null &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
+    return asRecord(JSON.parse(json));
   } catch {
-    return {};
+    return undefined;
   }
 };
 

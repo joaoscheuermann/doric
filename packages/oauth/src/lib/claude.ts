@@ -13,6 +13,7 @@ import {
   numberField,
   stringField,
 } from './utils/json.js';
+import { bearerToken, clean } from './utils/text.js';
 
 const DEFAULT_REFRESH_SKEW_MS = 5 * 60 * 1000;
 
@@ -194,45 +195,45 @@ const readKeychainLogin = async (
  * One that already expired and carries no refresh token is refused rather
  * than answered: its access token no longer works.
  */
+interface RefreshOptions {
+  readonly credentialsPath: string;
+  readonly transport: OAuthTransport;
+  readonly now: () => number;
+  readonly signal?: AbortSignal;
+}
+
 const credentialFromLogin = async (
   login: ClaudeAiOauth,
-  options: ResolveClaudeAuthOptions & {
-    readonly credentialsPath: string;
-    readonly transport: OAuthTransport;
-    readonly now: () => number;
-  },
+  options: ResolveClaudeAuthOptions & RefreshOptions,
 ): Promise<ClaudeCredential> => {
   const now = options.now();
-  const expired = (expiresAtMs(login.expiresAt) ?? Infinity) <= now;
-  const nextLogin =
-    options.refresh !== false &&
-    shouldRefresh(login, now) &&
-    (login.refreshToken !== undefined || expired)
-      ? await refreshClaudeLogin(login, options)
-      : login;
 
-  return credential(nextLogin);
-};
+  if (options.refresh === false || !shouldRefresh(login, now)) {
+    return credential(login);
+  }
 
-/** Refreshes an expiring login through the JSON refresh grant and writes it back. */
-const refreshClaudeLogin = async (
-  login: ClaudeAiOauth,
-  options: {
-    readonly credentialsPath: string;
-    readonly transport: OAuthTransport;
-    readonly now: () => number;
-    readonly signal?: AbortSignal;
-  },
-): Promise<ClaudeAiOauth> => {
-  const refreshToken = login.refreshToken;
+  if (login.refreshToken === undefined) {
+    if ((expiresAtMs(login.expiresAt) ?? Infinity) > now) {
+      return credential(login);
+    }
 
-  if (refreshToken === undefined) {
     return error(
       'claude_refresh_token_missing',
       'Claude access token has expired and no refresh token is available.',
     );
   }
 
+  return credential(
+    await refreshClaudeLogin(login, login.refreshToken, options),
+  );
+};
+
+/** Refreshes an expiring login through the JSON refresh grant and writes it back. */
+const refreshClaudeLogin = async (
+  login: ClaudeAiOauth,
+  refreshToken: string,
+  options: RefreshOptions,
+): Promise<ClaudeAiOauth> => {
   const response = await options.transport.request({
     method: 'POST',
     url: claudeOAuthProfile.tokenEndpoint,
@@ -258,16 +259,9 @@ const refreshClaudeLogin = async (
   const refreshed = parseRefreshResponse(response.body, options.now);
   const nextLogin: ClaudeAiOauth = {
     ...login,
-    ...(refreshed.accessToken === undefined
-      ? {}
-      : { accessToken: refreshed.accessToken }),
-    ...(refreshed.refreshToken === undefined
-      ? {}
-      : { refreshToken: refreshed.refreshToken }),
-    ...(refreshed.expiresAt === undefined
-      ? {}
-      : { expiresAt: refreshed.expiresAt }),
-    ...(refreshed.scopes === undefined ? {} : { scopes: refreshed.scopes }),
+    ...Object.fromEntries(
+      Object.entries(refreshed).filter(([, value]) => value !== undefined),
+    ),
   };
 
   await writeCredentialsFile(options.credentialsPath, nextLogin);
@@ -424,18 +418,7 @@ const claudeHome = (
   options: ResolveClaudeAuthOptions,
   env: Readonly<Record<string, string | undefined>>,
 ): string =>
-  options.claudeHome ?? env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
-
-const clean = (value: string | undefined): string | undefined => {
-  const trimmed = value?.trim();
-
-  return trimmed === undefined || trimmed === '' ? undefined : trimmed;
-};
-
-const bearerToken = (value: string): string =>
-  value.toLowerCase().startsWith('bearer ')
-    ? value.slice('bearer '.length).trimStart()
-    : value;
+  options.claudeHome ?? clean(env.CLAUDE_CONFIG_DIR) ?? join(homedir(), '.claude');
 
 const error = (
   code: string,

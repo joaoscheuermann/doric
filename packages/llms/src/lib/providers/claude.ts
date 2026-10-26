@@ -2,7 +2,7 @@ import type { Logger } from 'pino';
 
 import { HttpStreamError } from '../classes/http-error.js';
 import { ProviderErrorObject } from '../classes/provider-error.js';
-import type { HttpRequest, HttpTransport } from '../types/http.js';
+import type { HttpTransport } from '../types/http.js';
 import type {
   JsonValue,
   LlmProvider,
@@ -20,7 +20,6 @@ import type {
   StructuredOutputSchema,
   StructuredOutputValue,
 } from '../types/provider.js';
-import { diagnosticExcerpt } from '../utils/diagnostics.js';
 import {
   arrayField,
   asRecord,
@@ -33,18 +32,15 @@ import { claudeBody, claudeBodyBetas } from './claude/body.js';
 import { undatedModelId } from './claude/models.js';
 import {
   claudeErrorOf,
+  claudeHttpError,
   claudeStreamEvents,
   claudeStreamFinish,
   createClaudeStreamState,
   isClaudeStreamError,
   parseClaudeFinished,
 } from './claude/parse.js';
-import {
-  parseJsonBody,
-  requireRequestInput,
-  streamErrorEvent,
-} from './common.js';
-import { withProviderErrors } from './http.js';
+import { parseJsonBody, streamErrorEvent } from './common.js';
+import { requestJson, withProviderErrors } from './http.js';
 import { withProviderLogging } from './logging.js';
 import { parseStructuredOutput } from './structured.js';
 
@@ -56,11 +52,6 @@ export interface ClaudeProviderDeps {
   readonly authorization: SecretSource;
   readonly baseUrl?: string;
   readonly logger: Logger;
-  /**
-   * Accepted for kind-builder symmetry; Claude is always its own identity, so
-   * a configured provider still answers `claude`.
-   */
-  readonly identity?: { readonly id: string; readonly name: string };
 }
 
 export const claudeMetadata: ProviderMetadata = {
@@ -102,22 +93,6 @@ export const createClaudeProvider = (deps: ClaudeProviderDeps): LlmProvider => {
     'user-agent': claudeUserAgent,
   });
 
-  /** A JSON request; a refusal answers with Anthropic's own error message. */
-  const requestJson = async (
-    request: HttpRequest,
-  ): Promise<Record<string, unknown>> => {
-    const response = await transport.request(request);
-    if (response.status >= 400) {
-      throw claudeHttpError(
-        providerId,
-        response.status,
-        response.body,
-        response.headers,
-      );
-    }
-    return parseJsonBody(providerId, response.body);
-  };
-
   /** Every model the catalog lists, page by page. */
   const listModels = async (
     signal?: AbortSignal,
@@ -126,7 +101,7 @@ export const createClaudeProvider = (deps: ClaudeProviderDeps): LlmProvider => {
     let after: string | undefined;
 
     do {
-      const page = await requestJson({
+      const page = await requestJson(transport, providerId, {
         method: 'GET',
         url: `${baseUrl}/v1/models?beta=true&limit=1000${
           after === undefined ? '' : `&after_id=${encodeURIComponent(after)}`
@@ -175,9 +150,8 @@ export const createClaudeProvider = (deps: ClaudeProviderDeps): LlmProvider => {
   async function complete<Output = JsonValue>(
     request: ProviderRequest<Output>,
   ): Promise<ProviderFinished<Output>> {
-    requireRequestInput(providerId, request);
     const body = claudeBody(request, false, providerId);
-    const response = await requestJson({
+    const response = await requestJson(transport, providerId, {
       method: 'POST',
       url: `${baseUrl}/v1/messages?beta=true`,
       headers: {
@@ -206,7 +180,6 @@ export const createClaudeProvider = (deps: ClaudeProviderDeps): LlmProvider => {
       async *stream<Output = JsonValue>(
         request: ProviderRequest<Output>,
       ): AsyncIterable<ProviderStreamEvent<Output>> {
-        requireRequestInput(providerId, request);
         const body = claudeBody(request, true, providerId);
         const state = createClaudeStreamState();
         const contextWindow = await contextWindowOf(request.model);
@@ -214,7 +187,7 @@ export const createClaudeProvider = (deps: ClaudeProviderDeps): LlmProvider => {
         yield {
           type: 'response.started',
           provider: providerId,
-          model: body.model as string,
+          model: request.model,
           ...(contextWindow === undefined ? {} : { contextWindow }),
         };
 
@@ -254,13 +227,15 @@ export const createClaudeProvider = (deps: ClaudeProviderDeps): LlmProvider => {
             yield {
               type: 'error',
               error: {
-                provider: providerId,
-                code: error.type ?? 'provider_error',
-                message: `${providerName} stream error${
-                  error.type === undefined ? '' : ` (${error.type})`
-                }${error.message === undefined ? '.' : `: ${error.message}`}`,
+                ...streamErrorEvent(
+                  providerId,
+                  error.type ?? 'provider_error',
+                  `${providerName} stream error${
+                    error.type === undefined ? '' : ` (${error.type})`
+                  }${error.message === undefined ? '.' : `: ${error.message}`}`,
+                  event.data,
+                ).error,
                 retryable: error.retryable,
-                diagnostic: diagnosticExcerpt(event.data),
               },
             };
             return;
@@ -406,72 +381,26 @@ const findModel = (
   models.find((item) => item.id === model) ??
   models.find((item) => undatedModelId(item.id) === undatedModelId(model));
 
-/** `retry-after` in milliseconds: seconds, or an HTTP date. */
-const retryAfterMs = (value: string | undefined): number | undefined => {
-  if (value === undefined || value.trim() === '') return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
-  const date = Date.parse(value);
-  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
-};
-
-/** A header by case-insensitive name. */
-const header = (
-  headers: Readonly<Record<string, string>>,
-  name: string,
-): string | undefined =>
-  Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1];
-
 /**
- * A refused request as the provider error it is, with Anthropic's own message
- * in it (`prompt is too long: …` is what a context-overflow check reads), the
- * wait `retry-after` asks for and the request id. A spend cap is never
- * retryable, however long a retry waits.
- */
-export const claudeHttpError = (
-  provider: string,
-  status: number,
-  body: string,
-  headers: Readonly<Record<string, string>> = {},
-): ProviderErrorObject => {
-  let envelope: Record<string, unknown> = {};
-  try {
-    envelope = asRecord(JSON.parse(body)) ?? {};
-  } catch {
-    // A body that is not Anthropic's error envelope keeps the bare status.
-  }
-  const error = claudeErrorOf(envelope);
-  const wait = retryAfterMs(header(headers, 'retry-after'));
-  const requestId =
-    header(headers, 'request-id') ?? stringField(envelope, 'request_id');
-  const hint =
-    status === 401 ? ' Sign in with Claude again to renew the login.' : '';
-
-  return new ProviderErrorObject({
-    provider,
-    code: status === 401 || status === 403 ? 'auth_failed' : 'http_error',
-    message: `${provider} request failed with HTTP ${status}${
-      error.message === undefined ? '.' : `: ${error.message}`
-    }${hint}`,
-    status,
-    retryable:
-      (status === 429 || status >= 500) &&
-      error.code !== 'enforced_spend_limit_reached',
-    diagnostic: diagnosticExcerpt(body),
-    ...(wait === undefined ? {} : { retryAfterMs: wait }),
-    ...(requestId === undefined ? {} : { requestId }),
-  });
-};
-
-/**
- * A transport whose rejected streams fail as Claude's own errors, so a stream
- * that is refused before it opens says what Anthropic said.
+ * A transport whose refused requests and streams fail as Claude's own errors,
+ * so a refusal says what Anthropic said.
  */
 const withClaudeErrors = (
   transport: HttpTransport,
   provider: string,
 ): HttpTransport => ({
-  request: (request) => transport.request(request),
+  async request(request) {
+    const response = await transport.request(request);
+    if (response.status >= 400) {
+      throw claudeHttpError(
+        provider,
+        response.status,
+        response.body,
+        response.headers,
+      );
+    }
+    return response;
+  },
   async *stream(request) {
     try {
       yield* transport.stream(request);

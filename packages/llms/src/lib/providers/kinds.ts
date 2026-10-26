@@ -354,7 +354,6 @@ const builders: Record<ProviderKindId, ProviderBuilder> = {
     createClaudeProvider({
       transport: deps.transport,
       logger: deps.logger,
-      identity: deps.identity,
       authorization: values.token ?? '',
       ...baseUrl(values),
     }),

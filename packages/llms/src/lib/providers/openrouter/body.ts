@@ -160,8 +160,7 @@ const replayItems = (
   message: ProviderMessage,
   policy: NonNullable<OpenRouterBodyOptions['replay']>,
 ) =>
-  untaggedReplay(message) === undefined ||
-  (policy === 'tool_calls' && (message.toolCalls?.length ?? 0) === 0)
+  policy === 'tool_calls' && (message.toolCalls?.length ?? 0) === 0
     ? undefined
     : untaggedReplay(message);
 

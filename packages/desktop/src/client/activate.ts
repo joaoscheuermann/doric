@@ -196,9 +196,9 @@ export const activateClientBundles = async (input: {
     tokens: description.tokens,
   });
 
-  // Stage 9 window platform contracts: elements and connection, and the
-  // system browser (`doric.browser/v1`). The client
-  // `doric.notifications/v1` (D9-6) is gone since WP-10N.
+  // Stage 9 window platform contracts: elements, connection and the system
+  // browser (`doric.browser/v1`). The client `doric.notifications/v1` (D9-6)
+  // is gone since WP-10N.
   const principals = new Map<string, Principal>();
 
   provideElements(platform, {

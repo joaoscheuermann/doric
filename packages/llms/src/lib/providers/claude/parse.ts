@@ -13,8 +13,10 @@ import {
   recordField,
   stringField,
 } from '../../utils/json.js';
+import { ProviderErrorObject } from '../../classes/provider-error.js';
+import { diagnosticExcerpt } from '../../utils/diagnostics.js';
 import { deltaEvent } from '../common.js';
-import { claudeReplayProvider } from './body.js';
+import { claudeReplayProvider, parseObject } from './body.js';
 
 /** One content block as the stream builds it, by its index in the message. */
 interface StreamBlock {
@@ -31,7 +33,7 @@ interface StreamBlock {
 }
 
 /** What a Claude Messages stream accumulates as it emits events. */
-export interface ClaudeStreamState {
+interface ClaudeStreamState {
   readonly blocks: Map<number, StreamBlock>;
   /** Every numeric usage count the stream reported so far, by Anthropic's name. */
   counts?: Record<string, number>;
@@ -39,14 +41,11 @@ export interface ClaudeStreamState {
   finishReason?: FinishReason;
   /** The refusal the stream ended on, as `stop_details` described it. */
   refusal?: string;
-  /** Whether `message_stop` arrived: a stream without it was cut short. */
-  stopped: boolean;
 }
 
 /** An empty stream state, one the events below fill as the stream runs. */
 export const createClaudeStreamState = (): ClaudeStreamState => ({
   blocks: new Map(),
-  stopped: false,
 });
 
 /**
@@ -55,7 +54,7 @@ export const createClaudeStreamState = (): ClaudeStreamState => ({
  * and reads (the whole prompt), with the cache counts kept as its parts;
  * thinking tokens are the reasoning count, and the total is input plus output.
  */
-export const claudeUsage = (
+const claudeUsage = (
   usage: Record<string, unknown> | undefined,
 ): UsageMetadata | undefined => {
   if (usage === undefined) {
@@ -103,7 +102,7 @@ export const claudeUsage = (
  * An Anthropic stop_reason as the shared finish reason; an unknown one stays
  * unset. A full context window is a cut-off answer, as `max_tokens` is.
  */
-export const claudeFinishReason = (
+const claudeFinishReason = (
   value: unknown,
 ): FinishReason | undefined => {
   if (
@@ -140,18 +139,6 @@ const refusalOf = (details: Record<string, unknown> | undefined): string => {
     category === undefined ? '' : ` (${category})`,
     explanation === undefined ? '.' : `: ${explanation}`,
   ].join('');
-};
-
-/** Whether a tool call's JSON is an object a tool can take. */
-const parsesAsInput = (json: string): boolean => {
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    return (
-      parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-    );
-  } catch {
-    return false;
-  }
 };
 
 /** A replay item: one Claude content block, tagged so no other provider replays it. */
@@ -395,10 +382,6 @@ export const claudeStreamEvents = (
     return events;
   }
 
-  if (type === 'message_stop') {
-    state.stopped = true;
-  }
-
   return events;
 };
 
@@ -411,13 +394,10 @@ const implicitBlock = (
   index: number,
   deltaType: string | undefined,
 ): StreamBlock | undefined => {
-  const type =
-    deltaType === 'text_delta'
-      ? 'text'
-      : deltaType === 'thinking_delta'
-        ? 'thinking'
-        : undefined;
-  if (type === undefined) return undefined;
+  if (deltaType !== 'text_delta' && deltaType !== 'thinking_delta') {
+    return undefined;
+  }
+  const type = deltaType === 'text_delta' ? 'text' : 'thinking';
   const block: StreamBlock = { type, content: '', signature: '', done: false };
   state.blocks.set(index, block);
   return block;
@@ -433,7 +413,7 @@ const streamCall = (
 ): ProviderToolCall | undefined => {
   if (block.type !== 'tool_use' || !block.done) return undefined;
   const json = block.content === '' ? '{}' : block.content;
-  if (!parsesAsInput(json)) return undefined;
+  if (parseObject(json) === undefined) return undefined;
   return {
     id: block.id ?? `toolu_${index}`,
     name: block.name ?? '',
@@ -447,6 +427,9 @@ export const isClaudeStreamError = (
   payload: Record<string, unknown>,
 ): boolean =>
   payload.type === 'error' || recordField(payload, 'error') !== undefined;
+
+/** The error code of a spend cap, which stays reached however long a retry waits. */
+const spendLimitCode = 'enforced_spend_limit_reached';
 
 /** The Anthropic error types a retry can outlast. */
 const retryableErrorTypes = new Set([
@@ -475,13 +458,65 @@ export const claudeErrorOf = (
   return {
     type,
     message: stringField(error, 'message'),
-    // A spend cap stays reached however long a retry waits.
     retryable:
       type !== undefined &&
       retryableErrorTypes.has(type) &&
-      code !== 'enforced_spend_limit_reached',
+      code !== spendLimitCode,
     ...(code === undefined ? {} : { code }),
   };
+};
+
+/** `retry-after` in milliseconds: seconds, or an HTTP date. */
+const retryAfterMs = (value: string | undefined): number | undefined => {
+  if (value === undefined || value.trim() === '') return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+};
+
+/** A header by case-insensitive name. */
+const header = (
+  headers: Readonly<Record<string, string>>,
+  name: string,
+): string | undefined =>
+  Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1];
+
+/**
+ * A refused request as the provider error it is, with Anthropic's own message
+ * in it (`prompt is too long: …` is what a context-overflow check reads), the
+ * wait `retry-after` asks for and the request id. A spend cap is never
+ * retryable, however long a retry waits.
+ */
+export const claudeHttpError = (
+  provider: string,
+  status: number,
+  body: string,
+  headers: Readonly<Record<string, string>> = {},
+): ProviderErrorObject => {
+  // A body that is not Anthropic's error envelope keeps the bare status.
+  const envelope = parseObject(body) ?? {};
+  const error = claudeErrorOf(envelope);
+  const wait = retryAfterMs(header(headers, 'retry-after'));
+  const requestId =
+    header(headers, 'request-id') ?? stringField(envelope, 'request_id');
+  const hint =
+    status === 401 ? ' Sign in with Claude again to renew the login.' : '';
+
+  return new ProviderErrorObject({
+    provider,
+    code: status === 401 || status === 403 ? 'auth_failed' : 'http_error',
+    message: `${provider} request failed with HTTP ${status}${
+      error.message === undefined ? '.' : `: ${error.message}`
+    }${hint}`,
+    status,
+    retryable:
+      (status === 429 || status >= 500) &&
+      error.code !== spendLimitCode,
+    diagnostic: diagnosticExcerpt(body),
+    ...(wait === undefined ? {} : { retryAfterMs: wait }),
+    ...(requestId === undefined ? {} : { requestId }),
+  });
 };
 
 /**

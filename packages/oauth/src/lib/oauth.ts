@@ -218,15 +218,24 @@ const assertCallback = (
   }
 };
 
-const tokenHeaders = (
+/** The token request's headers and body, encoded as the profile asks. */
+const tokenRequest = (
   profile: OAuthProfile,
-): Readonly<Record<string, string>> =>
-  profile.tokenRequest === 'json'
-    ? { 'content-type': 'application/json', accept: 'application/json' }
-    : {
-        'content-type': 'application/x-www-form-urlencoded',
-        accept: 'application/json',
-      };
+  params: Readonly<Record<string, string | undefined>>,
+  jsonParams: Readonly<Record<string, string | undefined>> = {},
+): { headers: Readonly<Record<string, string>>; body: string } => {
+  const json = profile.tokenRequest === 'json';
+
+  return {
+    headers: {
+      'content-type': json
+        ? 'application/json'
+        : 'application/x-www-form-urlencoded',
+      accept: 'application/json',
+    },
+    body: json ? JSON.stringify({ ...params, ...jsonParams }) : form(params),
+  };
+};
 
 const exchangeToken = async (
   transport: OAuthTransport,
@@ -242,32 +251,21 @@ const exchangeToken = async (
     readonly signal?: AbortSignal;
   },
 ): Promise<OAuthTokenRecord> => {
-  const body =
-    request.profile.tokenRequest === 'json'
-      ? JSON.stringify({
-          grant_type: 'authorization_code',
-          client_id: request.clientId,
-          client_secret: request.clientSecret,
-          code: request.code,
-          redirect_uri: request.redirectUri,
-          code_verifier: request.codeVerifier,
-          state: request.state,
-          ...(request.profile.tokenExchangeParams ?? {}),
-        })
-      : form({
-          grant_type: 'authorization_code',
-          client_id: request.clientId,
-          client_secret: request.clientSecret,
-          code: request.code,
-          code_verifier: request.codeVerifier,
-          redirect_uri: request.redirectUri,
-        });
-
   const response = await transport.request({
     method: 'POST',
     url: request.profile.tokenEndpoint,
-    headers: tokenHeaders(request.profile),
-    body,
+    ...tokenRequest(
+      request.profile,
+      {
+        grant_type: 'authorization_code',
+        client_id: request.clientId,
+        client_secret: request.clientSecret,
+        code: request.code,
+        code_verifier: request.codeVerifier,
+        redirect_uri: request.redirectUri,
+      },
+      { state: request.state, ...request.profile.tokenExchangeParams },
+    ),
     signal: request.signal,
   });
 
@@ -294,26 +292,15 @@ const refreshToken = async (
     readonly signal?: AbortSignal;
   },
 ): Promise<OAuthTokenRecord> => {
-  const body =
-    request.profile.tokenRequest === 'json'
-      ? JSON.stringify({
-          grant_type: 'refresh_token',
-          refresh_token: request.refreshToken,
-          client_id: request.clientId,
-          client_secret: request.clientSecret,
-        })
-      : form({
-          grant_type: 'refresh_token',
-          refresh_token: request.refreshToken,
-          client_id: request.clientId,
-          client_secret: request.clientSecret,
-        });
-
   const response = await transport.request({
     method: 'POST',
     url: request.profile.tokenEndpoint,
-    headers: tokenHeaders(request.profile),
-    body,
+    ...tokenRequest(request.profile, {
+      grant_type: 'refresh_token',
+      refresh_token: request.refreshToken,
+      client_id: request.clientId,
+      client_secret: request.clientSecret,
+    }),
     signal: request.signal,
   });
 
