@@ -28,7 +28,15 @@ import { anchorOf, pointAnchorOf } from '../anchor.js';
 import { anchorIndexOf, type ContentPoint, offsetIn } from './pin-geometry.js';
 import { OVERLAY_ATTRIBUTE } from './pins-layer.js';
 import type { Scene } from './scene.js';
-import { hitTest, nearestNode, type SceneNode } from './scene-graph.js';
+import {
+  hitTest,
+  nearestNode,
+  pseudoAt,
+  type SceneNode,
+  type SceneTarget,
+  targetBounds,
+  targetIdOf,
+} from './scene-graph.js';
 import { toContent, type Viewport, zoomAt } from './viewport.js';
 
 export interface GestureInput {
@@ -81,15 +89,24 @@ const contentPointOf = (
   });
 };
 
-const nodeOfEvent = (
-  input: GestureInput,
+/** The client point of an event, when it has one (a pointer or mouse event). */
+const clientPointOf = (
   event: Event,
-  nearest = true,
+): { readonly clientX: number; readonly clientY: number } | undefined => {
+  const pointer = event as unknown as { clientX?: number; clientY?: number };
+
+  return typeof pointer.clientX === 'number' &&
+    typeof pointer.clientY === 'number'
+    ? { clientX: pointer.clientX, clientY: pointer.clientY }
+    : undefined;
+};
+
+const hostOfEvent = (
+  input: GestureInput,
+  scene: Scene,
+  event: Event,
+  nearest: boolean,
 ): SceneNode | undefined => {
-  const scene = input.scene;
-
-  if (scene === undefined) return undefined;
-
   const path =
     typeof event.composedPath === 'function' ? event.composedPath() : [];
 
@@ -104,18 +121,11 @@ const nodeOfEvent = (
 
   // The pointer missed everything in the path: the derived tree answers —
   // the hit-test under the transform, else the nearest node.
-  const pointer = event as unknown as { clientX?: number; clientY?: number };
+  const client = clientPointOf(event);
 
-  if (
-    typeof pointer.clientX !== 'number' ||
-    typeof pointer.clientY !== 'number'
-  )
-    return undefined;
+  if (client === undefined) return undefined;
 
-  const point = contentPointOf(input, {
-    clientX: pointer.clientX,
-    clientY: pointer.clientY,
-  });
+  const point = contentPointOf(input, client);
 
   return (
     hitTest(scene.graph, point, scene.bounds, input.hidden) ??
@@ -126,30 +136,59 @@ const nodeOfEvent = (
 };
 
 /**
- * The element under the pointer, never the document's own body: empty space
- * points at nothing.
+ * The target under the pointer: the node, resolved from the event's path,
+ * else the hit-test, else (when `nearest`) the nearest node — or the node's
+ * out-of-flow `::before` / `::after` when the pointer lies on its box.
  */
-const pointedNodeOf = (
+const targetOfEvent = (
   input: GestureInput,
-  event: MouseEvent,
-): SceneNode | undefined => {
-  const node = nodeOfEvent(input, event, false);
+  event: Event,
+  nearest = true,
+): SceneTarget | undefined => {
+  const scene = input.scene;
 
-  return node === undefined || node.tag === 'body' || node.tag === 'html'
-    ? undefined
-    : node;
+  if (scene === undefined) return undefined;
+
+  const node = hostOfEvent(input, scene, event, nearest);
+
+  if (node === undefined) return undefined;
+
+  const client = clientPointOf(event);
+  const pseudo =
+    client === undefined
+      ? undefined
+      : pseudoAt(node, contentPointOf(input, client), scene.pseudoBounds);
+
+  return { node, pseudo };
 };
 
 /**
- * The element a comment would land on: the one under the pointer — empty
+ * The target under the pointer, never the document's own body: empty space
+ * points at nothing.
+ */
+const pointedTargetOf = (
+  input: GestureInput,
+  event: MouseEvent,
+): SceneTarget | undefined => {
+  const target = targetOfEvent(input, event, false);
+
+  return target === undefined ||
+    target.node.tag === 'body' ||
+    target.node.tag === 'html'
+    ? undefined
+    : target;
+};
+
+/**
+ * The target a comment would land on: the one under the pointer — empty
  * space is a free point — and none at all while `Alt` is held, which forces
  * a free point over an element.
  */
-const commentNodeOf = (
+const commentTargetOf = (
   input: GestureInput,
   event: MouseEvent,
-): SceneNode | undefined =>
-  event.altKey ? undefined : pointedNodeOf(input, event);
+): SceneTarget | undefined =>
+  event.altKey ? undefined : pointedTargetOf(input, event);
 
 const nearestNodeOf = (
   input: GestureInput,
@@ -193,25 +232,34 @@ const click = (input: GestureInput, gesture: Gesture, event: MouseEvent) => {
   event.preventDefault();
 
   if (input.tool === 'select') {
-    input.onSelect(nodeOfEvent(input, event)?.id);
+    const target = targetOfEvent(input, event);
+
+    input.onSelect(target === undefined ? undefined : targetIdOf(target));
 
     return;
   }
 
   if (!input.canComment) return;
 
-  const node = commentNodeOf(input, event);
+  const target = commentTargetOf(input, event);
   const point = contentPointOf(input, event);
   const scene = input.scene;
-  const box = node === undefined ? undefined : scene?.bounds(node);
   const anchor =
-    node === undefined
+    target === undefined
       ? pointAnchorOf(point, nearestNodeOf(input, point))
       : anchorOf(
-          node.element,
-          box === undefined ? undefined : offsetIn(box, point),
+          target.node.element,
+          scene === undefined
+            ? undefined
+            : offsetIn(
+                targetBounds(target, scene.bounds, scene.pseudoBounds),
+                point,
+              ),
           point,
-          scene === undefined ? undefined : anchorIndexOf(scene.graph, node),
+          scene === undefined
+            ? undefined
+            : anchorIndexOf(scene.graph, target.node),
+          target.pseudo,
         );
 
   input.onComment(anchor, point);
@@ -227,12 +275,12 @@ const hover = (input: GestureInput, gesture: Gesture, event: PointerEvent) => {
 
   const panning =
     input.tool === 'pan' || input.spaceHeld || gesture.panDrag !== undefined;
-  const id = panning
+  const target = panning
     ? undefined
-    : (input.tool === 'comment'
-        ? commentNodeOf(input, event)
-        : pointedNodeOf(input, event)
-      )?.id;
+    : input.tool === 'comment'
+      ? commentTargetOf(input, event)
+      : pointedTargetOf(input, event);
+  const id = target === undefined ? undefined : targetIdOf(target);
 
   if (id !== input.hoverId) input.onHover(id);
 };

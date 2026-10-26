@@ -258,6 +258,67 @@ describe('comments/v1.add', () => {
     }
   });
 
+  test('keeps the pseudo-element a source anchor names', async () => {
+    const harness = await commentsHarness();
+    const onPseudo: CommentTarget = {
+      kind: 'artifact',
+      id: 'checkout-7f3a',
+      revision: 1,
+      anchor: {
+        form: 'source',
+        path: 'src/checkout/Checkout.tsx',
+        line: 42,
+        selector: 'button#pay',
+        label: 'button::before',
+        pseudo: '::before',
+      },
+    };
+
+    try {
+      const comment = await harness.comments.add(
+        { target: onPseudo, text: 'o selo' },
+        harness.call(),
+      );
+
+      assert.deepEqual(comment.target, onPseudo);
+      assert.deepEqual(
+        (await harness.comments.list({}, harness.call()))[0]?.target,
+        onPseudo,
+      );
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test('refuses an anchor naming a pseudo-element other than ::before or ::after', async () => {
+    const harness = await commentsHarness();
+
+    try {
+      for (const pseudo of ['::marker', 'after', '']) {
+        await assert.rejects(
+          async () =>
+            harness.comments.add(
+              {
+                target: {
+                  kind: 'artifact',
+                  id: 'a',
+                  anchor: { form: 'source', path: 'src/App.tsx', pseudo },
+                } as never,
+                text: 'nota',
+              },
+              harness.call(),
+            ),
+          codeOf('invalid_input'),
+          JSON.stringify(pseudo),
+        );
+      }
+
+      assert.equal(harness.log.rows.length, 0);
+    } finally {
+      await harness.close();
+    }
+  });
+
   test('still accepts an anchor that names no seat, so older comments keep working', async () => {
     const harness = await commentsHarness();
     const unseated: CommentTarget = {

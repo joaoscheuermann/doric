@@ -58,6 +58,7 @@ import { ensureRevisionCached, usePreviewData } from './preview-data.js';
 import { PreviewHeader } from './preview-header.js';
 import { PreviewSurface, type SurfaceMode } from './preview-surface.js';
 import { useHiddenLayers, useScene } from './scene.js';
+import { targetBounds, targetById } from './scene-graph.js';
 import { useThreadOpenRequests } from './thread-open.js';
 import { DETACHED_STEP, openCountOf, pinsOf } from './threads-view.js';
 import { TreePanel } from './tree-panel.js';
@@ -330,7 +331,7 @@ export function PreviewContainer({
   // resolves is stacked by the content's edge, a fixed surface step apart
   // whatever the zoom.
   const resolve = useMemo(
-    () => anchorResolver(scene?.graph, scene?.bounds),
+    () => anchorResolver(scene?.graph, scene?.bounds, scene?.pseudoBounds),
     [scene],
   );
   const pins = useMemo<readonly CommentPin[]>(
@@ -376,10 +377,14 @@ export function PreviewContainer({
     [hasResolved, showResolved, toggleShowResolved],
   );
 
-  const selectedNode =
-    selectedId === undefined ? undefined : scene?.graph.byId.get(selectedId);
-  const hoverNode =
-    hoverId === undefined ? undefined : scene?.graph.byId.get(hoverId);
+  const selectedTarget =
+    selectedId === undefined || scene === undefined
+      ? undefined
+      : targetById(scene.graph, selectedId);
+  const hoverTarget =
+    hoverId === undefined || scene === undefined
+      ? undefined
+      : targetById(scene.graph, hoverId);
 
   return (
     <TooltipProvider>
@@ -471,19 +476,22 @@ export function PreviewContainer({
             />
           </div>
 
-          {hoverNode !== undefined ? (
+          {scene !== undefined && hoverTarget !== undefined ? (
             <HoverOutline
-              node={hoverNode}
-              bounds={scene?.bounds}
+              target={hoverTarget}
+              box={targetBounds(hoverTarget, scene.bounds, scene.pseudoBounds)}
               viewport={viewport}
               withLabel={!inputOpen}
             />
           ) : null}
 
-          {active && selectedNode !== undefined ? (
+          {active && scene !== undefined && selectedTarget !== undefined ? (
             <SelectionOutline
-              node={selectedNode}
-              bounds={scene?.bounds}
+              box={targetBounds(
+                selectedTarget,
+                scene.bounds,
+                scene.pseudoBounds,
+              )}
               viewport={viewport}
             />
           ) : null}
@@ -525,7 +533,7 @@ export function PreviewContainer({
           <>
             <TreePanel
               graph={scene?.graph}
-              selectedId={selectedId}
+              selectedId={selectedTarget?.node.id ?? selectedId}
               hidden={hidden}
               onSelect={setSelectedId}
               onToggleHidden={toggleHidden}

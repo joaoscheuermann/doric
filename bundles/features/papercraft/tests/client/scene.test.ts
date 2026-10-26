@@ -1,7 +1,9 @@
 // The frame's scene (`scene.ts`): the bounds of each derived node, in content
-// coordinates, cover the out-of-flow `::before`/`::after` boxes its host
-// draws outside itself, so the hover and selection outlines frame what the
-// reader sees, and a click on such a box still lands on its host.
+// coordinates, are its own border box, cut to what its clipping ancestors
+// leave visible; each out-of-flow (`absolute` / `fixed`) `::before` /
+// `::after` box is measured on its own (`pseudoBounds`), so the reader can
+// point at it as a target of its own — a point on it answers the pseudo, and
+// an offset is measured in its box.
 //
 // happy-dom lays nothing out and computes no pseudo-element styles: the
 // layout is the boundary these tests fake — each element's
@@ -13,12 +15,14 @@ import { test } from 'node:test';
 import { Window } from 'happy-dom';
 
 import { offsetIn } from '../../src/client/surface/pin-geometry.js';
+import { type Scene, sceneOf } from '../../src/client/surface/scene.js';
 import {
   type Bounds,
   hitTest,
+  pseudoAt,
   type SceneNode,
+  targetBounds,
 } from '../../src/client/surface/scene-graph.js';
-import { type Scene, sceneOf } from '../../src/client/surface/scene.js';
 
 /** The computed style of an element, as far as the layout fake answers. */
 interface BoxStyle {
@@ -85,8 +89,9 @@ const declaration = (values: Record<string, string>): CSSStyleDeclaration =>
     display: 'block',
     ...values,
     getPropertyValue: (name: string): string =>
-      values[name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())] ??
-      '',
+      values[
+        name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
+      ] ?? '',
   }) as unknown as CSSStyleDeclaration;
 
 const realComputedStyle = happy.getComputedStyle.bind(happy) as unknown as (
@@ -163,7 +168,9 @@ const stage = (
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<div class="papercraft-content">${markup}</div>`;
 
-  const content = root.querySelector('.papercraft-content') as unknown as Element;
+  const content = root.querySelector(
+    '.papercraft-content',
+  ) as unknown as Element;
   lay(content, {
     rect: options.content ?? { x: 0, y: 0, width: 800, height: 600 },
     style: { position: 'relative' },
@@ -190,30 +197,31 @@ const stage = (
 };
 
 /** A positioned 100×40 host with an `::after` strip 4px tall right below it. */
-const strip = (): Stage =>
-  stage('<div id="host"></div>', {
-    '#host': {
-      rect: { x: 0, y: 0, width: 100, height: 40 },
-      style: { position: 'relative' },
-      after: {
-        content: '""',
-        position: 'absolute',
-        left: '0px',
-        top: '40px',
-        right: '0px',
-        bottom: '-4px',
-      },
-    },
-  });
+const STRIP: Layout = {
+  rect: { x: 0, y: 0, width: 100, height: 40 },
+  style: { position: 'relative' },
+  after: {
+    content: '""',
+    position: 'absolute',
+    left: '0px',
+    top: '40px',
+    right: '0px',
+    bottom: '-4px',
+  },
+};
 
-test('the bounds of a positioned host cover its absolute pseudo-element outside it', () => {
+const strip = (): Stage => stage('<div id="host"></div>', { '#host': STRIP });
+
+test('a positioned host keeps its own box and measures its absolute pseudo-element apart', () => {
   const { scene, nodeOf } = strip();
+  const host = nodeOf('#host');
 
-  assert.deepEqual(scene.bounds(nodeOf('#host')), {
+  assert.deepEqual(scene.bounds(host), { x: 0, y: 0, width: 100, height: 40 });
+  assert.deepEqual(scene.pseudoBounds(host, '::after'), {
     x: 0,
-    y: 0,
+    y: 40,
     width: 100,
-    height: 44,
+    height: 4,
   });
 });
 
@@ -238,16 +246,18 @@ test('a static host places its absolute pseudo-element in the nearest positioned
       },
     },
   );
+  const host = nodeOf('#host');
 
-  assert.deepEqual(scene.bounds(nodeOf('#host')), {
+  assert.deepEqual(scene.pseudoBounds(host, '::before'), {
     x: 10,
     y: 10,
-    width: 90,
+    width: 10,
     height: 20,
   });
+  assert.deepEqual(scene.bounds(host), { x: 60, y: 10, width: 40, height: 20 });
 });
 
-test('an empty host drawn only by its pseudo-element takes the pseudo-element box', () => {
+test('an empty host drawn only by its pseudo-element keeps its empty box', () => {
   const { scene, nodeOf } = stage('<i id="host"></i>', {
     '#host': {
       rect: { x: 30, y: 30, width: 0, height: 0 },
@@ -262,8 +272,10 @@ test('an empty host drawn only by its pseudo-element takes the pseudo-element bo
       },
     },
   });
+  const host = nodeOf('#host');
 
-  assert.deepEqual(scene.bounds(nodeOf('#host')), {
+  assert.deepEqual(scene.bounds(host), { x: 30, y: 30, width: 0, height: 0 });
+  assert.deepEqual(scene.pseudoBounds(host, '::before'), {
     x: 30,
     y: 30,
     width: 20,
@@ -271,7 +283,7 @@ test('an empty host drawn only by its pseudo-element takes the pseudo-element bo
   });
 });
 
-test('a host without an out-of-flow pseudo-element keeps its own box', () => {
+test('a pseudo-element that is absent or in flow has no box of its own', () => {
   const rect = { x: 10, y: 10, width: 50, height: 20 };
   const { scene, nodeOf } = stage(
     '<div id="plain"></div><div id="relative"></div><div id="static"></div>',
@@ -304,36 +316,24 @@ test('a host without an out-of-flow pseudo-element keeps its own box', () => {
     },
   );
 
-  assert.deepEqual(scene.bounds(nodeOf('#plain')), rect);
-  assert.deepEqual(scene.bounds(nodeOf('#relative')), rect);
-  assert.deepEqual(scene.bounds(nodeOf('#static')), rect);
+  for (const selector of ['#plain', '#relative', '#static']) {
+    const node = nodeOf(selector);
+
+    assert.equal(scene.pseudoBounds(node, '::before'), undefined, selector);
+    assert.equal(scene.pseudoBounds(node, '::after'), undefined, selector);
+    assert.deepEqual(scene.bounds(node), rect, selector);
+  }
 });
 
-test('a host that hides its overflow clips its pseudo-element away', () => {
+test('a host that hides its overflow leaves its outside pseudo-element no box', () => {
   const { scene, nodeOf } = stage('<div id="host"></div>', {
-    '#host': {
-      rect: { x: 0, y: 0, width: 100, height: 40 },
-      style: { position: 'relative', overflow: 'hidden' },
-      after: {
-        content: '""',
-        position: 'absolute',
-        left: '0px',
-        top: '40px',
-        right: '0px',
-        bottom: '-4px',
-      },
-    },
+    '#host': { ...STRIP, style: { position: 'relative', overflow: 'hidden' } },
   });
 
-  assert.deepEqual(scene.bounds(nodeOf('#host')), {
-    x: 0,
-    y: 0,
-    width: 100,
-    height: 40,
-  });
+  assert.equal(scene.pseudoBounds(nodeOf('#host'), '::after'), undefined);
 });
 
-test('a clipping ancestor cuts the host and its pseudo-element together', () => {
+test('a clipping ancestor cuts the pseudo-element box, and the host keeps its own', () => {
   const { scene, nodeOf } = stage(
     '<div id="scroller"><div id="host"></div></div>',
     {
@@ -341,68 +341,75 @@ test('a clipping ancestor cuts the host and its pseudo-element together', () => 
         rect: { x: 0, y: 0, width: 100, height: 42 },
         style: { overflow: 'auto' },
       },
-      '#host': {
-        rect: { x: 0, y: 0, width: 100, height: 40 },
-        style: { position: 'relative' },
-        after: {
-          content: '""',
-          position: 'absolute',
-          left: '0px',
-          top: '40px',
-          right: '0px',
-          bottom: '-4px',
-        },
-      },
+      '#host': STRIP,
     },
   );
+  const host = nodeOf('#host');
 
-  assert.deepEqual(scene.bounds(nodeOf('#host')), {
+  assert.deepEqual(scene.pseudoBounds(host, '::after'), {
     x: 0,
-    y: 0,
+    y: 40,
     width: 100,
-    height: 42,
+    height: 2,
   });
+  assert.deepEqual(scene.bounds(host), { x: 0, y: 0, width: 100, height: 40 });
 });
 
 test('under zoom the pseudo-element is measured in content units', () => {
-  // At scale 2 a CSS px is 2 viewport px. The host sits at content (20, 10),
-  // 100×40; its strip 4 CSS px tall right below it ends at content y 54.
+  // At scale 2 a CSS px is 2 viewport px. The host's viewport rect
+  // (60, 40) 200×80, less the content's origin (20, 20), halves to content
+  // (20, 10) 100×40; its strip, 4 CSS px tall, starts 40 CSS px below its top.
   const { scene, nodeOf } = stage(
     '<div id="host"></div>',
-    {
-      '#host': {
-        rect: { x: 60, y: 40, width: 200, height: 80 },
-        style: { position: 'relative' },
-        after: {
-          content: '""',
-          position: 'absolute',
-          left: '0px',
-          top: '40px',
-          right: '0px',
-          bottom: '-4px',
-        },
-      },
-    },
+    { '#host': { ...STRIP, rect: { x: 60, y: 40, width: 200, height: 80 } } },
     { scale: 2, content: { x: 20, y: 20, width: 1600, height: 1200 } },
   );
+  const host = nodeOf('#host');
 
-  assert.deepEqual(scene.bounds(nodeOf('#host')), {
+  assert.deepEqual(scene.bounds(host), {
     x: 20,
     y: 10,
     width: 100,
-    height: 44,
+    height: 40,
+  });
+  assert.deepEqual(scene.pseudoBounds(host, '::after'), {
+    x: 20,
+    y: 50,
+    width: 100,
+    height: 4,
   });
 });
 
-test('a point on the pseudo-element hits its host, at an offset inside its bounds', () => {
+test('a point on the pseudo-element answers the pseudo, at an offset in its box', () => {
   const { scene, nodeOf } = strip();
   const host = nodeOf('#host');
-  const point = { x: 50, y: 42 };
+  const onStrip = { x: 50, y: 42 };
+  const onHost = { x: 50, y: 20 };
 
+  assert.equal(pseudoAt(host, onStrip, scene.pseudoBounds), '::after');
+  assert.equal(pseudoAt(host, onHost, scene.pseudoBounds), undefined);
   // Compared by id: a failure message inspecting the DOM element is unbounded.
-  assert.equal(hitTest(scene.graph, point, scene.bounds)?.id, host.id);
+  assert.equal(hitTest(scene.graph, onHost, scene.bounds)?.id, host.id);
+  assert.deepEqual(
+    offsetIn(
+      targetBounds(
+        { node: host, pseudo: '::after' },
+        scene.bounds,
+        scene.pseudoBounds,
+      ),
+      onStrip,
+    ),
+    { x: 0.5, y: 0.5 },
+  );
+});
 
-  const offset = offsetIn(scene.bounds(host), point);
-  assert.ok(offset.y < 1, `offset y ${offset.y} should fall inside the box`);
-  assert.ok(Math.abs(offset.y - 42 / 44) < 1e-9);
+test('where ::before and ::after share a box, the point answers ::after', () => {
+  const { scene, nodeOf } = stage('<div id="host"></div>', {
+    '#host': { ...STRIP, before: STRIP.after },
+  });
+
+  assert.equal(
+    pseudoAt(nodeOf('#host'), { x: 50, y: 42 }, scene.pseudoBounds),
+    '::after',
+  );
 });

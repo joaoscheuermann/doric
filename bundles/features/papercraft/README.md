@@ -56,8 +56,10 @@ how bundles work.
    and switch between revisions, from the toolbar or the keyboard.
 3. **You comment.** Arm the comment tool and click an element. A dashed outline
    labeled `element · file:line` shows where the comment will land; hold `Alt`
-   to pin a free point instead. Comments collect as drafts in the chat
-   composer, and `Cmd/Ctrl+Enter` sends them together as your next prompt.
+   to pin a free point instead. An absolutely positioned `::before` or
+   `::after` is its own target, outlined and labeled `element::after`.
+   Comments collect as drafts in the chat composer, and `Cmd/Ctrl+Enter` sends
+   them together as your next prompt.
 4. **The agent revises.** The tool always returns the unresolved comments with
    their anchors and replies, so the agent never depends on you repeating
    yourself. It answers each one with `comment_reply`, publishes the next

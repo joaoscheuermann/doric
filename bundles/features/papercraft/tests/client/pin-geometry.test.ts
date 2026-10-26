@@ -17,7 +17,7 @@ for (const name of ['window', 'document', 'Element', 'Node'] as const) {
   });
 }
 
-import { anchorOf } from '../../src/client/anchor.js';
+import { anchorOf, pseudoOf } from '../../src/client/anchor.js';
 import {
   anchorIndexOf,
   anchorResolver,
@@ -29,6 +29,7 @@ import {
   type Bounds,
   type BoundsOf,
   buildSceneGraph,
+  type PseudoBoundsOf,
   type SceneGraph,
 } from '../../src/client/surface/scene-graph.js';
 import type { CommentAnchor } from '../../src/contracts/index.js';
@@ -273,4 +274,100 @@ test('unstamped cells commented by selector do not collapse onto the first one',
     anchors.map((anchor) => pinOn(cells(80), anchor)),
     CELLS,
   );
+});
+
+/* Pseudo-element anchors ---------------------------------------------------- */
+
+test('an anchor on a pseudo-element keeps its host and names the pseudo', () => {
+  const { graph } = render(el('div', 'id="pay"', 42, '0 0 100 40', 'Pagar'));
+  const element = graph.nodes[0]?.element;
+  assert.ok(element);
+
+  const offset = { x: 0.25, y: 0.75 };
+  const point = { x: 25, y: 43 };
+  const host = anchorOf(element, offset, point, 2);
+  const pseudo = anchorOf(element, offset, point, 2, '::after');
+
+  assert.equal(host.form, 'source');
+  assert.equal(host.label, 'div');
+  assert.equal('pseudo' in host, false);
+
+  // Form, stamp, selector, text, index and point stay the host's.
+  assert.deepEqual(pseudo, { ...host, label: 'div::after', pseudo: '::after' });
+  assert.equal(pseudo.path, FILE);
+  assert.equal(pseudo.line, 42);
+  assert.equal(pseudo.selector, 'div#pay');
+  assert.equal((pseudo as { readonly index?: unknown }).index, 2);
+  assert.deepEqual((pseudo as { readonly offset?: unknown }).offset, offset);
+
+  assert.equal(pseudoOf(pseudo), '::after');
+  assert.equal(pseudoOf({ ...host, pseudo: '::before' }), '::before');
+  assert.equal(pseudoOf(host), undefined);
+  assert.equal(pseudoOf({ ...host, pseudo: '::marker' } as never), undefined);
+});
+
+/** A 100×40 host whose `::after` strip is 4px tall right below it. */
+const STRIPPED = render(
+  el('div', 'id="host"', undefined, '0 0 100 40', 'Host'),
+);
+const STRIP: PseudoBoundsOf = (_, pseudo) =>
+  pseudo === '::after' ? { x: 0, y: 40, width: 100, height: 4 } : undefined;
+const NO_STRIP: PseudoBoundsOf = () => undefined;
+
+const ON_HOST: CommentAnchor = {
+  form: 'selector',
+  selector: 'div#host',
+  label: 'div',
+  offset: { x: 0.5, y: 0.5 },
+};
+const ON_STRIP: CommentAnchor = {
+  ...ON_HOST,
+  label: 'div::after',
+  pseudo: '::after',
+};
+
+test('a pseudo-element anchor pins at its offset inside the pseudo box', () => {
+  const { graph, bounds } = STRIPPED;
+
+  assert.deepEqual(pinPointOf(ON_STRIP, graph, bounds, undefined, STRIP), {
+    x: 50,
+    y: 42,
+  });
+  assert.deepEqual(anchorResolver(graph, bounds, STRIP)(ON_STRIP), {
+    x: 50,
+    y: 42,
+  });
+});
+
+test('a pseudo-element anchor whose pseudo draws no box pins inside its host', () => {
+  const { graph, bounds } = STRIPPED;
+
+  assert.deepEqual(pinPointOf(ON_STRIP, graph, bounds, undefined, NO_STRIP), {
+    x: 50,
+    y: 20,
+  });
+  assert.deepEqual(anchorResolver(graph, bounds, NO_STRIP)(ON_STRIP), {
+    x: 50,
+    y: 20,
+  });
+});
+
+test('an anchor without a pseudo pins inside its host, whatever the pseudo boxes', () => {
+  const { graph, bounds } = STRIPPED;
+
+  for (const pseudoBounds of [undefined, STRIP]) {
+    assert.deepEqual(
+      pinPointOf(ON_HOST, graph, bounds, undefined, pseudoBounds),
+      {
+        x: 50,
+        y: 20,
+      },
+    );
+    assert.deepEqual(anchorResolver(graph, bounds, pseudoBounds)(ON_HOST), {
+      x: 50,
+      y: 20,
+    });
+  }
+  assert.deepEqual(pinPointOf(ON_HOST, graph, bounds), { x: 50, y: 20 });
+  assert.deepEqual(anchorResolver(graph, bounds)(ON_HOST), { x: 50, y: 20 });
 });

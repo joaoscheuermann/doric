@@ -8,8 +8,8 @@ import { test } from 'node:test';
 
 import {
   type Bounds,
-  pseudoBoxOf,
   type PseudoStyle,
+  pseudoBoxOf,
 } from '../../src/client/surface/scene-graph.js';
 
 const pseudo = (overrides: Partial<PseudoStyle> = {}): PseudoStyle => ({

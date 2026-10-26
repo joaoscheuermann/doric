@@ -17,6 +17,7 @@ for (const name of ['window', 'document', 'Element', 'Node'] as const) {
   });
 }
 
+import { hoverLabelOf } from '../../src/client/surface/overlays.js';
 import {
   type Bounds,
   boundsIndex,
@@ -27,8 +28,13 @@ import {
   isolateHiddenIds,
   nearestNode,
   nodeLabel,
+  type PseudoBoundsOf,
   type SceneGraph,
   stampLabel,
+  targetBounds,
+  targetById,
+  targetIdOf,
+  targetLabel,
   visualBounds,
 } from '../../src/client/surface/scene-graph.js';
 
@@ -112,6 +118,87 @@ test('the hit-test answers from bounds, not from the document, under zoom', () =
   assert.equal(
     hitTest(graph, { x: 10, y: 10 }, bounds, new Set(['n0'])),
     undefined,
+  );
+});
+
+test('a target id names a node, or one of its ::before / ::after, and round-trips', () => {
+  const graph = mount('<main><h1 id="t">T</h1></main>');
+  const h1 = graph.byId.get('n1');
+
+  const pseudo = targetById(graph, 'n1::before');
+  assert.equal(pseudo?.node.id, 'n1');
+  assert.equal(pseudo?.pseudo, '::before');
+
+  const plain = targetById(graph, 'n1');
+  assert.equal(plain?.node.id, 'n1');
+  assert.equal(plain !== undefined && 'pseudo' in plain, false);
+
+  assert.equal(targetById(graph, 'n1::marker'), undefined);
+  assert.equal(targetById(graph, 'n1::'), undefined);
+  assert.equal(targetById(graph, 'n99::after'), undefined);
+  assert.equal(targetById(graph, 'nope'), undefined);
+
+  assert.ok(h1);
+  assert.equal(targetIdOf({ node: h1 }), 'n1');
+  assert.equal(targetIdOf({ node: h1, pseudo: '::after' }), 'n1::after');
+
+  for (const target of [
+    { node: h1 },
+    { node: h1, pseudo: '::after' as const },
+  ]) {
+    const back = targetById(graph, targetIdOf(target));
+
+    assert.equal(back?.node.id, target.node.id);
+    assert.equal(back?.pseudo, target.pseudo);
+  }
+});
+
+test('a pseudo target is framed by its own box, else by its host', () => {
+  const graph = mount('<main></main>');
+  const main = graph.byId.get('n0');
+  assert.ok(main);
+
+  const host = { x: 0, y: 0, width: 100, height: 40 };
+  const strip = { x: 0, y: 40, width: 100, height: 4 };
+  const bounds = boundsOf({ n0: host });
+  const drawn: PseudoBoundsOf = (_, pseudo) =>
+    pseudo === '::after' ? strip : undefined;
+
+  assert.deepEqual(
+    targetBounds({ node: main, pseudo: '::after' }, bounds, drawn),
+    strip,
+  );
+  assert.deepEqual(targetBounds({ node: main }, bounds, drawn), host);
+  // A pseudo that draws no box, or no pseudo measure at all: the host.
+  assert.deepEqual(
+    targetBounds({ node: main, pseudo: '::before' }, bounds, drawn),
+    host,
+  );
+  assert.deepEqual(
+    targetBounds({ node: main, pseudo: '::after' }, bounds),
+    host,
+  );
+});
+
+test('the hover label names the pseudo-element after its host, then the source line', () => {
+  const graph = mount(
+    '<div class="font-conversation" data-papercraft-source="src/editor.tsx:400"></div>',
+  );
+  const div = graph.byId.get('n0');
+  assert.ok(div);
+
+  assert.equal(
+    targetLabel({ node: div, pseudo: '::before' }),
+    'div.font-conversation::before',
+  );
+  assert.equal(targetLabel({ node: div }), 'div.font-conversation');
+  assert.equal(
+    hoverLabelOf({ node: div, pseudo: '::before' }),
+    'div.font-conversation::before · editor.tsx:400',
+  );
+  assert.equal(
+    hoverLabelOf({ node: div }),
+    'div.font-conversation · editor.tsx:400',
   );
 });
 

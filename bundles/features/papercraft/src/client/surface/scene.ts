@@ -19,6 +19,8 @@ import {
   buildSceneGraph,
   type Clip,
   clipBounds,
+  type PseudoBoundsOf,
+  type PseudoKind,
   pseudoBoxOf,
   type SceneGraph,
 } from './scene-graph.js';
@@ -28,11 +30,20 @@ export interface Scene {
   readonly graph: SceneGraph;
   /**
    * The node bounds in content coordinates, measured once per node: the
-   * element's border box together with the boxes of its out-of-flow
-   * (`absolute` / `fixed`) `::before` / `::after` pseudo-elements, cut to what
-   * its clipping ancestors leave visible.
+   * element's own border box only, cut to what its clipping ancestors leave
+   * visible. A pseudo-element never widens its host's box.
    */
   readonly bounds: BoundsOf;
+  /**
+   * The out-of-flow `::before` / `::after` boxes, in the same content
+   * coordinates and at the same scale as `bounds`, measured once per
+   * (node, pseudo). Each box is cut to the host's own overflow (when the host
+   * is its containing block) and the host's clipping ancestors.
+   * Undefined when the pseudo-element is in flow, has `content: none/normal`,
+   * has an `auto` inset or margin, or has no area once clipped. `remeasured`
+   * measures it again together with `bounds`.
+   */
+  readonly pseudoBounds: PseudoBoundsOf;
   /** The content element the bounds are measured from; the root when absent. */
   readonly content: HTMLElement | null;
 }
@@ -136,65 +147,49 @@ const hasArea = (bounds: Bounds): boolean =>
   (bounds.width > 0 || bounds.height > 0);
 
 /**
- * The viewport box of an element together with its out-of-flow `::before` /
- * `::after` boxes — those its own overflow hides cut away — or its own box
- * when none of them has area.
+ * The viewport box of an out-of-flow `::before` / `::after` of `host`, cut to
+ * the host's own overflow when the host is its containing block; undefined
+ * when the pseudo-element draws no out-of-flow box.
  */
-const drawnBoxOf = (
-  element: Element,
+const pseudoViewportBoxOf = (
+  host: Element,
+  pseudo: PseudoKind,
   content: Element | null,
   styleOf: StyleOf,
   factor: number,
-): Bounds => {
-  const own = boxOf(element);
-  const boxes = [own];
+): Bounds | undefined => {
+  const style = styleOf(host, pseudo);
 
-  for (const pseudo of ['::before', '::after']) {
-    const style = styleOf(element, pseudo);
-
-    // In flow, it lies inside its host: no containing block to measure.
-    if (style.position !== 'absolute' && style.position !== 'fixed') continue;
-
-    const block = containingBlockOf(element, style.position, content, styleOf);
-    const padding = paddingBoxOf(block, styleOf, factor);
-    const box = pseudoBoxOf(style, padding, factor);
-
-    if (box === undefined) continue;
-
-    const host = styleOf(element);
-    const x = host.overflowX !== 'visible';
-    const y = host.overflowY !== 'visible';
-
-    boxes.push(
-      block === element && (x || y)
-        ? clipBounds(box, [{ box: padding, x, y }])
-        : box,
-    );
+  // In flow, it lies inside its host: no containing block to measure.
+  if (style.position !== 'absolute' && style.position !== 'fixed') {
+    return undefined;
   }
 
-  const drawn = boxes.filter(hasArea);
+  const block = containingBlockOf(host, style.position, content, styleOf);
+  const padding = paddingBoxOf(block, styleOf, factor);
+  const box = pseudoBoxOf(style, padding, factor);
 
-  if (drawn.length === 0) return own;
+  if (box === undefined || block !== host) return box;
 
-  const left = Math.min(...drawn.map((box) => box.x));
-  const top = Math.min(...drawn.map((box) => box.y));
-  const right = Math.max(...drawn.map((box) => box.x + box.width));
-  const bottom = Math.max(...drawn.map((box) => box.y + box.height));
+  const own = styleOf(host);
+  const x = own.overflowX !== 'visible';
+  const y = own.overflowY !== 'visible';
 
-  return { x: left, y: top, width: right - left, height: bottom - top };
+  return x || y ? clipBounds(box, [{ box: padding, x, y }]) : box;
 };
 
 /**
- * A fresh, lazy cache of node bounds in content coordinates: the part of
- * each node its clipping ancestors leave visible (`clipBounds`). Each node is
- * measured on its first reading, at the scale the canvas has then — its rect,
- * its clips and the divisor are read together, so a zoom between two
- * readings changes nothing.
+ * A fresh, lazy cache of node bounds and out-of-flow pseudo-element bounds in
+ * content coordinates: the part of each box its clipping ancestors leave
+ * visible (`clipBounds`). Each box is measured on its first reading, at the
+ * scale the canvas has then — its rect, its clips and the divisor are read
+ * together, so a zoom between two readings changes nothing. Both caches share
+ * one cache of computed styles.
  */
 const measured = (
   content: HTMLElement | null,
   scale: () => number,
-): BoundsOf => {
+): Pick<Scene, 'bounds' | 'pseudoBounds'> => {
   const styles = new Map<Element, Map<string, CSSStyleDeclaration>>();
   const styleOf: StyleOf = (element, pseudo = '') => {
     let own = styles.get(element);
@@ -226,12 +221,9 @@ const measured = (
     return style;
   };
 
-  return boundsIndex((node) => {
-    const factor = scale();
-    const shown = clipBounds(
-      drawnBoxOf(node.element, content, styleOf, factor),
-      clipsOf(node.element, content, styleOf),
-    );
+  /** A viewport box, clipped by `host`'s clipping ancestors, in content units. */
+  const toContent = (box: Bounds, host: Element, factor: number): Bounds => {
+    const shown = clipBounds(box, clipsOf(host, content, styleOf));
     const origin = content?.getBoundingClientRect() ?? { x: 0, y: 0 };
 
     return {
@@ -240,14 +232,40 @@ const measured = (
       width: shown.width / factor,
       height: shown.height / factor,
     };
-  });
+  };
+
+  const pseudos = new Map<string, Bounds | undefined>();
+
+  return {
+    bounds: boundsIndex((node) =>
+      toContent(boxOf(node.element), node.element, scale()),
+    ),
+    pseudoBounds: (node, pseudo) => {
+      const key = `${node.id}${pseudo}`;
+
+      if (pseudos.has(key)) return pseudos.get(key);
+
+      const factor = scale();
+      const box = pseudoViewportBoxOf(
+        node.element,
+        pseudo,
+        content,
+        styleOf,
+        factor,
+      );
+      const shown = box && toContent(box, node.element, factor);
+      const result = shown && hasArea(shown) ? shown : undefined;
+      pseudos.set(key, result);
+
+      return result;
+    },
+  };
 };
 
 /**
- * The scene of what a shadow root holds now. Each node's bounds include its
- * out-of-flow pseudo-element boxes, so a badge or decoration drawn by
- * `::before` / `::after` outside its host counts toward the node's outline,
- * hit area and the content box.
+ * The scene of what a shadow root holds now. Each node's bounds are its own
+ * border box; its out-of-flow `::before` / `::after` boxes are measured apart
+ * (`pseudoBounds`), as targets of their own.
  */
 export const sceneOf = (root: ShadowRoot, scale: () => number): Scene => {
   const content = root.querySelector(
@@ -257,14 +275,14 @@ export const sceneOf = (root: ShadowRoot, scale: () => number): Scene => {
   return {
     graph: buildSceneGraph(content ?? root),
     content,
-    bounds: measured(content, scale),
+    ...measured(content, scale),
   };
 };
 
 /** The same derivation, measured again. */
 export const remeasured = (scene: Scene, scale: () => number): Scene => ({
   ...scene,
-  bounds: measured(scene.content, scale),
+  ...measured(scene.content, scale),
 });
 
 /**

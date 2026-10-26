@@ -44,6 +44,13 @@ export interface CommentAnchor {
   /** The selected text of a `range` anchor. */
   readonly text?: string;
   /**
+   * The `::before` / `::after` pseudo-element of the anchored element that the
+   * comment is on, for a kind whose target draws them (a Papercraft preview).
+   * The owner of `kind` writes and reads it; the registry stores it and never
+   * interprets it. An anchor without it points at the element itself.
+   */
+  readonly pseudo?: '::before' | '::after';
+  /**
    * Where in the target the range sits, for a kind that draws its target as
    * turns of blocks: the turn's own key and the 0-based index of the block the
    * selection starts in. The owner of `kind` writes and reads them; the
@@ -178,6 +185,7 @@ const anchorFields = {
   y: z.number().optional(),
   label: z.string().optional(),
   text: z.string().optional(),
+  pseudo: z.enum(['::before', '::after']).optional(),
   // A seat's own shape is `add`'s to refuse: the schema runs before the call,
   // so a malformed seat is turned away there, as a rejection of the write,
   // while the fields stay declared here for every form they may ride on.
