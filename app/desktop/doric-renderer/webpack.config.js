@@ -35,7 +35,16 @@ module.exports = {
     // The page's origin is `doric://app`, so the HMR socket cannot be derived
     // from it, and the requests main forwards carry that origin's host.
     allowedHosts: 'all',
-    client: { webSocketURL: 'ws://localhost:4200/ws' },
+    client: {
+      webSocketURL: 'ws://localhost:4200/ws',
+      overlay: {
+        // The browser reports a ResizeObserver whose callback resized what it
+        // observes, deferring the rest to the next frame, as an error event;
+        // it is a notice, not a failure, so the overlay leaves it out.
+        runtimeErrors: (error) =>
+          !/^ResizeObserver loop/.test(error?.message ?? ''),
+      },
+    },
     devMiddleware: { publicPath: shellPath },
     historyApiFallback: {
       index: `${shellPath}shell.html`,
