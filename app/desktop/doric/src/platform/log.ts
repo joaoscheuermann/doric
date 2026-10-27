@@ -37,12 +37,26 @@ export const formatLogLine = (
     (_key, value: unknown) => serialize(value),
   );
 
-export const createPlatformLog = (
-  output: LogConsole = new Console({
+const ignore = (): void => undefined;
+
+/**
+ * The process's own console, kept alive when its reader goes away: a write
+ * still pending when the pipe closes (the dev runner exiting) fails with EPIPE
+ * after `ignoreErrors` has dropped its listener, so the streams keep one.
+ */
+const processConsole = (): LogConsole => {
+  for (const stream of [process.stdout, process.stderr]) {
+    if (!stream.listeners('error').includes(ignore)) stream.on('error', ignore);
+  }
+  return new Console({
     stdout: process.stdout,
     stderr: process.stderr,
     ignoreErrors: true,
-  }),
+  });
+};
+
+export const createPlatformLog = (
+  output: LogConsole = processConsole(),
   now?: () => Date,
 ): PlatformLog => ({
   info: (fields, message) =>
