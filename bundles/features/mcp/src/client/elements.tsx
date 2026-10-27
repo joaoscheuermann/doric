@@ -41,7 +41,6 @@ import {
   HourglassIcon,
   KeyRoundIcon,
   Loader2Icon,
-  LogInIcon,
   PlusIcon,
   XIcon,
 } from 'lucide-react';
@@ -129,27 +128,32 @@ function ServerRow({
         size="sm"
         className={cn(
           'h-7 w-full translate-x-0 rounded-none pl-3',
-          signs ? 'pr-14' : 'pr-8',
+          signs ? 'pr-22' : 'pr-8',
         )}
         title={[server.name, label, message].filter(Boolean).join(' — ')}
         onClick={onEdit}
       >
         <Icon className={cn(state === 'connecting' && 'animate-spin')} />
         <span className="min-w-0 flex-1 truncate">{server.name}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {state === 'connected' ? toolCount(server.tools.length) : label}
-        </span>
+        {!signs && (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {state === 'connected' ? toolCount(server.tools.length) : label}
+          </span>
+        )}
       </SidebarMenuButton>
       {signs && (
-        <SidebarMenuAction
-          className="right-7"
+        // The status text is the action; a button cannot sit inside the row's,
+        // so it sits over the row's right padding, left of the remove action.
+        <button
+          type="button"
+          className="absolute top-1 right-7 flex h-5 items-center rounded-md px-1 text-xs text-muted-foreground ring-sidebar-ring outline-hidden hover:text-sidebar-foreground hover:underline focus-visible:ring-2 disabled:opacity-50"
           aria-label={`Sign in to ${server.name}`}
           title="Sign in"
           disabled={signingIn}
           onClick={onSignIn}
         >
-          <LogInIcon />
-        </SidebarMenuAction>
+          Sign in
+        </button>
       )}
       <SidebarMenuAction
         showOnHover

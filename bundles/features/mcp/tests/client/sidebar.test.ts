@@ -932,6 +932,8 @@ test('W2 every status reads as its label', async () => {
   const servers = labels.map(
     ([state], index): McpServerView => ({
       ...files,
+      // Only an http server offers a sign-in.
+      ...(state === 'needs-sign-in' ? { transport: notion.transport } : {}),
       id: `s-${state}`,
       name: `Server ${index}`,
       status: state === 'error' ? { state, message: 'exited' } : { state },
@@ -944,7 +946,19 @@ test('W2 every status reads as its label', async () => {
       const name = `Server ${index}`;
       const message = state === 'error' ? ' — exited' : '';
       assert.equal(rowButton(pane, name).title, `${name} — ${label}${message}`);
-      const row = normalized(rowNamed(pane, name).textContent);
+      const rowElement = rowNamed(pane, name);
+      assert.equal(
+        rowElement.querySelector('.lucide-log-in') === null,
+        true,
+        `${name} shows a sign-in icon.`,
+      );
+      if (state === 'needs-sign-in') {
+        // The status text itself is the action: a "Sign in" text button.
+        const signIn = buttonNamed(rowElement, `Sign in to ${name}`);
+        assert.equal(normalized(signIn.textContent), 'Sign in');
+        return;
+      }
+      const row = normalized(rowElement.textContent);
       const shown = state === 'connected' ? '0 tools' : label;
       assert.ok(row.includes(shown), `"${row}" does not read "${shown}".`);
     });
@@ -987,6 +1001,15 @@ test('W4 adding an http server with a credential header creates it in the Projec
 
     await type(controlLabelled(dialog, 'Name'), 'Linear');
     await pickTransport(dialog, 'HTTP');
+    // Each half of the Transport segmented control carries an icon.
+    for (const transport of ['HTTP', 'stdio']) {
+      const toggle = buttonNamed(groupNamed(dialog, 'Transport'), transport);
+      assert.equal(
+        toggle.querySelector('svg') !== null,
+        true,
+        `The ${transport} toggle has no icon.`,
+      );
+    }
     await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
     // The headers are a table; with none yet it says so.
     assert.deepEqual(columnsOf(groupNamed(dialog, 'Headers')), [
@@ -1254,7 +1277,16 @@ test('W7 signing in opens the authorization page between signIn and finishSignIn
     assert.equal(findButton(pane.rows, 'Sign in to Linear'), undefined);
     assert.equal(findButton(pane.rows, 'Sign in to Shell'), undefined);
 
-    await click(buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion'));
+    const notionRow = rowNamed(pane, 'Notion');
+    assert.equal(
+      notionRow.querySelector('.lucide-log-in') === null,
+      true,
+      'The Notion row shows a sign-in icon.',
+    );
+    const signIn = buttonNamed(notionRow, 'Sign in to Notion');
+    assert.equal(normalized(signIn.textContent), 'Sign in');
+
+    await click(signIn);
     await waitFor(
       () => host.steps.length >= 3,
       `The sign-in stopped after: ${host.steps.join(', ')}.`,

@@ -54,7 +54,13 @@ import {
 } from 'desktop/ui/table';
 import { Textarea } from 'desktop/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from 'desktop/ui/toggle-group';
-import { ChevronRightIcon, PlusIcon, XIcon } from 'lucide-react';
+import {
+  ChevronRightIcon,
+  GlobeIcon,
+  PlusIcon,
+  TerminalIcon,
+  XIcon,
+} from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 
 import type { McpServerView } from '../contracts/index.js';
@@ -570,6 +576,7 @@ export function ServerDialog({
               <ToggleGroup
                 variant="outline"
                 size="sm"
+                className="w-full"
                 aria-labelledby={`${id}-transport`}
                 value={[draft.kind]}
                 onValueChange={([kind]) => {
@@ -578,8 +585,14 @@ export function ServerDialog({
                   }
                 }}
               >
-                <ToggleGroupItem value="http">HTTP</ToggleGroupItem>
-                <ToggleGroupItem value="stdio">stdio</ToggleGroupItem>
+                <ToggleGroupItem value="http" className="flex-1">
+                  <GlobeIcon data-icon="inline-start" />
+                  HTTP
+                </ToggleGroupItem>
+                <ToggleGroupItem value="stdio" className="flex-1">
+                  <TerminalIcon data-icon="inline-start" />
+                  stdio
+                </ToggleGroupItem>
               </ToggleGroup>
             </Field>
             <TransportFields
