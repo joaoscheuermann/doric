@@ -55,7 +55,7 @@ export function DashboardProviderPage({
           endpoint={draft.configuration.endpoint}
           className="size-4 shrink-0"
         />
-        <h1 className="min-w-0 flex-1 truncate text-base font-medium">
+        <h1 className="min-w-0 flex-1 truncate text-base">
           {draft.index === undefined
             ? 'Add provider'
             : providerLabel(draft, draft.index)}

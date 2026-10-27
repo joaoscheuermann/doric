@@ -218,7 +218,7 @@ function Message({
     >
       <Avatar name={message.author ?? name} className="size-5.5" />
       <span className="flex min-w-0 items-baseline gap-2">
-        <span className="truncate font-medium">{name}</span>
+        <span className="truncate font-normal">{name}</span>
         <span className="truncate text-xs text-muted-foreground">
           {message.draft ? 'na pilha' : relativeTime(message.createdAt)}
         </span>
@@ -324,7 +324,7 @@ export function ThreadPopover({
       <PortalContainerProvider container={surface}>
         <div className="flex items-center gap-0.5 border-b border-border py-1.5 pr-1.5 pl-3">
           <span
-            className="mr-auto flex min-w-0 items-center gap-2 text-sm font-medium"
+            className="mr-auto flex min-w-0 items-center gap-2 text-sm font-normal"
             title={anchor}
           >
             <Badge

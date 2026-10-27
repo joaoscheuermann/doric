@@ -583,7 +583,7 @@ export function ServerDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl!">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <McpLogo className="size-4 shrink-0" />

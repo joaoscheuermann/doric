@@ -228,7 +228,7 @@ export function ProviderModelsTable({
             header: ({ column }) => <SortHeader column={column} />,
             cell: ({ row }) => (
               <div className="flex flex-col">
-                <span className="truncate font-medium">
+                <span className="truncate font-normal">
                   {row.original.model.id}
                 </span>
                 <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">

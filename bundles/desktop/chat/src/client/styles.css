@@ -340,8 +340,8 @@
  *
  * They sit outside `@layer base` because a block carries no utility class of its
  * own to lose to, and the transcript's own `font-light` would otherwise win the
- * one weight that has to change: emphasis in markdown is the brightest thing in
- * a wall of light text, so it keeps the medium weight the app states nowhere.
+ * one weight that has to change: emphasis, headings and header cells stand out
+ * of the light text in the regular weight, 400, the heaviest the app uses.
  */
 .editor-paragraph {
   margin: 0 0 0.5rem;
@@ -366,7 +366,7 @@
 .editor-heading-h2,
 .editor-heading-h3 {
   margin: 0.875rem 0 0.5rem;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .editor-heading-h1 {
@@ -459,7 +459,7 @@
 
 .editor-table-cell-header {
   background: var(--muted);
-  font-weight: 500;
+  font-weight: 400;
   /* A header cell is centered by the browser; the column's own alignment, set
      on the cell's paragraph, still wins over this. */
   text-align: left;
@@ -471,7 +471,7 @@
 }
 
 .editor-text-bold {
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .editor-text-italic {

@@ -275,7 +275,7 @@ function CredentialTable({
           id: 'name',
           header: ({ column }) => <SortHeader column={column} />,
           cell: ({ row }) => (
-            <span className="truncate font-medium">
+            <span className="truncate font-normal">
               {row.original.credential.name}
             </span>
           ),

@@ -12,7 +12,7 @@ import {
  * not as a grey outline.
  */
 const READER_AVATAR_CLASS =
-  'flex size-5 shrink-0 items-center justify-center rounded-full border font-medium text-[0.6em] leading-none text-foreground';
+  'flex size-5 shrink-0 items-center justify-center rounded-full border font-normal text-[0.6em] leading-none text-foreground';
 
 type ReaderAvatarProps = {
   readonly className?: string;

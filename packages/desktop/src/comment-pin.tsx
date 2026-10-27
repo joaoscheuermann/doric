@@ -24,7 +24,7 @@ export type CommentPinSize = 'sm' | 'md' | 'lg';
  * number together, so a pin reads the same at any size.
  */
 const commentPinVariants = cva(
-  'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-[9999px_9999px_9999px_0] font-semibold tabular-nums shadow-md transition-transform duration-120 origin-bottom-left hover:scale-110 focus-visible:scale-110 outline-none focus-visible:outline-2 focus-visible:outline-ring',
+  'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-[9999px_9999px_9999px_0] font-normal tabular-nums shadow-md transition-transform duration-120 origin-bottom-left hover:scale-110 focus-visible:scale-110 outline-none focus-visible:outline-2 focus-visible:outline-ring',
   {
     variants: {
       state: {

@@ -30,9 +30,9 @@ import { $blockOf } from './blocks.js';
 
 /** The size a heading of this depth wears, up to the six a heading can be. */
 const headingStyles: Readonly<Record<number, string>> = {
-  1: 'font-size: 1.25rem; font-weight: 500;',
-  2: 'font-size: 1.125rem; font-weight: 500;',
-  3: 'font-size: 1rem; font-weight: 500;',
+  1: 'font-size: 1.25rem; font-weight: 400;',
+  2: 'font-size: 1.125rem; font-weight: 400;',
+  3: 'font-size: 1rem; font-weight: 400;',
   4: 'font-size: 1rem;',
   5: 'font-size: 0.9rem;',
   6: 'font-size: 0.9rem;',

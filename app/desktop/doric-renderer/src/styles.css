@@ -53,25 +53,6 @@
     @apply bg-background text-foreground select-none;
     margin: 0;
     font-family: var(--font-sans);
-    font-weight: 400;
-  }
-
-  /*
-   * A title is medium, never the browser's bold: an `<h1>`–`<h3>` names a thing
-   * and what it names is already the strongest thing on the screen, so the rule
-   * is stated once here instead of on each heading. The smaller headings are the
-   * app's normal weight, like every other surface.
-   */
-  h1,
-  h2,
-  h3 {
-    font-weight: 500;
-  }
-
-  h4,
-  h5,
-  h6 {
-    font-weight: var(--font-weight-normal);
   }
 
   input,

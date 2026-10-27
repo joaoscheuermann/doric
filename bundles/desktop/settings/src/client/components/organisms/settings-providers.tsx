@@ -177,7 +177,7 @@ function ProviderTable({
           id: 'id',
           header: ({ column }) => <SortHeader column={column} />,
           cell: ({ row }) => (
-            <span className="truncate font-medium">
+            <span className="truncate font-normal">
               {providerLabel(row.original.provider, row.original.index)}
             </span>
           ),

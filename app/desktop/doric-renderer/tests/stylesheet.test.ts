@@ -58,6 +58,33 @@ const allSelectors = (sheet: Root): Set<string> => {
   return selectors;
 };
 
+/** The selectors of a rule, one per list entry, whitespace collapsed. */
+const selectorList = (rule: postcss.Rule): string[] =>
+  rule.selectors.map((selector) => selector.replace(/\s+/g, ' ').trim());
+
+/** The value of the rule's own `font-weight` declaration, if it has one. */
+const fontWeight = (rule: postcss.Rule): string | undefined =>
+  rule.nodes
+    .filter(
+      (node): node is postcss.Declaration =>
+        node.type === 'decl' && node.prop === 'font-weight',
+    )
+    .at(-1)?.value;
+
+/** The rules of the sheet's `base` layer, in order. */
+const baseRules = (sheet: Root): postcss.Rule[] => {
+  const rules: postcss.Rule[] = [];
+  sheet.walkAtRules('layer', (layer) => {
+    if (layer.params !== 'base') return;
+    layer.walkRules((rule) => {
+      rules.push(rule);
+    });
+  });
+  return rules;
+};
+
+const headings = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
+
 const monacoSlider =
   '.monaco-editor .monaco-scrollable-element > .scrollbar > .slider';
 const xtermSlider =
@@ -169,6 +196,87 @@ describe('window stylesheets', () => {
         ?.toString(),
       'font-weight: 400 !important',
     );
+  });
+
+  test('the theme sets running text light and every heading normal', () => {
+    const base = baseRules(theme);
+
+    const root = base.filter(
+      (rule) =>
+        selectorList(rule).includes(':root') && fontWeight(rule) !== undefined,
+    );
+    assert.deepEqual(
+      root.map((rule) => fontWeight(rule)),
+      ['300'],
+    );
+
+    // The preflight resets headings to `inherit`; the theme's later rule is the
+    // one that wins for each of them, and it is the normal weight.
+    for (const heading of headings) {
+      const weight = base
+        .filter((rule) => selectorList(rule).includes(heading))
+        .map((rule) => fontWeight(rule))
+        .filter((value) => value !== undefined)
+        .at(-1);
+      assert.ok(
+        weight === '400' || weight === 'var(--font-weight-normal)',
+        `${heading}: ${weight}`,
+      );
+    }
+  });
+
+  test('the shell sets no text or heading weight of its own', () => {
+    const bodies: postcss.Rule[] = [];
+    const headingWeights: string[] = [];
+    shell.walkRules((rule) => {
+      const selectors = selectorList(rule);
+      if (selectors.includes('body')) bodies.push(rule);
+      const weight = fontWeight(rule);
+      if (weight === undefined) return;
+      for (const heading of headings) {
+        if (selectors.includes(heading)) {
+          headingWeights.push(`${heading}: ${weight}`);
+        }
+      }
+    });
+
+    assert.ok(bodies.length > 0);
+    assert.deepEqual(
+      bodies.map((rule) => fontWeight(rule)).filter(Boolean),
+      [],
+    );
+    assert.deepEqual(headingWeights, []);
+  });
+
+  test("the shell carries the mcp dialog's important small-screen max width", () => {
+    const found: string[] = [];
+    shell.walkDecls('max-width', (decl) => {
+      let inRule = false;
+      let inMedia = false;
+      for (
+        let node: postcss.Node | undefined = decl.parent;
+        node;
+        node = node.parent
+      ) {
+        if (
+          node.type === 'rule' &&
+          selectorList(node as postcss.Rule).includes('.sm\\:max-w-xl\\!')
+        ) {
+          inRule = true;
+        }
+        if (
+          node.type === 'atrule' &&
+          (node as postcss.AtRule).name === 'media' &&
+          /min-width:\s*40rem|width\s*>=\s*40rem/.test(
+            (node as postcss.AtRule).params,
+          )
+        ) {
+          inMedia = true;
+        }
+      }
+      if (inRule && inMedia) found.push(decl.important ? 'important' : 'plain');
+    });
+    assert.deepEqual(found, ['important']);
   });
 
   test('the conversation and editor-surface rules come from their bundles, not from the shell', () => {

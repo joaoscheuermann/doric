@@ -55,6 +55,8 @@ utilities this bundle uses are also emitted by the shell's sorted sheet; do not
 add a second theme. All footer text, including nested controls, uses
 `font-weight: 400` through the shell's footer rule: use a semantic `footer` or a
 `data-slot` ending in `-footer`, and add no per-control weights inside footers.
+Labels and titles are 400 and running text 300, through desktop/ui's components
+and the theme's root weight; add no per-control weight to reach them.
 
 ## Tests
 

@@ -112,6 +112,14 @@ compares:
   overlays land in the container a `PortalContainerProvider` names (a
   Papercraft preview's shadow root). The exported `*Portal` wrappers pass it
   before their spread props, so a caller's own `container` still wins.
+- `alert-dialog.tsx`, `alert.tsx`, `badge.tsx`, `button.tsx`, `combobox.tsx`,
+  `command.tsx`, `context-menu.tsx`, `dialog.tsx`, `dropdown-menu.tsx`,
+  `empty.tsx`, `field.tsx`, `input-group.tsx`, `input.tsx`, `kbd.tsx`,
+  `label.tsx`, `popover.tsx`, `progress.tsx`, `sheet.tsx`, `sidebar.tsx`,
+  `table.tsx`, `tabs.tsx` and `toggle.tsx`: labels and titles take the regular
+  weight, `font-normal` (400), where shadcn writes `font-medium`; `field.tsx`'s
+  description and error take `font-light` (300), the theme's running-text
+  weight.
 
 ## Fonts
 

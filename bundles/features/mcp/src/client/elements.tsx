@@ -129,7 +129,7 @@ function ServerRow({
         size="sm"
         className={cn(
           'h-7 w-full translate-x-0 rounded-none pl-3',
-          signs ? 'pr-22' : 'pr-8',
+          signs && 'group-has-data-[sidebar=menu-action]/menu-item:pr-22',
         )}
         title={[server.name, label, message].filter(Boolean).join(' — ')}
         onClick={onEdit}

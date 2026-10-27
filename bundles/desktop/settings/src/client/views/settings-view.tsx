@@ -355,7 +355,7 @@ export function Settings({ services }: { readonly services: Services }) {
         */}
         <header className="mb-4 flex items-center gap-2">
           <Icon aria-hidden className="size-5 shrink-0" />
-          <h1 className="text-lg font-medium">{title}</h1>
+          <h1 className="text-lg">{title}</h1>
         </header>
         {config.issue !== undefined && (
           <Alert variant="destructive" className="mb-4">

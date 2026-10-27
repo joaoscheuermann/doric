@@ -22,6 +22,25 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  /*
+   * Running text is light; labels and titles set the regular weight. The rule
+   * is on `:root` so a Papercraft preview's theme scope gets it too
+   * (papercraft/src/host/css.ts scopeRootSelectors rewrites `:root`).
+   */
+  :root {
+    font-weight: 300;
+  }
+
+  /* A heading is the regular weight, never the browser's bold: its size and place name it. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: var(--font-weight-normal);
+  }
 }
 
 /*

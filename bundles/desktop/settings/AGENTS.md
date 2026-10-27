@@ -46,6 +46,9 @@ All footer text, including nested controls, uses `font-weight: 400` through the
 shell's footer rule: use a semantic `footer` or a `data-slot` ending in
 `-footer`, and add no per-control weights inside footers.
 
+Labels and titles are 400 and running text 300, through desktop/ui's components
+and the theme's root weight; add no per-control weight to reach them.
+
 ## Tests
 
 `tests/*.test.ts` are DOM-free; `tests/client/*.test.ts` boot happy-dom with

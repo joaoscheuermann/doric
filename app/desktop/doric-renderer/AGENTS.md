@@ -45,6 +45,11 @@ belongs in that bundle's sheet.
 All footer text, including nested controls, must use `font-weight: 400`, never
 500, through the shared rule in `src/styles.css`. Do not override or weaken it.
 
+Labels and titles (headings, overlay titles, buttons, tabs, badges, form, table
+and menu labels) are `font-weight: 400`; running text is 300, the theme's root
+weight (`desktop/ui/theme.css`); nothing is heavier, emphasis included.
+desktop/ui's components carry these weights; do not restate them per call site.
+
 ## Tests
 
 `tests/stylesheet.test.ts` compiles the theme, the shell sheet and the bundle

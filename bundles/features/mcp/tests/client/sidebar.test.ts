@@ -988,6 +988,30 @@ test('W2 every status reads as its label', async () => {
         true,
         `${name} shows a sign-in icon.`,
       );
+      // A row that offers Sign in keeps its name clear of the wider action.
+      const buttonClasses = (
+        rowButton(pane, name).getAttribute('class') ?? ''
+      ).split(/\s+/);
+      if (state === 'needs-sign-in') {
+        assert.deepEqual(
+          [
+            buttonClasses.includes(
+              'group-has-data-[sidebar=menu-action]/menu-item:pr-22',
+            ),
+            buttonClasses.includes(
+              'group-has-data-[sidebar=menu-action]/menu-item:pr-8',
+            ),
+          ],
+          [true, false],
+          `${name} does not clear its Sign in action.`,
+        );
+      } else {
+        assert.equal(
+          buttonClasses.some((className) => className.endsWith('pr-22')),
+          false,
+          `${name} clears a Sign in action it does not have.`,
+        );
+      }
       if (state === 'needs-sign-in') {
         // The status text itself is the action: a "Sign in" text button.
         const signIn = buttonNamed(rowElement, `Sign in to ${name}`);
@@ -1273,6 +1297,15 @@ test('W5 editing a server starts from its view and updates it by id', async () =
     );
     await click(rowButton(pane, 'Linear'));
     const dialog = await dialogNamed('Edit MCP server');
+
+    // The dialog's width is important, so a later sheet re-emitting the
+    // dialog's default max width cannot narrow it.
+    const content = dialog.closest('[data-slot="dialog-content"]');
+    assert.deepEqual(
+      [content !== null, hasClass(content, 'sm:max-w-xl!')],
+      [true, true],
+      'The dialog content is not sm:max-w-xl!.',
+    );
 
     // The editor has no tabs: its fields and the server's tools and skills
     // are one form, Tools then Skills right after the Headers.

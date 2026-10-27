@@ -102,7 +102,7 @@ export function WorkspaceCwd({
               {git?.repo ? 'Current worktree' : 'Working directory'}
             </span>
             <div className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              <span className="min-w-0 flex-1 truncate text-sm font-normal">
                 {root.split('/').at(-1) || '/'}
               </span>
               <CopyButton value={root} label="Copy worktree path" />
