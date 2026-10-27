@@ -15,6 +15,16 @@
 @source '../chrome-bar.tsx';
 
 /*
+ * Borders and outlines take the theme's colours by default, wherever a sheet
+ * or a preview draws them, instead of the foreground.
+ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+}
+
+/*
  * Every chrome bar is the Papermache app bar's 40px height, stated once by
  * the tokens. A 28px control has 6px of air on each side.
  */

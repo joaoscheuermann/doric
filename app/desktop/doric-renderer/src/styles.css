@@ -19,10 +19,6 @@
 @source '../../../../bundles/*/*/src/client/**/*';
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-
   /* Every clickable surface shows a pointer. Tailwind v4's preflight leaves
      buttons with the plain arrow, and the hand is half of what makes a surface
      read as clickable. The roles cover the composed primitives — Radix menus,

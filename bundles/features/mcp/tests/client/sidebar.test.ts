@@ -793,6 +793,16 @@ const setChecked = async (
   assert.equal(isChecked(control), checked);
 };
 
+/** Whether `control` sits in its dialog's footer. */
+const inFooter = (control: Element): boolean =>
+  control.closest('[data-slot="dialog-footer"]') !== null;
+
+/** The `aria-checked` of the switch in `dialog`'s footer, or null without one. */
+const footerSwitchState = (dialog: Element): string | null =>
+  dialog
+    .querySelector('[data-slot="dialog-footer"] [role="switch"]')
+    ?.getAttribute('aria-checked') ?? null;
+
 /** Hands `servers` to a watch's listener, a function or an observer. */
 const emit = async (
   watch: WatchRecord,
@@ -990,6 +1000,13 @@ test('W4 adding an http server with a credential header creates it in the Projec
     await type(controlLabelled(headers, 'Name'), 'Authorization');
     await choose(controlLabelled(headers, 'Credential'), 'Linear token');
     await setChecked(controlLabelled(dialog, 'Enabled'), true);
+    // Enabled is a switch in the footer, beside Cancel and Save.
+    assert.equal(
+      inFooter(controlLabelled(dialog, 'Enabled')),
+      true,
+      'Enabled is not in the dialog footer.',
+    );
+    assert.equal(footerSwitchState(dialog), 'true');
     await click(buttonNamed(dialog, 'Save'));
     await waitFor(
       () => callsOf(host, 'create').length > 0,
@@ -1144,6 +1161,13 @@ test('W5 editing a stdio server keeps every field it did not change', async () =
       '/workspace',
     );
     await setChecked(controlLabelled(dialog, 'Enabled'), false);
+    // Enabled is a switch in the footer, beside Cancel and Save.
+    assert.equal(
+      inFooter(controlLabelled(dialog, 'Enabled')),
+      true,
+      'Enabled is not in the dialog footer.',
+    );
+    assert.equal(footerSwitchState(dialog), 'false');
     await click(buttonNamed(dialog, 'Save'));
     await waitFor(
       () => callsOf(host, 'update').length > 0,

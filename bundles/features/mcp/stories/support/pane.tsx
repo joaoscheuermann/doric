@@ -30,6 +30,11 @@ const services: Services = {
   whenAvailable: () => ({ dispose: () => undefined }),
 };
 
+/**
+ * Tags are unique per module instance too: a later preview revision loads this
+ * module again in the same document, whose registry keeps the earlier tags.
+ */
+const instance = Math.random().toString(36).slice(2, 8);
 let defined = 0;
 
 /** Builds the pane's elements over a seeded store, under fresh tags. */
@@ -39,9 +44,12 @@ const defineFor = ({ projectId, servers }: PaneSetup) => {
   store.setServers(servers);
   const elements = defineMcpElements({ store, api: fakeApi });
   defined += 1;
-  customElements.define(`mcp-sidebar-story-${defined}`, elements.sidebar);
   customElements.define(
-    `mcp-group-action-story-${defined}`,
+    `mcp-sidebar-story-${instance}-${defined}`,
+    elements.sidebar,
+  );
+  customElements.define(
+    `mcp-group-action-story-${instance}-${defined}`,
     elements.groupAction,
   );
   return elements;

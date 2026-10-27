@@ -11,7 +11,6 @@
 
 import type { CredentialDescription } from 'bundle/contracts';
 import { Button } from 'desktop/ui/button';
-import { Checkbox } from 'desktop/ui/checkbox';
 import {
   Collapsible,
   CollapsibleContent,
@@ -44,6 +43,7 @@ import {
   SelectValue,
 } from 'desktop/ui/select';
 import { toast } from 'desktop/ui/sonner';
+import { Switch } from 'desktop/ui/switch';
 import {
   Table,
   TableBody,
@@ -589,24 +589,26 @@ export function ServerDialog({
               onChange={setDraft}
               onNewCredential={setCreatingFor}
             />
-            <Field orientation="horizontal">
-              <Checkbox
-                id={`${id}-enabled`}
-                checked={draft.enabled}
-                onCheckedChange={(enabled) => setDraft({ ...draft, enabled })}
-              />
-              <FieldLabel htmlFor={`${id}-enabled`}>Enabled</FieldLabel>
-            </Field>
           </FieldGroup>
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button size="sm" disabled={saving} onClick={() => void save()}>
-            Save
-          </Button>
+        <DialogFooter className="sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Switch
+              id={`${id}-enabled`}
+              checked={draft.enabled}
+              onCheckedChange={(enabled) => setDraft({ ...draft, enabled })}
+            />
+            <FieldLabel htmlFor={`${id}-enabled`}>Enabled</FieldLabel>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button size="sm" disabled={saving} onClick={() => void save()}>
+              Save
+            </Button>
+          </div>
         </DialogFooter>
 
         {creatingFor !== undefined && (

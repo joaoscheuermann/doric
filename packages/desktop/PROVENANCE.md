@@ -18,7 +18,8 @@ shadcn/ui files edited locally. Each comes from one of two origins, which
   `collapsible`, `combobox`, `command`, `context-menu`, `dialog`,
   `dropdown-menu`, `input`, `input-group`, `kbd`, `label`, `marker`, `popover`,
   `progress`, `scroll-area`, `select`, `separator`, `sheet`, `sidebar`, `tabs`,
-  `toggle`, `toggle-group` and `tooltip`.
+  `toggle`, `toggle-group` and `tooltip`. `switch` was added later from the
+  same CLI and style.
 
 `scripts/verify-provenance.mjs` checks this. `desktop:test` runs it. For each
 file, it undoes the import rewrites and the patches below and compares the
