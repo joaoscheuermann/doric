@@ -68,6 +68,7 @@ let act: (callback: () => void | Promise<void>) => Promise<void>;
 let createRoot: typeof import('react-dom/client')['createRoot'];
 let createElement: typeof import('react')['createElement'];
 let Toaster: typeof import('desktop/ui/sonner')['Toaster'];
+let toast: typeof import('desktop/ui/sonner')['toast'];
 let activate: typeof import('../../src/client/index.js')['activate'];
 let mcpPane: typeof import('../../src/client/index.js')['mcpPane'];
 let McpV1: typeof import('../../src/contracts/index.js')['McpV1'];
@@ -89,7 +90,7 @@ before(async () => {
   globals.IS_REACT_ACT_ENVIRONMENT = true;
   ({ act, createElement } = await import('react'));
   ({ createRoot } = await import('react-dom/client'));
-  ({ Toaster } = await import('desktop/ui/sonner'));
+  ({ Toaster, toast } = await import('desktop/ui/sonner'));
 
   ({ activate, mcpPane } = await import('../../src/client/index.js'));
   ({ McpV1 } = await import('../../src/contracts/index.js'));
@@ -206,6 +207,10 @@ interface HostOptions {
   readonly mcp?: Partial<
     Record<'create' | 'update' | 'remove' | 'signIn' | 'finishSignIn', Answer>
   >;
+  /** Answers `secrets/v1.create` instead of storing at once. */
+  readonly createSecret?: Answer;
+  /** Whether the system browser opens (default) or fails to. */
+  readonly browserOpens?: boolean;
 }
 
 const createHost = (options: HostOptions = {}) => {
@@ -320,6 +325,9 @@ const createHost = (options: HostOptions = {}) => {
     list: async () => credentials,
     create: async (input: { readonly name: string; readonly kind: string }) => {
       secretsCreated.push(input);
+      if (options.createSecret !== undefined) {
+        return options.createSecret(input);
+      }
       return {
         id: 'c-new',
         kind: input.kind,
@@ -332,6 +340,9 @@ const createHost = (options: HostOptions = {}) => {
   const browser = {
     open: async (url: string) => {
       steps.push(`open ${url}`);
+      if (options.browserOpens === false) {
+        throw new ContractError('unavailable', 'No browser opened.');
+      }
     },
   };
 
@@ -459,7 +470,10 @@ const mountElement = (
 
 interface OpenPane {
   readonly header: HTMLElement;
+  /** The rows element mounted now. */
   readonly rows: HTMLElement;
+  /** Collapses the pane and opens it again: a new rows element, as the layout mounts it. */
+  reopen(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -498,9 +512,25 @@ const openPane = async (host: Host): Promise<OpenPane> => {
 
   return {
     header: header as unknown as HTMLElement,
-    rows: rows as unknown as HTMLElement,
+    get rows() {
+      return rows as unknown as HTMLElement;
+    },
+    reopen: async () => {
+      // The layout drops a collapsed pane's element; it is disposed after
+      // the task that removed it.
+      await act(() => {
+        rows?.remove();
+      });
+      await settle();
+      await act(() => {
+        rows = mountElement(host, pane.tag, panel);
+      });
+      await settle();
+    },
     close: async () => {
       await act(() => {
+        // The toasts outlive a Toaster; the next test's starts with none.
+        toast.dismiss();
         header?.dispose();
         rows?.dispose();
         toaster.unmount();
@@ -884,6 +914,40 @@ const paneWith = async (
 const callsOf = (host: Host, method: string): Recorded[] =>
   host.calls.filter((call) => call.method === method);
 
+/** An answer the test settles when it chooses. */
+const deferred = <T>() => {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (error: unknown) => void = () => undefined;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+};
+
+/** `finishSignIn` answers, one per call, each settled by the test. */
+const finishes = () => {
+  const answers: ReturnType<typeof deferred<unknown>>[] = [];
+  return {
+    answers,
+    answer: (): Promise<unknown> => {
+      const answer = deferred<unknown>();
+      answers.push(answer);
+      return answer.promise;
+    },
+  };
+};
+
+const signedIn: McpServerView = {
+  ...notion,
+  status: { state: 'connected' },
+  signedIn: true,
+};
+
+/** What the host answers a sign-in a newer `signIn` replaced. */
+const replaced = () =>
+  new ContractError('mcp_signin_aborted', 'The MCP sign-in was cancelled.');
+
 // ---------------------------------------------------------------------------
 // W1
 
@@ -1044,6 +1108,32 @@ test('W3 without a selected Project the pane lists nothing, cannot add and watch
       'Add MCP server is enabled without a Project.',
     );
     assert.equal(host.watches.length, 0);
+  } finally {
+    await pane.close();
+  }
+});
+
+test("W3 until the Project's watch answers the pane is loading, not empty", async () => {
+  const host = createHost({ project: { id: 'p1', name: 'Doric' } });
+  const pane = await openPane(host);
+  const busy = () => pane.rows.querySelector('[aria-busy="true"]') !== null;
+
+  try {
+    const p1 = await watchOf(host, 'p1');
+    assert.equal(busy(), true, 'The pane does not say it is loading.');
+
+    // Answered empty, the pane draws nothing: no rows and no placeholders.
+    await emit(p1, []);
+    assert.equal(busy(), false);
+    assert.equal(rowsOf(pane).length, 0);
+
+    // Another Project's servers are unknown again until its watch answers.
+    await host.select({ id: 'p2', name: 'Elsewhere' });
+    const p2 = await watchOf(host, 'p2');
+    assert.equal(busy(), true);
+    await emit(p2, [sentry]);
+    assert.equal(busy(), false);
+    assert.equal(rowsOf(pane).length, 1);
   } finally {
     await pane.close();
   }
@@ -1606,6 +1696,159 @@ test('W7 a sign-in that fails to finish says so in a toast', async () => {
   }
 });
 
+test('W7 once the browser opened, signing in again restarts the sign-in', async () => {
+  const finish = finishes();
+  const { host, pane } = await paneWith([notion], {
+    mcp: { finishSignIn: finish.answer },
+  });
+  const signInButton = () =>
+    buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion');
+
+  try {
+    await click(signInButton());
+    await waitFor(
+      () => finish.answers.length === 1,
+      `The sign-in stopped after: ${host.steps.join(', ')}.`,
+    );
+    // The host waits for the browser for minutes; the reader may retry.
+    assert.equal(isDisabled(signInButton()), false);
+
+    await click(signInButton());
+    await waitFor(
+      () => finish.answers.length === 2,
+      `The retry stopped after: ${host.steps.join(', ')}.`,
+    );
+    assert.deepEqual(host.steps, [
+      'signIn s4',
+      `open ${authorizeUrl}`,
+      'finishSignIn s4',
+      'signIn s4',
+      `open ${authorizeUrl}`,
+      'finishSignIn s4',
+    ]);
+
+    // The host cancels the first when the second starts; that is no failure.
+    finish.answers[0]?.reject(replaced());
+    finish.answers[1]?.resolve(signedIn);
+    await settle(10);
+    assert.deepEqual(toastsOf(), []);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W7 a browser that did not open leaves the link on screen, with a copy action', async () => {
+  const finish = finishes();
+  const { host, pane } = await paneWith([notion], {
+    browserOpens: false,
+    mcp: { finishSignIn: finish.answer },
+  });
+
+  try {
+    await click(buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion'));
+    await waitFor(
+      () => toastsOf().some((text) => text.includes(authorizeUrl)),
+      `No toast with the link after: ${host.steps.join(', ')}.`,
+    );
+    assert.deepEqual(host.steps, [
+      'signIn s4',
+      `open ${authorizeUrl}`,
+      'finishSignIn s4',
+    ]);
+
+    // Longer than a toast lasts by default: the sign-in still waits.
+    await act(() => new Promise<void>((done) => setTimeout(done, 4600)));
+    await settle();
+    const [link] = [
+      ...window.document.querySelectorAll('[data-sonner-toast]'),
+    ] as unknown as HTMLElement[];
+    assert.ok(link !== undefined, 'The link vanished while the sign-in waits.');
+    assert.match(normalized(link.textContent), /Notion/);
+
+    await click(buttonNamed(link, 'Copy link'));
+    assert.equal(await window.navigator.clipboard.readText(), authorizeUrl);
+    assert.equal(toastsOf().length, 1, 'Copying the link closed it.');
+
+    // Signed in, the link is spent.
+    finish.answers[0]?.resolve(signedIn);
+    await waitFor(
+      () => toastsOf().length === 0,
+      'The link outlived the sign-in.',
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+test("W7 a replaced sign-in neither says it was cancelled nor takes the newer one's toast", async () => {
+  const finish = finishes();
+  const { host, pane } = await paneWith([notion], {
+    browserOpens: false,
+    mcp: { finishSignIn: finish.answer },
+  });
+  const signInButton = () =>
+    buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion');
+
+  try {
+    await click(signInButton());
+    await waitFor(
+      () => finish.answers.length === 1,
+      `The sign-in stopped after: ${host.steps.join(', ')}.`,
+    );
+    await click(signInButton());
+    await waitFor(
+      () => finish.answers.length === 2,
+      `The retry stopped after: ${host.steps.join(', ')}.`,
+    );
+
+    finish.answers[0]?.reject(replaced());
+    await settle(10);
+    const toasts = toastsOf();
+    assert.equal(toasts.length, 1, `Toasts: ${toasts.join(' | ')}.`);
+    assert.ok(toasts[0]?.includes(authorizeUrl), `Toast: ${toasts[0]}.`);
+    assert.doesNotMatch(toasts[0] ?? '', /cancelled/);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W7 a sign-in under way outlives the pane collapsing', async () => {
+  const finish = finishes();
+  const { host, pane } = await paneWith([notion], {
+    mcp: { finishSignIn: finish.answer },
+  });
+
+  try {
+    await click(buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion'));
+    await waitFor(
+      () => finish.answers.length === 1,
+      `The sign-in stopped after: ${host.steps.join(', ')}.`,
+    );
+
+    await pane.reopen();
+    await emit(await watchOf(host, 'p1'), [notion]);
+    await click(buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion'));
+    await waitFor(
+      () => finish.answers.length === 2,
+      `The retry stopped after: ${host.steps.join(', ')}.`,
+    );
+
+    // The first sign-in is the replaced one, whichever element started it.
+    finish.answers[0]?.reject(replaced());
+    await settle(10);
+    assert.deepEqual(toastsOf(), []);
+
+    // The one that counts still reports its failure.
+    finish.answers[1]?.reject(
+      new ContractError('mcp_signin_failed', 'The authorization was refused.'),
+    );
+    await waitFor(() => toastsOf().length === 1, 'The failure went unsaid.');
+    assert.match(toastsOf()[0] ?? '', /refused/);
+  } finally {
+    await pane.close();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // W8
 
@@ -1739,6 +1982,62 @@ test('W8 choosing Plain value again brings back the value typed before', async (
         return transport.kind === 'http' ? transport.headers : [];
       }),
       [[{ name: 'X-Api-Key', value: 'abc' }]],
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W8 a credential the reader cancelled before it was stored is not attached', async () => {
+  const stored = deferred<unknown>();
+  const { host, pane } = await paneWith([], {
+    createSecret: () => stored.promise,
+  });
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+    await type(controlLabelled(dialog, 'Name'), 'Linear');
+    await pickTransport(dialog, 'HTTP');
+    await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
+    await click(buttonNamed(dialog, 'Add header'));
+    await type(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Key'),
+      'X-Api-Key',
+    );
+    await pickMenuItem(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Choose a credential'),
+      'New credential…',
+    );
+
+    const create = await dialogNamed('New credential');
+    await type(controlLabelled(create, 'Name'), 'Linear key');
+    await type(controlLabelled(create, 'Secret'), 'lin_api_123');
+    await click(buttonNamed(create, 'Create'));
+    await waitFor(
+      () => host.secretsCreated.length > 0,
+      'Create never called secrets/v1.create.',
+    );
+    await click(buttonNamed(create, 'Cancel'));
+    stored.resolve({
+      id: 'c-new',
+      kind: 'API_TOKEN',
+      name: 'Linear key',
+      hasSecret: true,
+    });
+    await settle(10);
+
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'create').length > 0,
+      'Save never called create.',
+    );
+    assert.deepEqual(
+      callsOf(host, 'create').map(({ input }) => {
+        const { transport } = input as McpServerInput;
+        return transport.kind === 'http' ? transport.headers : [];
+      }),
+      [[{ name: 'X-Api-Key', value: '' }]],
     );
   } finally {
     await pane.close();

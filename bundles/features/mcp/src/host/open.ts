@@ -29,6 +29,9 @@ export type Opened =
   | { readonly kind: 'open'; readonly client: Client }
   | { readonly kind: 'waiting' };
 
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message || error.name : String(error);
+
 /** Whether a failure is the server asking for a sign-in, not a transport one. */
 export const isAuthFailure = (error: unknown): boolean =>
   error instanceof SignInRequired ||
@@ -70,6 +73,8 @@ export const openHttp = async (
 ): Promise<Opened> => {
   const options = { requestInit: { headers: entries.values }, authProvider };
 
+  let streamable: unknown;
+
   try {
     return {
       kind: 'open',
@@ -80,20 +85,32 @@ export const openHttp = async (
     };
   } catch (error) {
     if (signal.aborted || isAuthFailure(error)) throw error;
+    streamable = error;
   }
 
   // A server that predates Streamable HTTP speaks HTTP+SSE.
-  return {
-    kind: 'open',
-    client: await connect(new SSEClientTransport(url, options), signal),
-  };
+  try {
+    return {
+      kind: 'open',
+      client: await connect(new SSEClientTransport(url, options), signal),
+    };
+  } catch (error) {
+    if (signal.aborted || isAuthFailure(error)) throw error;
+    // Most servers speak Streamable HTTP: its failure says why, the
+    // fallback's follows it.
+    throw new Error(
+      `${messageOf(streamable)} (over HTTP+SSE: ${messageOf(error)})`,
+      { cause: streamable },
+    );
+  }
 };
 
 /**
  * Starts a `stdio` server in the Project's sandbox, with its own entries
  * added to the sandbox's environment, and connects to it. `waiting` when the
- * Project holds no sandbox lease; rejects when the sandbox cannot keep a
- * process running.
+ * Project holds no sandbox lease yet, or lost it while the server started
+ * (that client is closed, so its process ends); rejects when the Project is
+ * gone or has ended, or when the sandbox cannot keep a process running.
  */
 export const openStdio = async (
   transport: Extract<McpTransport, { readonly kind: 'stdio' }>,
@@ -106,6 +123,8 @@ export const openStdio = async (
   const env = Object.entries(entries.values).map(
     ([name, value]) => `${name}=${value}`,
   );
+  // What the task connected, whatever the lease answers after it.
+  const task: { client?: Client } = {};
   const outcome = await lease.withLease(async (sandbox) => {
     const start = sandbox.start?.bind(sandbox);
 
@@ -115,7 +134,7 @@ export const openStdio = async (
       );
     }
 
-    return await connect(
+    task.client = await connect(
       createSandboxStdioTransport({
         start: (onOutput) =>
           start({
@@ -130,9 +149,26 @@ export const openStdio = async (
       }),
       signal,
     );
+
+    return task.client;
   });
 
-  return outcome.status === 'ready'
-    ? { kind: 'open', client: outcome.value }
-    : { kind: 'waiting' };
+  if (outcome.status === 'ready')
+    return { kind: 'open', client: outcome.value };
+  // The lease dropped while the server started: its process must not outlive it.
+  await task.client?.close().catch(() => undefined);
+
+  if (outcome.status === 'missing') {
+    throw new Error(
+      'The Project no longer exists, so its stdio MCP server cannot start.',
+    );
+  }
+
+  if (outcome.status === 'expired') {
+    throw new Error(
+      'The Project has ended, so its sandbox cannot run a stdio MCP server.',
+    );
+  }
+
+  return { kind: 'waiting' };
 };

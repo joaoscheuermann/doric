@@ -38,13 +38,15 @@ const HASHED_PREFIX = 55;
 
 /**
  * The server's prefix in its tools' names: lowercased, each run of
- * characters outside [a-z0-9_-] one `_`, at most 20 characters, with no
- * leading or trailing `_`. 'GitHub Copilot' → 'github_copilot'.
+ * characters outside [a-z0-9-] (`_` included) one `_`, at most 20
+ * characters, with no leading or trailing `_`. 'GitHub Copilot' →
+ * 'github_copilot'. It never holds `__`, so the first `__` after
+ * `mcp__<slug>` ends the slug and two servers' tools never share a name.
  */
 export const serverSlug = (name: string): string =>
   name
     .toLowerCase()
-    .replace(/[^a-z0-9_-]+/gu, '_')
+    .replace(/[^a-z0-9-]+/gu, '_')
     .replace(/^_+/u, '')
     .slice(0, SLUG_MAX)
     .replace(/_+$/u, '');

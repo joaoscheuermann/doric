@@ -151,3 +151,25 @@ void test('a credential without a secret is refused as invalid input', async () 
     },
   );
 });
+
+void test('a credential of the MCP_TOKEN kind is refused as invalid input, whatever server stored it', async () => {
+  const { secrets } = secretsOf([
+    {
+      id: 'sign-in-token',
+      kind: 'MCP_TOKEN',
+      name: 'mcp:another-server:access',
+      secret: 'another-server-token',
+    },
+  ]);
+
+  await assert.rejects(
+    resolveEntries(
+      [{ name: 'Authorization', credentialId: 'sign-in-token' }],
+      secrets,
+    ),
+    (error: unknown) => {
+      assert.equal(codeOf(error), 'invalid_input');
+      return true;
+    },
+  );
+});

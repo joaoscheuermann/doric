@@ -49,6 +49,11 @@ export interface FakeAuthorizationServer {
   readonly accessTokens: Set<string>;
   /** Consents to an authorization URL and answers the redirect it earns. */
   approve(authorizationUrl: string): Approval;
+  /**
+   * Holds every `/token` answer (each request is recorded on arrival) until
+   * the returned release runs; held requests are then answered in order.
+   */
+  holdTokens(): () => void;
   close(): Promise<void>;
 }
 
@@ -83,6 +88,7 @@ export const authorizationServer = async (
   const accessTokens = new Set<string>();
   const codes = new Map<string, { challenge: string; redirectUri: string }>();
   const refreshTokens = new Set<string>();
+  let held: Promise<void> | undefined;
   let issuer = '';
 
   const issue = (): IssuedTokens => {
@@ -151,6 +157,7 @@ export const authorizationServer = async (
     if (url.pathname === '/token' && req.method === 'POST') {
       const body = Object.fromEntries(new URLSearchParams(await readBody(req)));
       tokenRequests.push(body);
+      await held;
 
       if (body.grant_type === 'authorization_code') {
         const grant = codes.get(body.code ?? '');
@@ -215,6 +222,17 @@ export const authorizationServer = async (
       });
 
       return { code, state: url.searchParams.get('state') ?? '', redirectUri };
+    },
+    holdTokens: () => {
+      let release!: () => void;
+      held = new Promise((resolve) => {
+        release = resolve;
+      });
+
+      return () => {
+        held = undefined;
+        release();
+      };
     },
     close: async () => {
       server.closeAllConnections();

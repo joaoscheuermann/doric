@@ -9,7 +9,8 @@
 //
 // Built inside a factory the activation calls, so importing this module touches
 // no DOM global [D10-7]. What the rows show lives in the activation's store
-// (D9-17); an element keeps only which of its dialogs is open.
+// (D9-17), and so do the sign-ins under way (`sign-in.ts`); an element keeps
+// only which of its dialogs is open.
 
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import {
@@ -29,6 +30,7 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSkeleton,
   SidebarScope,
 } from 'desktop/ui/sidebar';
 import { toast } from 'desktop/ui/sonner';
@@ -51,6 +53,7 @@ import { failureMessage, type McpApi } from './api.js';
 import { useSubscribed } from './hooks.js';
 import { McpLogo } from './mcp-logo.js';
 import { ServerDialog } from './server-dialog.js';
+import type { McpSignIns } from './sign-in.js';
 import type { McpServersStore } from './store.js';
 
 export const MCP_SIDEBAR_TAG = 'mcp-sidebar';
@@ -61,7 +64,11 @@ export const MCP_GROUP_ACTION_TAG = 'mcp-group-action';
 interface McpClient {
   readonly store: McpServersStore;
   readonly api: McpApi;
+  readonly signIns: McpSignIns;
 }
+
+/** Placeholder rows while the selected Project's watch has not answered yet. */
+const SKELETON_ROWS = ['mcp-skeleton-0', 'mcp-skeleton-1', 'mcp-skeleton-2'];
 
 /** What each status reads as in a row, and its glyph. */
 const statusOf: Readonly<
@@ -85,26 +92,6 @@ const toolCount = (count: number): string =>
 /** Only an http server the host asked to sign in offers it. */
 const offersSignIn = (server: McpServerView): boolean =>
   server.transport.kind === 'http' && server.status.state === 'needs-sign-in';
-
-/**
- * Signs in to an http server: the host prepares the authorization, the system
- * browser opens it, and the host waits for its answer. A browser that did not
- * open leaves the URL in a toast, so the sign-in is one click away.
- */
-const signIn = async (api: McpApi, server: McpServerView): Promise<void> => {
-  const id = `mcp-sign-in-${server.id}`;
-  try {
-    const url = await api.signIn(server.projectId, server.id);
-    await api.openBrowser(url).catch(() => {
-      toast.info(`Open ${url} in a browser to sign in to ${server.name}.`, {
-        id,
-      });
-    });
-    await api.finishSignIn(server.projectId, server.id);
-  } catch (error) {
-    toast.error(failureMessage(error), { id });
-  }
-};
 
 function ServerRow({
   server,
@@ -206,24 +193,15 @@ function RemoveDialog({
   );
 }
 
-export const defineMcpElements = ({ store, api }: McpClient) => {
+export const defineMcpElements = ({ store, api, signIns }: McpClient) => {
   function McpSidebar() {
+    const projectId = useSubscribed(store, () => store.projectId());
     const servers = useSubscribed(store, () => store.servers());
+    const loaded = useSubscribed(store, () => store.loaded());
     const failure = useSubscribed(store, () => store.failure());
+    const signingIn = useSubscribed(store, () => store.signingIn());
     const [editing, setEditing] = useState<McpServerView>();
     const [removing, setRemoving] = useState<McpServerView>();
-    const [signingIn, setSigningIn] = useState<ReadonlySet<string>>(new Set());
-
-    const startSignIn = (server: McpServerView): void => {
-      setSigningIn((ids) => new Set(ids).add(server.id));
-      void signIn(api, server).finally(() =>
-        setSigningIn((ids) => {
-          const next = new Set(ids);
-          next.delete(server.id);
-          return next;
-        }),
-      );
-    };
 
     const remove = async (server: McpServerView): Promise<void> => {
       setRemoving(undefined);
@@ -233,6 +211,9 @@ export const defineMcpElements = ({ store, api }: McpClient) => {
         toast.error(failureMessage(error), { id: 'mcp-server-remove' });
       }
     };
+
+    // Until the Project's watch answers, its servers are unknown, not none.
+    const loading = projectId !== undefined && !loaded;
 
     return (
       // The element's root is its own: the sidebar's scope does not reach it
@@ -245,14 +226,23 @@ export const defineMcpElements = ({ store, api }: McpClient) => {
             <AlertDescription>{failure}</AlertDescription>
           </Alert>
         )}
-        <SidebarMenu className="w-full gap-0">
+        <SidebarMenu className="w-full gap-0" aria-busy={loading || undefined}>
+          {loading &&
+            SKELETON_ROWS.map((row) => (
+              <SidebarMenuItem key={row}>
+                <SidebarMenuSkeleton
+                  showIcon
+                  className="h-7 rounded-none pl-3 pr-8"
+                />
+              </SidebarMenuItem>
+            ))}
           {servers.map((server) => (
             <ServerRow
               key={server.id}
               server={server}
               signingIn={signingIn.has(server.id)}
               onEdit={() => setEditing(server)}
-              onSignIn={() => startSignIn(server)}
+              onSignIn={() => signIns.start(server)}
               onRemove={() => setRemoving(server)}
             />
           ))}

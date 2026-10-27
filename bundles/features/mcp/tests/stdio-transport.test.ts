@@ -231,3 +231,38 @@ void test('stderr lines reach onStderr with every secret redacted', async () => 
 
   await transport.close();
 });
+
+void test('a stderr line that never ends keeps only its end, with no part of a secret', async () => {
+  const fake = fakeProcess();
+  const lines: string[] = [];
+  const secret = 'S3CRET-T0KEN';
+  const transport = createSandboxStdioTransport({
+    start: fake.start,
+    secrets: [secret],
+    onStderr: (line) => {
+      lines.push(line);
+    },
+  });
+  await transport.start();
+  // Over a million characters, in chunks that split the secret anywhere.
+  const stream = `x${secret}`.repeat(100_000);
+
+  for (let index = 0; index < stream.length; index += 4093) {
+    fake.emit({ stream: 'stderr', data: stream.slice(index, index + 4093) });
+  }
+  fake.emit({ stream: 'stderr', data: ' the end' });
+  fake.exit(1);
+
+  await eventually(
+    () => lines.length === 1,
+    'the last stderr line',
+    () => lines.length,
+  );
+  const [line = ''] = lines;
+
+  assert.ok(line.length < 100_000, `${line.length} characters`);
+
+  assert.ok(line.endsWith(' the end'));
+
+  assert.doesNotMatch(line.replaceAll('[REDACTED]', ''), /[S3CRET0KN-]/u);
+});

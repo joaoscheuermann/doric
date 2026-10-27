@@ -21,6 +21,7 @@ import {
   MCP_SIDEBAR_TAG,
 } from './elements.js';
 import { LayoutStackV1, LayoutWorkspaceV1, type StackPane } from './peers.js';
+import { createMcpSignIns } from './sign-in.js';
 import { createMcpServersStore } from './store.js';
 
 /**
@@ -44,7 +45,8 @@ export function activate({ services }: ClientContext): Cleanup {
   const store = createMcpServersStore();
   const api = createMcpApi(services);
   const ui = services.use(UiV1);
-  const elements = defineMcpElements({ store, api });
+  const signIns = createMcpSignIns({ store, api });
+  const elements = defineMcpElements({ store, api, signIns });
   const element = ui.define(MCP_SIDEBAR_TAG, elements.sidebar);
   const actionElement = ui.define(MCP_GROUP_ACTION_TAG, elements.groupAction);
 
@@ -88,6 +90,7 @@ export function activate({ services }: ClientContext): Cleanup {
 
   return () => {
     following.dispose();
+    signIns.dispose();
     pane.dispose();
     element.dispose();
     actionElement.dispose();

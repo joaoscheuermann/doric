@@ -1,9 +1,11 @@
 // What a server's entries resolve to, and where its OAuth state lives. A
 // header or environment entry naming a credential reads its secret through
 // secrets/v1 when the server connects, and only that server's entries are
-// ever read. An OAuth sign-in's secrets (the access and refresh tokens, a
-// client secret) are MCP_TOKEN credentials named `mcp:<serverId>:<part>`;
-// the rest of the OAuth state is plain data in the server's document.
+// ever read; an entry never names an MCP_TOKEN credential, which belongs to
+// the OAuth state of one server. An OAuth sign-in's secrets (the access and
+// refresh tokens, a client secret) are MCP_TOKEN credentials named
+// `mcp:<serverId>:<part>`; the rest of the OAuth state is plain data in the
+// server's document, and it is only ever written for the URL it was read for.
 
 import type { OAuthDiscoveryState } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
@@ -25,7 +27,7 @@ import {
 
 import type { McpEntry } from '../contracts/index.js';
 import type { OAuthState } from './oauth.js';
-import type { ServerStore, StoredOAuth } from './store.js';
+import type { ServerDocument, ServerStore, StoredOAuth } from './store.js';
 
 /**
  * The `MCP_TOKEN` credential kind: one secret an MCP server's OAuth sign-in
@@ -44,11 +46,40 @@ export interface ResolvedEntries {
   readonly secrets: readonly string[];
 }
 
+/** The refusal of an entry naming a credential of an MCP sign-in. */
+const signInCredential = (name: string): ContractError =>
+  new ContractError(
+    'invalid_input',
+    `The credential of ${name} is an MCP sign-in token; only the sign-in of its own server uses it.`,
+  );
+
+/**
+ * Refuses entries that name an MCP_TOKEN credential: those hold the OAuth
+ * tokens of one server, never a value another entry may send. A credential
+ * that is not stored passes; connecting reports it.
+ */
+export const assertEntryCredentials = async (
+  entries: readonly McpEntry[],
+  secrets: Pick<Secrets, 'describe'>,
+  call?: CallArg,
+): Promise<void> => {
+  for (const entry of entries) {
+    if ('value' in entry) continue;
+
+    const credential = await secrets.describe({ id: entry.credentialId }, call);
+
+    if (credential?.kind === mcpTokenKind.id) {
+      throw signInCredential(entry.name);
+    }
+  }
+};
+
 /**
  * Resolves a server's entries through secrets/v1 under `call`; a later entry
  * of the same name wins. Rejects with the secrets/v1 error when a referenced
  * credential cannot be resolved, and with ContractError('invalid_input')
- * when it holds no secret. Reads nothing when no entry names a credential.
+ * when it holds no secret or is an MCP_TOKEN one. Reads nothing when no
+ * entry names a credential.
  */
 export const resolveEntries = async (
   entries: readonly McpEntry[],
@@ -65,6 +96,10 @@ export const resolveEntries = async (
         { id: entry.credentialId },
         call,
       );
+
+      if (credential.kind === mcpTokenKind.id) {
+        throw signInCredential(entry.name);
+      }
 
       if (credential.secret === undefined) {
         throw new ContractError(
@@ -100,17 +135,47 @@ export const redact = (text: string, secrets: readonly string[]): string =>
 /** What a server's OAuth state persistence can drop. */
 export type OAuthScope = 'all' | 'client' | 'tokens' | 'discovery';
 
+/**
+ * A save for a server that no longer has the URL its state was read for: the
+ * state it carries belongs to the server's former authorization server.
+ */
+export class OAuthServerChanged extends Error {
+  override readonly name = 'OAuthServerChanged';
+
+  constructor(serverId: string) {
+    super(`MCP server ${serverId} changed its URL; its sign-in state is gone.`);
+  }
+}
+
 /** A server's OAuth state: secrets in secrets/v1, the rest in its document. */
 export interface OAuthVault {
-  /** The stored state; a credential deleted elsewhere reads as absent. */
+  /**
+   * The stored state, with the http URL it belongs to (`serverUrl`); a
+   * credential deleted elsewhere reads as absent.
+   */
   load(serverId: string): Promise<OAuthState>;
-  /** Stores what `patch` carries, replacing those parts; a removed server stores nothing. */
+  /**
+   * Stores what `patch` carries, replacing those parts; a removed server
+   * stores nothing. A patch naming a `serverUrl` the server no longer has
+   * stores nothing either, and rejects with OAuthServerChanged.
+   */
   save(serverId: string, patch: OAuthState): Promise<void>;
-  /** Drops a part of the stored state and deletes the credentials it named. */
-  invalidate(serverId: string, scope: OAuthScope): Promise<void>;
+  /**
+   * Drops a part of the stored state and deletes the credentials it named;
+   * nothing, when `serverUrl` is given and the server no longer has it.
+   */
+  invalidate(
+    serverId: string,
+    scope: OAuthScope,
+    serverUrl?: string,
+  ): Promise<void>;
   /** Deletes every credential the stored state names; the document is left as is. */
   forget(oauth: StoredOAuth | undefined): Promise<void>;
 }
+
+/** The URL a server's OAuth state belongs to: its http URL, else none. */
+const urlOf = (document: ServerDocument): string | undefined =>
+  document.transport.kind === 'http' ? document.transport.url : undefined;
 
 const authorizationServerMetadataOf = (value: unknown) =>
   OAuthMetadataSchema.safeParse(value).data ??
@@ -331,15 +396,25 @@ export const createOAuthVault = ({
     await deleteSecret(oauth?.clientSecretCredentialId);
   };
 
-  /** Rewrites the stored state of a server that still exists. */
+  /**
+   * Rewrites the stored state of a server that still exists, and still has
+   * `serverUrl` when one is given; `moved` answers a server that does not.
+   */
   const change = (
     serverId: string,
+    serverUrl: string | undefined,
     next: (oauth: StoredOAuth) => Promise<StoredOAuth | undefined>,
+    moved: () => void,
   ): Promise<void> =>
     store.lock(serverId, async () => {
       const document = await store.get(serverId);
 
       if (document === undefined) {
+        return;
+      }
+
+      if (serverUrl !== undefined && urlOf(document) !== serverUrl) {
+        moved();
         return;
       }
 
@@ -355,10 +430,13 @@ export const createOAuthVault = ({
 
   return {
     load: async (serverId) => {
-      const oauth = (await store.get(serverId))?.oauth;
+      const document = await store.get(serverId);
+      const serverUrl = document === undefined ? undefined : urlOf(document);
+      const oauth = document?.oauth;
+      const of = serverUrl === undefined ? {} : { serverUrl };
 
       if (oauth === undefined) {
-        return {};
+        return of;
       }
 
       const [access, refresh, clientSecret] = await Promise.all([
@@ -372,6 +450,7 @@ export const createOAuthVault = ({
           : clientOf(oauth.clientInformation, clientSecret);
 
       return {
+        ...of,
         ...(clientInformation === undefined ? {} : { clientInformation }),
         ...(oauth.discoveryState === undefined
           ? {}
@@ -391,30 +470,46 @@ export const createOAuthVault = ({
       };
     },
     save: (serverId, patch) =>
-      change(serverId, async (oauth) => {
-        const { tokens, clientInformation, discoveryState } = patch;
-        const tokened =
-          tokens === undefined
-            ? oauth
-            : await withTokens(serverId, oauth, tokens);
-        const registered =
-          clientInformation === undefined
-            ? tokened
-            : await withClient(serverId, tokened, clientInformation);
+      change(
+        serverId,
+        patch.serverUrl,
+        async (oauth) => {
+          const { tokens, clientInformation, discoveryState } = patch;
+          const tokened =
+            tokens === undefined
+              ? oauth
+              : await withTokens(serverId, oauth, tokens);
+          const registered =
+            clientInformation === undefined
+              ? tokened
+              : await withClient(serverId, tokened, clientInformation);
 
-        return discoveryState === undefined
-          ? registered
-          : { ...registered, discoveryState: storedDiscovery(discoveryState) };
-      }),
-    invalidate: (serverId, scope) =>
-      change(serverId, async (oauth) => {
-        if (scope === 'all') {
-          await forget(oauth);
-          return undefined;
-        }
+          return discoveryState === undefined
+            ? registered
+            : {
+                ...registered,
+                discoveryState: storedDiscovery(discoveryState),
+              };
+        },
+        () => {
+          throw new OAuthServerChanged(serverId);
+        },
+      ),
+    invalidate: (serverId, scope, serverUrl) =>
+      change(
+        serverId,
+        serverUrl,
+        async (oauth) => {
+          if (scope === 'all') {
+            await forget(oauth);
+            return undefined;
+          }
 
-        return without(oauth, scope);
-      }),
+          return without(oauth, scope);
+        },
+        // Another URL's state is not the caller's to drop.
+        () => undefined,
+      ),
     forget,
   };
 };

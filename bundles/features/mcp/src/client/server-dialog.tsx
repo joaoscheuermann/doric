@@ -70,7 +70,7 @@ import {
   TerminalIcon,
   XIcon,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useId, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
 import type { McpServerView } from '../contracts/index.js';
 import { failureMessage, type McpApi } from './api.js';
@@ -310,7 +310,11 @@ function Entries({
   );
 }
 
-/** Stores a token as an `API_TOKEN` credential, then hands it back. */
+/**
+ * Stores a token as an `API_TOKEN` credential, then hands it back. Closed
+ * before the host answered, it hands back nothing: the reader cancelled, so
+ * no entry takes the credential (it stays stored, and listed next time).
+ */
 function NewCredentialDialog({
   api,
   onCreated,
@@ -325,12 +329,26 @@ function NewCredentialDialog({
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState(false);
   const ready = name.trim() !== '' && secret !== '' && !busy;
+  /** Whether the dialog is still open; closing it unmounts it. */
+  const open = useRef(true);
+
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
 
   const create = async (): Promise<void> => {
     setBusy(true);
     try {
-      onCreated(await api.createCredential({ name: name.trim(), secret }));
+      const credential = await api.createCredential({
+        name: name.trim(),
+        secret,
+      });
+      if (open.current) onCreated(credential);
     } catch (error) {
+      if (!open.current) return;
       toast.error(failureMessage(error), { id: 'mcp-credential' });
       setBusy(false);
     }

@@ -42,6 +42,31 @@ void test('H15 serverSlug lowercases, folds each run of other characters into on
   assert.match(long, /^[a-z0-9-][a-z0-9_-]*[a-z0-9-]$/u);
 });
 
+void test('H15 a server slug never holds __, so the tool name says which server it is and two servers never share one', () => {
+  const servers = ['a', 'a__b', 'a_b', 'a _b', '_a_', 'Docs  Hub', 'x-y'];
+  const tools = ['x', 'b__x', '__y', '_z', 'b'];
+  const names = new Map<string, string>();
+
+  for (const server of servers) {
+    const slug = serverSlug(server);
+
+    assert.ok(!slug.includes('__'), slug);
+
+    for (const tool of tools) {
+      const name = toolName(slug, tool, new Set());
+
+      assert.equal(name.slice(5, name.indexOf('__', 5)), slug, name);
+
+      const other = names.get(name);
+
+      assert.ok(other === undefined || serverSlug(other) === slug, name);
+      names.set(name, server);
+    }
+  }
+
+  assert.equal(serverSlug('a__b'), 'a_b');
+});
+
 void test('H15 toolName prefixes the slug and replaces characters outside [a-zA-Z0-9_-]', () => {
   assert.equal(
     toolName('docs', 'get.weather/now', new Set()),

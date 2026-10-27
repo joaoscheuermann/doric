@@ -235,6 +235,11 @@ export interface HttpMcpServer {
   readonly requests: readonly ReceivedRequest[];
   /** Server-to-client event streams still open (GET streams, SSE). */
   openStreams(): number;
+  /**
+   * Forgets every session, as a restarted server would: a request naming one
+   * answers 404, and a new initialize opens a new session.
+   */
+  restart(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -412,6 +417,12 @@ export const httpMcpServer = async (
     tools,
     requests,
     openStreams: () => streams,
+    restart: async () => {
+      const sessions = [...streamable.values(), ...sse.values()];
+      streamable.clear();
+      sse.clear();
+      await Promise.all(sessions.map((session) => session.close()));
+    },
     close: async () => {
       await tools.close();
       server.closeAllConnections();

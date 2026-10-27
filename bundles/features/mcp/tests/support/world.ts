@@ -140,12 +140,33 @@ export interface SecretCalls {
   readonly kinds: CredentialKindDefinition[];
 }
 
+/** `lost` runs the task, then answers `unavailable`: the lease dropped meanwhile. */
 export type LeaseStatus =
   | 'ready'
   | 'pending'
   | 'unavailable'
   | 'expired'
-  | 'missing';
+  | 'missing'
+  | 'lost';
+
+/**
+ * How the fake tools/v1 is reached. `local`, as in-process: `register`
+ * throws `duplicate_tool` for a name its scope holds, and `dispose` applies
+ * at once. `remote`, as across the bundle envelope: `register` answers at
+ * once, a refusal is only recorded, and a dispose reaches the registry
+ * REMOTE_DISPOSE_MS later.
+ */
+export type Registry = 'local' | 'remote';
+
+/** How late a dispose reaches a `remote` registry. */
+export const REMOTE_DISPOSE_MS = 50;
+
+/** Holds storage/v1 queries: each one answers what it read only once `open` resolves. */
+export interface QueryGate {
+  readonly open: Promise<void>;
+  /** How many queries read and are held. */
+  held: number;
+}
 
 /** What outlives one activation: storage, credentials, the sandbox, the lease. */
 export interface Environment {
@@ -158,6 +179,10 @@ export interface Environment {
   lease: LeaseStatus;
   /** The Project of each withLease call, in order. */
   readonly leased: string[];
+  /** How tools/v1 is reached; `local` by default. */
+  registry: Registry;
+  /** When set, storage/v1 queries are held by it. */
+  queryGate: QueryGate | undefined;
   /** Stores an API_TOKEN credential and answers its id. */
   addCredential(name: string, secret?: string): string;
   credentialNamed(name: string): Secret | undefined;
@@ -184,6 +209,8 @@ export const createEnvironment = (
     sandbox: fakeSandbox(options.sandbox),
     lease: 'ready',
     leased: [],
+    registry: 'local',
+    queryGate: undefined,
     addCredential: (name, secret) => {
       const id = randomUUID();
       credentials.set(id, {
@@ -322,9 +349,13 @@ const secretsService = (env: Environment): AnyServiceDefinition => {
 /**
  * storage/v1 over a backend, as the core facade serves it: a type is
  * declared before its first use and every put is validated against the
- * defined type's schema.
+ * defined type's schema. A query the environment's gate holds answers what
+ * it read before the gate opened.
  */
-const storageService = (backend: StorageBackend): AnyServiceDefinition => {
+const storageService = (
+  backend: StorageBackend,
+  env: Environment,
+): AnyServiceDefinition => {
   const types = new Map<string, StorageTypeDefinition>();
   const declared = new Map<string, Promise<void>>();
 
@@ -368,8 +399,15 @@ const storageService = (backend: StorageBackend): AnyServiceDefinition => {
     },
     query: async (query: Parameters<StorageBackend['query']>[0]) => {
       await ready(query.type);
+      const result = await backend.query(query);
+      const gate = env.queryGate;
 
-      return backend.query(query);
+      if (gate !== undefined) {
+        gate.held += 1;
+        await gate.open;
+      }
+
+      return result;
     },
     read: (request: Parameters<StorageBackend['read']>[0]) =>
       backend.read(request),
@@ -409,7 +447,10 @@ export interface Registration {
   readonly disposed: boolean;
 }
 
-type RuntimeHook = 'onPromptStartedHook' | 'onProjectClosingHook';
+type RuntimeHook =
+  | 'onPromptStartedHook'
+  | 'onProjectClosingHook'
+  | 'onProjectReadyHook';
 
 /** One `log/v1.warn` call the fake log received. */
 export interface LoggedWarning {
@@ -426,6 +467,8 @@ export interface World {
   /** mcp/v1 called with no Project scope. */
   readonly unscoped: Mcp;
   readonly registrations: readonly Registration[];
+  /** The names a `remote` registry refused, in order. */
+  readonly refused: readonly string[];
   /** The registrations under the Project that are not disposed. */
   live(projectId: string): readonly Registration[];
   /** The live tool names under the Project, sorted. */
@@ -438,6 +481,8 @@ export interface World {
   promptStarted(projectId: string): Promise<void>;
   /** Fires runtime.hooks/v1.onProjectClosingHook and awaits its handlers. */
   projectClosing(projectId: string): Promise<void>;
+  /** Fires runtime.hooks/v1.onProjectReadyHook and awaits its handlers. */
+  projectReady(projectId: string): Promise<void>;
   /** Publishes a runtime/v1 notice to every watcher. */
   notice(notice: RuntimeNotice): void;
   /** Images the bundle attached, in order. */
@@ -471,6 +516,7 @@ export const activateWorld = async (
     options: Registration['options'];
     disposed: boolean;
   }[] = [];
+  const refused: string[] = [];
   const handlers: { hook: string; handler: Handler }[] = [];
   const listeners = new Set<RuntimeListener>();
   const attached: AttachInput[] = [];
@@ -482,17 +528,62 @@ export const activateWorld = async (
     provide: [memoryStorageBackend(env.store)],
   });
 
+  /** What the registry holds that a call of `projectId` sees. */
+  const visible = (projectId: string | undefined) =>
+    registrations.filter(
+      (entry) =>
+        !entry.disposed &&
+        (entry.options.projectId === undefined ||
+          entry.options.projectId === projectId),
+    );
+
   const tools = fake(ToolsV1.id, toolsMethods, {
     register: ([tool, options]: [ContractTool, Registration['options']]) => {
+      // A name collides with an unscoped tool, or with one of the same Project.
+      const taken = registrations.some(
+        (entry) =>
+          !entry.disposed &&
+          entry.tool.name === tool.name &&
+          (entry.options.projectId === undefined ||
+            options.projectId === undefined ||
+            entry.options.projectId === options.projectId),
+      );
+
+      if (taken && env.registry === 'remote') {
+        refused.push(tool.name);
+        return once(() => undefined);
+      }
+
+      if (taken) {
+        throw new ContractError(
+          'duplicate_tool',
+          `Tool ${tool.name} is already registered.`,
+        );
+      }
+
       const entry = { tool, options, disposed: false };
       registrations.push(entry);
+      const remote = env.registry === 'remote';
 
       return once(() => {
-        entry.disposed = true;
+        if (!remote) {
+          entry.disposed = true;
+          return;
+        }
+
+        setTimeout(() => {
+          entry.disposed = true;
+        }, REMOTE_DISPOSE_MS);
       });
     },
     list: () => [],
-    catalog: () => Promise.resolve([]),
+    catalog: (_input: unknown, call: Call) =>
+      Promise.resolve(
+        visible(call.scope?.projectId).map((entry) => ({
+          name: entry.tool.name,
+          settings: [],
+        })),
+      ),
   });
 
   const hooks = fake(HooksV1.id, hooksMethods, {
@@ -543,6 +634,11 @@ export const activateWorld = async (
     ) => {
       env.leased.push(call.scope?.projectId ?? '');
 
+      if (env.lease === 'lost') {
+        await task(env.sandbox.sandbox);
+        return { status: 'unavailable' };
+      }
+
       if (env.lease !== 'ready') {
         return { status: env.lease };
       }
@@ -575,7 +671,7 @@ export const activateWorld = async (
   const test = createTestServices({
     bundle: { id: 'mcp' },
     provide: [
-      storageService(backendWorld.services.use(StorageBackendV1)),
+      storageService(backendWorld.services.use(StorageBackendV1), env),
       secretsService(env),
       tools,
       hooks,
@@ -628,6 +724,7 @@ export const activateWorld = async (
     mcp,
     unscoped: test.services.use(McpV1),
     registrations,
+    refused,
     live,
     liveNames: (projectId) =>
       live(projectId)
@@ -660,6 +757,7 @@ export const activateWorld = async (
         cwd: '/workspace',
       }),
     projectClosing: (projectId) => fire('onProjectClosingHook', { projectId }),
+    projectReady: (projectId) => fire('onProjectReadyHook', { projectId }),
     notice: (notice) => {
       for (const listener of [...listeners]) {
         listener(notice);

@@ -16,8 +16,9 @@
 // - `mcp_signin_unsupported` (`signIn`): the server is a `stdio` one.
 // - `mcp_signin_not_started` (`finishSignIn`): no sign-in of that server waits.
 // - `mcp_signin_busy` (`finishSignIn`): another `finishSignIn` waits on it.
-// - `mcp_signin_aborted` (`finishSignIn`): the caller cancelled, or a newer
-//   `signIn` replaced it.
+// - `mcp_signin_aborted` (`signIn`, `finishSignIn`): the caller cancelled, a
+//   newer `signIn` of the same server replaced it, or the server changed its
+//   transport or URL, or was removed.
 // - `mcp_signin_failed` (`signIn`, `finishSignIn`): discovery, registration,
 //   the authorization or the token exchange failed; the message says which.
 //
@@ -165,15 +166,17 @@ export interface Mcp {
   /**
    * Stores a new server and answers it; an enabled one connects when its
    * Project is watched. `mcp_server_name_taken` when another server of the
-   * Project has a name with the same slug.
+   * Project has a name with the same slug; `invalid_input` when an entry
+   * names an MCP_TOKEN credential (the sign-in of a server).
    */
   create(input: McpServerInput, call?: CallArg): Promise<McpServerView>;
   /**
    * Replaces the server's name, `enabled` and transport and reconnects it (or
    * stops it when disabled), answering the stored view. An update that
    * changes the transport kind or the http URL drops the stored OAuth state
-   * and deletes its MCP_TOKEN credentials. `mcp_server_missing`,
-   * `mcp_server_name_taken`.
+   * and deletes its MCP_TOKEN credentials, and cancels its waiting sign-in.
+   * `mcp_server_missing`, `mcp_server_name_taken`, `invalid_input` (as
+   * `create`).
    */
   update(
     input: McpServerInput & { readonly id: string },
@@ -181,7 +184,8 @@ export interface Mcp {
   ): Promise<McpServerView>;
   /**
    * Stops the server, unregisters its tools, deletes the MCP_TOKEN
-   * credentials its sign-in stored, then the server. `mcp_server_missing`.
+   * credentials its sign-in stored, then the server, and cancels its waiting
+   * sign-in. `mcp_server_missing`.
    */
   remove(input: { readonly id: string }, call?: CallArg): Promise<void>;
   /**
@@ -196,9 +200,12 @@ export interface Mcp {
   ): Disposable;
   /**
    * Prepares a browser OAuth sign-in of an `http` server and answers the
-   * authorization URL to open; a sign-in already waiting is replaced.
+   * authorization URL to open; a sign-in of the same server already waiting
+   * is replaced, another server's is left alone.
    * `mcp_server_missing`, `mcp_signin_unsupported` (a `stdio` server),
-   * `mcp_signin_failed` (discovery or client registration failed).
+   * `mcp_signin_aborted` (the caller cancelled, or the server changed or
+   * went away meanwhile), `mcp_signin_failed` (discovery or client
+   * registration failed).
    */
   signIn(
     input: { readonly id: string },

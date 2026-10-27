@@ -1691,19 +1691,23 @@ through `runtime.lease/v1` and `Sandbox.start` on the sandbox the Project
 holds; it is never a host process, and its environment is the sandbox image's
 plus its own entries alone. A header or environment entry is a literal value
 or the id of a stored credential whose secret is read when that server
-connects. An `http` server that asks for OAuth signs in through the browser
-with a loopback callback on the host's `127.0.0.1`, as the Claude login does,
-so it works only where the browser's loopback is the host's; its access,
-refresh and client secrets are `MCP_TOKEN` credentials, a kind the bundle
-registers, deleted with the server or when its transport kind or URL
-changes. A connected server's tools are registered with `tools/v1` under its
-Project as `mcp__<server slug>__<tool>`, with the server's input schema
-verbatim. The skills a connected server lists through the MCP Skills
+connects; the host refuses an entry naming an `MCP_TOKEN` credential, which
+holds one server's sign-in. An `http` server that asks for OAuth signs in
+through the browser with a loopback callback on the host's `127.0.0.1`, as
+the Claude login does, so it works only where the browser's loopback is the
+host's; its access, refresh and client secrets are `MCP_TOKEN` credentials,
+a kind the bundle registers, deleted with the server or when its transport
+kind or URL changes, and never stored for a URL other than the one they
+were earned for. A connected server's tools are registered with `tools/v1`
+under its Project as `mcp__<server slug>__<tool>`, with the server's input
+schema verbatim. The skills a connected server lists through the MCP Skills
 extension are only shown, never loaded into a prompt. Servers connect when a
 window watches their Project (the client part's MCP pane in the sidebar's
 stack does), when a prompt of the Project starts (which waits up to ten
-seconds for them) and when a sign-in finishes; a closing Project stops them
-and a deleted one loses them. The user
+seconds for them), when a sign-in finishes, and when the Project's sandbox
+becomes ready for a server waiting for it; a tool call that loses its
+connection moves the server to `needs-sign-in` or reconnects it. A closing
+Project stops them and a deleted one loses them. The user
 explicitly approved this expansion of network access from the host, command
 execution in the sandbox and credential handling under HC-004 and HC-007.
 

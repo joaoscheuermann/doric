@@ -85,14 +85,43 @@ export interface ServerStore {
    * must not lock the same server again.
    */
   lock<T>(id: string, task: () => Promise<T>): Promise<T>;
+  /**
+   * Runs `task` once every earlier task of the same Project ended, so a check
+   * of the Project's server names and the write it allows are one step. A
+   * task may lock a server of the Project; a server's task must never lock
+   * its Project.
+   */
+  lockProject<T>(projectId: string, task: () => Promise<T>): Promise<T>;
 }
+
+/** Runs tasks of the same key one after another, in call order. */
+export const keyedQueue = () => {
+  const queues = new Map<string, Promise<void>>();
+
+  return <T>(key: string, task: () => Promise<T>): Promise<T> => {
+    // The queue holds settled promises only, so a failed task never stops
+    // the next one.
+    const run = (queues.get(key) ?? Promise.resolve()).then(task);
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    queues.set(key, settled);
+    void settled.then(() => {
+      if (queues.get(key) === settled) queues.delete(key);
+    });
+
+    return run;
+  };
+};
 
 const PAGE = 1000;
 
 export const createServerStore = (
   storage: Pick<Storage, 'get' | 'query' | 'commit'>,
 ): ServerStore => {
-  const queues = new Map<string, Promise<void>>();
+  const servers = keyedQueue();
+  const projects = keyedQueue();
 
   const list = async (projectId: string): Promise<ServerDocument[]> => {
     const documents: ServerDocument[] = [];
@@ -133,20 +162,7 @@ export const createServerStore = (
     remove: async (id) => {
       await storage.commit({ delete: [{ type: serverType.type, id }] });
     },
-    lock: (id, task) => {
-      // The queue holds settled promises only, so a failed task never stops
-      // the next one.
-      const run = (queues.get(id) ?? Promise.resolve()).then(task);
-      const settled = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      queues.set(id, settled);
-      void settled.then(() => {
-        if (queues.get(id) === settled) queues.delete(id);
-      });
-
-      return run;
-    },
+    lock: servers,
+    lockProject: projects,
   };
 };

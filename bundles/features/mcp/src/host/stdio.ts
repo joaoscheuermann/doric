@@ -22,12 +22,49 @@ interface SandboxStdioOptions {
   readonly start: StartProcess;
   /** Masked in all stderr. */
   readonly secrets: readonly string[];
-  /** Each complete stderr line, every secret replaced with `[REDACTED]`. */
+  /**
+   * Each complete stderr line, every secret replaced with `[REDACTED]`; of
+   * a longer line, `…` and its last 4096 characters.
+   */
   readonly onStderr?: (line: string) => void;
 }
 
 const asError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error));
+
+/** How much of a longer stderr line is kept: its end, after `…`. */
+const STDERR_LINE_MAX = 4096;
+
+/**
+ * Where the kept end of `text` starts: `length - keep`, moved back to the
+ * start of any secret across it, so a secret is cut out whole or kept whole
+ * and is masked either way.
+ */
+const cutPoint = (
+  text: string,
+  keep: number,
+  secrets: readonly string[],
+): number => {
+  let cut = text.length - keep;
+  let moved = true;
+
+  while (moved) {
+    moved = false;
+
+    for (const secret of secrets) {
+      if (secret === '') continue;
+
+      const across = text.indexOf(secret, Math.max(0, cut - secret.length + 1));
+
+      if (across !== -1 && across < cut) {
+        cut = across;
+        moved = true;
+      }
+    }
+  }
+
+  return cut;
+};
 
 /**
  * An SDK Transport over a sandbox process. It starts once (a second `start`
@@ -40,19 +77,35 @@ export const createSandboxStdioTransport = (
   options: SandboxStdioOptions,
 ): Transport => {
   const stdout = new ReadBuffer();
+  /** The unterminated stderr line so far, unmasked; only its end is kept. */
   let stderr = '';
+  /** Whether the start of that line was dropped. */
+  let cut = false;
   let child: SandboxProcess | undefined;
   let started = false;
   let closed = false;
+  // Long enough for the line's kept end and for any secret whole.
+  const keep = Math.max(
+    STDERR_LINE_MAX,
+    ...options.secrets.map((secret) => secret.length),
+  );
 
-  const emitStderr = (line: string): void =>
-    options.onStderr?.(redact(line.replace(/\r$/u, ''), options.secrets));
+  const emitStderr = (line: string, dropped = false): void => {
+    const raw = line.replace(/\r$/u, '');
+    const at =
+      raw.length > STDERR_LINE_MAX
+        ? cutPoint(raw, STDERR_LINE_MAX, options.secrets)
+        : 0;
+    const text = redact(raw.slice(at), options.secrets);
+
+    options.onStderr?.(dropped || at > 0 ? `…${text}` : text);
+  };
 
   const finish = (): void => {
     if (closed) return;
     closed = true;
     // A last line the process left unterminated still reaches the reader.
-    if (stderr !== '') emitStderr(stderr);
+    if (stderr !== '') emitStderr(stderr, cut);
     stderr = '';
     transport.onclose?.();
   };
@@ -83,10 +136,25 @@ export const createSandboxStdioTransport = (
 
   const readStderr = (data: string): void => {
     const lines = (stderr + data).split('\n');
-    stderr = lines.pop() ?? '';
+    const rest = lines.pop() ?? '';
+    const first = lines.shift();
+
+    if (first !== undefined) {
+      emitStderr(first, cut);
+      cut = false;
+    }
 
     for (const line of lines) {
       emitStderr(line);
+    }
+
+    // A process that never ends its line keeps only the line's end.
+    if (rest.length > 2 * keep) {
+      const at = cutPoint(rest, keep, options.secrets);
+      stderr = rest.slice(at);
+      cut ||= at > 0;
+    } else {
+      stderr = rest;
     }
   };
 

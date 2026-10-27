@@ -13,6 +13,7 @@ import {
   defineService,
   HooksV1,
   type HostContext,
+  isContractError,
   LogV1,
   SecretsV1,
   StorageV1,
@@ -28,7 +29,11 @@ import {
   mcpMethods,
   mcpScopeMessage,
 } from '../contracts/index.js';
-import { createOAuthVault, mcpTokenKind } from './credentials.js';
+import {
+  assertEntryCredentials,
+  createOAuthVault,
+  mcpTokenKind,
+} from './credentials.js';
 import { createManager } from './manager.js';
 import { createSignIns } from './oauth.js';
 import {
@@ -91,6 +96,29 @@ export const activate = ({ services }: HostContext): Cleanup => {
     return server;
   };
 
+  /** Refuses entries naming a credential no server entry may use. */
+  const assertCredentials = (
+    { transport }: McpServerInput,
+    call: Call,
+  ): Promise<void> =>
+    assertEntryCredentials(
+      transport.kind === 'http' ? transport.headers : transport.env,
+      secrets,
+      call,
+    );
+
+  /**
+   * Deletes a server and the credentials of its OAuth state, as stored when
+   * no other change of it runs; `mcp_server_missing` when it is gone or
+   * another Project's.
+   */
+  const forgetServer = (projectId: string, id: string): Promise<void> =>
+    store.lock(id, async () => {
+      const server = await serverOf(projectId, id);
+      await vault.forget(server.oauth);
+      await store.remove(id);
+    });
+
   /** Refuses a name whose slug another server of the Project already has. */
   const assertNameFree = async (
     projectId: string,
@@ -133,11 +161,25 @@ export const activate = ({ services }: HostContext): Cleanup => {
 
   /** Stops the servers of a Project and forgets them and their tokens. */
   const forgetProject = async (projectId: string): Promise<void> => {
+    const forgotten = await store.lockProject(projectId, async () => {
+      const servers = await store.list(projectId);
+
+      for (const server of servers) {
+        // A server a concurrent `remove` took is gone already.
+        await forgetServer(projectId, server.id).catch((error: unknown) => {
+          if (!isContractError(error) || error.code !== 'mcp_server_missing') {
+            throw error;
+          }
+        });
+      }
+
+      return servers;
+    });
+    // After the removal, as `remove` does.
     await manager.stopProject(projectId);
 
-    for (const server of await store.list(projectId)) {
-      await vault.forget(server.oauth);
-      await store.remove(server.id);
+    for (const server of forgotten) {
+      await signIns.cancel(server.id);
     }
 
     manager.publish(projectId);
@@ -160,9 +202,18 @@ export const activate = ({ services }: HostContext): Cleanup => {
           call: Call,
         ): Promise<McpServerView> => {
           const projectId = projectOf(call);
-          await assertNameFree(projectId, input.name);
-          const server = newDocument({ ...input, id: randomUUID(), projectId });
-          await store.put(server);
+          await assertCredentials(input, call);
+          const server = await store.lockProject(projectId, async () => {
+            await assertNameFree(projectId, input.name);
+            const created = newDocument({
+              ...input,
+              id: randomUUID(),
+              projectId,
+            });
+            await store.put(created);
+
+            return created;
+          });
           reconcile(server);
 
           return manager.viewOf(server);
@@ -175,22 +226,27 @@ export const activate = ({ services }: HostContext): Cleanup => {
           call: Call,
         ): Promise<McpServerView> => {
           const projectId = projectOf(call);
-          const server = await store.lock(id, async () => {
-            const stored = await serverOf(projectId, id);
-            await assertNameFree(projectId, input.name, id);
-            const { oauth, ...rest } = stored;
-            const moved = movedServer(stored.transport, input.transport);
-            if (moved) await vault.forget(oauth);
-            const next: ServerDocument = {
-              ...rest,
-              ...input,
-              ...(moved || oauth === undefined ? {} : { oauth }),
-              updatedAt: new Date().toISOString(),
-            };
-            await store.put(next);
+          await assertCredentials(input, call);
+          const { server, moved } = await store.lockProject(projectId, () =>
+            store.lock(id, async () => {
+              const stored = await serverOf(projectId, id);
+              await assertNameFree(projectId, input.name, id);
+              const { oauth, ...rest } = stored;
+              const moving = movedServer(stored.transport, input.transport);
+              if (moving) await vault.forget(oauth);
+              const next: ServerDocument = {
+                ...rest,
+                ...input,
+                ...(moving || oauth === undefined ? {} : { oauth }),
+                updatedAt: new Date().toISOString(),
+              };
+              await store.put(next);
 
-            return next;
-          });
+              return { server: next, moved: moving };
+            }),
+          );
+          // Outside the locks: a sign-in under way saves through them.
+          if (moved) await signIns.cancel(id);
           reconcile(server);
 
           return manager.viewOf(server);
@@ -200,10 +256,12 @@ export const activate = ({ services }: HostContext): Cleanup => {
         ...mcpMethods.remove,
         execute: async ({ id }: { readonly id: string }, call: Call) => {
           const projectId = projectOf(call);
-          const server = await serverOf(projectId, id);
+          await forgetServer(projectId, id);
+          // After the removal, never under its lock: stopping waits for a
+          // connect under way, which may save through that lock, and a
+          // server started meanwhile finds itself gone.
           await manager.stop(id);
-          await vault.forget(server.oauth);
-          await store.remove(id);
+          await signIns.cancel(id);
           manager.publish(projectId);
         },
       }),

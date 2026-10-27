@@ -117,6 +117,68 @@ for (const lease of ['pending', 'unavailable'] as const) {
   });
 }
 
+for (const lease of ['missing', 'expired'] as const) {
+  void test(`S3 a ${lease} Project leaves the server in error without starting anything`, async (t) => {
+    const env = createEnvironment();
+    env.lease = lease;
+    const world = await opened(t, env);
+    const created = await world
+      .mcp(P1)
+      .create(stdioServer('files', 'files-mcp'));
+
+    const servers = await world.watchUntil(
+      P1,
+      inState(created.id, 'error'),
+      'error',
+    );
+
+    assert.ok((serverOf(servers, created.id)?.status.message ?? '').length > 0);
+
+    assert.equal(env.sandbox.started.length, 0);
+
+    assert.deepEqual(world.liveNames(P1), []);
+  });
+}
+
+void test('S3 a lease lost while the server started ends its process and leaves it waiting for the sandbox', async (t) => {
+  const env = createEnvironment();
+  env.lease = 'lost';
+  const world = await opened(t, env);
+  const created = await world.mcp(P1).create(stdioServer('files', 'files-mcp'));
+
+  await world.watchUntil(
+    P1,
+    inState(created.id, 'waiting-for-sandbox'),
+    'waiting-for-sandbox',
+  );
+
+  assert.ok(env.sandbox.started.length > 0);
+
+  assert.ok(env.sandbox.started.every((process) => process.terminated));
+
+  assert.deepEqual(world.liveNames(P1), []);
+});
+
+void test('S3 a server waiting for the sandbox connects when its Project is ready', async (t) => {
+  const env = createEnvironment();
+  env.lease = 'pending';
+  const world = await opened(t, env);
+  const created = await world.mcp(P1).create(stdioServer('files', 'files-mcp'));
+  await world.watchUntil(
+    P1,
+    inState(created.id, 'waiting-for-sandbox'),
+    'waiting-for-sandbox',
+  );
+
+  env.lease = 'ready';
+  await world.projectReady(P1);
+
+  // `list` never connects: only the Project's readiness did.
+  await world.listUntil(P1, inState(created.id, 'connected'), 'connected');
+
+  assert.deepEqual(world.liveNames(P1), ['mcp__files__echo']);
+});
+
 void test('S4 a sandbox that cannot start processes leaves the server in error', async (t) => {
   const world = await opened(
     t,
