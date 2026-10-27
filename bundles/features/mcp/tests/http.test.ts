@@ -293,6 +293,8 @@ void test('H10 a disabled server reports disabled, is never contacted and regist
 
   assert.deepEqual(serverOf(servers, created.id)?.tools, []);
 
+  assert.deepEqual(serverOf(servers, created.id)?.skills, []);
+
   assert.deepEqual(world.liveNames(P1), []);
 
   assert.equal(server.requests.length, 0);
@@ -314,6 +316,8 @@ void test('H11 an unreachable server reports an error with a message and registe
   assert.ok((view?.status.message ?? '').length > 0);
 
   assert.deepEqual(view?.tools, []);
+
+  assert.deepEqual(view?.skills, []);
 
   assert.deepEqual(world.liveNames(P1), []);
 });

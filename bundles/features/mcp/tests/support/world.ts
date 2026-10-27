@@ -411,6 +411,12 @@ export interface Registration {
 
 type RuntimeHook = 'onPromptStartedHook' | 'onProjectClosingHook';
 
+/** One `log/v1.warn` call the fake log received. */
+export interface LoggedWarning {
+  readonly message: string;
+  readonly fields?: unknown;
+}
+
 /** The world one activation of the bundle runs in. */
 export interface World {
   readonly env: Environment;
@@ -438,6 +444,8 @@ export interface World {
   readonly attached: readonly AttachInput[];
   /** The attachments the fake answered, in order. */
   readonly attachments: readonly Attachment[];
+  /** The `log/v1` warnings the bundle logged, in order. */
+  readonly warnings: readonly LoggedWarning[];
   /** Watches the Project until a snapshot satisfies `predicate`. */
   watchUntil(
     projectId: string,
@@ -467,6 +475,7 @@ export const activateWorld = async (
   const listeners = new Set<RuntimeListener>();
   const attached: AttachInput[] = [];
   const attachments: Attachment[] = [];
+  const warnings: LoggedWarning[] = [];
 
   const backendWorld = createTestServices({
     bundle: { id: 'mcp-storage' },
@@ -511,7 +520,9 @@ export const activateWorld = async (
   const log = fake(LogV1.id, logMethods, {
     debug: () => undefined,
     info: () => undefined,
-    warn: () => undefined,
+    warn: ([message, fields]: [string, unknown]) => {
+      warnings.push({ message, fields });
+    },
     error: () => undefined,
   });
 
@@ -656,6 +667,7 @@ export const activateWorld = async (
     },
     attached,
     attachments,
+    warnings,
     watchUntil: (projectId, predicate, label) =>
       new Promise((resolve, reject) => {
         let last: readonly McpServerView[] | undefined;

@@ -22,7 +22,10 @@ export const AddHttp = {
   ),
 };
 
-/** Editing an http server: its URL, and a header that holds a credential. */
+/**
+ * Editing an http server: its URL and a header that holds a credential, then
+ * its Tools and Skills, named and described.
+ */
 export const EditHttp = {
   render: () => (
     <ServerDialog
@@ -34,7 +37,11 @@ export const EditHttp = {
   ),
 };
 
-/** Editing a stdio server: its command, arguments, directory and environment. */
+/**
+ * Editing a stdio server: its command line (a path with a space quoted) and
+ * environment, then Tools and Skills, which say "No tools" and "No skills",
+ * and its directory under Advanced.
+ */
 export const EditStdio = {
   render: () => (
     <ServerDialog

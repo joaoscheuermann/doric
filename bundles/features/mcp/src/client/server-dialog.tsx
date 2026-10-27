@@ -1,8 +1,10 @@
 // The dialog that adds or edits one MCP server of a Project: its name, how
 // Doric reaches it (an `http` URL with headers, or a `stdio` command the
 // Project's sandbox runs, with its environment) and whether it runs. A header
-// or variable is a literal value or a stored credential the server reads when
-// it connects; "New credential…" stores a token without leaving the dialog.
+// or variable is a typed value or a stored credential, picked with the key
+// button, that the server reads when it connects; "New credential…" stores a
+// token without leaving the dialog. Editing a server also lists the tools and
+// skills it offers, right after its headers or its environment.
 //
 // The draft is checked by the contract's own schema on Save: a refusal marks
 // the fields to correct, and they are checked again as the reader types. A
@@ -25,6 +27,15 @@ import {
   DialogTitle,
 } from 'desktop/ui/dialog';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from 'desktop/ui/dropdown-menu';
+import {
   Field,
   FieldDescription,
   FieldError,
@@ -35,13 +46,11 @@ import {
 } from 'desktop/ui/field';
 import { Input } from 'desktop/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from 'desktop/ui/select';
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from 'desktop/ui/input-group';
 import { toast } from 'desktop/ui/sonner';
 import { Switch } from 'desktop/ui/switch';
 import {
@@ -52,19 +61,20 @@ import {
   TableHeader,
   TableRow,
 } from 'desktop/ui/table';
-import { Textarea } from 'desktop/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from 'desktop/ui/toggle-group';
 import {
   ChevronRightIcon,
   GlobeIcon,
+  KeyRoundIcon,
   PlusIcon,
   TerminalIcon,
   XIcon,
 } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { type ReactNode, useEffect, useId, useState } from 'react';
 
 import type { McpServerView } from '../contracts/index.js';
 import { failureMessage, type McpApi } from './api.js';
+import { CatalogTable, skillWords, toolWords } from './catalog-table.js';
 import {
   checkDraft,
   type DraftErrors,
@@ -75,14 +85,12 @@ import {
   type ServerDraft,
 } from './draft.js';
 
-/** The credential picker's item that opens the "New credential" dialog. */
-const NEW_CREDENTIAL = 'mcp:new-credential';
-
 interface EntryWords {
   readonly legend: string;
   readonly add: string;
   readonly remove: string;
   readonly empty: string;
+  readonly keyPlaceholder: string;
   readonly description: string;
 }
 
@@ -91,6 +99,7 @@ const headerWords: EntryWords = {
   add: 'Add header',
   remove: 'Remove header',
   empty: 'No headers',
+  keyPlaceholder: 'Authorization',
   description: 'Sent with every request to the server.',
 };
 
@@ -99,6 +108,7 @@ const variableWords: EntryWords = {
   add: 'Add variable',
   remove: 'Remove variable',
   empty: 'No variables',
+  keyPlaceholder: 'LOG_LEVEL',
   description:
     "Added to the sandbox image's environment; the command gets nothing else from the host.",
 };
@@ -115,71 +125,91 @@ function EntryRow({
   readonly entry: EntryDraft;
   readonly words: EntryWords;
   readonly error: string | undefined;
-  readonly credentials: readonly CredentialDescription[];
+  /** The stored credentials, or `undefined` while they load. */
+  readonly credentials: readonly CredentialDescription[] | undefined;
   readonly onChange: (next: EntryDraft) => void;
   readonly onRemove: () => void;
   readonly onNewCredential: () => void;
 }) {
-  const items = [
-    { label: 'Plain value', value: null },
-    ...credentials.map((credential) => ({
-      label: credential.name,
-      value: credential.id,
-    })),
-    { label: 'New credential…', value: NEW_CREDENTIAL },
-  ];
+  const chosen = entry.credentialId !== undefined;
+  const credentialName =
+    credentials === undefined
+      ? ''
+      : (credentials.find((credential) => credential.id === entry.credentialId)
+          ?.name ?? 'Unknown credential');
 
   return (
     <TableRow>
       <TableCell>
         <Input
-          aria-label="Name"
+          aria-label="Key"
           autoComplete="off"
           spellCheck={false}
+          placeholder={words.keyPlaceholder}
           aria-invalid={error !== undefined}
           value={entry.name}
           onChange={(event) => onChange({ ...entry, name: event.target.value })}
         />
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-2">
-          <Select
-            items={items}
-            value={entry.credentialId ?? null}
-            onValueChange={(value) => {
-              if (value === NEW_CREDENTIAL) onNewCredential();
-              else onChange({ ...entry, credentialId: value ?? undefined });
-            }}
-          >
-            <SelectTrigger
-              size="sm"
-              aria-label="Credential"
-              className={entry.credentialId === undefined ? 'w-32' : 'w-full'}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {items.map((item) => (
-                  <SelectItem key={item.value ?? 'none'} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          {entry.credentialId === undefined && (
-            <Input
-              aria-label="Value"
-              autoComplete="off"
-              spellCheck={false}
-              value={entry.value}
-              onChange={(event) =>
-                onChange({ ...entry, value: event.target.value })
-              }
-            />
-          )}
-        </div>
+        <InputGroup>
+          <InputGroupInput
+            readOnly={chosen}
+            aria-label={chosen ? 'Credential' : 'Value'}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={chosen ? undefined : 'Plain value'}
+            value={chosen ? credentialName : entry.value}
+            onChange={(event) =>
+              onChange({ ...entry, value: event.target.value })
+            }
+          />
+          <InputGroupAddon align="inline-end">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <InputGroupButton
+                    size="icon-xs"
+                    aria-label="Choose a credential"
+                    title="Choose a credential"
+                    variant={chosen ? 'secondary' : 'ghost'}
+                  />
+                }
+              >
+                <KeyRoundIcon className={chosen ? 'text-primary' : undefined} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-auto min-w-48">
+                <DropdownMenuRadioGroup
+                  value={entry.credentialId ?? ''}
+                  onValueChange={(value: string) =>
+                    onChange({
+                      ...entry,
+                      credentialId: value === '' ? undefined : value,
+                    })
+                  }
+                >
+                  <DropdownMenuRadioItem value="" closeOnClick>
+                    Plain value
+                  </DropdownMenuRadioItem>
+                  {credentials?.map((credential) => (
+                    <DropdownMenuRadioItem
+                      key={credential.id}
+                      value={credential.id}
+                      closeOnClick
+                    >
+                      {credential.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onNewCredential}>
+                  <PlusIcon />
+                  New credential…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </InputGroupAddon>
+        </InputGroup>
       </TableCell>
       <TableCell>
         <Button
@@ -207,7 +237,7 @@ function Entries({
   readonly entries: readonly EntryDraft[];
   readonly words: EntryWords;
   readonly errors: DraftErrors['entries'];
-  readonly credentials: readonly CredentialDescription[];
+  readonly credentials: readonly CredentialDescription[] | undefined;
   readonly onChange: (next: readonly EntryDraft[]) => void;
   readonly onNewCredential: (key: string) => void;
 }) {
@@ -219,7 +249,7 @@ function Entries({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-2/5">Name</TableHead>
+              <TableHead className="w-2/5">Key</TableHead>
               <TableHead>Value</TableHead>
               <TableHead className="w-10">
                 <span className="sr-only">Remove</span>
@@ -326,6 +356,7 @@ function NewCredentialDialog({
             <Input
               id={`${id}-name`}
               autoComplete="off"
+              placeholder="GitHub token"
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
@@ -337,6 +368,7 @@ function NewCredentialDialog({
               type="password"
               autoComplete="new-password"
               spellCheck={false}
+              placeholder="Paste the token"
               value={secret}
               onChange={(event) => setSecret(event.target.value)}
             />
@@ -359,12 +391,15 @@ function TransportFields({
   draft,
   errors,
   credentials,
+  catalogs,
   onChange,
   onNewCredential,
 }: {
   readonly draft: ServerDraft;
   readonly errors: DraftErrors;
-  readonly credentials: readonly CredentialDescription[];
+  readonly credentials: readonly CredentialDescription[] | undefined;
+  /** What the edited server offers, after its headers or its environment. */
+  readonly catalogs: ReactNode;
   readonly onChange: (next: ServerDraft) => void;
   readonly onNewCredential: (key: string) => void;
 }) {
@@ -397,6 +432,7 @@ function TransportFields({
           onChange={(headers) => onChange({ ...draft, headers })}
           onNewCredential={onNewCredential}
         />
+        {catalogs}
       </>
     );
   }
@@ -409,28 +445,19 @@ function TransportFields({
           id={`${id}-command`}
           autoComplete="off"
           spellCheck={false}
-          placeholder="npx"
+          placeholder="npx -y @modelcontextprotocol/server-everything"
           aria-invalid={errors.command !== undefined}
           value={draft.command}
           onChange={(event) =>
             onChange({ ...draft, command: event.target.value })
           }
         />
-        <FieldDescription>Run in the Project's sandbox.</FieldDescription>
+        <FieldDescription>
+          Run in the Project's sandbox. Quote an argument that holds spaces.
+        </FieldDescription>
         {errors.command !== undefined && (
           <FieldError>{errors.command}</FieldError>
         )}
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={`${id}-args`}>Arguments</FieldLabel>
-        <Textarea
-          id={`${id}-args`}
-          spellCheck={false}
-          rows={3}
-          value={draft.args}
-          onChange={(event) => onChange({ ...draft, args: event.target.value })}
-        />
-        <FieldDescription>One argument per line.</FieldDescription>
       </Field>
       <Entries
         entries={draft.env}
@@ -440,6 +467,7 @@ function TransportFields({
         onChange={(env) => onChange({ ...draft, env })}
         onNewCredential={onNewCredential}
       />
+      {catalogs}
       <Collapsible>
         <CollapsibleTrigger className="group flex w-full items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
           Advanced
@@ -500,8 +528,8 @@ export function ServerDialog({
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [credentials, setCredentials] = useState<
-    readonly CredentialDescription[]
-  >([]);
+    readonly CredentialDescription[] | undefined
+  >();
   /** The entry a "New credential" dialog is open for. */
   const [creatingFor, setCreatingFor] = useState<string>();
 
@@ -537,6 +565,13 @@ export function ServerDialog({
     }
   };
 
+  const catalogs = server !== undefined && (
+    <>
+      <CatalogTable words={toolWords} items={server.tools} />
+      <CatalogTable words={skillWords} items={server.skills} />
+    </>
+  );
+
   return (
     <Dialog
       open
@@ -561,6 +596,7 @@ export function ServerDialog({
               <Input
                 id={`${id}-name`}
                 autoComplete="off"
+                placeholder="GitHub"
                 aria-invalid={errors.name !== undefined}
                 value={draft.name}
                 onChange={(event) =>
@@ -599,6 +635,7 @@ export function ServerDialog({
               draft={draft}
               errors={errors}
               credentials={credentials}
+              catalogs={catalogs}
               onChange={setDraft}
               onNewCredential={setCreatingFor}
             />
@@ -629,7 +666,7 @@ export function ServerDialog({
             api={api}
             onClose={() => setCreatingFor(undefined)}
             onCreated={(credential) => {
-              setCredentials((list) => [...list, credential]);
+              setCredentials((list) => [...(list ?? []), credential]);
               setDraft((current) =>
                 withCredential(current, creatingFor, credential.id),
               );

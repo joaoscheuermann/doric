@@ -1698,10 +1698,12 @@ refresh and client secrets are `MCP_TOKEN` credentials, a kind the bundle
 registers, deleted with the server or when its transport kind or URL
 changes. A connected server's tools are registered with `tools/v1` under its
 Project as `mcp__<server slug>__<tool>`, with the server's input schema
-verbatim. Servers connect when a window watches their Project (the client
-part's MCP pane in the sidebar's stack does), when a prompt of the Project
-starts (which waits up to ten seconds for them) and when a sign-in finishes;
-a closing Project stops them and a deleted one loses them. The user
+verbatim. The skills a connected server lists through the MCP Skills
+extension are only shown, never loaded into a prompt. Servers connect when a
+window watches their Project (the client part's MCP pane in the sidebar's
+stack does), when a prompt of the Project starts (which waits up to ten
+seconds for them) and when a sign-in finishes; a closing Project stops them
+and a deleted one loses them. The user
 explicitly approved this expansion of network access from the host, command
 execution in the sandbox and credential handling under HC-004 and HC-007.
 

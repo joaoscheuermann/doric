@@ -25,9 +25,21 @@ export const linearServer: McpServerView = {
   status: { state: 'connected' },
   signedIn: false,
   tools: [
-    { name: 'list_issues' },
-    { name: 'create_issue' },
+    { name: 'list_issues', description: 'List the issues of a team.' },
+    { name: 'create_issue', description: 'Create an issue in a team.' },
     { name: 'get_issue' },
+  ],
+  skills: [
+    {
+      uri: 'skill://triage/SKILL.md',
+      name: 'triage',
+      description: 'Sort new issues by team.',
+    },
+    {
+      uri: 'skill://release-notes/SKILL.md',
+      name: 'release-notes',
+      description: 'Draft release notes from closed issues.',
+    },
   ],
 };
 
@@ -39,7 +51,11 @@ export const filesServer: McpServerView = {
   transport: {
     kind: 'stdio',
     command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace'],
+    args: [
+      '-y',
+      '@modelcontextprotocol/server-filesystem',
+      '/workspace/My Files',
+    ],
     cwd: '/workspace',
     env: [
       { name: 'LOG_LEVEL', value: 'debug' },
@@ -49,6 +65,7 @@ export const filesServer: McpServerView = {
   status: { state: 'idle' },
   signedIn: false,
   tools: [],
+  skills: [],
 };
 
 /** A server name per status, so each row says which one it shows. */
@@ -76,6 +93,7 @@ export const everyStatus: readonly McpServerView[] = mcpStatuses.map(
         ? { state, message: 'The process exited with code 1.' }
         : { state },
     tools: state === 'connected' ? linearServer.tools : [],
+    skills: state === 'connected' ? linearServer.skills : [],
   }),
 );
 

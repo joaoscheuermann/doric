@@ -19,6 +19,7 @@ import type { RuntimeLease } from 'runtime/contracts';
 import type { McpTransport } from '../contracts/index.js';
 import type { ResolvedEntries } from './credentials.js';
 import { SignInRequired } from './oauth.js';
+import { SKILLS_EXTENSION } from './skills.js';
 import { createSandboxStdioTransport } from './stdio.js';
 
 const CLIENT_INFO = { name: 'doric', version: '1.0.0' };
@@ -44,7 +45,9 @@ const connect = async (
   transport: Transport,
   signal: AbortSignal,
 ): Promise<Client> => {
-  const client = new Client(CLIENT_INFO);
+  const client = new Client(CLIENT_INFO, {
+    capabilities: { extensions: { [SKILLS_EXTENSION]: {} } },
+  });
 
   try {
     await client.connect(transport, { signal });

@@ -20,9 +20,48 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
   CallToolRequestSchema,
   type CallToolResult,
+  type ClientCapabilities,
   ListToolsRequestSchema,
+  type ServerCapabilities,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
+
+/** The MCP Skills extension's identifier in `capabilities.extensions`. */
+export const SKILLS_EXTENSION = 'io.modelcontextprotocol/skills';
+
+/** One skill a fake server lists through `skills/list`. */
+export interface FakeSkill {
+  readonly uri: string;
+  readonly frontmatter: Readonly<Record<string, unknown>> & {
+    readonly name: string;
+    readonly description: string;
+  };
+  readonly resources: string;
+}
+
+/** A skill at `skill://<name>/SKILL.md`, with extra frontmatter fields. */
+export const fakeSkill = (
+  name: string,
+  description: string,
+  extra: Readonly<Record<string, unknown>> = {},
+): FakeSkill => ({
+  uri: `skill://${name}/SKILL.md`,
+  frontmatter: { name, description, ...extra },
+  resources: 'dynamic',
+});
+
+/**
+ * The skills a fake server serves: its `skills/list` pages, in order, or
+ * `fails` for a listing that answers an error. Given, the server declares the
+ * Skills extension; absent, it declares nothing.
+ */
+export type FakeSkills = readonly (readonly FakeSkill[])[] | 'fails';
+
+const SkillsListRequestSchema = z.object({
+  method: z.literal('skills/list'),
+  params: z.object({ cursor: z.string().optional() }).loose().optional(),
+});
 
 /** One tool a fake server offers, with how it answers a call. */
 export interface FakeTool {
@@ -42,6 +81,10 @@ export interface ReceivedCall {
 /** A tool set served to every session connected to it. */
 export interface ToolServer {
   readonly calls: readonly ReceivedCall[];
+  /** The cursor of each `skills/list` request received, in order. */
+  readonly skillCursors: readonly (string | undefined)[];
+  /** The capabilities the client of the last session declared. */
+  clientCapabilities(): ClientCapabilities | undefined;
   /** Replaces the tools every session lists from now on. */
   setTools(tools: readonly FakeTool[]): void;
   /** Serves one more MCP session over the transport. */
@@ -62,21 +105,59 @@ export const textTool = (
   }),
 });
 
-export const toolServer = (initial: readonly FakeTool[]): ToolServer => {
+export const toolServer = (
+  initial: readonly FakeTool[],
+  skills?: FakeSkills,
+): ToolServer => {
   let tools = [...initial];
   const servers = new Set<Server>();
   const calls: ReceivedCall[] = [];
+  const skillCursors: (string | undefined)[] = [];
+  let last: Server | undefined;
+
+  const capabilities: ServerCapabilities =
+    skills === undefined
+      ? { tools: { listChanged: true } }
+      : {
+          tools: { listChanged: true },
+          resources: {},
+          extensions: { [SKILLS_EXTENSION]: {} },
+        };
 
   return {
     calls,
+    skillCursors,
+    clientCapabilities: () => last?.getClientCapabilities(),
     setTools: (next) => {
       tools = [...next];
     },
     connect: async (transport) => {
       const server = new Server(
         { name: 'fake-mcp', version: '1.0.0' },
-        { capabilities: { tools: { listChanged: true } } },
+        { capabilities },
       );
+      last = server;
+
+      server.setRequestHandler(SkillsListRequestSchema, (request) => {
+        const cursor = request.params?.cursor;
+        skillCursors.push(cursor);
+
+        if (skills === 'fails') {
+          throw new Error('The skills listing failed.');
+        }
+
+        const pages = skills ?? [[]];
+        const index = cursor === undefined ? 0 : Number(cursor.slice(5));
+        const result: {
+          skills: readonly FakeSkill[];
+          nextCursor?: string;
+        } =
+          index + 1 < pages.length
+            ? { skills: pages[index] ?? [], nextCursor: `page-${index + 1}` }
+            : { skills: pages[index] ?? [] };
+
+        return result;
+      });
 
       server.setRequestHandler(ListToolsRequestSchema, () => ({
         tools: tools.map((entry) => entry.tool),
@@ -132,6 +213,8 @@ export interface ReceivedRequest {
 
 export interface HttpMcpOptions {
   readonly tools: readonly FakeTool[];
+  /** The skills it serves; absent, it does not declare the Skills extension. */
+  readonly skills?: FakeSkills;
   /** `streamable` (default) or a legacy server that speaks only HTTP+SSE. */
   readonly mode?: 'streamable' | 'sse';
   /**
@@ -172,7 +255,7 @@ const json = (res: ServerResponse, status: number, body: unknown): void => {
 export const httpMcpServer = async (
   options: HttpMcpOptions,
 ): Promise<HttpMcpServer> => {
-  const tools = toolServer(options.tools);
+  const tools = toolServer(options.tools, options.skills);
   const requests: ReceivedRequest[] = [];
   const streamable = new Map<string, StreamableHTTPServerTransport>();
   const sse = new Map<string, SSEServerTransport>();

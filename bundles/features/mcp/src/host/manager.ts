@@ -22,6 +22,7 @@ import { ToolErrorObject } from 'tool';
 
 import type {
   McpServerView,
+  McpSkillView,
   McpStatus,
   McpToolView,
 } from '../contracts/index.js';
@@ -33,6 +34,7 @@ import {
 } from './credentials.js';
 import { createOAuthProvider } from './oauth.js';
 import { isAuthFailure, type Opened, openHttp, openStdio } from './open.js';
+import { listSkills } from './skills.js';
 import type { ServerDocument, ServerStore } from './store.js';
 import {
   listTools,
@@ -99,6 +101,7 @@ interface Live {
   readonly projectId: string;
   status: { readonly state: McpStatus; readonly message?: string };
   tools: readonly McpToolView[];
+  skills: readonly McpSkillView[];
   attempt?: {
     readonly controller: AbortController;
     readonly done: Promise<void>;
@@ -145,6 +148,7 @@ export const createManager = ({
         server.transport.kind === 'http' &&
         server.oauth?.accessCredentialId !== undefined,
       tools: status.state === 'connected' ? (entry?.tools ?? []) : [],
+      skills: status.state === 'connected' ? (entry?.skills ?? []) : [],
     };
   };
 
@@ -286,6 +290,7 @@ export const createManager = ({
     unregister(connection);
     entry.connection = undefined;
     entry.tools = [];
+    entry.skills = [];
     const last = entry.stderr.at(-1);
     entry.status = {
       state: 'error',
@@ -378,8 +383,20 @@ export const createManager = ({
           ),
       );
       await refresh(server, entry, connection, signal);
+      const skills = await listSkills(connection.client, signal).catch(
+        (error: unknown) => {
+          if (!signal.aborted) {
+            log().warn('The MCP server skills could not be listed', {
+              serverId: server.id,
+              error: messageOf(error, secrets),
+            });
+          }
+          return [];
+        },
+      );
 
       if (current() && entry.connection === connection) {
+        entry.skills = skills;
         entry.status = { state: 'connected' };
       }
     } catch (error) {
@@ -387,6 +404,7 @@ export const createManager = ({
       const { connection } = entry;
       entry.connection = undefined;
       entry.tools = [];
+      entry.skills = [];
       entry.status = isAuthFailure(error)
         ? { state: 'needs-sign-in' }
         : { state: 'error', message: messageOf(error, secrets) };
@@ -413,6 +431,7 @@ export const createManager = ({
       projectId: server.projectId,
       status: { state: 'connecting' },
       tools: [],
+      skills: [],
       stderr: [],
     };
     live.set(server.id, entry);

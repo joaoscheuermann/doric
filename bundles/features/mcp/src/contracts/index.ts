@@ -127,6 +127,20 @@ export interface McpToolView {
   readonly description?: string;
 }
 
+/**
+ * One skill a connected server serves through the MCP Skills extension
+ * (`io.modelcontextprotocol/skills`), as the reader sees it. Listed only:
+ * Doric never loads a skill into a prompt.
+ */
+export interface McpSkillView {
+  /** The URI of its SKILL.md: unique within the server (names need not be). */
+  readonly uri: string;
+  /** Its frontmatter `name`. */
+  readonly name: string;
+  /** Its frontmatter `description`. */
+  readonly description: string;
+}
+
 /** One stored server of the Project, with its live state. */
 export interface McpServerView extends McpServerInput {
   readonly id: string;
@@ -136,6 +150,12 @@ export interface McpServerView extends McpServerInput {
   readonly signedIn: boolean;
   /** Its registered tools; empty unless `status.state` is `connected`. */
   readonly tools: readonly McpToolView[];
+  /**
+   * The skills it lists (`skills/list`), in its order; empty unless
+   * `status.state` is `connected`, the server declared the Skills extension
+   * and its listing succeeded.
+   */
+  readonly skills: readonly McpSkillView[];
 }
 
 /** `mcp/v1` (host): the MCP servers of the Project of `call.scope.projectId`. */
@@ -261,6 +281,10 @@ export const mcpToolViewSchema: z.ZodType<McpToolView, McpToolView> = z
   })
   .strict();
 
+export const mcpSkillViewSchema: z.ZodType<McpSkillView, McpSkillView> = z
+  .object({ uri: z.string(), name: z.string(), description: z.string() })
+  .strict();
+
 export const mcpServerViewSchema: z.ZodType<McpServerView, McpServerView> =
   mcpServerInputSchema
     .extend({
@@ -274,6 +298,7 @@ export const mcpServerViewSchema: z.ZodType<McpServerView, McpServerView> =
         .strict(),
       signedIn: z.boolean(),
       tools: z.array(mcpToolViewSchema),
+      skills: z.array(mcpSkillViewSchema),
     })
     .strict();
 

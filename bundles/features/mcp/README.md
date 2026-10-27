@@ -26,11 +26,18 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   sanitize alike or run over 64 characters end with a hash of the MCP name).
   The server's input schema is what the model sees, verbatim; the tool is not
   strict, and the server validates the arguments.
+- **Skills:** the skills a connected server lists through the MCP Skills
+  extension (`io.modelcontextprotocol/skills`, `skills/list`), on its view by
+  URI, name and description; listed only when the server declares the
+  extension. They are for display only and never loaded into a prompt. A
+  failed listing is logged and leaves the server connected, with no skills.
 - **Window:** the client part registers the sidebar's MCP pane
   (`layout.stack/v1`): the selected Project's servers with their status and
   tool count over `mcp/v1.watch`, and the dialogs that add, edit, remove and
-  sign in to them. An entry's credential is picked from `secrets/v1`, or
-  stored there as a new `API_TOKEN`.
+  sign in to them; the edit dialog lists the server's tools and skills after
+  its headers or its environment. A header or variable is a typed value or a
+  credential picked with the key button, from `secrets/v1` or stored there as
+  a new `API_TOKEN`.
 
 ## Servers
 

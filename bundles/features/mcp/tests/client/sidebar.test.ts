@@ -116,9 +116,21 @@ const linear: McpServerView = {
   status: { state: 'connected' },
   signedIn: true,
   tools: [
-    { name: 'list_issues' },
-    { name: 'create_issue' },
+    { name: 'list_issues', description: 'List the issues of a team.' },
+    { name: 'create_issue', description: 'Create an issue in a team.' },
     { name: 'get_issue' },
+  ],
+  skills: [
+    {
+      uri: 'skill://triage/SKILL.md',
+      name: 'triage',
+      description: 'Sort new issues by team.',
+    },
+    {
+      uri: 'skill://release-notes/SKILL.md',
+      name: 'release-notes',
+      description: 'Draft release notes from closed issues.',
+    },
   ],
 };
 
@@ -137,6 +149,7 @@ const files: McpServerView = {
   status: { state: 'idle' },
   signedIn: false,
   tools: [],
+  skills: [],
 };
 
 const sentry: McpServerView = {
@@ -148,6 +161,7 @@ const sentry: McpServerView = {
   status: { state: 'disabled' },
   signedIn: false,
   tools: [{ name: 'find_errors' }, { name: 'get_event' }],
+  skills: [],
 };
 
 /** An http server that asks for a sign-in before it connects. */
@@ -160,6 +174,7 @@ const notion: McpServerView = {
   status: { state: 'needs-sign-in' },
   signedIn: false,
   tools: [],
+  skills: [],
 };
 
 const credentials: readonly CredentialDescription[] = [
@@ -249,6 +264,7 @@ const createHost = (options: HostOptions = {}) => {
     status: { state: 'idle' },
     signedIn: false,
     tools: [],
+    skills: [],
   });
 
   const mcpFor = (scope: CallScope | undefined) => {
@@ -599,8 +615,11 @@ const dialogNamed = async (
   return find() as unknown as HTMLElement;
 };
 
-/** A `fieldset` (by its legend) or a `group` (by its name) named `name`. */
-const groupNamed = (root: Element, name: string): HTMLElement => {
+/**
+ * The `fieldset` (by its legend) or `group` (by its name) named `name`
+ * under `root`, if there is one.
+ */
+const findGroup = (root: Element, name: string): HTMLElement | undefined => {
   const groups = [
     ...root.querySelectorAll('fieldset, [role="group"]'),
   ] as unknown as Element[];
@@ -617,9 +636,24 @@ const groupNamed = (root: Element, name: string): HTMLElement => {
       nameOf(candidate) === name
     );
   });
-  assert.ok(group !== undefined, `No group named "${name}".`);
-  return group as unknown as HTMLElement;
+  return group as unknown as HTMLElement | undefined;
 };
+
+/** A `fieldset` (by its legend) or a `group` (by its name) named `name`. */
+const groupNamed = (root: Element, name: string): HTMLElement => {
+  const group = findGroup(root, name);
+  assert.ok(group !== undefined, `No group named "${name}".`);
+  return group;
+};
+
+/** Whether `first` comes before `second` in document order. */
+const precedes = (first: Element, second: Element): boolean =>
+  // Node.DOCUMENT_POSITION_FOLLOWING
+  (first.compareDocumentPosition(second as unknown as Node) & 4) !== 0;
+
+/** Whether the `class` of `element` holds `name`. */
+const hasClass = (element: Element | null, name: string): boolean =>
+  (element?.getAttribute('class') ?? '').split(/\s+/).includes(name);
 
 /** The pane's rows: the top-level list items of the rows element. */
 const rowsOf = (pane: OpenPane): HTMLElement[] =>
@@ -711,49 +745,6 @@ const press = (element: HTMLElement): void => {
   element.click();
 };
 
-/**
- * Picks the option named `option` in a select (native or listbox) and answers
- * the names of every option it offered.
- */
-const choose = async (
-  control: HTMLElement,
-  option: string,
-): Promise<string[]> => {
-  if (control.tagName === 'SELECT') {
-    const select = control as unknown as HTMLSelectElement;
-    const offered = [...select.options].map((item) =>
-      normalized(item.textContent),
-    );
-    const match = [...select.options].find(
-      (item) => normalized(item.textContent) === option,
-    );
-    assert.ok(match !== undefined, `No option "${option}" in ${offered}.`);
-    await act(() => {
-      select.value = match.value;
-      select.dispatchEvent(
-        new window.Event('change', { bubbles: true }) as never,
-      );
-    });
-    await settle();
-    return offered;
-  }
-
-  await act(() => press(control));
-  const options = () =>
-    [
-      ...window.document.querySelectorAll('[role="option"]'),
-    ] as unknown as HTMLElement[];
-  await waitFor(() => options().length > 0, 'The select opened no options.');
-  const offered = options().map((item) => normalized(item.textContent));
-  const match = options().find(
-    (item) => normalized(item.textContent) === option,
-  );
-  assert.ok(match !== undefined, `No option "${option}" in ${offered}.`);
-  await act(() => press(match));
-  await settle(10);
-  return offered;
-};
-
 /** Presses the transport `name` in the dialog's Transport toggle group. */
 const pickTransport = async (
   dialog: HTMLElement,
@@ -770,15 +761,60 @@ const pickTransport = async (
 };
 
 /**
- * The value the Credential select's trigger under `root` shows: its value
- * slot, not the whole trigger, whose chevron carries a hidden `▼`.
+ * The credential name the read-only Credential field under `root` shows, or
+ * '' while there is none (so it can be waited for).
  */
-const credentialShown = (root: Element): string =>
-  normalized(
-    controlLabelled(root, 'Credential').querySelector(
-      '[data-slot="select-value"]',
-    )?.textContent ?? '',
+const credentialShown = (root: Element): string => {
+  const [control] = controlsLabelled(root, 'Credential');
+  return control === undefined ? '' : fieldValue(control);
+};
+
+/**
+ * Presses a menu's `trigger`, picks its item named `name` (a menu item or a
+ * radio item) and answers the names of every item it offered.
+ */
+const pickMenuItem = async (
+  trigger: HTMLElement,
+  name: string,
+): Promise<string[]> => {
+  await act(() => press(trigger));
+  const items = () =>
+    [
+      ...window.document.querySelectorAll(
+        '[role="menuitem"], [role="menuitemradio"]',
+      ),
+    ] as unknown as HTMLElement[];
+  await waitFor(() => items().length > 0, 'The menu opened no items.');
+  const offered = items().map((item) => normalized(item.textContent));
+  const match = items().find((item) => normalized(item.textContent) === name);
+  assert.ok(
+    match !== undefined,
+    `No menu item "${name}" in ${offered.join(' | ')}.`,
   );
+  await act(() => press(match));
+  await settle(10);
+  return offered;
+};
+
+/** Whether the key icon of the credential button under `root` is tinted. */
+const keyTinted = (root: Element): boolean =>
+  hasClass(
+    controlLabelled(root, 'Choose a credential').querySelector('svg'),
+    'text-primary',
+  );
+
+/** The cells' text of each row in the body of the table under `root`. */
+const tableRowsOf = (root: Element): string[][] =>
+  [...root.querySelectorAll('tbody tr')].map((row) =>
+    [...row.querySelectorAll('td')].map((cell) => normalized(cell.textContent)),
+  );
+
+/** The `placeholder` of the control under `root` labelled `label`. */
+const placeholderOf = (root: Element, label: string): string | null =>
+  controlLabelled(root, label).getAttribute('placeholder');
+
+const commandQuoteMessage =
+  'Close the open quote, or end the line with a character after "\\".';
 
 const isChecked = (control: HTMLElement): boolean =>
   control.tagName === 'INPUT'
@@ -1013,15 +1049,28 @@ test('W4 adding an http server with a credential header creates it in the Projec
     await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
     // The headers are a table; with none yet it says so.
     assert.deepEqual(columnsOf(groupNamed(dialog, 'Headers')), [
-      'Name',
+      'Key',
       'Value',
       'Remove',
     ]);
     assert.equal(tableBodyOf(groupNamed(dialog, 'Headers')), 'No headers');
     await click(buttonNamed(dialog, 'Add header'));
     const headers = groupNamed(dialog, 'Headers');
-    await type(controlLabelled(headers, 'Name'), 'Authorization');
-    await choose(controlLabelled(headers, 'Credential'), 'Linear token');
+    await type(controlLabelled(headers, 'Key'), 'Authorization');
+    await pickMenuItem(
+      controlLabelled(headers, 'Choose a credential'),
+      'Linear token',
+    );
+    // The credential is shown by name, in place of the plain value.
+    assert.equal(
+      credentialShown(groupNamed(dialog, 'Headers')),
+      'Linear token',
+    );
+    assert.equal(
+      controlsLabelled(groupNamed(dialog, 'Headers'), 'Value').length,
+      0,
+      'A header with a credential still offers a plain value.',
+    );
     await setChecked(controlLabelled(dialog, 'Enabled'), true);
     // Enabled is a switch in the footer, beside Cancel and Save.
     assert.equal(
@@ -1065,14 +1114,20 @@ test('W4 adding a stdio server sends its command, arguments, directory and envir
 
     await type(controlLabelled(dialog, 'Name'), 'Files');
     await pickTransport(dialog, 'stdio');
-    await type(controlLabelled(dialog, 'Command'), 'npx');
-    await type(controlLabelled(dialog, 'Arguments'), '-y\n@mcp/files');
+    // One command line holds the command and its arguments.
+    await type(controlLabelled(dialog, 'Command'), 'npx -y @mcp/files');
+    assert.equal(
+      controlsLabelled(dialog, 'Arguments').length,
+      0,
+      'The dialog still has an Arguments control.',
+    );
     // The working directory sits under Advanced, closed at first.
     await click(buttonNamed(dialog, 'Advanced'));
     await type(controlLabelled(dialog, 'Working directory'), '/workspace');
     await click(buttonNamed(dialog, 'Add variable'));
     const environment = groupNamed(dialog, 'Environment');
-    await type(controlLabelled(environment, 'Name'), 'LOG_LEVEL');
+    assert.deepEqual(columnsOf(environment), ['Key', 'Value', 'Remove']);
+    await type(controlLabelled(environment, 'Key'), 'LOG_LEVEL');
     await type(controlLabelled(environment, 'Value'), 'debug');
     await setChecked(controlLabelled(dialog, 'Enabled'), true);
     await click(buttonNamed(dialog, 'Save'));
@@ -1103,6 +1158,107 @@ test('W4 adding a stdio server sends its command, arguments, directory and envir
   }
 });
 
+test('W4 a quoted command line splits into the command and its arguments', async () => {
+  const { host, pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+
+    await type(controlLabelled(dialog, 'Name'), 'Node');
+    await pickTransport(dialog, 'stdio');
+    await type(
+      controlLabelled(dialog, 'Command'),
+      String.raw`node "My Server/index.js" --label 'a b' it\'s`,
+    );
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'create').length > 0,
+      'Save never called create.',
+    );
+
+    assert.deepEqual(
+      callsOf(host, 'create').map(({ input }) => {
+        const { transport } = input as McpServerInput;
+        return transport.kind === 'stdio'
+          ? { command: transport.command, args: transport.args }
+          : { kind: transport.kind };
+      }),
+      [
+        {
+          command: 'node',
+          args: ['My Server/index.js', '--label', 'a b', "it's"],
+        },
+      ],
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W4 a command line with an open quote is refused at Save', async () => {
+  const { host, pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+
+    await type(controlLabelled(dialog, 'Name'), 'Files');
+    await pickTransport(dialog, 'stdio');
+    await type(controlLabelled(dialog, 'Command'), 'npx "@mcp/files');
+    await click(buttonNamed(dialog, 'Save'));
+    await settle(10);
+
+    assert.equal(callsOf(host, 'create').length, 0, 'Save created the server.');
+    assert.equal(
+      controlLabelled(dialog, 'Command').getAttribute('aria-invalid'),
+      'true',
+    );
+    assert.ok(
+      normalized(dialog.textContent).includes(commandQuoteMessage),
+      'The dialog does not say to close the open quote.',
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W4 the fields carry example placeholders', async () => {
+  const { pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+    await pickTransport(dialog, 'HTTP');
+
+    const shown: Record<string, string | null> = {
+      name: placeholderOf(dialog, 'Name'),
+      url: placeholderOf(dialog, 'URL'),
+    };
+    await click(buttonNamed(dialog, 'Add header'));
+    shown.headerKey = placeholderOf(groupNamed(dialog, 'Headers'), 'Key');
+    shown.headerValue = placeholderOf(groupNamed(dialog, 'Headers'), 'Value');
+    await pickTransport(dialog, 'stdio');
+    shown.command = placeholderOf(dialog, 'Command');
+    await click(buttonNamed(dialog, 'Advanced'));
+    shown.cwd = placeholderOf(dialog, 'Working directory');
+    await click(buttonNamed(dialog, 'Add variable'));
+    shown.variableKey = placeholderOf(groupNamed(dialog, 'Environment'), 'Key');
+
+    assert.deepEqual(shown, {
+      name: 'GitHub',
+      url: 'https://example.com/mcp',
+      headerKey: 'Authorization',
+      headerValue: 'Plain value',
+      command: 'npx -y @modelcontextprotocol/server-everything',
+      cwd: "The sandbox's default",
+      variableKey: 'LOG_LEVEL',
+    });
+  } finally {
+    await pane.close();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // W5
 
@@ -1118,6 +1274,16 @@ test('W5 editing a server starts from its view and updates it by id', async () =
     await click(rowButton(pane, 'Linear'));
     const dialog = await dialogNamed('Edit MCP server');
 
+    // The editor has no tabs: its fields and the server's tools and skills
+    // are one form, Tools then Skills right after the Headers.
+    assert.equal(dialog.querySelectorAll('[role="tab"]').length, 0);
+    assert.deepEqual(
+      [
+        precedes(groupNamed(dialog, 'Headers'), groupNamed(dialog, 'Tools')),
+        precedes(groupNamed(dialog, 'Tools'), groupNamed(dialog, 'Skills')),
+      ],
+      [true, true],
+    );
     assert.equal(fieldValue(controlLabelled(dialog, 'Name')), 'Linear');
     assert.equal(
       fieldValue(controlLabelled(dialog, 'URL')),
@@ -1169,10 +1335,28 @@ test('W5 editing a stdio server keeps every field it did not change', async () =
     await click(rowButton(pane, 'Files'));
     const dialog = await dialogNamed('Edit MCP server');
 
-    assert.equal(fieldValue(controlLabelled(dialog, 'Command')), 'npx');
+    // Tools and Skills follow the Environment, before the Advanced fields.
+    assert.deepEqual(
+      [
+        precedes(
+          groupNamed(dialog, 'Environment'),
+          groupNamed(dialog, 'Tools'),
+        ),
+        precedes(groupNamed(dialog, 'Tools'), groupNamed(dialog, 'Skills')),
+        precedes(groupNamed(dialog, 'Tools'), buttonNamed(dialog, 'Advanced')),
+      ],
+      [true, true, true],
+    );
+
+    // The command and its arguments read as one command line.
     assert.equal(
-      fieldValue(controlLabelled(dialog, 'Arguments')),
-      '-y\n@mcp/files',
+      fieldValue(controlLabelled(dialog, 'Command')),
+      'npx -y @mcp/files',
+    );
+    assert.equal(
+      controlsLabelled(dialog, 'Arguments').length,
+      0,
+      'The dialog still has an Arguments control.',
     );
     assert.equal(
       fieldValue(controlLabelled(groupNamed(dialog, 'Environment'), 'Value')),
@@ -1215,6 +1399,55 @@ test('W5 editing a stdio server keeps every field it did not change', async () =
         },
       },
     ]);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W5 arguments with spaces and quotes read back quoted and save unchanged', async () => {
+  const docs: McpServerView = {
+    ...files,
+    id: 's6',
+    name: 'Docs',
+    transport: {
+      kind: 'stdio',
+      command: 'npx',
+      args: ['--root', '/my files', "it's"],
+      env: [],
+    },
+  };
+  const { host, pane } = await paneWith([docs]);
+
+  try {
+    await click(rowButton(pane, 'Docs'));
+    const dialog = await dialogNamed('Edit MCP server');
+
+    assert.equal(
+      fieldValue(controlLabelled(dialog, 'Command')),
+      String.raw`npx --root '/my files' 'it'\''s'`,
+    );
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'update').length > 0,
+      'Save never called update.',
+    );
+
+    assert.deepEqual(
+      callsOf(host, 'update').map(({ input }) => input),
+      [
+        {
+          id: 's6',
+          name: 'Docs',
+          enabled: true,
+          transport: {
+            kind: 'stdio',
+            command: 'npx',
+            args: ['--root', '/my files', "it's"],
+            env: [],
+          },
+        },
+      ],
+    );
   } finally {
     await pane.close();
   }
@@ -1354,24 +1587,26 @@ test('W8 the credential picker lists the stored credentials and creates a new to
     await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
     await click(buttonNamed(dialog, 'Add header'));
     await type(
-      controlLabelled(groupNamed(dialog, 'Headers'), 'Name'),
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Key'),
       'X-Api-Key',
     );
 
-    const offered = await choose(
-      controlLabelled(groupNamed(dialog, 'Headers'), 'Credential'),
+    const offered = await pickMenuItem(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Choose a credential'),
       'New credential…',
     );
-    for (const name of [
+    assert.deepEqual(offered, [
       'Plain value',
       'Linear token',
       'GitHub token',
       'New credential…',
-    ]) {
-      assert.ok(offered.includes(name), `"${name}" is not in ${offered}.`);
-    }
+    ]);
 
     const create = await dialogNamed('New credential');
+    assert.deepEqual(
+      [placeholderOf(create, 'Name'), placeholderOf(create, 'Secret')],
+      ['GitHub token', 'Paste the token'],
+    );
     await type(controlLabelled(create, 'Name'), 'Linear key');
     await type(controlLabelled(create, 'Secret'), 'lin_api_123');
     await click(buttonNamed(create, 'Create'));
@@ -1409,6 +1644,258 @@ test('W8 the credential picker lists the stored credentials and creates a new to
         },
       ],
     );
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W8 choosing Plain value again brings back the value typed before', async () => {
+  const { host, pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+    await type(controlLabelled(dialog, 'Name'), 'Linear');
+    await pickTransport(dialog, 'HTTP');
+    await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
+    await click(buttonNamed(dialog, 'Add header'));
+    await type(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Key'),
+      'X-Api-Key',
+    );
+    await type(controlLabelled(groupNamed(dialog, 'Headers'), 'Value'), 'ab');
+
+    await pickMenuItem(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Choose a credential'),
+      'Linear token',
+    );
+    assert.equal(
+      credentialShown(groupNamed(dialog, 'Headers')),
+      'Linear token',
+    );
+    assert.equal(
+      controlsLabelled(groupNamed(dialog, 'Headers'), 'Value').length,
+      0,
+      'A header with a credential still offers a plain value.',
+    );
+
+    await pickMenuItem(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Choose a credential'),
+      'Plain value',
+    );
+    assert.equal(
+      controlsLabelled(groupNamed(dialog, 'Headers'), 'Credential').length,
+      0,
+      'A plain header still shows a credential.',
+    );
+    // The value typed before the credential was chosen is still there.
+    assert.equal(
+      fieldValue(controlLabelled(groupNamed(dialog, 'Headers'), 'Value')),
+      'ab',
+    );
+    await type(controlLabelled(groupNamed(dialog, 'Headers'), 'Value'), 'abc');
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'create').length > 0,
+      'Save never called create.',
+    );
+
+    assert.deepEqual(
+      callsOf(host, 'create').map(({ input }) => {
+        const { transport } = input as McpServerInput;
+        return transport.kind === 'http' ? transport.headers : [];
+      }),
+      [[{ name: 'X-Api-Key', value: 'abc' }]],
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W8 the key icon is tinted while the entry holds a credential', async () => {
+  const { pane } = await paneWith([linear, files]);
+
+  try {
+    await click(rowButton(pane, 'Linear'));
+    const dialog = await dialogNamed('Edit MCP server');
+    await waitFor(
+      () => credentialShown(groupNamed(dialog, 'Headers')) === 'Linear token',
+      'The header never showed its credential, "Linear token".',
+    );
+    assert.equal(keyTinted(groupNamed(dialog, 'Headers')), true);
+
+    await pickMenuItem(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Choose a credential'),
+      'Plain value',
+    );
+    assert.equal(keyTinted(groupNamed(dialog, 'Headers')), false);
+
+    await pickMenuItem(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Choose a credential'),
+      'GitHub token',
+    );
+    assert.equal(
+      credentialShown(groupNamed(dialog, 'Headers')),
+      'GitHub token',
+    );
+    assert.equal(keyTinted(groupNamed(dialog, 'Headers')), true);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W8 the credential menu is as wide as its items, at least 12rem', async () => {
+  const { pane } = await paneWith([linear, files]);
+
+  try {
+    await click(rowButton(pane, 'Linear'));
+    const dialog = await dialogNamed('Edit MCP server');
+    const content = () =>
+      window.document.querySelector(
+        '[data-slot="dropdown-menu-content"]',
+      ) as unknown as Element | null;
+
+    await act(() =>
+      press(
+        controlLabelled(groupNamed(dialog, 'Headers'), 'Choose a credential'),
+      ),
+    );
+    await waitFor(
+      () => content() !== null,
+      'The credential menu never opened.',
+    );
+
+    assert.deepEqual(
+      [hasClass(content(), 'w-auto'), hasClass(content(), 'min-w-48')],
+      [true, true],
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W10
+
+test("W10 the editor's Tools group lists the server's tools and filters them", async () => {
+  const { pane } = await paneWith([linear, files]);
+
+  try {
+    await click(rowButton(pane, 'Linear'));
+    const dialog = await dialogNamed('Edit MCP server');
+    const tools = () => groupNamed(dialog, 'Tools');
+
+    assert.deepEqual(columnsOf(tools()), ['Name', 'Description']);
+    assert.deepEqual(tableRowsOf(tools()), [
+      ['list_issues', 'List the issues of a team.'],
+      ['create_issue', 'Create an issue in a team.'],
+      ['get_issue', ''],
+    ]);
+
+    const filter = controlLabelled(tools(), 'Filter tools');
+    assert.equal(filter.getAttribute('placeholder'), 'Filter tools…');
+    await type(filter, 'create');
+    assert.deepEqual(tableRowsOf(tools()), [
+      ['create_issue', 'Create an issue in a team.'],
+    ]);
+    // The filter ignores case and reads the descriptions too.
+    await type(controlLabelled(tools(), 'Filter tools'), 'TEAM');
+    assert.deepEqual(
+      tableRowsOf(tools()).map(([name]) => name),
+      ['list_issues', 'create_issue'],
+    );
+    await type(controlLabelled(tools(), 'Filter tools'), 'zzz');
+    assert.equal(tableBodyOf(tools()), 'No tool matches that filter.');
+  } finally {
+    await pane.close();
+  }
+});
+
+test("W10 the editor's Skills group lists the server's skills and filters them", async () => {
+  const { pane } = await paneWith([linear, files]);
+
+  try {
+    await click(rowButton(pane, 'Linear'));
+    const dialog = await dialogNamed('Edit MCP server');
+    const skills = () => groupNamed(dialog, 'Skills');
+
+    assert.deepEqual(columnsOf(skills()), ['Name', 'Description']);
+    assert.deepEqual(tableRowsOf(skills()), [
+      ['triage', 'Sort new issues by team.'],
+      ['release-notes', 'Draft release notes from closed issues.'],
+    ]);
+
+    const filter = controlLabelled(skills(), 'Filter skills');
+    assert.equal(filter.getAttribute('placeholder'), 'Filter skills…');
+    // The filter ignores case and reads the descriptions too.
+    await type(filter, 'CLOSED');
+    assert.deepEqual(
+      tableRowsOf(skills()).map(([name]) => name),
+      ['release-notes'],
+    );
+    await type(controlLabelled(skills(), 'Filter skills'), 'zzz');
+    assert.equal(tableBodyOf(skills()), 'No skill matches that filter.');
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W10 a server without tools or skills says so, and adding a server shows neither', async () => {
+  const { pane } = await paneWith([linear, files]);
+
+  try {
+    await click(rowButton(pane, 'Files'));
+    const edit = await dialogNamed('Edit MCP server');
+    assert.deepEqual(
+      [
+        tableBodyOf(groupNamed(edit, 'Tools')),
+        tableBodyOf(groupNamed(edit, 'Skills')),
+      ],
+      ['No tools', 'No skills'],
+    );
+    await click(buttonNamed(edit, 'Cancel'));
+    await waitFor(
+      () => dialogs().length === 0,
+      'Cancel never closed the editor.',
+    );
+
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const add = await dialogNamed('Add MCP server');
+    assert.deepEqual(
+      [
+        findGroup(add, 'Tools') === undefined,
+        findGroup(add, 'Skills') === undefined,
+        add.querySelectorAll('[role="tab"]').length,
+      ],
+      [true, true, 0],
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W10 saving an invalid edit marks the field and updates nothing', async () => {
+  const { host, pane } = await paneWith([linear, files]);
+
+  try {
+    await click(rowButton(pane, 'Linear'));
+    const dialog = await dialogNamed('Edit MCP server');
+    await type(controlLabelled(dialog, 'URL'), '');
+
+    await click(buttonNamed(dialog, 'Save'));
+    await settle();
+
+    assert.equal(
+      controlLabelled(dialog, 'URL').getAttribute('aria-invalid'),
+      'true',
+    );
+    assert.ok(
+      normalized(dialog.textContent).includes(
+        'Enter an http:// or https:// URL.',
+      ),
+      'The dialog does not show the URL error.',
+    );
+    assert.equal(callsOf(host, 'update').length, 0);
   } finally {
     await pane.close();
   }

@@ -27,9 +27,8 @@ export interface ServerDraft {
   readonly kind: TransportKind;
   readonly url: string;
   readonly headers: readonly EntryDraft[];
+  /** The whole command line, as parseCommandLine reads it. */
   readonly command: string;
-  /** One argument per line. */
-  readonly args: string;
   readonly cwd: string;
   readonly env: readonly EntryDraft[];
 }
@@ -50,10 +49,60 @@ const draftMessages = {
   name: 'Enter a name of up to 64 characters with a letter, a digit or "-".',
   url: 'Enter an http:// or https:// URL.',
   command: 'Enter the command to run.',
+  commandQuote:
+    'Close the open quote, or end the line with a character after "\\".',
   header: "A header name is letters, digits and !#$%&'*+-.^_`|~ only.",
   variable:
     'A variable name starts with a letter or "_", then letters, digits or "_".',
 } as const;
+
+/**
+ * Splits a command line into words the way a POSIX shell quotes them, without
+ * any expansion: unquoted whitespace separates words; '…' is literal; inside
+ * "…" a backslash escapes only `"` and `\`; outside quotes `\x` is `x`;
+ * adjacent parts join; '' or "" is an empty word; `$ | ; * ~` stay literal.
+ * Returns the words (`[]` for a blank line), or `undefined` when a quote is
+ * left open or the line ends in a lone backslash. Never throws.
+ */
+export const parseCommandLine = (
+  line: string,
+): readonly string[] | undefined => {
+  const words: string[] = [];
+  /** The word being read, or `undefined` between words. */
+  let word: string | undefined;
+
+  // Whitespace, '…', "…", \x, a bare run — or a lone quote or backslash.
+  for (const [, space, single, double, escaped, bare] of line.matchAll(
+    /(\s+)|'([^']*)'|"((?:\\[\s\S]|[^"\\])*)"|\\([\s\S])|([^\s'"\\]+)|[\s\S]/g,
+  )) {
+    if (space !== undefined) {
+      if (word !== undefined) words.push(word);
+      word = undefined;
+      continue;
+    }
+    const part =
+      single ?? double?.replace(/\\(["\\])/g, '$1') ?? escaped ?? bare;
+    if (part === undefined) return undefined;
+    word = (word ?? '') + part;
+  }
+
+  if (word !== undefined) words.push(word);
+  return words;
+};
+
+const bareWord = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+/**
+ * Writes `words` as one line: bare when a word holds only
+ * [A-Za-z0-9_@%+=:,./-], `''` when empty, otherwise single-quoted with each
+ * `'` written as `'\''`. For every `words`, parseCommandLine(result) deep-equals `words`.
+ */
+export const formatCommandLine = (words: readonly string[]): string =>
+  words
+    .map((word) =>
+      bareWord.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`,
+    )
+    .join(' ');
 
 let nextKey = 0;
 
@@ -78,7 +127,6 @@ export const emptyDraft: ServerDraft = {
   url: '',
   headers: [],
   command: '',
-  args: '',
   cwd: '',
   env: [],
 };
@@ -103,8 +151,7 @@ export const draftOf = ({
         name,
         enabled,
         kind: 'stdio',
-        command: transport.command,
-        args: transport.args.join('\n'),
+        command: formatCommandLine([transport.command, ...transport.args]),
         cwd: transport.cwd ?? '',
         env: transport.env.map(entryDraftOf),
       };
@@ -115,6 +162,7 @@ const entryOf = ({ name, value, credentialId }: EntryDraft): McpEntry =>
 /** The input a draft stands for, before the schema checks it. */
 const inputOf = (draft: ServerDraft): McpServerInput => {
   const cwd = draft.cwd.trim();
+  const words = parseCommandLine(draft.command);
 
   return {
     name: draft.name,
@@ -128,8 +176,8 @@ const inputOf = (draft: ServerDraft): McpServerInput => {
           }
         : {
             kind: 'stdio',
-            command: draft.command.trim(),
-            args: draft.args.split(/\r?\n/).filter((line) => line !== ''),
+            command: words?.[0] ?? '',
+            args: words?.slice(1) ?? [],
             ...(cwd === '' ? {} : { cwd }),
             env: draft.env.map(entryOf),
           },
@@ -158,7 +206,12 @@ const errorsOf = (
       ? { url: draftMessages.url }
       : {}),
     ...(paths.some(([, second]) => second === 'command')
-      ? { command: draftMessages.command }
+      ? {
+          command:
+            parseCommandLine(draft.command) === undefined
+              ? draftMessages.commandQuote
+              : draftMessages.command,
+        }
       : {}),
     ...(invalidEntries.length === 0
       ? {}
