@@ -640,6 +640,30 @@ const rowNamed = (pane: OpenPane, name: string): HTMLElement => {
   return row;
 };
 
+/** The one-line button a row is drawn as: the Screens pane's menu button. */
+const rowButton = (pane: OpenPane, name: string): HTMLElement => {
+  const button = rowNamed(pane, name).querySelector(
+    '[data-slot="sidebar-menu-button"]',
+  ) as unknown as HTMLElement | null;
+  assert.ok(button !== null, `The row for "${name}" has no menu button.`);
+  return button;
+};
+
+const isDisabled = (control: HTMLElement): boolean =>
+  (control as unknown as HTMLButtonElement).disabled ||
+  control.getAttribute('aria-disabled') === 'true';
+
+/** The column headers of the table under `root`, as their text reads. */
+const columnsOf = (root: Element): string[] =>
+  [...root.querySelectorAll('th')].map((cell) => normalized(cell.textContent));
+
+/** The text of the body of the table under `root`. */
+const tableBodyOf = (root: Element): string => {
+  const body = root.querySelector('tbody');
+  assert.ok(body !== null, 'The table has no body.');
+  return normalized(body.textContent);
+};
+
 const toastsOf = (): string[] =>
   [...window.document.querySelectorAll('[data-sonner-toast]')].map((toast) =>
     normalized(toast.textContent),
@@ -729,6 +753,32 @@ const choose = async (
   await settle(10);
   return offered;
 };
+
+/** Presses the transport `name` in the dialog's Transport toggle group. */
+const pickTransport = async (
+  dialog: HTMLElement,
+  name: 'HTTP' | 'stdio',
+): Promise<void> => {
+  const toggle = buttonNamed(groupNamed(dialog, 'Transport'), name);
+  await act(() => press(toggle));
+  await settle();
+  assert.equal(
+    toggle.getAttribute('aria-pressed'),
+    'true',
+    `The ${name} transport is not pressed.`,
+  );
+};
+
+/**
+ * The value the Credential select's trigger under `root` shows: its value
+ * slot, not the whole trigger, whose chevron carries a hidden `▼`.
+ */
+const credentialShown = (root: Element): string =>
+  normalized(
+    controlLabelled(root, 'Credential').querySelector(
+      '[data-slot="select-value"]',
+    )?.textContent ?? '',
+  );
 
 const isChecked = (control: HTMLElement): boolean =>
   control.tagName === 'INPUT'
@@ -833,12 +883,14 @@ test("W2 the rows are the selected Project's servers with their status and tool 
 
   try {
     assert.equal(rowsOf(pane).length, 2);
+    // Connected: the tool count, with the status in the row's title.
     const linearRow = normalized(rowNamed(pane, 'Linear').textContent);
-    assert.match(linearRow, /Connected/);
     assert.match(linearRow, /3 tools/);
+    assert.equal(rowButton(pane, 'Linear').title, 'Linear — Connected');
+    // Otherwise: the status, and no tool count.
     const filesRow = normalized(rowNamed(pane, 'Files').textContent);
     assert.match(filesRow, /Idle/);
-    assert.match(filesRow, /0 tools/);
+    assert.doesNotMatch(filesRow, /tools/);
 
     // Another Project selected: its servers, through a watch in its scope.
     const p1 = await watchOf(host, 'p1');
@@ -850,7 +902,7 @@ test("W2 the rows are the selected Project's servers with their status and tool 
     assert.equal(rowsOf(pane).length, 1);
     const sentryRow = normalized(rowNamed(pane, 'Sentry').textContent);
     assert.match(sentryRow, /Disabled/);
-    assert.match(sentryRow, /2 tools/);
+    assert.doesNotMatch(sentryRow, /tools/);
     assert.doesNotMatch(normalized(pane.rows.textContent), /Linear|Files/);
   } finally {
     await pane.close();
@@ -872,15 +924,19 @@ test('W2 every status reads as its label', async () => {
       ...files,
       id: `s-${state}`,
       name: `Server ${index}`,
-      status: { state },
+      status: state === 'error' ? { state, message: 'exited' } : { state },
     }),
   );
   const { pane } = await paneWith(servers);
 
   try {
-    labels.forEach(([, label], index) => {
-      const row = normalized(rowNamed(pane, `Server ${index}`).textContent);
-      assert.ok(row.includes(label), `"${row}" does not read "${label}".`);
+    labels.forEach(([state, label], index) => {
+      const name = `Server ${index}`;
+      const message = state === 'error' ? ' — exited' : '';
+      assert.equal(rowButton(pane, name).title, `${name} — ${label}${message}`);
+      const row = normalized(rowNamed(pane, name).textContent);
+      const shown = state === 'connected' ? '0 tools' : label;
+      assert.ok(row.includes(shown), `"${row}" does not read "${shown}".`);
     });
   } finally {
     await pane.close();
@@ -890,14 +946,19 @@ test('W2 every status reads as its label', async () => {
 // ---------------------------------------------------------------------------
 // W3
 
-test('W3 without a selected Project the pane says so and watches nothing', async () => {
+test('W3 without a selected Project the pane lists nothing, cannot add and watches nothing', async () => {
   const host = createHost();
   const pane = await openPane(host);
 
   try {
     await settle(10);
-    assert.match(normalized(pane.rows.textContent), /select a project/i);
+    assert.equal(normalized(pane.rows.textContent), '');
     assert.equal(rowsOf(pane).length, 0);
+    assert.equal(
+      isDisabled(buttonNamed(pane.header, 'Add MCP server')),
+      true,
+      'Add MCP server is enabled without a Project.',
+    );
     assert.equal(host.watches.length, 0);
   } finally {
     await pane.close();
@@ -915,8 +976,15 @@ test('W4 adding an http server with a credential header creates it in the Projec
     const dialog = await dialogNamed('Add MCP server');
 
     await type(controlLabelled(dialog, 'Name'), 'Linear');
-    await choose(controlLabelled(dialog, 'Transport'), 'HTTP');
+    await pickTransport(dialog, 'HTTP');
     await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
+    // The headers are a table; with none yet it says so.
+    assert.deepEqual(columnsOf(groupNamed(dialog, 'Headers')), [
+      'Name',
+      'Value',
+      'Remove',
+    ]);
+    assert.equal(tableBodyOf(groupNamed(dialog, 'Headers')), 'No headers');
     await click(buttonNamed(dialog, 'Add header'));
     const headers = groupNamed(dialog, 'Headers');
     await type(controlLabelled(headers, 'Name'), 'Authorization');
@@ -956,9 +1024,11 @@ test('W4 adding a stdio server sends its command, arguments, directory and envir
     const dialog = await dialogNamed('Add MCP server');
 
     await type(controlLabelled(dialog, 'Name'), 'Files');
-    await choose(controlLabelled(dialog, 'Transport'), 'stdio');
+    await pickTransport(dialog, 'stdio');
     await type(controlLabelled(dialog, 'Command'), 'npx');
     await type(controlLabelled(dialog, 'Arguments'), '-y\n@mcp/files');
+    // The working directory sits under Advanced, closed at first.
+    await click(buttonNamed(dialog, 'Advanced'));
     await type(controlLabelled(dialog, 'Working directory'), '/workspace');
     await click(buttonNamed(dialog, 'Add variable'));
     const environment = groupNamed(dialog, 'Environment');
@@ -1000,13 +1070,28 @@ test('W5 editing a server starts from its view and updates it by id', async () =
   const { host, pane } = await paneWith([linear, files]);
 
   try {
-    await click(buttonNamed(rowNamed(pane, 'Linear'), 'Edit Linear'));
+    // The row itself opens the editor; there is no Edit button.
+    assert.ok(
+      findButton(rowNamed(pane, 'Linear'), 'Edit Linear') === undefined,
+      'The Linear row still has an Edit button.',
+    );
+    await click(rowButton(pane, 'Linear'));
     const dialog = await dialogNamed('Edit MCP server');
 
     assert.equal(fieldValue(controlLabelled(dialog, 'Name')), 'Linear');
     assert.equal(
       fieldValue(controlLabelled(dialog, 'URL')),
       'https://mcp.linear.app/mcp',
+    );
+    // The header's credential is shown by name, with no plain value beside it.
+    await waitFor(
+      () => credentialShown(groupNamed(dialog, 'Headers')) === 'Linear token',
+      'The header never showed its credential, "Linear token".',
+    );
+    assert.equal(
+      controlsLabelled(groupNamed(dialog, 'Headers'), 'Value').length,
+      0,
+      'A header with a credential still offers a plain value.',
     );
     await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/v2/mcp');
     await click(buttonNamed(dialog, 'Save'));
@@ -1041,7 +1126,7 @@ test('W5 editing a stdio server keeps every field it did not change', async () =
   const { host, pane } = await paneWith([linear, files]);
 
   try {
-    await click(buttonNamed(rowNamed(pane, 'Files'), 'Edit Files'));
+    await click(rowButton(pane, 'Files'));
     const dialog = await dialogNamed('Edit MCP server');
 
     assert.equal(fieldValue(controlLabelled(dialog, 'Command')), 'npx');
@@ -1049,6 +1134,11 @@ test('W5 editing a stdio server keeps every field it did not change', async () =
       fieldValue(controlLabelled(dialog, 'Arguments')),
       '-y\n@mcp/files',
     );
+    assert.equal(
+      fieldValue(controlLabelled(groupNamed(dialog, 'Environment'), 'Value')),
+      'debug',
+    );
+    await click(buttonNamed(dialog, 'Advanced'));
     assert.equal(
       fieldValue(controlLabelled(dialog, 'Working directory')),
       '/workspace',
@@ -1204,7 +1294,7 @@ test('W8 the credential picker lists the stored credentials and creates a new to
     await click(buttonNamed(pane.header, 'Add MCP server'));
     const dialog = await dialogNamed('Add MCP server');
     await type(controlLabelled(dialog, 'Name'), 'Linear');
-    await choose(controlLabelled(dialog, 'Transport'), 'HTTP');
+    await pickTransport(dialog, 'HTTP');
     await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
     await click(buttonNamed(dialog, 'Add header'));
     await type(
@@ -1216,7 +1306,12 @@ test('W8 the credential picker lists the stored credentials and creates a new to
       controlLabelled(groupNamed(dialog, 'Headers'), 'Credential'),
       'New credential…',
     );
-    for (const name of ['Linear token', 'GitHub token', 'New credential…']) {
+    for (const name of [
+      'Plain value',
+      'Linear token',
+      'GitHub token',
+      'New credential…',
+    ]) {
       assert.ok(offered.includes(name), `"${name}" is not in ${offered}.`);
     }
 
@@ -1231,6 +1326,11 @@ test('W8 the credential picker lists the stored credentials and creates a new to
     assert.deepEqual(host.secretsCreated, [
       { kind: 'API_TOKEN', name: 'Linear key', secret: 'lin_api_123' },
     ]);
+    // The header now holds the new credential, shown by its name.
+    await waitFor(
+      () => credentialShown(groupNamed(dialog, 'Headers')) === 'Linear key',
+      'The header never showed the new credential, "Linear key".',
+    );
 
     await setChecked(controlLabelled(dialog, 'Enabled'), true);
     await click(buttonNamed(dialog, 'Save'));

@@ -13,6 +13,11 @@ import type { CredentialDescription } from 'bundle/contracts';
 import { Button } from 'desktop/ui/button';
 import { Checkbox } from 'desktop/ui/checkbox';
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from 'desktop/ui/collapsible';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -39,8 +44,17 @@ import {
   SelectValue,
 } from 'desktop/ui/select';
 import { toast } from 'desktop/ui/sonner';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from 'desktop/ui/table';
 import { Textarea } from 'desktop/ui/textarea';
-import { PlusIcon, XIcon } from 'lucide-react';
+import { ToggleGroup, ToggleGroupItem } from 'desktop/ui/toggle-group';
+import { ChevronRightIcon, PlusIcon, XIcon } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 
 import type { McpServerView } from '../contracts/index.js';
@@ -53,16 +67,7 @@ import {
   emptyDraft,
   emptyEntry,
   type ServerDraft,
-  type TransportKind,
 } from './draft.js';
-
-const transportItems: readonly {
-  readonly label: string;
-  readonly value: TransportKind;
-}[] = [
-  { label: 'HTTP', value: 'http' },
-  { label: 'stdio', value: 'stdio' },
-];
 
 /** The credential picker's item that opens the "New credential" dialog. */
 const NEW_CREDENTIAL = 'mcp:new-credential';
@@ -71,6 +76,7 @@ interface EntryWords {
   readonly legend: string;
   readonly add: string;
   readonly remove: string;
+  readonly empty: string;
   readonly description: string;
 }
 
@@ -78,6 +84,7 @@ const headerWords: EntryWords = {
   legend: 'Headers',
   add: 'Add header',
   remove: 'Remove header',
+  empty: 'No headers',
   description: 'Sent with every request to the server.',
 };
 
@@ -85,6 +92,7 @@ const variableWords: EntryWords = {
   legend: 'Environment',
   add: 'Add variable',
   remove: 'Remove variable',
+  empty: 'No variables',
   description:
     "Added to the sandbox image's environment; the command gets nothing else from the host.",
 };
@@ -106,9 +114,8 @@ function EntryRow({
   readonly onRemove: () => void;
   readonly onNewCredential: () => void;
 }) {
-  const id = useId();
   const items = [
-    { label: 'None', value: null },
+    { label: 'Plain value', value: null },
     ...credentials.map((credential) => ({
       label: credential.name,
       value: credential.id,
@@ -117,21 +124,58 @@ function EntryRow({
   ];
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border p-2.5">
-      <div className="flex items-end gap-2">
-        <Field data-invalid={error !== undefined} className="flex-1">
-          <FieldLabel htmlFor={`${id}-name`}>Name</FieldLabel>
-          <Input
-            id={`${id}-name`}
-            autoComplete="off"
-            spellCheck={false}
-            aria-invalid={error !== undefined}
-            value={entry.name}
-            onChange={(event) =>
-              onChange({ ...entry, name: event.target.value })
-            }
-          />
-        </Field>
+    <TableRow>
+      <TableCell>
+        <Input
+          aria-label="Name"
+          autoComplete="off"
+          spellCheck={false}
+          aria-invalid={error !== undefined}
+          value={entry.name}
+          onChange={(event) => onChange({ ...entry, name: event.target.value })}
+        />
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <Select
+            items={items}
+            value={entry.credentialId ?? null}
+            onValueChange={(value) => {
+              if (value === NEW_CREDENTIAL) onNewCredential();
+              else onChange({ ...entry, credentialId: value ?? undefined });
+            }}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Credential"
+              className={entry.credentialId === undefined ? 'w-32' : 'w-full'}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {items.map((item) => (
+                  <SelectItem key={item.value ?? 'none'} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {entry.credentialId === undefined && (
+            <Input
+              aria-label="Value"
+              autoComplete="off"
+              spellCheck={false}
+              value={entry.value}
+              onChange={(event) =>
+                onChange({ ...entry, value: event.target.value })
+              }
+            />
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -141,47 +185,8 @@ function EntryRow({
         >
           <XIcon />
         </Button>
-      </div>
-      {entry.credentialId === undefined && (
-        <Field>
-          <FieldLabel htmlFor={`${id}-value`}>Value</FieldLabel>
-          <Input
-            id={`${id}-value`}
-            autoComplete="off"
-            spellCheck={false}
-            value={entry.value}
-            onChange={(event) =>
-              onChange({ ...entry, value: event.target.value })
-            }
-          />
-        </Field>
-      )}
-      <Field>
-        <FieldLabel htmlFor={`${id}-credential`}>Credential</FieldLabel>
-        <Select
-          items={items}
-          value={entry.credentialId ?? null}
-          onValueChange={(value) => {
-            if (value === NEW_CREDENTIAL) onNewCredential();
-            else onChange({ ...entry, credentialId: value ?? undefined });
-          }}
-        >
-          <SelectTrigger id={`${id}-credential`} className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {items.map((item) => (
-                <SelectItem key={item.value ?? 'none'} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </Field>
-      {error !== undefined && <FieldError>{error}</FieldError>}
-    </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -204,24 +209,57 @@ function Entries({
     <FieldSet className="gap-2">
       <FieldLegend variant="label">{words.legend}</FieldLegend>
       <FieldDescription>{words.description}</FieldDescription>
-      {entries.map((entry) => (
-        <EntryRow
-          key={entry.key}
-          entry={entry}
-          words={words}
-          error={errors?.[entry.key]}
-          credentials={credentials}
-          onChange={(next) =>
-            onChange(
-              entries.map((item) => (item.key === entry.key ? next : item)),
-            )
-          }
-          onRemove={() =>
-            onChange(entries.filter((item) => item.key !== entry.key))
-          }
-          onNewCredential={() => onNewCredential(entry.key)}
-        />
-      ))}
+      <div className="overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-2/5">Name</TableHead>
+              <TableHead>Value</TableHead>
+              <TableHead className="w-10">
+                <span className="sr-only">Remove</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={3}
+                  className="h-16 text-center text-muted-foreground"
+                >
+                  {words.empty}
+                </TableCell>
+              </TableRow>
+            ) : (
+              entries.map((entry) => (
+                <EntryRow
+                  key={entry.key}
+                  entry={entry}
+                  words={words}
+                  error={errors?.[entry.key]}
+                  credentials={credentials}
+                  onChange={(next) =>
+                    onChange(
+                      entries.map((item) =>
+                        item.key === entry.key ? next : item,
+                      ),
+                    )
+                  }
+                  onRemove={() =>
+                    onChange(entries.filter((item) => item.key !== entry.key))
+                  }
+                  onNewCredential={() => onNewCredential(entry.key)}
+                />
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <FieldError
+        errors={entries
+          .flatMap((entry) => errors?.[entry.key] ?? [])
+          .map((message) => ({ message }))}
+      />
       <Button
         variant="outline"
         size="sm"
@@ -388,17 +426,6 @@ function TransportFields({
         />
         <FieldDescription>One argument per line.</FieldDescription>
       </Field>
-      <Field>
-        <FieldLabel htmlFor={`${id}-cwd`}>Working directory</FieldLabel>
-        <Input
-          id={`${id}-cwd`}
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="The sandbox's default"
-          value={draft.cwd}
-          onChange={(event) => onChange({ ...draft, cwd: event.target.value })}
-        />
-      </Field>
       <Entries
         entries={draft.env}
         words={variableWords}
@@ -407,6 +434,27 @@ function TransportFields({
         onChange={(env) => onChange({ ...draft, env })}
         onNewCredential={onNewCredential}
       />
+      <Collapsible>
+        <CollapsibleTrigger className="group flex w-full items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
+          Advanced
+          <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2 flex flex-col gap-4">
+          <Field>
+            <FieldLabel htmlFor={`${id}-cwd`}>Working directory</FieldLabel>
+            <Input
+              id={`${id}-cwd`}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="The sandbox's default"
+              value={draft.cwd}
+              onChange={(event) =>
+                onChange({ ...draft, cwd: event.target.value })
+              }
+            />
+          </Field>
+        </CollapsibleContent>
+      </Collapsible>
     </>
   );
 }
@@ -490,14 +538,13 @@ export function ServerDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
             {server === undefined ? 'Add MCP server' : 'Edit MCP server'}
           </DialogTitle>
           <DialogDescription>
-            Its tools are offered to this Project's prompts while it is
-            connected.
+            Its tools are offered to this Project's prompts.
           </DialogDescription>
         </DialogHeader>
 
@@ -514,35 +561,26 @@ export function ServerDialog({
                   setDraft({ ...draft, name: event.target.value })
                 }
               />
-              <FieldDescription>
-                Its tools are named after it: mcp__name__tool.
-              </FieldDescription>
               {errors.name !== undefined && (
                 <FieldError>{errors.name}</FieldError>
               )}
             </Field>
             <Field>
-              <FieldLabel htmlFor={`${id}-transport`}>Transport</FieldLabel>
-              <Select
-                items={transportItems}
-                value={draft.kind}
-                onValueChange={(kind) => {
-                  if (kind !== null) setDraft({ ...draft, kind });
+              <FieldLabel id={`${id}-transport`}>Transport</FieldLabel>
+              <ToggleGroup
+                variant="outline"
+                size="sm"
+                aria-labelledby={`${id}-transport`}
+                value={[draft.kind]}
+                onValueChange={([kind]) => {
+                  if (kind === 'http' || kind === 'stdio') {
+                    setDraft({ ...draft, kind });
+                  }
                 }}
               >
-                <SelectTrigger id={`${id}-transport`} className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {transportItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                <ToggleGroupItem value="http">HTTP</ToggleGroupItem>
+                <ToggleGroupItem value="stdio">stdio</ToggleGroupItem>
+              </ToggleGroup>
             </Field>
             <TransportFields
               draft={draft}

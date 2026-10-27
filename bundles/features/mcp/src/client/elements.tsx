@@ -1,14 +1,17 @@
 // The MCP client's elements: the sidebar's MCP pane. The layout draws the
 // group's frame — its header, the collapse control and the resizable panel
-// (`layout.stack/v1`) — so this part draws only what is inside it: one row per
-// server of the selected Project, with its status and tool count, and the
-// header's add control in an element of its own. A row opens the server's
-// dialog; its actions sign in to it and remove it.
+// (`layout.stack/v1`) — so this part draws only what is inside it: one
+// one-line row per server of the selected Project, as the Screens pane draws
+// its views, with its tool count once connected and its status otherwise, and
+// the header's add control in an element of its own. A row opens the server's
+// dialog; its actions sign in to it and remove it. A watch that failed says so
+// in an alert; an empty pane says nothing.
 //
 // Built inside a factory the activation calls, so importing this module touches
 // no DOM global [D10-7]. What the rows show lives in the activation's store
 // (D9-17); an element keeps only which of its dialogs is open.
 
+import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -19,7 +22,6 @@ import {
   AlertDialogTitle,
 } from 'desktop/ui/alert-dialog';
 import { Button } from 'desktop/ui/button';
-import { Empty, EmptyDescription, EmptyHeader } from 'desktop/ui/empty';
 import { defineReactElement } from 'desktop/ui/react-element';
 import {
   SidebarGroupAction,
@@ -40,9 +42,8 @@ import {
   KeyRoundIcon,
   Loader2Icon,
   LogInIcon,
-  PencilIcon,
   PlusIcon,
-  Trash2Icon,
+  XIcon,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -118,40 +119,30 @@ function ServerRow({
   readonly onSignIn: () => void;
   readonly onRemove: () => void;
 }) {
-  const { label, Icon } = statusOf[server.status.state];
-  const { message } = server.status;
+  const { state, message } = server.status;
+  const { label, Icon } = statusOf[state];
   const signs = offersSignIn(server);
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        size="lg"
+        size="sm"
         className={cn(
-          'h-11 w-full translate-x-0 rounded-none pl-3',
-          signs ? 'pr-20' : 'pr-14',
+          'h-7 w-full translate-x-0 rounded-none pl-3',
+          signs ? 'pr-14' : 'pr-8',
         )}
-        title={
-          message === undefined ? server.name : `${server.name} — ${message}`
-        }
+        title={[server.name, label, message].filter(Boolean).join(' — ')}
         onClick={onEdit}
       >
-        <Icon
-          className={cn(
-            server.status.state === 'connecting' && 'animate-spin',
-            server.status.state === 'error' && 'text-destructive',
-          )}
-        />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate">{server.name}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {label} · {toolCount(server.tools.length)}
-            {message === undefined ? null : ` · ${message}`}
-          </span>
+        <Icon className={cn(state === 'connecting' && 'animate-spin')} />
+        <span className="min-w-0 flex-1 truncate">{server.name}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {state === 'connected' ? toolCount(server.tools.length) : label}
         </span>
       </SidebarMenuButton>
       {signs && (
         <SidebarMenuAction
-          className="top-3 right-13"
+          className="right-7"
           aria-label={`Sign in to ${server.name}`}
           title="Sign in"
           disabled={signingIn}
@@ -162,21 +153,11 @@ function ServerRow({
       )}
       <SidebarMenuAction
         showOnHover
-        className="top-3 right-7"
-        aria-label={`Edit ${server.name}`}
-        title="Edit"
-        onClick={onEdit}
-      >
-        <PencilIcon />
-      </SidebarMenuAction>
-      <SidebarMenuAction
-        showOnHover
-        className="top-3"
         aria-label={`Remove ${server.name}`}
         title="Remove"
         onClick={onRemove}
       >
-        <Trash2Icon />
+        <XIcon />
       </SidebarMenuAction>
     </SidebarMenuItem>
   );
@@ -219,7 +200,6 @@ function RemoveDialog({
 
 export const defineMcpElements = ({ store, api }: McpClient) => {
   function McpSidebar() {
-    const projectId = useSubscribed(store, () => store.projectId());
     const servers = useSubscribed(store, () => store.servers());
     const failure = useSubscribed(store, () => store.failure());
     const [editing, setEditing] = useState<McpServerView>();
@@ -246,24 +226,16 @@ export const defineMcpElements = ({ store, api }: McpClient) => {
       }
     };
 
-    const notice =
-      projectId === undefined
-        ? 'Select a project to see its MCP servers.'
-        : (failure ??
-          (servers.length === 0
-            ? 'No MCP servers in this project.'
-            : undefined));
-
     return (
       // The element's root is its own: the sidebar's scope does not reach it
       // from the layout, so the pane brings one (as `screen` does).
       <SidebarScope>
-        {notice !== undefined && (
-          <Empty className="gap-2 p-3">
-            <EmptyHeader>
-              <EmptyDescription className="text-xs">{notice}</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+        {failure !== undefined && (
+          <Alert variant="destructive" className="mx-2 mb-2 w-auto">
+            <CircleAlertIcon />
+            <AlertTitle>Unable to load MCP servers</AlertTitle>
+            <AlertDescription>{failure}</AlertDescription>
+          </Alert>
         )}
         <SidebarMenu className="w-full gap-0">
           {servers.map((server) => (
@@ -306,7 +278,7 @@ export const defineMcpElements = ({ store, api }: McpClient) => {
         <SidebarGroupAction
           className="top-1 right-1"
           aria-label="Add MCP server"
-          title="Add an MCP server to the selected project"
+          title="Add MCP server"
           disabled={projectId === undefined}
           onClick={() => setAddingTo(projectId)}
         >
