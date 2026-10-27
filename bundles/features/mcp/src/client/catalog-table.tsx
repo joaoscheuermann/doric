@@ -1,8 +1,12 @@
 // What a connected MCP server offers — its tools or its skills — as a table
 // the reader filters by name or description.
 
-import { FieldLegend, FieldSet } from 'desktop/ui/field';
-import { Input } from 'desktop/ui/input';
+import { FieldSet, FieldTitle } from 'desktop/ui/field';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from 'desktop/ui/input-group';
 import {
   Table,
   TableBody,
@@ -11,7 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from 'desktop/ui/table';
-import { useState } from 'react';
+import { SearchIcon } from 'lucide-react';
+import { useId, useState } from 'react';
 
 import type { McpSkillView, McpToolView } from '../contracts/index.js';
 
@@ -47,6 +52,7 @@ export function CatalogTable({
   readonly words: CatalogWords;
   readonly items: readonly (McpToolView | McpSkillView)[];
 }) {
+  const titleId = useId();
   const [filter, setFilter] = useState('');
 
   const needle = filter.trim().toLowerCase();
@@ -64,16 +70,25 @@ export function CatalogTable({
         : undefined;
 
   return (
-    <FieldSet className="gap-2">
-      <FieldLegend variant="label">{words.legend}</FieldLegend>
-      <Input
-        aria-label={words.filter}
-        placeholder={words.placeholder}
-        autoComplete="off"
-        spellCheck={false}
-        value={filter}
-        onChange={(event) => setFilter(event.target.value)}
-      />
+    // A legend cannot share a flex row with the filter, so the title names the
+    // fieldset through aria-labelledby instead.
+    <FieldSet className="gap-2" aria-labelledby={titleId}>
+      <div className="flex items-center justify-between gap-2">
+        <FieldTitle id={titleId}>{words.legend}</FieldTitle>
+        <InputGroup className="w-56">
+          <InputGroupAddon>
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label={words.filter}
+            placeholder={words.placeholder}
+            autoComplete="off"
+            spellCheck={false}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        </InputGroup>
+      </div>
       <div className="overflow-hidden rounded-lg border">
         <Table>
           <TableHeader>

@@ -84,6 +84,7 @@ import {
   emptyEntry,
   type ServerDraft,
 } from './draft.js';
+import { McpLogo } from './mcp-logo.js';
 
 interface EntryWords {
   readonly legend: string;
@@ -344,7 +345,10 @@ function NewCredentialDialog({
     >
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>New credential</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <McpLogo className="size-4 shrink-0" />
+            New credential
+          </DialogTitle>
           <DialogDescription>
             A token the host stores and never sends back. The server reads it
             when it connects.
@@ -581,7 +585,8 @@ export function ServerDialog({
     >
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <McpLogo className="size-4 shrink-0" />
             {server === undefined ? 'Add MCP server' : 'Edit MCP server'}
           </DialogTitle>
           <DialogDescription>

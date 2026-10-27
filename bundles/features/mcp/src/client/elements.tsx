@@ -49,6 +49,7 @@ import { useState } from 'react';
 import type { McpServerView, McpStatus } from '../contracts/index.js';
 import { failureMessage, type McpApi } from './api.js';
 import { useSubscribed } from './hooks.js';
+import { McpLogo } from './mcp-logo.js';
 import { ServerDialog } from './server-dialog.js';
 import type { McpServersStore } from './store.js';
 
@@ -185,7 +186,10 @@ function RemoveDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Remove {server.name}?</AlertDialogTitle>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <McpLogo className="size-4 shrink-0" />
+            Remove {server.name}?
+          </AlertDialogTitle>
           <AlertDialogDescription>
             Its tools leave this Project's prompts, and the tokens its sign-in
             stored are deleted.
