@@ -252,6 +252,7 @@ const parseCallback = (
     value: {
       code: value(url, 'code'),
       state: value(url, 'state'),
+      iss: value(url, 'iss'),
       error: value(url, 'error'),
       errorDescription: value(url, 'error_description'),
     },

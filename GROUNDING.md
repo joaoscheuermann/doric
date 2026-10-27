@@ -823,9 +823,14 @@ reported to diagnostics; log records name the calling bundle, its version,
 generation, call scope, trace and environment, have every stored or added
 credential secret replaced with `[REDACTED]` in the message and the string
 fields, and reach the host's pino destinations through the platform's
-`doric.log/v1`; tools and skills are kept in bundle order with globally unique
-names, and skill `allowed-tools` resolve against the whole `tools/v1` catalog after
-activation. The other four are facades over the chosen backends. `storage/v1`
+`doric.log/v1`; tools and skills are kept in bundle order, skill names are
+globally unique and tool names unique per scope (`tools/v1` 1.3.0): an unscoped
+tool's name is taken everywhere, a tool registered with a `projectId` collides
+only with an unscoped tool or another tool of the same Project, and `list` and
+`catalog` show a Project's tools only to calls whose `scope.projectId` names it;
+skill `allowed-tools` resolve against the whole `tools/v1` catalog after
+activation. The core is 1.11.0 and provides `tools/v1@1.3.0` and
+`secrets/v1@1.2.0`. The other four are facades over the chosen backends. `storage/v1`
 lets a bundle define the storage types its namespace names and lists in
 `provides`, validates every write against the type's schema, lets only the
 owner read or write a type and only the bundle a stream's first segment names
@@ -1292,7 +1297,7 @@ names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
 `runtime`,
 `default`,
 `openai`, `openrouter`, `codex`, `claude`, `claude-login`, `docker`, `notifications`, `layout`,
-`settings`, `chat`, `history`, `artifacts`, `comments` and `papercraft`, and chooses
+`settings`, `chat`, `history`, `artifacts`, `comments`, `papercraft` and `mcp`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
 list names the installed host parts that run in the native host process rather
 than in a generation process: `host-config`, which owns the configuration's
@@ -1317,7 +1322,8 @@ stage 1 ends in the existing fatal startup path after logging `Bundle recovery
 mode` with every bundle's state and reasons. The catalog and diagnostics are
 read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
 Doric reads the active generation's `tools/v1` and `skills/v1` for `GET /tools`
-and for each prompt; `Bundles loaded`
+and for each prompt; `GET /tools` carries no Project scope, so it lists the
+unscoped tools alone and never a Project's own; `Bundles loaded`
 reports the activated installed bundles (24 in the shipped composition; the
 embedded ones are not counted) and the registered tools and skills. Because
 activation opens no database, so the startup work runs in the start hooks.
@@ -1571,7 +1577,11 @@ a recalculated `indexText`. `packages/tool` publicly owns `defineTool`, whose
 `execute(payload, call, services)` receives the validated payload, the prompt
 `Call` and the services of the bundle that registered it; registering the
 definition with `tools/v1` binds it to those services, and `toTool(call)`
-gives the agent-loop tool for one prompt. It also owns the
+gives the agent-loop tool for one prompt. Its `inputSchema` option replaces the
+JSON Schema derived from `input` with an object schema used verbatim as the
+definition's `inputSchema` (anything else throws `invalid_schema`); `input`
+still validates every payload, so a tool whose schema comes from elsewhere (an
+MCP server) passes a permissive `input` and `strict: false`. It also owns the
 JSON-Schema-compatible `ToolDefinitionSchema`, whose runtime descriptors carry
 both `inputSchema` and `outputSchema`, plus strict-output-compatible
 `ToolMetadataSchema` and JSON value schemas used by structured consumers.
@@ -1663,9 +1673,37 @@ scope, any bundle that requires them and builds a scope naming a running
 prompt reaches that prompt's controls; every stage-1 bundle is first-party and
 external bundles remain deferred. Because a tool result goes to the model, the
 contracts expose capabilities, never credential reads; secrets stay in the
-host's credential store, and no shipped tool bundle requires `secrets/v1`.
-Tool names stay globally unique in `tools/v1`, so a bundle tool cannot collide
-with another bundle's.
+host's credential store, and no shipped tool bundle requires `secrets/v1`
+except `mcp`, which resolves only a server's own credentials, at connect time,
+into that server's headers or environment, never into a tool payload or
+result. Tool names are unique per scope in `tools/v1`: an unscoped bundle tool
+cannot collide with another bundle's, and a Project-scoped tool collides only
+with an unscoped one or one of its own Project.
+
+`/bundles/features/mcp` connects a Project to MCP (Model Context Protocol)
+servers and provides `mcp/v1` (every method reachable from a desktop window,
+scoped by `projectId`) and the `mcp.server/v1` storage type, one document per
+server. Servers belong to the Project they were created in, never to the
+host. An `http` server is reached from the generation process over Streamable
+HTTP, with a fallback to the older HTTP+SSE transport, and carries its own
+headers only. A `stdio` server runs only in the Project's sandbox, started
+through `runtime.lease/v1` and `Sandbox.start` on the sandbox the Project
+holds; it is never a host process, and its environment is the sandbox image's
+plus its own entries alone. A header or environment entry is a literal value
+or the id of a stored credential whose secret is read when that server
+connects. An `http` server that asks for OAuth signs in through the browser
+with a loopback callback on the host's `127.0.0.1`, as the Claude login does,
+so it works only where the browser's loopback is the host's; its access,
+refresh and client secrets are `MCP_TOKEN` credentials, a kind the bundle
+registers, deleted with the server or when its transport kind or URL
+changes. A connected server's tools are registered with `tools/v1` under its
+Project as `mcp__<server slug>__<tool>`, with the server's input schema
+verbatim. Servers connect when a window watches their Project (the client
+part's MCP pane in the sidebar's stack does), when a prompt of the Project
+starts (which waits up to ten seconds for them) and when a sign-in finishes;
+a closing Project stops them and a deleted one loses them. The user
+explicitly approved this expansion of network access from the host, command
+execution in the sandbox and credential handling under HC-004 and HC-007.
 
 `packages/okf` is the explicitly requested embeddable TypeScript library for
 generating local Open Knowledge Format bundles. Its public `generate` API

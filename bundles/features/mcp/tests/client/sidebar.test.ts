@@ -1,0 +1,1297 @@
+// The MCP pane as the Project view's sidebar mounts it: the group the client
+// part registers in the layout's stack (`layout.stack/v1`), the rows of the
+// current Project's servers over `mcp/v1.watch`, and the dialogs the reader
+// adds, edits, removes and signs in to a server through.
+//
+// The part is driven only through `activate`: the pane it registers names the
+// elements `ui/v1` defines, and this file mounts those elements the way the
+// layout does (the header element and the rows element of the open pane), with
+// every host contract answered by a double keyed by contract ID. What is
+// asserted is what the reader sees — roles, accessible names, text — and the
+// contract calls the window makes, with the scope it makes them in.
+
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+
+import {
+  type CallScope,
+  type ClientContext,
+  ContractError,
+  type CredentialDescription,
+  type Services,
+} from 'bundle/contracts';
+import type { ReactElementInstance } from 'desktop/ui';
+import { Window } from 'happy-dom';
+
+import type {
+  McpServerInput,
+  McpServerView,
+} from '../../src/contracts/index.js';
+
+const window = new Window({ url: 'http://localhost/' });
+const globals = globalThis as unknown as Record<string, unknown>;
+const installed = [
+  'window',
+  'document',
+  'navigator',
+  'location',
+  'HTMLElement',
+  'HTMLIFrameElement',
+  'HTMLInputElement',
+  'HTMLTextAreaElement',
+  'HTMLSelectElement',
+  'HTMLButtonElement',
+  'SVGElement',
+  'ShadowRoot',
+  'DocumentFragment',
+  'Text',
+  'Node',
+  'Element',
+  'Event',
+  'CustomEvent',
+  'KeyboardEvent',
+  'MouseEvent',
+  'PointerEvent',
+  'FocusEvent',
+  'InputEvent',
+  'UIEvent',
+  'customElements',
+  'MutationObserver',
+  'ResizeObserver',
+  'getComputedStyle',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+  'matchMedia',
+] as const;
+
+let act: (callback: () => void | Promise<void>) => Promise<void>;
+let createRoot: typeof import('react-dom/client')['createRoot'];
+let createElement: typeof import('react')['createElement'];
+let Toaster: typeof import('desktop/ui/sonner')['Toaster'];
+let activate: typeof import('../../src/client/index.js')['activate'];
+let mcpPane: typeof import('../../src/client/index.js')['mcpPane'];
+let McpV1: typeof import('../../src/contracts/index.js')['McpV1'];
+
+before(async () => {
+  for (const name of installed) {
+    const value = window[name as keyof Window] as unknown;
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      // Window functions (`getComputedStyle`, `requestAnimationFrame`) need
+      // their window as `this`; constructors are installed as they are.
+      value:
+        typeof value === 'function' && /^[a-z]/.test(name)
+          ? (value as (...args: unknown[]) => unknown).bind(window)
+          : value,
+      writable: true,
+    });
+  }
+  globals.IS_REACT_ACT_ENVIRONMENT = true;
+  ({ act, createElement } = await import('react'));
+  ({ createRoot } = await import('react-dom/client'));
+  ({ Toaster } = await import('desktop/ui/sonner'));
+
+  ({ activate, mcpPane } = await import('../../src/client/index.js'));
+  ({ McpV1 } = await import('../../src/contracts/index.js'));
+});
+
+after(async () => {
+  await window.happyDOM.abort();
+  await window.happyDOM.close();
+});
+
+// ---------------------------------------------------------------------------
+// Fixtures
+
+const linear: McpServerView = {
+  id: 's1',
+  projectId: 'p1',
+  name: 'Linear',
+  enabled: true,
+  transport: {
+    kind: 'http',
+    url: 'https://mcp.linear.app/mcp',
+    headers: [{ name: 'Authorization', credentialId: 'c1' }],
+  },
+  status: { state: 'connected' },
+  signedIn: true,
+  tools: [
+    { name: 'list_issues' },
+    { name: 'create_issue' },
+    { name: 'get_issue' },
+  ],
+};
+
+const files: McpServerView = {
+  id: 's2',
+  projectId: 'p1',
+  name: 'Files',
+  enabled: true,
+  transport: {
+    kind: 'stdio',
+    command: 'npx',
+    args: ['-y', '@mcp/files'],
+    cwd: '/workspace',
+    env: [{ name: 'LOG_LEVEL', value: 'debug' }],
+  },
+  status: { state: 'idle' },
+  signedIn: false,
+  tools: [],
+};
+
+const sentry: McpServerView = {
+  id: 's3',
+  projectId: 'p2',
+  name: 'Sentry',
+  enabled: false,
+  transport: { kind: 'http', url: 'https://mcp.sentry.dev/mcp', headers: [] },
+  status: { state: 'disabled' },
+  signedIn: false,
+  tools: [{ name: 'find_errors' }, { name: 'get_event' }],
+};
+
+/** An http server that asks for a sign-in before it connects. */
+const notion: McpServerView = {
+  id: 's4',
+  projectId: 'p1',
+  name: 'Notion',
+  enabled: true,
+  transport: { kind: 'http', url: 'https://mcp.notion.com/mcp', headers: [] },
+  status: { state: 'needs-sign-in' },
+  signedIn: false,
+  tools: [],
+};
+
+const credentials: readonly CredentialDescription[] = [
+  { id: 'c1', kind: 'API_TOKEN', name: 'Linear token', hasSecret: true },
+  { id: 'c2', kind: 'API_TOKEN', name: 'GitHub token', hasSecret: true },
+];
+
+const authorizeUrl = 'https://mcp.notion.com/authorize?state=abc';
+
+// ---------------------------------------------------------------------------
+// The host: one double per contract the part reaches, keyed by contract ID.
+
+interface Recorded {
+  readonly method: string;
+  readonly scope: CallScope | undefined;
+  readonly input?: unknown;
+}
+
+interface WatchRecord {
+  readonly scope: CallScope | undefined;
+  readonly listener: unknown;
+  disposed: boolean;
+}
+
+type Answer = (input: unknown) => Promise<unknown>;
+
+interface HostOptions {
+  readonly project?: { readonly id: string; readonly name: string };
+  readonly mcp?: Partial<
+    Record<'create' | 'update' | 'remove' | 'signIn' | 'finishSignIn', Answer>
+  >;
+}
+
+const createHost = (options: HostOptions = {}) => {
+  let project = options.project;
+  const selectionListeners = new Set<() => void>();
+  const panes: unknown[] = [];
+  const defined = new Map<string, new () => ReactElementInstance>();
+  const calls: Recorded[] = [];
+  const watches: WatchRecord[] = [];
+  const secretsCreated: unknown[] = [];
+  /** The sign-in's steps across contracts, in the order the window took them. */
+  const steps: string[] = [];
+
+  const workspace = {
+    selectedThread: () =>
+      project === undefined ? undefined : { id: 't1', projectId: project.id },
+    // A fresh record on every read, as the layout builds them.
+    selection: () =>
+      project === undefined
+        ? {}
+        : {
+            project: { ...project },
+            thread: { id: 't1', projectId: project.id },
+          },
+    subscribe: (listener: () => void) => {
+      selectionListeners.add(listener);
+      return { dispose: () => selectionListeners.delete(listener) };
+    },
+  };
+
+  const stack = {
+    register: (pane: unknown) => {
+      panes.push(pane);
+      return {
+        dispose: () => {
+          const index = panes.indexOf(pane);
+          if (index >= 0) panes.splice(index, 1);
+        },
+      };
+    },
+  };
+
+  const ui = {
+    define: (tag: string, element: new () => ReactElementInstance) => {
+      defined.set(tag, element);
+      return { dispose: () => defined.delete(tag) };
+    },
+    create: () => ({}),
+    dispose: () => undefined,
+  };
+
+  const viewOf = (input: unknown, scope: CallScope | undefined) => ({
+    ...(input as McpServerInput),
+    id: 's-new',
+    projectId: scope?.projectId ?? 'p1',
+    status: { state: 'idle' },
+    signedIn: false,
+    tools: [],
+  });
+
+  const mcpFor = (scope: CallScope | undefined) => {
+    const record =
+      (method: keyof NonNullable<HostOptions['mcp']>) =>
+      async (input: unknown): Promise<unknown> => {
+        calls.push({ method, scope, input });
+        if (method === 'signIn' || method === 'finishSignIn') {
+          steps.push(`${method} ${(input as { id: string }).id}`);
+        }
+        const answer = options.mcp?.[method];
+        if (answer !== undefined) return answer(input);
+        switch (method) {
+          case 'create':
+          case 'update':
+            return viewOf(input, scope);
+          case 'remove':
+            return undefined;
+          case 'signIn':
+            return { url: authorizeUrl };
+          case 'finishSignIn':
+            return {
+              ...notion,
+              status: { state: 'connected' },
+              signedIn: true,
+            };
+        }
+      };
+
+    return {
+      list: async () => {
+        calls.push({ method: 'list', scope });
+        return [];
+      },
+      create: record('create'),
+      update: record('update'),
+      remove: record('remove'),
+      signIn: record('signIn'),
+      finishSignIn: record('finishSignIn'),
+      watch: (listener: unknown) => {
+        const watch: WatchRecord = { scope, listener, disposed: false };
+        watches.push(watch);
+        return {
+          dispose: () => {
+            watch.disposed = true;
+          },
+        };
+      },
+    };
+  };
+
+  const secrets = {
+    list: async () => credentials,
+    create: async (input: { readonly name: string; readonly kind: string }) => {
+      secretsCreated.push(input);
+      return {
+        id: 'c-new',
+        kind: input.kind,
+        name: input.name,
+        hasSecret: true,
+      };
+    },
+  };
+
+  const browser = {
+    open: async (url: string) => {
+      steps.push(`open ${url}`);
+    },
+  };
+
+  const connection = {
+    status: () => 'connected' as const,
+    subscribe: () => ({ dispose: () => undefined }),
+  };
+
+  const apiOf = (id: string, scope: CallScope | undefined): unknown => {
+    switch (id) {
+      case 'layout.workspace/v1':
+        return workspace;
+      case 'layout.stack/v1':
+        return stack;
+      case 'ui/v1':
+        return ui;
+      case 'mcp/v1':
+        return mcpFor(scope);
+      case 'secrets/v1':
+        return secrets;
+      case 'doric.browser/v1':
+        return browser;
+      case 'doric.connection/v1':
+        return connection;
+      default:
+        return undefined;
+    }
+  };
+
+  const idOf = (contract: unknown): string =>
+    (contract as { readonly id?: string }).id ?? '';
+
+  const services = {
+    provide: () => ({ dispose: () => undefined }),
+    use: (contract: unknown, scope?: CallScope) => {
+      const api = apiOf(idOf(contract), scope);
+      if (api === undefined) {
+        throw new ContractError(
+          'unavailable',
+          `No provider for ${idOf(contract)}.`,
+        );
+      }
+      return api;
+    },
+    whenAvailable: (
+      contract: unknown,
+      callback: (api: unknown, provider: unknown) => unknown,
+    ) => {
+      const api = apiOf(idOf(contract), undefined);
+      if (api === undefined) return { dispose: () => undefined };
+      const cleanup = callback(api, { bundleId: 'probe', version: '1.0.0' });
+      return {
+        dispose: () => {
+          if (typeof cleanup === 'function') (cleanup as () => void)();
+        },
+      };
+    },
+  } as unknown as Services;
+
+  /** Selects another Project and tells the subscribers, as the layout does. */
+  const select = async (next: HostOptions['project']): Promise<void> => {
+    project = next;
+    await act(() => {
+      for (const listener of [...selectionListeners]) listener();
+    });
+  };
+
+  return {
+    calls,
+    defined,
+    panes,
+    secretsCreated,
+    select,
+    services,
+    steps,
+    watches,
+  };
+};
+
+type Host = ReturnType<typeof createHost>;
+
+// ---------------------------------------------------------------------------
+// The pane as the layout mounts it
+
+const settle = async (rounds = 5): Promise<void> => {
+  for (let round = 0; round < rounds; round += 1) {
+    await act(() => new Promise<void>((done) => setTimeout(done, 0)));
+  }
+};
+
+/** Settles until `ready` holds, failing with `message` after `ms`. */
+const waitFor = async (
+  ready: () => boolean,
+  message: string,
+  ms = 2000,
+): Promise<void> => {
+  const deadline = Date.now() + ms;
+  while (!ready()) {
+    if (Date.now() > deadline) assert.fail(message);
+    await act(() => new Promise<void>((done) => setTimeout(done, 10)));
+  }
+};
+
+let probe = 0;
+
+/** Mounts one element `ui/v1` was given, under a fresh name of its own. */
+const mountElement = (
+  host: Host,
+  tag: string | undefined,
+  parent: HTMLElement,
+): ReactElementInstance => {
+  assert.ok(tag !== undefined, 'The pane names no element.');
+  const Defined = host.defined.get(tag);
+  assert.ok(Defined !== undefined, `ui/v1 was never given <${tag}>.`);
+  const name = `mcp-probe-${probe++}`;
+  // A subclass per mount: a constructor is registered under one name only.
+  window.customElements.define(name, class extends Defined {} as never);
+  const element = window.document.createElement(
+    name,
+  ) as unknown as ReactElementInstance;
+  element.services = host.services;
+  parent.appendChild(element);
+  return element;
+};
+
+interface OpenPane {
+  readonly header: HTMLElement;
+  readonly rows: HTMLElement;
+  close(): Promise<void>;
+}
+
+/**
+ * Activates the part and mounts what the layout draws for its open pane: the
+ * header element and the rows element, plus the window's one `Toaster` the
+ * layout's frame carries.
+ */
+const openPane = async (host: Host): Promise<OpenPane> => {
+  const cleanup = await activate({ services: host.services } as ClientContext);
+  const pane = host.panes[0] as {
+    readonly tag?: string;
+    readonly headerTag?: string;
+  };
+  assert.ok(pane !== undefined, 'No pane was registered.');
+
+  const body = window.document.body as unknown as HTMLElement;
+  const toasts = window.document.createElement('div') as unknown as HTMLElement;
+  const headerSlot = window.document.createElement(
+    'header',
+  ) as unknown as HTMLElement;
+  const panel = window.document.createElement(
+    'section',
+  ) as unknown as HTMLElement;
+  body.append(toasts, headerSlot, panel);
+
+  const toaster = createRoot(toasts);
+  let header: ReactElementInstance | undefined;
+  let rows: ReactElementInstance | undefined;
+  await act(() => {
+    toaster.render(createElement(Toaster));
+    header = mountElement(host, pane.headerTag, headerSlot);
+    rows = mountElement(host, pane.tag, panel);
+  });
+  await settle();
+
+  return {
+    header: header as unknown as HTMLElement,
+    rows: rows as unknown as HTMLElement,
+    close: async () => {
+      await act(() => {
+        header?.dispose();
+        rows?.dispose();
+        toaster.unmount();
+      });
+      if (typeof cleanup === 'function') await cleanup();
+      body.replaceChildren();
+    },
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Reading the window as the reader does
+
+const normalized = (text: string | null | undefined): string =>
+  (text ?? '').replace(/\s+/g, ' ').trim();
+
+const byId = (id: string): Element | null =>
+  window.document.getElementById(id) as unknown as Element | null;
+
+/** The accessible name: `aria-labelledby`, `aria-label`, labels, then content. */
+const nameOf = (element: Element): string => {
+  const labelledBy = element.getAttribute('aria-labelledby');
+  if (labelledBy !== null) {
+    return normalized(
+      labelledBy
+        .split(/\s+/)
+        .map((id) => byId(id)?.textContent ?? '')
+        .join(' '),
+    );
+  }
+  const label = element.getAttribute('aria-label');
+  if (label !== null) return normalized(label);
+  return normalized(element.textContent);
+};
+
+/** Every name a form control is labelled with. */
+const labelsOf = (control: Element): string[] => {
+  const names: string[] = [];
+  const labelledBy = control.getAttribute('aria-labelledby');
+  if (labelledBy !== null) names.push(nameOf(control));
+  const label = control.getAttribute('aria-label');
+  if (label !== null) names.push(normalized(label));
+  const id = control.getAttribute('id');
+  if (id !== null && id !== '') {
+    for (const element of window.document.querySelectorAll('label')) {
+      if ((element as unknown as HTMLLabelElement).htmlFor === id) {
+        names.push(normalized(element.textContent));
+      }
+    }
+  }
+  const wrapping = control.closest('label');
+  if (wrapping !== null) names.push(normalized(wrapping.textContent));
+  return names;
+};
+
+const controls =
+  'input, textarea, select, button, [role="combobox"], [role="checkbox"], [role="textbox"]';
+
+/** The form controls under `root` labelled `label`, in document order. */
+const controlsLabelled = (root: Element, label: string): HTMLElement[] =>
+  [...root.querySelectorAll(controls)].filter((control) =>
+    labelsOf(control as unknown as Element).includes(label),
+  ) as unknown as HTMLElement[];
+
+/** The first form control under `root` labelled `label`. */
+const controlLabelled = (root: Element, label: string): HTMLElement => {
+  const [control] = controlsLabelled(root, label);
+  assert.ok(control !== undefined, `No control labelled "${label}".`);
+  return control;
+};
+
+const buttonsOf = (root: Element): Element[] =>
+  [...root.querySelectorAll('button, [role="button"]')] as unknown as Element[];
+
+const findButton = (root: Element, name: string): HTMLElement | undefined =>
+  buttonsOf(root).find((button) => nameOf(button) === name) as
+    | HTMLElement
+    | undefined;
+
+const buttonNamed = (root: Element, name: string): HTMLElement => {
+  const button = findButton(root, name);
+  assert.ok(
+    button !== undefined,
+    `No button named "${name}"; there are: ${buttonsOf(root)
+      .map(nameOf)
+      .join(' | ')}.`,
+  );
+  return button;
+};
+
+const dialogs = (): Element[] =>
+  [
+    ...window.document.querySelectorAll(
+      '[role="dialog"], [role="alertdialog"]',
+    ),
+  ] as unknown as Element[];
+
+/** The open dialog named `name`, once it is drawn. */
+const dialogNamed = async (
+  name: string,
+  role: 'dialog' | 'alertdialog' = 'dialog',
+): Promise<HTMLElement> => {
+  const find = () =>
+    dialogs().find(
+      (dialog) =>
+        dialog.getAttribute('role') === role && nameOf(dialog) === name,
+    );
+  await waitFor(
+    () => find() !== undefined,
+    `No ${role} named "${name}"; open: ${dialogs().map(nameOf).join(' | ')}.`,
+  );
+  return find() as unknown as HTMLElement;
+};
+
+/** A `fieldset` (by its legend) or a `group` (by its name) named `name`. */
+const groupNamed = (root: Element, name: string): HTMLElement => {
+  const groups = [
+    ...root.querySelectorAll('fieldset, [role="group"]'),
+  ] as unknown as Element[];
+  const group = groups.find((candidate) => {
+    if (candidate.tagName === 'FIELDSET') {
+      const legend = candidate.querySelector('legend');
+      if (legend !== null && normalized(legend.textContent) === name) {
+        return true;
+      }
+    }
+    return (
+      (candidate.hasAttribute('aria-label') ||
+        candidate.hasAttribute('aria-labelledby')) &&
+      nameOf(candidate) === name
+    );
+  });
+  assert.ok(group !== undefined, `No group named "${name}".`);
+  return group as unknown as HTMLElement;
+};
+
+/** The pane's rows: the top-level list items of the rows element. */
+const rowsOf = (pane: OpenPane): HTMLElement[] =>
+  (
+    [
+      ...pane.rows.querySelectorAll('li, [role="listitem"]'),
+    ] as unknown as HTMLElement[]
+  ).filter((item) => {
+    const outer = item.parentElement?.closest('li, [role="listitem"]');
+    return outer == null || !pane.rows.contains(outer);
+  });
+
+const rowNamed = (pane: OpenPane, name: string): HTMLElement => {
+  const row = rowsOf(pane).find((item) =>
+    normalized(item.textContent).includes(name),
+  );
+  assert.ok(row !== undefined, `No row for "${name}".`);
+  return row;
+};
+
+const toastsOf = (): string[] =>
+  [...window.document.querySelectorAll('[data-sonner-toast]')].map((toast) =>
+    normalized(toast.textContent),
+  );
+
+// ---------------------------------------------------------------------------
+// Acting as the reader does
+
+const click = async (element: HTMLElement): Promise<void> => {
+  await act(() => element.click());
+  await settle();
+};
+
+/** Types `value` into a text field, replacing what it held. */
+const type = async (control: HTMLElement, value: string): Promise<void> => {
+  const setter = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(control),
+    'value',
+  )?.set;
+  assert.ok(setter !== undefined, 'The control takes no typed text.');
+  await act(() => {
+    setter.call(control, value);
+    control.dispatchEvent(
+      new window.Event('input', { bubbles: true }) as never,
+    );
+  });
+  await settle();
+};
+
+const fieldValue = (control: HTMLElement): string =>
+  (control as unknown as HTMLInputElement).value;
+
+const press = (element: HTMLElement): void => {
+  const init = {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    pointerId: 1,
+    pointerType: 'mouse',
+  };
+  element.dispatchEvent(new window.PointerEvent('pointerdown', init) as never);
+  element.dispatchEvent(new window.MouseEvent('mousedown', init) as never);
+  element.dispatchEvent(new window.PointerEvent('pointerup', init) as never);
+  element.dispatchEvent(new window.MouseEvent('mouseup', init) as never);
+  element.click();
+};
+
+/**
+ * Picks the option named `option` in a select (native or listbox) and answers
+ * the names of every option it offered.
+ */
+const choose = async (
+  control: HTMLElement,
+  option: string,
+): Promise<string[]> => {
+  if (control.tagName === 'SELECT') {
+    const select = control as unknown as HTMLSelectElement;
+    const offered = [...select.options].map((item) =>
+      normalized(item.textContent),
+    );
+    const match = [...select.options].find(
+      (item) => normalized(item.textContent) === option,
+    );
+    assert.ok(match !== undefined, `No option "${option}" in ${offered}.`);
+    await act(() => {
+      select.value = match.value;
+      select.dispatchEvent(
+        new window.Event('change', { bubbles: true }) as never,
+      );
+    });
+    await settle();
+    return offered;
+  }
+
+  await act(() => press(control));
+  const options = () =>
+    [
+      ...window.document.querySelectorAll('[role="option"]'),
+    ] as unknown as HTMLElement[];
+  await waitFor(() => options().length > 0, 'The select opened no options.');
+  const offered = options().map((item) => normalized(item.textContent));
+  const match = options().find(
+    (item) => normalized(item.textContent) === option,
+  );
+  assert.ok(match !== undefined, `No option "${option}" in ${offered}.`);
+  await act(() => press(match));
+  await settle(10);
+  return offered;
+};
+
+const isChecked = (control: HTMLElement): boolean =>
+  control.tagName === 'INPUT'
+    ? (control as unknown as HTMLInputElement).checked
+    : control.getAttribute('aria-checked') === 'true';
+
+const setChecked = async (
+  control: HTMLElement,
+  checked: boolean,
+): Promise<void> => {
+  if (isChecked(control) !== checked) await click(control);
+  assert.equal(isChecked(control), checked);
+};
+
+/** Hands `servers` to a watch's listener, a function or an observer. */
+const emit = async (
+  watch: WatchRecord,
+  servers: readonly McpServerView[],
+): Promise<void> => {
+  await act(() => {
+    const listener = watch.listener as
+      | ((servers: readonly McpServerView[]) => void)
+      | { next?: (servers: readonly McpServerView[]) => void };
+    if (typeof listener === 'function') listener(servers);
+    else listener.next?.(servers);
+  });
+  await settle();
+};
+
+/** The live watch of `projectId`, once the pane has opened it. */
+const watchOf = async (host: Host, projectId: string): Promise<WatchRecord> => {
+  const find = () =>
+    host.watches.find(
+      (watch) => watch.scope?.projectId === projectId && !watch.disposed,
+    );
+  await waitFor(
+    () => find() !== undefined,
+    `mcp/v1.watch was never opened for ${projectId}.`,
+  );
+  return find() as WatchRecord;
+};
+
+/** Opens the pane on p1 with `servers` delivered by its watch. */
+const paneWith = async (
+  servers: readonly McpServerView[],
+  options: HostOptions = {},
+): Promise<{ host: Host; pane: OpenPane }> => {
+  const host = createHost({
+    project: { id: 'p1', name: 'Doric' },
+    ...options,
+  });
+  const pane = await openPane(host);
+  await emit(await watchOf(host, 'p1'), servers);
+  return { host, pane };
+};
+
+const callsOf = (host: Host, method: string): Recorded[] =>
+  host.calls.filter((call) => call.method === method);
+
+// ---------------------------------------------------------------------------
+// W1
+
+test('W1 activating with a stack registers the MCP pane once', async () => {
+  assert.equal(McpV1.id, 'mcp/v1');
+  const host = createHost({ project: { id: 'p1', name: 'Doric' } });
+  const cleanup = await activate({ services: host.services } as ClientContext);
+
+  try {
+    assert.deepEqual(host.panes, [
+      {
+        id: 'mcp-sidebar',
+        order: 20,
+        title: 'MCP',
+        tag: 'mcp-sidebar',
+        headerTag: 'mcp-group-action',
+        collapsible: true,
+        initiallyOpen: false,
+        minSize: '20%',
+        maxSize: '80%',
+      },
+    ]);
+    assert.deepEqual(host.panes[0], mcpPane);
+    // The pane's elements are the ones the part defines.
+    assert.ok(host.defined.has('mcp-sidebar'), 'mcp-sidebar is not defined.');
+    assert.ok(
+      host.defined.has('mcp-group-action'),
+      'mcp-group-action is not defined.',
+    );
+  } finally {
+    if (typeof cleanup === 'function') await cleanup();
+  }
+
+  // Deactivating takes the pane out of the stack.
+  assert.deepEqual(host.panes, []);
+});
+
+// ---------------------------------------------------------------------------
+// W2
+
+test("W2 the rows are the selected Project's servers with their status and tool count", async () => {
+  const { host, pane } = await paneWith([linear, files]);
+
+  try {
+    assert.equal(rowsOf(pane).length, 2);
+    const linearRow = normalized(rowNamed(pane, 'Linear').textContent);
+    assert.match(linearRow, /Connected/);
+    assert.match(linearRow, /3 tools/);
+    const filesRow = normalized(rowNamed(pane, 'Files').textContent);
+    assert.match(filesRow, /Idle/);
+    assert.match(filesRow, /0 tools/);
+
+    // Another Project selected: its servers, through a watch in its scope.
+    const p1 = await watchOf(host, 'p1');
+    await host.select({ id: 'p2', name: 'Elsewhere' });
+    const p2 = await watchOf(host, 'p2');
+    assert.equal(p1.disposed, true, "p1's watch outlived the selection.");
+    await emit(p2, [sentry]);
+
+    assert.equal(rowsOf(pane).length, 1);
+    const sentryRow = normalized(rowNamed(pane, 'Sentry').textContent);
+    assert.match(sentryRow, /Disabled/);
+    assert.match(sentryRow, /2 tools/);
+    assert.doesNotMatch(normalized(pane.rows.textContent), /Linear|Files/);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W2 every status reads as its label', async () => {
+  const labels: readonly [McpServerView['status']['state'], string][] = [
+    ['disabled', 'Disabled'],
+    ['idle', 'Idle'],
+    ['connecting', 'Connecting…'],
+    ['connected', 'Connected'],
+    ['needs-sign-in', 'Sign in required'],
+    ['waiting-for-sandbox', 'Waiting for sandbox'],
+    ['error', 'Error'],
+  ];
+  const servers = labels.map(
+    ([state], index): McpServerView => ({
+      ...files,
+      id: `s-${state}`,
+      name: `Server ${index}`,
+      status: { state },
+    }),
+  );
+  const { pane } = await paneWith(servers);
+
+  try {
+    labels.forEach(([, label], index) => {
+      const row = normalized(rowNamed(pane, `Server ${index}`).textContent);
+      assert.ok(row.includes(label), `"${row}" does not read "${label}".`);
+    });
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W3
+
+test('W3 without a selected Project the pane says so and watches nothing', async () => {
+  const host = createHost();
+  const pane = await openPane(host);
+
+  try {
+    await settle(10);
+    assert.match(normalized(pane.rows.textContent), /select a project/i);
+    assert.equal(rowsOf(pane).length, 0);
+    assert.equal(host.watches.length, 0);
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W4
+
+test('W4 adding an http server with a credential header creates it in the Project', async () => {
+  const { host, pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+
+    await type(controlLabelled(dialog, 'Name'), 'Linear');
+    await choose(controlLabelled(dialog, 'Transport'), 'HTTP');
+    await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
+    await click(buttonNamed(dialog, 'Add header'));
+    const headers = groupNamed(dialog, 'Headers');
+    await type(controlLabelled(headers, 'Name'), 'Authorization');
+    await choose(controlLabelled(headers, 'Credential'), 'Linear token');
+    await setChecked(controlLabelled(dialog, 'Enabled'), true);
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'create').length > 0,
+      'Save never called create.',
+    );
+
+    assert.deepEqual(callsOf(host, 'create'), [
+      {
+        method: 'create',
+        scope: { projectId: 'p1' },
+        input: {
+          name: 'Linear',
+          enabled: true,
+          transport: {
+            kind: 'http',
+            url: 'https://mcp.linear.app/mcp',
+            headers: [{ name: 'Authorization', credentialId: 'c1' }],
+          },
+        } satisfies McpServerInput,
+      },
+    ]);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W4 adding a stdio server sends its command, arguments, directory and environment', async () => {
+  const { host, pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+
+    await type(controlLabelled(dialog, 'Name'), 'Files');
+    await choose(controlLabelled(dialog, 'Transport'), 'stdio');
+    await type(controlLabelled(dialog, 'Command'), 'npx');
+    await type(controlLabelled(dialog, 'Arguments'), '-y\n@mcp/files');
+    await type(controlLabelled(dialog, 'Working directory'), '/workspace');
+    await click(buttonNamed(dialog, 'Add variable'));
+    const environment = groupNamed(dialog, 'Environment');
+    await type(controlLabelled(environment, 'Name'), 'LOG_LEVEL');
+    await type(controlLabelled(environment, 'Value'), 'debug');
+    await setChecked(controlLabelled(dialog, 'Enabled'), true);
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'create').length > 0,
+      'Save never called create.',
+    );
+
+    assert.deepEqual(callsOf(host, 'create'), [
+      {
+        method: 'create',
+        scope: { projectId: 'p1' },
+        input: {
+          name: 'Files',
+          enabled: true,
+          transport: {
+            kind: 'stdio',
+            command: 'npx',
+            args: ['-y', '@mcp/files'],
+            cwd: '/workspace',
+            env: [{ name: 'LOG_LEVEL', value: 'debug' }],
+          },
+        } satisfies McpServerInput,
+      },
+    ]);
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W5
+
+test('W5 editing a server starts from its view and updates it by id', async () => {
+  const { host, pane } = await paneWith([linear, files]);
+
+  try {
+    await click(buttonNamed(rowNamed(pane, 'Linear'), 'Edit Linear'));
+    const dialog = await dialogNamed('Edit MCP server');
+
+    assert.equal(fieldValue(controlLabelled(dialog, 'Name')), 'Linear');
+    assert.equal(
+      fieldValue(controlLabelled(dialog, 'URL')),
+      'https://mcp.linear.app/mcp',
+    );
+    await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/v2/mcp');
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'update').length > 0,
+      'Save never called update.',
+    );
+
+    assert.deepEqual(callsOf(host, 'update'), [
+      {
+        method: 'update',
+        scope: { projectId: 'p1' },
+        input: {
+          id: 's1',
+          name: 'Linear',
+          enabled: true,
+          transport: {
+            kind: 'http',
+            url: 'https://mcp.linear.app/v2/mcp',
+            headers: [{ name: 'Authorization', credentialId: 'c1' }],
+          },
+        },
+      },
+    ]);
+    assert.equal(callsOf(host, 'create').length, 0);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W5 editing a stdio server keeps every field it did not change', async () => {
+  const { host, pane } = await paneWith([linear, files]);
+
+  try {
+    await click(buttonNamed(rowNamed(pane, 'Files'), 'Edit Files'));
+    const dialog = await dialogNamed('Edit MCP server');
+
+    assert.equal(fieldValue(controlLabelled(dialog, 'Command')), 'npx');
+    assert.equal(
+      fieldValue(controlLabelled(dialog, 'Arguments')),
+      '-y\n@mcp/files',
+    );
+    assert.equal(
+      fieldValue(controlLabelled(dialog, 'Working directory')),
+      '/workspace',
+    );
+    await setChecked(controlLabelled(dialog, 'Enabled'), false);
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'update').length > 0,
+      'Save never called update.',
+    );
+
+    assert.deepEqual(callsOf(host, 'update'), [
+      {
+        method: 'update',
+        scope: { projectId: 'p1' },
+        input: {
+          id: 's2',
+          name: 'Files',
+          enabled: false,
+          transport: {
+            kind: 'stdio',
+            command: 'npx',
+            args: ['-y', '@mcp/files'],
+            cwd: '/workspace',
+            env: [{ name: 'LOG_LEVEL', value: 'debug' }],
+          },
+        },
+      },
+    ]);
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W6
+
+test('W6 removing a server asks first and removes it by id once confirmed', async () => {
+  const { host, pane } = await paneWith([linear, files]);
+
+  try {
+    await click(buttonNamed(rowNamed(pane, 'Linear'), 'Remove Linear'));
+    const alert = await dialogNamed('Remove Linear?', 'alertdialog');
+    assert.equal(callsOf(host, 'remove').length, 0, 'Removed before asking.');
+
+    await click(buttonNamed(alert, 'Remove'));
+    await waitFor(
+      () => callsOf(host, 'remove').length > 0,
+      'Confirming never called remove.',
+    );
+
+    assert.deepEqual(callsOf(host, 'remove'), [
+      { method: 'remove', scope: { projectId: 'p1' }, input: { id: 's1' } },
+    ]);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W6 cancelling the removal removes nothing', async () => {
+  const { host, pane } = await paneWith([linear, files]);
+
+  try {
+    await click(buttonNamed(rowNamed(pane, 'Linear'), 'Remove Linear'));
+    const alert = await dialogNamed('Remove Linear?', 'alertdialog');
+    await click(buttonNamed(alert, 'Cancel'));
+    await settle(10);
+
+    assert.deepEqual(callsOf(host, 'remove'), []);
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W7
+
+test('W7 signing in opens the authorization page between signIn and finishSignIn', async () => {
+  const errored: McpServerView = {
+    ...files,
+    id: 's5',
+    name: 'Shell',
+    status: { state: 'error', message: 'exited' },
+  };
+  const { host, pane } = await paneWith([notion, linear, errored]);
+
+  try {
+    // Only an http server that needs a sign-in offers one.
+    assert.equal(findButton(pane.rows, 'Sign in to Linear'), undefined);
+    assert.equal(findButton(pane.rows, 'Sign in to Shell'), undefined);
+
+    await click(buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion'));
+    await waitFor(
+      () => host.steps.length >= 3,
+      `The sign-in stopped after: ${host.steps.join(', ')}.`,
+    );
+
+    assert.deepEqual(host.steps, [
+      'signIn s4',
+      `open ${authorizeUrl}`,
+      'finishSignIn s4',
+    ]);
+    assert.deepEqual(
+      [...callsOf(host, 'signIn'), ...callsOf(host, 'finishSignIn')].map(
+        ({ scope, input }) => ({ scope, input }),
+      ),
+      [
+        { scope: { projectId: 'p1' }, input: { id: 's4' } },
+        { scope: { projectId: 'p1' }, input: { id: 's4' } },
+      ],
+    );
+    await settle(10);
+    assert.deepEqual(toastsOf(), []);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W7 a sign-in that fails to finish says so in a toast', async () => {
+  const { host, pane } = await paneWith([notion], {
+    mcp: {
+      finishSignIn: async () => {
+        throw new ContractError('internal', 'The authorization was refused.');
+      },
+    },
+  });
+
+  try {
+    await click(buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion'));
+    await waitFor(
+      () => toastsOf().length > 0,
+      `No toast after: ${host.steps.join(', ')}.`,
+    );
+
+    assert.deepEqual(host.steps, [
+      'signIn s4',
+      `open ${authorizeUrl}`,
+      'finishSignIn s4',
+    ]);
+    assert.equal(toastsOf().length, 1);
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W8
+
+test('W8 the credential picker lists the stored credentials and creates a new token', async () => {
+  const { host, pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+    await type(controlLabelled(dialog, 'Name'), 'Linear');
+    await choose(controlLabelled(dialog, 'Transport'), 'HTTP');
+    await type(controlLabelled(dialog, 'URL'), 'https://mcp.linear.app/mcp');
+    await click(buttonNamed(dialog, 'Add header'));
+    await type(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Name'),
+      'X-Api-Key',
+    );
+
+    const offered = await choose(
+      controlLabelled(groupNamed(dialog, 'Headers'), 'Credential'),
+      'New credential…',
+    );
+    for (const name of ['Linear token', 'GitHub token', 'New credential…']) {
+      assert.ok(offered.includes(name), `"${name}" is not in ${offered}.`);
+    }
+
+    const create = await dialogNamed('New credential');
+    await type(controlLabelled(create, 'Name'), 'Linear key');
+    await type(controlLabelled(create, 'Secret'), 'lin_api_123');
+    await click(buttonNamed(create, 'Create'));
+    await waitFor(
+      () => host.secretsCreated.length > 0,
+      'Create never called secrets/v1.create.',
+    );
+    assert.deepEqual(host.secretsCreated, [
+      { kind: 'API_TOKEN', name: 'Linear key', secret: 'lin_api_123' },
+    ]);
+
+    await setChecked(controlLabelled(dialog, 'Enabled'), true);
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'create').length > 0,
+      'Save never called create.',
+    );
+
+    assert.deepEqual(
+      callsOf(host, 'create').map(({ input }) => input),
+      [
+        {
+          name: 'Linear',
+          enabled: true,
+          transport: {
+            kind: 'http',
+            url: 'https://mcp.linear.app/mcp',
+            headers: [{ name: 'X-Api-Key', credentialId: 'c-new' }],
+          },
+        },
+      ],
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// W9
+
+test('W9 a watch lost with the host generation subscribes again', async () => {
+  const { host, pane } = await paneWith([linear]);
+
+  try {
+    const first = await watchOf(host, 'p1');
+    const observer = first.listener as {
+      readonly end?: (error?: ContractError) => void;
+    };
+    assert.equal(
+      typeof observer.end,
+      'function',
+      'The watch takes no observer, so it cannot learn the stream ended.',
+    );
+    await act(() =>
+      observer.end?.(
+        new ContractError('generation_lost', 'The host restarted.'),
+      ),
+    );
+
+    await waitFor(
+      () => host.watches.filter((watch) => watch !== first).length > 0,
+      'The pane never watched again.',
+      3000,
+    );
+    const second = host.watches.find((watch) => watch !== first);
+    assert.deepEqual(second?.scope, { projectId: 'p1' });
+
+    await emit(second as WatchRecord, [linear, files]);
+    assert.equal(rowsOf(pane).length, 2);
+    assert.match(normalized(rowNamed(pane, 'Files').textContent), /Idle/);
+  } finally {
+    await pane.close();
+  }
+});

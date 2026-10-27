@@ -1,11 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { DoricBundleV1, ToolsV1 } from 'bundle/contracts';
+import {
+  DoricBundleV1,
+  isContractError,
+  type RegisteredTool,
+  type Tools,
+  ToolsV1,
+} from 'bundle/contracts';
 import { defineTool, isBoundTool } from 'tool';
 import { z } from 'zod';
 
-import { boot, core, probe, reasonCodes, states } from './support/host.js';
+import {
+  type Booted,
+  boot,
+  core,
+  probe,
+  reasonCodes,
+  states,
+} from './support/host.js';
 
 const usesTools = ['tools/v1@^1.0.0'];
 
@@ -246,4 +259,201 @@ void test('catalog answers the GET /tools entries as plain data, in list order',
   } finally {
     await host.close();
   }
+});
+
+// Project-scoped tools (1.3.0) ------------------------------------------------
+
+/**
+ * Boots the core with one bundle that keeps its `tools/v1` to register with
+ * after activation, the way a bundle adds tools as their sources appear.
+ */
+const withRegistrant = async (
+  run: (tools: Tools, host: Booted) => Promise<void> | void,
+): Promise<void> => {
+  let tools: Tools | undefined;
+  const host = await boot([
+    await core(),
+    probe('registrant', {
+      requires: ['tools/v1@^1.3.0'],
+      activate: ({ services }) => {
+        tools = services.use(ToolsV1);
+      },
+    }),
+  ]);
+
+  try {
+    assert.equal(states(host.platform).registrant, 'active');
+    assert.ok(tools !== undefined);
+    await run(tools, host);
+  } finally {
+    await host.close();
+  }
+};
+
+const inProject = (host: Booted, projectId: string) =>
+  host.platform.call({ scope: { projectId } });
+
+const listedIn = (host: Booted, projectId?: string) =>
+  host.platform.services
+    .use(ToolsV1)
+    .list(projectId === undefined ? undefined : inProject(host, projectId));
+
+const namesOf = (entries: readonly RegisteredTool[]) =>
+  entries.map(({ tool }) => tool.name);
+
+const isDuplicate = (error: unknown): boolean =>
+  isContractError(error) && error.code === 'duplicate_tool';
+
+void test('a Project tool is listed to its Project, marked with it, in global order', async () => {
+  await withRegistrant((tools, host) => {
+    tools.register(whoami('everyone-300'), {
+      alwaysAvailable: true,
+      order: 300,
+    });
+    tools.register(whoami('p1-100'), {
+      alwaysAvailable: false,
+      order: 100,
+      projectId: 'p1',
+    });
+    tools.register(whoami('p1-500'), {
+      alwaysAvailable: false,
+      order: 500,
+      projectId: 'p1',
+    });
+    tools.register(whoami('everyone-unordered'), { alwaysAvailable: true });
+
+    assert.deepEqual(
+      listedIn(host, 'p1').map(({ tool, projectId, order }) => [
+        tool.name,
+        projectId,
+        order,
+      ]),
+      [
+        ['p1-100', 'p1', 100],
+        ['everyone-300', undefined, 300],
+        ['p1-500', 'p1', 500],
+        ['everyone-unordered', undefined, undefined],
+      ],
+    );
+  });
+});
+
+void test('a Project tool is not listed to another Project', async () => {
+  await withRegistrant((tools, host) => {
+    tools.register(whoami('everyone'), { alwaysAvailable: true });
+    tools.register(whoami('p1-only'), {
+      alwaysAvailable: false,
+      projectId: 'p1',
+    });
+
+    assert.deepEqual(namesOf(listedIn(host, 'p2')), ['everyone']);
+  });
+});
+
+void test('a call without a Project sees only unscoped tools in list and catalog', async () => {
+  await withRegistrant(async (tools, host) => {
+    tools.register(whoami('everyone'), { alwaysAvailable: true });
+    tools.register(whoami('p1-only'), {
+      alwaysAvailable: false,
+      projectId: 'p1',
+    });
+    const service = host.platform.services.use(ToolsV1);
+
+    assert.deepEqual(namesOf(service.list()), ['everyone']);
+    assert.deepEqual(
+      (await service.catalog()).map(({ name }) => name),
+      ['everyone'],
+    );
+    assert.deepEqual(
+      (await service.catalog(inProject(host, 'p1'))).map(({ name }) => name),
+      ['everyone', 'p1-only'],
+    );
+  });
+});
+
+void test('two Projects may each hold a tool of the same name', async () => {
+  await withRegistrant((tools, host) => {
+    tools.register(whoami('search'), {
+      alwaysAvailable: false,
+      projectId: 'p1',
+    });
+    tools.register(whoami('search'), {
+      alwaysAvailable: false,
+      projectId: 'p2',
+    });
+
+    assert.deepEqual(
+      listedIn(host, 'p1').map(({ tool, projectId }) => [tool.name, projectId]),
+      [['search', 'p1']],
+    );
+    assert.deepEqual(
+      listedIn(host, 'p2').map(({ tool, projectId }) => [tool.name, projectId]),
+      [['search', 'p2']],
+    );
+  });
+});
+
+void test('one Project cannot hold two tools of the same name', async () => {
+  await withRegistrant((tools, host) => {
+    tools.register(whoami('search'), {
+      alwaysAvailable: false,
+      projectId: 'p1',
+    });
+
+    assert.throws(
+      () =>
+        tools.register(whoami('search'), {
+          alwaysAvailable: false,
+          projectId: 'p1',
+        }),
+      isDuplicate,
+    );
+    assert.deepEqual(namesOf(listedIn(host, 'p1')), ['search']);
+  });
+});
+
+void test('a Project tool and an unscoped tool cannot share a name, in either order', async () => {
+  await withRegistrant((tools) => {
+    tools.register(whoami('shared'), { alwaysAvailable: true });
+
+    assert.throws(
+      () =>
+        tools.register(whoami('shared'), {
+          alwaysAvailable: false,
+          projectId: 'p1',
+        }),
+      isDuplicate,
+    );
+
+    tools.register(whoami('held'), {
+      alwaysAvailable: false,
+      projectId: 'p1',
+    });
+
+    assert.throws(
+      () => tools.register(whoami('held'), { alwaysAvailable: true }),
+      isDuplicate,
+    );
+  });
+});
+
+void test('disposing a Project tool removes it from that Project only', async () => {
+  await withRegistrant((tools, host) => {
+    const first = tools.register(whoami('search'), {
+      alwaysAvailable: false,
+      projectId: 'p1',
+    });
+    tools.register(whoami('search'), {
+      alwaysAvailable: false,
+      projectId: 'p2',
+    });
+
+    first.dispose();
+
+    assert.deepEqual(namesOf(listedIn(host, 'p1')), []);
+    assert.deepEqual(
+      listedIn(host, 'p2').map(({ tool, projectId }) => [tool.name, projectId]),
+      [['search', 'p2']],
+    );
+  });
 });

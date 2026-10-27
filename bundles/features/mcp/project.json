@@ -1,0 +1,47 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-mcp",
+  "projectType": "library",
+  "sourceRoot": "bundles/features/mcp/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/mcp/tsconfig.json",
+          "tsc -p bundles/features/mcp/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/features/mcp"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/mcp/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/mcp/tsconfig.client.json"
+        ],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/features/mcp/dist-tests",
+          "tsc -p bundles/features/mcp/tsconfig.spec.json",
+          "tsc -p bundles/features/mcp/tsconfig.client-spec.json",
+          "node --test --test-timeout=60000 bundles/features/mcp/dist-tests/tests/*.test.js bundles/features/mcp/dist-tests/tests/client/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

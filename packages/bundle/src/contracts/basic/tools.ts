@@ -46,6 +46,12 @@ export interface RegisteredTool {
   readonly alwaysAvailable: boolean;
   /** The global position the registrant gave (1.2.0); absent when unordered. */
   readonly order?: number;
+  /**
+   * The Project the tool was registered for (1.3.0); absent for a tool every
+   * call sees. A scoped tool is listed only to calls whose `scope.projectId`
+   * equals it.
+   */
+  readonly projectId?: string;
   readonly tool: ContractTool;
 }
 
@@ -66,6 +72,12 @@ export interface ToolRegistrationOptions {
    * every ordered entry, in registration order.
    */
   readonly order?: number;
+  /**
+   * The Project the tool belongs to (1.3.0), non-empty. `list` and `catalog`
+   * show it only to calls whose `scope.projectId` equals it; absent, the tool
+   * is unscoped and every call sees it.
+   */
+  readonly projectId?: string;
 }
 
 /** A global order key of tools/v1 and skills/v1: a positive safe integer. */
@@ -76,7 +88,13 @@ export const orderKeySchema = z
   .max(Number.MAX_SAFE_INTEGER);
 
 export interface Tools {
-  /** Local. Throws ContractError('duplicate_tool') when the name is taken. */
+  /**
+   * Local. Throws ContractError('duplicate_tool') when the name is taken in
+   * the registration's scope (1.3.0): an unscoped registration collides with
+   * any tool of that name; one with `projectId` collides with an unscoped
+   * tool of that name or a tool of the same Project. Two Projects may each
+   * hold a tool of the same name.
+   */
   register(
     tool: Registrable<ContractTool>,
     options: ToolRegistrationOptions,
@@ -87,13 +105,16 @@ export interface Tools {
    * as tool handles and are the registered tool again in their own process;
    * called from another process the result arrives as a promise of the same
    * list, so a remote caller awaits it. The call picks the generation whose
-   * tools are listed (D4-11).
+   * tools are listed (D4-11). 1.3.0: a tool registered with `projectId` is
+   * listed only when `call.scope.projectId` equals it; a call with no Project
+   * scope lists the unscoped tools alone.
    */
   list(call?: CallArg): readonly RegisteredTool[];
   /**
    * The `list` the call sees as serializable catalog entries, in the same
-   * order (1.1.0, stage 9): remote-callable, so a desktop window reads the
-   * tool catalog over the bridge.
+   * order and with the same Project filter (1.1.0, stage 9; 1.3.0):
+   * remote-callable, so a desktop window reads the tool catalog over the
+   * bridge.
    */
   catalog(call?: CallArg): Promise<readonly ToolCatalogEntry[]>;
 }
@@ -138,6 +159,7 @@ export const toolsMethods = {
         .object({
           alwaysAvailable: z.boolean(),
           order: orderKeySchema.optional(),
+          projectId: z.string().min(1).optional(),
         })
         .strict(),
     ]),

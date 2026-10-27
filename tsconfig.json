@@ -164,6 +164,9 @@
     },
     {
       "path": "./bundles/features/claude-login"
+    },
+    {
+      "path": "./bundles/features/mcp"
     }
   ]
 }

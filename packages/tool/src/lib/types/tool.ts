@@ -8,7 +8,7 @@ import type { z } from 'zod';
 
 import type { ToolDefinitionSchema } from '../schemas/definition.js';
 import type { ToolMetadataSchema } from '../schemas/metadata.js';
-import type { JsonValue } from './json.js';
+import type { JsonObject, JsonValue } from './json.js';
 
 export type ToolInput = z.ZodObject;
 
@@ -125,6 +125,15 @@ export interface DefineToolOptions<
   readonly output: Output;
   readonly execute: ToolExecute<Input, Output>;
   readonly strict?: boolean;
+  /**
+   * The JSON Schema the model sees for the input, used verbatim as
+   * `definition.inputSchema` instead of the one derived from `input`. It must
+   * be an object schema (`type: 'object'`), or `defineTool` throws a
+   * ToolErrorObject with code `invalid_schema`. `input` still validates every
+   * payload: a tool whose schema comes from elsewhere (an MCP server) passes a
+   * permissive `input` (`z.looseObject({})`) and `strict: false`.
+   */
+  readonly inputSchema?: JsonObject;
   /**
    * The configuration fields this tool reads. A host aggregates them into the
    * settings surface and validates the persisted values against them; the

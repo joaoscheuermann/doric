@@ -123,13 +123,22 @@ const withHost = async (run: (host: Host) => Promise<void>): Promise<void> => {
   }
 };
 
-void test('the default composition registers the GIT kind when the git bundle activates', async () => {
+void test('the default composition registers the GIT and MCP_TOKEN kinds when the git and mcp bundles activate', async () => {
   await withHost(async (host) => {
     const kinds = await host.platform.services.use(SecretsV1).kinds();
 
     assert.deepEqual(
       kinds.map(({ id }) => id),
-      ['API_TOKEN', 'USERNAME_PASSWORD', 'GIT'],
+      ['API_TOKEN', 'USERNAME_PASSWORD', 'GIT', 'MCP_TOKEN'],
+    );
+    assert.deepEqual(
+      kinds.find(({ id }) => id === 'MCP_TOKEN'),
+      {
+        id: 'MCP_TOKEN',
+        required: ['secret'],
+        optional: [],
+        label: 'MCP token',
+      },
     );
     assert.deepEqual(
       kinds.find(({ id }) => id === 'GIT'),
@@ -261,9 +270,10 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // `screen-relay` bundle is one too: it is the resident half of the screen,
     // which serves the relay on the host's own listener, and the `artifacts`,
     // `comments` and `papercraft` features are the review registry, its
-    // anchored comments and the live preview over them. No bundle is
+    // anchored comments and the live preview over them. The `mcp` feature is
+    // the Project's MCP servers and the tools they bring. No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 29);
+    assert.equal(host.bundleCount, 30);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -305,6 +315,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         artifacts: ['active', 'others'],
         comments: ['active', 'others'],
         papercraft: ['active', 'others'],
+        mcp: ['active', 'others'],
       },
     );
     const order = host.platform.catalog().order;
@@ -329,6 +340,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['claude-login', 'settings'],
       ['artifacts', 'papercraft'],
       ['comments', 'papercraft'],
+      ['runtime', 'mcp'],
     ] as const)
       assert.ok(
         order.indexOf(provider) < order.indexOf(consumer),
