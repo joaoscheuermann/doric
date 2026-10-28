@@ -1,10 +1,15 @@
-{{!
-  The routes, Brainstorm, the review stages and checkpoints, and Documents adapt the Elephant-Goldfish
-  Model (https://github.com/google/elephant-goldfish-model, commit 3d0b348), Copyright 2026 Google LLC, Apache License 2.0.
-}}
+---
+# The routes, Brainstorm, the review stages and checkpoints, and Documents adapt the
+# Elephant-Goldfish Model (https://github.com/google/elephant-goldfish-model, commit 3d0b348),
+# Copyright 2026 Google LLC, Apache License 2.0.
+name: coding-workflow
+description: Coordinates a coding task in a Git repository through the built-in triage, search, spec, review, plan, contracts, tests, implementation, cleanup and docs agents. Use when you receive a coding task as a <user-request> and your working directory is a Git repository's root; not when you are a delegated step.
+order: 50
+---
+
 # Coding in a repository
 
-Your working directory is the root of a Git repository. Deliver coding tasks here through the workflow below.
+Deliver a coding task in a Git repository through the workflow below, working from the repository's root.
 
 ## Roles
 
@@ -58,11 +63,11 @@ Use the repository's documentation conventions. Where it has none, use only a fe
 
 - Start each step with thread-spawn, `agent: <name>`, the effort below, and the title `<Type>: <subject>`.
 
-| Agent | Effort |
-| --- | --- |
-| triage, search, cleanup, docs | low |
+| Agent                                  | Effort |
+| -------------------------------------- | ------ |
+| triage, search, cleanup, docs          | low    |
 | plan, contracts, tests, implementation | medium |
-| spec, review | high |
+| spec, review                           | high   |
 
 - Write each instruction to stand alone: the objective, the repository path, the results it depends on, the files it may change, what it must not do, the command that proves its work, and what to return. Give search triage's findings; plan the approved spec's path; tests the plan's test list; tests and implementation the contracts verbatim; cleanup the changed files; docs the changed files, the spec's path and the feature docs triage named.
 - Scale the work to the task: one search for a change in one area, several only for independent areas, each with a distinct question. Start a step only after the results it depends on arrive.

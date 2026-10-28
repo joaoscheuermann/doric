@@ -35,7 +35,7 @@ import { compactionConfig, maybeCompactRun } from './compact.js';
 import { isContextOverflowError } from './compaction/project.js';
 import { coalesced } from './deltas.js';
 import { input } from './envelope.js';
-import { readMessages, readMeta, saved } from './history.js';
+import { readMessages, readMeta, retainedKey, saved } from './history.js';
 import {
   checkTemplate,
   loadTemplate,
@@ -47,11 +47,15 @@ import {
   promptVariableNames,
   type RunVariables,
 } from './prompts/variables.js';
-import { retainedKey, type Workflow } from './repository.js';
 import { skillCatalog } from './skills/catalog.js';
 import { liveCatalog } from './skills/live.js';
 import { LOAD_SKILL_TOOL, loadSkillTool } from './skills/load-skill.js';
-import { type CatalogSkill, readRunSkills } from './skills/sources.js';
+import { CODING_WORKFLOW_SKILL } from './skills/loaded.js';
+import {
+  type CatalogSkill,
+  type RunSkills,
+  readRunSkills,
+} from './skills/sources.js';
 import { resolveToolConfigs } from './tool-config.js';
 
 // Moved from agents/doric/src/lib/agents/direct/executor.ts (design 57 §5.3).
@@ -242,7 +246,7 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * Before every model request the system prompt passes through
  * `onBeforeModelRequestHook`, under the prompt's call. A standing
  * instruction (a retained bundle steer) is recorded in `meta.retained` when
- * the run stores it, so compaction keeps it and the workflow gives it once.
+ * the run stores it, so compaction keeps it.
  * The run's prompt variables are read once at its start, through `variables`,
  * and stay the same for the whole run.
  * At its start the run also reads the agents of `thread.cwd` (`builtInAgents`
@@ -256,15 +260,15 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * execution.effort` on `execution.providerId` once, for its agent loop and its
  * automatic compaction; manual compaction (`compactThread`) keeps the
  * execution model. A Thread running as an agent gets its `agentSection` before
- * `# Agents`, never receives the coding workflow, and on invalid instructions
- * rejects with `agentSection`'s Error before its first model request.
+ * `# Agents`, is not offered the coding workflow skill
+ * (`CODING_WORKFLOW_SKILL`), and on invalid instructions rejects with
+ * `agentSection`'s Error before its first model request.
  */
 export const runPrompt = async (
   { thread, job, session }: ExecutorRunInput,
   call: Call,
   services: Services,
   hooks: HookHandle<typeof DefaultHooksV1>,
-  workflow: Workflow,
   variables: RunVariables,
   builtInAgents: readonly AgentSummary[],
 ): Promise<Readonly<Pick<ExecutorRunResult, 'text'>>> => {
@@ -290,10 +294,21 @@ export const runPrompt = async (
   const compaction = compactionConfig(configuration);
   // `list` answers a promise when tools/v1 is in another process.
   const tools = boundTools(await services.use(ToolsV1).list(call));
-  const [skills, workspaceAgents] = await Promise.all([
+  const [read, workspaceAgents] = await Promise.all([
     readRunSkills(thread.cwd, call, services),
     readWorkspaceAgents(thread.cwd, call, services),
   ]);
+  // A Thread running as an agent is not offered the coding workflow: its
+  // agent's instructions are its workflow.
+  const skills: RunSkills =
+    thread.agent === undefined
+      ? read
+      : {
+          ...read,
+          builtIn: read.builtIn.filter(
+            ({ name }) => name !== CODING_WORKFLOW_SKILL,
+          ),
+        };
   const catalog = skillCatalog(skills);
   const live = liveCatalog(
     { cwd: thread.cwd, skills, catalog },
@@ -450,24 +465,6 @@ export const runPrompt = async (
   // measure it before the first provider call of the run.
   await compactIfUnderPressure(input(job).length);
   try {
-    // Before the first model request: an instruction the workflow gives here
-    // is read with the run's first steering.
-    await workflow.start(
-      {
-        threadId: thread.id,
-        promptId: job.id,
-        retains: (key) => {
-          settle();
-          return key in retained || [...retaining.values()].includes(key);
-        },
-      },
-      {
-        ...(thread.cwdRepo === undefined ? {} : { cwdRepo: thread.cwdRepo }),
-        source: job.source,
-        ...(thread.agent === undefined ? {} : { agent: thread.agent }),
-      },
-      call,
-    );
     for await (const value of agent.stream(input(job), {
       resume,
       signal,
@@ -558,7 +555,6 @@ export const runPrompt = async (
     }
     throw error;
   } finally {
-    workflow.end(job.id);
     // The run ended, so whatever it left — complete or partial — is the history
     // its Thread carries on with, after the deltas it still held.
     if (!lost) await log.record({ history: history() });

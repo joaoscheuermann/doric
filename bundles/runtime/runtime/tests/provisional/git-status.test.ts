@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { SandboxExecInput, SandboxExecResult } from 'sandbox';
+
 import {
   cwdRepoHint,
+  HintProbeIncompleteError,
   threadGit,
 } from '../../src/host/provisional/git-status.js';
 import { type FakeGitProbe, fakeSandbox } from '../support/sandbox.js';
@@ -238,6 +241,74 @@ void test('names a repository without a GitHub origin as a repository', async ()
       '/workspace/alpha',
     ),
     'git',
+  );
+});
+
+/**
+ * A repository sandbox whose hint probe answers `answer` instead, recording the
+ * exec input the probe passed; every other command goes to the scripted sandbox.
+ */
+const hintAnswering = (
+  answer: (input: SandboxExecInput) => Promise<SandboxExecResult>,
+) => {
+  const sandbox = repositoryAt({ status: clean });
+  const probes: SandboxExecInput[] = [];
+  const scripted = sandbox.exec;
+  sandbox.exec = async (input: SandboxExecInput) => {
+    if (input.cmd[3] !== 'git-hint') return scripted(input);
+    probes.push(input);
+    return answer(input);
+  };
+  return { sandbox, probes };
+};
+
+const exited = (exitCode: number | null): SandboxExecResult => ({
+  exitCode,
+  stdout: '',
+  stderr: '',
+  stdoutBytes: new Uint8Array(),
+  stderrBytes: new Uint8Array(),
+});
+
+void test('bounds the hint probe at five seconds', async () => {
+  const { sandbox, probes } = hintAnswering(async () => ({
+    ...exited(0),
+    stdout: 'present\n',
+  }));
+  assert.equal(await cwdRepoHint(sandbox, '/workspace/alpha'), 'git');
+  assert.equal(probes.length, 1);
+  assert.equal(probes[0]?.timeoutMs, 5000);
+});
+
+void test('rejects as incomplete, with the exit code, a hint probe that did not finish', async () => {
+  for (const exitCode of [1, null]) {
+    const { sandbox } = hintAnswering(async () => exited(exitCode));
+    await assert.rejects(
+      cwdRepoHint(sandbox, '/workspace/alpha'),
+      (error: unknown) => {
+        assert.ok(
+          error instanceof HintProbeIncompleteError,
+          `expected HintProbeIncompleteError for ${String(exitCode)}`,
+        );
+        assert.equal(error.exitCode, exitCode);
+        return true;
+      },
+    );
+  }
+});
+
+void test('passes through the error of a hint probe whose exec rejects', async () => {
+  const failure = new Error('Sandbox command timed out');
+  const { sandbox } = hintAnswering(async () => {
+    throw failure;
+  });
+  await assert.rejects(
+    cwdRepoHint(sandbox, '/workspace/alpha'),
+    (error: unknown) => {
+      assert.equal(error, failure);
+      assert.ok(!(error instanceof HintProbeIncompleteError));
+      return true;
+    },
   );
 });
 

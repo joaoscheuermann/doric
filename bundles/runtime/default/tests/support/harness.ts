@@ -34,14 +34,11 @@ import {
   type LeaseExecResult,
   type PromptSession,
   RuntimeLeaseV1,
-  RuntimeThreadsV1,
   RuntimeWorkspaceV1,
   runtimeLeaseMethods,
-  runtimeThreadsMethods,
   runtimeWorkspaceMethods,
   type SteerInput,
 } from 'runtime/contracts';
-import type { z } from 'zod';
 
 import type { AgentFile } from '../../src/host/agents/built-in.js';
 import { activate } from '../../src/host/index.js';
@@ -427,13 +424,6 @@ export interface HarnessOptions {
   readonly builtInAgents?: readonly AgentFile[];
   /** A `runtime.workspace/v1` provider; without it the contract is unprovided. */
   readonly workspace?: FakeWorkspace;
-  /**
-   * What the runtime does with an instruction the bundle gives: the steer the
-   * run reads at its next safe point, as `fakeThreadState().steer` queues it.
-   */
-  readonly onInstruct?: (
-    input: z.output<typeof runtimeThreadsMethods.instruct.input>,
-  ) => void;
 }
 
 /**
@@ -486,9 +476,6 @@ const transformHooks = () => {
 export const bundleServices = (options: HarnessOptions) => {
   const configuration = options.configuration ?? testConfiguration();
   const resolved: unknown[] = [];
-  /** What the bundle asked `runtime.threads/v1.instruct` to give a Thread. */
-  const instructions: z.output<typeof runtimeThreadsMethods.instruct.input>[] =
-    [];
   const languageModel = toLanguageModel(options.provider);
   /**
    * Every call the fake `runtime.lease/v1`, `mcp/v1` and
@@ -503,16 +490,6 @@ export const bundleServices = (options: HarnessOptions) => {
     bundle: { id: 'default' },
     provide: [
       transformHooks(),
-      defineService(RuntimeThreadsV1.id, {
-        instruct: defineMethod({
-          ...runtimeThreadsMethods.instruct,
-          execute: (input) => {
-            instructions.push(input);
-            options.onInstruct?.(input);
-            return { status: 'steered' as const, promptId: 'instruction' };
-          },
-        }),
-      }),
       defineService(ConfigurationV1.id, {
         current: defineMethod({
           input: configurationMethods.current.input,
@@ -604,7 +581,6 @@ export const bundleServices = (options: HarnessOptions) => {
   return {
     harness,
     resolved,
-    instructions,
     calls,
     activate: () =>
       activate(

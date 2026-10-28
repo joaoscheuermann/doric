@@ -30,8 +30,11 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   takes strict, optional `options`: `agent`
   (`{ name, source: 'built-in' | 'workspace', instructions }`, the
   instructions at most 64 000 characters), `model` and `effort`.
-- `runtime.workspace/v1` — `cwd` and `setCwd` of the calling prompt's Thread,
-  and `withThread`, which runs a task on one live Thread.
+- `runtime.workspace/v1` — `cwd`, `setCwd` and `location` (the directory and
+  its repository hint, probed now; 1.2.0, see
+  [docs/features/cwd-tool.md](../../../docs/features/cwd-tool.md)) of the
+  calling prompt's Thread, and `withThread`, which runs a task on one live
+  Thread.
 - `runtime.lease/v1` — `describe`, `exec`, `readFile` and `writeFile` on the
   sandbox leased to the calling prompt's Project (`exec` carries no abort
   signal and returns text only), lease reads that answer the lease state

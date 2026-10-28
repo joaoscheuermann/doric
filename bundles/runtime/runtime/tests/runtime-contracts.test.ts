@@ -183,7 +183,8 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // 1.6.0: spawn options (agent, model, effort).
     `${RuntimeThreadsV1.id}@1.6.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
-    `${RuntimeWorkspaceV1.id}@1.1.0`,
+    // 1.2.0: location
+    `${RuntimeWorkspaceV1.id}@1.2.0`,
     // 1.1.0: withLease (stage 10 R-5.1); 1.2.0: readFileBytes.
     `${RuntimeLeaseV1.id}@1.2.0`,
     // The images a Project holds, for prompts and tool results.

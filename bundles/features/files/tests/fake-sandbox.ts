@@ -319,6 +319,11 @@ export interface FakeHostOptions {
   readonly cwd?: string;
   /** Where `root` lives on this machine, so a move can see what is there. */
   readonly localRoot?: string;
+  /**
+   * Absolute directories that hold a repository of their own: `location()`
+   * answers `repo: 'git'` while the working directory is one of them.
+   */
+  readonly repositoryRoots?: readonly string[];
 }
 
 /**
@@ -332,6 +337,9 @@ export const fakeHost = (options: FakeHostOptions = {}): Host => {
   const root = normalizePath(options.root ?? WORKSPACE_ROOT);
   const localRoot = options.localRoot;
   let cwd = normalizePath(options.cwd ?? root);
+  const repositoryRoots = new Set(
+    (options.repositoryRoots ?? []).map((path) => normalizePath(path)),
+  );
 
   return {
     threads: {} as never,
@@ -361,6 +369,10 @@ export const fakeHost = (options: FakeHostOptions = {}): Host => {
         cwd = resolved;
 
         return { status: 'set', cwd };
+      },
+
+      async location() {
+        return repositoryRoots.has(cwd) ? { cwd, repo: 'git' } : { cwd };
       },
     },
   };

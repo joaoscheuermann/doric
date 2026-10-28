@@ -1296,3 +1296,16 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 - **Host.** `Ask.answer` deixa de recusar uma resposta sem escolha; as demais regras ficam. `formatAnswers` escreve `(skipped)` na linha de valores da pergunta pulada. O formato de `threads.answered/v1` não muda.
 - **Versão.** `threads.ask/v1` vai de 1.0.0 para 1.1.0 (aceita o que antes recusava); o bundle `threads` continua 1.1.0 (não lançado).
 - **Testes.** O teclado é testado no bloco montado na conversa; pular, no cliente, no domínio e no host.
+
+## Workflow de código como skill sob demanda (DORIC-91, 2026-10-28)
+
+- **Skill em vez de push.** O texto do `repository.md` vira a skill built-in `coding-workflow` do `default` (`src/skills/coding-workflow/SKILL.md`, `order: 50`, não always-available), carregada com `load_skill`; somem `createWorkflow`, o handler de `onThreadCwdChangedHook`, a razão `coding-workflow` e a chave `default:coding-workflow`. O host não verifica que o modelo carregou a skill; o system prompt manda checar o diretório com `cwd` e carregar as skills que casam.
+- **Flag e nota no `cwd`.** O resultado ganha `repositoryRoot` em todo status e, na raiz de um repositório, `note` com o texto exato `Remember to load the skills that match your task when working in a repository.` Só a raiz conta.
+- **`location()`.** `runtime.workspace/v1` 1.2.0 ganha `location()`, que sonda a dica agora e responde `{ cwd, repo? }`; quando a dica muda, grava, publica e dispara `onThreadCwdChangedHook`. O `cwd` a chama depois de todo resultado.
+- **Sonda limitada.** O exec da sonda leva `timeoutMs: 5000`; saída diferente de 0 (ou `null`) lança `HintProbeIncompleteError`, que só o `setCwd` traduz em "sem dica"; `location()` mantém a dica guardada quando a sonda não termina.
+- **Filtro de agente.** O executor tira `coding-workflow` das skills built-in de uma Thread com `agent`: não é listada e `load_skill` recusa.
+- **Pin.** A mensagem "Loaded skills" sempre mantém a entrada `CODING_WORKFLOW_SKILL`, antes do preenchimento guloso e fora do corte por tamanho.
+- **Sem migração.** Instruções `default:coding-workflow` já retidas ficam; o manifest do `default` tira `runtime.threads/v1` e `runtime.hooks/v1` de `optional`.
+- **Versões.** `files` 1.3.0 → 1.4.0 e `runtime.workspace/v1` 1.1.0 → 1.2.0; `runtime` continua 2.6.0 e `default` 2.3.0 (não lançados).
+- **Substitui.** A entrega do `repository.md` dos registros anteriores (o push e seus gatilhos: linhas 1193-1195 em "Prompts em Markdown com mustache", 1234 em "Execução com o agente, o modelo e o esforço da thread" e 1280 em "Workflow de código com rotas, agentes definidos e docs vivas"), o comentário de atribuição EGM no topo do `repository.md` (linha 1286; agora no topo do `SKILL.md`) e o teste `repositoryPrompt` (linha 1290).
+- **Testes e docs.** `repository.test.ts` sai; testes cobrem `location()`, a sonda, o resultado do `cwd`, o filtro e o pin. Spec: [coding-workflow-skill.md](../../designs/coding-workflow-skill.md); features: [coding-workflow.md](../../features/coding-workflow.md), [cwd-tool.md](../../features/cwd-tool.md).

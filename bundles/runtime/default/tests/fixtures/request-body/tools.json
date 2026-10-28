@@ -35,11 +35,18 @@
               "missing",
               "not-directory"
             ]
+          },
+          "repositoryRoot": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
           }
         },
         "required": [
           "cwd",
-          "status"
+          "status",
+          "repositoryRoot"
         ],
         "additionalProperties": false
       },

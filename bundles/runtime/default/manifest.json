@@ -17,11 +17,5 @@
     "hooks/v1@^1.0.0",
     "log/v1@^1.0.0"
   ],
-  "optional": [
-    "runtime.threads/v1",
-    "runtime.hooks/v1",
-    "runtime.lease/v1",
-    "runtime.workspace/v1",
-    "mcp/v1"
-  ]
+  "optional": ["runtime.lease/v1", "runtime.workspace/v1", "mcp/v1"]
 }

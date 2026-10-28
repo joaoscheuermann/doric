@@ -627,7 +627,8 @@ each Thread's working directory starts at the sandbox's workspace root
 `/workspace` and is inherited by a child Thread at creation. The agent moves it
 with the `cwd` tool, and a reader moves the same Thread's with
 `PATCH /threads/:id`; both reach one rule, which refuses any path that resolves
-outside the workspace root. The
+outside the workspace root. The `cwd` result also says whether the directory
+is a repository root ([docs/features/cwd-tool.md](docs/features/cwd-tool.md)). The
 existing sandbox-pool capacity governs Projects, not Threads.
 
 The migration replaces the Session-facing APIs and clients without legacy
@@ -683,15 +684,15 @@ former one-module-per-coordination-tool set ships in `/bundles/features/threads`
 prompt texts are Markdown templates rendered with `mustache`, one file in
 `src/host/prompts` per text the model receives whole: the system prompt
 (`system.md`), the `# Agent: <name>` section of a Thread that runs as an agent
-(`agent.md`), the coding workflow (`repository.md`), the `# Agents` section
+(`agent.md`), the `# Agents` section
 (`agents.md`), the "Agents changed" message (`agents-changed.md`), the
 `# Skills` section (`skills-catalog.md`), the "Skills changed" message
 (`skills-changed.md`) and the "Loaded skills" message (`loaded-skills.md`); tool descriptions, the
 `load_skill` one included, stay in the tool's `defineTool`. Each module reads
-the templates it uses once, when it loads (`executor.ts`, `repository.ts`,
+the templates it uses once, when it loads (`executor.ts`,
 `agents/catalog.ts`, `skills/catalog.ts`, `skills/loaded.ts`), checks each against the names it may
 cite (`system.md` declares the standard prompt variables, the three message
-templates theirs, `repository.md` none; partials are refused) and
+templates theirs; partials are refused) and
 renders it without HTML escaping; a missing template fails the import, so the
 bundle is quarantined with `invalid_part`. The code supplies only data — which
 always-available skills and rows fit, each cell already on one line, capped and
@@ -747,19 +748,11 @@ from the tool result cap. The `default` bundle owns `default.hooks/v1`, an exten
 handler of its own: its `onBeforeModelRequestHook` (`transform`, input
 `{ system }`) runs before every model request of a prompt, under the prompt's
 call, and `packages/agent` accepts a `system` function that it calls before
-each provider request for this. The coding workflow reaches the agent as an
-standing instruction, not as system prompt text, once per Thread: the
-`default` bundle gives the Thread the workflow (`prompts/repository.md`: the
-coordinator's routes — triage first, then a small route or a large one with a
-spec reviewed in four stages, user checkpoints and explicit approval,
-Brainstorm for an unclear idea, and docs at the end — each step a built-in
-agent started with `agent: <name>` and its effort) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
-`retain: true`, only to a Thread without an `agent` (an agent's instructions
-are its workflow), when a task — a `user` or `parent` input — starts with a
-`cwdRepo` hint (the executor checks before the run's first model request) and
-when a running prompt moves into a repository root (its
-`onThreadCwdChangedHook` handler), in both cases only while the history the
-model reads does not hold it yet. The executor records each retained steer it
+each provider request for this. The coding workflow (the coordinator's
+routes, each step a built-in agent) is the `default` bundle's built-in
+`coding-workflow` skill, loaded on demand, not offered to agent Threads and
+always kept in the "Loaded skills" message
+([docs/features/coding-workflow.md](docs/features/coding-workflow.md)). The executor records each retained steer it
 stores in `meta.retained` (`<bundleId>:<reason>` to the message's index),
 compaction keeps those messages verbatim after the summary and out of the
 summarizer's input and re-bases their indexes like the turn boundaries, and a
@@ -769,16 +762,17 @@ compaction itself and replaced rather than kept by the next one:
 reason="loaded-skills">` message holding the skills loaded in the condensed
 span and not loaded again in the kept tail (each cut at 20 000 characters,
 within min(100 000, `charBudget` / 4) characters in all), so they stay in
-effect after the summary. The coding workflow is kept verbatim, so it is given again only
-after a rewind removed it. The main Thread is the coordinator; a trivial
+effect after the summary. The main Thread is the coordinator; a trivial
 change skips the workflow, triage included, and a plain child given a
-`<parent-instruction>` does that step itself. It
-reaches both runtime contracts through `optional`, because the runtime requires
-`executor/v1`. The
+`<parent-instruction>` does that step itself. The
 base prompt tells the agent to work at a repository's root, to initialize a
 repository for a complex deliverable that has none, to ask the user before
 initializing one for an experiment, and to follow a `<bundle-instruction>` from
-its next step. Project and Thread lifecycle, queues, the prompt runner and the
+its next step; it reaches a repository only from its root, since the
+repository's own skills and agents are listed from the working directory, and
+before working on code it checks its directory with `cwd` and, at a repository
+root, loads the matching skills
+([docs/features/coding-workflow.md](docs/features/coding-workflow.md)). Project and Thread lifecycle, queues, the prompt runner and the
 prompt-scoped host facade live in `/bundles/runtime/runtime`; REST routes, Socket.IO
 namespaces, HTTP errors and safe event serialization live in
 `/bundles/foundation/transport`, which registers them on the native listeners through
@@ -968,7 +962,8 @@ committed. A runtime commit that meets such an append first folds it on its
 revision conflicts 8). Either way each external event is folded and published
 exactly once, by the one commit that moves the document past it. `/bundles/features/files` owns the built-in `cwd`,
 `edit`, `find`, `grep`, `terminal`, `tree`, `web`, and `write` tools; the `cwd` tool reports the calling Thread's
-working directory and moves it, and a relative path a tool is given resolves
+working directory and moves it, and says whether that directory is a repository
+root ([docs/features/cwd-tool.md](docs/features/cwd-tool.md)), and a relative path a tool is given resolves
 against that directory rather than the workspace root, exactly as `cd`
 resolves one against the current directory; a move that resolves outside the
 workspace root changes nothing. Its `view-image` tool reads an image file of the
@@ -1559,7 +1554,11 @@ adds `onPromptStartedHook` (after `prompt.started`, with the prompt's source,
 the Thread's `cwd` and `cwdRepo`) and `onThreadCwdChangedHook` (after any change
 of a Thread's `cwd` or `cwdRepo`, with both values before and after and the
 running `promptId`), both awaited by the runner outside the Project lock, and
-`runtime.threads/v1` 1.5.0 adds `instruct`, a bundle's instruction to a Thread; the core adds
+`runtime.threads/v1` 1.5.0 adds `instruct`, a bundle's instruction to a Thread;
+on 2026-10-28 `runtime.workspace/v1` 1.2.0 adds `location()`, whose repository
+hint probe is bounded at 5000 ms, so a move (also via `PATCH /threads/:id`)
+rejects instead of hanging when the probe times out
+([docs/features/cwd-tool.md](docs/features/cwd-tool.md)); the core adds
 `models/v1.contextWindow` over `models.provider/v1.catalogCapacity` and the
 `secrets/v1.watchRedactions` stream. It persists Projects, Threads and
 histories as `runtime.project/v1`, `runtime.thread/v1` and

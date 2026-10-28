@@ -120,16 +120,34 @@ export const threadGit = async (
   };
 };
 
-/** The repository hint of one working directory, or nothing when it holds none. */
+/** How long the hint probe may run. */
+const HINT_TIMEOUT_MS = 5000;
+
+/** The hint probe ran but did not finish: it exited non-zero, was killed or timed out. */
+export class HintProbeIncompleteError extends Error {
+  constructor(readonly exitCode: number | null) {
+    super(`The repository hint probe exited with ${String(exitCode)}.`);
+    this.name = 'HintProbeIncompleteError';
+  }
+}
+
+/**
+ * The repository hint of one working directory, or nothing when it holds none.
+ * Rejects with HintProbeIncompleteError when the probe did not finish: the
+ * script exits 0 on every path it completes, so any other exit code, `null`
+ * included, is a failure. An exec that rejects passes its error through.
+ */
 export const cwdRepoHint = async (
   sandbox: Sandbox,
   cwd: string,
 ): Promise<CwdRepo | undefined> => {
   const result = await sandbox.exec({
     cmd: ['sh', '-c', HINT_SCRIPT, 'git-hint', cwd],
+    timeoutMs: HINT_TIMEOUT_MS,
   });
 
-  if (result.exitCode !== 0) return undefined;
+  if (result.exitCode !== 0)
+    throw new HintProbeIncompleteError(result.exitCode);
 
   const [marker, ...origin] = result.stdout.split('\n');
   if (marker !== 'present') return undefined;

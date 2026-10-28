@@ -205,6 +205,10 @@ void test('the prompt-scoped contracts refuse a call whose prompt is not running
     async () => tools.use(RuntimeWorkspaceV1, scope).cwd(),
     inactive,
   );
+  await assert.rejects(
+    async () => tools.use(RuntimeWorkspaceV1, scope).location(),
+    inactive,
+  );
   await assert.rejects(async () => harness.lease(scope).describe(), inactive);
   await harness.dispose();
 });

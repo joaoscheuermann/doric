@@ -295,3 +295,94 @@ void test('L3 drops the older message when every one of its skills is loaded aga
   ]);
   assert.deepEqual(applied.rewritten.meta.retained, {});
 });
+
+/** The bundle skill the loaded-skills message pins: its locator is its name. */
+const WORKFLOW = 'coding-workflow';
+
+/** A skill text of exactly 3000 characters, heading included. */
+const sizedSkill = (locator: string): string =>
+  skillText(locator, 'a'.repeat(3000 - `# Skill: ${locator}\n\n`.length));
+
+/** One load of each locator in order, the call and its result. */
+const loads = (...entries: readonly (readonly [string, string])[]) =>
+  entries.flatMap(([locator, text], index) => [
+    loadCall(`p${index}`, locator),
+    toolResult(`p${index}`, text),
+  ]);
+
+void test('P1 puts the coding workflow first and whole, then fits the others most recent first and names the rest', () => {
+  const workflow = sizedSkill(WORKFLOW);
+  const [s1, s2, s3] = [sizedSkill('s1'), sizedSkill('s2'), sizedSkill('s3')];
+  const messages = [
+    user('go'),
+    ...loads([WORKFLOW, workflow], ['s1', s1], ['s2', s2], ['s3', s3]),
+    user('tail'),
+  ];
+
+  assert.deepEqual(loadedSkillsReplacement(messages, {}, 9, 7000), {
+    key: KEY,
+    message: reattach([workflow, s3], ['s2', 's1']),
+  });
+});
+
+void test('P2 keeps the whole coding workflow over a total smaller than it, and omits every other skill', () => {
+  const workflow = skillText(WORKFLOW, 'Follow the workflow.');
+  const messages = [
+    user('go'),
+    ...loads([WORKFLOW, workflow], ['b', B]),
+    user('tail'),
+  ];
+
+  assert.deepEqual(loadedSkillsReplacement(messages, {}, 5, 10), {
+    key: KEY,
+    message: reattach([workflow], ['b']),
+  });
+});
+
+void test('P3 does not pin a workspace skill named coding-workflow', () => {
+  const local = sizedSkill(`cwd/${WORKFLOW}`);
+  const [s2, s3] = [sizedSkill('s2'), sizedSkill('s3')];
+  const messages = [
+    user('go'),
+    ...loads([`cwd/${WORKFLOW}`, local], ['s2', s2], ['s3', s3]),
+    user('tail'),
+  ];
+
+  assert.deepEqual(loadedSkillsReplacement(messages, {}, 7, 7000), {
+    key: KEY,
+    message: reattach([s3, s2], [`cwd/${WORKFLOW}`]),
+  });
+});
+
+void test('P4 leaves out the coding workflow when the tail loads it again', () => {
+  const workflow = skillText(WORKFLOW, 'Follow the workflow.');
+  const messages = [
+    user('go'),
+    ...loads([WORKFLOW, workflow], ['b', B]),
+    user('tail'),
+    loadCall('t1', WORKFLOW),
+    toolResult('t1', workflow),
+  ];
+
+  assert.deepEqual(loadedSkillsReplacement(messages, {}, 5, 100_000), {
+    key: KEY,
+    message: reattach([B]),
+  });
+});
+
+void test('P5 keeps pinning the coding workflow an earlier loaded-skills message holds', () => {
+  const workflow = sizedSkill(WORKFLOW);
+  const [s1, s2, s3] = [sizedSkill('s1'), sizedSkill('s2'), sizedSkill('s3')];
+  const messages = [
+    user('[Context summary]\n\nEarlier work.'),
+    reattach([workflow]),
+    user('next'),
+    ...loads(['s1', s1], ['s2', s2], ['s3', s3]),
+    user('tail'),
+  ];
+
+  assert.deepEqual(loadedSkillsReplacement(messages, { [KEY]: 1 }, 9, 7000), {
+    key: KEY,
+    message: reattach([workflow, s3], ['s2', 's1']),
+  });
+});

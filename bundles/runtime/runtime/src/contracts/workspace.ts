@@ -2,6 +2,7 @@ import { type CallArg, functionSchema, ref } from 'bundle/contracts';
 import type { Sandbox } from 'sandbox';
 import { z } from 'zod';
 
+import type { CwdRepo } from './model.js';
 import { LOCAL_KEY } from './runtime.js';
 
 /*
@@ -23,6 +24,20 @@ export const cwdChangeSchema: z.ZodType<CwdChange, CwdChange> = z.union([
   z.looseObject({ status: z.literal('set'), cwd: z.string() }),
   z.looseObject({ status: z.enum(['outside', 'missing', 'not-directory']) }),
 ]);
+
+/** 1.2.0: the Thread's working directory and the repository hint of its own root. */
+export interface CwdLocation {
+  /** Absolute inside the sandbox. */
+  readonly cwd: string;
+  /** `git` or `github` when the directory itself holds a `.git` marker; absent otherwise. */
+  readonly repo?: CwdRepo;
+}
+
+export const cwdLocationSchema: z.ZodType<CwdLocation, CwdLocation> =
+  z.looseObject({
+    cwd: z.string(),
+    repo: z.enum(['git', 'github']).optional(),
+  });
 
 /** What `withThread` hands its task: the live Thread and its Project's sandbox. */
 export interface ThreadContext {
@@ -62,6 +77,14 @@ export interface RuntimeWorkspace {
    * nothing moves.
    */
   setCwd(path: string, call?: CallArg): Promise<CwdChange>;
+  /**
+   * 1.2.0: the Thread's working directory and the repository hint of its own
+   * root, probed now. A probe that fails or times out answers the hint the
+   * Thread already had. Not a pure read: when the probed hint differs from the
+   * stored one, the runtime writes it, publishes a Thread update and fires
+   * `onThreadCwdChangedHook`, so a caller that polls causes those writes.
+   */
+  location(call?: CallArg): Promise<CwdLocation>;
   /**
    * 1.1.0, local only: runs `task` on one live Thread, whatever the call's
    * scope. The outcome is a value; the task's own rejection propagates.
@@ -103,6 +126,7 @@ export const threadTaskSchema = functionSchema<ThreadTask<unknown>>().meta({
 export const runtimeWorkspaceMethods = {
   cwd: { input: z.tuple([]), output: z.string() },
   setCwd: { input: z.string(), output: cwdChangeSchema },
+  location: { input: z.tuple([]), output: cwdLocationSchema },
   withThread: {
     input: z.tuple([z.string(), withThreadOptionsSchema, threadTaskSchema]),
     output: threadTaskOutcomeSchema,

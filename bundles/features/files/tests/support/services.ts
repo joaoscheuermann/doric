@@ -81,7 +81,8 @@ const providers = (
   attached: AttachedImages = new Map(),
 ) => [
   attachments(attached),
-  // By id: the stage-1 methods only; withThread (1.1.0) has no fake here.
+  // By id: the stage-1 methods and location (1.2.0); withThread (1.1.0) has no
+  // fake here.
   defineService(RuntimeWorkspaceV1.id, {
     cwd: defineMethod({
       input: runtimeWorkspaceMethods.cwd.input,
@@ -92,6 +93,11 @@ const providers = (
       input: runtimeWorkspaceMethods.setCwd.input,
       output: runtimeWorkspaceMethods.setCwd.output,
       execute: (path) => host.workspace.setCwd(path),
+    }),
+    location: defineMethod({
+      input: runtimeWorkspaceMethods.location.input,
+      output: runtimeWorkspaceMethods.location.output,
+      execute: () => host.workspace.location(),
     }),
   }),
   // Stage-1 methods only: the lease reads have no fake here.

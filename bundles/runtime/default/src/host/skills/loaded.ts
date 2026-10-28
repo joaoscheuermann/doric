@@ -2,12 +2,12 @@ import type { ProviderMessage } from 'llms';
 
 import type { RetainedReplacement } from '../compaction/rewrite.js';
 import { bundleInstruction } from '../envelope.js';
+import { retainedKey } from '../history.js';
 import {
   loadTemplate,
   renderBlock,
   renderSection,
 } from '../prompts/templates.js';
-import { retainedKey } from '../repository.js';
 import { LOAD_SKILL_TOOL } from './load-skill.js';
 
 export const LOADED_SKILL_MAX_CHARS_PER_ENTRY = 20_000;
@@ -15,6 +15,13 @@ export const LOADED_SKILLS_MAX_CHARS = 100_000;
 
 /** The meta.retained key of the loaded-skills message: retainedKey('default', 'loaded-skills'). */
 export const loadedSkillsKey: string = retainedKey('default', 'loaded-skills');
+
+/**
+ * The `default` bundle's coding-workflow skill, by name and locator. The
+ * "Loaded skills" message always keeps its entry, and the executor does not
+ * offer it to a Thread running as an agent.
+ */
+export const CODING_WORKFLOW_SKILL = 'coding-workflow';
 
 /** Math.min(LOADED_SKILLS_MAX_CHARS, Math.floor(charBudget / 4)). Pure. */
 export const loadedSkillsMaxChars = (charBudget: number): number =>
@@ -163,6 +170,17 @@ export const loadedSkills = (
   return found;
 };
 
+/** One entry as the loaded-skills message renders it, cut when too long. */
+const loadedEntry = ({ text, cut }: LoadedSkill): LoadedEntry => {
+  const cutting = cut || text.length > LOADED_SKILL_MAX_CHARS_PER_ENTRY;
+  const kept = cutting ? text.slice(0, LOADED_SKILL_MAX_CHARS_PER_ENTRY) : text;
+  return {
+    fence: fenceFor(cutting ? `${kept}${cutMarker}` : kept),
+    text: kept,
+    cut: cutting,
+  };
+};
+
 /**
  * The swap of the loaded-skills message for a compaction condensing [0,end)
  * (entries one per locator from the span, most recent; locators found in the
@@ -174,7 +192,9 @@ export const loadedSkills = (
  * `loaded-skills.md` rendered with the fitted entries and the omitted
  * locators). Returns { key, message } when ≥1 entry (fitted or omitted);
  * { key } when retained[key] in [0,end) but no entry; undefined when nothing
- * to swap or retained[key] >= end. Pure.
+ * to swap or retained[key] >= end. The entry whose locator is
+ * `CODING_WORKFLOW_SKILL` comes first and is never omitted for
+ * `totalMaxChars`. Pure.
  */
 export const loadedSkillsReplacement = (
   messages: readonly ProviderMessage[],
@@ -191,18 +211,22 @@ export const loadedSkillsReplacement = (
   const fitted: LoadedEntry[] = [];
   const omitted: { readonly locator: string }[] = [];
   let used = 0;
-  for (const { locator, text, cut } of loadedSkills(messages.slice(0, end))) {
+  const span = loadedSkills(messages.slice(0, end));
+  // The pinned pass: the coding workflow's most recent load, whatever the cap.
+  for (const skill of span) {
+    if (skill.locator !== CODING_WORKFLOW_SKILL) continue;
+    if (seen.has(skill.locator) || again.has(skill.locator)) continue;
+    seen.add(skill.locator);
+    const entry = loadedEntry(skill);
+    fitted.push(entry);
+    used += renderSection(template, 'entries', [entry]).length;
+  }
+  // The greedy pass: every other entry, while it fits.
+  for (const skill of span) {
+    const { locator } = skill;
     if (seen.has(locator) || again.has(locator)) continue;
     seen.add(locator);
-    const cutting = cut || text.length > LOADED_SKILL_MAX_CHARS_PER_ENTRY;
-    const kept = cutting
-      ? text.slice(0, LOADED_SKILL_MAX_CHARS_PER_ENTRY)
-      : text;
-    const entry: LoadedEntry = {
-      fence: fenceFor(cutting ? `${kept}${cutMarker}` : kept),
-      text: kept,
-      cut: cutting,
-    };
+    const entry = loadedEntry(skill);
     const length = renderSection(template, 'entries', [entry]).length;
     if (used + length <= totalMaxChars) {
       fitted.push(entry);

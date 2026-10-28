@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
-import type { Sandbox, SandboxExecInput } from 'sandbox';
+import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
 import type { Thread } from '../../src/contracts/model.js';
 import type { WorkspaceService } from '../../src/host/domain/types.js';
@@ -440,6 +440,129 @@ void test('probes the sandbox on every read, and publishes a hint only when it c
   // Reading again finds the same hint, so nothing is published for it.
   updated.length = 0;
   await service.threads.git(thread.id);
+  assert.deepEqual(updated, []);
+  await service.dispose();
+});
+
+void test('reads a location that sees a repository appear without a move, and records its hint', async () => {
+  const live = liveSandbox(fakeSandbox({ entries: [{ path: 'alpha' }] }));
+  const seen: unknown[] = [];
+  const finished = deferred();
+  const { harness, service } = serviceAt(live.handle, async ({ tools }) => {
+    try {
+      seen.push(await tools.workspace.setCwd('alpha'));
+      // The prompt creates a repository where it stands.
+      live.state.current = sandboxWithAlpha();
+      seen.push(await tools.workspace.location());
+    } finally {
+      finished.resolve();
+    }
+    return 'done';
+  });
+  const project = await service.projects.create('Project');
+  await harness.projectState(project.id, 'ready');
+  const thread = await createThread(service, project.id);
+
+  await service.threads.prompt(thread.id, 'init');
+  await finished.promise;
+
+  assert.deepEqual(seen, [
+    { status: 'set', cwd: '/workspace/alpha' },
+    { cwd: '/workspace/alpha', repo: 'git' },
+  ]);
+  assert.equal((await service.threads.find(thread.id))?.cwdRepo, 'git');
+  await service.dispose();
+});
+
+const exited = (exitCode: number | null): SandboxExecResult => ({
+  exitCode,
+  stdout: '',
+  stderr: '',
+  stdoutBytes: new Uint8Array(),
+  stderrBytes: new Uint8Array(),
+});
+
+/**
+ * Repository `alpha`, whose hint probe answers `state.answer` when one is set,
+ * with every hint probe's exec input recorded.
+ */
+const probingAlpha = () => {
+  const sandbox = sandboxWithAlpha();
+  const state: { answer?: () => Promise<SandboxExecResult> } = {};
+  const probes: SandboxExecInput[] = [];
+  const scripted = sandbox.exec;
+  sandbox.exec = async (input: SandboxExecInput) => {
+    if (input.cmd[3] !== 'git-hint') return scripted(input);
+    probes.push(input);
+    return state.answer === undefined ? scripted(input) : state.answer();
+  };
+  return { sandbox, state, probes };
+};
+
+void test('a route move whose hint probe did not finish moves without a hint, and one whose probe failed does not move', async () => {
+  const { sandbox, state, probes } = probingAlpha();
+  const { harness, service } = serviceAt(sandbox);
+  const project = await service.projects.create('Project');
+  await harness.projectState(project.id, 'ready');
+  const thread = await createThread(service, project.id);
+
+  for (const message of ['Probe failed', 'Sandbox command timed out']) {
+    state.answer = async () => {
+      throw new Error(message);
+    };
+    await assert.rejects(service.threads.setCwd(thread.id, 'alpha'), {
+      message,
+    });
+    assert.equal((await service.threads.find(thread.id))?.cwd, '/workspace');
+  }
+
+  for (const exitCode of [1, null]) {
+    state.answer = undefined;
+    assert.equal(
+      (await service.threads.setCwd(thread.id, '/workspace')).status,
+      'updated',
+    );
+    state.answer = async () => exited(exitCode);
+    const moved = await service.threads.setCwd(thread.id, 'alpha');
+    assert.equal(moved.status, 'updated', `expected updated for ${exitCode}`);
+    if (moved.status !== 'updated') throw new Error('The move was refused');
+    assert.equal(moved.thread.cwd, '/workspace/alpha');
+    assert.equal(moved.thread.cwdRepo, undefined);
+  }
+
+  // A probe that finishes in a repository still names it.
+  state.answer = undefined;
+  await service.threads.setCwd(thread.id, '/workspace');
+  const moved = await service.threads.setCwd(thread.id, 'alpha');
+  assert.equal(moved.status, 'updated');
+  if (moved.status !== 'updated') throw new Error('The move was refused');
+  assert.equal(moved.thread.cwdRepo, 'git');
+
+  assert.ok(probes.length > 0);
+  for (const probe of probes) assert.equal(probe.timeoutMs, 5000);
+  await service.dispose();
+});
+
+void test('a hint refresh whose probe did not finish keeps the stored hint and publishes nothing', async () => {
+  const { sandbox, state } = probingAlpha();
+  const { harness, service, updated } = serviceAt(sandbox);
+  const project = await service.projects.create('Project');
+  await harness.projectState(project.id, 'ready');
+  const thread = await createThread(service, project.id);
+  const moved = await service.threads.setCwd(thread.id, 'alpha');
+  assert.ok(moved.status === 'updated' && moved.thread.cwdRepo === 'git');
+  updated.length = 0;
+
+  state.answer = async () => exited(1);
+  assert.deepEqual(
+    await service.threads.withThread(
+      thread.id,
+      { exclusive: false, refreshHint: true },
+      async () => 'status',
+    ),
+    { status: 'ready', value: 'status' },
+  );
+  assert.equal((await service.threads.find(thread.id))?.cwdRepo, 'git');
   assert.deepEqual(updated, []);
   await service.dispose();
 });

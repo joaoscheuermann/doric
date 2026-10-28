@@ -79,7 +79,7 @@ See **Agents** below.
     git identity fallback).
 - **Prompt templates:** every text the model receives whole is one Markdown
   file under `src/host/prompts`, rendered with `mustache`: `system.md`,
-  `agent.md` (the `# Agent: <name>` section), `repository.md`, `agents.md`
+  `agent.md` (the `# Agent: <name>` section), `agents.md`
   (the `# Agents` section), `agents-changed.md`,
   `skills-catalog.md` (the `# Skills` section), `skills-changed.md` and
   `loaded-skills.md`. Tool descriptions, the
@@ -196,21 +196,16 @@ reason="agents-changed">` message (`agents-changed.md`), before any "Skills
 
 - **Working in code:** the instruction tells the agent to work at a
   repository's root, to initialize a repository for a complex deliverable that
-  has none, and to ask the user first when the code is an experiment.
-- **Coding in a repository:** the coding workflow
-  (`src/host/prompts/repository.md`) reaches the agent as a standing
-  instruction, not as system prompt text, once per Thread, and never to a
-  Thread that runs as an agent: its instructions are its workflow. The bundle calls
-  `runtime.threads/v1.instruct` (reason `coding-workflow`, `retain: true`):
-  - when a task — the reader's request or a parent's delegated step — starts
-    while the Thread's `cwdRepo` hint is set: the executor checks before the
-    run's first model request;
-  - when a running prompt moves into a repository root, after the tool batch
-    that moved it: the `onThreadCwdChangedHook` handler checks the run;
-
-  and in both cases only while the history the model reads does not hold it
-  (`meta.retained`), so a later task, or a move between repositories, gives
-  nothing again, and a rewind that removed it gives it once more.
+  has none, and to ask the user first when the code is an experiment. It
+  works on a repository only from its root, since the repository's own skills
+  and agents are listed from the working directory. Before working on code it checks its directory with `cwd` and, at a
+  repository root, loads the matching skills (see
+  [docs/features/coding-workflow.md](../../../docs/features/coding-workflow.md)).
+- **Coding in a repository:** the coding workflow is the built-in
+  `coding-workflow` skill (`src/skills/coding-workflow/SKILL.md`), loaded on
+  demand and not offered to Threads with `agent`: their instructions are their
+  workflow. See
+  [docs/features/coding-workflow.md](../../../docs/features/coding-workflow.md).
 
   The main Thread is the coordinator: it starts every task with triage, then
   chooses a small route (search when needed, plan, contracts, tests,
@@ -224,8 +219,7 @@ reason="agents-changed">` message (`agents-changed.md`), before any "Skills
   `low`; plan, contracts, tests and implementation `medium`; spec and review
   `high`; no model, so agents inherit the coordinator's). A plain child given
   a `<parent-instruction>` does that step and skips the workflow; a trivial
-  change skips the workflow, triage included. Both runtime contracts are
-  `optional`, because the runtime requires `executor/v1`.
+  change skips the workflow, triage included.
 
 - **Input envelope:** every input is framed in XML, not Markdown headers:
   `<user-request>`, `<parent-instruction thread="" prompt="">`,
@@ -268,7 +262,9 @@ reason="agents-changed">` message (`agents-changed.md`), before any "Skills
 reason="loaded-skills">` message after the summary (`default:loaded-skills`),
   which a later compaction replaces rather than keeps: the most recent text of
   each, cut at 20 000 characters and marked as cut, within min(100 000,
-  `charBudget` / 4) characters, naming the ones that did not fit. After an
+  `charBudget` / 4) characters, naming the ones that did not fit, except the
+  `coding-workflow` entry, which is always kept
+  ([docs/features/coding-workflow.md](../../../docs/features/coding-workflow.md)). After an
   in-run compaction, the next skills check compares with the system prompt's
   lists again, so a change the summary replaced is told again.
 - **Writes:** every history and event write goes through the runtime's
@@ -281,15 +277,14 @@ reason="loaded-skills">` message after the summary (`default:loaded-skills`),
 ## Tests
 
 `npx nx test bundle-default` runs the ported executor scenarios against fake
-`host-config/v1`, `models/v1`, `tools/v1`, `skills/v1`, `hooks/v1` and
-`runtime.threads/v1` providers and a fake prompt session, the skill catalog,
+`host-config/v1`, `models/v1`, `tools/v1`, `skills/v1` and `hooks/v1`
+providers and a fake prompt session, the skill catalog,
 its mid-run changes, the agent definitions (the shipped built-in ones
 included), their `# Agents` catalog and their mid-run changes, the loaded
 skills kept across a compaction and
 `load_skill` against fake `runtime.lease/v1`, `runtime.workspace/v1` and
 `mcp/v1` providers that record every call (or none, to stand for an
-unprovided one), and the coding
-workflow's instruction policy through the runtime hooks it observes. It also runs the exact request-body checks: the real `llms`
+unprovided one), and the `coding-workflow` skill's agent filter and pin. It also runs the exact request-body checks: the real `llms`
 OpenRouter and OpenAI Responses providers, with a faked HTTP transport, must
 send the bodies the stage-1 host recorded (`tests/fixtures/request-body`).
 
@@ -310,7 +305,7 @@ npx nx run doric-host:build-bundles
 
 ## Credits
 
-The coding workflow (`src/host/prompts/repository.md`) and the `triage`,
+The coding workflow (`src/skills/coding-workflow/SKILL.md`) and the `triage`,
 `spec`, `review` and `docs` agents adapt the Elephant-Goldfish Model
 (https://github.com/google/elephant-goldfish-model, commit 3d0b348),
 Copyright 2026 Google LLC, Apache License 2.0.

@@ -30,7 +30,11 @@ import type {
   ThreadControl,
   WorkspaceControl,
 } from '../../contracts/tool-host/index.js';
-import { cwdRepoHint, threadGit } from '../provisional/git-status.js';
+import {
+  cwdRepoHint,
+  HintProbeIncompleteError,
+  threadGit,
+} from '../provisional/git-status.js';
 import type { AttachmentStore } from '../store/attachments.js';
 import {
   queuedPrompt,
@@ -1345,7 +1349,14 @@ export const createThreadRunner = (context: RunnerContext) => {
       // same refusal as a path that leaves the root outright.
       if (!(await physicallyInside(sandbox, sandbox.root, target)))
         return refused('outside');
-      const cwdRepo = await cwdRepoHint(sandbox, target);
+      // A probe that did not finish stores no hint, as a non-zero exit did
+      // before; an exec that throws still rejects the move.
+      const cwdRepo = await cwdRepoHint(sandbox, target).catch(
+        (error: unknown) => {
+          if (error instanceof HintProbeIncompleteError) return undefined;
+          throw error;
+        },
+      );
       const updated = await store.setCwd(thread.thread.id, target, cwdRepo);
       if (updated === undefined) return { status: 'missing' as const };
       thread.thread = updated;
@@ -1359,12 +1370,13 @@ export const createThreadRunner = (context: RunnerContext) => {
     return result;
   };
   /**
-   * Re-reads the working directory's repository hint after a job settles, when
-   * the job may have created, removed, or re-origined a repository. The probe
-   * runs outside the project lock and the write re-checks the directory it
-   * probed, so a hint can never describe a directory the Thread has left; a
-   * probe that fails keeps the hint the record already had, because a hint is an
-   * optimization and no prompt should fail over one.
+   * Re-reads the working directory's repository hint after a job settles, on a
+   * Git read, and on `location()`, when the directory may have gained, lost or
+   * re-origined a repository. The probe runs outside the project lock and the
+   * write re-checks the directory it probed, so a hint can never describe a
+   * directory the Thread has left; a probe that fails keeps the hint the record
+   * already had, because a hint is an optimization and no prompt should fail
+   * over one.
    */
   const hint = async (project: ProjectRuntime, thread: ThreadRuntime) => {
     const sandbox = project.lease?.sandbox;
@@ -1427,6 +1439,12 @@ export const createThreadRunner = (context: RunnerContext) => {
         return { status: 'set', cwd: result.thread.cwd };
       if (result.status === 'refused') return result.change;
       throw new Error('Thread control is no longer active.');
+    },
+    location: async () => {
+      active(project, thread, job);
+      await hint(project, thread);
+      const { cwd, cwdRepo } = thread.thread;
+      return { cwd, ...(cwdRepo === undefined ? {} : { repo: cwdRepo }) };
     },
   });
   const coordinate = (

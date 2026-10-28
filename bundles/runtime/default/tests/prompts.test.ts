@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { parseSkillDocument } from 'bundle';
+
 import { systemPromptWith } from '../src/host/executor.js';
 import { harnessVariables, sandboxSection } from './support/harness.js';
 
@@ -57,4 +59,42 @@ void test('moves each git skill into the working directory with the cwd tool', a
 
   assert.match(cloning, workingDirectoryStep);
   assert.match(worktrees, workingDirectoryStep);
+});
+
+/** The bullet that sends the model to the cwd tool and its skills before code work. */
+const checkWorkingDirectoryBullet =
+  '- Before you work on code, check your working directory with the cwd tool. When its result reports a repository root, load the skills that match your work before you start it.';
+
+void test('tells the model to check its working directory and load the matching skills before code work', () => {
+  const prompt = systemPromptWith(harnessVariables, '');
+
+  assert.ok(prompt.includes(checkWorkingDirectoryBullet));
+  assert.ok(
+    prompt.includes(
+      "Do not reach into a repository from another directory with working_directory or absolute paths: the repository's own skills and agents are listed from your working directory.",
+    ),
+  );
+  assert.ok(
+    !prompt.includes(
+      "moving your working directory into it is what gives you the repository's working rules",
+    ),
+  );
+});
+
+void test('ships the coding workflow as a skill to load, ordered first among the built-in skills', async () => {
+  const parsed = parseSkillDocument(
+    await readSkill(
+      'bundles/runtime/default/src/skills/coding-workflow/SKILL.md',
+    ),
+    'coding-workflow SKILL.md',
+    { frontmatterAvailability: true },
+  );
+
+  assert.equal(parsed.skill.name, 'coding-workflow');
+  assert.equal(parsed.alwaysAvailable, undefined);
+  assert.equal(parsed.order, 50);
+  assert.ok(
+    parsed.skill.body.trimStart().startsWith('# Coding in a repository'),
+  );
+  assert.ok(!parsed.skill.body.includes('Elephant-Goldfish'));
 });

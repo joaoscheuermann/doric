@@ -26,6 +26,10 @@ export interface HistoryMeta {
   readonly retained: Readonly<Record<string, number>>;
 }
 
+/** The key a standing instruction is retained under in the history's meta. */
+export const retainedKey = (bundleId: string, why: string): string =>
+  `${bundleId}:${why}`;
+
 /** The entries of a stored index map whose values are whole indexes. */
 const indexes = (value: unknown): Readonly<Record<string, number>> =>
   isRecord(value)

@@ -5,13 +5,7 @@ import {
   HooksV1,
   type HostContext,
 } from 'bundle/contracts';
-import {
-  ExecutorV1,
-  executorMethods,
-  RuntimeHooksV1,
-  type RuntimeThreads,
-  RuntimeThreadsV1,
-} from 'runtime/contracts';
+import { ExecutorV1, executorMethods } from 'runtime/contracts';
 
 import { type AgentSummary, DefaultHooksV1 } from '../contracts/index.js';
 import { type AgentFile, builtInAgentFiles } from './agents/built-in.js';
@@ -25,7 +19,6 @@ import {
   rewind,
 } from './history.js';
 import { createRunVariables } from './prompts/variables.js';
-import { createWorkflow, type Workflow } from './repository.js';
 
 /**
  * The default `executor/v1`: one prompt run, its turn boundary and rewind.
@@ -37,7 +30,6 @@ import { createWorkflow, type Workflow } from './repository.js';
  */
 export const createExecutor = (
   hooks: HookHandle<typeof DefaultHooksV1>,
-  workflow: Workflow,
   now: () => Date,
   builtInAgents: readonly AgentSummary[],
 ) => {
@@ -48,15 +40,7 @@ export const createExecutor = (
       input: executorMethods.run.input,
       output: executorMethods.run.output,
       execute: (input, call, services) =>
-        runPrompt(
-          input,
-          call,
-          services,
-          hooks,
-          workflow,
-          runVariables,
-          builtInAgents,
-        ),
+        runPrompt(input, call, services, hooks, runVariables, builtInAgents),
     }),
     checkpoint: defineMethod({
       input: executorMethods.checkpoint.input,
@@ -89,13 +73,9 @@ export interface ActivateOptions {
 }
 
 /**
- * Defines `default.hooks/v1`, provides the default executor, and gives a
- * Thread the coding workflow once, as a standing instruction: when a task
- * starts at a repository root or a running prompt moves into one, while its
- * history does not hold it; a Thread running as an agent never receives it.
- * The runtime requires `executor/v1`, so its hooks
- * and Thread controls arrive after activation, when it does. The bundle
- * loader passes no `options`.
+ * Defines `default.hooks/v1` and provides the default executor.
+ * The runtime requires `executor/v1`, so its hooks arrive after activation,
+ * when it does. The bundle loader passes no `options`.
  * Before anything else, loads the built-in agents with `loadBuiltInAgents`
  * and throws its Error, providing nothing, when one is invalid. Provides
  * `default.agents/v1` over them, and gives them to the executor.
@@ -105,25 +85,12 @@ export const activate = (
   options: ActivateOptions = {},
 ): void => {
   const builtIn = loadBuiltInAgents(options.builtInAgents ?? builtInAgentFiles);
-  let threads: RuntimeThreads | undefined;
   const hooks = services.use(HooksV1);
-
-  services.whenAvailable(RuntimeThreadsV1, (api) => {
-    threads = api;
-    return () => {
-      threads = undefined;
-    };
-  });
-  const workflow = createWorkflow(() => threads);
-  hooks.whenAvailable(RuntimeHooksV1, (runtime) => {
-    runtime.onThreadCwdChangedHook(workflow.onCwdChanged);
-  });
 
   services.provide(agentsService(builtIn));
   services.provide(
     createExecutor(
       hooks.define(DefaultHooksV1),
-      workflow,
       options.now ?? (() => new Date()),
       builtIn,
     ),
