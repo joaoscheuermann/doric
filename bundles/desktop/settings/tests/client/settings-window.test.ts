@@ -1,5 +1,5 @@
 // The settings window as the user meets it: opened at `/settings`, the nav
-// of its own four sections (Versioning is the git bundle's, WP-10N), each
+// of its own five sections (Versioning is the git bundle's, WP-10N), each
 // section a route, the search, and the save the
 // window's close waits for.
 
@@ -41,9 +41,9 @@ const openrouter = {
 };
 
 /** A host with one stored configuration; a replace stores what it gets. */
-const host = () => {
+const host = (initial: unknown = configuration) => {
   let revision = 1;
-  let stored: unknown = configuration;
+  let stored: unknown = initial;
 
   return {
     'host-config/v1.current': () => ({
@@ -97,6 +97,56 @@ const type = (input: HTMLInputElement, value: string): void => {
   input.dispatchEvent(new window.Event('input', { bubbles: true }));
 };
 
+const field = (window: SettingsWindow, id: string): HTMLInputElement =>
+  window.document.getElementById(id) as HTMLInputElement;
+
+/** A mouse press as a pointer delivers it: down, up, then the click. */
+const press = (element: HTMLElement): void => {
+  for (const name of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+    element.dispatchEvent(
+      new window.PointerEvent(name, { bubbles: true, pointerType: 'mouse' }),
+    );
+  }
+  element.click();
+};
+
+/** Opens a combobox, types into it and clicks the option named `label`. */
+const choose = async (
+  window: SettingsWindow,
+  input: HTMLInputElement,
+  query: string,
+  label: string,
+): Promise<void> => {
+  press(input);
+  await settle();
+  type(input, query);
+  await settle();
+  const option = [
+    ...window.document.querySelectorAll<HTMLElement>('[role="option"]'),
+  ].find((candidate) => candidate.textContent?.trim() === label);
+  assert.ok(option, `no option ${label} for "${query}"`);
+  option.click();
+  await settle();
+};
+
+/** The close phases the window's close waits on, which flush the autosave. */
+const flush = async (window: SettingsWindow): Promise<void> => {
+  await window.requestClose({ phase: 'close', forced: false, deadline: 0 });
+  await window.requestClose({
+    phase: 'flush',
+    forced: false,
+    deadline: Date.now() + 1_500,
+  });
+};
+
+/** The profile of the last configuration the window sent the host. */
+const savedProfile = (window: SettingsWindow): unknown =>
+  (
+    window.received('host-config/v1.replace').at(-1)?.input as
+      | { readonly profile?: unknown }
+      | undefined
+  )?.profile;
+
 test('a window opened at /settings shows the Providers section and names itself', async () => {
   opened = await openSettingsWindow({ host: host() });
   await settle(20);
@@ -105,12 +155,71 @@ test('a window opened at /settings shows the Providers section and names itself'
   assert.equal(opened.document.title, 'Doric Settings');
   assert.equal(heading(opened), 'Providers');
   assert.deepEqual(navRows(opened), [
+    'Profile',
     'Providers',
     'Execution',
     'Tools',
     'Credentials',
   ]);
   assert.equal(activeRow(opened), 'Providers');
+});
+
+test('the Profile section saves a name and a time zone, and shows them when the window opens again', async () => {
+  const stateful = host();
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/profile',
+    host: stateful,
+  });
+  await settle(20);
+
+  assert.equal(heading(opened), 'Profile');
+  type(field(opened, 'profile-name'), 'Ana');
+  await settle();
+  await choose(
+    opened,
+    field(opened, 'profile-timezone'),
+    'Sao_Paulo',
+    'America/Sao_Paulo',
+  );
+  await flush(opened);
+
+  assert.deepEqual(savedProfile(opened), {
+    name: 'Ana',
+    timezone: 'America/Sao_Paulo',
+  });
+
+  await opened.close();
+  opened = undefined;
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/profile',
+    host: stateful,
+  });
+  await settle(20);
+
+  assert.equal(field(opened, 'profile-name').value, 'Ana');
+  assert.equal(field(opened, 'profile-timezone').value, 'America/Sao_Paulo');
+});
+
+test('choosing the host time zone saves a profile without one', async () => {
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/profile',
+    host: host({
+      ...configuration,
+      profile: { name: 'Ana', timezone: 'America/Sao_Paulo' },
+    }),
+  });
+  await settle(20);
+
+  assert.equal(heading(opened), 'Profile');
+  await choose(
+    opened,
+    field(opened, 'profile-timezone'),
+    'Host',
+    'Host time zone',
+  );
+  await flush(opened);
+
+  assert.deepEqual(savedProfile(opened), { name: 'Ana' });
 });
 
 test('a nav row opens its section at its own path', async () => {
@@ -235,6 +344,7 @@ test('a section another bundle adds is headed by its link and saves through the 
 
   assert.equal(heading(opened), 'Git');
   assert.deepEqual(navRows(opened), [
+    'Profile',
     'Providers',
     'Execution',
     'Tools',

@@ -53,6 +53,15 @@ const hostContracts: Readonly<
   'secrets/v1': { list: 0, create: null, update: 2, delete: null },
 };
 
+/** The version each host contract is staged at; any other is at 1.0.0. */
+const hostContractVersions: Readonly<Record<string, string>> = {
+  // The configuration that carries the optional profile (DORIC-86).
+  'host-config/v1': '1.1.0',
+};
+
+const hostContractVersion = (id: string): string =>
+  hostContractVersions[id] ?? '1.0.0';
+
 /** The host bundle, staging every host contract but the `absent` ones. */
 const hostCandidateWithout = (
   absent: ReadonlySet<string>,
@@ -67,7 +76,7 @@ const hostCandidateWithout = (
     provides: [
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
-      'host-config/v1@1.0.0',
+      `host-config/v1@${hostContractVersion('host-config/v1')}`,
       // The settings part takes this one when it is there; the host answers
       // it behind the bridge, so the window harness stages it here the way
       // the real composition enables the bundle that provides it.
@@ -87,7 +96,7 @@ const hostCandidateWithout = (
       .filter((id) => !absent.has(id))
       .map((id) => ({
         id,
-        version: '1.0.0',
+        version: hostContractVersion(id),
         kind: 'service' as const,
         environment: 'host' as const,
         cardinality: 'one' as const,
@@ -150,7 +159,7 @@ const hostRemote = (absent: ReadonlySet<string>): RemoteContract[] =>
       environment: 'host',
       bundleId: id === 'host-config/v1' ? 'host' : 'core',
       version: '1.0.0',
-      contractVersion: '1.0.0',
+      contractVersion: hostContractVersion(id),
       cardinality: 'one',
       methods: Object.fromEntries(
         Object.entries(methods).map(([name, tuple]) => [
@@ -179,7 +188,7 @@ const globalNames = (window: Window): string[] => [
   'innerWidth',
   'innerHeight',
   ...Object.getOwnPropertyNames(window).filter((name) =>
-    /^(HTML|SVG)\w*Element$|^\w*Event$|^(Node|Element|Text|Comment|DocumentFragment|ShadowRoot|Range|Selection|DOMRect|ResizeObserver|IntersectionObserver)$/.test(
+    /^(HTML|SVG)\w*Element$|^\w*Event$|^(Node|Element|Text|Comment|DocumentFragment|ShadowRoot|NodeFilter|Range|Selection|DOMRect|ResizeObserver|IntersectionObserver)$/.test(
       name,
     ),
   ),

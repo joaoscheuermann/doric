@@ -46,6 +46,7 @@ import {
   credentialFields,
   credentialKinds,
   type DoricConfiguration,
+  type Profile,
   type ProviderConfiguration,
   type ProviderField,
   type ProviderFieldKind,
@@ -268,11 +269,37 @@ const guardedReference = (value: unknown): string | undefined => {
 };
 
 /**
+ * The profile a save sends: none for `undefined` or `null`. A value that is not
+ * a plain record, or has a `name`/`timezone` that is present but not a string,
+ * fails with `invalidConfiguration()`. Only `name` and `timezone` are kept,
+ * each only when present, and a profile left with no field becomes none.
+ * Contents are not checked here; the host does that and answers `invalid`.
+ */
+const guardedProfile = (value: unknown): Profile | undefined => {
+  if (value === undefined || value === null) return undefined;
+  if (
+    !isPlainRecord(value) ||
+    (value.name !== undefined && typeof value.name !== 'string') ||
+    (value.timezone !== undefined && typeof value.timezone !== 'string')
+  ) {
+    return invalidConfiguration();
+  }
+  const { name, timezone } = value;
+  if (name === undefined && timezone === undefined) return undefined;
+  return {
+    ...(name === undefined ? {} : { name }),
+    ...(timezone === undefined ? {} : { timezone }),
+  };
+};
+
+/**
  * The configuration a settings save sends to the host: the former IPC guard,
- * unchanged. It keeps only the providers, the execution model, the turn limit
- * and the two credential references, so the Tools section's values,
- * `execution.maxToolResultChars` and `execution.contextCompaction` never reach
- * the host (a kept quirk), and an empty or `null` reference is sent as none.
+ * unchanged but for the profile. It keeps only the providers, the execution
+ * model, the turn limit, the two credential references and the profile, so the
+ * Tools section's values, `execution.maxToolResultChars` and
+ * `execution.contextCompaction` never reach the host (a kept quirk), and an
+ * empty or `null` reference is sent as none. The profile reaches the host as
+ * the draft holds it, without `profile` when the draft has none.
  */
 export const desktopConfiguration = (value: unknown): ConfigurationInput => {
   if (!isPlainRecord(value) || !Array.isArray(value.providers)) {
@@ -284,12 +311,14 @@ export const desktopConfiguration = (value: unknown): ConfigurationInput => {
 
   const gitCredentialId = guardedReference(value.gitCredentialId);
   const githubCredentialId = guardedReference(value.githubCredentialId);
+  const profile = guardedProfile(value.profile);
   return {
     providers: value.providers.map(guardedProvider),
     models: { execution: guardedExecutionModel(models.execution) },
     execution: { maxTurns: guardedMaxTurns(value.execution) },
     ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
     ...(githubCredentialId === undefined ? {} : { githubCredentialId }),
+    ...(profile === undefined ? {} : { profile }),
   };
 };
 
@@ -645,6 +674,27 @@ const credentialReferenceFrom = (value: unknown): string | undefined => {
   return typeof value === 'string' ? value : invalidResponse();
 };
 
+/**
+ * The profile a host answer carries: none when it is absent. Anything that is not
+ * a plain record of optional string `name`/`timezone` fails with
+ * `invalidResponse()`. Only those two fields are kept.
+ */
+const profileFrom = (value: unknown): Profile | undefined => {
+  if (value === undefined) return undefined;
+  if (
+    !isPlainRecord(value) ||
+    (value.name !== undefined && typeof value.name !== 'string') ||
+    (value.timezone !== undefined && typeof value.timezone !== 'string')
+  ) {
+    return invalidResponse();
+  }
+  const { name, timezone } = value;
+  return {
+    ...(name === undefined ? {} : { name }),
+    ...(timezone === undefined ? {} : { timezone }),
+  };
+};
+
 const toolValuesFrom = (
   value: unknown,
 ): Readonly<Record<string, Readonly<Record<string, string>>>> | undefined => {
@@ -697,6 +747,7 @@ const configurationFrom = (value: unknown): Configuration => {
   const gitCredentialId = credentialReferenceFrom(value.gitCredentialId);
   const githubCredentialId = credentialReferenceFrom(value.githubCredentialId);
   const tools = toolValuesFrom(value.tools);
+  const profile = profileFrom(value.profile);
   return {
     providers: value.providers.map(providerConfigurationFrom),
     models: {
@@ -718,6 +769,7 @@ const configurationFrom = (value: unknown): Configuration => {
     ...(tools === undefined ? {} : { tools }),
     ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
     ...(githubCredentialId === undefined ? {} : { githubCredentialId }),
+    ...(profile === undefined ? {} : { profile }),
   };
 };
 

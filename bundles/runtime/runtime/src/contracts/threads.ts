@@ -19,15 +19,18 @@ import {
   type PromptAcceptResult,
   type QueuedPrompt,
   queuedPromptSchema,
+  type ReasoningEffort,
   type RemoveQueuedResult,
   type ResumeResult,
   type RewindResult,
+  reasoningEfforts,
   removeQueuedResultSchema,
   resumeResultSchema,
   rewindResultSchema,
   type SteerResult,
   steerResultSchema,
   type Thread,
+  type ThreadAgent,
   type ThreadCreateResult,
   type ThreadEvent,
   type ThreadQueue,
@@ -190,6 +193,48 @@ export const spawnedThreadSchema: z.ZodType<SpawnedThread, SpawnedThread> =
     promptId: z.string(),
   });
 
+/** The longest agent instructions a spawn accepts and a Thread document stores. */
+export const spawnInstructionsMaxLength = 64_000;
+/**
+ * The agent a child is spawned as: its public identity plus the instructions
+ * the executor gives it. The instructions are stored with the Thread but are
+ * never part of the public `Thread` record or of any event.
+ */
+export interface SpawnAgent extends ThreadAgent {
+  readonly instructions: string;
+}
+/**
+ * 1.6.0: how a child is spawned. Every field is optional, and omitting one
+ * means:
+ * - `agent`: none. An agent is never inherited from the parent.
+ * - `model` / `effort`: the parent Thread's own value, else the executor's
+ *   default.
+ */
+export interface SpawnOptions {
+  readonly agent?: SpawnAgent;
+  readonly model?: string;
+  readonly effort?: ReasoningEffort;
+}
+/**
+ * Strict: an unknown key, an unknown effort, a source other than `built-in`
+ * or `workspace`, or instructions longer than `spawnInstructionsMaxLength`
+ * fail the call's input validation before anything is created.
+ */
+export const spawnOptionsSchema: z.ZodType<SpawnOptions, SpawnOptions> = z
+  .object({
+    agent: z
+      .object({
+        name: z.string(),
+        source: z.enum(['built-in', 'workspace']),
+        instructions: z.string().max(spawnInstructionsMaxLength),
+      })
+      .strict()
+      .optional(),
+    model: z.string().optional(),
+    effort: z.enum(reasoningEfforts).optional(),
+  })
+  .strict();
+
 export const promptResultSchema: z.ZodType<PromptResult, PromptResult> =
   z.union([
     z.looseObject({ status: z.literal('accepted'), promptId: z.string() }),
@@ -239,8 +284,20 @@ export const interruptResultSchema = z.enum([
  * `Error('Thread control is no longer active.')`.
  */
 export interface RuntimeThreadControls {
-  /** Names the child `title`, or the start of `prompt` without one. */
-  spawn(prompt: string, title?: string, call?: CallArg): Promise<SpawnedThread>;
+  /**
+   * Names the child `title`, or the start of `prompt` without one.
+   * 1.6.0: `options` spawns it as an agent and/or on a model and effort (see
+   * `SpawnOptions`); without them the child runs as before, on its parent's
+   * model and effort. Returns the child and its first prompt. Rejects on an
+   * empty prompt or title, a closed binding, or a Project that cannot take a
+   * Thread, exactly as before.
+   */
+  spawn(
+    prompt: string,
+    title?: string,
+    options?: SpawnOptions,
+    call?: CallArg,
+  ): Promise<SpawnedThread>;
   list(limit: number, cursor?: string, call?: CallArg): Promise<ThreadPage>;
   /** The child's state and, when a prompt has finished, its result. */
   get(threadId: string, call?: CallArg): Promise<ThreadSummary>;
@@ -473,7 +530,11 @@ export const threadEventLogSchema: z.ZodType<ThreadEventLog, ThreadEventLog> =
 
 export const runtimeThreadsMethods = {
   spawn: {
-    input: z.tuple([z.string(), z.string().optional()]),
+    input: z.tuple([
+      z.string(),
+      z.string().optional(),
+      spawnOptionsSchema.optional(),
+    ]),
     output: spawnedThreadSchema,
   },
   list: {

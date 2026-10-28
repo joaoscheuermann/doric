@@ -5,19 +5,6 @@ import { createTestServices } from 'bundle/testing';
 
 import { systemPromptWith } from '../src/host/executor.js';
 import {
-  addedSkillsPrompt,
-  alwaysAvailableSkillsPrompt,
-  builtInSkillsPrompt,
-  changedWorkspaceSkillsPrompt,
-  removedSkillsPrompt,
-  serverSkillsPrompt,
-  skillsChangedPrompt,
-  skillsPrompt,
-  skillsToLoadPrompt,
-  workspaceSkillsPrompt,
-} from '../src/host/prompts/skills.js';
-import { systemPrompt } from '../src/host/prompts/system.js';
-import {
   type CatalogState,
   skillCatalog,
   skillCatalogChange,
@@ -28,6 +15,7 @@ import {
   readRunSkills,
 } from '../src/host/skills/sources.js';
 import {
+  harnessVariables,
   leaseService,
   mcpServer,
   mcpService,
@@ -37,6 +25,20 @@ import {
   skillsService,
   threadId,
 } from './support/harness.js';
+import {
+  addedSkillsPrompt,
+  alwaysAvailableSkillsPrompt,
+  builtInSkillsPrompt,
+  changedWorkspaceSkillsPrompt,
+  environmentPrompt,
+  removedSkillsPrompt,
+  serverSkillsPrompt,
+  skillsChangedPrompt,
+  skillsPrompt,
+  skillsToLoadPrompt,
+  systemPrompt,
+  workspaceSkillsPrompt,
+} from './support/prompts.js';
 
 /*
  * The `# Skills` section of the default agent's system prompt, rendered once
@@ -106,7 +108,10 @@ void test('S1 renders nothing when every list is empty, and the system prompt st
 
   assert.equal(catalog.section, '');
   assert.equal(catalog.listed.size, 0);
-  assert.equal(systemPromptWith(''), systemPrompt);
+  assert.equal(
+    systemPromptWith(harnessVariables, ''),
+    `${systemPrompt}\n\n${environmentPrompt(harnessVariables)}`,
+  );
 });
 
 void test('S2 renders only the always-available part, keeping each body verbatim, when no skill is to load', () => {

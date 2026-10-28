@@ -26,9 +26,15 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   `list`, `get`, `events`, `send`, `restart`, `interrupt` and `terminate` act on the
   calling prompt's direct children, through the `ThreadControl` type in
   `contracts/tool-host`; the [`threads`](../../features/threads/README.md)
-  bundle exposes them as tools.
-- `runtime.workspace/v1` — `cwd` and `setCwd` of the calling prompt's Thread,
-  and `withThread`, which runs a task on one live Thread.
+  bundle exposes them as tools. `spawn(prompt, title?, options?)` (1.6.0)
+  takes strict, optional `options`: `agent`
+  (`{ name, source: 'built-in' | 'workspace', instructions }`, the
+  instructions at most 64 000 characters), `model` and `effort`.
+- `runtime.workspace/v1` — `cwd`, `setCwd` and `location` (the directory and
+  its repository hint, probed now; 1.2.0, see
+  [docs/features/cwd-tool.md](../../../docs/features/cwd-tool.md)) of the
+  calling prompt's Thread, and `withThread`, which runs a task on one live
+  Thread.
 - `runtime.lease/v1` — `describe`, `exec`, `readFile` and `writeFile` on the
   sandbox leased to the calling prompt's Project (`exec` carries no abort
   signal and returns text only), lease reads that answer the lease state
@@ -70,6 +76,25 @@ sidebar, and the host enforces the same tree: `create` answers `invalid_parent`
 to a Thread the reader opens under anything but a main Thread, while an agent
 may spawn under any Thread it is working in, as deep as the work goes. A
 sub-thread is a branch already, so no surface offers a branch under it either.
+
+A spawned Thread keeps the `agent`, `model` and `effort` it was spawned with
+as a snapshot in its `runtime.thread/v1` document (1.1.0). A child spawned
+without a `model` or an `effort` takes its parent's stored value, and when
+the parent has none either, the executor's configured default applies. The
+`agent` is never inherited: a child spawned without one has none. The runtime
+stores the model and effort as given and does not check them against the
+model catalog. The public `Thread` shows `agent` as `{ name, source }`,
+`model` and `effort`, and never the instructions: the runner reads them from
+the stored document on every run and compaction and passes them to the
+executor as `thread.agent.instructions`, so a retry, a parent's send, the
+restart of a failed child and a run after a host restart all use the values
+the Thread was spawned with. A document written before 1.1.0 has none of the
+three. From `executor/v1` 1.3.0 the executor's `run` and `compact` receive
+this Thread (`ExecutorThread`, checked by `executorThreadSchema`): its
+`agent` with the instructions, its `model` and its `effort`. When the stored
+document holds no instructions for an agent Thread, the runner drops `agent`
+from what it passes, and the executor runs the Thread as the default agent.
+The runtime still requires `executor/v1@^1.0.0`.
 
 ## How it works
 

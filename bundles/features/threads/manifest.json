@@ -1,16 +1,28 @@
 {
   "manifestVersion": 1,
   "id": "threads",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "engines": {
     "doric": "^1.0.0"
   },
   "description": "Delegation capabilities for creating and steering direct child threads.",
-  "provides": [],
+  "provides": [
+    "threads.ask/v1@1.1.0",
+    "threads.asked/v1@1.0.0",
+    "threads.answered/v1@1.0.0"
+  ],
   "requires": [
     "tools/v1@^1.2.0",
-    "runtime.threads/v1@^1.0.0",
+    "runtime.threads/v1@^1.6.0",
+    "events/v1@^1.0.0",
+    "hooks/v1@^1.0.0",
     "ui/v1@^1.0.0",
-    "navigation/v1@^1.0.0"
-  ]
+    "navigation/v1@^1.0.0",
+    "models/v1@^1.0.0",
+    "host-config/v1@^1.1.0"
+  ],
+  "optional": ["default.agents/v1"],
+  "desktopScope": {
+    "threads.ask/v1": ["projectId", "threadId", "promptId"]
+  }
 }

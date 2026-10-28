@@ -35,11 +35,18 @@
               "missing",
               "not-directory"
             ]
+          },
+          "repositoryRoot": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
           }
         },
         "required": [
           "cwd",
-          "status"
+          "status",
+          "repositoryRoot"
         ],
         "additionalProperties": false
       },
@@ -926,7 +933,7 @@
   {
     "definition": {
       "name": "thread-spawn",
-      "description": "Create an agent thread and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat. The reader can watch it, pause it, continue it and retry it, but never prompt or delete it, so the task must stand on its own. Give it a short title (up to 80 characters) naming the task, as the user sees it in the thread list; without one, the thread is named after the start of the prompt.",
+      "description": "Create an agent thread and delegate a self-contained task. Returns immediately. The child shares this project workspace; its result arrives automatically in this chat. The reader can watch it, pause it, continue it and retry it, but never prompt or delete it, so the task must stand on its own. Give it a short title (up to 80 characters) naming the task, as the user sees it in the thread list; without one, the thread is named after the start of the prompt. Set agent to run the child as one of the agents listed under # Agents, with that agent's instructions; without it, the child is a plain thread. model and effort override the agent's defaults; without them the child uses the agent's, else yours.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -937,6 +944,26 @@
           },
           "title": {
             "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
           }
         },
         "required": [
@@ -1157,6 +1184,92 @@
         },
         "required": [
           "threadId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
+  },
+  {
+    "definition": {
+      "name": "ask",
+      "description": "Ask the user one or more multiple-choice questions. The chat shows them as an interactive block where the user picks options or types a free answer. Use it when progress depends on a decision only the user can make: an approval, a choice between alternatives, or a missing requirement; do not ask what the workspace or your tools can answer. Write the questions and options in the user's language and mark the options you recommend. After calling it, end your turn without further tool calls: the answers arrive as the next user request, and until then nothing is approved or decided. Only the main thread can ask; a subagent puts its question in its result for its coordinator. A new call replaces any question still unanswered.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "questions": {
+            "minItems": 1,
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "question": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "options": {
+                  "minItems": 2,
+                  "maxItems": 6,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "recommended": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "multiSelect": {
+                  "type": "boolean"
+                },
+                "allowOther": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "questions"
         ],
         "additionalProperties": false
       },

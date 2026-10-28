@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
-import type { ThreadEvent } from '../../src/contracts/model.js';
-import { threadEventsStream } from '../../src/contracts/storage.js';
+import type { Thread, ThreadEvent } from '../../src/contracts/model.js';
+import { createdKey, threadEventsStream } from '../../src/contracts/storage.js';
 import { onEventAppended } from '../../src/host/appends.js';
 import { createNotices } from '../../src/host/domain/notices.js';
 import type { RuntimeStores } from '../../src/host/store/index.js';
@@ -1590,3 +1590,108 @@ void test('refuses a Project deletion over the backend batch limit without remov
     await backend.close();
   }
 });
+
+storeTest(
+  'reads a Thread written before spawn options with no agent, model, effort or instructions',
+  async ({ projects, threads, backend, second }) => {
+    const { project } = await projects.create('Old', snapshot(), 'blue');
+    const id = randomUUID();
+    const at = new Date(0).toISOString();
+    // A document as the store wrote it before DORIC-71, committed directly.
+    await backend.storage.commit({
+      expect: [{ type: 'runtime.thread/v1', id, revision: 0 }],
+      put: [
+        {
+          type: 'runtime.thread/v1',
+          id,
+          value: {
+            id,
+            projectId: project.id,
+            parentThreadId: null,
+            origin: 'agent',
+            name: 'Old',
+            state: 'ready',
+            open: true,
+            cwd: '/workspace',
+            cwdRepo: null,
+            queuePaused: false,
+            activePromptId: null,
+            errorCode: null,
+            lastSequence: 0,
+            result: null,
+            lastStarted: null,
+            usage: null,
+            pending: [],
+            createdAt: at,
+            updatedAt: at,
+            startedAt: null,
+            finishedAt: null,
+            createdKey: createdKey(at, id),
+          },
+        },
+      ],
+    });
+
+    for (const store of [threads, second.threads]) {
+      const found = await store.find(id);
+      assert.ok(found);
+      assert.equal(found.instructions, undefined);
+      assert.equal('instructions' in found, false);
+      const record = await store.record(id);
+      for (const thread of [found.thread, record]) {
+        assert.equal(thread?.name, 'Old');
+        assert.equal(thread !== undefined && 'agent' in thread, false);
+        assert.equal(thread !== undefined && 'model' in thread, false);
+        assert.equal(thread !== undefined && 'effort' in thread, false);
+      }
+      assert.deepEqual(
+        (await store.listByProject(project.id)).map((thread) => thread.id),
+        [id],
+      );
+    }
+  },
+);
+
+storeTest(
+  'writes a spawned agent, model and effort as given and keeps them through a reopen',
+  async ({ projects, threads, second }) => {
+    const { project } = await projects.create('Agents', snapshot(), 'blue');
+    const { thread: parent } = await threads.create(project.id, 'Parent');
+    const instructions = 'Review every change.';
+    const created = await threads.create(
+      project.id,
+      'Reviewer',
+      parent.id,
+      undefined,
+      'agent',
+      {
+        agent: { name: 'reviewer', source: 'workspace', instructions },
+        model: 'm-1',
+        effort: 'high',
+      },
+    );
+    const id = created.thread.id;
+    const expectPublic = (thread: Thread | undefined) => {
+      assert.ok(thread);
+      assert.deepEqual(thread.agent, { name: 'reviewer', source: 'workspace' });
+      assert.equal(thread.model, 'm-1');
+      assert.equal(thread.effort, 'high');
+      assert.equal(JSON.stringify(thread).includes(instructions), false);
+    };
+    expectPublic(created.thread);
+    assert.equal(created.instructions, instructions);
+    const found = await threads.find(id);
+    expectPublic(found?.thread);
+    assert.equal(found?.instructions, instructions);
+
+    await threads.setState(id, 'failed', undefined, 'boom');
+    assert.equal((await threads.reopen(id))?.state, 'ready');
+    for (const store of [threads, second.threads]) {
+      const reopened = await store.find(id);
+      assert.equal(reopened?.thread.state, 'ready');
+      expectPublic(reopened?.thread);
+      assert.equal(reopened?.instructions, instructions);
+      expectPublic(await store.record(id));
+    }
+  },
+);

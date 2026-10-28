@@ -50,7 +50,7 @@ import {
   storableJson,
   timestamps,
 } from './records.js';
-import type { PromptProgress, ThreadStore } from './types.js';
+import type { PromptProgress, ThreadRecord, ThreadStore } from './types.js';
 import {
   foldUsage,
   projectUsage,
@@ -147,6 +147,19 @@ export const toThread = (stored: ThreadDocument): Thread => ({
         ),
       }
     : {}),
+  ...(stored.agent === undefined
+    ? {}
+    : { agent: { name: stored.agent.name, source: stored.agent.source } }),
+  ...(stored.model === undefined ? {} : { model: stored.model }),
+  ...(stored.effort === undefined ? {} : { effort: stored.effort }),
+});
+
+/** The record with the executor-only instructions, when it has an agent. */
+const toRecord = (stored: ThreadDocument): ThreadRecord => ({
+  thread: toThread(stored),
+  ...(stored.agent === undefined
+    ? {}
+    : { instructions: stored.agent.instructions }),
 });
 
 /** The document after a write that changes it (`updatedAt` moves). */
@@ -618,7 +631,7 @@ export const createThreadStore = (
       return threadUsage(rows);
     },
 
-    create(projectId, name, parentThreadId, inherit, origin) {
+    create(projectId, name, parentThreadId, inherit, origin, options) {
       const id = randomUUID();
       return projects.mutate(projectId, async (owner) => {
         if (
@@ -664,6 +677,9 @@ export const createThreadStore = (
           updatedAt: at,
           startedAt: null,
           finishedAt: null,
+          ...(options?.agent === undefined ? {} : { agent: options.agent }),
+          ...(options?.model === undefined ? {} : { model: options.model }),
+          ...(options?.effort === undefined ? {} : { effort: options.effort }),
           createdKey: createdKey(at, id),
         };
         return {
@@ -678,16 +694,14 @@ export const createThreadStore = (
             ],
             put: [{ type: threadType.type, id, value }],
           },
-          done: () => ({ thread: toThread(value) }),
+          done: () => toRecord(value),
         };
       });
     },
 
     async find(id) {
       const stored = await threads.get(id);
-      return stored === undefined
-        ? undefined
-        : { thread: toThread(stored.value) };
+      return stored === undefined ? undefined : toRecord(stored.value);
     },
 
     async record(id) {

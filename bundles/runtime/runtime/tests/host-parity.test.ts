@@ -56,6 +56,13 @@ const parity = {
     same<
       Equal<WithoutCall<RuntimeWorkspace['setCwd']>, WorkspaceControl['setCwd']>
     >(),
+  location:
+    same<
+      Equal<
+        WithoutCall<RuntimeWorkspace['location']>,
+        WorkspaceControl['location']
+      >
+    >(),
   terminalRun:
     same<
       Equal<

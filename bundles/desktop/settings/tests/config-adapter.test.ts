@@ -235,6 +235,42 @@ describe('saving the configuration', () => {
   });
 });
 
+describe('the profile', () => {
+  test('reads the stored profile and sends it back with an edit', async () => {
+    const profiled: Configuration = {
+      ...configuration,
+      profile: { name: 'Ana', timezone: 'America/Sao_Paulo' },
+    };
+    let sent: unknown;
+
+    await settingsOver(
+      {
+        current: () => stored(profiled, 3),
+        replace: (input) => {
+          sent = input;
+          return { status: 'replaced', config: stored(profiled, 4) };
+        },
+      },
+      async (api) => {
+        const read = await api.config.get();
+        assert.deepEqual(read.configuration.profile, profiled.profile);
+
+        await api.config.update({
+          ...read.configuration,
+          execution: { maxTurns: 12 },
+        });
+      },
+    );
+
+    const body = sent as Configuration;
+    assert.deepEqual(body.profile, {
+      name: 'Ana',
+      timezone: 'America/Sao_Paulo',
+    });
+    assert.deepEqual(body.execution, { maxTurns: 12 });
+  });
+});
+
 describe('reading the configuration', () => {
   test('reads the stored configuration, its revision and update time', async () => {
     const value = {

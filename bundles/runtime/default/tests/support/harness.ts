@@ -24,25 +24,25 @@ import {
   type AttachmentContent,
   type ConfigurationValue,
   type CwdRepo,
+  type ExecutorThread,
   ExecutorV1,
   type HistoryPatch,
   type HistoryReader,
   type InputSource,
+  type LeaseDescription,
   type LeaseExecInput,
   type LeaseExecResult,
   type PromptSession,
   RuntimeLeaseV1,
-  RuntimeThreadsV1,
   RuntimeWorkspaceV1,
   runtimeLeaseMethods,
-  runtimeThreadsMethods,
   runtimeWorkspaceMethods,
   type SteerInput,
-  type Thread,
 } from 'runtime/contracts';
-import type { z } from 'zod';
 
+import type { AgentFile } from '../../src/host/agents/built-in.js';
 import { activate } from '../../src/host/index.js';
+import type { PromptVariables } from '../../src/host/prompts/variables.js';
 
 export const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1603';
 export const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
@@ -70,7 +70,21 @@ export const testConfiguration = (): ConfigurationValue => ({
   },
   execution: { maxTurns: 32 },
   tools: {},
+  // A fixed zone, so a run's date line does not follow the host's zone.
+  profile: { timezone: 'UTC' },
 });
+
+/** The clock every harness runs on unless a test gives its own. */
+export const harnessNow = new Date('2026-03-01T12:00:00.000Z');
+
+/**
+ * The prompt variables of a default harness run: `testConfiguration()`'s UTC
+ * zone at `harnessNow`, no user name, and no lease to probe an OS on.
+ */
+export const harnessVariables: PromptVariables = {
+  date: '2026-03-01',
+  timezone: 'UTC',
+};
 
 /**
  * A skill `skills/v1` lists. `alwaysAvailable` defaults to true, as every
@@ -118,6 +132,8 @@ export interface RecordedCall {
 
 /** The sandbox the prompt's Project leases, as `runtime.lease/v1` answers. */
 export interface FakeLease {
+  /** Default: the call rejects, so a run probes no OS. */
+  readonly describe?: () => LeaseDescription | Promise<LeaseDescription>;
   /** Default: exit 0 with no output. */
   readonly exec?: (
     input: LeaseExecInput,
@@ -125,6 +141,25 @@ export interface FakeLease {
   /** Default: the file does not exist. */
   readonly readFile?: (path: string) => string | Promise<string>;
 }
+
+/** Whether `input` is the run's OS probe, the exec that runs `uname -srm`. */
+export const isOsProbe = (input: LeaseExecInput): boolean =>
+  input.cmd.some((part) => part.includes('uname -srm'));
+
+/**
+ * A lease `lease-1` whose OS probe prints `uname` on its first line and
+ * `prettyName` on its second; every other exec exits 0 with no output.
+ */
+export const osLease = (
+  uname = 'Linux 6.8.0 x86_64',
+  prettyName = 'Ubuntu 24.04 LTS',
+): FakeLease => ({
+  describe: () => ({ id: 'lease-1', root: '/workspace' }),
+  exec: (input) =>
+    isOsProbe(input)
+      ? { exitCode: 0, stdout: `${uname}\n${prettyName}\n`, stderr: '' }
+      : { exitCode: 0, stdout: '', stderr: '' },
+});
 
 /** The Project's MCP servers, as `mcp/v1` answers. */
 export interface FakeMcp {
@@ -186,9 +221,19 @@ export const skillsService = (skills: readonly HarnessSkill[]) =>
     }),
   });
 
-/** A fake `runtime.lease/v1` (exec, readFile) recording every call. */
+/** A fake `runtime.lease/v1` (describe, exec, readFile) recording every call. */
 export const leaseService = (lease: FakeLease, calls: RecordedCall[]) =>
   defineService(RuntimeLeaseV1.id, {
+    describe: defineMethod({
+      input: runtimeLeaseMethods.describe.input,
+      output: runtimeLeaseMethods.describe.output,
+      execute: async (input, call) => {
+        recorder(calls, 'describe')(input, call);
+        if (lease.describe === undefined)
+          throw new Error('The lease cannot be described.');
+        return lease.describe();
+      },
+    }),
     exec: defineMethod({
       input: runtimeLeaseMethods.exec.input,
       output: runtimeLeaseMethods.exec.output,
@@ -373,15 +418,12 @@ export interface HarnessOptions {
   readonly lease?: FakeLease;
   /** An `mcp/v1` provider; without it the contract is unprovided. */
   readonly mcp?: FakeMcp;
+  /** The bundle's clock. Default: always `harnessNow`. */
+  readonly now?: () => Date;
+  /** The built-in agent files `activate` loads. Default: none (`[]`), so tests see only the agents they inject; pass `builtInAgentFiles` for the shipped ones. */
+  readonly builtInAgents?: readonly AgentFile[];
   /** A `runtime.workspace/v1` provider; without it the contract is unprovided. */
   readonly workspace?: FakeWorkspace;
-  /**
-   * What the runtime does with an instruction the bundle gives: the steer the
-   * run reads at its next safe point, as `fakeThreadState().steer` queues it.
-   */
-  readonly onInstruct?: (
-    input: z.output<typeof runtimeThreadsMethods.instruct.input>,
-  ) => void;
 }
 
 /**
@@ -434,9 +476,6 @@ const transformHooks = () => {
 export const bundleServices = (options: HarnessOptions) => {
   const configuration = options.configuration ?? testConfiguration();
   const resolved: unknown[] = [];
-  /** What the bundle asked `runtime.threads/v1.instruct` to give a Thread. */
-  const instructions: z.output<typeof runtimeThreadsMethods.instruct.input>[] =
-    [];
   const languageModel = toLanguageModel(options.provider);
   /**
    * Every call the fake `runtime.lease/v1`, `mcp/v1` and
@@ -451,16 +490,6 @@ export const bundleServices = (options: HarnessOptions) => {
     bundle: { id: 'default' },
     provide: [
       transformHooks(),
-      defineService(RuntimeThreadsV1.id, {
-        instruct: defineMethod({
-          ...runtimeThreadsMethods.instruct,
-          execute: (input) => {
-            instructions.push(input);
-            options.onInstruct?.(input);
-            return { status: 'steered' as const, promptId: 'instruction' };
-          },
-        }),
-      }),
       defineService(ConfigurationV1.id, {
         current: defineMethod({
           input: configurationMethods.current.input,
@@ -552,14 +581,20 @@ export const bundleServices = (options: HarnessOptions) => {
   return {
     harness,
     resolved,
-    instructions,
     calls,
-    activate: () => activate({ services: harness.services }),
+    activate: () =>
+      activate(
+        { services: harness.services },
+        {
+          now: options.now ?? (() => new Date(harnessNow)),
+          builtInAgents: options.builtInAgents ?? [],
+        },
+      ),
     executor: (scope: CallScope) => harness.services.use(ExecutorV1, scope),
   };
 };
 
-export const thread = (): Thread => ({
+export const thread = (): ExecutorThread => ({
   id: threadId,
   projectId,
   name: 'Main thread',
@@ -580,19 +615,26 @@ export const runPrompt = async (
     source = { kind: 'user' },
     id = promptId,
     cwdRepo,
+    thread: overrides,
   }: {
     readonly signal?: AbortSignal;
     readonly source?: InputSource;
     readonly id?: string;
     /** The repository hint of the Thread snapshot the run receives. */
     readonly cwdRepo?: CwdRepo;
+    /** Fields of the Thread snapshot the run receives (its agent, model, effort). */
+    readonly thread?: Partial<ExecutorThread>;
   } = {},
 ): Promise<string> => {
   const result = await services
     .executor({ projectId, threadId, promptId: id })
     .run(
       {
-        thread: { ...thread(), ...(cwdRepo === undefined ? {} : { cwdRepo }) },
+        thread: {
+          ...thread(),
+          ...(cwdRepo === undefined ? {} : { cwdRepo }),
+          ...overrides,
+        },
         job: { id, prompt, source },
         session: state.session(id),
       },

@@ -1,5 +1,13 @@
-import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import {
+  copyFile,
+  cp,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import type { Activate } from '../contracts/context.js';
@@ -42,6 +50,48 @@ const exists = async (path: string): Promise<boolean> => {
   }
 };
 
+/** The `*.md` files at any depth below `dir`, relative to it; none when `dir` is missing. */
+const markdownBelow = async (dir: string): Promise<readonly string[]> => {
+  try {
+    const entries = await readdir(dir, {
+      recursive: true,
+      withFileTypes: true,
+    });
+
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+      .map((entry) => relative(dir, join(entry.parentPath, entry.name)));
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return [];
+    }
+
+    throw error;
+  }
+};
+
+/**
+ * Mirrors the Markdown files of `from` into `to`. Deletes every `*.md` file
+ * at any depth below `to`, then copies every `*.md` file at any depth below
+ * `from` to the same relative path under `to`, creating directories as needed.
+ *
+ * Files under `to` that are not `*.md` are kept, and so are directories,
+ * including any left empty. A missing `from` copies nothing (the deletions
+ * still happen); a missing `to` deletes nothing and is created only when
+ * something is copied. Rejects with the fs error for any other read, delete
+ * or copy failure.
+ */
+const copyMarkdown = async (from: string, to: string): Promise<void> => {
+  for (const path of await markdownBelow(to)) {
+    await rm(join(to, path));
+  }
+
+  for (const path of await markdownBelow(from)) {
+    await mkdir(dirname(join(to, path)), { recursive: true });
+    await copyFile(join(from, path), join(to, path));
+  }
+};
+
 /**
  * Parts recorded at build time. A client part is imported and dry-activated
  * with the DOM shim installed (stage 9): it may touch the DOM at import time
@@ -71,7 +121,9 @@ export interface BuildOptions {
 }
 
 /**
- * `build <bundleDir>` (after tsc): validates the v1 manifest, copies skills,
+ * `build <bundleDir>` (after tsc): validates the v1 manifest, copies skills
+ * and the host part's Markdown templates (every `.md` file below `src/host`,
+ * which the host part reads at import time, so before the dry activation),
  * builds the desktop and client parts, dry-activates the parts, writes JSON
  * Schemas, `contracts.json` and package.json. The semver check against a
  * published baseline is not here yet: it returns with publishing (stage 11).
@@ -124,6 +176,8 @@ export const buildBundle = async (
     await mkdir(dirname(join(dist, path)), { recursive: true });
     await copyFile(join(source, path), join(dist, path));
   }
+
+  await copyMarkdown(join(source, 'host'), join(dist, 'host'));
 
   // Loaded on demand: esbuild and Tailwind are build-time tools the host
   // runtime never needs.
@@ -273,8 +327,14 @@ export const stageBundles = async (
 };
 
 const usage =
-  'Usage: cli.js build [--development] <bundleDir> | stage <dest> <bundleDir...>';
+  'Usage: cli.js build [--development] <bundleDir> | stage <dest> <bundleDir...> | copy-md <from> <to>';
 
+/**
+ * Runs one CLI command: `build [--development] <bundleDir>`,
+ * `stage <dest> <bundleDir...>` or `copy-md <from> <to>` (copyMarkdown).
+ * Rejects with a BuildError carrying `usage` for any other arguments, and
+ * with the command's own error when it fails.
+ */
 export const runCli = async (args: readonly string[]): Promise<void> => {
   const [command, ...rest] = args;
 
@@ -288,6 +348,8 @@ export const runCli = async (args: readonly string[]): Promise<void> => {
     await buildBundle(rest[1] as string, { mode: 'development' });
   } else if (command === 'stage' && rest.length >= 2) {
     await stageBundles(rest[0] as string, rest.slice(1));
+  } else if (command === 'copy-md' && rest.length === 2) {
+    await copyMarkdown(rest[0] as string, rest[1] as string);
   } else {
     throw new BuildError(usage);
   }

@@ -4,22 +4,12 @@ import test from 'node:test';
 import { HooksV1, type RegisteredTool } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import type { ProviderMessage, ProviderRequest } from 'llms';
-import type { ConfigurationValue } from 'runtime/contracts';
+import type { ConfigurationValue, LeaseExecInput } from 'runtime/contracts';
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
 import { DefaultHooksV1 } from '../src/contracts/index.js';
 import { systemPromptWith } from '../src/host/executor.js';
-import {
-  alwaysAvailableSkillsPrompt,
-  builtInSkillsPrompt,
-  loadSkillNamePrompt,
-  loadSkillPrompt,
-  serverSkillsPrompt,
-  skillsPrompt,
-  skillsToLoadPrompt,
-  workspaceSkillsPrompt,
-} from '../src/host/prompts/skills.js';
 import {
   loadCall,
   skillText,
@@ -33,6 +23,7 @@ import {
   type FakeWorkspace,
   fakeThreadState,
   type HarnessSkill,
+  harnessVariables,
   mcpServer,
   projectId,
   promptId,
@@ -42,6 +33,16 @@ import {
   testConfiguration,
   threadId,
 } from './support/harness.js';
+import {
+  alwaysAvailableSkillsPrompt,
+  builtInSkillsPrompt,
+  loadSkillNamePrompt,
+  loadSkillPrompt,
+  serverSkillsPrompt,
+  skillsPrompt,
+  skillsToLoadPrompt,
+  workspaceSkillsPrompt,
+} from './support/prompts.js';
 
 /*
  * A prompt run offers the skills it lists in its system prompt through one
@@ -422,7 +423,7 @@ void test('E1 reads the skills once per run and sends every request the same sys
     },
   });
 
-  const system = systemPromptWith(section);
+  const system = systemPromptWith(harnessVariables, section);
   assert.equal(requests.length, 2);
   for (const request of requests) {
     assert.deepEqual(request.messages[0], { role: 'system', content: system });
@@ -434,8 +435,15 @@ void test('E1 reads the skills once per run and sends every request the same sys
     );
   }
   assert.deepEqual(seen, [system, system]);
-  // The working directory did not move: the workspace is scanned once.
-  assert.equal(calls.lease.filter(({ method }) => method === 'exec').length, 1);
+  // The working directory did not move: the workspace skills are scanned once.
+  assert.equal(
+    calls.lease.filter(
+      ({ method, input }) =>
+        method === 'exec' &&
+        (input as LeaseExecInput).cmd.at(-1) === '/workspace/.agents/skills',
+    ).length,
+    1,
+  );
   // The servers are listed at the start and before the later request.
   assert.equal(calls.mcp.filter(({ method }) => method === 'list').length, 2);
 });

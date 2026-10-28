@@ -247,7 +247,7 @@ const blockScalar = (folded: boolean, lines: readonly string[]): string => {
   return content.map((line) => line.slice(indent)).join('\n');
 };
 
-/** The scalar `description:` holds, from its first-line value and the lines after it. */
+/** The scalar a top-level key holds, from its first-line value and the lines after it. */
 const scalar = (value: string, after: readonly string[]): string => {
   const block = /^([>|])[-+0-9]*\s*(?:#.*)?$/u.exec(value);
   if (block !== null) {
@@ -279,23 +279,32 @@ const scalar = (value: string, after: readonly string[]): string => {
 };
 
 /**
- * The `description` of a SKILL.md's YAML frontmatter, leniently: the
- * frontmatter opens with `---` and ends at the next `---` line or the end of
- * the source; only a top-level `description:` counts, plain (more-indented
- * continuation lines joined by one space), single- or double-quoted on one
- * line, folded `>` (lines joined by spaces) or literal `|` (lines joined by
- * `\n`), with no trailing newline. Other keys are ignored. undefined when
- * there is no frontmatter, no description, or only whitespace. Never throws.
+ * The value of the top-level `<key>:` of a Markdown file's YAML frontmatter,
+ * leniently: the frontmatter opens with `---` and ends at the next `---` line
+ * or the end of the source; only a top-level `<key>:` counts, plain
+ * (more-indented continuation lines joined by one space), single- or
+ * double-quoted on one line, folded `>` (lines joined by spaces) or literal
+ * `|` (lines joined by `\n`), with no trailing newline. Other keys are
+ * ignored. Returns undefined when there is no frontmatter, no such key, or
+ * only whitespace. Never throws.
  */
-export const frontmatterSummary = (source: string): string | undefined => {
+export const frontmatterField = (
+  source: string,
+  key: string,
+): string | undefined => {
   const matter = frontmatter(source);
   if (matter === undefined) return undefined;
-  const at = matter.lines.findIndex((line) => /^description:/u.test(line));
+  const prefix = `${key}:`;
+  const at = matter.lines.findIndex((line) => line.startsWith(prefix));
   if (at === -1) return undefined;
-  const value = (matter.lines[at] ?? '').slice('description:'.length).trim();
-  const summary = scalar(value, matter.lines.slice(at + 1)).trim();
-  return summary === '' ? undefined : summary;
+  const value = (matter.lines[at] ?? '').slice(prefix.length).trim();
+  const field = scalar(value, matter.lines.slice(at + 1)).trim();
+  return field === '' ? undefined : field;
 };
+
+/** `frontmatterField(source, 'description')`: a SKILL.md's summary. */
+export const frontmatterSummary = (source: string): string | undefined =>
+  frontmatterField(source, 'description');
 
 /**
  * The text after the frontmatter's closing `---` line, trimmed, or all of

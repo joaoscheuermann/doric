@@ -627,6 +627,7 @@ export function PreviewContainer({
             threaded={scopeThread !== undefined}
             showResolved={showResolved}
             onToggleShowResolved={toggleShowResolved}
+            focusCanvas={focusCanvas}
           />
         </div>
 

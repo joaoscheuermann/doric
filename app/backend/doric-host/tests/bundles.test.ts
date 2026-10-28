@@ -188,6 +188,7 @@ void test('the default composition exposes the pre-migration tools, in order, by
         'thread-interrupt',
         'thread-terminate',
         'thread-restart',
+        'ask',
         'papercraft_preview',
         'comment_reply',
       ],

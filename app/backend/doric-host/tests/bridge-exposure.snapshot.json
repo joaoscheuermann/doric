@@ -111,6 +111,7 @@
       "stop",
       "watchProject"
     ],
+    "threads.ask/v1": ["answer", "status"],
     "tools/v1": ["catalog"],
     "usage/v1": ["compact", "compactionTarget", "setCompactionTarget", "thread"]
   },

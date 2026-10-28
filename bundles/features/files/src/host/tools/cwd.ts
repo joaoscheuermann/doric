@@ -8,11 +8,17 @@ const description =
 
 export const input = z.object({ path: z.string().optional() }).strict();
 
+/** The reminder a `cwd` result carries when the directory is a Git repository's root. */
+export const repositoryNote =
+  'Remember to load the skills that match your task when working in a repository.';
+
 export const output = z
   .object({
     cwd: z.string(),
     status: z.enum(['reported', 'set', 'refused']),
     reason: z.enum(['outside', 'missing', 'not-directory']).optional(),
+    repositoryRoot: z.boolean(),
+    note: z.string().optional(),
   })
   .strict();
 
@@ -32,10 +38,13 @@ export const tool = defineTool({
 
 /**
  * A refusal keeps the current directory and names why, so the model corrects
- * its own path instead of handling a thrown failure. A path that is absent, or
- * blank once trimmed, names no directory - the HTTP route reads such a value the
- * same way - so it reports the current one instead. A path that is given is
- * trimmed here, exactly as the route trims it, so one rule sees one spelling.
+ * its own path instead of handling a thrown failure. Every outcome then reads
+ * `location()`, so `cwd` and `repositoryRoot` describe the directory the Thread
+ * is in after the call, and a repository root adds the note. A path that is
+ * absent, or blank once trimmed, names no directory - the HTTP route reads such
+ * a value the same way - so it reports the current one instead. A path that is
+ * given is trimmed here, exactly as the route trims it, so one rule sees one
+ * spelling.
  */
 const execute = async (
   workspace: RuntimeWorkspace,
@@ -43,18 +52,19 @@ const execute = async (
   input: Input,
 ): Promise<CwdOutput> => {
   const path = input.path?.trim();
+  const change =
+    path === undefined || path === ''
+      ? undefined
+      : await workspace.setCwd(path, call);
+  // One read after every outcome: the directory the Thread is in now, and
+  // whether it is a repository root.
+  const { cwd, repo } = await workspace.location(call);
+  const repository =
+    repo === undefined
+      ? { repositoryRoot: false }
+      : { repositoryRoot: true, note: repositoryNote };
 
-  if (path === undefined || path === '') {
-    return { cwd: await workspace.cwd(call), status: 'reported' };
-  }
-
-  const change = await workspace.setCwd(path, call);
-
-  return change.status === 'set'
-    ? { cwd: change.cwd, status: 'set' }
-    : {
-        cwd: await workspace.cwd(call),
-        status: 'refused',
-        reason: change.status,
-      };
+  if (change === undefined) return { cwd, status: 'reported', ...repository };
+  if (change.status === 'set') return { cwd, status: 'set', ...repository };
+  return { cwd, status: 'refused', reason: change.status, ...repository };
 };

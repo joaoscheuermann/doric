@@ -159,9 +159,11 @@ What each bundle owns:
   `default.hooks/v1` before every model request.
 - **`threads`** (`bundles/features/threads`) ships the delegation tools
   `thread-spawn`, `thread-list`, `thread-get`, `thread-events`, `thread-send`,
-  `thread-restart`, `thread-interrupt` and `thread-terminate`, which reach the
-  host only through
-  `runtime.threads/v1`.
+  `thread-restart`, `thread-interrupt` and `thread-terminate`, and the `ask`
+  tool, with which the main Thread asks the user multiple-choice questions. It
+  provides `threads.ask/v1` (`status` and `answer`, exposed to the desktop) and
+  the events `threads.asked/v1` and `threads.answered/v1`, and reaches the host
+  only through `runtime.threads/v1` and `events/v1`.
 - **`files`** and **`git`** tools reach the Thread's working directory and the
   Project sandbox through `runtime.workspace/v1` and `runtime.lease/v1`; the
   **`terminal`** tool reaches tracked terminals through `terminal/v1`.

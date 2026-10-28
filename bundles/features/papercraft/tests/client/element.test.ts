@@ -1252,6 +1252,77 @@ test('a click opens the inline input; Enter confirms one draft with its note', a
   await mounted.unmount();
 });
 
+/** The node's canvas: the element the keyboard commands act on. */
+const canvasOf = (frame: HTMLElement) =>
+  frame.querySelector('.papercraft-canvas') as HTMLElement;
+
+/** Names an element by tag, test id and classes, for a failure message. */
+const nameOf = (element: Element | null) =>
+  element === null
+    ? 'nothing'
+    : `<${element.tagName.toLowerCase()}${
+        element.getAttribute('data-testid')
+          ? ` data-testid="${element.getAttribute('data-testid')}"`
+          : ''
+      }${element.className ? ` class="${element.className}"` : ''}>`;
+
+/**
+ * Asserts the focus is on `expected`. Compares identity and names the focused
+ * element, so a failure does not dump two whole DOM trees.
+ */
+const assertFocusOn = (expected: Element | null, what: string) =>
+  assert.ok(
+    expected !== null && document.activeElement === expected,
+    `the focus should be on ${what}, but it is on ${nameOf(document.activeElement)}`,
+  );
+
+test('Enter and the send button both confirm the inline input and hand the focus back to the canvas', async () => {
+  for (const [action, confirm] of [
+    [
+      'Enter',
+      (frame: HTMLElement) => key(inputOf(frame) as HTMLElement, 'Enter'),
+    ],
+    [
+      'the send button',
+      (frame: HTMLElement) =>
+        react.act(async () => {
+          (
+            query(frame, 'papercraft-comment-confirm') as HTMLButtonElement
+          ).click();
+        }),
+    ],
+  ] as const) {
+    const h = harness();
+    const { mounted, composer } = await commenting(h);
+    try {
+      await clickIn(inPreview(mounted.frame, '#pay'));
+      const field = inputOf(mounted.frame) as HTMLTextAreaElement;
+      assert.ok(field !== null, `${action}: the inline input never opened`);
+      await react.act(async () => type(field, 'mais respiro'));
+      await confirm(mounted.frame);
+      await settle(
+        () => composer.added.length,
+        (length) => length === 1,
+        `${action}: the confirmed note never joined the stack`,
+      );
+      assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
+
+      // The canvas holds the focus again, not the page.
+      assertFocusOn(canvasOf(mounted.frame), `the canvas after ${action}`);
+
+      // So the very next press is answered: it opens a new input.
+      await press(inPreview(mounted.frame, '#title'));
+      assert.ok(
+        inputOf(mounted.frame) !== null,
+        `${action}: the press after the confirm was spent on focusing the node`,
+      );
+    } finally {
+      comment.setComposerAvailable(false);
+      await mounted.unmount();
+    }
+  }
+});
+
 test('an empty input that loses focus is discarded, and Esc cancels a written one', async () => {
   const h = harness();
   const { mounted, composer } = await commenting(h);
@@ -1260,6 +1331,11 @@ test('an empty input that loses focus is discarded, and Esc cancels a written on
   await clickIn(pay);
   await react.act(async () => inputOf(mounted.frame)?.blur());
   assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
+  // The focus went elsewhere: the canvas does not take it back.
+  assert.ok(
+    document.activeElement !== canvasOf(mounted.frame),
+    'the canvas took back a focus that went elsewhere',
+  );
 
   // The focus left the node with the input: the next press only focuses it.
   await focusNode(mounted.frame);
@@ -1274,6 +1350,36 @@ test('an empty input that loses focus is discarded, and Esc cancels a written on
 
   comment.setComposerAvailable(false);
   await mounted.unmount();
+});
+
+test('Esc cancels the inline input and hands the focus back to the canvas, whose keys still work', async () => {
+  const h = harness();
+  const { mounted, composer } = await commenting(h);
+  try {
+    const canvas = canvasOf(mounted.frame);
+    const toolOf = () =>
+      (mounted.frame.querySelector('[data-tool]') as HTMLElement).dataset.tool;
+
+    await clickIn(inPreview(mounted.frame, '#pay'));
+    const field = inputOf(mounted.frame) as HTMLTextAreaElement;
+    assert.ok(field !== null, 'the inline input never opened');
+    await react.act(async () => type(field, 'deixa pra lá'));
+    await key(field, 'Escape');
+    assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
+
+    assertFocusOn(canvas, 'the canvas');
+
+    // The canvas commands answer: C leaves comment mode.
+    assert.equal(toolOf(), 'comment');
+    await key(canvas, 'c');
+    assert.equal(toolOf(), 'select');
+
+    await tick();
+    assert.equal(composer.added.length, 0);
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
 });
 
 test('Alt forces a free point over an element', async () => {
@@ -1384,6 +1490,8 @@ test('a draft pin opens its thread; a reply joins the stack answering it', async
     (length) => length === 1,
     'the reply never joined the stack',
   );
+  // The thread stays open for the next reply, and keeps the focus.
+  assertFocusOn(replyFieldOf(mounted.frame), 'the reply field');
   const reply = composer.added[0] as {
     note: string;
     data: { inReplyTo?: string; pin?: number; target?: { id?: string } };
@@ -1526,6 +1634,45 @@ test('Esc closes a thread without adding what its field holds', async () => {
 
   comment.setComposerAvailable(false);
   await mounted.unmount();
+});
+
+test('closing a thread with Esc or its close button hands the focus back to the canvas', async () => {
+  const h = harness();
+  const { mounted } = await commenting(
+    h,
+    fakeComposer([draftOf('comment-d1', 1, 'primeira versão')]),
+  );
+  try {
+    const canvas = canvasOf(mounted.frame);
+
+    const pin = await settle(
+      () => query(mounted.frame, 'papercraft-pin'),
+      (found) => found !== null,
+      'the draft never became a pin',
+    );
+
+    // Esc in the reply field.
+    await react.act(async () => pin?.click());
+    const field = replyFieldOf(mounted.frame) as HTMLTextAreaElement;
+    assert.ok(field !== null, 'the thread never opened');
+    await key(field, 'Escape');
+    assert.equal(threadOf(mounted.frame), null);
+    assertFocusOn(canvas, 'the canvas');
+
+    // The close button.
+    await react.act(async () =>
+      query(mounted.frame, 'papercraft-pin')?.click(),
+    );
+    assert.ok(threadOf(mounted.frame) !== null, 'the thread never reopened');
+    await react.act(async () => {
+      query(mounted.frame, 'papercraft-thread-close')?.click();
+    });
+    assert.equal(threadOf(mounted.frame), null);
+    assertFocusOn(canvas, 'the canvas');
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
 });
 
 test('sent pins say where their thread stands, and the control counts the open ones', async () => {

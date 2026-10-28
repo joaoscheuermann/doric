@@ -8,8 +8,8 @@ import type { Bindings } from '../domain/bindings.js';
 import type { WorkspaceService } from '../domain/types.js';
 
 /**
- * runtime.workspace/v1: the calling prompt's own working directory and, from
- * 1.1.0, local tasks on a named live Thread.
+ * runtime.workspace/v1: the calling prompt's own working directory, from
+ * 1.1.0 local tasks on a named live Thread and, from 1.2.0, its location.
  */
 export const workspaceService = (
   bindings: Bindings,
@@ -24,6 +24,11 @@ export const workspaceService = (
     setCwd: defineMethod({
       ...methods.setCwd,
       execute: (path, call) => bindings.bound(call).host.workspace.setCwd(path),
+    }),
+    location: defineMethod({
+      ...methods.location,
+      execute: async (_input, call) =>
+        bindings.bound(call).host.workspace.location(),
     }),
     withThread: defineMethod({
       ...methods.withThread,

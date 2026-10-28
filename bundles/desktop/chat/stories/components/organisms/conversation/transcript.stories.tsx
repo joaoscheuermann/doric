@@ -1016,7 +1016,10 @@ const overviewTool = turnsOfType('tool_call', (log) => {
   });
 });
 
-/** A `thread-spawn` a child answered, and one still spawning. */
+/**
+ * A `thread-spawn` a child answered as the review agent, on its own model and
+ * effort, and one still spawning.
+ */
 const overviewSpawn = turnsOfType('tool_call', (log) => {
   const spawned = promptIdOf(6004);
   log.prompt(spawned, 'Audit the checkout card for accessibility issues.');
@@ -1028,6 +1031,9 @@ const overviewSpawn = turnsOfType('tool_call', (log) => {
       prompt:
         'Audit the muted text and the disabled button label against WCAG AA on every card.',
       title: 'contrast audit',
+      agent: 'review',
+      model: 'gpt-5',
+      effort: 'high',
     },
     {
       output: JSON.stringify({
@@ -1145,7 +1151,8 @@ const overviewSections: readonly OverviewSection[] = [
     turns: overviewTool,
   },
   {
-    caption: 'The thread spawn: one a child answered, one still spawning',
+    caption:
+      'The thread spawn: one a child answered as the review agent, one still spawning',
     turns: overviewSpawn,
   },
   {

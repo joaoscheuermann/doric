@@ -26,6 +26,9 @@ models/**/artifact*/
 scripts/**/evidence/
 package-lock.json
 
+# Prompt templates must retain their original bytes: the model reads them as written.
+bundles/*/*/src/host/**/*.md
+
 # Biome formats and lints these languages.
 **/*.js
 **/*.jsx

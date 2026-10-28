@@ -129,6 +129,34 @@ export type ThreadGit =
  */
 export type ThreadOrigin = 'user' | 'agent';
 
+/**
+ * The reasoning efforts a model can be asked for, mirrored from `llms`
+ * (packages/llms/src/lib/types/provider.ts) because the runtime imports no
+ * llms; the desktop settings mirror the same list
+ * (bundles/desktop/settings/src/client/domain/config.ts). Whether a given
+ * model accepts a value is the executor's concern, not this contract's.
+ */
+export const reasoningEfforts = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const;
+export type ReasoningEffort = (typeof reasoningEfforts)[number];
+/** Where an agent definition came from: shipped with Doric, or the workspace's own. */
+export type ThreadAgentSource = 'built-in' | 'workspace';
+/**
+ * The agent a Thread was spawned as, by name and source. The public record
+ * never carries the agent's instructions: only the executor sees them.
+ */
+export interface ThreadAgent {
+  readonly name: string;
+  readonly source: ThreadAgentSource;
+}
+
 export interface Thread {
   readonly id: string;
   readonly projectId: string;
@@ -150,6 +178,19 @@ export interface Thread {
   readonly startedAt?: string;
   readonly finishedAt?: string;
   readonly result?: ThreadOutcome;
+  /**
+   * The agent the Thread was spawned as (runtime.thread/v1 1.1.0). Absent on
+   * a Thread spawned without one and on every Thread written before; never
+   * inherited from the parent, and never carries the agent's instructions.
+   */
+  readonly agent?: ThreadAgent;
+  /**
+   * The model the Thread runs on (1.1.0): the one it was spawned with, else
+   * its parent's. Absent means the executor's configured default.
+   */
+  readonly model?: string;
+  /** The reasoning effort (1.1.0), resolved like `model`. */
+  readonly effort?: ReasoningEffort;
 }
 
 export type InputSource =
@@ -634,6 +675,17 @@ export const threadSchema: z.ZodType<Thread, Thread> = z.looseObject({
   startedAt: z.string().optional(),
   finishedAt: z.string().optional(),
   result: threadOutcomeSchema.optional(),
+  /* Loose, so the executor-only `instructions` survives the
+   * runtime.executor/v1 boundary; `executorThreadSchema` (executor.ts)
+   * extends this. */
+  agent: z
+    .looseObject({
+      name: z.string(),
+      source: z.enum(['built-in', 'workspace']),
+    })
+    .optional(),
+  model: z.string().optional(),
+  effort: z.enum(reasoningEfforts).optional(),
 });
 
 export const threadEventSchema: z.ZodType<ThreadEvent, ThreadEvent> =

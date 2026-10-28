@@ -318,6 +318,44 @@ const contextCompaction = z
   })
   .strict();
 
+/** Whether the host's Intl knows `value` as a time zone; `''` is not one. */
+const isTimeZone = (value: string): boolean => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The person the agent's prompts speak for: their name and their time zone. Both
+ * are optional, and so is the profile as a whole. An absent `timezone` means the
+ * host's own time zone applies.
+ *
+ * - `name`: trimmed first, then 1–100 UTF-16 code units, with no `\r` or `\n`
+ *   inside the trimmed value. The value it outputs is the trimmed one.
+ * - `timezone`: a zone `isTimeZone` accepts, stored as given.
+ * - It is strict: an unknown key is refused.
+ */
+const profile = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .refine((value) => !/[\r\n]/.test(value), {
+        message: 'A profile name cannot contain a line break.',
+      })
+      .optional(),
+    timezone: z
+      .string()
+      .refine(isTimeZone, { message: 'Unknown time zone.' })
+      .optional(),
+  })
+  .strict();
+
 const execution = z
   .object({
     maxTurns: limit,
@@ -386,6 +424,8 @@ export const ConfigInputSchema = z
     tools,
     gitCredentialId: z.uuid().optional(),
     githubCredentialId: z.uuid().optional(),
+    // Optional and last, so a configuration without it serialises as before.
+    profile: profile.optional(),
   })
   .strict()
   .superRefine(referencesKnownProviders);

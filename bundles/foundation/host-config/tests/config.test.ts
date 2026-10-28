@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { CatalogResult, ModelKindDescriptor } from 'bundle/contracts';
+import {
+  type CatalogResult,
+  defineSettings,
+  type ModelKindDescriptor,
+  type Settings,
+  type SettingsDefinition,
+  type SettingsEntry,
+} from 'bundle/contracts';
 import { type ProviderKind, providerKinds } from 'llms';
 import type { BoundTool } from 'tool';
 
@@ -13,6 +20,11 @@ import {
   providerCredentials,
 } from '../src/host/config/schema.js';
 import { createConfigService } from '../src/host/config/service.js';
+import { createConfigStore } from '../src/host/config/store.js';
+import {
+  type ConfigurationSettings,
+  configurationSettingsId,
+} from '../src/host/configuration.js';
 import type { Credential } from '../src/host/credentials/kind.js';
 import { credentialResolver } from './helpers/credentials.js';
 
@@ -378,6 +390,70 @@ void test('rejects a context-compaction policy outside the shape the host stores
       false,
     );
   }
+});
+
+/** A configuration whose profile is the value under test, loosely typed. */
+const withProfile = (profile: Record<string, unknown>): unknown => ({
+  ...structuredClone(defaultConfig),
+  profile,
+});
+
+/** The paths of the issues the schema raises for a configuration. */
+const issuePaths = (configuration: unknown): string[] =>
+  (ConfigInputSchema.safeParse(configuration).error?.issues ?? []).map(
+    (issue) => issue.path.join('.'),
+  );
+
+void test('accepts a profile with a name, a time zone, or both at their limits', () => {
+  for (const profile of [
+    { timezone: 'UTC' },
+    { name: 'a'.repeat(100) },
+    { name: 'Ana' },
+    { name: 'Ana', timezone: 'America/Sao_Paulo' },
+  ]) {
+    assert.equal(
+      ConfigInputSchema.safeParse(withProfile(profile)).success,
+      true,
+      `profile ${JSON.stringify(profile)} was refused`,
+    );
+  }
+});
+
+void test('refuses a profile time zone this computer does not know, on that field', () => {
+  const configuration = withProfile({ timezone: 'Mars/Olympus' });
+
+  assert.equal(ConfigInputSchema.safeParse(configuration).success, false);
+  assert.ok(issuePaths(configuration).includes('profile.timezone'));
+});
+
+void test('refuses a profile name that is blank, too long or on more than one line', () => {
+  for (const name of ['', '   ', 'a'.repeat(101), 'Ana\nMaria']) {
+    const configuration = withProfile({ name });
+
+    assert.equal(
+      ConfigInputSchema.safeParse(configuration).success,
+      false,
+      `name ${JSON.stringify(name)} was accepted`,
+    );
+    assert.ok(
+      issuePaths(configuration).includes('profile.name'),
+      `name ${JSON.stringify(name)} was not refused on profile.name`,
+    );
+  }
+});
+
+void test('refuses a profile field the host does not store', () => {
+  const configuration = withProfile({
+    name: 'Ana',
+    email: 'ana@example.com',
+  });
+
+  assert.equal(ConfigInputSchema.safeParse(configuration).success, false);
+  assert.ok(issuePaths(configuration).includes('profile'));
+});
+
+void test('keeps a configuration that names no profile without one', () => {
+  assert.equal('profile' in ConfigInputSchema.parse(defaultConfig), false);
 });
 
 void test('rejects duplicate provider identifiers', () => {
@@ -831,4 +907,77 @@ const snapshot = (
   configuration,
   revision,
   updatedAt: new Date(revision * 1000).toISOString(),
+});
+
+/**
+ * `settings/v1` held in memory: one space whose value is validated by the
+ * space's own schema on every write, as the settings provider does.
+ */
+const memorySettings = (value: unknown) => {
+  let entry: SettingsEntry = {
+    value,
+    revision: 1,
+    version: '1.0.0',
+    updatedAt: new Date(1000).toISOString(),
+    generation: 1,
+  };
+
+  return {
+    entry: async () => entry,
+    set: async (definition: SettingsDefinition, next: unknown) => {
+      entry = {
+        value: definition.schema.parse(next),
+        revision: entry.revision + 1,
+        version: entry.version,
+        updatedAt: new Date((entry.revision + 1) * 1000).toISOString(),
+        generation: entry.generation + 1,
+      };
+      return entry;
+    },
+  } as unknown as Settings;
+};
+
+/** The configuration service over the real store, reading `settings`. */
+const storedService = (settings: Settings) =>
+  createConfigService({
+    store: createConfigStore({
+      settings,
+      definition: defineSettings({
+        id: configurationSettingsId,
+        schema: ConfigInputSchema,
+      }) as unknown as ConfigurationSettings,
+      track: () => undefined,
+    }),
+    credentials: async () => credentialResolver(() => [providerCredential]),
+    tools: () => [],
+    models: {
+      catalog: async () => ({ status: 'absent' }),
+      kind: async () => undefined,
+      prepare: async () => undefined,
+    },
+  });
+
+void test('stores a profile and answers it after the host loads again', async () => {
+  const settings = memorySettings(structuredClone(defaultConfig));
+  const profile = { name: 'Ana', timezone: 'America/Sao_Paulo' };
+
+  const result = await storedService(settings).replace({
+    ...structuredClone(defaultConfig),
+    profile,
+  });
+
+  assert.equal(result.status, 'replaced');
+  assert.ok(result.status === 'replaced');
+  assert.deepEqual(result.config.configuration.profile, profile);
+
+  const reloaded = await storedService(settings).current();
+  assert.deepEqual(reloaded.configuration.profile, profile);
+});
+
+void test('loads a configuration stored before profiles existed without one', async () => {
+  const settings = memorySettings(structuredClone(defaultConfig));
+
+  const loaded = await storedService(settings).current();
+
+  assert.equal('profile' in loaded.configuration, false);
 });

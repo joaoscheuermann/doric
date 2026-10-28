@@ -200,3 +200,72 @@ void test('a standing instruction keeps its retain mark on the source the run re
     retain: true,
   });
 });
+
+void test('a location that finds a new repository publishes the record and fires the cwd hook once', {
+  timeout: 5000,
+}, async (t) => {
+  const changes: CwdChanged[] = [];
+  const updates: unknown[] = [];
+  const counts: { updates: number; changes: number }[] = [];
+  const finished = deferred();
+  const plain = fakeSandbox({ entries: [{ path: 'alpha' }] });
+  const repository = fakeSandbox({
+    entries: [{ path: 'alpha' }],
+    repositories: [{ path: 'alpha', git: { status: '# branch.head main' } }],
+  });
+  const state = { current: plain };
+  const handle = fakeSandbox();
+  handle.exec = (input) => state.current.exec(input);
+  let promptId = '';
+  const harness: Harness = createHarness({
+    sandbox: { sandbox: handle as never },
+    onHook: async (hook, input) => {
+      if (hook === 'onThreadCwdChangedHook') changes.push(input as CwdChanged);
+    },
+    execute: async ({ job, tools }) => {
+      try {
+        promptId = job.id;
+        // The prompt creates a repository where it stands, without moving.
+        state.current = repository;
+        changes.length = 0;
+        updates.length = 0;
+        await tools.workspace.location();
+        counts.push({ updates: updates.length, changes: changes.length });
+        await tools.workspace.location();
+        counts.push({ updates: updates.length, changes: changes.length });
+      } finally {
+        finished.resolve();
+      }
+      return 'done';
+    },
+  });
+  t.after(() => harness.dispose());
+  harness.listen((notice) => {
+    // A prompt's own status changes publish the record too; only a record
+    // carrying the new hint is the location's publication.
+    if (notice.kind === 'threadUpdated' && notice.value.cwdRepo === 'git')
+      updates.push(notice.value);
+  });
+  const created = await thread(harness);
+  const moved = await harness.service.threads.setCwd(created.id, 'alpha');
+  assert.ok(moved.status === 'updated' && moved.thread.cwdRepo === undefined);
+
+  await harness.service.threads.prompt(created.id, 'git init');
+  await finished.promise;
+
+  assert.deepEqual(counts, [
+    { updates: 1, changes: 1 },
+    { updates: 1, changes: 1 },
+  ]);
+  assert.equal((updates[0] as { cwdRepo?: string }).cwdRepo, 'git');
+  assert.deepEqual(changes, [
+    {
+      projectId: created.projectId,
+      threadId: created.id,
+      promptId,
+      cwd: '/workspace/alpha',
+      cwdRepo: 'git',
+      previous: { cwd: '/workspace/alpha' },
+    },
+  ]);
+});

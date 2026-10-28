@@ -2,6 +2,7 @@ import { type ComponentType, useState } from 'react';
 
 import { SettingsCredentials } from '../../../src/client/components/organisms/settings-credentials.js';
 import { SettingsExecution } from '../../../src/client/components/organisms/settings-execution.js';
+import { SettingsProfile } from '../../../src/client/components/organisms/settings-profile.js';
 import { SettingsProviderScreen } from '../../../src/client/components/organisms/settings-provider.js';
 import { SettingsProviders } from '../../../src/client/components/organisms/settings-providers.js';
 import { SettingsTools } from '../../../src/client/components/organisms/settings-tools.js';
@@ -55,6 +56,8 @@ function Window({
 
   const section = (() => {
     switch (nav.active) {
+      case 'profile':
+        return <SettingsProfile draft={draft} onChange={setDraft} />;
       case 'providers':
         return (
           <SettingsProviders

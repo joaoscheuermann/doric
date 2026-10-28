@@ -2,16 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { AgentErrorObject } from 'agent';
-import type { CallScope } from 'bundle/contracts';
+import { type CallScope, HooksV1 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import type { ProviderMessage, ProviderRequest } from 'llms';
+import type { CwdRepo, ExecutorThread, InputSource } from 'runtime/contracts';
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
+import { DefaultHooksV1 } from '../src/contracts/index.js';
 import { systemPromptWith } from '../src/host/executor.js';
 import {
   bundleServices,
   fakeThreadState,
+  harnessVariables,
   PersistenceFailure,
   projectId,
   promptId,
@@ -22,6 +25,7 @@ import {
   testConfiguration,
   threadId,
 } from './support/harness.js';
+import { builtInSkillsPrompt } from './support/prompts.js';
 
 // Ported from agents/doric/tests/direct.test.ts: the same scenarios, run
 // through executor/v1 with the runtime's prompt session faked.
@@ -169,7 +173,7 @@ void test('retains a completed tool result and its event when a full disk reject
 });
 
 void test('starts the system prompt with the default instruction and keeps an empty skill section out of it', () => {
-  const system = systemPromptWith('');
+  const system = systemPromptWith(harnessVariables, '');
 
   assert.match(system, /Complete the user's request in the project sandbox/u);
   assert.ok(!system.includes('# Skills'));
@@ -179,8 +183,8 @@ void test('separates the skill section from the default instruction by a blank l
   const section = '# Skills\n\n### Skill: first\n\n\nFirst body.\n';
 
   assert.equal(
-    systemPromptWith(section),
-    `${systemPromptWith('')}\n\n${section}`,
+    systemPromptWith(harnessVariables, section),
+    `${systemPromptWith(harnessVariables, '')}\n\n${section}`,
   );
 });
 
@@ -190,7 +194,7 @@ void test('sends the default instruction with the always-available skill bodies 
 
   assert.deepEqual(harness.requests[0]?.messages[0], {
     role: 'system',
-    content: systemPromptWith(sandboxSection),
+    content: systemPromptWith(harnessVariables, sandboxSection),
   });
   assert.deepEqual(
     harness.requests[0]?.tools?.map(({ name }) => name),
@@ -633,4 +637,250 @@ void test('pauses without recording the failure when the generation running a to
     1,
     'the history is saved once, before the call is answered, and not again',
   );
+});
+
+/*
+ * The bundle-instruction envelope and the onBeforeModelRequestHook, moved from
+ * repository.test.ts with their helpers.
+ */
+
+const skills = [skill('sandbox', 'Inspect before reporting.')];
+const envelope =
+  '<bundle-instruction bundle="default" reason="coding-workflow">';
+
+/** The default bundle over a fake Thread, its model answering every request. */
+const activated = async (
+  options: {
+    /**
+     * Steers an instruction the bundle gives into the run, as the runtime did
+     * while the bundle gave one: a run then shows any instruction it gives.
+     */
+    readonly steer?: boolean;
+  } = {},
+) => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  // Spread, so the option reads as one the harness may no longer declare.
+  const steering =
+    options.steer === true
+      ? {
+          onInstruct: ({
+            prompt,
+            reason,
+            retain,
+          }: {
+            readonly prompt: string;
+            readonly reason: string;
+            readonly retain?: boolean;
+          }) =>
+            state.steer(prompt, {
+              kind: 'bundle',
+              bundleId: 'default',
+              reason,
+              ...(retain === true ? { retain: true as const } : {}),
+            }),
+        }
+      : {};
+  const services = bundleServices({
+    skills,
+    ...steering,
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: async function* (request: ProviderRequest) {
+        requests.push(request);
+        yield {
+          type: 'response.finished' as const,
+          finish: {
+            text: 'done',
+            finishReason: 'stop' as const,
+            toolCalls: [],
+          },
+        };
+      },
+    },
+  });
+  await services.activate();
+  const hooks = services.harness.services.use(HooksV1);
+  return { services, requests, state, hooks };
+};
+
+type Activated = Awaited<ReturnType<typeof activated>>;
+
+const run = (
+  { services, state }: Activated,
+  prompt: string,
+  options: {
+    readonly id?: string;
+    readonly source?: InputSource;
+    readonly cwdRepo?: CwdRepo;
+    readonly thread?: Partial<ExecutorThread>;
+  } = {},
+) => runPrompt(services, state, prompt, options);
+
+const stored = ({ state }: Activated) =>
+  (state.parts().messages ?? []) as readonly ProviderMessage[];
+
+const retained = ({ state }: Activated) =>
+  (state.parts().meta as { retained?: Record<string, number> } | undefined)
+    ?.retained;
+
+void test('frames a bundle instruction in a bundle-instruction envelope naming the bundle and reason', async () => {
+  const harness = await activated();
+
+  await run(harness, 'Follow the workflow.', {
+    source: { kind: 'bundle', bundleId: 'default', reason: 'coding-workflow' },
+  });
+
+  assert.equal(
+    harness.requests[0]?.messages.at(-1)?.content,
+    `${envelope}\nFollow the workflow.\n</bundle-instruction>`,
+  );
+});
+
+void test('sends the system prompt an onBeforeModelRequestHook handler returns', async () => {
+  const harness = await activated();
+  harness.hooks.use(DefaultHooksV1).onBeforeModelRequestHook(({ system }) => ({
+    system: `${system}\n\n# Project rules\n\nUse tabs.`,
+  }));
+
+  await run(harness, 'fix the bug');
+
+  assert.deepEqual(
+    harness.requests.map((request) => request.messages[0]?.content),
+    [
+      `${systemPromptWith(harnessVariables, sandboxSection)}\n\n# Project rules\n\nUse tabs.`,
+    ],
+  );
+});
+
+void test('B4 gives a task the reader starts at a repository root no coding-workflow instruction', async () => {
+  const harness = await activated({ steer: true });
+
+  await run(harness, 'fix the bug', { cwdRepo: 'github' });
+
+  const instructed = (messages: readonly ProviderMessage[]) =>
+    messages.filter(({ content }) =>
+      String(content).includes('reason="coding-workflow"'),
+    );
+  assert.deepEqual(instructed(harness.requests[0]?.messages ?? []), []);
+  assert.deepEqual(instructed(stored(harness)), []);
+  assert.equal(retained(harness)?.['default:coding-workflow'], undefined);
+});
+
+/*
+ * The coding workflow is a built-in skill to load, listed first by the registry,
+ * and offered only to a Thread that runs as no agent.
+ */
+
+/** The built-in skills of the cases below, in the registry's order. */
+const workflowSkills = [
+  skill('coding-workflow', 'Workflow body.', { alwaysAvailable: false }),
+  skill('git-commit', 'Commit body.', { alwaysAvailable: false }),
+  skill('git-rebase', 'Rebase body.', { alwaysAvailable: false }),
+];
+
+/** An agent a Thread runs as. */
+const reviewer = {
+  name: 'reviewer',
+  source: 'workspace' as const,
+  instructions: 'Review the diff.',
+};
+
+/**
+ * One run over `workflowSkills` whose model calls load_skill for each name in
+ * turn, then answers.
+ */
+const loadingRun = async (
+  names: readonly string[],
+  thread: Partial<ExecutorThread> = {},
+) => {
+  const requests: ProviderRequest[] = [];
+  const services = bundleServices({
+    skills: workflowSkills,
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: async function* (request: ProviderRequest) {
+        requests.push(request);
+        const name = names[requests.length - 1];
+        yield {
+          type: 'response.finished' as const,
+          finish:
+            name === undefined
+              ? { text: 'done', finishReason: 'stop' as const, toolCalls: [] }
+              : {
+                  text: '',
+                  finishReason: 'tool_calls' as const,
+                  toolCalls: [
+                    {
+                      id: `load-${requests.length}`,
+                      name: 'load_skill',
+                      arguments: JSON.stringify({ name }),
+                    },
+                  ],
+                },
+        };
+      },
+    },
+  });
+  await services.activate();
+  await runPrompt(services, fakeThreadState(), 'do the task', { thread });
+  const system = String(requests[0]?.messages[0]?.content);
+  return {
+    /** The rows of the built-in "Skills to load" table, in order. */
+    rows: (system.split(`${builtInSkillsPrompt}\n\n`)[1] ?? '')
+      .split('\n\n')[0]
+      ?.split('\n')
+      .slice(2),
+    /** What each load_skill call answered, as the next request carries it. */
+    answers: names.map((_, index) =>
+      String(requests[index + 1]?.messages.at(-1)?.content),
+    ),
+  };
+};
+
+void test('B1 lists coding-workflow as the first built-in skill to load and loads its body', async () => {
+  const { rows, answers } = await loadingRun(['coding-workflow']);
+
+  assert.deepEqual(rows, [
+    '| coding-workflow | coding-workflow description |',
+    '| git-commit | git-commit description |',
+    '| git-rebase | git-rebase description |',
+  ]);
+  assert.ok(
+    answers[0]?.includes('# Skill: coding-workflow\n\nWorkflow body.'),
+    answers[0],
+  );
+});
+
+void test('B2 neither lists nor loads coding-workflow for a Thread that runs as an agent', async () => {
+  const { rows, answers } = await loadingRun(['coding-workflow'], {
+    agent: reviewer,
+  });
+
+  assert.ok(!rows?.some((row) => row.startsWith('| coding-workflow |')));
+  assert.ok(
+    answers[0]?.includes('Unknown skill id "coding-workflow".'),
+    answers[0],
+  );
+  assert.ok(!answers[0]?.includes('Workflow body.'));
+});
+
+void test('B3 lists and loads the other built-in skills for an agent Thread, and all three for a plain one', async () => {
+  const agent = await loadingRun(['git-commit', 'git-rebase'], {
+    agent: reviewer,
+  });
+
+  assert.deepEqual(agent.rows, [
+    '| git-commit | git-commit description |',
+    '| git-rebase | git-rebase description |',
+  ]);
+  assert.ok(agent.answers[0]?.includes('# Skill: git-commit\n\nCommit body.'));
+  assert.ok(agent.answers[1]?.includes('# Skill: git-rebase\n\nRebase body.'));
+
+  const plain = await loadingRun([]);
+  assert.deepEqual(plain.rows, [
+    '| coding-workflow | coding-workflow description |',
+    '| git-commit | git-commit description |',
+    '| git-rebase | git-rebase description |',
+  ]);
 });

@@ -153,6 +153,7 @@ const fakeHost = (cwd: string): Host => ({
     setCwd: () => {
       throw new Error('Git tests never move the working directory');
     },
+    location: async () => ({ cwd }),
   },
 });
 

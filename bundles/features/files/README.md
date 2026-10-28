@@ -25,14 +25,14 @@ client part (the desktop UI), loaded by the `bundle` platform. See the
 The host part registers these tools with `tools/v1` at fixed global
 model-visible positions:
 
-| Order | Tool    | What it does                                                       |
-| ----- | ------- | ------------------------------------------------------------------ |
-| 100   | `cwd`   | Report the thread's working directory, or move it.                 |
-| 200   | `edit`  | Change a file through unique, exact-text replacements.             |
-| 300   | `find`  | Find files by glob; respects `.gitignore`, bounded output.         |
-| 400   | `grep`  | Search file contents with paths and line numbers; bounded output.  |
-| 600   | `tree`  | Show the directory structure; skips hidden files except `.agents`. |
-| 800   | `write` | Create or overwrite a whole file, creating parent directories.     |
+| Order | Tool    | What it does                                                                            |
+| ----- | ------- | --------------------------------------------------------------------------------------- |
+| 100   | `cwd`   | Report the thread's working directory, or move it; say whether it is a repository root. |
+| 200   | `edit`  | Change a file through unique, exact-text replacements.                                  |
+| 300   | `find`  | Find files by glob; respects `.gitignore`, bounded output.                              |
+| 400   | `grep`  | Search file contents with paths and line numbers; bounded output.                       |
+| 600   | `tree`  | Show the directory structure; skips hidden files except `.agents`.                      |
+| 800   | `write` | Create or overwrite a whole file, creating parent directories.                          |
 
 Positions 500 and 700 belong to the `terminal` tool of the
 [`terminal`](../terminal/README.md) bundle and the `web` tool of the
@@ -40,7 +40,10 @@ Positions 500 and 700 belong to the `terminal` tool of the
 
 `cwd` reports and moves the calling thread's working directory, and every other
 relative path in this bundle resolves against it at call time. A move is refused
-unless the path names a directory inside the workspace root.
+unless the path names a directory inside the workspace root. Its result says
+whether the directory is a repository root, and there reminds the model to load
+the matching skills; see
+[docs/features/cwd-tool.md](../../../docs/features/cwd-tool.md).
 
 The tools reach the working directory through `runtime.workspace/v1` and the
 Project sandbox through `runtime.lease/v1`, both in `requires`.

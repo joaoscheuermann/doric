@@ -38,6 +38,8 @@ export interface CommentOverlayProps {
   readonly threaded: boolean;
   readonly showResolved: boolean;
   readonly onToggleShowResolved: () => void;
+  /** Focuses the canvas and makes it the one the commands act on: the overlay hands it the focus when its open input is confirmed or cancelled, or its open thread is cancelled (Esc) or closed by its close button. */
+  readonly focusCanvas: () => void;
 }
 
 export function CommentOverlay({
@@ -50,8 +52,13 @@ export function CommentOverlay({
   threaded,
   showResolved,
   onToggleShowResolved,
+  focusCanvas,
 }: CommentOverlayProps) {
   const { open, text, thread } = flow;
+  const thenFocus = (close: () => void) => () => {
+    focusCanvas();
+    close();
+  };
 
   /* The open inline input, positioned on its pin -------------------------------- */
 
@@ -64,8 +71,9 @@ export function CommentOverlay({
             open.data.point,
           value: text,
           onChange: flow.setText,
-          onConfirm: () => void flow.confirmInput(),
-          onCancel: flow.closeInput,
+          // Focus moves into the canvas before the field unmounts, so it never leaves the node.
+          onConfirm: thenFocus(() => void flow.confirmInput()),
+          onCancel: thenFocus(flow.closeInput),
           onBlurOutside: flow.resolveInput,
         };
 
@@ -105,8 +113,8 @@ export function CommentOverlay({
           editing={flow.editing !== undefined}
           onChange={flow.setText}
           onConfirm={() => void flow.confirmInput(false)}
-          onCancel={flow.closeInput}
-          onClose={flow.resolveInput}
+          onCancel={thenFocus(flow.closeInput)}
+          onClose={thenFocus(flow.resolveInput)}
           onEdit={flow.editDraft}
           onRemove={flow.removeDraft}
           onCopy={copyText}
