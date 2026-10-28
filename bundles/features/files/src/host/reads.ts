@@ -16,6 +16,7 @@ import {
 } from 'sandbox';
 
 import {
+  type ContentInput,
   type ContentRead,
   type DirectoryRead,
   FilesV1,
@@ -25,6 +26,9 @@ import {
 
 /** The largest text payload the content read returns. */
 export const CONTENT_LIMIT_BYTES = 262_144;
+
+/** The most bytes a base64 content read returns (a font, an image). */
+export const BYTES_LIMIT = 4_194_304;
 
 /** Lists one directory level, with the workspace visibility rules. */
 export const readDirectory = async (
@@ -58,10 +62,14 @@ export const readTree = async (
   };
 };
 
-/** Reads one workspace file as bounded UTF-8 text, never a mangled binary. */
+/**
+ * Reads one workspace file as bounded UTF-8 text, never a mangled binary, or
+ * as its bytes in base64 under BYTES_LIMIT.
+ */
 export const readContent = async (
   sandbox: Sandbox,
   path: string,
+  encoding: 'utf8' | 'base64' = 'utf8',
 ): Promise<ContentRead> => {
   const kind = await workspacePathKind(sandbox, path);
 
@@ -69,19 +77,25 @@ export const readContent = async (
   if (kind === 'missing') return { status: 'not_found' };
   if (kind !== 'file') return { status: 'not_file' };
 
+  const limit = encoding === 'base64' ? BYTES_LIMIT : CONTENT_LIMIT_BYTES;
+
   // One bounded read: ask for one byte past the cap so truncation is visible.
   const result = await sandbox.exec({
-    cmd: ['head', '-c', String(CONTENT_LIMIT_BYTES + 1), '--', path],
+    cmd: ['head', '-c', String(limit + 1), '--', path],
   });
 
   if (result.exitCode !== 0) return { status: 'not_found' };
 
   const bytes = result.stdoutBytes;
-  const truncated = bytes.byteLength > CONTENT_LIMIT_BYTES;
+  const truncated = bytes.byteLength > limit;
   const binary = bytes.includes(0);
-  const content = binary
-    ? ''
-    : Buffer.from(bytes.subarray(0, CONTENT_LIMIT_BYTES)).toString('utf8');
+  const kept = Buffer.from(bytes.subarray(0, limit));
+  const content =
+    encoding === 'base64'
+      ? kept.toString('base64')
+      : binary
+        ? ''
+        : kept.toString('utf8');
 
   return { status: 'read', path, content, truncated, binary };
 };
@@ -107,9 +121,12 @@ export const filesService = defineService(FilesV1, {
   content: defineMethod({
     expose: 'desktop',
     ...filesMethods.content,
-    execute: (input: { readonly path: string }, call: Call, services) =>
+    execute: (input: ContentInput, call: Call, services) =>
       services
         .use(RuntimeLeaseV1, call.scope)
-        .withLease((sandbox) => readContent(sandbox, input.path), call),
+        .withLease(
+          (sandbox) => readContent(sandbox, input.path, input.encoding),
+          call,
+        ),
   }),
 });

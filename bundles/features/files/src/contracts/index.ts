@@ -40,16 +40,28 @@ export type TreeRead =
     }
   | { readonly status: 'not_found' | 'not_directory' | 'invalid_path' };
 
-/** One file as bounded text (`GET /projects/:id/file`). */
+/**
+ * One file as bounded text (`GET /projects/:id/file`), or, asked with
+ * `encoding: 'base64'` (1.1.0), as its bytes in base64 under a larger bound:
+ * `binary` still says whether they hold a NUL byte, and `truncated` whether
+ * the file was cut.
+ */
 export type ContentRead =
   | {
       readonly status: 'read';
       readonly path: string;
+      /** UTF-8 text, empty for a binary file; base64 bytes when asked. */
       readonly content: string;
       readonly truncated: boolean;
       readonly binary: boolean;
     }
   | { readonly status: 'not_found' | 'not_file' | 'invalid_path' };
+
+/** What a content read asks: the path and, since 1.1.0, base64 bytes. */
+export interface ContentInput {
+  readonly path: string;
+  readonly encoding?: 'utf8' | 'base64';
+}
 
 /**
  * The Project is `call.scope.projectId` (`services.use(FilesV1, { projectId })`).
@@ -65,7 +77,7 @@ export interface Files {
     call?: CallArg,
   ): Promise<LeaseOutcome<TreeRead>>;
   content(
-    input: { readonly path: string },
+    input: ContentInput,
     call?: CallArg,
   ): Promise<LeaseOutcome<ContentRead>>;
 }
@@ -148,7 +160,12 @@ export const filesMethods = {
     >,
   },
   content: {
-    input: z.object({ path: z.string() }).strict(),
+    input: z
+      .object({
+        path: z.string(),
+        encoding: z.enum(['utf8', 'base64']).optional(),
+      })
+      .strict(),
     output: z.union([ready(contentReadSchema), leaseStates]) as z.ZodType<
       LeaseOutcome<ContentRead>,
       LeaseOutcome<ContentRead>

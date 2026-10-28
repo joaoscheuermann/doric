@@ -29,7 +29,11 @@ import type { Sandbox } from 'sandbox';
 
 import { createFilesReads } from '../src/client/api/reads.js';
 import { FilesV1 } from '../src/contracts/index.js';
-import { CONTENT_LIMIT_BYTES, filesService } from '../src/host/reads.js';
+import {
+  BYTES_LIMIT,
+  CONTENT_LIMIT_BYTES,
+  filesService,
+} from '../src/host/reads.js';
 import { createFakeSandbox } from './fake-sandbox.js';
 
 type LeaseState = 'ready' | 'pending' | 'unavailable' | 'expired' | 'missing';
@@ -212,6 +216,34 @@ describe('files/v1 over the Project lease', () => {
     assert.ok(image.status === 'ready' && image.value.status === 'read');
     assert.equal(image.value.binary, true);
     assert.equal(image.value.content, '');
+  });
+
+  test('reads any file as base64 bytes when asked, cut at its own larger limit', async (t) => {
+    const { files, dispose } = setup();
+    t.after(dispose);
+    const project = files({ projectId: 'p-1' });
+
+    const image = await project.content({
+      path: 'image.bin',
+      encoding: 'base64',
+    });
+    assert.ok(image.status === 'ready' && image.value.status === 'read');
+    assert.equal(image.value.binary, true);
+    assert.equal(image.value.truncated, false);
+    assert.deepEqual(
+      Buffer.from(image.value.content, 'base64'),
+      await readFile(join(root, 'image.bin')),
+    );
+
+    // Past the text limit a base64 read is still whole.
+    const big = await project.content({ path: 'big.txt', encoding: 'base64' });
+    assert.ok(big.status === 'ready' && big.value.status === 'read');
+    assert.equal(big.value.truncated, false);
+    assert.equal(
+      Buffer.from(big.value.content, 'base64').byteLength,
+      (await readFile(join(root, 'big.txt'))).byteLength,
+    );
+    assert.ok(BYTES_LIMIT > CONTENT_LIMIT_BYTES);
   });
 
   test('refuses a content read of a directory, a missing file or an outside path', async (t) => {

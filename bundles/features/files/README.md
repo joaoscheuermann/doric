@@ -63,7 +63,9 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
 
 - `files/v1` (host) answers the Project sandbox reads of the Files view and the
   file tab: one directory level, the whole tree below a path, and one file as
-  bounded text (up to 256 KiB). Each read runs on the Project's current lease
+  bounded text (up to 256 KiB) or, with `encoding: 'base64'` (1.1.0), as its
+  bytes up to 4 MiB, which papercraft reads a preview sheet's fonts and images
+  with. Each read runs on the Project's current lease
   through `runtime.lease/v1.withLease` and never acquires one; a Project
   without a lease answers its lease state.
 - `files.sandbox/v1` (client) keeps the window's one tree read per Project and
