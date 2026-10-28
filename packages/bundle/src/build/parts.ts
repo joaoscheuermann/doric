@@ -2,7 +2,9 @@
 // run in a utilityProcess) and `src/client/index.ts` (+ `styles.css`, run in
 // a window). Both are ESM with the platform specifiers left external, so one
 // instance of `zod`, `bundle/contracts` and each `<id>/contracts` exists per
-// generation.
+// generation. A client's frames (`src/client/frames/*.ts`) are modules of
+// their own, for documents outside the window: only the frame import map's
+// specifiers stay external.
 
 import {
   mkdir,
@@ -19,7 +21,11 @@ import { Scanner } from '@tailwindcss/oxide';
 import { type BuildFailure, build, type Plugin } from 'esbuild';
 
 import { manifestV1Schema } from '../runtime/manifest.js';
-import { clientExternals, matchesExternal } from './externals.js';
+import {
+  clientExternals,
+  frameExternals,
+  matchesExternal,
+} from './externals.js';
 
 export class PartBuildError extends Error {
   override readonly name = 'PartBuildError';
@@ -36,6 +42,8 @@ export interface BuiltParts {
   readonly desktopMain?: string;
   readonly client?: string;
   readonly clientStyles?: string;
+  /** The client's frames, `client/frames/<name>.js`. */
+  readonly frames?: readonly string[];
 }
 
 /** What the desktopMain runner resolves (plus Node built-ins). */
@@ -78,6 +86,20 @@ const forbiddenInClient = (specifier: string): boolean =>
   specifier === 'desktop/client' ||
   specifier.startsWith('desktop/client/');
 
+/**
+ * Imports a frame must not contain: the window's own modules, and the
+ * window's import-map specifiers the frame's map does not have (a second
+ * React, `desktop/ui`, contracts), except `zod`, which a frame bundles.
+ */
+const forbiddenInFrame = (specifier: string): boolean =>
+  forbiddenInClient(specifier) ||
+  specifier.startsWith('bundle/') ||
+  specifier.startsWith('desktop/') ||
+  (matchesExternal(clientExternals, specifier) &&
+    !matchesExternal(frameExternals, specifier) &&
+    specifier !== 'zod' &&
+    !specifier.startsWith('zod/'));
+
 const exists = async (path: string): Promise<boolean> => {
   try {
     return (await stat(path)).isFile();
@@ -101,7 +123,7 @@ const EXTERNAL_REQUIRE = 'doric-external-require';
 const partPlugin = (input: {
   readonly id: string;
   readonly contractsDir: string;
-  readonly part: 'desktop' | 'client';
+  readonly part: 'desktop' | 'client' | 'frame';
   readonly forbidden: (specifier: string) => boolean;
   /** The part's external specifiers (stage 9). */
   readonly external?: readonly string[];
@@ -143,7 +165,9 @@ const partPlugin = (input: {
         };
       }
 
-      if (args.path.startsWith('.')) {
+      // A frame bundles the contracts' sources it imports: its document
+      // has no `<id>/contracts`.
+      if (args.path.startsWith('.') && input.part !== 'frame') {
         const target = resolve(args.resolveDir, args.path);
 
         if (inside(input.contractsDir, target)) {
@@ -249,8 +273,11 @@ const buildStyles = async (source: string): Promise<string> => {
   return output;
 };
 
-/** `src/client/workers/*.ts`: each a self-contained module worker. */
-const workerEntries = async (dir: string): Promise<readonly string[]> => {
+/**
+ * The `.ts` files directly in a folder (`src/client/workers/*.ts`,
+ * `src/client/frames/*.ts`), each an entry; subfolders hold their modules.
+ */
+const entriesOf = async (dir: string): Promise<readonly string[]> => {
   try {
     return (await readdir(dir, { withFileTypes: true }))
       .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
@@ -281,6 +308,7 @@ export const buildParts = async (
     desktopMain?: string;
     client?: string;
     clientStyles?: string;
+    frames?: readonly string[];
   } = {};
 
   // Only a part with a source entry is (re)built; a dist part without one
@@ -342,7 +370,7 @@ export const buildParts = async (
     // Workers run outside the window's import map: nothing is external.
     const workersDir = join(root, 'src', 'client', 'workers');
 
-    for (const name of await workerEntries(workersDir)) {
+    for (const name of await entriesOf(workersDir)) {
       await buildScript({
         entry: join(workersDir, name),
         outfile: join(dist, 'client', 'workers', name.replace(/\.ts$/, '.js')),
@@ -358,6 +386,38 @@ export const buildParts = async (
         label: `client worker ${name}`,
       });
     }
+  }
+
+  // Frames run in documents of their own (a preview's sandboxed iframe),
+  // with the frame import map: `client/frames/<name>.js`, never loaded by
+  // the build's dry activation.
+  const framesDir = join(root, 'src', 'client', 'frames');
+  const frames = await entriesOf(framesDir);
+
+  await rm(join(dist, 'client', 'frames'), { recursive: true, force: true });
+
+  for (const name of frames) {
+    await buildScript({
+      entry: join(framesDir, name),
+      outfile: join(dist, 'client', 'frames', name.replace(/\.ts$/, '.js')),
+      platform: 'browser',
+      external: frameExternals,
+      plugin: partPlugin({
+        id: manifest.id,
+        contractsDir,
+        part: 'frame',
+        forbidden: forbiddenInFrame,
+        external: frameExternals,
+      }),
+      mode: options.mode,
+      label: `client frame ${name}`,
+    });
+  }
+
+  if (frames.length > 0) {
+    built.frames = frames.map(
+      (name) => `client/frames/${name.replace(/\.ts$/, '.js')}`,
+    );
   }
 
   if (hasStyles || importedCss !== undefined) {

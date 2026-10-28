@@ -641,7 +641,63 @@ export interface DoricWindows {
    * way and fails `invalid_input`; a key that is not open fails `not_found`.
    */
   navigate(input: { key: string; path: string }, call?: CallArg): Promise<void>;
+  /**
+   * 1.2.0: captures `rect` (CSS px of the window's viewport) of an open path
+   * window as a PNG: its bytes as base64, its size in device pixels and the
+   * device pixels per CSS px it was taken at. A key that is not open fails
+   * `not_found`; a view window, or a rectangle outside the viewport, fails
+   * `invalid_input`; a capture main could not take fails `unavailable`.
+   */
+  capture(input: WindowCaptureRequest, call?: CallArg): Promise<WindowCapture>;
 }
+
+/** The longest side of a window capture, in CSS px. */
+export const WINDOW_CAPTURE_MAX_SIDE = 4096;
+
+export interface WindowCaptureRequest {
+  readonly key: string;
+  readonly rect: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+}
+
+export interface WindowCapture {
+  /** The PNG bytes, base64. */
+  readonly png: string;
+  /** Device pixels. */
+  readonly width: number;
+  readonly height: number;
+  /** Device pixels per CSS px. */
+  readonly scale: number;
+}
+
+const captureSide = z.number().positive().max(WINDOW_CAPTURE_MAX_SIDE);
+
+export const windowCaptureRequestSchema = z
+  .object({
+    key: z.string().min(1),
+    rect: z
+      .object({
+        x: z.number().nonnegative(),
+        y: z.number().nonnegative(),
+        width: captureSide,
+        height: captureSide,
+      })
+      .strict(),
+  })
+  .strict();
+
+export const windowCaptureSchema = z
+  .object({
+    png: z.string().min(1),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    scale: z.number().positive(),
+  })
+  .strict();
 
 export interface DoricMenus {
   setSkeleton(skeleton: MenuSkeleton, call?: CallArg): Promise<void>;
@@ -969,6 +1025,10 @@ export const platformContracts = Object.freeze({
           .object({ key: z.string(), path: z.string().startsWith('/') })
           .strict(),
         output: z.void(),
+      },
+      capture: {
+        input: windowCaptureRequestSchema,
+        output: windowCaptureSchema,
       },
     },
   },

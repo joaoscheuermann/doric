@@ -24,6 +24,21 @@ export const clientExternals: readonly string[] = [
   '*/contracts',
 ];
 
+/**
+ * Import-map specifiers a bundle frame (`src/client/frames/*.ts`) leaves to
+ * its document: the frame's import map has only what a preview needs, so
+ * everything else a frame imports is bundled into it.
+ */
+export const frameExternals: readonly string[] = [
+  'react',
+  'react/jsx-runtime',
+  'react/jsx-dev-runtime',
+  'react-dom',
+  'react-dom/client',
+  '@base-ui/react',
+  '@base-ui/react/*',
+];
+
 /** Whether a specifier is one of esbuild-style `external` patterns. */
 export const matchesExternal = (
   external: readonly string[],

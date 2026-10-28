@@ -11,7 +11,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { buildParts, PartBuildError } from '../src/build/parts.js';
-import { buildBundle } from '../src/index.js';
+import { buildBundle, distributionFiles } from '../src/index.js';
 import { contractsUrl, manifest } from './support/fixtures.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -354,6 +354,104 @@ void test('client workers are self-contained modules next to the part', async ()
       assert.deepEqual(importsOf(worker), []);
       assert.match(worker, /inlined-worker-helper/);
     },
+  );
+});
+
+void test('client frames are modules of their own with only the frame import map external', async () => {
+  await withBundle(
+    {
+      'src/contracts/index.ts': `export const marker = 'inlined-contract';\n`,
+      'src/client/index.ts': `export const activate = () => new URL('./frames/preview.js', import.meta.url);\n`,
+      'src/client/frames/preview.ts': [
+        `import { createElement } from 'react';`,
+        `import { jsx } from 'react/jsx-runtime';`,
+        `import { jsxDEV } from 'react/jsx-dev-runtime';`,
+        `import { flushSync } from 'react-dom';`,
+        `import { createRoot } from 'react-dom/client';`,
+        `import { mergeProps } from '@base-ui/react';`,
+        `import { Popover } from '@base-ui/react/popover';`,
+        `import { z } from 'zod';`,
+        `import { marker } from '../../contracts/index.js';`,
+        `import { helper } from './preview/helper.js';`,
+        `export const parts = [createElement, jsx, jsxDEV, flushSync, createRoot, mergeProps, Popover, z.string().parse('ok'), marker, helper()];`,
+        '',
+      ].join('\n'),
+      'src/client/frames/preview/helper.ts': `export const helper = () => 'inlined-frame-helper';\n`,
+    },
+    async (dir) => {
+      const built = await buildParts({ bundleDir: dir, mode: 'production' });
+
+      assert.deepEqual(built.frames, ['client/frames/preview.js']);
+
+      const frame = await read(dir, 'client/frames/preview.js');
+
+      assert.deepEqual(
+        new Set(importsOf(frame)),
+        new Set([
+          'react',
+          'react/jsx-runtime',
+          'react/jsx-dev-runtime',
+          'react-dom',
+          'react-dom/client',
+          '@base-ui/react',
+          '@base-ui/react/popover',
+        ]),
+      );
+      assert.match(frame, /inlined-frame-helper/);
+      assert.match(frame, /inlined-contract/);
+      // The frame's modules are bundled into it, not entries of their own.
+      await assert.rejects(read(dir, 'client/frames/preview/helper.js'));
+    },
+  );
+});
+
+void test('a frame with an import its document cannot resolve fails the build', async () => {
+  for (const specifier of [
+    'desktop/ui/button',
+    'lexical',
+    'react/compiler-runtime',
+    'bundle/contracts',
+    'git/contracts',
+    'desktop/client',
+  ]) {
+    await withBundle(
+      {
+        'src/client/frames/preview.ts': `import * as forbidden from '${specifier}';\nexport const parts = [forbidden];\n`,
+      },
+      async (dir) => {
+        await assert.rejects(
+          buildParts({ bundleDir: dir, mode: 'production' }),
+          (error: unknown) =>
+            error instanceof PartBuildError &&
+            error.message.includes(
+              `A frame part must not import "${specifier}".`,
+            ),
+          specifier,
+        );
+      },
+    );
+  }
+});
+
+void test('cli build never loads a frame, and the frame ships with the client', async () => {
+  await withBundle(
+    {
+      'src/client/index.ts': servicePart('demo.view/v1'),
+      // A frame touches its document at import time: loading it in Node
+      // would throw.
+      'src/client/frames/preview.ts': `document.body.append(document.createElement('div'));\nwindow.addEventListener('message', () => undefined);\n`,
+    },
+    async (dir) => {
+      await buildBundle(dir);
+
+      const files = await distributionFiles(join(dir, 'dist'));
+
+      assert.ok(
+        files.some((file) => file.path === 'client/frames/preview.js'),
+        files.map((file) => file.path).join(', '),
+      );
+    },
+    { provides: ['demo.view/v1@1.0.0'] },
   );
 });
 

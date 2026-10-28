@@ -161,8 +161,13 @@ export {
   type QuarantineReason,
   quarantineCodes,
   startupLevelSchema,
+  WINDOW_CAPTURE_MAX_SIDE,
+  type WindowCapture,
+  type WindowCaptureRequest,
   WindowHooksV1,
   type WorkHold,
+  windowCaptureRequestSchema,
+  windowCaptureSchema,
   workHoldSchema,
 } from './platform.js';
 export {
