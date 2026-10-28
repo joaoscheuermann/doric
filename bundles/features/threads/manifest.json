@@ -7,7 +7,7 @@
   },
   "description": "Delegation capabilities for creating and steering direct child threads.",
   "provides": [
-    "threads.ask/v1@1.0.0",
+    "threads.ask/v1@1.1.0",
     "threads.asked/v1@1.0.0",
     "threads.answered/v1@1.0.0"
   ],

@@ -352,10 +352,6 @@ describe('threads.ask/v1.answer', () => {
           [approve, { id: 'regions', options: ['EU'], other: 'APAC' }],
         ],
         ['missing answer', [approve]],
-        [
-          'no label and blank other',
-          [{ id: 'approve', options: [], other: '   ' }, region],
-        ],
       ];
 
       for (const [name, answers] of cases) {
@@ -369,6 +365,67 @@ describe('threads.ask/v1.answer', () => {
       assert.equal(harness.steers.length, 0);
       assert.equal(rowsOf(harness.log, ANSWERED).length, 0);
       assert.deepEqual(await status(harness, askId), { state: 'pending' });
+    });
+  });
+
+  // DORIC-90
+  test('accepts a skipped question, with no pick or a blank free answer, and writes it as skipped', async () => {
+    await withHarness(async (harness) => {
+      const askId = await askFor(harness, {
+        questions: [approval, platforms, regions],
+      });
+      const answers: AskAnswer[] = [
+        { id: 'approve', options: ['Yes'] },
+        { id: 'platforms', options: [], other: '  ' },
+        { id: 'regions', options: [] },
+      ];
+
+      const result = await answer(harness, askId, answers);
+
+      assert.deepEqual(result, { state: 'answered', answers });
+      const answered = rowsOf(harness.log, ANSWERED);
+      assert.equal(answered.length, 1);
+      assert.deepEqual(answered[0]?.event, { type: ANSWERED, askId, answers });
+      assert.equal(harness.steers.length, 1);
+      const prompt = harness.steers[0]?.prompt ?? '';
+      assert.ok(
+        prompt.includes('1. Ship the migration today?\n   Yes'),
+        prompt,
+      );
+      assert.ok(
+        prompt.includes('2. Which platforms must it support?\n   (skipped)'),
+        prompt,
+      );
+      assert.ok(
+        prompt.includes('3. Which regions get it first?\n   (skipped)'),
+        prompt,
+      );
+    });
+  });
+
+  // DORIC-90
+  test('accepts and sends an answer that skips every question', async () => {
+    await withHarness(async (harness) => {
+      const askId = await askFor(harness, { questions: [approval, regions] });
+      const answers: AskAnswer[] = [
+        { id: 'approve', options: [] },
+        { id: 'regions', options: [] },
+      ];
+
+      const result = await answer(harness, askId, answers);
+
+      assert.equal(result.state, 'answered');
+      assert.equal(rowsOf(harness.log, ANSWERED).length, 1);
+      assert.equal(harness.steers.length, 1);
+      const prompt = harness.steers[0]?.prompt ?? '';
+      assert.ok(
+        prompt.includes('1. Ship the migration today?\n   (skipped)'),
+        prompt,
+      );
+      assert.ok(
+        prompt.includes('2. Which regions get it first?\n   (skipped)'),
+        prompt,
+      );
     });
   });
 
@@ -587,5 +644,24 @@ describe('formatAnswers', () => {
       '2. Which platforms must it support?\n   Linux; Windows; BSD\n   Haiku';
     assert.ok(text.includes(first), text);
     assert.ok(text.indexOf(second) > text.indexOf(first), text);
+  });
+
+  // DORIC-90
+  test('writes a skipped question as "(skipped)" under it, and the others as answered', () => {
+    const text = formatAnswers(
+      [approval, platforms, regions],
+      [
+        { id: 'approve', options: [] },
+        { id: 'platforms', options: [], other: '   ' },
+        { id: 'regions', options: ['EU'] },
+      ],
+    );
+
+    const first = '1. Ship the migration today?\n   (skipped)';
+    const second = '2. Which platforms must it support?\n   (skipped)';
+    const third = '3. Which regions get it first?\n   EU';
+    assert.ok(text.includes(first), text);
+    assert.ok(text.indexOf(second) > text.indexOf(first), text);
+    assert.ok(text.indexOf(third) > text.indexOf(second), text);
   });
 });

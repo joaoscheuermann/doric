@@ -24,7 +24,6 @@ import { StrictMode, useEffect, useRef, useState } from 'react';
 import { type AskQuestion, type AskState, AskV1 } from '../contracts/index.js';
 import { watchAsk } from './ask-changes.js';
 import {
-  filled,
   fromAnswers,
   OTHER,
   type Picks,
@@ -69,8 +68,8 @@ export interface AskQuestionsProps {
   /** A later ask replaced this one: "Superseded" and the numbered questions, no answers or controls. */
   readonly superseded?: boolean;
   /**
-   * Called with the picks when Send is pressed on the last question (enabled only
-   * when filled). While pending, Send is disabled. If it rejects: "Could not send.
+   * Called with the picks when Send is pressed on the last question (an empty
+   * question is skipped). While pending, Send is disabled. If it rejects: "Could not send.
    * Try again." (`role="status"`), picks kept, Send enabled again. If it resolves,
    * the block stays until its owner passes `answered` or `superseded`.
    */
@@ -124,9 +123,10 @@ function Settled({
  * The approved ask block (prototype revision 14). Pending: one question at a time,
  * "n/N" count with more than one question, numbered option rows as `radio`/`checkbox`
  * with `aria-checked`, the "Type your answer..." row ("Your answer") unless
- * `allowOther` is false, Back from the second question on (keeping picks), Next or
- * Send disabled until filled. Typing in the free answer picks that row; on a
- * single-select question it replaces the picked option.
+ * `allowOther` is false, Back from the second question on (keeping picks), Next and
+ * Send always enabled (an empty question is skipped). Keys stay in the block.
+ * Typing in the free answer picks that row; on a single-select question it
+ * replaces the picked option.
  */
 export function AskQuestions({
   context,
@@ -176,9 +176,12 @@ export function AskQuestions({
   };
 
   return (
+    // Keys stay here: with the block selected, the chat editor (Lexical) would
+    // cancel Backspace, Delete, arrows and Enter (as in delegated-turn.tsx).
     <section
       aria-label="Question from the agent"
       className={cn('flex flex-col gap-2', frame)}
+      onKeyDown={(event) => event.stopPropagation()}
     >
       {/* The question is the block's title: its mark on the left, the step
           count on the right when there is more than one. */}
@@ -303,7 +306,7 @@ export function AskQuestions({
           <Button
             size="icon-sm"
             aria-label="Send"
-            disabled={sending || !filled(answer)}
+            disabled={sending}
             onClick={send}
           >
             <ArrowUpIcon />
@@ -312,7 +315,6 @@ export function AskQuestions({
           <Button
             size="icon-sm"
             aria-label="Next"
-            disabled={!filled(answer)}
             onClick={() => setStep(step + 1)}
           >
             <ArrowRightIcon />

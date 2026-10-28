@@ -143,11 +143,12 @@ export const filled = (a: Picked | undefined): boolean =>
   a !== undefined &&
   (a.picked.some((p) => p !== OTHER) || freeText(a) !== undefined);
 
-/** The one-line answer: picked labels, then the free text when `OTHER` is picked with non-empty text, joined by ", ". '—' when nothing, incl. `undefined`. */
+/** The one-line answer: picked labels, then the free text when `OTHER` is picked with non-empty text, joined by ", ". 'Skipped' when not `filled`. */
 export const summary = (a: Picked | undefined): string => {
-  const words = (a?.picked ?? []).filter((p) => p !== OTHER);
-  if (a?.picked.includes(OTHER) && a.other) words.push(a.other);
-  return words.join(', ') || '—';
+  if (a === undefined || !filled(a)) return 'Skipped';
+  const words = a.picked.filter((p) => p !== OTHER);
+  if (a.picked.includes(OTHER) && a.other) words.push(a.other);
+  return words.join(', ');
 };
 
 /**

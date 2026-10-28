@@ -187,10 +187,6 @@ const checkAnswers = (
     if (answer.other !== undefined && question.allowOther === false) {
       throw invalid(`The question "${answer.id}" takes no free answer.`);
     }
-
-    if (answer.options.length === 0 && !answer.other?.trim()) {
-      throw invalid(`The answer to "${answer.id}" picks nothing.`);
-    }
   }
 
   const missing = questions.filter(({ id }) => !answered.has(id));
@@ -210,6 +206,7 @@ const checkAnswers = (
  * - `values` are the selected labels in the question's option order, then
  *   the trimmed `other` when it is not blank, joined with `; `. A newline
  *   inside a value becomes `\n   `, so it stays indented.
+ * - A skipped question (no label, `other` blank or absent) gets `(skipped)`.
  * - Items are joined with `\n`, with no trailing newline.
  *
  * Expects answers already checked against the questions (`Ask.answer`).
@@ -230,7 +227,7 @@ export const formatAnswers = (
       .join('; ')
       .replaceAll('\n', '\n   ');
 
-    return `${index + 1}. ${question.question}\n   ${values}`;
+    return `${index + 1}. ${question.question}\n   ${values || '(skipped)'}`;
   });
 
   return `Answers to your questions:\n\n${items.join('\n')}`;

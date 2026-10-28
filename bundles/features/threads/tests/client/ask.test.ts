@@ -92,6 +92,14 @@ const accepted = row(
 );
 const asked = row('threads.asked/v1', { askId, context, questions }, 2);
 
+/** A two-question ask: a single-select question, then a multi-select one. */
+const pairId = '77777777-7777-4777-8777-777777777777';
+const askedPair = row(
+  'threads.asked/v1',
+  { askId: pairId, questions: questions.slice(0, 2) },
+  2,
+);
+
 type Status =
   | { readonly state: 'pending' }
   | { readonly state: 'answered'; readonly answers: readonly unknown[] }
@@ -213,6 +221,29 @@ const pick = async (block: Element, label: string) => {
 const freeAnswer = (block: Element): HTMLTextAreaElement | null =>
   block.querySelector('textarea[aria-label="Your answer"]');
 
+/** Presses one key on `target`, as the reader would; returns the event to read `defaultPrevented`. */
+const key = async (
+  window: ThreadsWindow,
+  target: Element,
+  name: string,
+  modifiers: { readonly ctrlKey?: boolean } = {},
+): Promise<KeyboardEvent> => {
+  const event = new window.window.KeyboardEvent('keydown', {
+    key: name,
+    bubbles: true,
+    cancelable: true,
+    ...modifiers,
+  }) as unknown as KeyboardEvent;
+  // A browser names the event it is dispatching as `window.event`, which the
+  // chat editor reads while handling a key; happy-dom does not.
+  const view = target.ownerDocument.defaultView as unknown as object;
+  Object.defineProperty(view, 'event', { value: event, configurable: true });
+  target.dispatchEvent(event);
+  Reflect.deleteProperty(view, 'event');
+  await settle(20);
+  return event;
+};
+
 /** Types into the free answer as the reader would: React reads the input event. */
 const type = async (window: ThreadsWindow, block: Element, text: string) => {
   const field = freeAnswer(block);
@@ -297,12 +328,16 @@ test('a pending ask opens on its first question, read in the scope of its row', 
   assert.equal(read?.scope?.promptId, scopeOfAsk.promptId);
 });
 
-test('Next waits for a pick, and Back returns to the pick made', async () => {
+test('Next goes on without a pick, and Back returns to the pick made', async () => {
   const { window } = await open({ [askId]: { state: 'pending' } });
   await deliver(window, [accepted, asked]);
   const block = present(window);
 
-  assert.equal(button(block, 'Next')?.disabled, true);
+  assert.equal(
+    button(block, 'Next')?.disabled,
+    false,
+    'Next is enabled with nothing picked',
+  );
   assert.equal(button(block, 'Back'), null);
 
   await pick(block, 'Any thread');
@@ -355,7 +390,11 @@ test('on a multi-select question, options check and uncheck on their own', async
     ),
     true,
   );
-  assert.equal(button(block, 'Next')?.disabled, true);
+  assert.equal(
+    button(block, 'Next')?.disabled,
+    false,
+    'Next is enabled with nothing checked',
+  );
 
   await pick(block, 'Single choice');
   await pick(block, 'Multiple choice');
@@ -367,6 +406,118 @@ test('on a multi-select question, options check and uncheck on their own', async
   assert.equal(checked(block, 'Single choice'), 'false');
   assert.equal(checked(block, 'Multiple choice'), 'true');
   assert.equal(button(block, 'Next')?.disabled, false);
+});
+
+test('keys typed in the free answer stay in it: the chat editor prevents none of them', async () => {
+  const { window } = await open({ [askId]: { state: 'pending' } });
+  await deliver(window, [accepted, asked]);
+  const block = present(window);
+  const field = freeAnswer(block);
+  assert.notEqual(field, null, 'the free answer is shown');
+
+  field?.click();
+  await settle(50);
+
+  for (const [name, modifiers] of [
+    ['Backspace', {}],
+    ['Delete', {}],
+    ['ArrowLeft', {}],
+    ['ArrowRight', {}],
+    ['Enter', {}],
+    ['a', { ctrlKey: true }],
+  ] as const) {
+    const event = await key(window, field as Element, name, modifiers);
+    assert.equal(
+      event.defaultPrevented,
+      false,
+      `${modifiers.ctrlKey ? 'Ctrl+' : ''}${name} is left to the free answer`,
+    );
+  }
+});
+
+test('Next and Send go on with nothing picked: each skipped question is sent without picks', async () => {
+  const { window } = await open({ [pairId]: { state: 'pending' } });
+  await deliver(window, [accepted, askedPair]);
+  const block = present(window, pairId);
+
+  assert.equal(button(block, 'Next')?.disabled, false, 'Next is enabled');
+  await press(block, 'Next');
+  assert.match(textOf(block), /2\/2/);
+  assert.equal(button(block, 'Send')?.disabled, false, 'Send is enabled');
+  await press(block, 'Send');
+  await settle(50);
+
+  const sent = window.received('threads.ask/v1.answer');
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0]?.input, {
+    askId: pairId,
+    answers: [
+      { id: 'who', options: [] },
+      { id: 'scope', options: [] },
+    ],
+  });
+});
+
+test('Send is enabled on the last question with nothing picked, and disabled while the send is pending', async () => {
+  const { ask, window } = await open({ [pairId]: { state: 'pending' } });
+  await deliver(window, [accepted, askedPair]);
+  const block = present(window, pairId);
+  await pick(block, 'Any thread');
+  await press(block, 'Next');
+
+  assert.equal(
+    button(block, 'Send')?.disabled,
+    false,
+    'Send is enabled with nothing picked',
+  );
+
+  let release: (value: unknown) => void = () => {};
+  ask.answerWith(
+    (input) =>
+      new Promise((resolve) => {
+        release = () => resolve({ state: 'answered', answers: input.answers });
+      }),
+  );
+  await press(block, 'Send');
+  assert.equal(
+    button(block, 'Send')?.disabled,
+    true,
+    'Send is disabled while the send is pending',
+  );
+  release(undefined);
+  await settle(50);
+});
+
+test('a skipped question shows "Skipped" in the answered block', async () => {
+  const { ask, window } = await open({ [pairId]: { state: 'pending' } });
+  await deliver(window, [accepted, askedPair]);
+  const block = present(window, pairId);
+
+  await pick(block, 'Any thread');
+  await press(block, 'Next');
+  await press(block, 'Send');
+  await settle(50);
+
+  const answers = [
+    { id: 'who', options: ['Any thread'] },
+    { id: 'scope', options: [] },
+  ];
+  const sent = window.received('threads.ask/v1.answer');
+  assert.equal(sent.length, 1, 'the answers are sent');
+  assert.deepEqual(sent[0]?.input, { askId: pairId, answers });
+
+  ask.statuses[pairId] = { state: 'answered', answers };
+  await live(window, row('threads.answered/v1', { askId: pairId, answers }, 3));
+
+  const shown = present(window, pairId);
+  assert.match(textOf(shown), /Answered/);
+  const items = [...shown.querySelectorAll('ol li')];
+  assert.equal(items.length, 2);
+  assert.ok(textOf(items[0] as Element).includes('Any thread'));
+  const second = textOf(items[1] as Element);
+  assert.ok(second.includes('What goes in the first version?'), second);
+  assert.ok(second.includes('Skipped'), second);
+  noControls(shown);
 });
 
 test('Send answers in the scope of the asked row, and the block shows the answers', async () => {

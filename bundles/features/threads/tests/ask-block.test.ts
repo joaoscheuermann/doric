@@ -202,9 +202,9 @@ describe('the picks', () => {
     assert.equal(filled({ picked: [OTHER], other: 'x' }), true);
   });
 
-  test('the summary names the picked labels, then the free answer', () => {
-    assert.equal(summary(undefined), '—');
-    assert.equal(summary({ picked: [] }), '—');
+  test('the summary names the picked labels, then the free answer, and "Skipped" when nothing is filled', () => {
+    assert.equal(summary(undefined), 'Skipped');
+    assert.equal(summary({ picked: [] }), 'Skipped');
     assert.equal(summary({ picked: ['Single choice'] }), 'Single choice');
     assert.equal(
       summary({ picked: ['Single choice', 'Free answer'] }),
@@ -215,7 +215,8 @@ describe('the picks', () => {
       'Single choice, Ranking',
     );
     assert.equal(summary({ picked: [OTHER], other: 'Ranking' }), 'Ranking');
-    assert.equal(summary({ picked: [OTHER], other: '' }), '—');
+    assert.equal(summary({ picked: [OTHER], other: '' }), 'Skipped');
+    assert.equal(summary({ picked: [OTHER], other: '  ' }), 'Skipped');
   });
 
   test('the picks become one answer per question, in order', () => {

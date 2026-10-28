@@ -22,7 +22,7 @@ See the [main README](../../../README.md) for Doric as a whole and
   instruction or result, and `<threads-ask>`, the chat's question block for an
   ask.
 - **Contracts** (`threads/contracts`, bundle 1.1.0): the host service
-  `threads.ask/v1@1.0.0` and the events `threads.asked/v1@1.0.0` and
+  `threads.ask/v1@1.1.0` and the events `threads.asked/v1@1.0.0` and
   `threads.answered/v1@1.0.0`.
 
 ## Tools
@@ -93,9 +93,9 @@ state survives a host restart. An askId the Thread's log does not hold is
 - `answer({ askId, answers })` returns the state of an answered or superseded
   ask without sending anything. Otherwise the answers must give each recorded
   question exactly one answer that names only its labels, each once, at most
-  one on a single-select question, `other` only where `allowOther` is not
-  false, and at least one label or a non-blank `other`; anything else is
-  `invalid_input`.
+  one on a single-select question, and `other` only where `allowOther` is not
+  false; anything else is `invalid_input`. A question may be skipped: an
+  answer with no label and no non-blank `other` (`{ "id": …, "options": [] }`).
   The answers then reach the Thread as one user input through
   `runtime.threads/v1.steer`: into the running prompt, else into the ask's own
   prompt, which the runtime queues and runs at once when the Thread is idle.
@@ -104,7 +104,8 @@ state survives a host restart. An askId the Thread's log does not hold is
   stays pending. Calls for the same askId run one at a time.
 
 The input the Thread receives lists each question in order with the chosen
-labels, in option order, then the trimmed free answer, joined with `; `:
+labels, in option order, then the trimmed free answer, joined with `; `, and
+`(skipped)` for a skipped question:
 
 ```text
 Answers to your questions:
@@ -113,13 +114,17 @@ Answers to your questions:
    PostgreSQL; keep the current schema
 2. Approve the migration plan?
    Yes
+3. Which regions get it first?
+   (skipped)
 ```
 
 In the chat, the ask is an interactive block (`<threads-ask>`, see
 [Client part](#client-part)): one question at a time, its options as numbered
-rows and a free answer row unless `allowOther` is `false`, then Send. Once
-answered it shows each question with its answer; a later ask marks it
-superseded.
+rows and a free answer row unless `allowOther` is `false`, then Send. Back,
+Next and Send are always enabled (Send only waits while sending): a question
+left empty is skipped. Keys typed in the block stay in it and never reach the
+chat editor. Once answered it shows each question with its answer, or
+"Skipped"; a later ask marks it superseded.
 
 ## Skills
 

@@ -142,9 +142,9 @@ const wait = { picked: [OTHER], other: 'Para, mas me avisa por notificação' };
 
 /** Every state of the block, in the order the reader meets them. */
 const states: readonly (readonly [string, StoryProps])[] = [
-  ['1. Uma pergunta, nada escolhido — Send desabilitado', checkpoint],
+  ['1. Uma pergunta, nada escolhido — Send pula a pergunta', checkpoint],
   [
-    '2. Uma opção escolhida — Send habilitado',
+    '2. Uma opção escolhida — Send ativo',
     { ...checkpoint, picked: { next: { picked: ['Resolver com o agente'] } } },
   ],
   [
@@ -163,8 +163,8 @@ const states: readonly (readonly [string, StoryProps])[] = [
     '4. Sem resposta livre, opção escolhida',
     { ...triage, picked: { route: { picked: ['Pequena — direto ao Plan'] } } },
   ],
-  ['5. Várias perguntas, 1/3, nada escolhido — Next desabilitado', brainstorm],
-  ['6. 1/3 escolhida — Next habilitado', { ...brainstorm, picked: { who } }],
+  ['5. Várias perguntas, 1/3, nada escolhido — Next pula', brainstorm],
+  ['6. 1/3 escolhida — Next ativo', { ...brainstorm, picked: { who } }],
   [
     '7. 2/3, múltipla escolha, nada marcado — Back aparece',
     { ...brainstorm, step: 1, picked: { who } },
@@ -174,7 +174,7 @@ const states: readonly (readonly [string, StoryProps])[] = [
     { ...brainstorm, step: 1, picked: { who, scope } },
   ],
   [
-    '9. 3/3, resposta livre — Send habilitado',
+    '9. 3/3, resposta livre — Send ativo',
     { ...brainstorm, step: 2, picked: { who, scope, wait } },
   ],
   [
@@ -182,8 +182,8 @@ const states: readonly (readonly [string, StoryProps])[] = [
     { ...brainstorm, step: 2, picked: { who, scope, wait }, failed: true },
   ],
   [
-    '11. Respondida — resumo',
-    { ...brainstorm, answered: { who, scope, wait } },
+    '11. Respondida — resumo, a 2ª pergunta pulada ("Skipped")',
+    { ...brainstorm, answered: { who, wait } },
   ],
   ['12. Substituída por outra pergunta', { ...brainstorm, superseded: true }],
 ];

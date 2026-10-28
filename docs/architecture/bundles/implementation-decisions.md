@@ -1288,3 +1288,11 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 - **Custo.** O texto retido fica menor (101 → 67 linhas); a rota grande usa ao menos 18 threads.
 - **Versão.** O `default` continua 2.3.0 (não lançado).
 - **Testes.** Sem teste de conteúdo (M15); o teste de texto exato (`repositoryPrompt` em `tests/support/prompts.ts`) prova que o comentário não vaza.
+
+## Ask: apagar a resposta livre e pular perguntas (2026-10-28)
+
+- **Teclado (DORIC-89).** Um clique no bloco `<threads-ask>` seleciona o bloco inteiro no editor Lexical do chat, que então cancela Backspace, Delete, setas, Enter e Ctrl+A digitados na resposta livre. A `<section>` pendente de `AskQuestions` para a propagação do `keydown` (`stopPropagation`), como `delegated-turn.tsx`; o `<threads-ask>` é uma raiz React própria, então o evento nativo para ali. Com o foco no bloco, Esc e Tab também não chegam ao editor.
+- **Pular (DORIC-90).** Back, Next e Send ficam sempre ativos (Send só espera enquanto envia). Uma pergunta deixada vazia é pulada e vai como `options: []`; enviar com todas puladas é permitido. O bloco respondido mostra "Skipped" na pergunta pulada.
+- **Host.** `Ask.answer` deixa de recusar uma resposta sem escolha; as demais regras ficam. `formatAnswers` escreve `(skipped)` na linha de valores da pergunta pulada. O formato de `threads.answered/v1` não muda.
+- **Versão.** `threads.ask/v1` vai de 1.0.0 para 1.1.0 (aceita o que antes recusava); o bundle `threads` continua 1.1.0 (não lançado).
+- **Testes.** O teclado é testado no bloco montado na conversa; pular, no cliente, no domínio e no host.

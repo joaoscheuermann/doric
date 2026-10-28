@@ -179,9 +179,10 @@ export interface Ask {
    * checking the answers or sending anything. Otherwise the answers must:
    * give every recorded question exactly one answer, with no unknown or
    * repeated id; name only labels of that question, each once; name at most
-   * one label on a single-select question; carry `other` only where
-   * `allowOther` is not `false`; and pick at least one label or give a
-   * non-blank `other`. Any violation is `invalid_input`.
+   * one label on a single-select question; and carry `other` only where
+   * `allowOther` is not `false`. Any violation is `invalid_input`. A question
+   * answered with no label and no non-blank `other` is skipped: the sent text
+   * marks it `(skipped)`.
    *
    * The answers are then sent to the Thread as one user input
    * (`formatAnswers`), steering its running prompt, or the ask's own prompt
