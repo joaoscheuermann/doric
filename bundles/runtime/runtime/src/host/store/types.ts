@@ -17,6 +17,7 @@ import type {
   ThreadUsage,
 } from '../../contracts/model.js';
 import type { RuntimeOwner } from '../../contracts/runtime.js';
+import type { SpawnOptions } from '../../contracts/threads.js';
 
 /*
  * The durable boundaries of the runtime domain (design 57 §3, §4.1), frozen by
@@ -79,7 +80,14 @@ export interface ProjectRecord {
 
 /** A Thread's record; its executor history is read through `history`. */
 export interface ThreadRecord {
+  /** The public record: carries `agent` as `{ name, source }`, never its instructions. */
   readonly thread: Thread;
+  /**
+   * The agent's instructions, for the executor only. Present exactly when the
+   * document has an agent; absent on every Thread without one and on
+   * documents written before runtime.thread/v1 1.1.0.
+   */
+  readonly instructions?: string;
 }
 
 export interface ProjectStore {
@@ -138,13 +146,21 @@ export interface ThreadStore {
   catchUp(id: string): Promise<void>;
   queue(id: string): Promise<ThreadQueue | undefined>;
   usage(id: string): Promise<ThreadUsage | undefined>;
-  /** A child inherits its parent's working directory and hint as a snapshot. */
+  /**
+   * A child inherits its parent's working directory and hint as a snapshot.
+   * `options` are the already-resolved values: the store writes those
+   * present, as given, and never inherits or defaults any of them. The
+   * returned record's `thread` carries `agent` without instructions, and its
+   * `instructions` field carries them. Rejects as before on an inactive
+   * Project or an invalid parent.
+   */
   create(
     projectId: string,
     name: string,
     parentThreadId?: string,
     inherit?: { readonly cwd: string; readonly cwdRepo?: CwdRepo },
     origin?: ThreadOrigin,
+    options?: SpawnOptions,
   ): Promise<ThreadRecord>;
   find(id: string): Promise<ThreadRecord | undefined>;
   record(id: string): Promise<Thread | undefined>;

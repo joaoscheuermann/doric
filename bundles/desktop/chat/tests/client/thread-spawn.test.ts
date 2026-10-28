@@ -266,3 +266,90 @@ test('a spawn block the reader opened stays open while the transcript goes on', 
   // Their choice is theirs: the run going on must not fold the block again.
   assert.match(block(window)?.textContent ?? '', /Audit the contrast/);
 });
+
+/** A spawn call that names how its child runs, beside the prompt. */
+const configuredCall = (configuration: Record<string, string>) => ({
+  id: 'call-1',
+  name: 'thread-spawn',
+  payload: { prompt: 'Audit the contrast', ...configuration },
+});
+
+/** The header's note of the agent, model and effort the child runs with. */
+const meta = (spawn: HTMLElement | null): HTMLElement | null =>
+  spawn?.querySelector<HTMLElement>('[data-slot="spawn-meta"]') ?? null;
+
+test('a finished spawn names the agent, model and effort of its child in the header', async () => {
+  const call = configuredCall({
+    agent: 'reviewer',
+    model: 'gpt-5',
+    effort: 'high',
+  });
+  const window = await open();
+  await deliver(window, [
+    asked,
+    event(2, { type: 'tool.started', call }),
+    event(3, {
+      type: 'tool.finished',
+      call,
+      record: {
+        output: JSON.stringify({ threadId: childId, promptId: childPromptId }),
+      },
+    }),
+  ]);
+
+  const spawn = block(window);
+  assert.notEqual(spawn, null);
+  assert.equal(toggle(spawn)?.textContent, 'Spawned · reviewer · gpt-5 · high');
+  assert.equal(meta(spawn)?.textContent, '· reviewer · gpt-5 · high');
+  // The note is part of the header line, not of the folded detail.
+  assert.equal(meta(spawn)?.closest('[data-slot="collapsible-content"]'), null);
+
+  // The header still names the child it started.
+  const link = spawn?.querySelector(`button[title="${childId}"]`) ?? null;
+  assert.notEqual(link, null);
+  assert.match(link?.textContent ?? '', /Accent audit/);
+  // Folded as before: the prompt is the detail, and it is not drawn.
+  assert.doesNotMatch(spawn?.textContent ?? '', /Audit the contrast/);
+});
+
+test('a spawning call names only the settings it carries', async () => {
+  const call = configuredCall({ agent: 'reviewer', effort: 'high' });
+  const window = await open();
+  await deliver(window, [asked, event(2, { type: 'tool.started', call })]);
+
+  const spawn = block(window);
+  assert.notEqual(spawn, null);
+  assert.equal(meta(spawn)?.textContent, '· reviewer · high');
+  assert.equal(toggle(spawn)?.textContent, 'Spawning · reviewer · high');
+  // Open while it runs: the prompt stays readable.
+  assert.match(spawn?.textContent ?? '', /Audit the contrast/);
+});
+
+/** The element the header's label stands in: its verb and nothing beside it. */
+const labelHolder = (spawn: HTMLElement | null): Element | null =>
+  toggle(spawn)?.querySelector('span.font-normal')?.parentElement ?? null;
+
+test('a spawn that names no settings keeps its header to the verb alone', async () => {
+  const settled = await open();
+  await deliver(settled, [asked, spawning, spawned]);
+
+  const finished = block(settled);
+  assert.notEqual(finished, null);
+  assert.equal(toggle(finished)?.textContent, 'Spawned');
+  assert.equal(meta(finished), null);
+  const holder = labelHolder(finished);
+  assert.equal(holder?.children.length, 1);
+  assert.equal(holder?.firstElementChild?.matches('span.font-normal'), true);
+
+  await settled.close();
+  opened = undefined;
+
+  const running = await open();
+  await deliver(running, [asked, spawning]);
+
+  const spawn = block(running);
+  assert.notEqual(spawn, null);
+  assert.equal(toggle(spawn)?.textContent, 'Spawning');
+  assert.equal(meta(spawn), null);
+  assert.equal(labelHolder(spawn)?.children.length, 1);
+});

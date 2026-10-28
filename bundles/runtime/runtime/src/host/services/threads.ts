@@ -28,8 +28,8 @@ export const threadsService = ({
   defineService(RuntimeThreadsV1, {
     spawn: defineMethod({
       ...methods.spawn,
-      execute: ([prompt, title], call) =>
-        bindings.bound(call).host.threads.spawn(prompt, title),
+      execute: ([prompt, title, options], call) =>
+        bindings.bound(call).host.threads.spawn(prompt, title, options),
     }),
     list: defineMethod({
       ...methods.list,

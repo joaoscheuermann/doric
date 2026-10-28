@@ -3,11 +3,13 @@ import {
   KeyRoundIcon,
   type LucideIcon,
   ServerIcon,
+  UserRoundIcon,
   WrenchIcon,
   ZapIcon,
 } from 'lucide-react';
 
 const icons: Readonly<Record<string, LucideIcon>> = {
+  user: UserRoundIcon,
   server: ServerIcon,
   zap: ZapIcon,
   wrench: WrenchIcon,

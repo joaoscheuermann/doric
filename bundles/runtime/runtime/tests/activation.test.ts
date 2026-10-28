@@ -120,7 +120,7 @@ void test('the runtime activates after its providers and before the bundles that
         'settings.config/v1@1.0.0',
       ]),
     ),
-    candidate(provider('host-config', ['host-config/v1@1.0.0'])),
+    candidate(provider('host-config', ['host-config/v1@1.1.0'])),
     candidate(
       provider('storage-backend', [
         'storage.backend/v1@1.0.0',
@@ -170,7 +170,7 @@ void test('a second provider of runtime/v1 is quarantined without a choice', asy
     candidate(other),
     candidate(provider('default', ['executor/v1@1.0.0'])),
     candidate(provider('docker', ['sandbox/v1@1.0.0'])),
-    candidate(provider('host-config', ['host-config/v1@1.0.0'])),
+    candidate(provider('host-config', ['host-config/v1@1.1.0'])),
     candidate(
       provider('storage-backend', [
         'storage.backend/v1@1.0.0',

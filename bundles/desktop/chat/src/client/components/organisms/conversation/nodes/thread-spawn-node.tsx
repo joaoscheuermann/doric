@@ -75,7 +75,8 @@ function SpawnedLink({ threadId }: { readonly threadId: string }) {
 /**
  * The call as the reader meets it: the verb the call is at, the child it started
  * once the result names one, and the prompt the agent handed down — with the
- * error beside it when the call failed.
+ * error beside it when the call failed. The header notes the agent, model and
+ * effort the call names, beside the verb.
  */
 function ThreadSpawnRow({
   args,
@@ -96,9 +97,27 @@ function ThreadSpawnRow({
 }) {
   const parsed = parseThreadSpawn(args, result);
   const child = parsed.child;
+  const meta = [parsed.agent, parsed.model, parsed.effort].filter(
+    (value) => value !== undefined,
+  );
   return (
     <CollapsibleBlock
-      label={<span className="font-normal">{spawnVerb(status)}</span>}
+      label={
+        <>
+          <span className="font-normal">{spawnVerb(status)}</span>
+          {meta.length > 0 && (
+            <>
+              {' '}
+              <span
+                data-slot="spawn-meta"
+                className="inline-block max-w-60 truncate align-bottom font-light text-muted-foreground/70"
+              >
+                · {meta.join(' · ')}
+              </span>
+            </>
+          )}
+        </>
+      }
       action={
         child === undefined
           ? undefined

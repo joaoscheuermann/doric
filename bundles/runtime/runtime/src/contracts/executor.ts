@@ -9,12 +9,15 @@ import {
   threadSchema,
 } from './model.js';
 import { LOCAL_KEY } from './runtime.js';
+import type { SpawnAgent } from './threads.js';
 
 /*
  * executor/v1: one prompt run (design 57 §2.7). Local: the run receives the
  * runtime's PromptSession, through which every history and event write goes,
  * so the runtime keeps commit-before-publish, redaction, the storage-pause
  * retry and its aggregate atomic. Cardinality `one`; `direct` provides it.
+ * 1.3.0: `run` and `compact` receive an `ExecutorThread` — the Thread's agent
+ * with its instructions, and its model and effort.
  */
 
 export interface PromptJob {
@@ -25,6 +28,15 @@ export interface PromptJob {
 
 /** One input that steers a running prompt: its text and where it came from. */
 export type SteerInput = Pick<PromptJob, 'prompt' | 'source'>;
+
+/**
+ * The Thread a run or a compaction receives (executor/v1 1.3.0): the public
+ * `Thread`, whose `agent`, when present, also carries the agent's
+ * `instructions`. Only the runtime builds one; it is never published, stored
+ * or returned as the Thread. `agent` absent: the default agent, with no agent
+ * section. `model` / `effort` absent: the executor's configured default.
+ */
+export type ExecutorThread = Thread & { readonly agent?: SpawnAgent };
 
 /** Read access to the Thread's opaque, versioned executor state. */
 export interface HistoryReader {
@@ -69,7 +81,8 @@ export interface PromptSession {
 }
 
 export interface ExecutorRunInput {
-  readonly thread: Thread;
+  /** The Thread to run as: its agent with instructions, model and effort (1.3.0). */
+  readonly thread: ExecutorThread;
   readonly job: PromptJob;
   readonly session: PromptSession;
 }
@@ -107,7 +120,8 @@ export type ExecutorCompactionResult =
 
 /** The executor's `compact` input, without a prompt job. */
 export interface ExecutorCompactionInput {
-  readonly thread: Thread;
+  /** The Thread being compacted, as `ExecutorRunInput.thread` (1.3.0). */
+  readonly thread: ExecutorThread;
   readonly session: PromptSession;
   readonly policy: CompactionPolicyValue;
 }
@@ -173,11 +187,30 @@ export const historyPatchSchema: z.ZodType<HistoryPatch, HistoryPatch> =
     parts: z.record(z.string(), z.unknown()),
   });
 
+/**
+ * `threadSchema` whose `agent`, when present, must carry a string
+ * `instructions`, else an input validation error before the method runs.
+ * Loose at both levels, like `threadSchema`. Serializable: no `x-doric-local`
+ * marker; its JSON Schema is an `allOf` of the two objects.
+ */
+export const executorThreadSchema: z.ZodType<ExecutorThread, ExecutorThread> =
+  threadSchema.and(
+    z.looseObject({
+      agent: z
+        .looseObject({
+          name: z.string(),
+          source: z.enum(['built-in', 'workspace']),
+          instructions: z.string(),
+        })
+        .optional(),
+    }),
+  );
+
 export const executorMethods = {
   run: {
     input: z
       .object({
-        thread: threadSchema,
+        thread: executorThreadSchema,
         job: promptJobSchema,
         session: promptSessionSchema,
       })
@@ -204,7 +237,7 @@ export const executorMethods = {
   compact: {
     input: z
       .object({
-        thread: threadSchema,
+        thread: executorThreadSchema,
         session: promptSessionSchema,
         policy: z
           .object({ tailMinMessages: z.number(), summaryMaxChars: z.number() })

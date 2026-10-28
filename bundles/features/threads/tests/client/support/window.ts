@@ -79,7 +79,8 @@ const hostCandidate: CatalogCandidate = {
     provides: [
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
-      'runtime.threads/v1@1.3.0',
+      'runtime.threads/v1@1.6.0',
+      'host-config/v1@1.1.0',
       'runtime.attachments/v1@1.0.0',
       'comments/v1@1.0.0',
       'tools/v1@1.2.0',
@@ -92,7 +93,8 @@ const hostCandidate: CatalogCandidate = {
     contracts: [
       ['storage.backend/v1', '1.0.0'],
       ['secrets.backend/v1', '1.0.0'],
-      ['runtime.threads/v1', '1.3.0'],
+      ['runtime.threads/v1', '1.6.0'],
+      ['host-config/v1', '1.1.0'],
       ['runtime.attachments/v1', '1.0.0'],
       ['comments/v1', '1.0.0'],
       ['tools/v1', '1.2.0'],
@@ -178,6 +180,23 @@ const threadsRemote: RemoteContract = {
     watchThread: { tuple: 2, local: false, stream: true },
   },
 };
+
+/**
+ * `threads.ask/v1` as main routes it: this bundle's host part provides it, and
+ * its question block reads and answers an ask through it.
+ */
+const askRemote = (version: string): RemoteContract => ({
+  id: 'threads.ask/v1',
+  environment: 'host',
+  bundleId: 'threads',
+  version,
+  contractVersion: '1.0.0',
+  cardinality: 'one',
+  methods: {
+    status: { tuple: null, local: false, stream: false },
+    answer: { tuple: null, local: false, stream: false },
+  },
+});
 
 /** The probe bundle: a client part defined by the test. */
 export interface Probe {
@@ -383,7 +402,13 @@ export const openThreadsWindow = async (input: {
         ? {}
         : { probe: { entry: partUrl('probe', '1.0.0') } }),
     },
-    remote: [threadsRemote, commentsRemote, composerRemote, menusRemote],
+    remote: [
+      threadsRemote,
+      askRemote(threadsManifest.version),
+      commentsRemote,
+      composerRemote,
+      menusRemote,
+    ],
     hostId: 'host-1',
     storageGeneration: 1,
   };

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import { sections as windowSections } from '../src/client/domain/sections.js';
 import { filterSettingsSections } from '../src/client/domain/settings-search.js';
 
 /** The settings sections as the window holds them, named by the text they show. */
@@ -62,5 +63,16 @@ describe('settings search', () => {
     assert.deepEqual(filterSettingsSections([{ label: 'Advanced' }], 'dv'), [
       { label: 'Advanced' },
     ]);
+  });
+});
+
+describe('settings search over the window sections', () => {
+  const found = (query: string): string[] =>
+    filterSettingsSections(windowSections, query).map((section) => section.id);
+
+  test('finds the Profile section by its label and by what it explains', () => {
+    assert.deepEqual(found('time zone'), ['profile']);
+    assert.deepEqual(found('PROFILE'), ['profile']);
+    assert.ok(found('name').includes('profile'));
   });
 });

@@ -3,6 +3,7 @@ import type {
   PromptResult,
   RestartResult,
   SpawnedThread,
+  SpawnOptions,
   ThreadEventsPage,
   ThreadPage,
   ThreadSummary,
@@ -17,8 +18,16 @@ import type {
  * `runtime.threads/v1` contract's own types.
  */
 export interface ThreadControl {
-  /** Names the child `title`, or the start of `prompt` without one. */
-  spawn(prompt: string, title?: string): Promise<SpawnedThread>;
+  /**
+   * Names the child `title`, or the start of `prompt` without one. `options`
+   * as in `RuntimeThreadControls.spawn` (runtime.threads/v1 1.6.0): an agent
+   * is never inherited; model and effort fall back to the parent's.
+   */
+  spawn(
+    prompt: string,
+    title?: string,
+    options?: SpawnOptions,
+  ): Promise<SpawnedThread>;
   list(limit: number, cursor?: string): Promise<ThreadPage>;
   /** The child's state and, when a prompt has finished, its materialized result. */
   get(threadId: string): Promise<ThreadSummary>;

@@ -58,7 +58,7 @@ ${body}
 /**
  * The default bundle's own instruction: `input({ prompt: body, source: {
  * kind: 'bundle', bundleId: 'default', reason } })`. reason is
- * `skills-changed` or `loaded-skills`. Pure; never throws.
+ * `skills-changed`, `agents-changed` or `loaded-skills`. Pure; never throws.
  */
 export const bundleInstruction = (reason: string, body: string): string =>
   input({

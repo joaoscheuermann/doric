@@ -8,15 +8,6 @@ import { defineTool } from 'tool';
 import { z } from 'zod';
 
 import { checkpointMarker } from '../src/host/compaction/markers.js';
-import {
-  addedSkillsPrompt,
-  changedWorkspaceSkillsPrompt,
-  loadedSkillsPrompt,
-  removedSkillsPrompt,
-  serverSkillsPrompt,
-  skillsChangedPrompt,
-} from '../src/host/prompts/skills.js';
-import { systemPrompt } from '../src/host/prompts/system.js';
 import { defaultInstruction, loadedEntry } from './support/envelopes.js';
 import {
   bundleServices,
@@ -34,6 +25,15 @@ import {
   thread,
   threadId,
 } from './support/harness.js';
+import {
+  addedSkillsPrompt,
+  changedWorkspaceSkillsPrompt,
+  loadedSkillsPrompt,
+  removedSkillsPrompt,
+  serverSkillsPrompt,
+  skillsChangedPrompt,
+  systemPrompt,
+} from './support/prompts.js';
 
 /*
  * The skills a run can load follow the Thread while it runs. The system
@@ -320,7 +320,8 @@ void test('D1 tells the model once about the skills of the directory the Thread 
   assert.equal(requests.length, 2);
   const scans = calls.lease
     .filter(({ method }) => method === 'exec')
-    .map(({ input }) => (input as LeaseExecInput).cmd.at(-1));
+    .map(({ input }) => (input as LeaseExecInput).cmd.at(-1))
+    .filter((directory) => String(directory).endsWith('/.agents/skills'));
   assert.deepEqual(scans, [
     '/workspace/.agents/skills',
     '/workspace/repo/.agents/skills',
@@ -529,7 +530,16 @@ void test('D6 changes nothing and scans once when no runtime.workspace/v1 tells 
   for (const request of requests) {
     assert.equal(request.messages.filter(isChange).length, 0);
   }
-  assert.equal(calls.lease.filter(({ method }) => method === 'exec').length, 1);
+  assert.equal(
+    calls.lease.filter(
+      ({ method, input }) =>
+        method === 'exec' &&
+        String((input as LeaseExecInput).cmd.at(-1)).endsWith(
+          '/.agents/skills',
+        ),
+    ).length,
+    1,
+  );
   assert.equal(loaded.length, 1);
 });
 

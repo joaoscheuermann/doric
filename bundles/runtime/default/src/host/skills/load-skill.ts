@@ -7,7 +7,6 @@ import { RuntimeLeaseV1 } from 'runtime/contracts';
 import { defineTool, excerpt, type Tool } from 'tool';
 import { z } from 'zod';
 
-import { loadSkillNamePrompt, loadSkillPrompt } from '../prompts/skills.js';
 import { loadedSkills } from './loaded.js';
 import { type CatalogSkill, skillBody } from './sources.js';
 
@@ -69,8 +68,7 @@ const unknownSkill = (
 
 /**
  * Always built; input schema never changes during a run: `{ name: string }`,
- * strict, described by loadSkillNamePrompt; description loadSkillPrompt;
- * output a string. listed() and history() read on every call.
+ * strict; output a string. listed() and history() read on every call.
  * Name in listed(): reads again from its source (bundle body /
  * RuntimeLeaseV1.readFile / McpV1.readSkill); fresh output =
  * `# Skill: <name>`, the source line when there is one, the body, joined by
@@ -92,9 +90,14 @@ export const loadSkillTool = (
 ): Tool =>
   defineTool({
     name: LOAD_SKILL_TOOL,
-    description: loadSkillPrompt,
+    description:
+      'Loads a skill listed under "Skills to load" in your instructions or in a later "Skills changed" message, and returns its instructions. Call it before starting work that a listed skill\'s description matches.',
     input: z
-      .object({ name: z.string().describe(loadSkillNamePrompt) })
+      .object({
+        name: z
+          .string()
+          .describe("The skill's id, as listed in the Skill column."),
+      })
       .strict(),
     output: z.string(),
     strict: true,

@@ -54,10 +54,13 @@ import {
   searchModelGroups,
   selectModelChoice,
   setExecutionEffort,
+  timeZoneChoices,
   turnsFromInput,
   updateCredentialChoice,
   updatedAtLabel,
   updateModel,
+  updateProfileName,
+  updateProfileTimezone,
   updateProvider,
   updateTurnLimit,
 } from '../src/client/domain/config.js';
@@ -1043,6 +1046,39 @@ describe('configuration comparison', () => {
       }),
     );
   });
+
+  test('breaks when the profile name or time zone changes, and holds for the same profile or none', () => {
+    const ana = configuration({
+      profile: { name: 'Ana', timezone: 'America/Sao_Paulo' },
+    });
+
+    assert.equal(
+      isSameConfiguration(
+        ana,
+        configuration({
+          profile: { name: 'Maria', timezone: 'America/Sao_Paulo' },
+        }),
+      ),
+      false,
+    );
+    assert.equal(
+      isSameConfiguration(
+        ana,
+        configuration({ profile: { name: 'Ana', timezone: 'UTC' } }),
+      ),
+      false,
+    );
+    assert.equal(isSameConfiguration(ana, configuration()), false);
+    assert.ok(
+      isSameConfiguration(
+        ana,
+        configuration({
+          profile: { name: 'Ana', timezone: 'America/Sao_Paulo' },
+        }),
+      ),
+    );
+    assert.ok(isSameConfiguration(configuration(), configuration()));
+  });
 });
 
 describe('the execution effort follows the model it names', () => {
@@ -1827,5 +1863,98 @@ describe('settings vocabulary', () => {
   test('shows when the host last stored the configuration', () => {
     assert.equal(updatedAtLabel('not a date'), 'not a date');
     assert.match(updatedAtLabel('2026-09-24T17:09:16.000Z'), /2026/);
+  });
+});
+
+describe('the profile the agent addresses', () => {
+  test('sets a name, then a time zone beside it, leaving everything else as it was', () => {
+    const base = configuration();
+    const named = updateProfileName(base, 'Ana');
+    const placed = updateProfileTimezone(named, 'America/Sao_Paulo');
+
+    assert.deepEqual(named.profile, { name: 'Ana' });
+    assert.deepEqual(placed.profile, {
+      name: 'Ana',
+      timezone: 'America/Sao_Paulo',
+    });
+    const { profile: _profile, ...rest } = placed;
+    assert.deepEqual(rest, base);
+  });
+
+  test('clears a time zone to the host one, and drops the profile with its last field', () => {
+    const both = configuration({
+      profile: { name: 'Ana', timezone: 'America/Sao_Paulo' },
+    });
+
+    const hostZone = updateProfileTimezone(both, undefined);
+    assert.deepEqual(hostZone.profile, { name: 'Ana' });
+    assert.equal('timezone' in (hostZone.profile ?? {}), false);
+
+    const cleared = updateProfileName(hostZone, '');
+    assert.equal('profile' in cleared, false);
+  });
+
+  test('refuses a name that is blank, too long or on more than one line', () => {
+    const named = (name: string) => configuration({ profile: { name } });
+
+    assert.equal(
+      configurationIssue(named('   '), kinds),
+      'Enter a name between 1 and 100 characters, or leave it empty.',
+    );
+    assert.equal(
+      configurationIssue(named('a'.repeat(101)), kinds),
+      'Enter a name between 1 and 100 characters, or leave it empty.',
+    );
+    assert.equal(
+      configurationIssue(named('Ana\nMaria'), kinds),
+      'Enter a name on one line.',
+    );
+  });
+
+  test('refuses a time zone this computer does not know', () => {
+    assert.equal(
+      configurationIssue(
+        configuration({ profile: { timezone: 'Mars/Olympus' } }),
+        kinds,
+      ),
+      'Choose a time zone this computer knows, or the host time zone.',
+    );
+  });
+
+  test('accepts a name at the bound, a known time zone, or no profile', () => {
+    for (const candidate of [
+      configuration({ profile: { name: 'a'.repeat(100) } }),
+      configuration({ profile: { timezone: 'UTC' } }),
+      configuration(),
+    ]) {
+      assert.equal(configurationIssue(candidate, kinds), undefined);
+    }
+  });
+
+  test('offers every supported time zone and UTC once, in order', () => {
+    const supported = ['Europe/Lisbon', 'America/Sao_Paulo'];
+
+    assert.deepEqual(timeZoneChoices(supported, undefined), [
+      'America/Sao_Paulo',
+      'Europe/Lisbon',
+      'UTC',
+    ]);
+    assert.deepEqual(timeZoneChoices(['UTC', 'Asia/Tokyo'], undefined), [
+      'Asia/Tokyo',
+      'UTC',
+    ]);
+    assert.deepEqual(supported, ['Europe/Lisbon', 'America/Sao_Paulo']);
+  });
+
+  test('keeps a stored time zone the list does not name, and a listed one once', () => {
+    assert.deepEqual(timeZoneChoices(['Europe/Lisbon'], 'Europe/Kiev'), [
+      'Europe/Kiev',
+      'Europe/Lisbon',
+      'UTC',
+    ]);
+    assert.deepEqual(timeZoneChoices(['Europe/Lisbon'], 'Europe/Lisbon'), [
+      'Europe/Lisbon',
+      'UTC',
+    ]);
   });
 });

@@ -1,7 +1,8 @@
 /**
  * Reading a `thread-spawn` tool call's serialized input and output into the
  * fields a spawn block renders: the prompt the agent handed down, the title it
- * gave the child, and the Thread that child turned out to be.
+ * gave the child, the agent, model and effort the child runs with, and the
+ * Thread that child turned out to be.
  *
  * Both strings come from the log, so malformed JSON or an unexpected shape
  * falls back to whatever raw text is present rather than throwing: a prompt that
@@ -20,6 +21,12 @@ export type ParsedThreadSpawn = {
   readonly prompt: string;
   /** The title the call gave the child, when it gave a non-empty one. */
   readonly title?: string;
+  /** `args.agent`, trimmed, when it is a non-empty string. */
+  readonly agent?: string;
+  /** `args.model`, trimmed, when it is a non-empty string. */
+  readonly model?: string;
+  /** `args.effort`, trimmed, when it is a non-empty string. */
+  readonly effort?: string;
   /** The child the call spawned, only when the result names both ids. */
   readonly child?: SpawnedChild;
 };
@@ -34,6 +41,16 @@ const parseJsonRecord = (text: string): Record<string, unknown> | undefined => {
   } catch {
     return undefined;
   }
+};
+
+/** The text at `key`, trimmed; nothing when it is empty or not a string. */
+const readText = (
+  input: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined => {
+  const value = input?.[key];
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text.length === 0 ? undefined : text;
 };
 
 /** The ids a finished spawn result names, when it names both of them. */
@@ -55,11 +72,13 @@ export const parseThreadSpawn = (
   result?: string,
 ): ParsedThreadSpawn => {
   const input = parseJsonRecord(args);
-  const title = typeof input?.title === 'string' ? input.title.trim() : '';
 
   return {
     prompt: typeof input?.prompt === 'string' ? input.prompt : args,
-    title: title.length === 0 ? undefined : title,
+    title: readText(input, 'title'),
+    agent: readText(input, 'agent'),
+    model: readText(input, 'model'),
+    effort: readText(input, 'effort'),
     child:
       result === undefined ? undefined : readChild(parseJsonRecord(result)),
   };

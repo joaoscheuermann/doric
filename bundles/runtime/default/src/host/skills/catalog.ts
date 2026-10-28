@@ -1,23 +1,68 @@
 import { excerpt } from 'tool';
 
 import {
-  addedSkillsPrompt,
-  alwaysAvailableSkillsPrompt,
-  builtInSkillsPrompt,
-  changedWorkspaceSkillsPrompt,
-  removedSkillsPrompt,
-  serverSkillsPrompt,
-  skillsChangedPrompt,
-  skillsPrompt,
-  skillsToLoadPrompt,
-  workspaceSkillsPrompt,
-} from '../prompts/skills.js';
+  loadTemplate,
+  renderBlock,
+  renderSection,
+} from '../prompts/templates.js';
 import type { CatalogSkill, RunSkills } from './sources.js';
 
-/** Characters of the always-available blocks, joined by a blank line. */
+/** One table row: its cells, each on one line, capped and pipe-escaped. */
+type Row = { readonly locator: string; readonly description: string };
+
+/** The names `skills-catalog.md` may cite. */
+const CATALOG_NAMES = [
+  'alwaysAvailable',
+  'skills',
+  'name',
+  'body',
+  'toLoad',
+  'lists',
+  'builtIn',
+  'workspace',
+  'server',
+  'table',
+  'rows',
+  'locator',
+  'description',
+  'dropped',
+  'count',
+  'one',
+];
+
+/** The names `skills-changed.md` may cite. */
+const CHANGED_NAMES = [
+  'added',
+  'lists',
+  'workspace',
+  'server',
+  'table',
+  'rows',
+  'locator',
+  'description',
+  'dropped',
+  'count',
+  'one',
+  'removed',
+  'skills',
+];
+
+/** The `# Skills` section of the system prompt. */
+const catalogTemplate = loadTemplate(
+  new URL('../prompts/skills-catalog.md', import.meta.url),
+  CATALOG_NAMES,
+);
+
+/** A mid-run "Skills changed" message. */
+const changedTemplate = loadTemplate(
+  new URL('../prompts/skills-changed.md', import.meta.url),
+  CHANGED_NAMES,
+);
+
+/** Characters of the always-available skills as the `skills` section of `skills-catalog.md` renders them, without its outer newlines. */
 const ALWAYS_AVAILABLE_MAX_CHARS = 16_000;
 
-/** Characters of the rendered rows of each list, joined by `\n`. */
+/** Characters of the rows of each list as the `rows` section of its template renders them, without the final newline. */
 const BUILT_IN_MAX_CHARS = 8000;
 const WORKSPACE_MAX_CHARS = 4000;
 const SERVER_MAX_CHARS = 4000;
@@ -54,15 +99,12 @@ export interface CatalogState {
 /** The skills section of one run, and the state it starts. */
 export interface SkillCatalog extends CatalogState {
   /**
-   * The `# Skills` section, or '' when nothing is rendered. Its parts are
-   * joined by a blank line: `skillsPrompt`; `alwaysAvailableSkillsPrompt`
-   * with each `### Skill: <name>\n\n<body>` (body verbatim);
-   * `skillsToLoadPrompt` with the non-empty lists among built-in, workspace
-   * and MCP, in that order. Each list is its prompt, then a
-   * `| Skill | Description |` table with one row per skill and, when rows were
-   * dropped, a blank line and "N more skills did not fit in this list.". A
-   * list whose rows are all dropped keeps its prompt and that line, with no
-   * table.
+   * The `# Skills` section, `skills-catalog.md` rendered, or '' when there
+   * is neither an always-available skill that fits nor a non-empty list. The
+   * template gives the always-available skills that fit (body verbatim), then
+   * the non-empty lists among built-in, workspace and MCP, in that order:
+   * each with its heading, a table of the rows that fit unless all were
+   * dropped, and how many were dropped when any were.
    */
   readonly section: string;
 }
@@ -95,14 +137,14 @@ const baseLocator = ({ name, origin }: CatalogSkill): string =>
       ? `cwd/${name}`
       : `mcp/${origin.serverSlug}/${name}`;
 
-/** One table cell: on one line, single-spaced, with its pipes escaped. */
-const cell = (text: string, max?: number): string => {
+/**
+ * One table cell: one line (whitespace runs → one space, trimmed), cut to
+ * `max` with `excerpt` when given, every `|` escaped as `\|`. Pure.
+ */
+export const cell = (text: string, max?: number): string => {
   const line = text.replace(/\s+/gu, ' ').trim();
   return (max === undefined ? line : excerpt(line, max)).replaceAll('|', '\\|');
 };
-
-const row = ({ locator, skill }: Entry, max: number): string =>
-  `| ${cell(locator)} | ${cell(skill.description, max)} |`;
 
 /** `base`, or its first `~N` suffix (N ≥ 2) not in `taken`. */
 const freeLocator = (base: string, taken: ReadonlySet<string>): string => {
@@ -113,40 +155,38 @@ const freeLocator = (base: string, taken: ReadonlySet<string>): string => {
   return locator;
 };
 
-const fits = (rows: readonly string[], budget: number): boolean =>
-  rows.join('\n').length <= budget;
-
-/** One list's rendered part and the entries it rendered a row for. */
-const renderList = (
-  prompt: string,
+/**
+ * The rows of `entries` that fit in `budget` characters of `template`'s
+ * `rows` section, the dropped count, and the entries shown.
+ */
+const fitList = (
+  template: string,
   entries: readonly Entry[],
   budget: number,
-): { readonly part: string; readonly shown: readonly Entry[] } => {
-  let rows = entries.map((entry) => row(entry, DESCRIPTION_MAX_CHARS));
-  if (!fits(rows, budget)) {
-    rows = entries.map((entry) => row(entry, DESCRIPTION_SHORT_CHARS));
-    while (rows.length > 0 && !fits(rows, budget)) rows = rows.slice(0, -1);
+) => {
+  const rowsOf = (max: number): Row[] =>
+    entries.map(({ locator, skill }) => ({
+      locator: cell(locator),
+      description: cell(skill.description, max),
+    }));
+  const length = (rows: readonly Row[]): number =>
+    renderSection(template, 'rows', rows).length;
+  let rows = rowsOf(DESCRIPTION_MAX_CHARS);
+  if (length(rows) > budget) {
+    rows = rowsOf(DESCRIPTION_SHORT_CHARS);
+    while (rows.length > 0 && length(rows) > budget) rows = rows.slice(0, -1);
   }
   const dropped = entries.length - rows.length;
-  const parts = [prompt];
-  if (rows.length > 0) {
-    parts.push(
-      ['| Skill | Description |', '| --- | --- |', ...rows].join('\n'),
-    );
-  }
-  if (dropped > 0) {
-    parts.push(
-      dropped === 1
-        ? '1 more skill did not fit in this list.'
-        : `${dropped} more skills did not fit in this list.`,
-    );
-  }
-  return { part: parts.join('\n\n'), shown: entries.slice(0, rows.length) };
+  return {
+    table: rows.length === 0 ? undefined : { rows },
+    dropped: dropped === 0 ? undefined : { count: dropped, one: dropped === 1 },
+    shown: entries.slice(0, rows.length),
+  };
 };
 
 /**
- * The skills section of one run. Always-available blocks are taken in order
- * while their joined length stays within `ALWAYS_AVAILABLE_MAX_CHARS`; the
+ * The skills section of one run. Always-available skills are taken in order
+ * while their rendered length stays within `ALWAYS_AVAILABLE_MAX_CHARS`; the
  * first that would pass it and every one after become rows at the front of
  * the built-in list. Locators: a bundle skill's name, `cwd/<name>` for a
  * workspace skill, `mcp/<serverSlug>/<name>` for an MCP skill, assigned in
@@ -158,13 +198,16 @@ const renderList = (
  * available, and lists the shown ones. Pure, deterministic, never throws.
  */
 export const skillCatalog = (skills: RunSkills): SkillCatalog => {
-  const blocks: string[] = [];
+  const fit: { readonly name: string; readonly body: string }[] = [];
   const overflow: CatalogSkill[] = [];
   for (const { name, description, body } of skills.alwaysAvailable) {
-    const text = `### Skill: ${name}\n\n${body}`;
-    const fitsBlocks =
-      [...blocks, text].join('\n\n').length <= ALWAYS_AVAILABLE_MAX_CHARS;
-    if (overflow.length === 0 && fitsBlocks) blocks.push(text);
+    const candidate = { name, body };
+    if (
+      overflow.length === 0 &&
+      renderSection(catalogTemplate, 'skills', [...fit, candidate]).length <=
+        ALWAYS_AVAILABLE_MAX_CHARS
+    )
+      fit.push(candidate);
     else overflow.push({ name, description, origin: { kind: 'bundle', body } });
   }
 
@@ -179,31 +222,35 @@ export const skillCatalog = (skills: RunSkills): SkillCatalog => {
     });
   const lists = [
     {
-      prompt: builtInSkillsPrompt,
+      builtIn: true,
       entries: entries([...overflow, ...skills.builtIn]),
       budget: BUILT_IN_MAX_CHARS,
     },
     {
-      prompt: workspaceSkillsPrompt,
+      workspace: true,
       entries: entries(skills.workspace),
       budget: WORKSPACE_MAX_CHARS,
     },
     {
-      prompt: serverSkillsPrompt,
+      server: true,
       entries: entries(skills.server),
       budget: SERVER_MAX_CHARS,
     },
   ]
     .filter(({ entries }) => entries.length > 0)
-    .map(({ prompt, entries, budget }) => renderList(prompt, entries, budget));
+    .map(({ entries, budget, ...kind }) => ({
+      ...kind,
+      ...fitList(catalogTemplate, entries, budget),
+    }));
 
-  const parts: string[] = [];
-  if (blocks.length > 0) parts.push(alwaysAvailableSkillsPrompt, ...blocks);
-  if (lists.length > 0) {
-    parts.push(skillsToLoadPrompt, ...lists.map(({ part }) => part));
-  }
   return {
-    section: parts.length === 0 ? '' : [skillsPrompt, ...parts].join('\n\n'),
+    section:
+      fit.length === 0 && lists.length === 0
+        ? ''
+        : renderBlock(catalogTemplate, {
+            alwaysAvailable: fit.length === 0 ? undefined : { skills: fit },
+            toLoad: lists.length === 0 ? undefined : { lists },
+          }),
     locators: new Map(
       all.map(({ locator, skill }) => [identity(skill), locator] as const),
     ),
@@ -225,12 +272,10 @@ export const skillCatalog = (skills: RunSkills): SkillCatalog => {
  * Locators for added: old locator if identity in state.locators; else base
  * (`cwd/<name>`, `mcp/<serverSlug>/<name>`) or first `<base>~N` (N ≥ 2) not a
  * value of state.locators.
- * Message parts joined by '\n\n': skillsChangedPrompt; when added:
- * addedSkillsPrompt then each non-empty added list rendered like the system
- * prompt renders a list (workspace under changedWorkspaceSkillsPrompt, MCP
- * under serverSkillsPrompt; 4000 chars of rows; descriptions 500 → 120 →
- * trailing rows dropped and counted); when a removed identity had a shown
- * row: removedSkillsPrompt, a blank line, one "- `<locator>`" line each in
+ * Message: `skills-changed.md` rendered with each non-empty added list,
+ * workspace then MCP, fitted like the system prompt fits a list (4000 chars
+ * of rows; descriptions 500 → 120 → trailing rows dropped and counted), and
+ * the locators of the removed identities that had a shown row, in
  * state.listed order.
  * message absent when nothing added and no shown row removed; a dropped row
  * that goes away is never reported.
@@ -271,34 +316,25 @@ export const skillCatalogChange = (
     });
   const lists = [
     {
-      prompt: changedWorkspaceSkillsPrompt,
+      workspace: true,
       entries: added(current.workspace),
       budget: WORKSPACE_MAX_CHARS,
     },
     {
-      prompt: serverSkillsPrompt,
+      server: true,
       entries: added(current.server),
       budget: SERVER_MAX_CHARS,
     },
   ]
     .filter(({ entries }) => entries.length > 0)
-    .map(({ prompt, entries, budget }) => ({
-      entries,
-      ...renderList(prompt, entries, budget),
+    .map(({ budget, ...list }) => ({
+      ...list,
+      ...fitList(changedTemplate, list.entries, budget),
     }));
   const gone = [...state.listed]
     .filter(([, skill]) => removed.has(identity(skill)))
     .map(([locator]) => locator);
 
-  const parts: string[] = [];
-  if (lists.length > 0) {
-    parts.push(addedSkillsPrompt, ...lists.map(({ part }) => part));
-  }
-  if (gone.length > 0) {
-    parts.push(
-      `${removedSkillsPrompt}\n\n${gone.map((locator) => `- \`${locator}\``).join('\n')}`,
-    );
-  }
   const next: CatalogState = {
     locators,
     available: new Set([
@@ -314,7 +350,15 @@ export const skillCatalogChange = (
       ),
     ]),
   };
-  return parts.length === 0
-    ? { state: next }
-    : { state: next, message: [skillsChangedPrompt, ...parts].join('\n\n') };
+  if (lists.length === 0 && gone.length === 0) return { state: next };
+  return {
+    state: next,
+    message: renderBlock(changedTemplate, {
+      added: lists.length === 0 ? undefined : { lists },
+      removed:
+        gone.length === 0
+          ? undefined
+          : { skills: gone.map((locator) => ({ locator })) },
+    }),
+  };
 };

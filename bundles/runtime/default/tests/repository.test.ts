@@ -6,16 +6,17 @@ import type { ProviderMessage, ProviderRequest } from 'llms';
 import {
   type CwdChanged,
   type CwdRepo,
+  type ExecutorThread,
   type InputSource,
   RuntimeHooksV1,
 } from 'runtime/contracts';
 
 import { DefaultHooksV1 } from '../src/contracts/index.js';
 import { systemPromptWith } from '../src/host/executor.js';
-import { repositoryPrompt } from '../src/host/prompts/repository.js';
 import {
   bundleServices,
   fakeThreadState,
+  harnessVariables,
   projectId,
   promptId,
   runPrompt,
@@ -23,6 +24,7 @@ import {
   skill,
   threadId,
 } from './support/harness.js';
+import { repositoryPrompt } from './support/prompts.js';
 
 /*
  * The coding workflow is a standing instruction: the default bundle gives it
@@ -84,6 +86,7 @@ const run = (
     readonly id?: string;
     readonly source?: InputSource;
     readonly cwdRepo?: CwdRepo;
+    readonly thread?: Partial<ExecutorThread>;
   } = {},
 ) => runPrompt(services, state, prompt, options);
 
@@ -221,6 +224,68 @@ void test('sends the system prompt an onBeforeModelRequestHook handler returns',
 
   assert.deepEqual(
     harness.requests.map((request) => request.messages[0]?.content),
-    [`${systemPromptWith(sandboxSection)}\n\n# Project rules\n\nUse tabs.`],
+    [
+      `${systemPromptWith(harnessVariables, sandboxSection)}\n\n# Project rules\n\nUse tabs.`,
+    ],
   );
+});
+
+/** An agent a Thread runs as: its own instructions replace the workflow. */
+const reviewer = {
+  name: 'reviewer',
+  source: 'workspace' as const,
+  instructions: 'Review the diff.',
+};
+
+void test('EX4a gives an agent Thread that starts at a repository root no workflow', async () => {
+  const harness = await activated();
+
+  await run(harness, 'fix the bug', {
+    cwdRepo: 'github',
+    thread: { agent: reviewer },
+  });
+
+  assert.deepEqual(harness.services.instructions, []);
+  assert.equal(instructionsIn(harness.requests[0]?.messages ?? []).length, 0);
+});
+
+void test('EX4b gives an agent Thread no workflow when its running prompt moves into a repository root', async () => {
+  const move = (cwd: string, cwdRepo: CwdRepo): CwdChanged => ({
+    projectId,
+    threadId,
+    promptId,
+    cwd,
+    cwdRepo,
+    previous: { cwd: '/workspace' },
+  });
+  let harness: Harness | undefined;
+  harness = await activated({
+    onFirstRequest: async () => {
+      const runtime = harness?.hooks.define(RuntimeHooksV1);
+      await runtime?.onThreadCwdChangedHook.execute(
+        move('/workspace/a', 'git'),
+      );
+      await runtime?.onThreadCwdChangedHook.execute(
+        move('/workspace/b', 'github'),
+      );
+    },
+  });
+
+  await run(harness, 'fix the bug', { thread: { agent: reviewer } });
+
+  assert.deepEqual(harness.services.instructions, []);
+  assert.equal(instructionsIn(stored(harness)).length, 0);
+  assert.equal(retained(harness)?.[key], undefined);
+});
+
+void test('EX5 gives a delegated step with its own model and effort but no agent the workflow', async () => {
+  const harness = await activated();
+
+  await run(harness, 'Type: Search', {
+    cwdRepo: 'git',
+    source: { kind: 'parent', threadId: 'parent', promptId: 'p' },
+    thread: { model: 'm', effort: 'low' },
+  });
+
+  assert.equal(harness.services.instructions.length, 1);
 });

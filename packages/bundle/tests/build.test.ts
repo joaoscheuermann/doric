@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, readFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -240,6 +240,53 @@ void test('the CLI has no baseline command; build and stage remain', async () =>
 
     await assert.rejects(runCli(['baseline', dir]), /Usage: cli\.js build/);
     assert.equal(await exists(join(dir, 'contracts.published.json')), false);
+  });
+});
+
+void test('the build copies host Markdown into dist before the dry activation, replacing stale copies', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeDemo(root, {
+      host: `import { readFileSync } from 'node:fs';
+readFileSync(new URL('./prompts/a.md', import.meta.url));
+${hostPart(getMethod)}`,
+      files: {
+        'src/host/prompts/a.md': 'A\n',
+        'src/host/b.md': 'B\n',
+        'dist/host/old.md': 'stale\n',
+      },
+    });
+
+    await buildBundle(dir);
+
+    assert.equal(
+      await readFile(join(dir, 'dist', 'host', 'prompts', 'a.md'), 'utf8'),
+      'A\n',
+    );
+    assert.equal(await exists(join(dir, 'dist', 'host', 'b.md')), true);
+    assert.equal(await exists(join(dir, 'dist', 'host', 'old.md')), false);
+    assert.equal(await exists(join(dir, 'dist', 'host', 'index.js')), true);
+  });
+});
+
+void test('copy-md mirrors the Markdown of a tree and keeps other files', async () => {
+  await withRoot(async (root) => {
+    const from = join(root, 'from');
+    const to = join(root, 'to');
+
+    await mkdir(join(from, 'nested', 'deeper'), { recursive: true });
+    await writeFile(join(from, 'nested', 'deeper', 'note.md'), 'note\n');
+    await mkdir(join(to, 'old'), { recursive: true });
+    await writeFile(join(to, 'old', 'stale.md'), 'stale\n');
+    await writeFile(join(to, 'index.js'), 'export {};\n');
+
+    await runCli(['copy-md', from, to]);
+
+    assert.equal(
+      await readFile(join(to, 'nested', 'deeper', 'note.md'), 'utf8'),
+      'note\n',
+    );
+    assert.equal(await exists(join(to, 'old', 'stale.md')), false);
+    assert.equal(await readFile(join(to, 'index.js'), 'utf8'), 'export {};\n');
   });
 });
 

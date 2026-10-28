@@ -47,12 +47,22 @@ It requires `hooks/v1`, `settings/v1`, `secrets/v1`, `models/v1` and
 | `tools`                        | Per-tool values, keyed by tool name and then by the field keys the tool declares.                                       |
 | `gitCredentialId`              | Optional `GIT` credential used as the Git identity.                                                                     |
 | `githubCredentialId`           | Optional `API_TOKEN` credential used for GitHub.                                                                        |
+| `profile.name`                 | Optional user's name: trimmed, 1–100 characters, one line.                                                              |
+| `profile.timezone`             | Optional IANA time zone the host's `Intl` accepts, stored as chosen; when absent, the host's own applies.               |
 
 The configuration holds no secret of its own. A provider field of kind
 `secret` carries the UUID of a stored credential, so `GET /config` answers the
 same shape `PUT /config` accepts. The schema is strict: an unknown key, a
 value the provider kind does not declare, an empty optional value, a non-HTTP
-URL, a repeated model, or an effort outside a model's list is refused.
+URL, a repeated model, or an effort outside a model's list is refused, and so
+is an unknown key inside `profile`, a `profile.name` that is empty or only
+spaces, longer than 100 characters or broken across lines, or a
+`profile.timezone` the host does not know. `profile` is optional and comes
+last, so a configuration written without it reads and serializes as before.
+The `default` bundle will use the profile as the prompt variables `user.name`
+and `timezone`; it is never read from the host's operating system, because
+the host can be remote. `host-config/v1` and `host-config.configuration/v1`
+added `profile` in 1.1.0.
 
 ## Replacing a configuration
 

@@ -16,7 +16,7 @@ footer picker), loaded by the `bundle` platform. See the
 - **UI:** `<settings-page>` at `/settings`, the settings window's one React
   root, and `<settings-execution-picker>`, a `layout.footer` item (order 20)
   in the [`layout`](../layout/README.md) bundle's conversation footer.
-- **Sections:** four child routes of `/settings`, each listed in the window's
+- **Sections:** five child routes of `/settings`, each listed in the window's
   nav through the `settings.sections` region.
 - **Region:** `settings.sections`, where other bundles add their own sections.
 - **Contract:** `settings.config/v1` (client), the window's one autosave draft
@@ -30,6 +30,7 @@ section that window showed, or Providers.
 
 | Path                    | Section     | What it edits                                                                     |
 | ----------------------- | ----------- | --------------------------------------------------------------------------------- |
+| `/settings/profile`     | Profile     | your optional name and time zone, which the agent's prompts will use              |
 | `/settings/providers`   | Providers   | every provider Doric may call, its fields, its models and the credential it uses  |
 | `/settings/execution`   | Execution   | the provider and model that run a prompt, its reasoning effort and the turn limit |
 | `/settings/tools`       | Tools       | the fields each tool of the loaded bundles declares in the `tools/v1` catalog     |
@@ -41,7 +42,16 @@ Other bundles add sections the same way:
 - `artifacts` adds Review at `/settings/review`.
 
 The nav has a search that keeps the sections whose label or description
-matches, so typing "turns" finds Execution.
+matches, so typing "turns" finds Execution and "time zone" finds Profile.
+
+Profile comes first in the nav, but a window that has shown no section yet
+still opens on Providers. Its Name field and Time zone combobox save into
+`profile` of the configuration (`host-config/v1@^1.1.0`). The combobox lists
+the zones `Intl` supports, always UTC, and "Host time zone", which removes
+`profile.timezone` so the host's own zone applies; clearing both fields
+removes `profile`. The name and zone are never taken from the host's
+operating system, because the host can be remote. `settings.config/v1` 1.1.0
+carries `profile` in the shared draft.
 
 ## Saving
 

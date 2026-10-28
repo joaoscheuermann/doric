@@ -5,8 +5,9 @@ import {
   attachmentIdSchema,
   attachmentMediaTypeSchema,
 } from './attachments.js';
-import { inputSourceSchema } from './model.js';
+import { inputSourceSchema, reasoningEfforts } from './model.js';
 import { runtimeOwnerSchema } from './runtime.js';
+import { spawnInstructionsMaxLength } from './threads.js';
 
 /*
  * The runtime's documents and streams on storage/v1 (design 57 §3.1, §3.2 as
@@ -118,6 +119,24 @@ export const threadDocumentSchema = z
     updatedAt: iso,
     startedAt: iso.nullable(),
     finishedAt: iso.nullable(),
+    /**
+     * The agent the Thread was spawned as, instructions included: the
+     * instructions stay in the document and reach only the executor. Absent
+     * when spawned without one and on documents written before
+     * runtime.thread/v1 1.1.0.
+     */
+    agent: z
+      .object({
+        name: z.string(),
+        source: z.enum(['built-in', 'workspace']),
+        instructions: z.string().max(spawnInstructionsMaxLength),
+      })
+      .strict()
+      .optional(),
+    /** The resolved model; absent on documents written before runtime.thread/v1 1.1.0. */
+    model: z.string().optional(),
+    /** The resolved effort; absent on documents written before runtime.thread/v1 1.1.0. */
+    effort: z.enum(reasoningEfforts).optional(),
     createdKey: z.string(),
   })
   .strict();

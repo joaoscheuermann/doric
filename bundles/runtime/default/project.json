@@ -30,6 +30,7 @@
       "options": {
         "commands": [
           "tsc -p bundles/runtime/default/tsconfig.spec.json",
+          "node packages/bundle/dist/build/cli.js copy-md bundles/runtime/default/src/host bundles/runtime/default/dist-tests/src/host",
           "node --test bundles/runtime/default/dist-tests/tests/*.test.js"
         ],
         "parallel": false

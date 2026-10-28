@@ -198,10 +198,14 @@ Every contract documents its error codes beside it; they are listed in
 ```console
 node packages/bundle/dist/build/cli.js build [--development] <bundleDir>
 node packages/bundle/dist/build/cli.js stage <dest> <bundleDir...>
+node packages/bundle/dist/build/cli.js copy-md <from> <to>
 ```
 
-`build` runs after `tsc`. It validates the manifest, copies skills, builds the
-desktop and client parts and the client's frames (production mode unless
+`build` runs after `tsc`. It validates the manifest, copies skills and the
+host part's Markdown templates (every `.md` below `src/host`, copied to the
+same path below `dist/host` before the dry activation, because the host part
+reads them when it is imported; stale `.md` files there are removed), builds
+the desktop and client parts and the client's frames (production mode unless
 `--development`), dry-activates the parts (never a frame) to compute each contract's environment and
 cardinality, and writes `dist/contracts.json` and
 `dist/schemas/<contract>.json` (JSON Schema 2020-12). There is no semver check
@@ -210,6 +214,12 @@ against a published baseline yet: `contracts.published.json` files and the
 leftover file is ignored.
 
 `stage` copies each `dist` into `<dest>/<id>`.
+
+`copy-md` mirrors the `.md` files below `<from>` into `<to>` the same way
+`build` does: it removes every `.md` below `<to>`, then copies each one from
+`<from>` to the same relative path, and keeps every other file. A bundle's
+`test` target runs it after `tsc` so the compiled tests find the templates
+(`default` copies `src/host` into `dist-tests/src/host`).
 
 ## Development
 

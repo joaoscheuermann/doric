@@ -62,7 +62,8 @@ const provider = (stored: ProviderInput): ProviderInput => {
  * order of their IDs, record keys in jsonb order with each provider's
  * credential last, and `tools` is always present; the schema then emits every
  * object in its own shape order. Reading and writing both pass through here,
- * so the two bodies stay identical byte for byte.
+ * so the two bodies stay identical byte for byte. A stored profile passes
+ * through as kept, and a configuration without one answers none.
  */
 const fromSettings = (entry: SettingsEntry<ConfigInput>): DoricConfig => {
   const value = entry.value;
@@ -86,6 +87,7 @@ const fromSettings = (entry: SettingsEntry<ConfigInput>): DoricConfig => {
       ...(value.githubCredentialId === undefined
         ? {}
         : { githubCredentialId: value.githubCredentialId }),
+      ...(value.profile === undefined ? {} : { profile: value.profile }),
     }),
     revision: entry.revision,
     updatedAt: entry.updatedAt,

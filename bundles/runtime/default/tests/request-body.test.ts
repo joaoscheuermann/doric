@@ -16,15 +16,17 @@ import type { ConfigurationValue } from 'runtime/contracts';
 import { z } from 'zod';
 
 import { systemPromptWith } from '../src/host/executor.js';
-import { systemPrompt } from '../src/host/prompts/system.js';
+import type { PromptVariables } from '../src/host/prompts/variables.js';
 import { skillCatalog } from '../src/host/skills/catalog.js';
 import {
   bundleServices,
   fakeThreadState,
   type HarnessSkill,
+  osLease,
   runPrompt,
   testConfiguration,
 } from './support/harness.js';
+import { environmentPrompt, systemPrompt } from './support/prompts.js';
 
 // The exact model request bodies of the stage-1 host for a fresh Thread:
 // `system-prompt.md` and `tools.json` are the stage-1 parity fixtures, and the
@@ -38,6 +40,25 @@ import {
 // `# Skills` section those skills render, and every expected tool list ends
 // with the run's own `load_skill`, which no bundle registers. Its `name` is a
 // plain string since the skills a run can load change while it runs.
+//
+// Re-baselined for the prompt variables (DORIC-87): the base instruction is
+// followed by the `# Environment` section of `fixtureVariables`, before the
+// `# Skills` section.
+
+/** The profile and clock every fresh run below runs with. */
+const fixtureProfile = { name: 'Ada Lovelace', timezone: 'America/Sao_Paulo' };
+const fixtureNow = new Date('2026-03-01T02:00:00Z');
+
+/**
+ * The variables of a fresh run: `osLease()`'s probe answer, the date of
+ * `fixtureNow` in São Paulo (still the 28th there), and the profile's name.
+ */
+const fixtureVariables: PromptVariables = {
+  os: 'Ubuntu 24.04 LTS (Linux 6.8.0 x86_64)',
+  date: '2026-02-28',
+  timezone: 'America/Sao_Paulo',
+  user: { name: 'Ada Lovelace' },
+};
 
 /** dist-tests/tests → the package's own tests/fixtures folder. */
 const fixtures = join(
@@ -243,10 +264,12 @@ const runFresh = async (
     },
   );
   const services = bundleServices({
-    configuration,
+    configuration: { ...configuration, profile: fixtureProfile },
     provider: languageModel,
     tools: tools.map(recordedTool) as never,
     skills,
+    lease: osLease(),
+    now: () => new Date(fixtureNow),
   });
   await services.activate();
   await runPrompt(services, fakeThreadState(), '[[plain]] Say hello.');
@@ -288,7 +311,10 @@ void test('F1 builds the recorded system prompt from the base instruction and th
   const skills = await readJson<readonly RecordedSkill[]>('skills.json');
   const [base] = system.split('\n\n# Skills\n\n');
 
-  assert.equal(base, systemPrompt);
+  assert.equal(
+    base,
+    `${systemPrompt}\n\n${environmentPrompt(fixtureVariables)}`,
+  );
   assert.equal(skills.length, 22);
   assert.deepEqual(
     skills
@@ -310,7 +336,7 @@ void test('F1 builds the recorded system prompt from the base instruction and th
     workspace: [],
     server: [],
   });
-  assert.equal(systemPromptWith(section), system);
+  assert.equal(systemPromptWith(fixtureVariables, section), system);
 });
 
 void test('sends the exact OpenRouter chat body the stage-1 host sent for a fresh Thread', async () => {

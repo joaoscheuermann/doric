@@ -543,7 +543,9 @@ conversation retains completed tool/background results, not terminal sessions.
 
 A settings window opened from the content footer — its own `BrowserWindow`
 loading a page that mounts the settings surface alone, with no conversation,
-sidebar or Thread — edits the host's configuration: the configured providers as
+sidebar or Thread — edits the host's configuration: a Profile section with the
+user's optional name and time zone (a host-time-zone choice that stores none,
+and UTC always offered), the configured providers as
 an editable table, the execution model with its reasoning effort, the execution
 turn limit, and a Credentials section over the host's credential store. A
 provider is configured on a page of its own, opened from the providers table,
@@ -656,16 +658,82 @@ The thread delegation tools act only on direct children in the same Project,
 reached through the per-prompt host facade; each child has its own history, not
 an automatic copy of its parent's history. A spawned child is named after the
 optional title its parent gives it, or the start of its prompt without one.
+A spawn may also name an agent (`name`, `source` `built-in` or `workspace`,
+and instructions of at most 64 000 characters), a model and a reasoning effort
+(`runtime.threads/v1` 1.6.0); the runtime stores them in the child's
+`runtime.thread/v1` document (1.1.0) as a snapshot taken at the spawn. A child
+spawned without a model or an effort takes its parent's stored value, and an
+agent is never inherited. The runtime does not check the model or the effort;
+the `thread-spawn` tool does, before it spawns: against the models the
+configured execution provider lists (a provider without a list accepts any),
+then through `models/v1`. The public Thread record shows the agent's name and
+source, the model and the effort, never the instructions; the runner reads them
+from the stored document on every run and hands them to the executor as
+`thread.agent.instructions`, so a retry, a parent's send, the restart of a
+failed child and a run after a host restart use the same values. The default
+executor (`executor/v1` 1.3.0) runs the Thread as that agent, with its model
+and effort in place of the configured ones on the configured provider; when no
+instructions are stored for an agent Thread, the runner drops the agent and the
+Thread runs as the default agent.
 
 The default agent — the executor formerly named Direct — and its system prompt
 live in `/bundles/runtime/default` (bundle `default`, renamed from `direct` on
 2026-10-19); the
 former one-module-per-coordination-tool set ships in `/bundles/features/threads`. The
-system prompt file (`prompts/system.ts`) exports only one constant literal
-template string; the executor appends the run's `# Skills` section, which
-`src/host/skills` builds once per prompt run from the constant literal strings
-of `prompts/skills.ts`, not from arrays of prompt lines, and which stays the
-same for the whole run. Before every model request after the first, the
+prompt texts are Markdown templates rendered with `mustache`, one file in
+`src/host/prompts` per text the model receives whole: the system prompt
+(`system.md`), the `# Agent: <name>` section of a Thread that runs as an agent
+(`agent.md`), the coding workflow (`repository.md`), the `# Agents` section
+(`agents.md`), the "Agents changed" message (`agents-changed.md`), the
+`# Skills` section (`skills-catalog.md`), the "Skills changed" message
+(`skills-changed.md`) and the "Loaded skills" message (`loaded-skills.md`); tool descriptions, the
+`load_skill` one included, stay in the tool's `defineTool`. Each module reads
+the templates it uses once, when it loads (`executor.ts`, `repository.ts`,
+`agents/catalog.ts`, `skills/catalog.ts`, `skills/loaded.ts`), checks each against the names it may
+cite (`system.md` declares the standard prompt variables, the three message
+templates theirs, `repository.md` none; partials are refused) and
+renders it without HTML escaping; a missing template fails the import, so the
+bundle is quarantined with `invalid_part`. The code supplies only data — which
+always-available skills and rows fit, each cell already on one line, capped and
+pipe-escaped, the `~N` locators, the dropped counts, fences, cut flags and
+omitted ids — and the templates do all the formatting with mustache sections,
+each section tag alone on its line. `prompts/templates.ts` renders a template
+as a block with `renderBlock` (one leading and one trailing newline dropped)
+and one section for given items with `renderSection`, which is how the budgets
+are measured, so the row format exists only in the template; the cut marker of
+the loaded-skills message is likewise rendered from its template and used to
+parse earlier ones. `system.md` ends with an `# Environment` section rendered
+from the standard prompt variables (`prompts/variables.ts`), read once at the
+start of each run so the prompt stays the same for the whole run: the
+sandbox's operating system (`<PRETTY_NAME> (<uname -srm>)`, from one 5 s probe
+through the optional `runtime.lease/v1`, cached in memory per Project and lease
+id; a missing provider or failed probe leaves the line out and is not cached),
+today's date (`YYYY-MM-DD`, never the time of day, which would change the
+cached prompt) in the host-config profile's `timezone` or else the host's
+zone, and the profile's `name`, left out when unset (no git identity
+fallback). For a Thread that runs as an agent, the executor appends first a
+`# Agent: <name>` section holding the agent's instructions rendered with the
+run's prompt variables (instructions citing another name fail the run before
+its first model request), then the run's `# Agents` section, then its
+`# Skills` section, which `src/host/agents` and `src/host/skills` build once
+per prompt run and which stay the same for the whole run. Each run uses the
+Thread's own model and effort when it has them, else the configured execution
+ones, always on the configured provider; the run's automatic compaction uses
+the run's model, and a manual compaction the configured one. The agents a Thread
+can be spawned as are served by `default.agents/v1` (host-only, `list` and
+`resolve`): the built-in agents shipped with the bundle (the ten
+coding-workflow steps `triage` … `docs`; an invalid one makes activation
+throw) and the `.agents/agents/<name>.md` files of the
+Thread's working directory, each with a frontmatter `description` (required),
+optional `model` and `effort`, and instructions that are a raw mustache
+template citing only the prompt variables (`{{=<% %>=}}` switches delimiters
+for literal tags). A workspace file, even an invalid one, hides the built-in of
+its name; `list` reads the files with one lease exec (size and first 4096
+bytes, files over 64 000 bytes invalid) and `resolve` reads the chosen file
+whole and checks it again, failing as `not_found` or `invalid_definition`. A
+change of the agents with the working directory reaches the model as one
+`<bundle-instruction bundle="default" reason="agents-changed">` message, given
+before the "Skills changed" one. Before every model request after the first, the
 executor reads the Thread's working directory (optional
 `runtime.workspace/v1`) and the MCP servers again through `packages/agent`'s
 `beforeRequest`, and a change in the skills it can load reaches the model as
@@ -681,14 +749,13 @@ handler of its own: its `onBeforeModelRequestHook` (`transform`, input
 call, and `packages/agent` accepts a `system` function that it calls before
 each provider request for this. The coding workflow reaches the agent as an
 standing instruction, not as system prompt text, once per Thread: the
-`default` bundle gives the Thread the workflow (`prompts/repository.ts`: Search,
-Plan, Development with contracts and red-green tests and implementation,
-Cleanup, each subagent type with its goal, tools, the files it may change,
-ordered steps, explicit rules and what it returns; Contracts generates the
-contracts as its result and changes no file, Tests derive expected values from
-the requirements, and Implementation never edits, weakens or special-cases a
-test and stops to report a test that contradicts the plan) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
-`retain: true`, when a task — a `user` or `parent` input — starts with a
+`default` bundle gives the Thread the workflow (`prompts/repository.md`: the
+coordinator's routes — triage first, then a small route or a large one with a
+spec reviewed in four stages, user checkpoints and explicit approval,
+Brainstorm for an unclear idea, and docs at the end — each step a built-in
+agent started with `agent: <name>` and its effort) through `runtime.threads/v1.instruct`, reason `coding-workflow` and
+`retain: true`, only to a Thread without an `agent` (an agent's instructions
+are its workflow), when a task — a `user` or `parent` input — starts with a
 `cwdRepo` hint (the executor checks before the run's first model request) and
 when a running prompt moves into a repository root (its
 `onThreadCwdChangedHook` handler), in both cases only while the history the
@@ -703,9 +770,9 @@ reason="loaded-skills">` message holding the skills loaded in the condensed
 span and not loaded again in the kept tail (each cut at 20 000 characters,
 within min(100 000, `charBudget` / 4) characters in all), so they stay in
 effect after the summary. The coding workflow is kept verbatim, so it is given again only
-after a rewind removed it. The main Thread delegates each step to a child
-Thread whose title and instruction name its type, except for trivial changes,
-and a delegated `<parent-instruction>` step is done by the child itself. It
+after a rewind removed it. The main Thread is the coordinator; a trivial
+change skips the workflow, triage included, and a plain child given a
+`<parent-instruction>` does that step itself. It
 reaches both runtime contracts through `optional`, because the runtime requires
 `executor/v1`. The
 base prompt tells the agent to work at a repository's root, to initialize a
@@ -828,7 +895,8 @@ bundles live as individual Nx packages immediately below `/bundles`, named by
 their bundle ID (Nx projects `bundle-<id>`); each owns its package metadata, a
 v1 `manifest.json`, a TypeScript build to `bundles/<id>/dist` and a public
 `<id>/contracts` entrypoint. The bundle build CLI of `packages/bundle`
-validates the manifest and skills, dry-activates the host part to write the
+validates the manifest and skills, copies the host part's Markdown templates
+(`src/host/**/*.md`) into `dist/host`, dry-activates the host part to write the
 contract descriptor (`dist/contracts.json`) and per-contract JSON Schemas
 (a client's `src/client/frames/*.ts` build to `dist/client/frames/<name>.js`,
 modules for documents outside the window such as a Papercraft preview frame:
@@ -884,7 +952,7 @@ append whose call scope lacks a key the sink names is refused with
 with the stream `runtime.thread.events/{threadId}`, registers only
 `runtime.prompt-finished/v1`, and writes the Thread events it owns to that
 stream directly, in the same commit as the Thread document; REST and Socket.IO
-serve the stream. Other bundles (`artifacts`, `comments`) append their
+serve the stream. Other bundles (`artifacts`, `comments`, `threads`) append their
 registered events to the same stream through `events/v1`. After each append it
 commits, `events/v1` fires the core-owned host hook
 `core.event-hooks/v1.onEventAppendedHook({ stream, type })` without waiting;
@@ -912,11 +980,38 @@ plus focused skills for cloning, commit preparation, conflict resolution,
 rebasing, remote synchronization, and linked worktrees. The Git tool executes
 structured argv directly without shell interpretation, forces non-interactive
 Git behavior, bounds stdout and stderr, and exposes no dedicated credential
-input. `/bundles/features/threads` owns the delegation tools `thread-spawn`,
+input. `/bundles/features/threads` owns the delegation tools `thread-spawn`
+(which can pass an agent, a model and an effort as spawn options),
 `thread-list`, `thread-get`, `thread-events`, `thread-send`, `thread-restart`
 (which reopens a direct child whose thread itself failed),
 `thread-interrupt`, and `thread-terminate` plus focused delegation,
-inspection, and steering skills. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
+inspection, and steering skills. It also owns the always-available `ask` tool
+(order 1660), the events `threads.asked/v1` and `threads.answered/v1`, and the
+host service `threads.ask/v1`, which reach the host only through
+`runtime.threads/v1` and `events/v1`. `ask` lets the main Thread put one to five
+multiple-choice questions to the user (two to six options each, unique ids and
+labels, optional `multiSelect` (default false), `allowOther` (default true) and
+`recommended`, and an optional `context`): it records `threads.asked/v1` with a
+host-generated `askId`, which supersedes any unanswered ask of the Thread, and
+returns a text telling the model to end its turn. In an agent Thread
+(`origin` `agent`) it refuses and records nothing. `threads.ask/v1` exposes
+`status` and `answer` to the desktop (`desktopScope` `projectId`, `threadId`,
+`promptId`) and holds no state: every call folds the Thread log again, so the
+state survives a host restart (answered, the first answer winning, over
+superseded over pending). `answer` returns the state of an answered or
+superseded ask without sending; otherwise it checks the answers against the
+recorded questions (`invalid_input`), sends them to the Thread as one user
+input through `runtime.threads/v1.steer` — into the running prompt, else the
+ask's own prompt, which queues it and runs it at once on an idle Thread — and
+only then records `threads.answered/v1`. A refused or failed send is
+`unavailable` and records nothing; calls for one `askId` run one at a time; an
+unknown `askId` is `not_found` and a scope missing a needed key
+`invalid_scope`. When `chat.views/v1` is available, the threads client part
+projects each `threads.asked/v1` row (claiming `threads.answered/v1` too) as a
+`threads.question/v1` block drawn by `<threads-ask>`, which reads `status` in
+the asked row's scope on mount and again on each live row of its Thread that
+can change it (received through `chat.hooks/v1` `onThreadUpdateHook`), and
+sends `answer` from the window. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
 describes below. Migration stages 5 to 7 are described below.
 
 `/bundles/features/artifacts` owns `artifacts/v1`, the kind registry
@@ -1939,7 +2034,16 @@ provider integration.
 The `host-config` bundle receives complete singleton configuration replacements
 through `PUT /config`, which the `transport` bundle routes to it. It persists only provider IDs, the kind each provider is, the
 configuration values that kind declares, the models each provider offers, one
-`models.execution` profile, and `execution.maxTurns`. A provider's kind, the
+`models.execution` profile, `execution.maxTurns`, and an optional `profile`
+with the user's name and time zone. That `profile` (strict, last in the
+configuration, `host-config/v1` and `host-config.configuration/v1` 1.1.0)
+carries an optional `name`, trimmed, 1–100 characters on one line, and an
+optional `timezone`, an IANA name the host's `Intl` accepts, stored as chosen;
+an absent `timezone` means the host's own. The `default` bundle reads them
+as the prompt variables `user.name` and `timezone`; they are never taken from
+the host's operating system, because the host can be remote. The settings
+window edits them in its Profile section, and clearing both fields removes
+`profile`. A provider's kind, the
 fields it declares and the model list it keeps are `providerKinds` in
 `packages/llms`; the host serves that catalog unchanged at `GET /providers/kinds`
 and builds each configured provider with `createProviderForKind`, so a stored
@@ -2753,7 +2857,7 @@ receives a fresh tool-call store, every registered bundle tool bound to a
 prompt `Call` scoped to that prompt (its sandbox and per-prompt host facade
 attached to that scope for the run) and the run's `load_skill`, offered once
 the run can load a skill and checking the run's live list on every call, the
-system prompt with its skills section computed once per prompt run, passed through
+system prompt with its environment, agents and skills sections computed once per prompt run, passed through
 `default.hooks/v1` before each model request, and
 `createMessageStorage(...)` initialized from that Thread's exact persisted
 provider-ready history. Success and failure both persist the resulting complete
@@ -2968,6 +3072,11 @@ its line, and the prompt and every turn draw a reference line as the image, as
 wide as the column at most; queue rows, receipts and the edit header show it as
 `[name]`. The host's Socket.IO message limit is sized to carry one attachment's
 base64 in a bridge envelope.
+
+From `executor/v1` 1.3.0 the executor's `run` and `compact` receive the Thread
+as an `ExecutorThread`: the public record whose `agent`, when present, also
+carries the agent's instructions, checked at the boundary by
+`executorThreadSchema`; the runtime still requires `executor/v1@^1.0.0`.
 
 A failed tool call's row and a prompt's failure marker read the stored error,
 not only its outermost message: its message, then each cause's on its own line

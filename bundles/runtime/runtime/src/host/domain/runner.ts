@@ -4,7 +4,11 @@ import { isAbsolute, join, normalize } from 'node:path';
 import type { Log } from 'bundle/contracts';
 import { type Sandbox, workspacePathKind } from 'sandbox';
 
-import type { Executor, HistoryReader } from '../../contracts/executor.js';
+import type {
+  Executor,
+  ExecutorThread,
+  HistoryReader,
+} from '../../contracts/executor.js';
 import type { CwdChanged, PromptStarted } from '../../contracts/hooks.js';
 import {
   type CompactResult,
@@ -20,7 +24,7 @@ import {
   type ThreadGit,
   type ThreadOrigin,
 } from '../../contracts/model.js';
-import type { InterruptResult } from '../../contracts/threads.js';
+import type { InterruptResult, SpawnOptions } from '../../contracts/threads.js';
 import type {
   Host,
   ThreadControl,
@@ -50,6 +54,20 @@ import { createSession } from './session.js';
 import { pauseForStorage } from './storage-pause.js';
 import { guardStorage, storageFull } from './storage-pressure.js';
 import type { WorkspacePublisher } from './types.js';
+
+/**
+ * The Thread as `executor.run` / `executor.compact` receive it: its agent with
+ * `instructions`, or no agent when none were found, so the executor runs it as
+ * the default agent instead of failing validation. Pure; `thread` is not
+ * modified.
+ */
+const executorThread = (
+  { agent, ...thread }: Thread,
+  instructions: string | undefined,
+): ExecutorThread =>
+  agent === undefined || instructions === undefined
+    ? thread
+    : { ...thread, agent: { ...agent, instructions } };
 
 /*
  * Moved from agents/doric (workspace/runner.ts, design 57 §4.10, §4.11). The
@@ -349,8 +367,11 @@ export const createThreadRunner = (context: RunnerContext) => {
     const scope = scopeOf(project, thread, job);
     const executor = context.executor(scope);
     let reader: HistoryReader;
+    let instructions: string | undefined;
     try {
       reader = await store.history(thread.thread.id);
+      if (thread.thread.agent !== undefined)
+        instructions = (await store.find(thread.thread.id))?.instructions;
     } catch (cause) {
       throw new ThreadPersistenceError(cause);
     }
@@ -391,7 +412,11 @@ export const createThreadRunner = (context: RunnerContext) => {
       }
       try {
         const result = await executor.run(
-          { thread: thread.thread, job, session },
+          {
+            thread: executorThread(thread.thread, instructions),
+            job,
+            session,
+          },
           { signal },
         );
         return result.text;
@@ -648,6 +673,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     name: string,
     parentThreadId?: string,
     origin?: ThreadOrigin,
+    options?: SpawnOptions,
   ) => {
     if (project.closing) return { status: 'inactive' as const };
     let inherit:
@@ -677,6 +703,7 @@ export const createThreadRunner = (context: RunnerContext) => {
       parentThreadId,
       inherit,
       origin,
+      options,
     );
     const runtime: ThreadRuntime = {
       thread: record.thread,
@@ -1026,8 +1053,11 @@ export const createThreadRunner = (context: RunnerContext) => {
       promptId: randomUUID(),
     };
     let reader: HistoryReader;
+    let instructions: string | undefined;
     try {
       reader = await store.history(thread.thread.id);
+      if (thread.thread.agent !== undefined)
+        instructions = (await store.find(thread.thread.id))?.instructions;
     } catch (cause) {
       throw new ThreadPersistenceError(cause);
     }
@@ -1049,7 +1079,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     try {
       const result = await executor.compact(
         {
-          thread: thread.thread,
+          thread: executorThread(thread.thread, instructions),
           session,
           policy: await context.compactionPolicy(),
         },
@@ -1421,18 +1451,25 @@ export const createThreadRunner = (context: RunnerContext) => {
       promptId: job.id,
     };
     return {
-      spawn: (prompt, title) =>
+      spawn: (prompt, title, options) =>
         exclusive(project.project.id, async () => {
           allowed();
           if (prompt.trim().length === 0)
             throw new TypeError('A non-empty prompt is required.');
           if (title !== undefined && title.trim().length === 0)
             throw new TypeError('A non-empty title is required.');
+          // An agent is the child's own; a model and an effort fall back to
+          // the parent's.
           const created = await create(
             project,
             nameFromPrompt(title ?? prompt),
             parent.thread.id,
             'agent',
+            {
+              ...options,
+              model: options?.model ?? parent.thread.model,
+              effort: options?.effort ?? parent.thread.effort,
+            },
           );
           if (created.status !== 'created')
             throw new Error('Thread cannot be created.');

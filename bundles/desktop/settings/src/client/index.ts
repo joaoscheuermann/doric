@@ -1,5 +1,5 @@
 // The settings bundle's client part (stage 9, design §6): the settings window
-// at `/settings`, its own four sections as child routes (Versioning is the git bundle's since WP-10N), the nav as the
+// at `/settings`, its own five sections as child routes (Versioning is the git bundle's since WP-10N), the nav as the
 // `settings.sections` region, and the footer execution picker in
 // `layout.footer`.
 

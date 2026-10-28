@@ -12,6 +12,7 @@ import { systemPromptWith } from '../src/host/executor.js';
 import {
   bundleServices,
   fakeThreadState,
+  harnessVariables,
   PersistenceFailure,
   projectId,
   promptId,
@@ -169,7 +170,7 @@ void test('retains a completed tool result and its event when a full disk reject
 });
 
 void test('starts the system prompt with the default instruction and keeps an empty skill section out of it', () => {
-  const system = systemPromptWith('');
+  const system = systemPromptWith(harnessVariables, '');
 
   assert.match(system, /Complete the user's request in the project sandbox/u);
   assert.ok(!system.includes('# Skills'));
@@ -179,8 +180,8 @@ void test('separates the skill section from the default instruction by a blank l
   const section = '# Skills\n\n### Skill: first\n\n\nFirst body.\n';
 
   assert.equal(
-    systemPromptWith(section),
-    `${systemPromptWith('')}\n\n${section}`,
+    systemPromptWith(harnessVariables, section),
+    `${systemPromptWith(harnessVariables, '')}\n\n${section}`,
   );
 });
 
@@ -190,7 +191,7 @@ void test('sends the default instruction with the always-available skill bodies 
 
   assert.deepEqual(harness.requests[0]?.messages[0], {
     role: 'system',
-    content: systemPromptWith(sandboxSection),
+    content: systemPromptWith(harnessVariables, sandboxSection),
   });
   assert.deepEqual(
     harness.requests[0]?.tools?.map(({ name }) => name),

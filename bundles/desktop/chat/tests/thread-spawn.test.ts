@@ -50,4 +50,67 @@ describe('thread-spawn tool domain parsing', () => {
       assert.equal(parsed.child, undefined, result);
     }
   });
+
+  test('reads the agent, model and effort the child is spawned with', () => {
+    const parsed = parseThreadSpawn(
+      JSON.stringify({
+        prompt: 'Audit the contrast',
+        agent: 'reviewer',
+        model: 'gpt-5',
+        effort: 'high',
+      }),
+    );
+
+    assert.equal(parsed.agent, 'reviewer');
+    assert.equal(parsed.model, 'gpt-5');
+    assert.equal(parsed.effort, 'high');
+  });
+
+  test('trims the agent, model and effort the call names', () => {
+    const parsed = parseThreadSpawn(
+      JSON.stringify({
+        prompt: 'Audit the contrast',
+        agent: '  reviewer  ',
+        model: ' gpt-5 ',
+        effort: ' high ',
+      }),
+    );
+
+    assert.equal(parsed.agent, 'reviewer');
+    assert.equal(parsed.model, 'gpt-5');
+    assert.equal(parsed.effort, 'high');
+  });
+
+  test('names no agent, model or effort the call does not carry as text', () => {
+    // A value that is not a string, or a string with nothing in it, names
+    // nothing the header could show.
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ...[42, true, null, {}, [], '', '   '].map(
+        (value) =>
+          [
+            JSON.stringify(value),
+            JSON.stringify({
+              prompt: 'Audit the contrast',
+              agent: value,
+              model: value,
+              effort: value,
+            }),
+          ] as const,
+      ),
+      ['absent', JSON.stringify({ prompt: 'Audit the contrast' })],
+    ];
+    for (const [name, args] of cases) {
+      const parsed = parseThreadSpawn(args);
+      assert.equal(parsed.prompt, 'Audit the contrast', name);
+      assert.equal(parsed.agent, undefined, name);
+      assert.equal(parsed.model, undefined, name);
+      assert.equal(parsed.effort, undefined, name);
+    }
+
+    // Args that cannot be read name none of them either.
+    const unreadable = parseThreadSpawn('not json');
+    assert.equal(unreadable.agent, undefined, 'not json');
+    assert.equal(unreadable.model, undefined, 'not json');
+    assert.equal(unreadable.effort, undefined, 'not json');
+  });
 });

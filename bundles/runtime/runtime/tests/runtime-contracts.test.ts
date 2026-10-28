@@ -15,8 +15,10 @@ import type { z } from 'zod';
 import {
   attachmentType,
   createdKey,
+  type ExecutorThread,
   ExecutorV1,
   executorMethods,
+  executorThreadSchema,
   historyType,
   isValidName,
   legacyEventTypes,
@@ -177,8 +179,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     `${RuntimeV1.id}@1.3.0`,
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
     // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0:
-    // retry; 1.5.0: a bundle's instruction and restarting a failed child.
-    `${RuntimeThreadsV1.id}@1.5.0`,
+    // retry; 1.5.0: a bundle's instruction and restarting a failed child;
+    // 1.6.0: spawn options (agent, model, effort).
+    `${RuntimeThreadsV1.id}@1.6.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
     `${RuntimeWorkspaceV1.id}@1.1.0`,
     // 1.1.0: withLease (stage 10 R-5.1); 1.2.0: readFileBytes.
@@ -198,7 +201,8 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // The storage types the host part defines are provided contracts too.
     // 1.1.0: the internal `owner` field (57-WP-H).
     `${projectType.type}@1.1.0`,
-    `${threadType.type}@1.0.0`,
+    // 1.1.0: a spawned Thread's agent, model and effort.
+    `${threadType.type}@1.1.0`,
     `${historyType.type}@1.0.0`,
     `${migrationType.type}@1.0.0`,
     `${attachmentType.type}@1.0.0`,
@@ -365,4 +369,86 @@ void test('names keep their current validation rules', () => {
   assert.equal(isValidName('x'.repeat(81)), false);
   assert.equal(nameFromPrompt(`  ${'😀'.repeat(81)}  `), '😀'.repeat(80));
   assert.equal(nameFromPrompt('a\0b'), 'a�b');
+});
+
+/*
+ * DORIC-73: executor/v1 1.3.0 types the Thread a run and a compaction receive
+ * as an ExecutorThread — the agent with its instructions, the model and the
+ * effort — and validates the instructions as a string.
+ */
+
+const executorThread: ExecutorThread = {
+  id: 'thread-1',
+  projectId: 'project-1',
+  name: 'Reviewer',
+  state: 'running',
+  lastSequence: 0,
+  cwd: '/workspace',
+  createdAt: '2026-03-01T00:00:00.000Z',
+  updatedAt: '2026-03-01T00:00:00.000Z',
+  agent: {
+    name: 'reviewer',
+    source: 'workspace',
+    instructions: 'Review the diff.',
+  },
+  model: 'thread-model',
+  effort: 'low',
+};
+
+const job = { id: 'prompt-1', prompt: 'review', source: { kind: 'user' } };
+const session = {
+  history: { format: undefined, read: () => Promise.resolve(undefined) },
+  record: () => Promise.resolve(),
+  steers: () => Promise.resolve([]),
+};
+const policy = { tailMinMessages: 2, summaryMaxChars: 6000 };
+
+/** The run and compaction inputs carrying `thread`. */
+const executorInputs = (thread: unknown) =>
+  [
+    [
+      'run',
+      () => executorMethods.run.input.safeParse({ thread, job, session }),
+    ],
+    [
+      'compact',
+      () =>
+        executorMethods.compact.input.safeParse({ thread, session, policy }),
+    ],
+  ] as const;
+
+void test('RC1 a run and a compaction keep the agent instructions, the model, the effort and loose keys', () => {
+  for (const [name, parse] of executorInputs({
+    ...executorThread,
+    extra: 'kept',
+  })) {
+    const parsed = parse();
+    assert.equal(parsed.success, true, name);
+    if (!parsed.success) continue;
+    assert.deepEqual(
+      parsed.data.thread,
+      { ...executorThread, extra: 'kept' },
+      name,
+    );
+  }
+  assert.deepEqual(executorThreadSchema.parse(executorThread), executorThread);
+});
+
+void test('RC1 a run and a compaction refuse an agent without string instructions', () => {
+  const withoutInstructions = { name: 'reviewer', source: 'workspace' };
+  for (const agent of [
+    withoutInstructions,
+    { ...withoutInstructions, instructions: 42 },
+  ]) {
+    const thread = { ...executorThread, agent };
+    for (const [name, parse] of executorInputs(thread))
+      assert.equal(parse().success, false, `${name}: ${JSON.stringify(agent)}`);
+    assert.equal(executorThreadSchema.safeParse(thread).success, false);
+  }
+});
+
+void test('RC1 the executor Thread schema is no process-local member', () => {
+  assert.deepEqual(markers(executorThreadSchema, 'input'), []);
+  assert.deepEqual(markers(executorMethods.run.input, 'input'), ['object']);
+  assert.deepEqual(markers(executorMethods.compact.input, 'input'), ['object']);
 });

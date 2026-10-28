@@ -2,6 +2,7 @@ import { sectionPath } from './section-route.js';
 
 /** The icon names a `settings-link` may carry (D9-15). */
 export type SectionIconName =
+  | 'user'
   | 'server'
   | 'zap'
   | 'wrench'
@@ -9,7 +10,7 @@ export type SectionIconName =
   | 'key-round';
 
 export interface SettingsSectionEntry {
-  readonly id: 'providers' | 'execution' | 'tools' | 'credentials';
+  readonly id: 'profile' | 'providers' | 'execution' | 'tools' | 'credentials';
   readonly label: string;
   readonly icon: SectionIconName;
   readonly order: number;
@@ -23,6 +24,14 @@ export interface SettingsSectionEntry {
 
 /** The sections this window offers, in the order the nav lists them. */
 export const sections = [
+  {
+    id: 'profile',
+    label: 'Profile',
+    icon: 'user',
+    order: 5,
+    description:
+      "Your name and time zone for the agent's prompts; with no time zone chosen, the host's own applies.",
+  },
   {
     id: 'providers',
     label: 'Providers',

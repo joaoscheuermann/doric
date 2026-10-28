@@ -1,10 +1,10 @@
 {
   "manifestVersion": 1,
   "id": "host-config",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "engines": { "doric": "^1.0.0" },
   "description": "Owner of the Doric configuration settings space.",
-  "provides": ["host-config.configuration/v1@1.0.0", "host-config/v1@1.0.0"],
+  "provides": ["host-config.configuration/v1@1.1.0", "host-config/v1@1.1.0"],
   "requires": [
     "hooks/v1@^1.0.0",
     "settings/v1@^1.0.0",

@@ -13,7 +13,11 @@ import {
 import { ConfigurationV1 } from 'host-config/contracts';
 import type { LlmProvider, ProviderMessage } from 'llms';
 import { createMessageStorage } from 'messages';
-import type { ExecutorRunInput, ExecutorRunResult } from 'runtime/contracts';
+import type {
+  ExecutorRunInput,
+  ExecutorRunResult,
+  SpawnAgent,
+} from 'runtime/contracts';
 import {
   type BoundTool,
   createToolStorage,
@@ -22,14 +26,27 @@ import {
   type ToolStorage,
 } from 'tool';
 
-import type { DefaultHooksV1 } from '../contracts/index.js';
+import type { AgentSummary, DefaultHooksV1 } from '../contracts/index.js';
+import { agentCatalog } from './agents/catalog.js';
+import { effectiveAgents, readWorkspaceAgents } from './agents/definitions.js';
+import { liveAgents } from './agents/live.js';
 import { withAttachments } from './attachments.js';
 import { compactionConfig, maybeCompactRun } from './compact.js';
 import { isContextOverflowError } from './compaction/project.js';
 import { coalesced } from './deltas.js';
 import { input } from './envelope.js';
 import { readMessages, readMeta, saved } from './history.js';
-import { systemPrompt } from './prompts/system.js';
+import {
+  checkTemplate,
+  loadTemplate,
+  render,
+  renderBlock,
+} from './prompts/templates.js';
+import {
+  type PromptVariables,
+  promptVariableNames,
+  type RunVariables,
+} from './prompts/variables.js';
 import { retainedKey, type Workflow } from './repository.js';
 import { skillCatalog } from './skills/catalog.js';
 import { liveCatalog } from './skills/live.js';
@@ -42,13 +59,51 @@ import { resolveToolConfigs } from './tool-config.js';
 // redacts, sanitizes, persists and publishes, and keeps the persistence retry.
 // The run writes through `coalesced`, so streamed deltas reach the log merged.
 
+/** `prompts/system.md`, checked at import against `promptVariableNames`; rendered per run. */
+const systemTemplate = loadTemplate(
+  new URL('./prompts/system.md', import.meta.url),
+  promptVariableNames,
+);
+
+/** `prompts/agent.md`, checked at import against the two names it may cite. */
+const agentTemplate = loadTemplate(
+  new URL('./prompts/agent.md', import.meta.url),
+  ['name', 'instructions'],
+);
+
 /**
- * The default agent's system prompt: `systemPrompt` when `section` is '', else
- * `${systemPrompt}\n\n${section}`. Used for human chats and delegated child
- * chats alike.
+ * The "# Agent: <name>" section for a Thread running as `agent`, without a
+ * leading or trailing newline: `agentTemplate` with the agent's name and its
+ * instructions, themselves rendered with the run's `variables`. Throws
+ * `checkTemplate`'s Error, named `agent <name>`, when the instructions cite a
+ * name outside `promptVariableNames`, use a partial or do not parse.
  */
-export const systemPromptWith = (section: string): string =>
-  section === '' ? systemPrompt : `${systemPrompt}\n\n${section}`;
+const agentSection = (agent: SpawnAgent, variables: PromptVariables): string =>
+  renderBlock(agentTemplate, {
+    name: agent.name,
+    instructions: render(
+      checkTemplate(
+        agent.instructions,
+        promptVariableNames,
+        `agent ${agent.name}`,
+      ),
+      variables,
+    ),
+  });
+
+/**
+ * The default agent's system prompt for `variables`:
+ * `renderBlock(systemTemplate, variables)` when `section` is '', else that
+ * text plus `\n\n${section}`. Used for human chats and delegated child chats
+ * alike. Pure; does not throw.
+ */
+export const systemPromptWith = (
+  variables: PromptVariables,
+  section: string,
+): string => {
+  const system = renderBlock(systemTemplate, variables);
+  return section === '' ? system : `${system}\n\n${section}`;
+};
 
 /**
  * What a restart interrupted a tool call with, handed back to the model as that
@@ -188,6 +243,21 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * `onBeforeModelRequestHook`, under the prompt's call. A standing
  * instruction (a retained bundle steer) is recorded in `meta.retained` when
  * the run stores it, so compaction keeps it and the workflow gives it once.
+ * The run's prompt variables are read once at its start, through `variables`,
+ * and stay the same for the whole run.
+ * At its start the run also reads the agents of `thread.cwd` (`builtInAgents`
+ * and the workspace's own, in parallel with the skills reads); their
+ * `# Agents` section goes before `# Skills`. Before every request after the
+ * first, a change of the agents with the working directory reaches the model
+ * as one "Agents changed" bundle instruction, given before the "Skills
+ * changed" one. A compaction makes the next check compare with the system
+ * prompt's agents again.
+ * The run resolves `thread.model ?? execution.model` and `thread.effort ??
+ * execution.effort` on `execution.providerId` once, for its agent loop and its
+ * automatic compaction; manual compaction (`compactThread`) keeps the
+ * execution model. A Thread running as an agent gets its `agentSection` before
+ * `# Agents`, never receives the coding workflow, and on invalid instructions
+ * rejects with `agentSection`'s Error before its first model request.
  */
 export const runPrompt = async (
   { thread, job, session }: ExecutorRunInput,
@@ -195,6 +265,8 @@ export const runPrompt = async (
   services: Services,
   hooks: HookHandle<typeof DefaultHooksV1>,
   workflow: Workflow,
+  variables: RunVariables,
+  builtInAgents: readonly AgentSummary[],
 ): Promise<Readonly<Pick<ExecutorRunResult, 'text'>>> => {
   const signal = call.signal;
   signal.throwIfAborted();
@@ -209,22 +281,40 @@ export const runPrompt = async (
   const boundary = checkpoints[job.id];
   const resume = boundary !== undefined && stored.length > boundary;
   const { configuration } = await services.use(ConfigurationV1).current(call);
+  const runVariables = variables(
+    thread.projectId,
+    configuration.profile,
+    call,
+    services,
+  );
   const compaction = compactionConfig(configuration);
   // `list` answers a promise when tools/v1 is in another process.
   const tools = boundTools(await services.use(ToolsV1).list(call));
-  const skills = await readRunSkills(thread.cwd, call, services);
+  const [skills, workspaceAgents] = await Promise.all([
+    readRunSkills(thread.cwd, call, services),
+    readWorkspaceAgents(thread.cwd, call, services),
+  ]);
   const catalog = skillCatalog(skills);
   const live = liveCatalog(
     { cwd: thread.cwd, skills, catalog },
     call,
     services,
   );
+  const agents = effectiveAgents(builtInAgents, workspaceAgents);
+  const agentsLive = liveAgents(
+    { cwd: thread.cwd, agents },
+    builtInAgents,
+    call,
+    services,
+  );
   const execution = configuration.models.execution;
+  const model = thread.model ?? execution.model;
+  const effort = thread.effort ?? execution.effort;
   const { languageModel } = await services.use(ModelsV1).resolve(
     {
       providerId: execution.providerId,
-      model: execution.model,
-      ...(execution.effort === undefined ? {} : { effort: execution.effort }),
+      model,
+      ...(effort === undefined ? {} : { effort }),
     },
     call,
   );
@@ -237,12 +327,6 @@ export const runPrompt = async (
       ? textProvider
       : withAttachments(textProvider, attachment);
   const messages = createMessageStorage(repaired(stored));
-  /**
-   * The history the run has built so far. A resumed run reads it back and
-   * continues from what it holds, so it is saved wherever it moved on rather
-   * than only when the run ends; a run that ends also writes what it left, so a
-   * paused prompt is durable before its pause is recorded.
-   */
   /**
    * The retained steers the run took and has not found in its storage yet,
    * by the exact text the agent stores for each.
@@ -262,15 +346,33 @@ export const runPrompt = async (
       retaining.delete(content);
     }
   };
+  /**
+   * The history the run has built so far. A resumed run reads it back and
+   * continues from what it holds, so it is saved wherever it moved on rather
+   * than only when the run ends; a run that ends also writes what it left, so a
+   * paused prompt is durable before its pause is recorded.
+   */
   const history = () => {
     settle();
     return saved(messages.list(), checkpoints, retained);
   };
-  const base = systemPromptWith(catalog.section);
+  const promptVariables = await runVariables;
+  const base = systemPromptWith(
+    promptVariables,
+    [
+      thread.agent === undefined
+        ? ''
+        : agentSection(thread.agent, promptVariables),
+      agentCatalog(agents),
+      catalog.section,
+    ]
+      .filter((section) => section !== '')
+      .join('\n\n'),
+  );
   const agent = createAgent({
     provider,
-    model: execution.model,
-    effort: execution.effort as AgentOptions['effort'],
+    model,
+    effort: effort as AgentOptions['effort'],
     system: async () =>
       (await hooks.onBeforeModelRequestHook.execute({ system: base }, call))
         .system,
@@ -298,7 +400,7 @@ export const runPrompt = async (
     messages,
   });
   let text = '';
-  /** Set once the first request was made: the skills are checked before every later one. */
+  /** Set once the first request was made: the agents and skills are checked before every later one. */
   let checked = false;
   /** Set once the run's generation process was lost; see below. */
   let lost = false;
@@ -306,12 +408,6 @@ export const runPrompt = async (
   let lastInputTokens: number | undefined;
   let lastOutputTokens: number | undefined;
   let contextWindow: number | undefined;
-  /**
-   * One compaction attempt between turns: skips or refuses without
-   * recording anything, condenses and re-bases the checkpoint map when it
-   * runs. The pre-run call projects the pending prompt on top of the
-   * resumed history; the between-turn calls project with real usage.
-   */
   /** Set once an overflow forced a condensation, so the run forces only one. */
   let overflowCondensed = false;
   const condenseOverflow = async () => {
@@ -319,6 +415,12 @@ export const runPrompt = async (
     overflowCondensed = true;
     await compactIfUnderPressure(0, true);
   };
+  /**
+   * One compaction attempt between turns: skips or refuses without
+   * recording anything, condenses and re-bases the checkpoint map when it
+   * runs. The pre-run call projects the pending prompt on top of the
+   * resumed history; the between-turn calls project with real usage.
+   */
   const compactIfUnderPressure = async (promptChars: number, force = false) => {
     settle();
     const result = await maybeCompactRun({
@@ -328,7 +430,7 @@ export const runPrompt = async (
       retained,
       config: compaction,
       provider: textProvider,
-      model: execution.model,
+      model,
       promptChars,
       ...(lastInputTokens === undefined ? {} : { lastInputTokens }),
       ...(lastOutputTokens === undefined ? {} : { lastOutputTokens }),
@@ -341,6 +443,7 @@ export const runPrompt = async (
       retained = result.retained;
       // A change message the summary replaced is told again.
       live.rebase();
+      agentsLive.rebase();
     }
   };
   // A long resumed history plus this run's input is the classic overflow:
@@ -361,6 +464,7 @@ export const runPrompt = async (
       {
         ...(thread.cwdRepo === undefined ? {} : { cwdRepo: thread.cwdRepo }),
         source: job.source,
+        ...(thread.agent === undefined ? {} : { agent: thread.agent }),
       },
       call,
     );
@@ -374,13 +478,16 @@ export const runPrompt = async (
           ? undefined
           : configuration.execution.maxToolResultChars,
       beforeRequest: async () => {
-        // The first request reads the skills the system prompt lists.
+        // The first request reads the agents and skills the system prompt lists.
         if (!checked) {
           checked = true;
           return [];
         }
-        const message = await live.refresh();
-        return message === undefined ? [] : [message];
+        const changes = await Promise.all([
+          agentsLive.refresh(),
+          live.refresh(),
+        ]);
+        return changes.filter((change) => change !== undefined);
       },
       ...(session.steers === undefined
         ? {}

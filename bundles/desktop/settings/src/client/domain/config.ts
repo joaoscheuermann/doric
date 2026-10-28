@@ -237,6 +237,16 @@ export type ContextCompactionConfig = {
   readonly charBudget: number;
 };
 
+/**
+ * The person the agent's prompts speak for, as the host keeps it. Both fields
+ * are optional, and a draft carries no `profile` at all rather than `{}`. An
+ * absent `timezone` means the host's own time zone applies.
+ */
+export type Profile = {
+  readonly name?: string;
+  readonly timezone?: string;
+};
+
 export type Configuration = {
   readonly providers: readonly ProviderConfiguration[];
   readonly models: {
@@ -261,6 +271,8 @@ export type Configuration = {
   readonly gitCredentialId?: string;
   /** The `API_TOKEN` credential GitHub authenticates with; absent for none. */
   readonly githubCredentialId?: string;
+  /** Name and time zone for the agent's prompts; absent for neither. */
+  readonly profile?: Profile;
 };
 
 /**
@@ -310,6 +322,9 @@ const credentialNameLimit = 128;
 const usernameLimit = 128;
 const emailLimit = 254;
 const secretLimit = 512;
+
+/** The bound the host enforces on a profile name, after trimming. */
+const profileNameLimit = 100;
 
 /**
  * A secret carries no whitespace or control character, which is what lets a
@@ -497,7 +512,7 @@ const contextCompactionIssue = (
  * rest of the surface uses, or `undefined` when it would accept it. The rules
  * are the host's, in the order a person would fix them: a usable provider list
  * first, then the model that runs against it, then the turn limit, then a
- * context-compaction policy the draft names.
+ * context-compaction policy the draft names, then the profile.
  *
  * The kind catalog travels in because a provider's fields and lists are the
  * kind's to declare: without it this module cannot say what a provider must
@@ -563,7 +578,32 @@ export const configurationIssue = (
     const issue = contextCompactionIssue(compaction);
     if (issue !== undefined) return issue;
   }
+  return profileIssue(configuration.profile);
+};
+
+/** The first reason the host would refuse a profile, or `undefined`. */
+const profileIssue = (profile: Profile | undefined): string | undefined => {
+  const name = profile?.name?.trim();
+  if (name !== undefined && (name === '' || name.length > profileNameLimit)) {
+    return `Enter a name between 1 and ${profileNameLimit} characters, or leave it empty.`;
+  }
+  if (name !== undefined && /[\r\n]/.test(name)) {
+    return 'Enter a name on one line.';
+  }
+  if (profile?.timezone !== undefined && !isTimeZone(profile.timezone)) {
+    return 'Choose a time zone this computer knows, or the host time zone.';
+  }
   return undefined;
+};
+
+/** Whether Intl knows `value` as a time zone; `''` is not one. */
+const isTimeZone = (value: string): boolean => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -949,7 +989,7 @@ export const applyProviderDraft = (
 /**
  * Whether two configurations describe the same host state. The host owns the
  * configuration, so a change is sent only when the draft differs from the copy
- * the host returned.
+ * the host returned. An absent profile and one with no fields are the same.
  */
 export const isSameConfiguration = (
   left: Configuration,
@@ -970,7 +1010,9 @@ export const isSameConfiguration = (
   ) &&
   isSameToolValues(left.tools, right.tools) &&
   left.gitCredentialId === right.gitCredentialId &&
-  left.githubCredentialId === right.githubCredentialId;
+  left.githubCredentialId === right.githubCredentialId &&
+  left.profile?.name === right.profile?.name &&
+  left.profile?.timezone === right.profile?.timezone;
 
 /**
  * Whether two tool-value maps describe the same values. A missing map and an
@@ -1655,3 +1697,55 @@ export const updateCredentialChoice = (
   else next[field] = id;
   return next;
 };
+
+/**
+ * The configuration with one profile field set, or cleared with `undefined` or
+ * `''`. A profile left with no field is removed, so a draft never carries
+ * `profile: {}`.
+ */
+const updateProfile = (
+  configuration: Configuration,
+  field: keyof Profile,
+  value: string | undefined,
+): Configuration => {
+  const profile = { ...configuration.profile };
+  if (value === undefined || value === '') delete profile[field];
+  else profile[field] = value;
+  const next = { ...configuration };
+  if (Object.keys(profile).length === 0) delete next.profile;
+  else next.profile = profile;
+  return next;
+};
+
+/**
+ * Sets the profile's name as typed, or clears it with `''`. The text is kept
+ * untrimmed; the host trims on save, and `configurationIssue` reports a name
+ * that is only whitespace.
+ */
+export const updateProfileName = (
+  configuration: Configuration,
+  name: string,
+): Configuration => updateProfile(configuration, 'name', name);
+
+/**
+ * Sets the profile's time zone, or clears it with `undefined` or `''`. A cleared
+ * zone means "the host's time zone". The zone is not checked here;
+ * `configurationIssue` does that.
+ */
+export const updateProfileTimezone = (
+  configuration: Configuration,
+  timezone: string | undefined,
+): Configuration => updateProfile(configuration, 'timezone', timezone);
+
+/**
+ * The time zones the picker offers: every `supported` zone, plus `'UTC'`, plus
+ * `current` when it is a non-empty string (so a stored zone the list leaves out
+ * still shows). Each appears once, in ascending code-unit order (plain
+ * `Array.prototype.sort`, which gives the same order under any ICU).
+ * The input array is not mutated, and nothing is thrown.
+ */
+export const timeZoneChoices = (
+  supported: readonly string[],
+  current: string | undefined,
+): readonly string[] =>
+  [...new Set([...supported, 'UTC', ...(current ? [current] : [])])].sort();

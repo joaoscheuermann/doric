@@ -46,6 +46,18 @@ export const defaultContextCompaction: ContextCompactionConfig = {
   charBudget: 200000,
 };
 
+/**
+ * The profile a configuration carries, mirrored structurally from the
+ * bundle's schema. The provider is the one that validates: `name` is trimmed,
+ * 1–100 characters, one line; `timezone` is an IANA zone the host knows.
+ * This contract passes the value through unchanged. An absent `timezone`
+ * means the host's own time zone applies.
+ */
+export interface ConfigurationProfile {
+  readonly name?: string;
+  readonly timezone?: string;
+}
+
 export interface ConfigurationValue {
   readonly providers: readonly ConfigurationProvider[];
   readonly models: {
@@ -63,6 +75,11 @@ export interface ConfigurationValue {
   readonly tools?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly gitCredentialId?: string;
   readonly githubCredentialId?: string;
+  /**
+   * The person the prompts speak for. Absent means no name and the host's time
+   * zone, so every configuration written before this field stays valid.
+   */
+  readonly profile?: ConfigurationProfile;
 }
 
 /** The exact GET /config body. */
@@ -132,6 +149,12 @@ export const configurationValueSchema: z.ZodType<
   tools: z.record(z.string(), z.record(z.string(), z.string())).optional(),
   gitCredentialId: z.string().optional(),
   githubCredentialId: z.string().optional(),
+  profile: z
+    .looseObject({
+      name: z.string().optional(),
+      timezone: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const doricConfigurationSchema: z.ZodType<

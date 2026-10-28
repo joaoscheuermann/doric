@@ -5,11 +5,6 @@ import type { ProviderMessage } from 'llms';
 
 import { applyCompaction } from '../src/host/compaction/compact.js';
 import {
-  loadedSkillCutPrompt,
-  loadedSkillsOmittedPrompt,
-  loadedSkillsPrompt,
-} from '../src/host/prompts/skills.js';
-import {
   LOADED_SKILL_MAX_CHARS_PER_ENTRY,
   LOADED_SKILLS_MAX_CHARS,
   type LoadedSkill,
@@ -27,6 +22,11 @@ import {
   toolFailure,
   toolResult,
 } from './support/envelopes.js';
+import {
+  loadedSkillCutPrompt,
+  loadedSkillsOmittedPrompt,
+  loadedSkillsPrompt,
+} from './support/prompts.js';
 
 /*
  * The skills a conversation loaded, read back from its history, and the one

@@ -107,7 +107,7 @@ export interface HostConfig {
 
 const id = 'host-config';
 const version = '0.0.0';
-const contractVersion = '1.0.0';
+const contractVersion = '1.1.0';
 
 export const createHostConfig = (): HostConfig => {
   let view: (() => SecretsView) | undefined;

@@ -14,13 +14,16 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
+      "path": "../../foundation/host-config"
+    },
+    {
       "path": "../../../packages/tool"
     },
     {
       "path": "../../runtime/runtime"
     },
     {
-      "path": "../../../packages/desktop"
+      "path": "../../runtime/default"
     },
     {
       "path": "../../../packages/bundle"
@@ -30,6 +33,9 @@
     },
     {
       "path": "../../desktop/chat"
+    },
+    {
+      "path": "../../../packages/desktop"
     }
   ],
   "exclude": ["src/client/**"]

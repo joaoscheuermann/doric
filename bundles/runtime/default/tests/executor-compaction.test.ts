@@ -484,3 +484,93 @@ void test('a usage event that arrives mid-stream does not condense before the tu
   assert.notEqual(started, -1);
   assert.ok(started > types.indexOf('response.finished'));
 });
+
+/** The `# Agent` section of the agent `reviewer` that reviews the diff. */
+const reviewerSection = [
+  '# Agent: reviewer',
+  'You run as the reviewer agent. Follow these instructions; they take precedence over general guidance for how to do your task.',
+  'Review the diff.',
+].join('\n\n');
+
+void test('EX6 an agent Thread keeps its # Agent section after a manual compaction, and the history never holds its instructions', async () => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(20),
+      { role: 'user' as const, content: 'recent' },
+    ],
+    checkpoints: { 'old-prompt': 20 },
+  });
+  const services = bundleServices({
+    configuration: compactionConfiguration({ charBudget: 100_000_000 }),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: (request: ProviderRequest) =>
+        summarizing(request)
+          ? summaryAnswer()
+          : finishing(requests).stream(request),
+    },
+  });
+  await services.activate();
+  const agentThread = {
+    ...thread(),
+    agent: {
+      name: 'reviewer',
+      source: 'workspace' as const,
+      instructions: 'Review the diff.',
+    },
+  };
+
+  const result = await services.executor(scope).compact({
+    thread: agentThread,
+    session: state.session('compaction-agent'),
+    policy: { tailMinMessages: 2, summaryMaxChars: 6000 },
+  });
+  assert.equal(result.status, 'compacted');
+
+  assert.equal(
+    await runPrompt(services, state, 'continue', { thread: agentThread }),
+    'done',
+  );
+
+  const run = requests.at(-1);
+  assert.ok(String(run?.messages[0]?.content).includes(reviewerSection));
+  assert.ok(
+    (run?.messages ?? []).some((message) =>
+      String(message.content).startsWith('[Context summary]'),
+    ),
+  );
+  const stored = (state.parts().messages ?? []) as readonly ProviderMessage[];
+  assert.ok(
+    stored.every(
+      ({ content }) => !String(content).includes('Review the diff.'),
+    ),
+  );
+});
+
+void test('EX2b a resumed run of a Thread with its own model condenses with that model', async () => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(20),
+      { role: 'user' as const, content: 'recent' },
+    ],
+    checkpoints: { 'old-prompt': 20 },
+  });
+  const services = bundleServices({
+    configuration: compactionConfiguration(),
+    provider: finishing(requests),
+  });
+  await services.activate();
+
+  await runPrompt(services, state, 'continue', {
+    thread: { model: 'thread-model' },
+  });
+
+  const summary = requests.find(summarizing);
+  assert.ok(summary !== undefined, 'the run condensed its history');
+  assert.equal(summary.model, 'thread-model');
+  assert.equal(requests.at(-1)?.model, 'thread-model');
+});

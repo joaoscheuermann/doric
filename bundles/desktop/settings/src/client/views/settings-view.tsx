@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 import { sectionIcon } from '../components/molecules/section-icon.js';
 import { SettingsCredentials } from '../components/organisms/settings-credentials.js';
 import { SettingsExecution } from '../components/organisms/settings-execution.js';
+import { SettingsProfile } from '../components/organisms/settings-profile.js';
 import { SettingsProviderScreen } from '../components/organisms/settings-provider.js';
 import { SettingsProviders } from '../components/organisms/settings-providers.js';
 import { SettingsTools } from '../components/organisms/settings-tools.js';
@@ -92,6 +93,8 @@ function Section({
   readonly onEdit: (index: number) => void;
 }) {
   switch (id) {
+    case 'profile':
+      return <SettingsProfile draft={draft} onChange={onChange} />;
     case 'providers':
       return (
         <SettingsProviders
@@ -124,11 +127,12 @@ const useRoute = (services: Services) => {
 
 /** The connected host of one section element, if its route is showing. */
 const useSectionHost = (id: SectionId | undefined): HTMLElement | undefined => {
+  const profile = sectionHosts.profile.useHosts();
   const providers = sectionHosts.providers.useHosts();
   const execution = sectionHosts.execution.useHosts();
   const tools = sectionHosts.tools.useHosts();
   const credentials = sectionHosts.credentials.useHosts();
-  const hosts = { providers, execution, tools, credentials };
+  const hosts = { profile, providers, execution, tools, credentials };
   return id === undefined ? undefined : hosts[id].at(-1)?.element;
 };
 
