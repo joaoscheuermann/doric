@@ -278,6 +278,9 @@ describe('doric.notifications/v1 (broker)', () => {
         lastPath: () => null,
         focus: () => false,
         navigate: async () => undefined,
+        capture: async () => {
+          throw new Error('unused');
+        },
       },
       menus,
       cacheDirectory: async () => '/cache',
@@ -349,6 +352,9 @@ describe('doric.windows/v1 focus (broker)', () => {
           return key === 'settings';
         },
         navigate: async () => undefined,
+        capture: async () => {
+          throw new Error('unused');
+        },
       },
       menus,
       cacheDirectory: async () => '/cache',

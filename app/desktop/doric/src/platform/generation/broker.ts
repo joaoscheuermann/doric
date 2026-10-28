@@ -37,7 +37,7 @@ import type { NativeWindows } from '../windows/native-windows';
 export interface BrokerDeps {
   readonly windows: Pick<
     NativeWindows,
-    'open' | 'focusOrOpen' | 'lastPath' | 'focus' | 'navigate'
+    'open' | 'focusOrOpen' | 'lastPath' | 'focus' | 'navigate' | 'capture'
   >;
   readonly menus: Pick<
     NativeMenus,
@@ -107,6 +107,12 @@ export const provideBroker = (platform: Principal, deps: BrokerDeps): void => {
         output: windows.navigate.output,
         execute: (input: { key: string; path: string }) =>
           deps.windows.navigate(input),
+      }),
+      capture: defineMethod({
+        input: windows.capture.input,
+        output: windows.capture.output,
+        execute: (input: Parameters<BrokerDeps['windows']['capture']>[0]) =>
+          deps.windows.capture(input),
       }),
     }),
   );

@@ -1,12 +1,21 @@
 // The `doric://app` protocol handler (doric-protocol.md): technical assets
-// under `/platform/`, `/bundles/`, `/schemas/` and `/artifacts/`, a 404 for
-// any missing file under them, and the shell for every other path.
+// under `/platform/`, `/bundles/`, `/schemas/` and `/artifacts/`, the preview
+// frame document under `/frame/`, a 404 for any missing file under them, and
+// the shell for every other path.
+//
+// A preview frame has an opaque origin, so every module, font and sheet it
+// loads is a cross-origin CORS request: only what a frame needs answers
+// `Access-Control-Allow-Origin: *` — `/frame/*`, `/platform/*`,
+// `/artifacts/*` and `/bundles/<id>@<version>/client/frames/*`
+// (docs/architecture/bundles/papercraft/isolamento.md). The rest of
+// `/bundles/`, `/schemas/` and the shell stay same-origin only.
 
 import { readFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
-import { packagedCsp } from './csp';
+import { splashCsp } from './csp';
 import type { DevProxy } from './dev-proxy';
+import { FRAME_BOOT_SCRIPT, type FrameDocument } from './frame';
 import { mimeOf } from './mime';
 import type { Resources } from './resources';
 import { DORIC_ORIGIN_HOST, DORIC_SCHEME } from './scheme';
@@ -35,7 +44,11 @@ export type RouteDecision =
       readonly revision: number;
       readonly segments: readonly string[];
     }
-  | { readonly type: 'schema'; readonly segments: readonly string[] };
+  | { readonly type: 'schema'; readonly segments: readonly string[] }
+  /** `/frame/index.html`: the preview frame document. */
+  | { readonly type: 'frame-document' }
+  /** `/frame/boot.js`: the frame's boot script. */
+  | { readonly type: 'frame-boot' };
 
 const notFound: RouteDecision = Object.freeze({ type: 'not-found' });
 
@@ -83,6 +96,20 @@ export const route = (
   }
 
   const { pathname } = url;
+
+  if (pathname.startsWith('/frame/')) {
+    const segments = segmentsOf(pathname.slice('/frame/'.length));
+
+    if (segments?.length === 1 && segments[0] === 'index.html') {
+      return { type: 'frame-document' };
+    }
+
+    if (segments?.length === 1 && segments[0] === 'boot.js') {
+      return { type: 'frame-boot' };
+    }
+
+    return notFound;
+  }
 
   for (const prefix of [
     '/platform/',
@@ -198,6 +225,8 @@ export interface ServedArtifacts {
 export interface ProtocolDeps {
   readonly resources: Resources;
   readonly shell: ShellRenderer;
+  /** The preview frame document (`/frame/index.html`). */
+  readonly frame: FrameDocument;
   readonly bundles: ServedBundles;
   /** Verified artifact revisions (`/artifacts/<artifactId>@<revision>/…`). */
   readonly artifacts: ServedArtifacts;
@@ -206,15 +235,57 @@ export interface ProtocolDeps {
   readonly readFile?: (path: string) => Promise<Uint8Array>;
 }
 
+/** Whether a preview frame (an opaque origin) may load this route's files. */
+const framesMayLoad = (decision: RouteDecision): boolean => {
+  switch (decision.type) {
+    case 'frame-document':
+    case 'frame-boot':
+    case 'platform':
+    case 'artifact':
+      return true;
+    case 'bundle':
+      return (
+        decision.segments.length > 2 &&
+        decision.segments[0] === 'client' &&
+        decision.segments[1] === 'frames'
+      );
+    default:
+      return false;
+  }
+};
+
+const CORS = { 'access-control-allow-origin': '*' } as const;
+
 const notFoundResponse = (): Response =>
   new Response('Not found', {
     status: 404,
     headers: { 'content-type': 'text/plain' },
   });
 
+/**
+ * Whether a request for an app path is a document's navigation, the one kind
+ * the shell answers. A subresource (a font, an image, a script, a fetch) at a
+ * path no route serves is a 404: answered with the shell's HTML, it would be
+ * read as the font or image it asked for. Electron hands a custom scheme's
+ * handler no `Sec-Fetch-Dest`, so the request's `Accept` decides, as the dev
+ * server's history fallback does (`htmlAcceptHeaders`): a navigation accepts
+ * HTML. A request that names neither is taken as a navigation.
+ */
+const navigates = (headers: Headers | undefined): boolean => {
+  const destination = headers?.get('sec-fetch-dest');
+  if (destination !== null && destination !== undefined) {
+    return destination === 'document';
+  }
+
+  const accept = headers?.get('accept');
+  if (accept === null || accept === undefined) return true;
+
+  return /\b(?:text\/html|application\/xhtml\+xml)\b/iu.test(accept);
+};
+
 /** Answers one request; every failure is a 404, never the shell. */
 export const respond = async (
-  request: { readonly url: string },
+  request: { readonly url: string; readonly headers?: Headers },
   deps: ProtocolDeps,
 ): Promise<Response> => {
   let url: URL;
@@ -227,10 +298,13 @@ export const respond = async (
 
   const decision = route(url, { shell: deps.resources.shellVersion });
   const read = deps.readFile ?? ((path: string) => readFile(path));
+  const cors = framesMayLoad(decision) ? CORS : {};
   const serve = async (
     path: string | undefined,
-    headers: Record<string, string> = {},
+    extra: Record<string, string> = {},
   ): Promise<Response> => {
+    const headers = { ...cors, ...extra };
+
     if (path === undefined) {
       return notFoundResponse();
     }
@@ -254,6 +328,8 @@ export const respond = async (
     case 'not-found':
       return notFoundResponse();
     case 'shell': {
+      if (!navigates(request.headers)) return notFoundResponse();
+
       const { html, csp } = await deps.shell.render();
 
       return new Response(html, {
@@ -264,10 +340,24 @@ export const respond = async (
         },
       });
     }
+    case 'frame-document':
+      return new Response(deps.frame.html, {
+        status: 200,
+        headers: {
+          'content-type': 'text/html',
+          'content-security-policy': deps.frame.csp,
+          ...cors,
+        },
+      });
+    case 'frame-boot':
+      return new Response(FRAME_BOOT_SCRIPT, {
+        status: 200,
+        headers: { 'content-type': 'text/javascript', ...cors },
+      });
     case 'splash':
       return await serve(
         insideRoot(deps.resources.platformRoot, decision.segments),
-        { 'content-security-policy': packagedCsp() },
+        { 'content-security-policy': splashCsp() },
       );
     case 'shell-asset':
       if (deps.devProxy !== undefined) {
