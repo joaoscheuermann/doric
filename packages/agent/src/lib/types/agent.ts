@@ -88,11 +88,18 @@ export interface AgentRunOptions<
   readonly maxTurns?: number;
   readonly maxToolCallRepairs?: number;
   /**
-   * The most a single tool result may carry into the model, in characters.
-   * Absent means no cap. The full result is always stored on the record, so this
-   * only bounds what the next turn reads.
+   * The most characters one tool answer may carry into the model.
+   * A number caps every tool. A function is called each time a call is answered, with the tool's
+   * name: `ToolCallRecord.toolName` for a result, `ToolCall.name` for a failure.
+   * Absent, or `undefined` from the function, means no cap for that call.
+   * Over the cap, the text keeps its first `cap` characters and then
+   * `\n… [truncated <omitted> of <total> characters]`.
+   * The full output is always kept on the record, so this only limits what the next turn reads.
+   * A function that throws ends the run with its error.
    */
-  readonly maxToolResultChars?: number;
+  readonly maxToolResultChars?:
+    | number
+    | ((toolName: string) => number | undefined);
   readonly signal?: AbortSignal;
   /**
    * Takes the messages a caller sent the running loop since it last asked.
@@ -104,6 +111,32 @@ export interface AgentRunOptions<
    * stay with the caller.
    */
   readonly steering?: () => readonly string[] | Promise<readonly string[]>;
+
+  /**
+   * User messages the caller adds right before a provider request.
+   *
+   * When it is called:
+   * - once before every provider request of a `complete` or `stream` run, the first one included,
+   *   and also before repair turns (structured output or tool calls);
+   * - after the turn is counted and the signal is checked;
+   * - before the loop reads the tool definitions, the system prompt and the history for that
+   *   request. So a tool that becomes visible because of the message is offered in that same request.
+   *
+   * What it returns: each string is stored in order as a `role: 'user'` message at the end of the
+   * history. `[]` adds nothing.
+   *
+   * What the caller can rely on:
+   * - Every tool call in the history already has its result at that point, so a message never sits
+   *   between a call and its result.
+   * - Unlike `steering`, it emits no `agent.steered` event, uses no turn, and does not change
+   *   `steering`'s schedule.
+   * - It is never called when no request follows: a finished answer, a resumed history that is
+   *   already answered, an accepted structured result, or a used-up turn budget (`turns.begin()`
+   *   throws first). So it never makes a finished run continue.
+   *
+   * Failure: a rejection ends the run with that error. Messages already stored stay.
+   */
+  readonly beforeRequest?: () => readonly string[] | Promise<readonly string[]>;
   readonly schema?: Schema;
   readonly onStructuredAttempt?: (
     event: AgentStructuredAttemptEvent,

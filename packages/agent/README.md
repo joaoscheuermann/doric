@@ -119,18 +119,19 @@ awaited tool lifecycle through `onToolEvent` without exposing a stream.
 
 Per-run options for `complete` and `stream`:
 
-| Option                | Effect                                                                     |
-| --------------------- | -------------------------------------------------------------------------- |
-| `resume`              | Continue the stored history without appending the input again.             |
-| `steering`            | Supplies user messages to insert into the run in flight.                   |
-| `maxTurns`            | Bounds provider invocations; unbounded when omitted.                       |
-| `maxToolCallRepairs`  | Overrides the default budget of two corrected submissions.                 |
-| `maxToolResultChars`  | Caps the characters of one tool result sent to the model; no cap if unset. |
-| `schema`              | Requests structured output validated against the schema.                   |
-| `signal`              | Cancels the run.                                                           |
-| `onToolEvent`         | Awaited callback for `tool.started`, `tool.finished`, and `tool.failed`.   |
-| `onToolCallRepair`    | Receives safe attempt counters when a tool-call turn is retried.           |
-| `onStructuredAttempt` | Receives safe evidence for each terminal structured-output submission.     |
+| Option                | Effect                                                                                                                                                |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resume`              | Continue the stored history without appending the input again.                                                                                        |
+| `steering`            | Supplies user messages to insert into the run in flight.                                                                                              |
+| `beforeRequest`       | Supplies user messages stored right before each provider request.                                                                                     |
+| `maxTurns`            | Bounds provider invocations; unbounded when omitted.                                                                                                  |
+| `maxToolCallRepairs`  | Overrides the default budget of two corrected submissions.                                                                                            |
+| `maxToolResultChars`  | Caps the characters of one tool answer sent to the model: a number for every tool, or a function of the tool name; unset or `undefined` means no cap. |
+| `schema`              | Requests structured output validated against the schema.                                                                                              |
+| `signal`              | Cancels the run.                                                                                                                                      |
+| `onToolEvent`         | Awaited callback for `tool.started`, `tool.finished`, and `tool.failed`.                                                                              |
+| `onToolCallRepair`    | Receives safe attempt counters when a tool-call turn is retried.                                                                                      |
+| `onStructuredAttempt` | Receives safe evidence for each terminal structured-output submission.                                                                                |
 
 ## Behavior
 
@@ -173,6 +174,17 @@ as a user message before its next provider turn; streaming emits one
 writes its final answer therefore continues the run. The loop never asks when
 no turn is left or when a structured run submits its result, so those messages
 stay with the caller.
+
+### Messages before a request
+
+Pass `beforeRequest` to add context right before each provider request,
+repair turns included. The loop calls it after the turn is counted and before
+it reads the tool definitions, the system prompt and the history, so a tool the
+message makes visible is offered in that same request. Each returned string is
+stored as a user message at the end of the history, after every tool result of
+the last batch. Unlike `steering`, it emits no `agent.steered` event, uses no
+turn, and never makes a finished run continue: it is not called when no request
+follows. A rejection ends the run with its error.
 
 ### Turn limits
 
