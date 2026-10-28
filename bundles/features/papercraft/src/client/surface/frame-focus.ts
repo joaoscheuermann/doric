@@ -1,12 +1,14 @@
 // `frame-focus.ts` — the node's focus is the frame's: the canvas, the open
 // input, the header's and the footer's controls all keep it, and so does the
-// preview's iframe. Unfocused, the first press on the frame only focuses it
-// and the click it makes is consumed: on the app's own elements it is
-// captured before anything sees it; over the preview, the iframe swallows it
-// itself (the `first` input capture) and only reports it, and the canvas
-// treats that report as the press that focused it. The window is always
-// focused, so none of this applies to it.
-
+// preview's iframe. Confirming or cancelling the open input, and cancelling or
+// closing the open thread (Esc or its close button), hand focus to the canvas
+// first, so it never leaves the node; a blur to outside the canvas does not
+// refocus it. Unfocused, the first press on the frame only focuses it and the
+// click it makes is consumed: on the app's own elements it is captured before
+// anything sees it; over the preview, the iframe swallows it itself (the
+// `first` input capture) and only reports it, and the canvas treats that report
+// as the press that focused it. The window is always focused, so none of this
+// applies to it.
 import {
   type RefObject,
   useCallback,

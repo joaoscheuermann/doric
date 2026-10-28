@@ -1264,7 +1264,10 @@ the label `element · file:line` follows the pointer in any mode, focused or
 not: to the element a comment would land on while the comment tool is armed
 (`Alt` forces a free point), else to the element under the pointer; nothing is
 outlined while the canvas pans, and the outline goes when the pointer leaves
-the canvas. Opening a pin that
+the canvas. Confirming or cancelling the open input, and cancelling or
+closing the open thread (`Esc` or its close button), hand focus to the canvas
+before the field unmounts; after a blur to outside, the next press on the node
+only focuses it. Opening a pin that
 already holds its first comment shows a thread popover (header
 `N Component:line`, a menu, resolve or reopen on sent roots, close; messages
 with avatar, name and time; a reply field): replies go to the stack with
