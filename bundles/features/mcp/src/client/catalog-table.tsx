@@ -71,8 +71,10 @@ export function CatalogTable({
 
   return (
     // A legend cannot share a flex row with the filter, so the title names the
-    // fieldset through aria-labelledby instead.
-    <FieldSet className="gap-2" aria-labelledby={titleId}>
+    // fieldset through aria-labelledby instead. A fieldset is at least as wide
+    // as its content by default; min-w-0 keeps it to the dialog's width so a
+    // long name scrolls the table sideways instead.
+    <FieldSet className="min-w-0 gap-2" aria-labelledby={titleId}>
       <div className="flex items-center justify-between gap-2">
         <FieldTitle id={titleId}>{words.legend}</FieldTitle>
         <InputGroup className="w-56">
@@ -113,7 +115,7 @@ export function CatalogTable({
                   <TableCell>
                     <span className="font-mono">{item.name}</span>
                   </TableCell>
-                  <TableCell className="whitespace-normal">
+                  <TableCell className="min-w-64 whitespace-normal">
                     <span className="line-clamp-2 text-muted-foreground">
                       {item.description}
                     </span>

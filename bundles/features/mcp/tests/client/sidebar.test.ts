@@ -1392,9 +1392,9 @@ test('W5 editing a server starts from its view and updates it by id', async () =
     // dialog's default max width cannot narrow it.
     const content = dialog.closest('[data-slot="dialog-content"]');
     assert.deepEqual(
-      [content !== null, hasClass(content, 'sm:max-w-xl!')],
+      [content !== null, hasClass(content, 'sm:max-w-3xl!')],
       [true, true],
-      'The dialog content is not sm:max-w-xl!.',
+      'The dialog content is not sm:max-w-3xl!.',
     );
 
     // The editor has no tabs: its fields and the server's tools and skills

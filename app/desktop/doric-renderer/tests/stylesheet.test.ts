@@ -260,7 +260,7 @@ describe('window stylesheets', () => {
       ) {
         if (
           node.type === 'rule' &&
-          selectorList(node as postcss.Rule).includes('.sm\\:max-w-xl\\!')
+          selectorList(node as postcss.Rule).includes('.sm\\:max-w-3xl\\!')
         ) {
           inRule = true;
         }
