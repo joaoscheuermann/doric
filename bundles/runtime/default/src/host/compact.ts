@@ -22,6 +22,10 @@ import { CompactionError } from './compaction/errors.js';
 import { projection } from './compaction/project.js';
 import { createSummarizer } from './compaction/summarize.js';
 import { readMessages, readMeta, saved } from './history.js';
+import {
+  loadedSkillsMaxChars,
+  loadedSkillsReplacement,
+} from './skills/loaded.js';
 
 /*
  * The executor's compaction participation: the seam's on-demand `compact`
@@ -126,7 +130,8 @@ export const compactThread = async (
   services: Services,
 ): Promise<ExecutorCompactionResult> => {
   const { configuration } = await services.use(ConfigurationV1).current(call);
-  if (!compactionConfig(configuration).enabled) {
+  const config = compactionConfig(configuration);
+  if (!config.enabled) {
     return { status: 'refused', reason: 'disabled' };
   }
   const stored = await readMessages(session.history);
@@ -150,6 +155,12 @@ export const compactThread = async (
         call.signal,
       ),
     );
+    const replace = loadedSkillsReplacement(
+      stored,
+      retained,
+      plan.end,
+      loadedSkillsMaxChars(config.charBudget),
+    );
     const applied = applyCompaction({
       messages: stored,
       meta: { checkpoints, messageCount: stored.length, retained },
@@ -157,6 +168,7 @@ export const compactThread = async (
       trigger: 'manual',
       summaryId,
       summary,
+      ...(replace === undefined ? {} : { replace }),
     });
     await session.record({
       history: saved(
@@ -263,6 +275,12 @@ export const maybeCompactRun = async (options: {
       summarizedSpan(stored, { retained: options.retained }, plan.end),
       options.signal,
     );
+    const replace = loadedSkillsReplacement(
+      stored,
+      options.retained,
+      plan.end,
+      loadedSkillsMaxChars(config.charBudget),
+    );
     const applied = applyCompaction({
       messages: stored,
       meta: {
@@ -274,6 +292,7 @@ export const maybeCompactRun = async (options: {
       trigger: 'automatic',
       summaryId,
       summary,
+      ...(replace === undefined ? {} : { replace }),
     });
     await options.session.record({
       history: saved(

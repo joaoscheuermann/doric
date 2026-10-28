@@ -49,6 +49,50 @@ export const keptIndexes = (
     .filter((index) => index >= start && index < end)
     .sort((left, right) => left - right);
 
+/** A retained message a rewrite swaps instead of keeping. */
+export interface RetainedReplacement {
+  /** its meta.retained key */
+  readonly key: string;
+  /** placed after the summary and the span's other kept retained messages; absent → the key is removed */
+  readonly message?: ProviderMessage;
+}
+
+/** The index of the message `replace` swaps when the span holds it, else undefined. */
+const swappedIndex = (
+  meta: Pick<HistoryMeta, 'retained'>,
+  start: number,
+  end: number,
+  replace?: RetainedReplacement,
+): number | undefined => {
+  const index =
+    replace === undefined ? undefined : meta.retained?.[replace.key];
+  return index !== undefined && index >= start && index < end
+    ? index
+    : undefined;
+};
+
+/** The span's retained message indexes a rewrite keeps verbatim: all but the swapped one. */
+const keptBy = (
+  meta: Pick<HistoryMeta, 'retained'>,
+  start: number,
+  end: number,
+  replace?: RetainedReplacement,
+): readonly number[] => {
+  const swapped = swappedIndex(meta, start, end, replace);
+  return keptIndexes(meta, start, end).filter((index) => index !== swapped);
+};
+
+/** How many messages take the span's place: the summary, the kept and the swapped-in one. */
+const insertedCount = (
+  meta: Pick<HistoryMeta, 'retained'>,
+  start: number,
+  end: number,
+  replace?: RetainedReplacement,
+): number =>
+  1 +
+  keptBy(meta, start, end, replace).length +
+  (replace?.message === undefined ? 0 : 1);
+
 /** The span's messages the summarizer condenses: all but the retained ones. */
 export const condensedSpan = (
   messages: readonly ProviderMessage[],
@@ -81,16 +125,17 @@ export const condensibleEnd = (
  * span, boundaries inside the span dropped (their prompts were condensed),
  * boundaries at `start` dropped too — the prompt they open is gone. The
  * checkpoint exactly at `end` survives: its prompt starts where the tail
- * begins.
+ * begins. `replace` changes how many messages sit before the tail.
  */
 export const rebasedCheckpoints = (
   meta: HistoryMeta,
   start: number,
   end: number,
+  replace?: RetainedReplacement,
 ): Readonly<Record<string, number>> => {
   const removed = end - start;
   // The summary and the retained messages now sit before the tail.
-  const inserted = 1 + keptIndexes(meta, start, end).length;
+  const inserted = insertedCount(meta, start, end, replace);
   const checkpoints: Record<string, number> = {};
   for (const [id, boundary] of Object.entries(meta.checkpoints)) {
     if (boundary >= start && boundary < end) continue;
@@ -103,25 +148,32 @@ export const rebasedCheckpoints = (
 /**
  * The retained indexes a rewrite leaves: a retained message of the span moves
  * to its place after the summary, one past the span re-bases like a
- * boundary, one before it stays.
+ * boundary, one before it stays. The key `replace` names points at its new
+ * message, after the kept ones, or is removed when it has none.
  */
 export const rebasedRetained = (
   meta: HistoryMeta,
   start: number,
   end: number,
+  replace?: RetainedReplacement,
 ): Readonly<Record<string, number>> => {
-  const kept = keptIndexes(meta, start, end);
+  const kept = keptBy(meta, start, end, replace);
   const removed = end - start;
-  return Object.fromEntries(
-    Object.entries(meta.retained ?? {}).map(([key, index]) => [
+  const inserted = insertedCount(meta, start, end, replace);
+  const entries = Object.entries(meta.retained ?? {})
+    .filter(([key]) => key !== replace?.key)
+    .map(([key, index]): [string, number] => [
       key,
       index < start
         ? index
         : index < end
           ? start + 1 + kept.indexOf(index)
-          : index - removed + 1 + kept.length,
-    ]),
-  );
+          : index - removed + inserted,
+    ]);
+  if (replace?.message !== undefined) {
+    entries.push([replace.key, start + 1 + kept.length]);
+  }
+  return Object.fromEntries(entries);
 };
 
 /** The character count of a message the estimate reads. */
@@ -139,6 +191,8 @@ const messageChars = (message: ProviderMessage): number => {
 /**
  * The span's size against the summary's, as an estimated token gain. The
  * span's retained messages stay, so they free nothing and count as retained.
+ * The message `replace` swaps out frees its size, and the one it swaps in
+ * costs its own.
  */
 export const condensation = (
   messages: readonly ProviderMessage[],
@@ -146,17 +200,25 @@ export const condensation = (
   end: number,
   summaryChars: number,
   meta: Pick<HistoryMeta, 'retained'> = {},
+  replace?: RetainedReplacement,
 ): Condensation => {
   const condensed = condensedSpan(messages, meta, start, end);
-  const kept = end - start - condensed.length;
-  const chars = condensed.reduce(
-    (total, message) => total + messageChars(message),
-    0,
-  );
-  const freed = Math.max(
-    0,
-    estimatedTokens(chars) - estimatedTokens(summaryChars),
-  );
+  const swapped = swappedIndex(meta, start, end, replace);
+  const swappedOut = swapped === undefined ? undefined : messages[swapped];
+  const swappedIn = replace?.message;
+  const kept =
+    end -
+    start -
+    condensed.length -
+    (swapped === undefined ? 0 : 1) +
+    (swappedIn === undefined ? 0 : 1);
+  const chars = [
+    ...condensed,
+    ...(swappedOut === undefined ? [] : [swappedOut]),
+  ].reduce((total, message) => total + messageChars(message), 0);
+  const added =
+    summaryChars + (swappedIn === undefined ? 0 : messageChars(swappedIn));
+  const freed = Math.max(0, estimatedTokens(chars) - estimatedTokens(added));
   return {
     start,
     end,
@@ -204,7 +266,8 @@ export interface Rewritten {
 
 /**
  * The messages that take the span's place: the summary, then the span's
- * retained messages verbatim, in history order.
+ * retained messages verbatim, in history order, then the message `replace`
+ * swaps in. The one it swaps out is not kept.
  */
 export const replacement = (
   messages: readonly ProviderMessage[],
@@ -212,11 +275,13 @@ export const replacement = (
   summaryMessage: ProviderMessage,
   start: number,
   end: number,
+  replace?: RetainedReplacement,
 ): readonly ProviderMessage[] => [
   summaryMessage,
-  ...keptIndexes(meta, start, end).map(
+  ...keptBy(meta, start, end, replace).map(
     (index) => messages[index] as ProviderMessage,
   ),
+  ...(replace?.message === undefined ? [] : [replace.message]),
 ];
 
 /**
@@ -231,8 +296,16 @@ export const rewritten = (
   summaryMessage: ProviderMessage,
   start: number,
   end: number,
+  replace?: RetainedReplacement,
 ): Rewritten => {
-  const inserted = replacement(messages, meta, summaryMessage, start, end);
+  const inserted = replacement(
+    messages,
+    meta,
+    summaryMessage,
+    start,
+    end,
+    replace,
+  );
   return {
     messages: [
       ...messages.slice(0, start),
@@ -240,9 +313,9 @@ export const rewritten = (
       ...messages.slice(end).map(unbound),
     ],
     meta: {
-      checkpoints: rebasedCheckpoints(meta, start, end),
+      checkpoints: rebasedCheckpoints(meta, start, end, replace),
       messageCount: messages.length - (end - start) + inserted.length,
-      retained: rebasedRetained(meta, start, end),
+      retained: rebasedRetained(meta, start, end, replace),
     },
   };
 };

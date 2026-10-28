@@ -1,5 +1,6 @@
 import {
   type AnyHookHandler,
+  type Call,
   type CallScope,
   defineMethod,
   defineService,
@@ -18,6 +19,7 @@ import {
 import { createTestServices } from 'bundle/testing';
 import { ConfigurationV1, configurationMethods } from 'host-config/contracts';
 import type { ProviderMessage } from 'llms';
+import { type McpServerView, McpV1, mcpMethods } from 'mcp/contracts';
 import {
   type AttachmentContent,
   type ConfigurationValue,
@@ -26,9 +28,15 @@ import {
   type HistoryPatch,
   type HistoryReader,
   type InputSource,
+  type LeaseExecInput,
+  type LeaseExecResult,
   type PromptSession,
+  RuntimeLeaseV1,
   RuntimeThreadsV1,
+  RuntimeWorkspaceV1,
+  runtimeLeaseMethods,
   runtimeThreadsMethods,
+  runtimeWorkspaceMethods,
   type SteerInput,
   type Thread,
 } from 'runtime/contracts';
@@ -64,12 +72,187 @@ export const testConfiguration = (): ConfigurationValue => ({
   tools: {},
 });
 
-export const skill = (name: string, body: string) => ({
+/**
+ * A skill `skills/v1` lists. `alwaysAvailable` defaults to true, as every
+ * skill was before the skill catalog: its body stays in the system prompt.
+ */
+export type HarnessSkill = RegisteredSkill['skill'] & {
+  readonly alwaysAvailable?: boolean;
+};
+
+export const skill = (
+  name: string,
+  body: string,
+  options: {
+    readonly alwaysAvailable?: boolean;
+    readonly description?: string;
+  } = {},
+): HarnessSkill => ({
   name,
-  description: `${name} description`,
+  description: options.description ?? `${name} description`,
   body,
   allowedTools: [],
   indexText: `${name} ${body}`,
+  ...(options.alwaysAvailable === undefined
+    ? {}
+    : { alwaysAvailable: options.alwaysAvailable }),
+});
+
+/**
+ * The system-prompt section of the one always-available skill
+ * `skill('sandbox', 'Inspect before reporting.')`, as the skill catalog
+ * renders it.
+ */
+export const sandboxSection = [
+  '# Skills',
+  '## Always-available skills\n\nFollow these skills whenever they apply.',
+  '### Skill: sandbox\n\nInspect before reporting.',
+].join('\n\n');
+
+/** One call a fake boundary provider received, with the scope it ran under. */
+export interface RecordedCall {
+  readonly method: string;
+  readonly input: unknown;
+  readonly scope: CallScope | undefined;
+}
+
+/** The sandbox the prompt's Project leases, as `runtime.lease/v1` answers. */
+export interface FakeLease {
+  /** Default: exit 0 with no output. */
+  readonly exec?: (
+    input: LeaseExecInput,
+  ) => LeaseExecResult | Promise<LeaseExecResult>;
+  /** Default: the file does not exist. */
+  readonly readFile?: (path: string) => string | Promise<string>;
+}
+
+/** The Project's MCP servers, as `mcp/v1` answers. */
+export interface FakeMcp {
+  /** Default: no server. */
+  readonly list?: () =>
+    | readonly McpServerView[]
+    | Promise<readonly McpServerView[]>;
+  /** Default: the skill cannot be read. */
+  readonly readSkill?: (input: {
+    readonly id: string;
+    readonly uri: string;
+  }) => { readonly text: string } | Promise<{ readonly text: string }>;
+}
+
+/** The Thread's live working directory, as `runtime.workspace/v1` answers. */
+export interface FakeWorkspace {
+  /** Read on every call, so a test can move the directory mid-run. */
+  cwd(): string | Promise<string>;
+}
+
+const recorder =
+  (calls: RecordedCall[], method: string) => (input: unknown, call: Call) => {
+    calls.push({ method, input, scope: call.scope });
+  };
+
+/** A fake `runtime.workspace/v1` (cwd only) recording every call. */
+export const workspaceService = (
+  workspace: FakeWorkspace,
+  calls: RecordedCall[],
+) =>
+  defineService(RuntimeWorkspaceV1.id, {
+    cwd: defineMethod({
+      input: runtimeWorkspaceMethods.cwd.input,
+      output: runtimeWorkspaceMethods.cwd.output,
+      execute: async (input, call) => {
+        recorder(calls, 'cwd')(input, call);
+        return workspace.cwd();
+      },
+    }),
+  });
+
+/** `skills/v1` listing `skills` in order, each from the bundle `test`. */
+export const skillsService = (skills: readonly HarnessSkill[]) =>
+  defineService(SkillsV1.id, {
+    register: defineMethod({
+      input: skillsMethods.register.input,
+      output: skillsMethods.register.output,
+      execute: () => ({ dispose: () => undefined }),
+    }),
+    list: defineMethod({
+      input: skillsMethods.list.input,
+      output: skillsMethods.list.output,
+      execute: () =>
+        skills.map(({ alwaysAvailable = true, ...value }) => ({
+          bundleId: 'test',
+          alwaysAvailable,
+          skill: value,
+        })),
+    }),
+  });
+
+/** A fake `runtime.lease/v1` (exec, readFile) recording every call. */
+export const leaseService = (lease: FakeLease, calls: RecordedCall[]) =>
+  defineService(RuntimeLeaseV1.id, {
+    exec: defineMethod({
+      input: runtimeLeaseMethods.exec.input,
+      output: runtimeLeaseMethods.exec.output,
+      execute: async (input, call) => {
+        recorder(calls, 'exec')(input, call);
+        return (
+          (await lease.exec?.(input)) ?? { exitCode: 0, stdout: '', stderr: '' }
+        );
+      },
+    }),
+    readFile: defineMethod({
+      input: runtimeLeaseMethods.readFile.input,
+      output: runtimeLeaseMethods.readFile.output,
+      execute: async (path, call) => {
+        recorder(calls, 'readFile')(path, call);
+        if (lease.readFile === undefined)
+          throw new Error(`No such file: ${path}`);
+        return lease.readFile(path);
+      },
+    }),
+  });
+
+/** A fake `mcp/v1` (list, readSkill) recording every call. */
+export const mcpService = (mcp: FakeMcp, calls: RecordedCall[]) =>
+  defineService(McpV1.id, {
+    list: defineMethod({
+      ...mcpMethods.list,
+      execute: async (input, call) => {
+        recorder(calls, 'list')(input, call);
+        return [...((await mcp.list?.()) ?? [])];
+      },
+    }),
+    readSkill: defineMethod({
+      ...mcpMethods.readSkill,
+      execute: async (input, call) => {
+        recorder(calls, 'readSkill')(input, call);
+        if (mcp.readSkill === undefined)
+          throw new Error(`The skill ${input.uri} cannot be read.`);
+        return mcp.readSkill(input);
+      },
+    }),
+  });
+
+/** A stored server of the Project with its live state, as `mcp/v1` lists it. */
+export const mcpServer = ({
+  id,
+  name,
+  state = 'connected',
+  skills = [],
+}: {
+  readonly id: string;
+  readonly name: string;
+  readonly state?: McpServerView['status']['state'];
+  readonly skills?: McpServerView['skills'];
+}): McpServerView => ({
+  id,
+  projectId,
+  name,
+  enabled: true,
+  transport: { kind: 'http', url: 'https://mcp.example.com/', headers: [] },
+  status: { state },
+  signedIn: false,
+  tools: [],
+  skills,
 });
 
 /** What the runtime's session throws when a write fails: it keeps the retry. */
@@ -185,7 +368,13 @@ export interface HarnessOptions {
   readonly configuration?: ConfigurationValue;
   readonly provider: object;
   readonly tools?: readonly RegisteredTool[];
-  readonly skills?: readonly RegisteredSkill['skill'][];
+  readonly skills?: readonly HarnessSkill[];
+  /** A `runtime.lease/v1` provider; without it the contract is unprovided. */
+  readonly lease?: FakeLease;
+  /** An `mcp/v1` provider; without it the contract is unprovided. */
+  readonly mcp?: FakeMcp;
+  /** A `runtime.workspace/v1` provider; without it the contract is unprovided. */
+  readonly workspace?: FakeWorkspace;
   /**
    * What the runtime does with an instruction the bundle gives: the steer the
    * run reads at its next safe point, as `fakeThreadState().steer` queues it.
@@ -238,8 +427,9 @@ const transformHooks = () => {
 
 /**
  * The `default` bundle activated over fake `host-config/v1`, `models/v1`,
- * `tools/v1` and `skills/v1` providers, run through `executor/v1` the way the
- * runtime calls it: scoped to the prompt, with the prompt's abort signal.
+ * `tools/v1` and `skills/v1` providers (and, when given, `runtime.lease/v1`,
+ * `mcp/v1` and `runtime.workspace/v1`), run through `executor/v1` the way the runtime calls it:
+ * scoped to the prompt, with the prompt's abort signal.
  */
 export const bundleServices = (options: HarnessOptions) => {
   const configuration = options.configuration ?? testConfiguration();
@@ -248,6 +438,15 @@ export const bundleServices = (options: HarnessOptions) => {
   const instructions: z.output<typeof runtimeThreadsMethods.instruct.input>[] =
     [];
   const languageModel = toLanguageModel(options.provider);
+  /**
+   * Every call the fake `runtime.lease/v1`, `mcp/v1` and
+   * `runtime.workspace/v1` received.
+   */
+  const calls = {
+    lease: [] as RecordedCall[],
+    mcp: [] as RecordedCall[],
+    workspace: [] as RecordedCall[],
+  };
   const harness = createTestServices({
     bundle: { id: 'default' },
     provide: [
@@ -337,23 +536,16 @@ export const bundleServices = (options: HarnessOptions) => {
             })),
         }),
       }),
-      defineService(SkillsV1.id, {
-        register: defineMethod({
-          input: skillsMethods.register.input,
-          output: skillsMethods.register.output,
-          execute: () => ({ dispose: () => undefined }),
-        }),
-        list: defineMethod({
-          input: skillsMethods.list.input,
-          output: skillsMethods.list.output,
-          execute: () =>
-            (options.skills ?? []).map((value) => ({
-              bundleId: 'test',
-              alwaysAvailable: true,
-              skill: value,
-            })),
-        }),
-      }),
+      skillsService(options.skills ?? []),
+      ...(options.lease === undefined
+        ? []
+        : [leaseService(options.lease, calls.lease)]),
+      ...(options.mcp === undefined
+        ? []
+        : [mcpService(options.mcp, calls.mcp)]),
+      ...(options.workspace === undefined
+        ? []
+        : [workspaceService(options.workspace, calls.workspace)]),
     ],
   });
 
@@ -361,6 +553,7 @@ export const bundleServices = (options: HarnessOptions) => {
     harness,
     resolved,
     instructions,
+    calls,
     activate: () => activate({ services: harness.services }),
     executor: (scope: CallScope) => harness.services.use(ExecutorV1, scope),
   };
@@ -415,6 +608,8 @@ export const seedHistory = (
   value: {
     readonly messages?: readonly ProviderMessage[];
     readonly checkpoints?: Readonly<Record<string, number>>;
+    /** The retained messages' indexes by `<bundleId>:<reason>`. */
+    readonly retained?: Readonly<Record<string, number>>;
   },
 ): void => {
   const messages = value.messages ?? [];
@@ -425,6 +620,7 @@ export const seedHistory = (
       meta: {
         checkpoints: value.checkpoints ?? {},
         messageCount: messages.length,
+        ...(value.retained === undefined ? {} : { retained: value.retained }),
       },
     },
   });

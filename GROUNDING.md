@@ -661,9 +661,21 @@ The default agent — the executor formerly named Direct — and its system prom
 live in `/bundles/runtime/default` (bundle `default`, renamed from `direct` on
 2026-10-19); the
 former one-module-per-coordination-tool set ships in `/bundles/features/threads`. The
-system prompt file exports only one constant literal template string; dynamic
-bundle skills are appended by the executor, not encoded as arrays of prompt
-lines. The `default` bundle owns `default.hooks/v1`, an extension point with no
+system prompt file (`prompts/system.ts`) exports only one constant literal
+template string; the executor appends the run's `# Skills` section, which
+`src/host/skills` builds once per prompt run from the constant literal strings
+of `prompts/skills.ts`, not from arrays of prompt lines, and which stays the
+same for the whole run. Before every model request after the first, the
+executor reads the Thread's working directory (optional
+`runtime.workspace/v1`) and the MCP servers again through `packages/agent`'s
+`beforeRequest`, and a change in the skills it can load reaches the model as
+one `<bundle-instruction bundle="default" reason="skills-changed">` message
+stored in the history. The skills a run lists to load are read through
+`load_skill`, a per-run tool the executor adds last to the run's tools and
+never registers in `tools/v1`; its `name` is a plain string checked against
+the run's live list on every call, an unknown id fails the call, a skill the
+history already holds unchanged answers a short note, and its answer is exempt
+from the tool result cap. The `default` bundle owns `default.hooks/v1`, an extension point with no
 handler of its own: its `onBeforeModelRequestHook` (`transform`, input
 `{ system }`) runs before every model request of a prompt, under the prompt's
 call, and `packages/agent` accepts a `system` function that it calls before
@@ -684,7 +696,13 @@ model reads does not hold it yet. The executor records each retained steer it
 stores in `meta.retained` (`<bundleId>:<reason>` to the message's index),
 compaction keeps those messages verbatim after the summary and out of the
 summarizer's input and re-bases their indexes like the turn boundaries, and a
-rewind forgets those past its boundary, so the workflow is given again only
+rewind forgets those past its boundary. One retained message is written by the
+compaction itself and replaced rather than kept by the next one:
+`default:loaded-skills`, a `<bundle-instruction bundle="default"
+reason="loaded-skills">` message holding the skills loaded in the condensed
+span and not loaded again in the kept tail (each cut at 20 000 characters,
+within min(100 000, `charBudget` / 4) characters in all), so they stay in
+effect after the summary. The coding workflow is kept verbatim, so it is given again only
 after a rewind removed it. The main Thread delegates each step to a child
 Thread whose title and instruction name its type, except for trivial changes,
 and a delegated `<parent-instruction>` step is done by the child itself. It
@@ -1645,9 +1663,11 @@ shown page, one of the `layout.dashboard.page` region items drawn instead of the
 project list, beside the `layout.dashboard.nav` groups of its sidebar. The layout
 imports the shared widgets from `desktop/ui/workspace` and `desktop/ui/code`.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
-frontmatter key) is recorded and never consulted: every registered tool is
-bound on every prompt, and Doric includes every canonical skill body in its
-default agent's system prompt in bundle order. `bundle/contracts` publicly owns the
+frontmatter key) is recorded and, for tools, never consulted: every registered
+tool is bound on every prompt. For skills it decides where the default agent
+puts them: an always-available skill's canonical body goes in its system
+prompt, in bundle order, within a fixed budget, and every other skill is a row
+of the prompt's catalog that the model loads with `load_skill`. `bundle/contracts` publicly owns the
 JSON-Schema-compatible `SkillSchema`, whose input is normalized into a
 canonical `SkillRecord` with trimmed fields, stable unique `allowedTools`, and
 a recalculated `indexText`. `packages/tool` publicly owns `defineTool`, whose
@@ -1758,8 +1778,9 @@ cannot collide with another bundle's, and a Project-scoped tool collides only
 with an unscoped one or one of its own Project.
 
 `/bundles/features/mcp` connects a Project to MCP (Model Context Protocol)
-servers and provides `mcp/v1` (every method reachable from a desktop window,
-scoped by `projectId`) and the `mcp.server/v1` storage type, one document per
+servers and provides `mcp/v1` (scoped by `projectId`; every method reachable
+from a desktop window but `readSkill`, host only since 1.1.0) and the
+`mcp.server/v1` storage type, one document per
 server. Servers belong to the Project they were created in, never to the
 host. An `http` server is reached from the generation process over Streamable
 HTTP, with a fallback to the older HTTP+SSE transport, and carries its own
@@ -1777,8 +1798,12 @@ a kind the bundle registers, deleted with the server or when its transport
 kind or URL changes, and never stored for a URL other than the one they
 were earned for. A connected server's tools are registered with `tools/v1`
 under its Project as `mcp__<server slug>__<tool>`, with the server's input
-schema verbatim. The skills a connected server lists through the MCP Skills
-extension are only shown, never loaded into a prompt. Servers connect when a
+schema verbatim. The default agent lists the skills a connected server lists
+through the MCP Skills extension and loads one only on demand, through the
+host-only `mcp/v1.readSkill`: a `resources/read` of a URI the connected server
+lists now, when asked and never before. Doric does not apply SEP-2640's
+per-skill approval or integrity (digest) checks to these skills: execution
+stays in the Project's sandbox. Servers connect when a
 window watches their Project (the client part's MCP pane in the sidebar's
 stack does), when a prompt of the Project starts (which waits up to ten
 seconds for them), when a sign-in finishes, and when the Project's sandbox
@@ -2497,7 +2522,8 @@ A thrown handler does not end the run: `tool.failed` is still emitted, and the
 call is answered with a short Markdown failure envelope (no observation ID)
 whose text is what the handler threw and each cause under it, one per line,
 with their codes, the tool registry's `handler_failed` wrapper unwrapped, under
-the same `maxToolResultChars` cap. The batch and the run continue, so the model
+the same `maxToolResultChars` cap (a number for every tool, or a function of the
+tool name where `undefined` leaves that call uncapped). The batch and the run continue, so the model
 reads why the call failed and corrects it, works around it or reports it; the
 run's turn limit bounds a model that keeps calling a failing tool. A handler
 that fails while the run's signal is already aborted ends the run with its
@@ -2526,6 +2552,11 @@ and emitting one streamed `agent.steered` event per message; a message that
 arrives during the final answer therefore continues the run. It is never called
 when no turn is left or when a structured run submits its result, so those
 messages stay with the caller.
+Agent runs may also pass a `beforeRequest` callback whose messages are stored
+as user messages right before every provider request, repair turns included,
+after the turn is counted and before the tool definitions, system prompt and
+history are read for it. It emits no `agent.steered` event, uses no turn, is
+never called when no request follows, and a rejection ends the run.
 Agent runs may declare an optional positive safe-integer `maxTurns`; omission
 keeps the loop unbounded. Invalid values fail with `TypeError` before message
 storage or provider activity. The budget is checked immediately before every
@@ -2720,9 +2751,10 @@ Thread whose Project holds no lease still takes itself and its subtree through
 Thread without prompting it first. A fresh Agent per prompt
 receives a fresh tool-call store, every registered bundle tool bound to a
 prompt `Call` scoped to that prompt (its sandbox and per-prompt host facade
-attached to that scope for the run), the deterministic
-all-skills system prompt, passed through `default.hooks/v1` before each model
-request, and
+attached to that scope for the run) and the run's `load_skill`, offered once
+the run can load a skill and checking the run's live list on every call, the
+system prompt with its skills section computed once per prompt run, passed through
+`default.hooks/v1` before each model request, and
 `createMessageStorage(...)` initialized from that Thread's exact persisted
 provider-ready history. Success and failure both persist the resulting complete
 or partial history, redacting configured credentials and replacing the

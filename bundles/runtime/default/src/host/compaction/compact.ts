@@ -9,7 +9,7 @@ import {
   checkpointMessage,
   isCompactionCheckpoint,
 } from './markers.js';
-import type { HistoryMeta } from './rewrite.js';
+import type { HistoryMeta, RetainedReplacement } from './rewrite.js';
 import {
   type Condensation,
   condensation,
@@ -83,6 +83,8 @@ export interface ApplyInput {
   readonly summaryId: string;
   /** The summarizer's body, without the marker line. */
   readonly summary: string;
+  /** A retained message to swap rather than keep, placed after the kept ones. */
+  readonly replace?: RetainedReplacement;
 }
 
 /** What one applied condensation produced: the rewrite and its accounting. */
@@ -103,7 +105,7 @@ export interface Applied {
  * would now split a tool pair, which the caller records and reports.
  */
 export const applyCompaction = (input: ApplyInput): Applied => {
-  const { messages, meta, end, trigger, summaryId, summary } = input;
+  const { messages, meta, end, trigger, summaryId, summary, replace } = input;
   if (!isSafeBoundary(messages, end)) {
     throw new CompactionError(
       'unsafe_boundary',
@@ -116,9 +118,9 @@ export const applyCompaction = (input: ApplyInput): Applied => {
   return {
     summaryId,
     summaryMessage,
-    replacement: replacement(messages, meta, summaryMessage, 0, end),
-    rewritten: rewritten(messages, meta, summaryMessage, 0, end),
-    condensation: condensation(messages, 0, end, content.length, meta),
+    replacement: replacement(messages, meta, summaryMessage, 0, end, replace),
+    rewritten: rewritten(messages, meta, summaryMessage, 0, end, replace),
+    condensation: condensation(messages, 0, end, content.length, meta, replace),
   };
 };
 

@@ -19,6 +19,7 @@ import {
   projectId,
   promptId,
   runPrompt,
+  sandboxSection,
   skill,
   threadId,
 } from './support/harness.js';
@@ -220,6 +221,6 @@ void test('sends the system prompt an onBeforeModelRequestHook handler returns',
 
   assert.deepEqual(
     harness.requests.map((request) => request.messages[0]?.content),
-    [`${systemPromptWith(skills)}\n\n# Project rules\n\nUse tabs.`],
+    [`${systemPromptWith(sandboxSection)}\n\n# Project rules\n\nUse tabs.`],
   );
 });
