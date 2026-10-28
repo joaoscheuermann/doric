@@ -59,7 +59,7 @@ Um bundle pode dispensar esses pacotes, por exemplo escrevendo Web Components se
 
 Os componentes shadcn saem de `app/doric-renderer/src/components/ui` para `packages/desktop`, que passa a ser a fronteira vendorizada. O `components.json` muda junto, e o pacote recebe o registro completo pelo CLI (`npx shadcn add --all`). A mudança é uma regeneração com proveniência, não uma movimentação manual de pastas.
 
-Os overlays do registro (Dialog, Sheet, AlertDialog, Popover, Tooltip, Select, DropdownMenu, ContextMenu, Combobox e os componentes construídos sobre eles) portam o conteúdo para o container que o `PortalContainerProvider` mais próximo nomeia, exportado por `desktop/ui` e por `desktop/ui/portal-container` junto com `usePortalContainer()`; fora de um provider, vão para o `document.body`, e um `container` passado direto a um `*Portal` continua valendo. Uma raiz React montada dentro de um shadow root (o preview do Papercraft) mantém assim os overlays dentro dele.
+Os overlays do registro (Dialog, Sheet, AlertDialog, Popover, Tooltip, Select, DropdownMenu, ContextMenu, Combobox e os componentes construídos sobre eles) portam o conteúdo para o container que o `PortalContainerProvider` mais próximo nomeia, exportado por `desktop/ui` e por `desktop/ui/portal-container` junto com `usePortalContainer()`; fora de um provider, vão para o `document.body`, e um `container` passado direto a um `*Portal` continua valendo. Um elemento que precise manter os overlays dentro de si (a thread de comentário do Papercraft, um shadow root) nomeia a si mesmo como container.
 
 ## A regra do Tailwind
 

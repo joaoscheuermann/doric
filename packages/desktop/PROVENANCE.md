@@ -110,7 +110,7 @@ compares:
   `tooltip.tsx`: each portal passes `container={usePortalContainer()}` (read
   into a `container` constant), imported from `../portal-container.js`, so
   overlays land in the container a `PortalContainerProvider` names (a
-  Papercraft preview's shadow root). The exported `*Portal` wrappers pass it
+  Papercraft comment thread keeps its menus inside itself). The exported `*Portal` wrappers pass it
   before their spread props, so a caller's own `container` still wins.
 - `alert-dialog.tsx`, `alert.tsx`, `badge.tsx`, `button.tsx`, `combobox.tsx`,
   `command.tsx`, `context-menu.tsx`, `dialog.tsx`, `dropdown-menu.tsx`,

@@ -25,8 +25,8 @@
 
   /*
    * Running text is light; labels and titles set the regular weight. The rule
-   * is on `:root` so a Papercraft preview's theme scope gets it too
-   * (papercraft/src/host/css.ts scopeRootSelectors rewrites `:root`).
+   * is on `:root`, so every element of the document inherits it, a Papercraft
+   * preview's frame document included.
    */
   :root {
     font-weight: 300;
