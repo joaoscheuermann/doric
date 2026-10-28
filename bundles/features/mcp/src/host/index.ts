@@ -25,9 +25,12 @@ import { RuntimeHooksV1, RuntimeV1 } from 'runtime/contracts';
 import {
   type McpServerInput,
   type McpServerView,
+  type McpSkillRef,
+  type McpSkillText,
   McpV1,
   mcpMethods,
   mcpScopeMessage,
+  serverSlug,
 } from '../contracts/index.js';
 import {
   assertEntryCredentials,
@@ -42,7 +45,6 @@ import {
   type ServerDocument,
   serverType,
 } from './store.js';
-import { serverSlug } from './tools.js';
 
 /** How long a starting prompt waits for its Project's servers. */
 const PROMPT_WAIT_MS = 10_000;
@@ -299,6 +301,17 @@ export const activate = ({ services }: HostContext): Cleanup => {
           await manager.connect(id);
 
           return manager.viewOf(await serverOf(projectId, id));
+        },
+      }),
+      readSkill: defineMethod({
+        ...mcpMethods.readSkill,
+        execute: async (
+          { id, uri }: McpSkillRef,
+          call: Call,
+        ): Promise<McpSkillText> => {
+          const server = await serverOf(projectOf(call), id);
+
+          return { text: await manager.readSkill(server, uri, call.signal) };
         },
       }),
     }),

@@ -1,7 +1,8 @@
-// The pure pieces that turn an MCP server's tools into Doric tools: the
-// server's slug, each tool's name, the text a result reads as, and the tool
-// definition itself. The server's own input schema is what the model sees,
-// verbatim; the server validates the arguments.
+// The pure pieces that turn an MCP server's tools into Doric tools: each
+// tool's name (after the server's slug, `serverSlug` in the contracts), the
+// text a result reads as, and the tool definition itself. The server's own
+// input schema is what the model sees, verbatim; the server validates the
+// arguments.
 
 import { createHash } from 'node:crypto';
 
@@ -31,25 +32,9 @@ import type { McpToolView } from '../contracts/index.js';
 /** The names tools/v1 accepts. */
 export const toolNamePattern = /^[a-zA-Z0-9_-]{1,64}$/;
 
-const SLUG_MAX = 20;
 const NAME_MAX = 64;
 /** How much of a name survives before its hash suffix: 55 + `_` + 8 = 64. */
 const HASHED_PREFIX = 55;
-
-/**
- * The server's prefix in its tools' names: lowercased, each run of
- * characters outside [a-z0-9-] (`_` included) one `_`, at most 20
- * characters, with no leading or trailing `_`. 'GitHub Copilot' →
- * 'github_copilot'. It never holds `__`, so the first `__` after
- * `mcp__<slug>` ends the slug and two servers' tools never share a name.
- */
-export const serverSlug = (name: string): string =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/gu, '_')
-    .replace(/^_+/u, '')
-    .slice(0, SLUG_MAX)
-    .replace(/_+$/u, '');
 
 const sha8 = (text: string): string =>
   createHash('sha256').update(text).digest('hex').slice(0, 8);

@@ -13,6 +13,7 @@ import {
   ToolListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import {
+  ContractError,
   type Disposable,
   HooksV1,
   LogV1,
@@ -22,11 +23,12 @@ import {
 } from 'bundle/contracts';
 import { RuntimeHooksV1, RuntimeLeaseV1 } from 'runtime/contracts';
 
-import type {
-  McpServerView,
-  McpSkillView,
-  McpStatus,
-  McpToolView,
+import {
+  type McpServerView,
+  type McpSkillView,
+  type McpStatus,
+  type McpToolView,
+  serverSlug,
 } from '../contracts/index.js';
 import {
   type OAuthVault,
@@ -36,15 +38,9 @@ import {
 } from './credentials.js';
 import { createOAuthProvider } from './oauth.js';
 import { isAuthFailure, type Opened, openHttp, openStdio } from './open.js';
-import { listSkills } from './skills.js';
+import { listSkills, readSkillText } from './skills.js';
 import type { ServerDocument, ServerStore } from './store.js';
-import {
-  listTools,
-  serverSlug,
-  toDoricTool,
-  toolName,
-  toolView,
-} from './tools.js';
+import { listTools, toDoricTool, toolName, toolView } from './tools.js';
 
 interface ManagerOptions {
   readonly services: Services;
@@ -79,6 +75,20 @@ export interface McpManager {
     projectId: string,
     listener: (servers: readonly McpServerView[]) => void,
   ): Disposable;
+  /**
+   * The text of a skill the stored server lists now. Rejects with
+   * ContractError('mcp_skill_unavailable', message) when the server has no
+   * open connection or is not `connected`, when `uri` is not in its current
+   * `skills`, or when `readSkillText` rejects (aborted, timed out, failed, no
+   * text). Messages: `The MCP server <name> is not connected.` / `The MCP
+   * server <name> does not list the skill <uri>.` / `The MCP server <name>
+   * could not read the skill <uri>: <masked reason>`. Changes no state.
+   */
+  readSkill(
+    server: ServerDocument,
+    uri: string,
+    signal?: AbortSignal,
+  ): Promise<string>;
   /** Stops every server; nothing connects any more. */
   dispose(): Promise<void>;
 }
@@ -767,6 +777,33 @@ export const createManager = ({
     publish,
     viewOf,
     snapshot,
+    readSkill: async (server, uri, signal) => {
+      const entry = server.enabled ? live.get(server.id) : undefined;
+      const connection = entry?.connection;
+
+      if (connection === undefined || entry?.status.state !== 'connected') {
+        throw new ContractError(
+          'mcp_skill_unavailable',
+          `The MCP server ${server.name} is not connected.`,
+        );
+      }
+
+      if (!entry.skills.some((skill) => skill.uri === uri)) {
+        throw new ContractError(
+          'mcp_skill_unavailable',
+          `The MCP server ${server.name} does not list the skill ${uri}.`,
+        );
+      }
+
+      try {
+        return await readSkillText(connection.client, uri, signal);
+      } catch (error) {
+        throw new ContractError(
+          'mcp_skill_unavailable',
+          `The MCP server ${server.name} could not read the skill ${uri}: ${messageOf(error, connection.secrets)}`,
+        );
+      }
+    },
     subscribe: (projectId, listener) => {
       const listeners = watchers.get(projectId) ?? new Set();
       watchers.set(projectId, listeners);

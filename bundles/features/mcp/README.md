@@ -13,10 +13,11 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
 
 ## What it provides
 
-- **Contract:** `mcp/v1` (host, every method reachable from a desktop window):
-  `list`, `create`, `update`, `remove`, `watch`, `signIn` and `finishSignIn`
-  over the servers of the Project of `call.scope.projectId`. A call without a
-  Project scope is refused (`invalid_input`). The shapes and error codes live
+- **Contract:** `mcp/v1` 1.1.0 (host): `list`, `create`, `update`, `remove`,
+  `watch`, `signIn` and `finishSignIn`, each reachable from a desktop window,
+  and the host-only `readSkill`, over the servers of the Project of
+  `call.scope.projectId`. A call without a Project scope is refused
+  (`invalid_input`). The shapes and error codes live
   in [`src/contracts/index.ts`](src/contracts/index.ts) (`mcp/contracts`).
 - **Storage type:** `mcp.server/v1`, one document per server, listed per
   Project in creation order.
@@ -31,8 +32,14 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
 - **Skills:** the skills a connected server lists through the MCP Skills
   extension (`io.modelcontextprotocol/skills`, `skills/list`), on its view by
   URI, name and description; listed only when the server declares the
-  extension. They are for display only and never loaded into a prompt. A
-  failed listing is logged and leaves the server connected, with no skills.
+  extension. A failed listing is logged and leaves the server connected, with
+  no skills. The default agent lists the connected servers' skills and loads
+  one on demand through the host-only `readSkill`: a `resources/read` of its
+  URI when asked, never before, for a URI the connected server lists now
+  (`mcp_skill_unavailable` otherwise, or when the read fails, passes 30
+  seconds or answers no text). Doric runs MCP skills without SEP-2640's
+  per-skill approval or digest checks: execution stays in the Project's
+  sandbox.
 - **Window:** the client part registers the sidebar's MCP pane
   (`layout.stack/v1`): the selected Project's servers with their status and
   tool count over `mcp/v1.watch`, and the dialogs that add, edit, remove and

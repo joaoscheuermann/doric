@@ -9,8 +9,8 @@
 //
 // Error codes raised by mcp/v1 (besides `invalid_input`):
 //
-// - `mcp_server_missing` (`update`, `remove`, `signIn`, `finishSignIn`): the
-//   Project holds no server with that id.
+// - `mcp_server_missing` (`update`, `remove`, `signIn`, `finishSignIn`,
+//   `readSkill`): the Project holds no server with that id.
 // - `mcp_server_name_taken` (`create`, `update`): another server of the
 //   Project has a name with the same slug.
 // - `mcp_signin_unsupported` (`signIn`): the server is a `stdio` one.
@@ -21,6 +21,9 @@
 //   transport or URL, or was removed.
 // - `mcp_signin_failed` (`signIn`, `finishSignIn`): discovery, registration,
 //   the authorization or the token exchange failed; the message says which.
+// - `mcp_skill_unavailable` (`readSkill`): the server is not connected, does
+//   not list that skill now, or its read failed, timed out or answered no
+//   text.
 //
 // This module is shared with the desktop part: it imports neither the MCP
 // SDK nor any Node-only module.
@@ -46,6 +49,7 @@ export const mcpErrorCodes = [
   'mcp_signin_busy',
   'mcp_signin_aborted',
   'mcp_signin_failed',
+  'mcp_skill_unavailable',
 ] as const;
 
 export type McpErrorCode = (typeof mcpErrorCodes)[number];
@@ -55,6 +59,25 @@ export const mcpScopeMessage = 'mcp/v1 needs a Project scope.';
 
 /** The longest server name, in characters, once trimmed. */
 export const MCP_NAME_MAX = 64;
+
+const SLUG_MAX = 20;
+
+/**
+ * The server's prefix in its tools' names: lowercased, each run of
+ * characters outside [a-z0-9-] (`_` included) one `_`, at most 20
+ * characters, with no leading or trailing `_`. 'GitHub Copilot' →
+ * 'github_copilot'. It never holds `__`, so the first `__` after
+ * `mcp__<slug>` ends the slug and two servers' tools never share a name.
+ * Pure; shared by the host, the desktop part and other bundles (the default
+ * agent's skill locators `mcp/<slug>/<name>`).
+ */
+export const serverSlug = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/gu, '_')
+    .replace(/^_+/u, '')
+    .slice(0, SLUG_MAX)
+    .replace(/_+$/u, '');
 
 /**
  * One header or environment variable: a literal `value`, or the `secret` of
@@ -130,8 +153,8 @@ export interface McpToolView {
 
 /**
  * One skill a connected server serves through the MCP Skills extension
- * (`io.modelcontextprotocol/skills`), as the reader sees it. Listed only:
- * Doric never loads a skill into a prompt.
+ * (`io.modelcontextprotocol/skills`), as the reader sees it. The default
+ * agent lists these skills and loads one only through `readSkill`.
  */
 export interface McpSkillView {
   /** The URI of its SKILL.md: unique within the server (names need not be). */
@@ -157,6 +180,17 @@ export interface McpServerView extends McpServerInput {
    * and its listing succeeded.
    */
   readonly skills: readonly McpSkillView[];
+}
+
+/** One skill of one of the Project's servers: the server's `id` and the skill's `uri`, as `list` gives them. */
+export interface McpSkillRef {
+  readonly id: string;
+  readonly uri: string;
+}
+
+/** A skill as `readSkill` reads it: the whole SKILL.md text, frontmatter included. */
+export interface McpSkillText {
+  readonly text: string;
 }
 
 /** `mcp/v1` (host): the MCP servers of the Project of `call.scope.projectId`. */
@@ -221,6 +255,16 @@ export interface Mcp {
     input: { readonly id: string },
     call?: CallArg,
   ): Promise<McpServerView>;
+  /**
+   * 1.1.0, host only: reads one skill a connected server lists now (its
+   * `skills` in `list`) with `resources/read`, once per call, never cached.
+   * `mcp_server_missing` when the Project holds no server with that id
+   * (another Project's included); `mcp_skill_unavailable` when the server is
+   * not connected, does not list `uri` now, the read fails or passes
+   * SKILL_READ_TIMEOUT_MS, or it returns no text content. Messages mask the
+   * server's secrets.
+   */
+  readSkill(input: McpSkillRef, call?: CallArg): Promise<McpSkillText>;
 }
 
 /** An environment variable name a POSIX shell accepts. */
@@ -280,6 +324,14 @@ export const mcpServerUpdateSchema = mcpServerInputSchema
 
 export const mcpServerRefSchema = z.object({ id: z.string().min(1) }).strict();
 
+export const mcpSkillRefSchema = z
+  .object({ id: z.string().min(1), uri: z.string().min(1) })
+  .strict();
+
+export const mcpSkillTextSchema: z.ZodType<McpSkillText, McpSkillText> = z
+  .object({ text: z.string() })
+  .strict();
+
 export const mcpToolViewSchema: z.ZodType<McpToolView, McpToolView> = z
   .object({
     name: z.string(),
@@ -309,7 +361,7 @@ export const mcpServerViewSchema: z.ZodType<McpServerView, McpServerView> =
     })
     .strict();
 
-/** The wire shapes of `mcp/v1`; every method is reachable from a desktop window. */
+/** The wire shapes of `mcp/v1`; every method but `readSkill` is reachable from a desktop window. */
 export const mcpMethods = {
   list: {
     input: noInput,
@@ -343,6 +395,8 @@ export const mcpMethods = {
     output: mcpServerViewSchema,
     expose: 'desktop',
   },
+  // No `expose`: host only.
+  readSkill: { input: mcpSkillRefSchema, output: mcpSkillTextSchema },
 } as const satisfies MethodSpecs;
 
 /** `mcp/v1`, provided by the `mcp` bundle. */

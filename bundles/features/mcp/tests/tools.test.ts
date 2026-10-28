@@ -14,10 +14,10 @@ import {
 } from 'runtime/contracts';
 import { ToolErrorObject } from 'tool';
 
+import { serverSlug } from '../src/contracts/index.js';
 import {
   type CallMcpTool,
   formatResult,
-  serverSlug,
   toDoricTool,
   toolName,
   toolNamePattern,

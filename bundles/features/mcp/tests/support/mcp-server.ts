@@ -22,6 +22,8 @@ import {
   type CallToolResult,
   type ClientCapabilities,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+  type ReadResourceResult,
   type ServerCapabilities,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -30,7 +32,10 @@ import { z } from 'zod';
 /** The MCP Skills extension's identifier in `capabilities.extensions`. */
 export const SKILLS_EXTENSION = 'io.modelcontextprotocol/skills';
 
-/** One skill a fake server lists through `skills/list`. */
+/**
+ * One skill a fake server lists through `skills/list` (its `uri`,
+ * `frontmatter` and `resources`) and serves through `resources/read`.
+ */
 export interface FakeSkill {
   readonly uri: string;
   readonly frontmatter: Readonly<Record<string, unknown>> & {
@@ -38,6 +43,13 @@ export interface FakeSkill {
     readonly description: string;
   };
   readonly resources: string;
+  /** The SKILL.md a read of `uri` answers as text; never listed. */
+  readonly text?: string;
+  /**
+   * How a read of `uri` answers instead of `text`: `blob`, one blob content
+   * and no text; `{ fails }`, an error carrying that message. Never listed.
+   */
+  readonly read?: 'blob' | { readonly fails: string };
 }
 
 /** A skill at `skill://<name>/SKILL.md`, with extra frontmatter fields. */
@@ -50,6 +62,35 @@ export const fakeSkill = (
   frontmatter: { name, description, ...extra },
   resources: 'dynamic',
 });
+
+/** What a read of the skill answers: its text, a blob only, or an error. */
+const readSkill = (skill: FakeSkill): ReadResourceResult => {
+  if (skill.read === 'blob') {
+    return {
+      contents: [
+        {
+          uri: skill.uri,
+          mimeType: 'application/octet-stream',
+          blob: Buffer.from('not text').toString('base64'),
+        },
+      ],
+    };
+  }
+
+  if (skill.read !== undefined) {
+    throw new Error(skill.read.fails);
+  }
+
+  return {
+    contents: [
+      {
+        uri: skill.uri,
+        mimeType: 'text/markdown',
+        text: skill.text ?? '',
+      },
+    ],
+  };
+};
 
 /**
  * The skills a fake server serves: its `skills/list` pages, in order, or
@@ -83,6 +124,8 @@ export interface ToolServer {
   readonly calls: readonly ReceivedCall[];
   /** The cursor of each `skills/list` request received, in order. */
   readonly skillCursors: readonly (string | undefined)[];
+  /** The uri of each `resources/read` request received, in order. */
+  readonly resourceReads: readonly string[];
   /** The capabilities the client of the last session declared. */
   clientCapabilities(): ClientCapabilities | undefined;
   /** Replaces the tools every session lists from now on. */
@@ -113,6 +156,7 @@ export const toolServer = (
   const servers = new Set<Server>();
   const calls: ReceivedCall[] = [];
   const skillCursors: (string | undefined)[] = [];
+  const resourceReads: string[] = [];
   let last: Server | undefined;
 
   const capabilities: ServerCapabilities =
@@ -127,6 +171,7 @@ export const toolServer = (
   return {
     calls,
     skillCursors,
+    resourceReads,
     clientCapabilities: () => last?.getClientCapabilities(),
     setTools: (next) => {
       tools = [...next];
@@ -148,16 +193,45 @@ export const toolServer = (
 
         const pages = skills ?? [[]];
         const index = cursor === undefined ? 0 : Number(cursor.slice(5));
+        // The listing carries what `skills/list` defines, never the text.
+        const listed = (pages[index] ?? []).map(
+          ({ uri, frontmatter, resources }) => ({
+            uri,
+            frontmatter,
+            resources,
+          }),
+        );
         const result: {
-          skills: readonly FakeSkill[];
+          skills: readonly Pick<
+            FakeSkill,
+            'uri' | 'frontmatter' | 'resources'
+          >[];
           nextCursor?: string;
         } =
           index + 1 < pages.length
-            ? { skills: pages[index] ?? [], nextCursor: `page-${index + 1}` }
-            : { skills: pages[index] ?? [] };
+            ? { skills: listed, nextCursor: `page-${index + 1}` }
+            : { skills: listed };
 
         return result;
       });
+
+      // A server serves resources only when it declares them (with skills).
+      if (skills !== undefined) {
+        server.setRequestHandler(ReadResourceRequestSchema, (request) => {
+          const uri = request.params.uri;
+          resourceReads.push(uri);
+          const skill =
+            skills === 'fails'
+              ? undefined
+              : skills.flat().find((candidate) => candidate.uri === uri);
+
+          if (skill === undefined) {
+            throw new Error(`No resource ${uri}.`);
+          }
+
+          return readSkill(skill);
+        });
+      }
 
       server.setRequestHandler(ListToolsRequestSchema, () => ({
         tools: tools.map((entry) => entry.tool),
