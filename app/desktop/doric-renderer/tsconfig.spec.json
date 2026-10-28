@@ -13,5 +13,5 @@
     "types": ["node"]
   },
   "exclude": [],
-  "include": ["tests/stylesheet.test.ts"]
+  "include": ["tests/stylesheet.test.ts", "tests/overlay-errors.test.ts"]
 }

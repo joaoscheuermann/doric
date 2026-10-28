@@ -1,6 +1,7 @@
 const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
 const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
 const { join } = require('node:path');
+const { showsInOverlay } = require('./overlay-errors');
 
 /**
  * Every window loads one shell page from `doric://app`, and main serves this
@@ -37,13 +38,8 @@ module.exports = {
     allowedHosts: 'all',
     client: {
       webSocketURL: 'ws://localhost:4200/ws',
-      overlay: {
-        // The browser reports a ResizeObserver whose callback resized what it
-        // observes, deferring the rest to the next frame, as an error event;
-        // it is a notice, not a failure, so the overlay leaves it out.
-        runtimeErrors: (error) =>
-          !/^ResizeObserver loop/.test(error?.message ?? ''),
-      },
+      // ResizeObserver notices and artifact previews' errors stay out of it.
+      overlay: { runtimeErrors: showsInOverlay },
     },
     devMiddleware: { publicPath: shellPath },
     historyApiFallback: {
