@@ -27,6 +27,7 @@ import {
   statesFailure,
 } from './prompt-lifecycle.js';
 import type { QueueItem } from './queue.js';
+import { LOAD_SKILL_TOOL } from './skill-load.js';
 import type { TerminalResult } from './terminal-result.js';
 import { THREAD_SPAWN_TOOL } from './thread-spawn.js';
 import type { ThreadEvent } from './workspace.js';
@@ -419,14 +420,15 @@ type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
  * reasoning and tool calls other than `edit` and `write`, which stay out of the
  * summary as their own turn blocks so every file modification remains visible in
  * the flow, and other than `thread-spawn`, whose delegation has a block of its
- * own.
+ * own, and `load_skill`, whose block names the skill the agent loaded.
  */
 const isBurstDraft = (turn: Draft): turn is BurstDraft =>
   turn.type === 'thinking' ||
   (turn.type === 'tool_call' &&
     turn.name !== 'edit' &&
     turn.name !== 'write' &&
-    turn.name !== THREAD_SPAWN_TOOL);
+    turn.name !== THREAD_SPAWN_TOOL &&
+    turn.name !== LOAD_SKILL_TOOL);
 
 /** One grouped step, in the shape a surface renders it. */
 const activityItem = (item: BurstDraft): ActivityItem =>

@@ -46,8 +46,9 @@ for how bundles work.
   markers kept. Reasoning and tool calls open while they run and fold once
   they settle. `edit` and `write` calls render as a unified diff with
   `+added / −removed` counts, and a `terminal` call shows its command and its
-  live output. A background command's result, a paused or resumed prompt, a
-  history compaction and a failure each get their own row.
+  live output. A `load_skill` call draws its own block naming the skill and
+  where it came from. A background command's result, a paused or resumed
+  prompt, a history compaction and a failure each get their own row.
 - **Steer while it runs.** `Cmd/Ctrl+Enter` sends; while a prompt runs it
   steers the prompt at its next safe point. `Tab` queues the words for after
   it, `Escape` with words aborts the current step and steers, and `Escape`

@@ -2,10 +2,12 @@ import { attachmentLine } from 'runtime/contracts';
 
 import { type Chosen, toolOpenness } from '../../domain/collapsible.js';
 import type { ToolStatus } from '../../domain/projector.js';
+import { LOAD_SKILL_TOOL } from '../../domain/skill-load.js';
 import { humanize } from '../../utility/humanize.js';
 import { AttachmentImage } from './attachment-image.js';
 import { CollapsibleBlock } from './collapsible-block.js';
 import { EditToolItem } from './edit-tool-item.js';
+import { SkillToolItem } from './skill-tool-item.js';
 import { TerminalToolItem } from './terminal-tool-item.js';
 
 type ToolItemProps = {
@@ -52,6 +54,19 @@ export function ToolItem({
   if (name === 'edit' || name === 'write') {
     return (
       <EditToolItem
+        args={args}
+        chosen={chosen}
+        error={error}
+        focused={focused}
+        onChosenChange={onChosenChange}
+        result={result}
+        status={status}
+      />
+    );
+  }
+  if (name === LOAD_SKILL_TOOL) {
+    return (
+      <SkillToolItem
         args={args}
         chosen={chosen}
         error={error}

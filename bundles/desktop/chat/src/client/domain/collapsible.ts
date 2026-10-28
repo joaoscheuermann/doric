@@ -110,3 +110,13 @@ export const spawnOpenness = (status: ToolStatus): Openness => ({
   hasContent: true,
   defaultOpen: status !== 'finished',
 });
+
+/**
+ * A `load_skill` block's answer: folded while it loads and once loaded, and
+ * open when the load failed, so the reason is not scrolled past.
+ */
+export const skillOpenness = (status: ToolStatus): Openness => ({
+  active: status === 'running',
+  hasContent: true,
+  defaultOpen: status === 'failed',
+});

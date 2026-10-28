@@ -423,6 +423,59 @@ describe('thread event projection', () => {
     assert.equal(activityOf(projection.turns[2])?.tools, 1);
   });
 
+  test('a load_skill call stands on its own and is never folded into a burst', () => {
+    const ran = (
+      sequence: number,
+      id: string,
+      name: string,
+      payload: unknown,
+      output: string,
+    ): readonly ThreadEvent[] => [
+      event(sequence, 'one', {
+        type: 'tool.started',
+        call: call(id, name, payload),
+      }),
+      event(sequence + 1, 'one', {
+        type: 'tool.finished',
+        call: call(id, name, payload),
+        record: { output },
+      }),
+    ];
+    const projection = projectEvents(emptyProjection, [
+      ...ran(1, 'c1', 'grep', { pattern: 'createSandbox' }, 'a.ts:1'),
+      ...ran(
+        3,
+        'c2',
+        'load_skill',
+        { name: 'cwd/behavioral-testing' },
+        '# Behavioral Testing',
+      ),
+      ...ran(5, 'c3', 'find', { pattern: '*.test.ts' }, 'a.test.ts'),
+      ...ran(7, 'c4', 'grep', { pattern: 'describe' }, 'a.test.ts:1'),
+      event(9, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: '',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    // The lone grep before the skill is a burst of one, so it reads as itself;
+    // the skill keeps its own block; the two calls after it fold into a summary.
+    assert.deepEqual(types(projection.turns), [
+      'tool_call',
+      'tool_call',
+      'activity',
+    ]);
+    assert.equal(toolOf(projection.turns[0])?.name, 'grep');
+    assert.equal(toolOf(projection.turns[1])?.name, 'load_skill');
+    const activity = activityOf(projection.turns[2]);
+    assert.deepEqual(
+      activity?.items.map((item) => (item.kind === 'tool' ? item.name : '')),
+      ['find', 'grep'],
+    );
+  });
+
   test('a burst that spawned a Thread does not list the spawn among its steps', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', {
