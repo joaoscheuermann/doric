@@ -53,6 +53,9 @@ All footer text, including nested controls, uses `font-weight: 400`. Use a
 semantic `footer` element or a `data-slot` ending in `-footer` so the shell's
 footer rule (`app/desktop/doric-renderer/src/styles.css`) applies.
 
+Labels and titles are 400 and running text 300, through desktop/ui's components
+and the theme's root weight; add no per-control weight to reach them.
+
 ## Tests
 
 `tests/*.test.ts` are DOM-free and run under `node --test` from

@@ -89,7 +89,7 @@ export function CommentThreadPin({
             {pin}
           </span>
           <span
-            className="mr-auto min-w-0 truncate text-sm font-medium"
+            className="mr-auto min-w-0 truncate text-sm font-normal"
             title={label ?? undefined}
           >
             {label ?? 'Comment'}
@@ -124,7 +124,7 @@ export function CommentThreadPin({
                   ) : (
                     <ReaderAvatar name={message.author ?? READER_NAME} />
                   )}
-                  <span className="shrink-0 font-medium">
+                  <span className="shrink-0 font-normal">
                     {authorName(message.author)}
                   </span>
                 </span>

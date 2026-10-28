@@ -52,6 +52,12 @@ export interface OAuthError {
 export interface OAuthCallback {
   readonly code?: string;
   readonly state?: string;
+  /**
+   * The redirect's `iss` parameter (RFC 9207), when the authorization server
+   * sent one: its issuer identifier. A client that knows the issuer compares
+   * the two to refuse a mix-up; its absence proves nothing.
+   */
+  readonly iss?: string;
   readonly error?: string;
   readonly errorDescription?: string;
 }

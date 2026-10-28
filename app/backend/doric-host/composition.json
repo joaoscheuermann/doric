@@ -29,7 +29,8 @@
     "history",
     "artifacts",
     "comments",
-    "papercraft"
+    "papercraft",
+    "mcp"
   ],
   "providers": {
     "storage.backend/v1": "postgres",

@@ -77,6 +77,7 @@ import {
   createDevProxy,
   DEFAULT_DEV_SERVER_ORIGIN,
 } from './protocol/dev-proxy';
+import { frameImportMap, renderFrameDocument } from './protocol/frame';
 import { registerDoricProtocol } from './protocol/handler';
 import {
   fileImportMap,
@@ -516,6 +517,7 @@ export class DesktopPlatform {
     registerDoricProtocol(protocol, {
       resources: this.resources,
       shell: shellRenderer,
+      frame: renderFrameDocument(frameImportMap(this.#platformMap)),
       bundles: this.cache,
       artifacts: { root: this.#paths.artifacts },
       ...(devProxy === undefined ? {} : { devProxy }),

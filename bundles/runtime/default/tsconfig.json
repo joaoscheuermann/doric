@@ -22,6 +22,9 @@
       "path": "../../../packages/messages"
     },
     {
+      "path": "../../features/mcp"
+    },
+    {
       "path": "../../../packages/llms"
     },
     {

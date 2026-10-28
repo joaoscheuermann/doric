@@ -77,7 +77,7 @@ const STYLE = [
   '[hidden] { display: none !important; }',
   '.artifacts-frame { display: flex; flex-direction: column; gap: 8px; }',
   '.artifacts-bar { display: flex; align-items: center; gap: 8px; }',
-  '.artifacts-title { font-weight: 600; }',
+  '.artifacts-title { font-weight: 400; }',
   '.artifacts-kind { opacity: 0.7; }',
   '.artifacts-revision { opacity: 0.7; font-variant-numeric: tabular-nums; }',
   '.artifacts-state { opacity: 0.7; }',

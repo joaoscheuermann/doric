@@ -88,6 +88,18 @@ export const activate = ({ services }: HostContext) => {
 ### Bundle layout
 
 - Parts live at `host/index.js`, `desktop/index.js` and `client/index.js`.
+- A client may also have frames: each `src/client/frames/<name>.ts` builds to
+  `client/frames/<name>.js`, a module for a document outside the window (a
+  Papercraft preview's sandboxed iframe loads one through
+  `doric://app/frame/index.html?entry=`). Only the frame import map's
+  specifiers stay external (`react`, `react/jsx-runtime`,
+  `react/jsx-dev-runtime`, `react-dom`, `react-dom/client`, `@base-ui/react`
+  and its subpaths); `zod` and what it imports by relative path (its own
+  contracts' sources included) are bundled in, and the window's other
+  import-map specifiers (`desktop/*`, `bundle/*`, any `<id>/contracts`) fail
+  the build. Frames
+  ship with the client's files and are served with
+  `Access-Control-Allow-Origin: *`.
 - Skills live at `skills/*/SKILL.md`, discovered in lexical directory order,
   with an optional `alwaysAvailable` frontmatter flag.
 - A manifest without `manifestVersion` is read as v0 and converted in memory:
@@ -189,8 +201,8 @@ node packages/bundle/dist/build/cli.js stage <dest> <bundleDir...>
 ```
 
 `build` runs after `tsc`. It validates the manifest, copies skills, builds the
-desktop and client parts (production mode unless `--development`),
-dry-activates the parts to compute each contract's environment and
+desktop and client parts and the client's frames (production mode unless
+`--development`), dry-activates the parts (never a frame) to compute each contract's environment and
 cardinality, and writes `dist/contracts.json` and
 `dist/schemas/<contract>.json` (JSON Schema 2020-12). There is no semver check
 against a published baseline yet: `contracts.published.json` files and the

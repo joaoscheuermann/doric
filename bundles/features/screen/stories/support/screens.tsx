@@ -1,11 +1,12 @@
 // The Screens pane's elements, mounted the way the layout mounts them: the
 // activation's mirror store seeded with views, the elements built by
-// `defineScreenElements` and defined under a tag of the story's own, and
+// `defineScreenElements` and defined, once mounted, under a free tag, and
 // fake `screen.views/v1` and `layout.workspace/v1` services in place of the
 // desktop part and the layout.
 
 import type { Services } from 'bundle/contracts';
-import { useEffect, useRef } from 'react';
+import type { ReactElementInstance } from 'desktop/ui';
+import { useEffect, useRef, useState } from 'react';
 
 import { defineScreenElements } from '../../src/client/elements.js';
 import type {
@@ -92,26 +93,44 @@ const servicesOf = (setup: ScreensSetup): Services => {
   };
 };
 
-let defined = 0;
+type ElementClass = new () => ReactElementInstance;
 
-/** Builds the pane's elements over a seeded store, under fresh tags. */
-const defineFor = (setup: ScreensSetup) => {
+/** The tag each element class was defined under, once it first mounted. */
+const tags = new WeakMap<ElementClass, string>();
+
+/**
+ * Defines `Element` under the first `screen-story-<n>` tag the window has
+ * free: every preview of the stories loads its own copy of this module, and
+ * every copy shares the window's one registry.
+ */
+const tagOf = (Element: ElementClass): string => {
+  const known = tags.get(Element);
+  if (known !== undefined) return known;
+  let index = 1;
+  while (customElements.get(`screen-story-${index}`) !== undefined) index += 1;
+  const tag = `screen-story-${index}`;
+  customElements.define(tag, Element);
+  tags.set(Element, tag);
+  return tag;
+};
+
+/** Builds the pane's elements over a seeded store; nothing is defined yet. */
+const elementsFor = (setup: ScreensSetup) => {
   const store = createScreenViewsStore();
   store.set(setup.views);
   const elements = defineScreenElements({ store });
-  defined += 1;
-  const sidebar = `screen-sidebar-story-${defined}`;
-  const groupAction = `screen-group-action-story-${defined}`;
-  customElements.define(sidebar, elements.sidebar);
-  customElements.define(groupAction, elements.groupAction);
-  return { sidebar, groupAction, services: servicesOf(setup) };
+  return {
+    sidebar: elements.sidebar,
+    groupAction: elements.groupAction,
+    services: servicesOf(setup),
+  };
 };
 
 function Mounted({
-  tag,
+  Element,
   services,
 }: {
-  readonly tag: string;
+  readonly Element: ElementClass;
   readonly services: Services;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -119,13 +138,13 @@ function Mounted({
   useEffect(() => {
     const frame = host.current;
     if (frame === null) return;
-    const element = document.createElement(tag) as HTMLElement & {
-      services: Services;
-    };
+    const element = document.createElement(
+      tagOf(Element),
+    ) as ReactElementInstance;
     element.services = services;
     frame.replaceChildren(element);
     return () => frame.replaceChildren();
-  }, [tag, services]);
+  }, [Element, services]);
 
   return <div ref={host} className="contents" />;
 }
@@ -135,17 +154,17 @@ function Mounted({
  * pane's title and its add control, and the rows below.
  */
 export function ScreensPane({ setup }: { readonly setup: ScreensSetup }) {
-  const elements = useRef<ReturnType<typeof defineFor> | null>(null);
-  elements.current ??= defineFor(setup);
-  const { sidebar, groupAction, services } = elements.current;
+  const [{ sidebar, groupAction, services }] = useState(() =>
+    elementsFor(setup),
+  );
 
   return (
     <div className="flex flex-col">
       <div className="relative flex h-8 items-center px-2 text-xs font-medium text-sidebar-foreground/70">
         Screens
-        <Mounted tag={groupAction} services={services} />
+        <Mounted Element={groupAction} services={services} />
       </div>
-      <Mounted tag={sidebar} services={services} />
+      <Mounted Element={sidebar} services={services} />
     </div>
   );
 }

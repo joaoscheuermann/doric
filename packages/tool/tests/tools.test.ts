@@ -398,3 +398,69 @@ void test('validates handler output without exposing the rejected value', async 
     return true;
   });
 });
+
+void test('uses a given inputSchema verbatim as the model-facing input schema', () => {
+  const inputSchema = {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    type: 'object',
+    $defs: {
+      tag: { type: 'string', pattern: '^[a-z]+$' },
+    },
+    properties: {
+      tags: { type: 'array', items: { $ref: '#/$defs/tag' } },
+    },
+    patternProperties: {
+      '^x-': { type: 'string' },
+    },
+    required: ['tags'],
+    additionalProperties: false,
+  };
+
+  const tool = defineTool({
+    name: 'remote',
+    input: z.looseObject({}),
+    inputSchema,
+    output: z.unknown(),
+    strict: false,
+    execute: () => undefined,
+  });
+
+  assert.deepEqual(tool.definition.inputSchema, inputSchema);
+});
+
+void test('a tool with a given inputSchema still validates payloads with its input', () => {
+  const bound = defineTool({
+    name: 'remote',
+    input: z.looseObject({}),
+    inputSchema: {
+      type: 'object',
+      properties: { query: { type: 'string' } },
+    },
+    output: z.unknown(),
+    strict: false,
+    execute: () => undefined,
+  }).bind(services);
+
+  assert.equal(bound.check('not an object').success, false);
+
+  assert.deepEqual(bound.check({ query: 'doric', extra: 1 }), {
+    success: true,
+    data: { query: 'doric', extra: 1 },
+  });
+});
+
+void test('rejects a given inputSchema that is not an object schema', () => {
+  assert.throws(
+    () =>
+      defineTool({
+        name: 'bad-input-schema',
+        input: z.looseObject({}),
+        inputSchema: { type: 'string' },
+        output: z.unknown(),
+        strict: false,
+        execute: () => undefined,
+      }),
+    (error: unknown) =>
+      error instanceof ToolErrorObject && error.data.code === 'invalid_schema',
+  );
+});

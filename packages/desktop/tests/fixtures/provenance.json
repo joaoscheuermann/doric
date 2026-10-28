@@ -123,6 +123,10 @@
       "origin": "renderer",
       "sha256": "1b8f01ece6190509e6fd365af92a294b1b95629cf708fbd388d16204d3a34a2b"
     },
+    "components/switch.tsx": {
+      "origin": "registry",
+      "sha256": "a3a2914f67086b997f84949a5be7ded75740898343f43cedd4538f5495977a74"
+    },
     "components/table.tsx": {
       "origin": "renderer",
       "sha256": "30ef4790ebf2d0e5b776da3b0955ee22f62a3319eda15c1b92012ddde943ce72"

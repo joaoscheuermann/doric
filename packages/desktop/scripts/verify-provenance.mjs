@@ -89,6 +89,14 @@ const solidButton = [
   '',
 ];
 
+// Labels and titles take the regular weight where shadcn writes `font-medium`;
+// running text is the theme's light root weight.
+const regular = (before) => [
+  before.replace('font-medium', 'font-normal'),
+  before,
+];
+const light = (before) => [before.replace('font-normal', 'font-light'), before];
+
 // WP-10N: `SidebarScope`, the context alone for another bundle's element.
 const sidebarScope = [
   [
@@ -123,44 +131,90 @@ const rendererPatches = {
       'export { Toaster };',
     ],
   ],
+  'components/alert.tsx': [
+    regular("'font-medium group-has-[>svg]/alert:col-start-2"),
+  ],
+  'components/empty.tsx': [regular("'text-sm font-medium tracking-tight'")],
+  'components/field.tsx': [
+    regular("'mb-1.5 font-medium"),
+    regular('text-sm font-medium group-data-[disabled=true]/field'),
+    light('leading-normal font-normal text-muted-foreground'),
+    light("'text-sm font-normal text-destructive'"),
+  ],
+  'components/table.tsx': [
+    regular('bg-muted/50 font-medium'),
+    regular('align-middle font-medium'),
+  ],
 };
 
 /** The local patches of the `registry` files, each undone exactly. */
 const registryPatches = {
-  'components/alert-dialog.tsx': portalContainer({
-    primitive: 'AlertDialogPrimitive',
-    spread: wrapped('AlertDialogPrimitive', 'alert-dialog-portal'),
-  }),
-  'components/combobox.tsx': portalContainer({
-    primitive: 'ComboboxPrimitive',
-    inline: true,
-  }),
-  'components/context-menu.tsx': portalContainer({
-    primitive: 'ContextMenuPrimitive',
-    spread: wrapped('ContextMenuPrimitive', 'context-menu-portal'),
-    inline: true,
-  }),
-  'components/dialog.tsx': portalContainer({
-    primitive: 'DialogPrimitive',
-    spread: oneLine('DialogPrimitive', 'dialog-portal'),
-  }),
-  'components/dropdown-menu.tsx': portalContainer({
-    primitive: 'MenuPrimitive',
-    spread: oneLine('MenuPrimitive', 'dropdown-menu-portal'),
-    inline: true,
-  }),
-  'components/popover.tsx': portalContainer({
-    primitive: 'PopoverPrimitive',
-    inline: true,
-  }),
+  'components/alert-dialog.tsx': [
+    ...portalContainer({
+      primitive: 'AlertDialogPrimitive',
+      spread: wrapped('AlertDialogPrimitive', 'alert-dialog-portal'),
+    }),
+    regular("'text-base font-medium sm:"),
+  ],
+  'components/badge.tsx': [regular('text-xs font-medium whitespace-nowrap')],
+  'components/combobox.tsx': [
+    ...portalContainer({
+      primitive: 'ComboboxPrimitive',
+      inline: true,
+    }),
+    regular('text-xs font-medium whitespace-nowrap text-foreground'),
+  ],
+  'components/command.tsx': [regular('**:[[cmdk-group-heading]]:font-medium')],
+  'components/context-menu.tsx': [
+    ...portalContainer({
+      primitive: 'ContextMenuPrimitive',
+      spread: wrapped('ContextMenuPrimitive', 'context-menu-portal'),
+      inline: true,
+    }),
+    regular('text-xs font-medium text-muted-foreground data-inset:pl-7'),
+  ],
+  'components/dialog.tsx': [
+    ...portalContainer({
+      primitive: 'DialogPrimitive',
+      spread: oneLine('DialogPrimitive', 'dialog-portal'),
+    }),
+    regular("'text-base leading-none font-medium'"),
+  ],
+  'components/dropdown-menu.tsx': [
+    ...portalContainer({
+      primitive: 'MenuPrimitive',
+      spread: oneLine('MenuPrimitive', 'dropdown-menu-portal'),
+      inline: true,
+    }),
+    regular('text-xs font-medium text-muted-foreground data-inset:pl-7'),
+  ],
+  'components/input-group.tsx': [
+    regular('text-sm font-medium text-muted-foreground'),
+  ],
+  'components/input.tsx': [regular('file:font-medium')],
+  'components/kbd.tsx': [regular('text-xs font-medium text-muted-foreground')],
+  'components/label.tsx': [regular('leading-none font-medium')],
+  'components/popover.tsx': [
+    ...portalContainer({
+      primitive: 'PopoverPrimitive',
+      inline: true,
+    }),
+    regular("cn('font-medium', className)"),
+  ],
+  'components/progress.tsx': [regular("cn('text-sm font-medium', className)")],
   'components/select.tsx': portalContainer({
     primitive: 'SelectPrimitive',
     inline: true,
   }),
-  'components/sheet.tsx': portalContainer({
-    primitive: 'SheetPrimitive',
-    spread: oneLine('SheetPrimitive', 'sheet-portal'),
-  }),
+  'components/sheet.tsx': [
+    ...portalContainer({
+      primitive: 'SheetPrimitive',
+      spread: oneLine('SheetPrimitive', 'sheet-portal'),
+    }),
+    regular("'text-base font-medium text-foreground'"),
+  ],
+  'components/tabs.tsx': [regular('text-sm font-medium whitespace-nowrap')],
+  'components/toggle.tsx': [regular('text-sm font-medium whitespace-nowrap')],
   'components/tooltip.tsx': portalContainer({
     primitive: 'TooltipPrimitive',
     inline: true,
@@ -172,6 +226,7 @@ const registryPatches = {
       "        default: 'bg-primary text-primary-foreground hover:bg-primary/80',\n",
     ],
     solidButton,
+    regular('text-sm font-medium whitespace-nowrap'),
   ],
   'components/scroll-area.tsx': [
     // The registry file imports React and never reads it (`noUnusedLocals`).
@@ -184,6 +239,9 @@ const registryPatches = {
       '',
     ],
     ...sidebarScope,
+    regular('text-xs font-medium text-sidebar-foreground/70'),
+    regular('data-active:font-medium'),
+    regular('text-xs font-medium text-sidebar-foreground tabular-nums'),
   ],
 };
 

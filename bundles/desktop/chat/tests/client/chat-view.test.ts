@@ -1265,3 +1265,67 @@ test('edit tool calls stand outside the activity summary with their diff while t
     'npm test',
   );
 });
+
+test('a load_skill call stands as a block of its own between tool calls, never inside an activity summary', async () => {
+  const ran = (
+    sequence: number,
+    id: string,
+    name: string,
+    payload: Record<string, unknown>,
+    output: string,
+  ) => [
+    event(sequence, {
+      type: 'tool.started',
+      call: { id, name, index: 0, payload },
+    }),
+    event(sequence + 1, {
+      type: 'tool.finished',
+      call: { id, name, index: 0, payload },
+      record: { output },
+    }),
+  ];
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    event(1, {
+      type: 'prompt.accepted',
+      text: 'Write the tests',
+      source: { kind: 'user' },
+    }),
+    ...ran(2, 'call-1', 'grep', { pattern: 'createSandbox' }, 'a.ts:1'),
+    ...ran(
+      4,
+      'call-2',
+      'load_skill',
+      { name: 'cwd/behavioral-testing' },
+      '# Behavioral Testing',
+    ),
+    ...ran(6, 'call-3', 'find', { pattern: '*.test.ts' }, 'a.test.ts'),
+    ...ran(8, 'call-4', 'grep', { pattern: 'describe' }, 'a.test.ts:1'),
+    event(10, {
+      type: 'prompt.finished',
+      status: 'completed',
+      text: 'Done.',
+      source: { kind: 'user' },
+    }),
+  ]);
+
+  const editor = opened.document.querySelector('[data-lexical-editor]');
+  const rows = [...(editor?.children ?? [])];
+  const rowOf = (pattern: RegExp): Element | undefined =>
+    rows.find((row) => pattern.test(row.textContent ?? ''));
+
+  // The skill draws its own row, which is no summary of other calls.
+  const skill = rowOf(/Loaded skill/);
+  assert.ok(skill, 'the load_skill call draws a row of its own');
+  assert.doesNotMatch(skill.textContent ?? '', /Called \d+ tools?/);
+
+  // Only the two calls after it fold into a summary; the skill is not one of
+  // the calls it counts.
+  const summary = rowOf(/Called 2 tools/);
+  assert.ok(summary, 'the calls after the skill fold into a summary');
+  assert.notEqual(summary, skill);
+  assert.doesNotMatch(
+    opened.document.body.textContent ?? '',
+    /Called [34] tools/,
+  );
+});

@@ -21,12 +21,12 @@ import {
   indexOf,
   offsetOf,
   pseudoOf,
-  STAMP_ATTRIBUTE,
 } from '../anchor.js';
 import {
   type Bounds,
   type BoundsOf,
   nodeLabel,
+  ownStampOf,
   type PseudoBoundsOf,
   type SceneGraph,
   type SceneNode,
@@ -38,23 +38,6 @@ export interface ContentPoint {
   readonly x: number;
   readonly y: number;
 }
-
-/** The `path` and `line` an element's own origin stamp names. */
-const ownStampOf = (
-  node: SceneNode,
-): { readonly path: string; readonly line?: number } | undefined => {
-  const value = node.element.getAttribute(STAMP_ATTRIBUTE);
-  if (value === null || value === '') return undefined;
-
-  const match = /^(.*?):(\d+)$/.exec(value);
-  if (match === null) return { path: value };
-
-  const line = Number(match[2]);
-
-  return Number.isInteger(line) && line > 0
-    ? { path: match[1] ?? value, line }
-    : { path: value };
-};
 
 /**
  * The elements an anchor can still mean: those of its selector stamped from
@@ -160,9 +143,7 @@ const pickPeer = (
   const quoted =
     text === ''
       ? []
-      : peers.filter((node) =>
-          excerptOf(node.element.textContent ?? '').startsWith(text),
-        );
+      : peers.filter((node) => excerptOf(node.text).startsWith(text));
 
   if (quoted.length === 1) return quoted[0];
 
@@ -206,9 +187,7 @@ export const nodeOfAnchor = (
     const stamp =
       anchor.line === undefined ? path : `${path}:${String(anchor.line)}`;
 
-    return graph.nodes.find(
-      (node) => node.element.getAttribute(STAMP_ATTRIBUTE) === stamp,
-    );
+    return graph.nodes.find((node) => node.source === stamp);
   }
 
   const peers = peersOf(graph, anchor.selector, path);

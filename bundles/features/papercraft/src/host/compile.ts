@@ -31,7 +31,11 @@ import {
   type SourceReader,
   sourceCache,
 } from './bundle.js';
-import { compileStyles } from './css.js';
+import {
+  compileStyles,
+  type ProjectBytesReader,
+  type StyleAsset,
+} from './css.js';
 import { isRelative, packageOf } from './paths.js';
 import type { SandboxBundler } from './sandbox.js';
 
@@ -39,8 +43,10 @@ import type { SandboxBundler } from './sandbox.js';
 export interface CompiledComponent {
   /** The ESM module: `export function mount(root, { theme })`. */
   readonly js: string;
-  /** The Tailwind sheet the module's classes need, for its shadow root. */
+  /** The Tailwind sheet the module's classes need, linked in its document. */
   readonly css: string;
+  /** The fonts and images the sheet names, stored beside it. */
+  readonly assets: readonly StyleAsset[];
   /** The export of the source the module mounts (a story's, for CSF). */
   readonly exportName: string;
   /** The Project harness the module applies, when it has one. */
@@ -184,6 +190,7 @@ export const compileComponent = async (
   read: SourceReader,
   input: { readonly path: string; readonly entry?: string },
   bundler?: SandboxBundler,
+  readBytes?: ProjectBytesReader,
 ): Promise<CompiledComponent> => {
   const { build, version } = await import('esbuild');
   const cached = sourceCache(read);
@@ -214,6 +221,7 @@ export const compileComponent = async (
 
       return known === undefined ? cached(path) : Promise.resolve(known);
     },
+    ...(readBytes === undefined ? {} : { readBytes }),
     sources: bundled.sources,
     globalCss: bundled.globalCss,
     componentCss: bundled.componentCss,
@@ -224,6 +232,7 @@ export const compileComponent = async (
   return {
     js,
     css: sheet.css,
+    assets: sheet.assets,
     exportName: bundled.exportName,
     ...(bundled.harness === undefined ? {} : { harness: bundled.harness }),
     warnings: [...bundled.warnings, ...sheet.warnings],

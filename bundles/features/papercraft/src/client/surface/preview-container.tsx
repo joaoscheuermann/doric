@@ -23,6 +23,15 @@
 // the tool it had armed (`frame-focus.ts`), and the wheel pans only the
 // focused node. The window is always focused.
 //
+// The preview itself renders in a sandboxed iframe (`preview-surface.tsx`,
+// `live-frame.tsx`): the canvas reads what it rendered from the scene the
+// frame reports, tells it which layers to hide, which cursor to show and
+// whose input it is, and hears its pointer, wheel, keys and focus. In the
+// conversation the node keeps a live frame only while it is one of the
+// window's most recently used (`live-frames.ts`); otherwise the surface draws
+// its snapshot (`snapshots.ts`), which the canvas takes with its own drawings
+// concealed. The canvas window's revision is always live.
+//
 // The frame composes its parts: the scene (`scene.ts`), the fit (`fit.ts`),
 // the focus (`frame-focus.ts`), the gestures and keys (`gestures.ts`), the
 // comment flow (`comment-flow.ts`) and what it draws (`comment-overlay.tsx`),
@@ -37,7 +46,11 @@ import { TooltipProvider } from 'desktop/ui/tooltip';
 import { cn } from 'desktop/ui/utils';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import type { PreviewScope, PreviewTool } from '../../contracts/index.js';
+import {
+  PapercraftSnapshotV1,
+  type PreviewScope,
+  type PreviewTool,
+} from '../../contracts/index.js';
 import { touchController } from '../canvas-registry.js';
 import { CommandToolbar } from './command-toolbar.js';
 import { useCommentFlow, useCommentRequest } from './comment-flow.js';
@@ -50,15 +63,21 @@ import {
 import { useFit } from './fit.js';
 import { useFrameFocus } from './frame-focus.js';
 import { canvasKeys, useCanvasGestures } from './gestures.js';
+import { useLiveFrame } from './live-frames.js';
 import { NodeFooter } from './node-footer.js';
 import { HoverOutline, SelectionOutline } from './overlays.js';
 import { anchorResolver } from './pin-geometry.js';
 import type { CommentPin } from './pins-layer.js';
 import { ensureRevisionCached, usePreviewData } from './preview-data.js';
 import { PreviewHeader } from './preview-header.js';
-import { PreviewSurface, type SurfaceMode } from './preview-surface.js';
-import { useHiddenLayers, useScene } from './scene.js';
+import {
+  type FrameInput,
+  PreviewSurface,
+  type SurfaceMode,
+} from './preview-surface.js';
+import { useScene } from './scene.js';
 import { targetBounds, targetById } from './scene-graph.js';
+import type { SurfaceSnapshots } from './snapshots.js';
 import { useThreadOpenRequests } from './thread-open.js';
 import { DETACHED_STEP, openCountOf, pinsOf } from './threads-view.js';
 import { TreePanel } from './tree-panel.js';
@@ -142,6 +161,8 @@ export function PreviewContainer({
   const container = useRef<HTMLDivElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
 
+  const [measureRequest, setMeasureRequest] = useState(0);
+
   const latest = useRef<Latest>({
     viewport: IDENTITY,
     tool: 'select',
@@ -149,11 +170,14 @@ export function PreviewContainer({
     revision: undefined,
     scene: undefined,
   });
-  const scale = useCallback(() => latest.current.viewport.scale, []);
 
-  /* The scene graph, derived from what the revision rendered ---------------- */
+  /* The scene graph, derived by the frame from what the revision rendered --- */
 
-  const { scene, onContent, remeasure } = useScene(scale);
+  const { scene, onScene } = useScene();
+  const requestMeasure = useCallback(
+    () => setMeasureRequest((count) => count + 1),
+    [],
+  );
 
   latest.current = {
     viewport,
@@ -163,8 +187,6 @@ export function PreviewContainer({
     scene,
   };
 
-  useHiddenLayers(scene, hidden);
-
   /* The focus, the comment flow, the fit and the controller ------------------ */
 
   const focusCanvas = useCallback(() => {
@@ -172,11 +194,12 @@ export function PreviewContainer({
     touchController(artifactId);
   }, [artifactId]);
 
-  const { focused, focusedRef } = useFrameFocus({
-    container,
-    chrome,
-    focusCanvas,
-  });
+  const { focused, capture, focusedRef, consumeFramePointer, onFrameFocus } =
+    useFrameFocus({
+      container,
+      chrome,
+      focusCanvas,
+    });
 
   /** Whether the frame shows its controls and tools: the window always is. */
   const active = chrome === 'canvas' || focused;
@@ -218,12 +241,19 @@ export function PreviewContainer({
   });
 
   const contentKey = `${artifactId}@${String(selectedRevision ?? blockRevision ?? 1)}`;
-  const { areaSize, fitContent } = useFit({
+
+  // The node holds a live frame only among the window's most recently used;
+  // the canvas window's revision stays live outside that count.
+  const { live, use: markUsed } = useLiveFrame(
+    chrome === 'node' ? contentKey : undefined,
+    container,
+  );
+  const { areaSize, area, fitContent } = useFit({
     wrapper,
     scene,
     viewport,
     contentKey,
-    remeasure,
+    requestMeasure,
     setViewport,
   });
 
@@ -283,7 +313,7 @@ export function PreviewContainer({
     });
   }, []);
 
-  const { panning } = useCanvasGestures({
+  const { panning, framePointer, frameWheel } = useCanvasGestures({
     wrapper,
     chrome,
     focusedRef,
@@ -305,16 +335,85 @@ export function PreviewContainer({
     onComment: flow.beginNew,
   });
 
+  /** The node lets go of the focus: the canvas's, or the preview's frame's. */
+  const release = useCallback(() => {
+    const focus =
+      typeof document === 'undefined' ? null : document.activeElement;
+
+    if (focus instanceof HTMLElement && container.current?.contains(focus))
+      focus.blur();
+  }, []);
+
   const keys = canvasKeys({
     chrome,
     tool,
     inputOpen,
     canComment,
-    wrapper,
+    release,
     setSpaceHeld,
     setCommentMode,
     closeInput: flow.closeInput,
   });
+
+  // The frame's input, as the canvas's own: its first press only focuses an
+  // unfocused node; then its pointer and wheel are the gestures', its keys
+  // the canvas's (typed while the preview has the focus).
+  const latestKeys = useRef(keys);
+  latestKeys.current = keys;
+  const onFrameInput = useCallback(
+    (message: FrameInput) => {
+      switch (message.kind) {
+        case 'pointer':
+          markUsed();
+          if (!consumeFramePointer(message)) framePointer(message);
+
+          return;
+        case 'wheel':
+          frameWheel(message);
+
+          return;
+        case 'key': {
+          const handle =
+            message.type === 'keydown'
+              ? latestKeys.current.onKeyDown
+              : latestKeys.current.onKeyUp;
+
+          handle({ ...message, preventDefault: () => undefined });
+
+          return;
+        }
+        case 'focus':
+          onFrameFocus(message.focused);
+
+          return;
+      }
+    },
+    [consumeFramePointer, framePointer, frameWheel, onFrameFocus, markUsed],
+  );
+
+  // A snapshot is taken only while nothing moves the canvas or covers it,
+  // with the canvas's drawings concealed for the capture (styles.css). The
+  // canvas window's frame never dies, so it takes none.
+  const busy = useRef<() => boolean>(() => false);
+  busy.current = () => panning() || inputOpen;
+  const snapshots = useMemo<SurfaceSnapshots | undefined>(
+    () =>
+      chrome !== 'node'
+        ? undefined
+        : {
+            capture: async (rect) =>
+              services.use(PapercraftSnapshotV1).capture({ rect }),
+            busy: () => busy.current(),
+            conceal: () => {
+              const element = container.current;
+
+              element?.setAttribute('data-capturing', 'true');
+
+              return () => element?.removeAttribute('data-capturing');
+            },
+          },
+    [services, chrome],
+  );
 
   useCommentRequest(commentRequest, {
     canComment,
@@ -376,6 +475,22 @@ export function PreviewContainer({
         : undefined,
     [hasResolved, showResolved, toggleShowResolved],
   );
+
+  /** The canvas's cursor: the frame's own document shows it over the preview. */
+  const cursorLocked =
+    active && (tool === 'comment' || tool === 'pan' || spaceHeld);
+  // `panning` reads a ref: each move of a drag renders with the new view,
+  // and the frame is told only when the keyword changes.
+  const cursor = cursorLocked
+    ? {
+        locked: true,
+        cursor: panning()
+          ? 'grabbing'
+          : spaceHeld || tool === 'pan'
+            ? 'grab'
+            : 'crosshair',
+      }
+    : { locked: false };
 
   const selectedTarget =
     selectedId === undefined || scene === undefined
@@ -466,13 +581,19 @@ export function PreviewContainer({
               ensure={(id, revision) =>
                 ensureRevisionCached(services, scope, id, revision)
               }
-              onContent={onContent}
+              area={area}
+              capture={capture}
+              hidden={hidden}
+              measureRequest={measureRequest}
+              onScene={onScene}
               onMode={setSurfaceMode}
-              // The comment balloon (and the pan hand) stays over the
+              onInput={onFrameInput}
+              // The comment cursor (and the pan hand) stays over the
               // artifact's own elements, whatever cursor they declare.
-              lockCursor={
-                active && (tool === 'comment' || tool === 'pan' || spaceHeld)
-              }
+              cursor={cursor}
+              live={live}
+              title={title}
+              {...(snapshots === undefined ? {} : { snapshots })}
             />
           </div>
 

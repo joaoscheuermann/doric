@@ -28,7 +28,7 @@ export function GenericBlock({ block }: { readonly block?: RenderBlock }) {
   return (
     <div className="rounded-md border px-3 py-2 text-xs">
       <div className="flex flex-wrap items-baseline gap-x-2 text-muted-foreground">
-        <span className="font-medium text-foreground">{type}</span>
+        <span className="font-normal text-foreground">{type}</span>
         <span className="font-mono">{block.id}</span>
         {data !== undefined && (
           <time dateTime={data.createdAt}>{data.createdAt}</time>

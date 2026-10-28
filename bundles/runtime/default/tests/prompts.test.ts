@@ -5,7 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { systemPromptWith } from '../src/host/executor.js';
-import { skill } from './support/harness.js';
+import { sandboxSection } from './support/harness.js';
 
 // Ported from agents/doric/tests/direct-prompts.test.ts.
 
@@ -34,13 +34,11 @@ const workingDirectoryInstruction =
 const workingDirectoryStep = /working directory[^.]*`cwd` tool/u;
 
 void test('states the per-thread working directory in the base default prompt', () => {
-  assert.match(systemPromptWith([]), workingDirectoryInstruction);
+  assert.match(systemPromptWith(''), workingDirectoryInstruction);
 });
 
 void test('keeps the working-directory instruction in the assembled default prompt', () => {
-  const prompt = systemPromptWith([
-    skill('sandbox', 'Inspect before reporting.'),
-  ]);
+  const prompt = systemPromptWith(sandboxSection);
 
   assert.match(prompt, workingDirectoryInstruction);
   assert.ok(prompt.includes('Inspect before reporting.'));

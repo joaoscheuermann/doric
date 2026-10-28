@@ -54,6 +54,18 @@
 }
 
 /*
+ * While the window captures a preview's snapshot (`surface/snapshots.ts`),
+ * the canvas hides everything it draws over the preview, so the picture holds
+ * the preview alone and a dead frame draws the pins and outlines again on top.
+ */
+.papercraft-container[data-capturing] > :not(.papercraft-canvas),
+.papercraft-container[data-capturing]
+  .papercraft-canvas
+  > :not(.papercraft-viewport) {
+  visibility: hidden;
+}
+
+/*
  * A pin's shape, its fills and its growth live in the pin component
  * (`desktop/ui/comment-pin`); what the canvas owns stays here: the pending
  * marker, the active ring and the detached stacking.

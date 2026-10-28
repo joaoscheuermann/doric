@@ -1,6 +1,7 @@
 const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
 const { NxReactWebpackPlugin } = require('@nx/react/webpack-plugin');
 const { join } = require('node:path');
+const { showsInOverlay } = require('./overlay-errors');
 
 /**
  * Every window loads one shell page from `doric://app`, and main serves this
@@ -35,7 +36,11 @@ module.exports = {
     // The page's origin is `doric://app`, so the HMR socket cannot be derived
     // from it, and the requests main forwards carry that origin's host.
     allowedHosts: 'all',
-    client: { webSocketURL: 'ws://localhost:4200/ws' },
+    client: {
+      webSocketURL: 'ws://localhost:4200/ws',
+      // ResizeObserver notices and artifact previews' errors stay out of it.
+      overlay: { runtimeErrors: showsInOverlay },
+    },
     devMiddleware: { publicPath: shellPath },
     historyApiFallback: {
       index: `${shellPath}shell.html`,

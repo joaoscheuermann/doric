@@ -1,0 +1,23 @@
+{
+  "manifestVersion": 1,
+  "id": "mcp",
+  "version": "1.1.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "MCP servers per Project: their tools for the Project's prompts, with OAuth sign-in for remote servers.",
+  "provides": ["mcp/v1@1.1.0", "mcp.server/v1@1.0.0"],
+  "requires": [
+    "tools/v1@^1.3.0",
+    "storage/v1@^1.1.0",
+    "secrets/v1@^1.2.0",
+    "hooks/v1@^1.0.0",
+    "log/v1@^1.0.0",
+    "runtime/v1@^1.0.0",
+    "runtime.hooks/v1@^1.2.0",
+    "runtime.lease/v1@^1.1.0",
+    "runtime.attachments/v1@^1.0.0",
+    "ui/v1@^1.0.0",
+    "layout.workspace/v1@^1.1.0",
+    "layout.stack/v1@^1.0.0"
+  ],
+  "desktopScope": { "mcp/v1": ["projectId", "threadId", "promptId"] }
+}

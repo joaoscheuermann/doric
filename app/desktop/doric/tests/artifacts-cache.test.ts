@@ -27,6 +27,7 @@ import {
   type Services,
 } from 'bundle/contracts';
 
+import { renderFrameDocument } from '../src/platform/protocol/frame';
 import type { ProtocolDeps } from '../src/platform/protocol/handler';
 import { respond } from '../src/platform/protocol/handler';
 import { createShellRenderer } from '../src/platform/protocol/shell';
@@ -131,6 +132,7 @@ const deps = (): ProtocolDeps => ({
   },
   bundles: { file: () => undefined },
   artifacts: { root },
+  frame: renderFrameDocument({ imports: {} }),
   shell: createShellRenderer({
     mode: 'packaged',
     template: async () => TEMPLATE,

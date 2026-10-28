@@ -1141,5 +1141,31 @@
       "strict": true
     },
     "settings": []
+  },
+  {
+    "definition": {
+      "name": "load_skill",
+      "description": "Loads a skill listed under \"Skills to load\" in your instructions or in a later \"Skills changed\" message, and returns its instructions. Call it before starting work that a listed skill's description matches.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The skill's id, as listed in the Skill column."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+      },
+      "strict": true
+    },
+    "settings": []
   }
 ]

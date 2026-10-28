@@ -34,6 +34,15 @@
       "switchBranch"
     ],
     "host-config/v1": ["current", "replace"],
+    "mcp/v1": [
+      "create",
+      "finishSignIn",
+      "list",
+      "remove",
+      "signIn",
+      "update",
+      "watch"
+    ],
     "models/v1": ["catalog", "kind", "kinds"],
     "papercraft.previews/v1": ["build", "read"],
     "resources/v1": ["host", "project"],

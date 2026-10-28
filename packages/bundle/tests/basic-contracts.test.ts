@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { z } from 'zod';
+
 import {
   builtinCredentialKinds,
   type CatalogSnapshot,
   type ContractErrorCode,
+  type ContractTool,
   type CredentialKindDefinition,
   commitBatchSchema,
   contractErrorCodes,
@@ -31,6 +34,7 @@ import {
   streamEntrySchema,
   streamPageSchema,
   streamReadSchema,
+  toolsMethods,
 } from '../src/contracts/index.js';
 import { catalogSnapshotSchema } from '../src/contracts/platform.js';
 import { platformSchemaDocuments } from '../src/index.js';
@@ -558,6 +562,32 @@ void test('a catalog snapshot may carry the storage identity', () => {
       ...snapshot,
       storage: { hostId: 'nope', storageGeneration: 2 },
     }),
+    false,
+  );
+});
+
+// tools/v1 -------------------------------------------------------------------
+
+void test('a tool registration may name a non-empty Project and nothing else', () => {
+  const tool: ContractTool = {
+    name: 'lookup',
+    input: z.object({}),
+    output: z.unknown(),
+    definition: {
+      name: 'lookup',
+      inputSchema: { type: 'object' },
+      outputSchema: {},
+    },
+    settings: [],
+    execute: async () => undefined,
+  };
+  const valid = accepts(toolsMethods.register.input);
+
+  assert.ok(valid([tool, { alwaysAvailable: false }]));
+  assert.ok(valid([tool, { alwaysAvailable: false, projectId: 'p1' }]));
+  assert.equal(valid([tool, { alwaysAvailable: false, projectId: '' }]), false);
+  assert.equal(
+    valid([tool, { alwaysAvailable: false, projectId: 'p1', scope: 'p1' }]),
     false,
   );
 });

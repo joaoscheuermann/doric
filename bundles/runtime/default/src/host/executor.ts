@@ -8,23 +8,18 @@ import {
   ModelsV1,
   type RegisteredTool,
   type Services,
-  type SkillRecord,
-  SkillsV1,
   ToolsV1,
 } from 'bundle/contracts';
 import { ConfigurationV1 } from 'host-config/contracts';
 import type { LlmProvider, ProviderMessage } from 'llms';
 import { createMessageStorage } from 'messages';
-import type {
-  ExecutorRunInput,
-  ExecutorRunResult,
-  PromptJob,
-} from 'runtime/contracts';
+import type { ExecutorRunInput, ExecutorRunResult } from 'runtime/contracts';
 import {
   type BoundTool,
   createToolStorage,
   isBoundTool,
   ToolErrorObject,
+  type ToolStorage,
 } from 'tool';
 
 import type { DefaultHooksV1 } from '../contracts/index.js';
@@ -32,9 +27,14 @@ import { withAttachments } from './attachments.js';
 import { compactionConfig, maybeCompactRun } from './compact.js';
 import { isContextOverflowError } from './compaction/project.js';
 import { coalesced } from './deltas.js';
+import { input } from './envelope.js';
 import { readMessages, readMeta, saved } from './history.js';
 import { systemPrompt } from './prompts/system.js';
 import { retainedKey, type Workflow } from './repository.js';
+import { skillCatalog } from './skills/catalog.js';
+import { liveCatalog } from './skills/live.js';
+import { LOAD_SKILL_TOOL, loadSkillTool } from './skills/load-skill.js';
+import { type CatalogSkill, readRunSkills } from './skills/sources.js';
 import { resolveToolConfigs } from './tool-config.js';
 
 // Moved from agents/doric/src/lib/agents/direct/executor.ts (design 57 §5.3).
@@ -42,73 +42,13 @@ import { resolveToolConfigs } from './tool-config.js';
 // redacts, sanitizes, persists and publishes, and keeps the persistence retry.
 // The run writes through `coalesced`, so streamed deltas reach the log merged.
 
-/** Common default-agent policy for human chats and delegated child chats. */
-export const systemPromptWith = (
-  skills: readonly Pick<SkillRecord, 'name' | 'body'>[],
-): string => {
-  let prompt = systemPrompt;
-  for (const { name, body } of skills) {
-    prompt += `
-
-## Skill: ${name}
-
-${body}`;
-  }
-  return prompt;
-};
-
-const envelopeTags = [
-  'user-request',
-  'parent-instruction',
-  'terminal-output',
-  'child-result',
-  'bundle-instruction',
-] as const;
-
-const closingTags = new RegExp(`</(${envelopeTags.join('|')})`, 'gi');
-
-const attribute = (value: string): string =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;');
-
 /**
- * Wraps the prompt in the XML envelope that names where the input came from.
- * Only the attribute values are escaped; the body stays as written, except that
- * a literal closing envelope tag is defused so the text cannot end the
- * envelope early. A plain-text prompt (older history, no inner tags) is
- * wrapped unchanged.
+ * The default agent's system prompt: `systemPrompt` when `section` is '', else
+ * `${systemPrompt}\n\n${section}`. Used for human chats and delegated child
+ * chats alike.
  */
-const input = (job: PromptJob): string => {
-  const source = job.source;
-  const [tag, attributes] =
-    source.kind === 'user'
-      ? (['user-request', ''] as const)
-      : source.kind === 'parent'
-        ? ([
-            'parent-instruction',
-            ` thread="${attribute(source.threadId)}" prompt="${attribute(source.promptId)}"`,
-          ] as const)
-        : source.kind === 'terminal'
-          ? ([
-              'terminal-output',
-              ` terminal="${attribute(source.terminalId)}" prompt="${attribute(source.promptId)}"`,
-            ] as const)
-          : source.kind === 'bundle'
-            ? ([
-                'bundle-instruction',
-                ` bundle="${attribute(source.bundleId)}" reason="${attribute(source.reason)}"`,
-              ] as const)
-            : ([
-                'child-result',
-                ` thread="${attribute(source.threadId)}" prompt="${attribute(source.promptId)}"`,
-              ] as const);
-  const body = job.prompt.replace(closingTags, '<\\/$1');
-  return `<${tag}${attributes}>
-${body}
-</${tag}>`;
-};
+export const systemPromptWith = (section: string): string =>
+  section === '' ? systemPrompt : `${systemPrompt}\n\n${section}`;
 
 /**
  * What a restart interrupted a tool call with, handed back to the model as that
@@ -195,6 +135,31 @@ const generationLost = (error: unknown): boolean => {
   return false;
 };
 
+/**
+ * The run's tools with `load_skill` left out of `definitions()` until
+ * `listed()` first holds a skill, and offered from then on, so a run with no
+ * skill to load sends no such tool. Every other method delegates.
+ */
+const offeringSkills = (
+  storage: ToolStorage,
+  listed: () => ReadonlyMap<string, CatalogSkill>,
+): ToolStorage => {
+  let offered = false;
+  return {
+    definitions: () => {
+      offered ||= listed().size > 0;
+      const definitions = storage.definitions();
+      return offered
+        ? definitions
+        : definitions.filter(({ name }) => name !== LOAD_SKILL_TOOL);
+    },
+    calls: (turn) => storage.calls(turn),
+    validate: (call) => storage.validate(call),
+    get: (name) => storage.get(name),
+    execute: (call) => storage.execute(call),
+  };
+};
+
 /** The tools of the prompt's generation; each must be one `defineTool` bound. */
 const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
   tools.map(({ tool }) => {
@@ -207,8 +172,18 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
 
 /**
  * Runs one prompt input, retaining provider-ready history for its Thread
- * through the runtime's session. Every tool and skill the bundles registered
- * is offered, in bundle order, and each tool runs under the prompt's call.
+ * through the runtime's session. Every tool the bundles registered is offered,
+ * in bundle order, and each tool runs under the prompt's call. The run's
+ * skills are read at its start: the always-available bodies and the lists of
+ * skills to load make the system prompt's `# Skills` section, which stays the
+ * same for the whole run. Before every request after the first, the working
+ * directory and the MCP servers are read again and a change reaches the model
+ * as one "Skills changed" bundle instruction. The run's own `load_skill` tool,
+ * last and offered once a skill can be loaded, loads a listed one, answers a
+ * note for one the history already holds unchanged, and is exempt from the
+ * tool result cap. A compaction keeps the skills it condensed away in one
+ * retained "Loaded skills" message and makes the next check compare with the
+ * system prompt's lists again.
  * Before every model request the system prompt passes through
  * `onBeforeModelRequestHook`, under the prompt's call. A standing
  * instruction (a retained bundle steer) is recorded in `meta.retained` when
@@ -237,8 +212,12 @@ export const runPrompt = async (
   const compaction = compactionConfig(configuration);
   // `list` answers a promise when tools/v1 is in another process.
   const tools = boundTools(await services.use(ToolsV1).list(call));
-  const skills = (await services.use(SkillsV1).list(call)).map(
-    ({ skill }) => skill,
+  const skills = await readRunSkills(thread.cwd, call, services);
+  const catalog = skillCatalog(skills);
+  const live = liveCatalog(
+    { cwd: thread.cwd, skills, catalog },
+    call,
+    services,
   );
   const execution = configuration.models.execution;
   const { languageModel } = await services.use(ModelsV1).resolve(
@@ -287,7 +266,7 @@ export const runPrompt = async (
     settle();
     return saved(messages.list(), checkpoints, retained);
   };
-  const base = systemPromptWith(skills);
+  const base = systemPromptWith(catalog.section);
   const agent = createAgent({
     provider,
     model: execution.model,
@@ -295,19 +274,32 @@ export const runPrompt = async (
     system: async () =>
       (await hooks.onBeforeModelRequestHook.execute({ system: base }, call))
         .system,
-    tools: createToolStorage(
-      (() => {
-        // Tool values reach tools through settings/v1 from stage 2; resolving
-        // them here still refuses a prompt whose tool settings are unmet.
-        resolveToolConfigs(tools, configuration);
+    tools: offeringSkills(
+      createToolStorage(
+        (() => {
+          // Tool values reach tools through settings/v1 from stage 2; resolving
+          // them here still refuses a prompt whose tool settings are unmet.
+          resolveToolConfigs(tools, configuration);
 
-        return tools.map((tool) => tool.toTool(call));
-      })(),
+          return [
+            ...tools.map((tool) => tool.toTool(call)),
+            loadSkillTool(
+              () => live.listed(),
+              () => messages.list(),
+              call,
+              services,
+            ),
+          ];
+        })(),
+      ),
+      () => live.listed(),
     ),
     toolCalls: createToolCallStorage(),
     messages,
   });
   let text = '';
+  /** Set once the first request was made: the skills are checked before every later one. */
+  let checked = false;
   /** Set once the run's generation process was lost; see below. */
   let lost = false;
   /** The last response's reported usage and window, for the projection. */
@@ -347,6 +339,8 @@ export const runPrompt = async (
     if (result.status === 'compacted') {
       checkpoints = result.checkpoints;
       retained = result.retained;
+      // A change message the summary replaced is told again.
+      live.rebase();
     }
   };
   // A long resumed history plus this run's input is the classic overflow:
@@ -374,7 +368,20 @@ export const runPrompt = async (
       resume,
       signal,
       maxTurns: configuration.execution.maxTurns,
-      maxToolResultChars: configuration.execution.maxToolResultChars,
+      // A loaded skill reaches the model whole; its own cap bounds it.
+      maxToolResultChars: (name) =>
+        name === LOAD_SKILL_TOOL
+          ? undefined
+          : configuration.execution.maxToolResultChars,
+      beforeRequest: async () => {
+        // The first request reads the skills the system prompt lists.
+        if (!checked) {
+          checked = true;
+          return [];
+        }
+        const message = await live.refresh();
+        return message === undefined ? [] : [message];
+      },
       ...(session.steers === undefined
         ? {}
         : {
@@ -382,7 +389,7 @@ export const runPrompt = async (
             // reader's request, a child's result or a terminal's output.
             steering: async () =>
               ((await session.steers?.()) ?? []).map(({ prompt, source }) => {
-                const text = input({ id: job.id, prompt, source });
+                const text = input({ prompt, source });
                 if (source.kind === 'bundle' && source.retain === true)
                   retaining.set(
                     text,

@@ -14,6 +14,10 @@ import { promisify } from 'node:util';
 
 import { BrowserWindow, protocol } from 'electron';
 
+import {
+  frameImportMap,
+  renderFrameDocument,
+} from '../../doric/src/platform/protocol/frame';
 import { respond } from '../../doric/src/platform/protocol/handler';
 import { platformImportMap } from '../../doric/src/platform/protocol/import-map';
 import { resourcesFor } from '../../doric/src/platform/protocol/resources';
@@ -122,6 +126,7 @@ describe('doric:// privileges', () => {
               : undefined,
         },
         artifacts: { root: join(root, 'artifacts') },
+        frame: renderFrameDocument(frameImportMap(importMap)),
         shell: {
           render: () =>
             createShellRenderer({

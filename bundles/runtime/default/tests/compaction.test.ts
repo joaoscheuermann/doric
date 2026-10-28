@@ -452,3 +452,140 @@ void test('a span of only earlier summaries and retained messages has nothing to
     { status: 'refused', reason: 'nothing_to_compact' },
   );
 });
+
+/*
+ * A retained message the rewrite swaps instead of keeping (the loaded skills):
+ * the condensed span's old one goes, the new one follows the summary and the
+ * other retained messages kept, and every index re-bases around it.
+ */
+
+const oldSkills = user(
+  '<bundle-instruction bundle="default" reason="loaded-skills">\nOld.\n</bundle-instruction>',
+);
+const newSkills = user(
+  '<bundle-instruction bundle="default" reason="loaded-skills">\nNew.\n</bundle-instruction>',
+);
+
+void test('R1 swaps the retained message under the key for the new one, after the other kept retained messages, and re-bases the rest', () => {
+  const messages = [
+    user('a'),
+    instruction,
+    oldSkills,
+    user('b'),
+    user('c'),
+    user('d'),
+    user('later'),
+  ];
+  const applied = applyCompaction({
+    messages,
+    meta: {
+      checkpoints: { early: 3, late: 5 },
+      messageCount: 7,
+      retained: {
+        'default:coding-workflow': 1,
+        'default:loaded-skills': 2,
+        'test:later': 6,
+      },
+    },
+    end: 5,
+    trigger: 'automatic',
+    summaryId: 'compaction-test',
+    summary: 'facts',
+    replace: { key: 'default:loaded-skills', message: newSkills },
+  });
+
+  assert.deepEqual(applied.rewritten.messages, [
+    applied.summaryMessage,
+    instruction,
+    newSkills,
+    user('d'),
+    user('later'),
+  ]);
+  assert.deepEqual(applied.replacement, [
+    applied.summaryMessage,
+    instruction,
+    newSkills,
+  ]);
+  assert.deepEqual(applied.rewritten.meta, {
+    checkpoints: { late: 3 },
+    messageCount: 5,
+    retained: {
+      'default:coding-workflow': 1,
+      'default:loaded-skills': 2,
+      'test:later': 4,
+    },
+  });
+  assert.equal(applied.condensation.retainedMessages, 5);
+});
+
+void test('R1 drops the retained message under the key and inserts nothing when the swap has no message', () => {
+  const messages = [
+    user('a'),
+    instruction,
+    oldSkills,
+    user('b'),
+    user('c'),
+    user('d'),
+    user('later'),
+  ];
+  const applied = applyCompaction({
+    messages,
+    meta: {
+      checkpoints: { late: 5 },
+      messageCount: 7,
+      retained: {
+        'default:coding-workflow': 1,
+        'default:loaded-skills': 2,
+        'test:later': 6,
+      },
+    },
+    end: 5,
+    trigger: 'automatic',
+    summaryId: 'compaction-test',
+    summary: 'facts',
+    replace: { key: 'default:loaded-skills' },
+  });
+
+  assert.deepEqual(applied.rewritten.messages, [
+    applied.summaryMessage,
+    instruction,
+    user('d'),
+    user('later'),
+  ]);
+  assert.deepEqual(applied.rewritten.meta, {
+    checkpoints: { late: 2 },
+    messageCount: 4,
+    retained: { 'default:coding-workflow': 1, 'test:later': 3 },
+  });
+  assert.equal(applied.condensation.retainedMessages, 4);
+});
+
+void test('R1 adds the new message after the kept retained ones when the span held none under the key', () => {
+  const messages = [user('a'), instruction, user('b'), user('c'), user('d')];
+  const applied = applyCompaction({
+    messages,
+    meta: {
+      checkpoints: { late: 4 },
+      messageCount: 5,
+      retained: { 'default:coding-workflow': 1 },
+    },
+    end: 3,
+    trigger: 'automatic',
+    summaryId: 'compaction-test',
+    summary: 'facts',
+    replace: { key: 'default:loaded-skills', message: newSkills },
+  });
+
+  assert.deepEqual(applied.rewritten.messages, [
+    applied.summaryMessage,
+    instruction,
+    newSkills,
+    user('c'),
+    user('d'),
+  ]);
+  assert.deepEqual(applied.rewritten.meta, {
+    checkpoints: { late: 4 },
+    messageCount: 5,
+    retained: { 'default:coding-workflow': 1, 'default:loaded-skills': 2 },
+  });
+});

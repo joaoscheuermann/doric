@@ -44,7 +44,7 @@ const STYLE = [
   '.artifacts-review-lead { color: var(--muted-foreground, #6b7280); }',
   '.artifacts-policy { display: grid; gap: 8px; border: none; margin: 0; padding: 0; }',
   '.artifacts-policy-choice { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: start; }',
-  '.artifacts-policy-label { font-weight: 500; }',
+  '.artifacts-policy-label { font-weight: 400; }',
   '.artifacts-policy-text { color: var(--muted-foreground, #6b7280); font-size: 0.875rem; }',
   '.artifacts-review-error { color: var(--destructive, #dc2626); font-size: 0.875rem; }',
   '.artifacts-review-error[hidden] { display: none; }',

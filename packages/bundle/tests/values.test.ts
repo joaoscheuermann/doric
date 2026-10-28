@@ -193,6 +193,8 @@ void test('every basic and platform method has a stated way across the envelope'
       focusOrOpen: 'crosses',
       lastPath: 'crosses',
       focus: 'crosses',
+      navigate: 'crosses',
+      capture: 'crosses',
     },
     'doric.menus/v1': {
       setSkeleton: 'crosses',

@@ -76,12 +76,12 @@ export const findHarness = async (
 /**
  * Built-in stand-ins for Storybook runtime packages a harness commonly
  * imports. Each follows the addon's public API, keyed on the preview's theme
- * (`context.globals.theme`, `'light'` or `'dark'`), and wraps the story in
- * an element instead of touching `document.documentElement`, which the
- * shadow-rooted preview does not own.
+ * (`context.globals.theme`, `'light'` or `'dark'`). The preview owns its
+ * document (the frame's), so the theme decorators set their class or
+ * attribute on `parentSelector` (`html` by default), as the real addon does.
  */
 export const STORYBOOK_SHIMS: Readonly<Record<string, string>> = {
-  '@storybook/addon-themes': `import { createElement, Fragment } from 'react';
+  '@storybook/addon-themes': `import { createElement, Fragment, useLayoutEffect } from 'react';
 const pick = (themes, defaultTheme, context) => {
   const names = Object.keys(themes || {});
   const wanted = context && context.globals ? context.globals.theme : undefined;
@@ -89,10 +89,27 @@ const pick = (themes, defaultTheme, context) => {
   if (defaultTheme !== undefined && names.includes(defaultTheme)) return defaultTheme;
   return names[0];
 };
-export const withThemeByClassName = ({ themes, defaultTheme } = {}) => (Story, context) =>
-  createElement('div', { className: (themes || {})[pick(themes, defaultTheme, context)] || undefined, style: { display: 'contents' } }, createElement(Story));
-export const withThemeByDataAttribute = ({ themes, defaultTheme, attributeName = 'data-theme' } = {}) => (Story, context) =>
-  createElement('div', { [attributeName]: (themes || {})[pick(themes, defaultTheme, context)], style: { display: 'contents' } }, createElement(Story));
+const classesOf = (value) => (typeof value === 'string' ? value.split(/\\s+/).filter(Boolean) : []);
+export const withThemeByClassName = ({ themes, defaultTheme, parentSelector = 'html' } = {}) => (Story, context) => {
+  const selected = (themes || {})[pick(themes, defaultTheme, context)];
+  useLayoutEffect(() => {
+    const parent = document.querySelector(parentSelector);
+    if (parent === null) return;
+    for (const value of Object.values(themes || {})) parent.classList.remove(...classesOf(value));
+    parent.classList.add(...classesOf(selected));
+  }, [selected]);
+  return createElement(Story);
+};
+export const withThemeByDataAttribute = ({ themes, defaultTheme, parentSelector = 'html', attributeName = 'data-theme' } = {}) => (Story, context) => {
+  const selected = (themes || {})[pick(themes, defaultTheme, context)];
+  useLayoutEffect(() => {
+    const parent = document.querySelector(parentSelector);
+    if (parent === null) return;
+    if (selected === undefined) parent.removeAttribute(attributeName);
+    else parent.setAttribute(attributeName, selected);
+  }, [selected]);
+  return createElement(Story);
+};
 export const withThemeFromJSXProvider = ({ themes, defaultTheme, Provider, GlobalStyles } = {}) => (Story, context) => {
   const theme = (themes || {})[pick(themes, defaultTheme, context)];
   const body = createElement(Fragment, null, GlobalStyles ? createElement(GlobalStyles) : null, createElement(Story));

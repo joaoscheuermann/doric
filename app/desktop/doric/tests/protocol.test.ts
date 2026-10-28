@@ -4,8 +4,17 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { constants, Script } from 'node:vm';
 
-import { developmentCsp, packagedCsp } from '../src/platform/protocol/csp';
+import {
+  developmentCsp,
+  packagedCsp,
+  splashCsp,
+} from '../src/platform/protocol/csp';
+import {
+  frameImportMap,
+  renderFrameDocument,
+} from '../src/platform/protocol/frame';
 import {
   type ProtocolDeps,
   respond,
@@ -46,6 +55,40 @@ const map: ImportMap = {
   },
 };
 
+/** A platform map with a preview's externals among everything else. */
+const platformMap: ImportMap = {
+  imports: {
+    react: 'doric://app/platform/react@19.2.8/index.js',
+    'react/jsx-runtime': 'doric://app/platform/react@19.2.8/jsx-runtime.js',
+    'react/jsx-dev-runtime':
+      'doric://app/platform/react@19.2.8/jsx-dev-runtime.js',
+    'react-dom': 'doric://app/platform/react-dom@19.2.8/index.js',
+    'react-dom/client': 'doric://app/platform/react-dom@19.2.8/client.js',
+    '@base-ui/react': 'doric://app/platform/@base-ui/react@1.8.0/index.js',
+    '@base-ui/react/dialog':
+      'doric://app/platform/@base-ui/react@1.8.0/dialog.js',
+    '@base-ui/react/internals/noop':
+      'doric://app/platform/@base-ui/react@1.8.0/internals/noop.js',
+    '@base-ui/reactive': 'doric://app/platform/@base-ui/reactive@1.0.0/x.js',
+    'react-is': 'doric://app/platform/react-is@19.2.8/index.js',
+    zod: 'doric://app/platform/zod@4.4.3/index.js',
+    lexical: 'doric://app/platform/lexical@0.51.0/index.js',
+    'desktop/ui': 'doric://app/platform/desktop@1.0.0/ui/index.js',
+    'bundle/contracts': 'doric://app/platform/bundle@1.0.0/contracts.js',
+    'core/contracts': 'doric://app/bundles/core@1.3.0/contracts/index.js',
+  },
+};
+
+/** The plan's frame policy for an import map hash. */
+const FRAME_POLICY = (hash: string) =>
+  `default-src 'none'; script-src doric://app 'sha256-${hash}'; style-src doric://app 'unsafe-inline'; font-src doric://app; img-src doric://app data: blob:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors doric://app`;
+
+const sha256 = (text: string) =>
+  createHash('sha256').update(text, 'utf8').digest('base64');
+
+const importMapOf = (html: string): string | undefined =>
+  /<script type="importmap">(.*?)<\/script>/su.exec(html)?.[1];
+
 let root: string;
 let resources: Resources;
 const listed = new Map<string, string>();
@@ -65,6 +108,7 @@ const deps = (overrides: Partial<ProtocolDeps> = {}): ProtocolDeps => ({
     themeHref: '/platform/desktop@1.0.0/theme.css',
     devServerOrigin: 'http://localhost:4200',
   }),
+  frame: renderFrameDocument(frameImportMap(platformMap)),
   ...overrides,
 });
 
@@ -124,6 +168,21 @@ before(async () => {
     'probe@1.0.0/client/index.js',
     join(root, 'cache', 'probe@1.0.0', 'client', 'index.js'),
   );
+  await mkdir(join(root, 'cache', 'probe@1.0.0', 'client', 'frames'), {
+    recursive: true,
+  });
+  await mkdir(join(root, 'cache', 'probe@1.0.0', 'desktop'), {
+    recursive: true,
+  });
+
+  for (const path of [
+    'client/frames/preview.js',
+    'client/framesake.js',
+    'desktop/index.js',
+  ]) {
+    await writeFile(join(root, 'cache', 'probe@1.0.0', path), 'export {};');
+    listed.set(`probe@1.0.0/${path}`, join(root, 'cache', 'probe@1.0.0', path));
+  }
 });
 
 after(async () => {
@@ -221,14 +280,50 @@ describe('doric://app routing', () => {
     }
   });
 
+  test('answers the shell only to a navigation: a font or image at an app path is a 404', async () => {
+    const at = (url: string, destination: string) =>
+      respond(
+        { url, headers: new Headers({ 'sec-fetch-dest': destination }) },
+        deps(),
+      );
+
+    const navigation = await at('doric://app/settings', 'document');
+    assert.equal(navigation.status, 200);
+    assert.equal(navigation.headers.get('content-type'), 'text/html');
+
+    // Electron passes a custom scheme's handler no `Sec-Fetch-Dest`: what a
+    // request accepts tells a navigation from a subresource.
+    const accepting = (url: string, accept: string) =>
+      respond({ url, headers: new Headers({ accept }) }, deps());
+    const page = await accepting(
+      'doric://app/projects/p1',
+      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    );
+    assert.equal(page.status, 200);
+    for (const accept of ['*/*', 'image/avif,image/webp,image/*,*/*;q=0.8']) {
+      const asset = await accepting('doric://app/assets/fonts/a.woff2', accept);
+      assert.equal(asset.status, 404, accept);
+    }
+
+    // A sheet's font written for another place lands on an app path.
+    for (const [url, destination] of [
+      ['doric://app/assets/fonts/noto-sans-latin-normal.woff2', 'font'],
+      ['doric://app/assets/hero.png', 'image'],
+      ['doric://app/settings', 'iframe'],
+      ['doric://app/projects/p1', 'script'],
+    ] as const) {
+      const response = await at(url, destination);
+
+      assert.equal(response.status, 404, `${destination} ${url}`);
+      assert.doesNotMatch(await response.text(), /<!doctype/iu);
+    }
+  });
+
   test('serves the splash page with the packaged CSP without a hash', async () => {
     const response = await get('doric://app/platform/splash@1.0.0/index.html');
 
     assert.equal(response.status, 200);
-    assert.equal(
-      response.headers.get('content-security-policy'),
-      packagedCsp(),
-    );
+    assert.equal(response.headers.get('content-security-policy'), splashCsp());
   });
 
   test('forwards shell assets to the dev server in development', async () => {
@@ -257,16 +352,22 @@ describe('doric://app routing', () => {
 });
 
 describe('content security policy', () => {
-  test('packaged is today plus worker-src and the import map hash', () => {
+  test('the packaged shell is today plus worker-src, the import map hash and the frame document', () => {
     assert.equal(
       packagedCsp('HASH'),
       TODAY_PACKAGED.replace(
         "script-src 'self'",
         "script-src 'self' 'sha256-HASH'; worker-src 'self'",
+      ).replace(
+        "font-src 'self'",
+        "font-src 'self'; frame-src doric://app/frame/",
       ),
     );
+  });
+
+  test('the splash is today plus worker-src, and frames nothing', () => {
     assert.equal(
-      packagedCsp(),
+      splashCsp(),
       TODAY_PACKAGED.replace(
         "script-src 'self'",
         "script-src 'self'; worker-src 'self'",
@@ -274,17 +375,34 @@ describe('content security policy', () => {
     );
   });
 
-  test('development is today plus the import map hash', () => {
+  test('the development shell is today plus the import map hash and the frame document', () => {
     assert.equal(
       developmentCsp('HASH', 'http://localhost:4200'),
-      TODAY_DEVELOPMENT.replace("'unsafe-eval'", "'unsafe-eval' 'sha256-HASH'"),
+      TODAY_DEVELOPMENT.replace(
+        "'unsafe-eval'",
+        "'unsafe-eval' 'sha256-HASH'",
+      ).replace(
+        "font-src 'self'",
+        "font-src 'self'; frame-src doric://app/frame/",
+      ),
     );
   });
 
-  test('neither policy carves out a frame origin: the default source governs frames', () => {
-    assert.ok(!packagedCsp('HASH').includes('frame-src'));
-    assert.ok(
-      !developmentCsp('HASH', 'http://localhost:4200').includes('frame-src'),
+  test('a development shell answer frames only the frame document too', async () => {
+    const response = await get('doric://app/', {
+      shell: createShellRenderer({
+        mode: 'development',
+        template: async () => TEMPLATE,
+        generation: () => 3,
+        importMap: () => map,
+        themeHref: '/platform/desktop@1.0.0/theme.css',
+        devServerOrigin: 'http://localhost:4200',
+      }),
+    });
+
+    assert.match(
+      response.headers.get('content-security-policy') ?? '',
+      /; frame-src doric:\/\/app\/frame\/;/u,
     );
   });
 
@@ -347,5 +465,220 @@ describe('shell document', () => {
       'doric://app/bundles/core@1.3.0/contracts/index.js',
     );
     assert.equal(parsed.imports.react, map.imports.react);
+  });
+});
+
+describe('preview frame document', () => {
+  test('is served at /frame/index.html, whatever its entry, with the frame policy over its own import map', async () => {
+    for (const url of [
+      'doric://app/frame/index.html',
+      'doric://app/frame/index.html?entry=doric%3A%2F%2Fapp%2Fbundles%2Fpapercraft%401.0.0%2Fclient%2Fframes%2Fpreview.js',
+    ]) {
+      const response = await get(url);
+      const html = await response.text();
+      const text = importMapOf(html);
+
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get('content-type'), 'text/html', url);
+      assert.notEqual(text, undefined, url);
+      assert.equal(
+        response.headers.get('content-security-policy'),
+        FRAME_POLICY(sha256(text as string)),
+        url,
+      );
+      assert.match(html, /<body><\/body>/u, url);
+      assert.match(
+        html,
+        /<script type="module" src="doric:\/\/app\/frame\/boot\.js"><\/script>/u,
+        url,
+      );
+    }
+  });
+
+  test('may be embedded by doric://app only, never refused outright', async () => {
+    const policy =
+      (await get('doric://app/frame/index.html')).headers.get(
+        'content-security-policy',
+      ) ?? '';
+
+    assert.ok(policy.endsWith('; frame-ancestors doric://app'));
+    assert.ok(!policy.includes("frame-ancestors 'none'"));
+  });
+
+  test("carries only a preview's externals, as the platform's absolute URLs", async () => {
+    const html = await (await get('doric://app/frame/index.html')).text();
+    const parsed = JSON.parse(importMapOf(html) as string) as ImportMap;
+
+    assert.deepEqual(parsed, {
+      imports: {
+        react: 'doric://app/platform/react@19.2.8/index.js',
+        'react/jsx-runtime': 'doric://app/platform/react@19.2.8/jsx-runtime.js',
+        'react/jsx-dev-runtime':
+          'doric://app/platform/react@19.2.8/jsx-dev-runtime.js',
+        'react-dom': 'doric://app/platform/react-dom@19.2.8/index.js',
+        'react-dom/client': 'doric://app/platform/react-dom@19.2.8/client.js',
+        '@base-ui/react': 'doric://app/platform/@base-ui/react@1.8.0/index.js',
+        '@base-ui/react/dialog':
+          'doric://app/platform/@base-ui/react@1.8.0/dialog.js',
+        '@base-ui/react/internals/noop':
+          'doric://app/platform/@base-ui/react@1.8.0/internals/noop.js',
+      },
+    });
+  });
+
+  test('serves boot.js as a script; any other /frame/ path is a 404', async () => {
+    const boot = await get('doric://app/frame/boot.js');
+
+    assert.equal(boot.status, 200);
+    assert.equal(boot.headers.get('content-type'), 'text/javascript');
+
+    for (const url of [
+      'doric://app/frame/',
+      'doric://app/frame/other.js',
+      'doric://app/frame/index.htm',
+      'doric://app/frame/index.html/x',
+      'doric://app/frame/sub/index.html',
+      'doric://app/frame//index.html',
+      'doric://app/frame/%2e%2e%2fsettings',
+    ]) {
+      const response = await get(url);
+
+      assert.equal(response.status, 404, url);
+      assert.doesNotMatch(await response.text(), /<html/iu, url);
+    }
+  });
+});
+
+describe('boot.js runs only a bundle frame entry', () => {
+  // Node cannot load `doric://`: a resolve hook (the module loader is the
+  // boundary) records each `doric:` import and answers an empty module.
+  let imported: string[] = [];
+
+  before(async () => {
+    const { registerHooks } = (await import('node:module')) as unknown as {
+      registerHooks(hooks: {
+        resolve(
+          specifier: string,
+          context: unknown,
+          next: (specifier: string, context: unknown) => unknown,
+        ): unknown;
+      }): void;
+    };
+
+    registerHooks({
+      resolve: (specifier, context, next) => {
+        if (!specifier.startsWith('doric:')) {
+          return next(specifier, context);
+        }
+
+        imported.push(specifier);
+
+        return { url: 'data:text/javascript,export{}', shortCircuit: true };
+      },
+    });
+  });
+
+  /** Runs the served boot script at `search`; the specifiers it imported. */
+  const boot = async (search: string): Promise<string[]> => {
+    const source = await (await get('doric://app/frame/boot.js')).text();
+    const script = new Script(source, {
+      importModuleDynamically: constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+    });
+
+    imported = [];
+    script.runInNewContext({ location: { search }, URLSearchParams });
+    await new Promise((done) => setTimeout(done, 20));
+
+    return imported;
+  };
+  const query = (entry: string) => `?entry=${encodeURIComponent(entry)}`;
+
+  test("imports a bundle's frame module", async () => {
+    for (const entry of [
+      'doric://app/bundles/papercraft@1.4.0/client/frames/preview.js',
+      'doric://app/bundles/papercraft@0.0.0-dev.3/client/frames/preview.js',
+      'doric://app/bundles/my-bundle@10.20.30/client/frames/two_words-x.js',
+    ]) {
+      assert.deepEqual(await boot(query(entry)), [entry], entry);
+    }
+  });
+
+  test('imports nothing for any other entry, or none', async () => {
+    assert.deepEqual(await boot(''), []);
+    assert.deepEqual(await boot('?other=1'), []);
+
+    for (const entry of [
+      '',
+      'doric://app/bundles/papercraft@1.4.0/client/index.js',
+      'doric://app/bundles/papercraft@1.4.0/desktop/index.js',
+      'doric://app/bundles/papercraft@1.4.0/client/frames/sub/preview.js',
+      'doric://app/bundles/papercraft@1.4.0/client/frames/../index.js',
+      'doric://app/bundles/papercraft@1.4.0/client/frames/%2e%2e%2findex.js',
+      'doric://app/bundles/papercraft@1.4.0/client/frames/.js',
+      'doric://app/bundles/papercraft@1.4.0/client/frames/preview.mjs',
+      'doric://app/bundles/papercraft@1.4.0/client/frames/preview.js?x=1',
+      'doric://app/bundles/papercraft@1.4.0/client/frames/preview.js#x',
+      'doric://app/bundles/papercraft@latest/client/frames/preview.js',
+      'doric://app/bundles/papercraft@1.4/client/frames/preview.js',
+      'doric://app/bundles/papercraft/client/frames/preview.js',
+      'doric://app/bundles/Papercraft@1.4.0/client/frames/preview.js',
+      'doric://app/artifacts/checkout-7f3a@1/index.js',
+      'doric://app/platform/react@19.2.8/index.js',
+      'doric://app/frame/boot.js',
+      'doric://other/bundles/papercraft@1.4.0/client/frames/preview.js',
+      'https://example.com/bundles/papercraft@1.4.0/client/frames/preview.js',
+      ' doric://app/bundles/papercraft@1.4.0/client/frames/preview.js',
+      'data:text/javascript,export%20{}',
+      'react',
+    ]) {
+      assert.deepEqual(await boot(query(entry)), [], entry);
+    }
+  });
+});
+
+describe('CORS for preview frames', () => {
+  const nullOrigin = (url: string) =>
+    respond(new Request(url, { headers: { origin: 'null' } }), deps());
+
+  test('frame, platform, artifact and bundle frame files allow any origin', async () => {
+    for (const url of [
+      'doric://app/frame/index.html?entry=x',
+      'doric://app/frame/boot.js',
+      'doric://app/platform/react@19.2.8/index.js',
+      'doric://app/artifacts/checkout-7f3a@1/index.js',
+      'doric://app/artifacts/checkout-7f3a@1/assets/theme.css',
+      'doric://app/bundles/probe@1.0.0/client/frames/preview.js',
+    ]) {
+      for (const response of [await get(url), await nullOrigin(url)]) {
+        assert.equal(response.status, 200, url);
+        assert.equal(
+          response.headers.get('access-control-allow-origin'),
+          '*',
+          url,
+        );
+      }
+    }
+  });
+
+  test('the shell, schemas, splash and every other bundle file stay same-origin', async () => {
+    for (const url of [
+      'doric://app/',
+      'doric://app/settings',
+      'doric://app/schemas/contracts/a.json',
+      'doric://app/platform/splash@1.0.0/index.html',
+      'doric://app/platform/shell@1.0.0/main.js',
+      'doric://app/bundles/probe@1.0.0/client/index.js',
+      'doric://app/bundles/probe@1.0.0/client/framesake.js',
+      'doric://app/bundles/probe@1.0.0/desktop/index.js',
+    ]) {
+      for (const response of [await get(url), await nullOrigin(url)]) {
+        assert.equal(response.status, 200, url);
+        assert.equal(
+          response.headers.get('access-control-allow-origin'),
+          null,
+          url,
+        );
+      }
+    }
   });
 });

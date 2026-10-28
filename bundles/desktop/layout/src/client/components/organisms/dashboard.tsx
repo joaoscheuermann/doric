@@ -436,7 +436,7 @@ export function Dashboard({
           <div className="mt-[28px] flex w-[520px] max-w-full items-center gap-[10px]">
             <button
               type="button"
-              className="inline-flex h-[36px] min-w-0 flex-1 items-center justify-between gap-[8px] rounded-[8px] bg-[#1e1e1e] px-[16px] text-[13px] font-medium text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 active:bg-[#333] dark:bg-[#f2f2f2] dark:active:bg-[#d4d4d4]"
+              className="inline-flex h-[36px] min-w-0 flex-1 items-center justify-between gap-[8px] rounded-[8px] bg-[#1e1e1e] px-[16px] text-[13px] font-normal text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 active:bg-[#333] dark:bg-[#f2f2f2] dark:active:bg-[#d4d4d4]"
               onClick={beginCreation}
             >
               <span>New project</span>
@@ -446,7 +446,7 @@ export function Dashboard({
             </button>
             <button
               type="button"
-              className="h-[36px] min-w-0 flex-1 rounded-[8px] bg-[var(--paper-control)] px-[16px] text-[13px] font-medium text-[var(--paper-gray-1)] shadow-[var(--paper-shadow-control)] outline-[var(--paper-focus)] focus-visible:outline-2 focus-visible:-outline-offset-1 active:bg-[var(--paper-control-pressed)]"
+              className="h-[36px] min-w-0 flex-1 rounded-[8px] bg-[var(--paper-control)] px-[16px] text-[13px] font-normal text-[var(--paper-gray-1)] shadow-[var(--paper-shadow-control)] outline-[var(--paper-focus)] focus-visible:outline-2 focus-visible:-outline-offset-1 active:bg-[var(--paper-control-pressed)]"
               onClick={() => navigate('/projects')}
             >
               Browse all projects
@@ -510,13 +510,13 @@ export function Dashboard({
             className={`sticky top-0 z-10 border-b bg-[var(--paper-root)] px-[80px] pt-[32px] pb-[12px] max-[900px]:px-[24px] ${scrolled ? 'border-[var(--paper-separator)]' : 'border-transparent'}`}
           >
             <div className="mx-auto flex h-[32px] w-full max-w-[1376px] items-center justify-between gap-[48px]">
-              <h1 className="min-w-0 truncate text-[24px] font-medium leading-[32px] tracking-[0.005em]">
+              <h1 className="min-w-0 truncate text-[24px] leading-[32px] tracking-[0.005em]">
                 Projects
               </h1>
               <div className="flex h-[28px] shrink-0 items-center gap-[12px]">
                 <button
                   type="button"
-                  className="flex h-[28px] items-center gap-[6px] rounded-[6px] bg-[#1e1e1e] px-[12px] text-[12px] font-medium text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 dark:bg-[#f2f2f2]"
+                  className="flex h-[28px] items-center gap-[6px] rounded-[6px] bg-[#1e1e1e] px-[12px] text-[12px] font-normal text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 dark:bg-[#f2f2f2]"
                   onClick={beginCreation}
                 >
                   <PlusIcon size={12} /> New project

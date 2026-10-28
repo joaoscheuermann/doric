@@ -5,7 +5,11 @@
 // one `WebContentsView` over a page on the host, in its own session, with no
 // app chrome, no preload and no bundle contracts.
 
-import type { OpenWindowRequest, WindowView } from 'bundle/contracts';
+import type {
+  DoricWindows,
+  OpenWindowRequest,
+  WindowView,
+} from 'bundle/contracts';
 import {
   ContractError,
   openWindowRequestSchema,
@@ -14,6 +18,7 @@ import {
 import {
   BaseWindow,
   BrowserWindow,
+  type NativeImage,
   nativeTheme,
   screen,
   WebContentsView,
@@ -79,6 +84,9 @@ const failed = (error: unknown): ContractError =>
     'unavailable',
     `The window could not load: ${error instanceof Error ? error.message : String(error)}`,
   );
+
+type WindowCaptureRequest = Parameters<DoricWindows['capture']>[0];
+type WindowCapture = Awaited<ReturnType<DoricWindows['capture']>>;
 
 /** The two shapes `open` accepts, after schema parsing. */
 type ParsedOpen = ReturnType<typeof openWindowRequestSchema.parse>;
@@ -209,6 +217,89 @@ export class NativeWindows {
     }
 
     return this.#options.paths.get(key);
+  }
+
+  /**
+   * `doric.windows/v1.capture` (1.2.0): a PNG of `rect`, in CSS px of an open
+   * path window's viewport. The rectangle is scaled by the page zoom into the
+   * window's DIPs (outward to whole DIPs) and captured from its contents, which
+   * takes in out-of-process frames and the device pixel ratio. A key that is
+   * not open fails `not_found`; a view window or a rectangle outside the
+   * viewport fails `invalid_input`; a capture that could not be taken, or came
+   * back empty, fails `unavailable`.
+   */
+  async capture(input: WindowCaptureRequest): Promise<WindowCapture> {
+    const { key, rect } = input;
+    const entry = this.#options.registry.byKey(key);
+
+    if (entry === undefined || entry.contents.isDestroyed()) {
+      throw new ContractError('not_found', `No window "${key}" is open.`, {
+        windowKey: key,
+      });
+    }
+
+    if (entry.kind !== 'path') {
+      throw new ContractError(
+        'invalid_input',
+        `Window "${key}" shows a host page; only app windows can be captured.`,
+        { windowKey: key },
+      );
+    }
+
+    const zoom = entry.contents.getZoomFactor();
+    const x = Math.floor(rect.x * zoom);
+    const y = Math.floor(rect.y * zoom);
+    const dip = {
+      x,
+      y,
+      width: Math.ceil((rect.x + rect.width) * zoom) - x,
+      height: Math.ceil((rect.y + rect.height) * zoom) - y,
+    };
+    const [contentWidth = 0, contentHeight = 0] = entry.window.getContentSize();
+
+    if (
+      dip.width <= 0 ||
+      dip.height <= 0 ||
+      dip.x + dip.width > contentWidth ||
+      dip.y + dip.height > contentHeight
+    ) {
+      throw new ContractError(
+        'invalid_input',
+        `The rectangle lies outside window "${key}".`,
+        { windowKey: key },
+      );
+    }
+
+    let image: NativeImage;
+
+    try {
+      image = await entry.contents.capturePage(dip, { stayHidden: true });
+    } catch (error) {
+      throw new ContractError(
+        'unavailable',
+        `Window "${key}" could not be captured: ${error instanceof Error ? error.message : String(error)}`,
+        { windowKey: key },
+      );
+    }
+
+    // The representation at the device pixel ratio the page was drawn at.
+    const factor = Math.max(1, ...image.getScaleFactors());
+    const size = image.getSize(factor);
+
+    if (image.isEmpty() || size.width === 0 || size.height === 0) {
+      throw new ContractError(
+        'unavailable',
+        `Window "${key}" gave an empty capture.`,
+        { windowKey: key },
+      );
+    }
+
+    return {
+      png: image.toPNG({ scaleFactor: factor }).toString('base64'),
+      width: size.width,
+      height: size.height,
+      scale: size.width / rect.width,
+    };
   }
 
   /**

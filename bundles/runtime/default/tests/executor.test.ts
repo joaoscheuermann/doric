@@ -16,6 +16,7 @@ import {
   projectId,
   promptId,
   runPrompt,
+  sandboxSection,
   seedHistory,
   skill,
   testConfiguration,
@@ -167,37 +168,29 @@ void test('retains a completed tool result and its event when a full disk reject
   assert.equal(harness.executions(), 1);
 });
 
-void test('includes the default instruction and every skill body once in bundle order', () => {
-  const system = systemPromptWith([
-    skill('first', 'First body.'),
-    skill('second', 'Second body.'),
-  ]);
-  const first = system.indexOf('First body.');
-  const second = system.indexOf('Second body.');
+void test('starts the system prompt with the default instruction and keeps an empty skill section out of it', () => {
+  const system = systemPromptWith('');
 
   assert.match(system, /Complete the user's request in the project sandbox/u);
-  assert.ok(first >= 0 && first < second);
-  assert.equal(system.lastIndexOf('First body.'), first);
-  assert.equal(system.lastIndexOf('Second body.'), second);
+  assert.ok(!system.includes('# Skills'));
 });
 
-void test('preserves skill whitespace and separates each skill from the preceding prompt', () => {
+void test('separates the skill section from the default instruction by a blank line, verbatim', () => {
+  const section = '# Skills\n\n### Skill: first\n\n\nFirst body.\n';
+
   assert.equal(
-    systemPromptWith([
-      skill('first', '\nFirst body.\n'),
-      skill('second', 'Second body.'),
-    ]),
-    `${systemPromptWith([])}\n\n## Skill: first\n\n\nFirst body.\n\n\n## Skill: second\n\nSecond body.`,
+    systemPromptWith(section),
+    `${systemPromptWith('')}\n\n${section}`,
   );
 });
 
-void test('sends the default instruction with the skills tools/v1 and skills/v1 list', async () => {
+void test('sends the default instruction with the always-available skill bodies and the tools tools/v1 lists', async () => {
   const harness = harnessOf();
   await harness.run('prompt-1');
 
   assert.deepEqual(harness.requests[0]?.messages[0], {
     role: 'system',
-    content: systemPromptWith([skill('sandbox', 'Inspect before reporting.')]),
+    content: systemPromptWith(sandboxSection),
   });
   assert.deepEqual(
     harness.requests[0]?.tools?.map(({ name }) => name),

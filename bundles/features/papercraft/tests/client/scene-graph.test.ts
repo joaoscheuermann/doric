@@ -1,7 +1,9 @@
-// The derived tree (`scene-graph.ts`): built from the DOM the revision
-// rendered, stamps inherited down, and every pointer question answered from
-// cached bounds — hit-testing under pan/zoom without `document.elementFromPoint`,
-// the nearest node for a click on empty space, isolation and the content box.
+// The derived tree (`scene-graph.ts`): built from the nodes the preview's
+// frame serialized from the DOM the revision rendered (untrusted: checked as
+// it is read), stamps inherited down, and every pointer question answered
+// from the frame's bounds — hit-testing under pan/zoom without
+// `document.elementFromPoint`, the nearest node for a click on empty space,
+// isolation and the content box.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -17,11 +19,10 @@ for (const name of ['window', 'document', 'Element', 'Node'] as const) {
   });
 }
 
+import type { SceneNodeData } from '../../src/client/frame-protocol.js';
 import { hoverLabelOf } from '../../src/client/surface/overlays.js';
 import {
   type Bounds,
-  boundsIndex,
-  buildSceneGraph,
   clipBounds,
   contentBounds,
   hitTest,
@@ -30,6 +31,7 @@ import {
   nodeLabel,
   type PseudoBoundsOf,
   type SceneGraph,
+  sceneGraphOf,
   stampLabel,
   targetBounds,
   targetById,
@@ -37,21 +39,34 @@ import {
   targetLabel,
   visualBounds,
 } from '../../src/client/surface/scene-graph.js';
+import { sceneNodesOf } from './support/fake-frame.js';
 
+/** The tree of what a frame rendering `markup` would send. */
 const mount = (markup: string): SceneGraph => {
   const root = document.createElement('div');
   root.innerHTML = markup;
 
-  return buildSceneGraph(root);
+  return sceneGraphOf(sceneNodesOf(root).nodes);
 };
 
-test('the tree derives from the rendered DOM, skipping the chrome', () => {
-  const graph = mount(
-    '<style>body{}</style><main><h1 id="t">T</h1><p class="a b">x</p></main>',
-  );
+const node = (
+  id: string,
+  extra: Partial<SceneNodeData> = {},
+): SceneNodeData => ({
+  id,
+  depth: 0,
+  tag: 'div',
+  classes: [],
+  text: '',
+  bounds: { x: 0, y: 0, width: 0, height: 0 },
+  ...extra,
+});
+
+test('the tree is the frame nodes in document order, parents before children', () => {
+  const graph = mount('<main><h1 id="t">T</h1><p class="a b">x</p></main>');
 
   assert.deepEqual(
-    graph.nodes.map((node) => node.tag),
+    graph.nodes.map((each) => each.tag),
     ['main', 'h1', 'p'],
   );
   assert.equal(graph.nodes[0]?.parentId, undefined);
@@ -59,6 +74,32 @@ test('the tree derives from the rendered DOM, skipping the chrome', () => {
   assert.equal(graph.nodes[2]?.depth, 1);
   assert.deepEqual(graph.nodes[2]?.classes, ['a', 'b']);
   assert.equal(graph.childrenOf.get('n0')?.length, 2);
+});
+
+test('the tree trusts only what it can check of the frame nodes', () => {
+  const graph = sceneGraphOf([
+    node('n0', { tag: 'MAIN', depth: 7 }),
+    // A repeated id is the first node's: the second is dropped.
+    node('n0', { tag: 'aside' }),
+    node('n1', { parentId: 'n0', depth: 0 }),
+    // A parent that never came first leaves the node at the root.
+    node('n2', { parentId: 'n9', depth: 3 }),
+    node('n3', { parentId: 'n2' }),
+  ]);
+
+  assert.deepEqual(
+    graph.nodes.map((each) => [each.id, each.tag, each.depth, each.parentId]),
+    [
+      ['n0', 'main', 0, undefined],
+      ['n1', 'div', 1, 'n0'],
+      ['n2', 'div', 0, undefined],
+      ['n3', 'div', 1, 'n2'],
+    ],
+  );
+  assert.deepEqual(
+    graph.childrenOf.get(undefined)?.map((each) => each.id),
+    ['n0', 'n2'],
+  );
 });
 
 test('the origin stamp walks down from the stamped ancestor', () => {
@@ -71,24 +112,11 @@ test('the origin stamp walks down from the stamped ancestor', () => {
 
   assert.deepEqual(main?.stamp, { path: 'src/Checkout.tsx', line: 42 });
   assert.deepEqual(button?.stamp, { path: 'src/Checkout.tsx', line: 42 });
-  assert.equal(stampLabel(button), 'src/Checkout.tsx:42');
+  assert.equal(stampLabel(button as never), 'src/Checkout.tsx:42');
   assert.equal(nodeLabel(button as never), 'button#pay');
-});
-
-test('the bounds are measured once per node and cached', () => {
-  const graph = mount('<main><h1>T</h1></main>');
-  let measured = 0;
-
-  const bounds = boundsIndex(() => {
-    measured += 1;
-
-    return { x: 0, y: 0, width: 10, height: 10 };
-  });
-
-  bounds(graph.nodes[1] as never);
-  bounds(graph.nodes[1] as never);
-
-  assert.equal(measured, 1);
+  // Only the stamped element carries the stamp as its own.
+  assert.equal(main?.source, 'src/Checkout.tsx:42');
+  assert.equal(button?.source, undefined);
 });
 
 const boundsOf = (boxes: Record<string, Bounds>) => {

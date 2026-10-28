@@ -20,7 +20,7 @@
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
         "commands": [
-          "node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads bundles/runtime/runtime bundles/runtime/default bundles/providers/openai bundles/providers/openrouter bundles/providers/codex bundles/providers/claude bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web bundles/features/terminal bundles/features/claude-login bundles/features/usage bundles/features/resources bundles/features/screen bundles/features/screen-relay bundles/desktop/notifications bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/artifacts bundles/features/comments bundles/features/papercraft bundles/foundation/transport bundles/foundation/host-config"
+          "node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads bundles/runtime/runtime bundles/runtime/default bundles/providers/openai bundles/providers/openrouter bundles/providers/codex bundles/providers/claude bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web bundles/features/terminal bundles/features/claude-login bundles/features/usage bundles/features/resources bundles/features/screen bundles/features/screen-relay bundles/desktop/notifications bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/artifacts bundles/features/comments bundles/features/papercraft bundles/features/mcp bundles/foundation/transport bundles/foundation/host-config"
         ],
         "parallel": false
       },
@@ -56,6 +56,7 @@
             "bundle-artifacts",
             "bundle-comments",
             "bundle-papercraft",
+            "bundle-mcp",
             "bundle-transport",
             "bundle-host-config"
           ]

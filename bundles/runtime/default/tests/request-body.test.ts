@@ -16,9 +16,12 @@ import type { ConfigurationValue } from 'runtime/contracts';
 import { z } from 'zod';
 
 import { systemPromptWith } from '../src/host/executor.js';
+import { systemPrompt } from '../src/host/prompts/system.js';
+import { skillCatalog } from '../src/host/skills/catalog.js';
 import {
   bundleServices,
   fakeThreadState,
+  type HarnessSkill,
   runPrompt,
   testConfiguration,
 } from './support/harness.js';
@@ -28,6 +31,13 @@ import {
 // two bodies were recorded by the E2E baseline (scenarios 06 and 16) from the
 // pre-migration host. The real llms providers build the body; only their HTTP
 // transport is faked.
+//
+// Re-baselined for the skill catalog (DORIC-56): `skills.json` holds the 22
+// recorded skills with their recorded bodies and the `alwaysAvailable` flag
+// they ship with; `system-prompt.md` is the base instruction followed by the
+// `# Skills` section those skills render, and every expected tool list ends
+// with the run's own `load_skill`, which no bundle registers. Its `name` is a
+// plain string since the skills a run can load change while it runs.
 
 /** dist-tests/tests → the package's own tests/fixtures folder. */
 const fixtures = join(
@@ -54,6 +64,16 @@ interface ToolFixture {
   readonly definition: { readonly name: string; readonly description: string };
   readonly settings: readonly object[];
 }
+
+interface RecordedSkill {
+  readonly name: string;
+  readonly description: string;
+  readonly alwaysAvailable: boolean;
+  readonly body: string;
+}
+
+/** The tool the executor adds to a run whose system prompt lists skills to load. */
+const LOAD_SKILL = 'load_skill';
 
 const catalog = {
   data: [
@@ -184,33 +204,30 @@ const recordedTool = ({ definition, settings }: ToolFixture) => {
   };
 };
 
-/** The recorded system prompt split back into the skills it was built from. */
-const recordedSkills = (system: string) => {
-  const [base, ...rest] = system.split('\n\n## Skill: ');
-  return {
-    base,
-    skills: rest.map((chunk) => {
-      const separator = chunk.indexOf('\n\n');
-      const name = chunk.slice(0, separator);
-      const body = chunk.slice(separator + 2);
-      return {
-        name,
-        description: `${name} description`,
-        body,
-        allowedTools: [],
-        indexText: name,
-      };
+/** The recorded skills, as skills/v1 lists them, in bundle order. */
+const recordedSkills = async (): Promise<readonly HarnessSkill[]> =>
+  (await readJson<readonly RecordedSkill[]>('skills.json')).map(
+    ({ name, description, alwaysAvailable, body }) => ({
+      name,
+      description,
+      body,
+      allowedTools: [],
+      indexText: name,
+      alwaysAvailable,
     }),
-  };
-};
+  );
 
 const runFresh = async (
   configuration: ConfigurationValue,
   stream: (model: string) => readonly HttpStreamChunk[],
 ) => {
   const system = await readFile(join(fixtures, 'system-prompt.md'), 'utf8');
-  const tools = await readJson<readonly ToolFixture[]>('tools.json');
-  const { base, skills } = recordedSkills(system);
+  const expectedTools = await readJson<readonly ToolFixture[]>('tools.json');
+  // The bundles register every recorded tool but the executor's own.
+  const tools = expectedTools.filter(
+    ({ definition }) => definition.name !== LOAD_SKILL,
+  );
+  const skills = await recordedSkills();
   const { transport, bodies } = capturingTransport(stream);
   const provider = configuration.providers.find(
     ({ id }) => id === configuration.models.execution.providerId,
@@ -233,7 +250,11 @@ const runFresh = async (
   });
   await services.activate();
   await runPrompt(services, fakeThreadState(), '[[plain]] Say hello.');
-  return { base, system, bodies };
+  return {
+    system,
+    bodies,
+    toolNames: expectedTools.map(({ definition }) => definition.name),
+  };
 };
 
 const split = (body: Record<string, unknown>, chat: boolean) => {
@@ -262,13 +283,34 @@ const split = (body: Record<string, unknown>, chat: boolean) => {
   };
 };
 
-void test('builds the recorded system prompt from the base instruction and the skills in bundle order', async () => {
+void test('F1 builds the recorded system prompt from the base instruction and the skill section of the recorded skills', async () => {
   const system = await readFile(join(fixtures, 'system-prompt.md'), 'utf8');
-  const { base, skills } = recordedSkills(system);
+  const skills = await readJson<readonly RecordedSkill[]>('skills.json');
+  const [base] = system.split('\n\n# Skills\n\n');
 
-  assert.equal(base, systemPromptWith([]));
+  assert.equal(base, systemPrompt);
   assert.equal(skills.length, 22);
-  assert.equal(systemPromptWith(skills), system);
+  assert.deepEqual(
+    skills
+      .filter(({ alwaysAvailable }) => alwaysAvailable)
+      .map(({ name }) => name),
+    ['goal-directed-tool-use', 'thread-delegation'],
+  );
+  const { section } = skillCatalog({
+    alwaysAvailable: skills
+      .filter(({ alwaysAvailable }) => alwaysAvailable)
+      .map(({ name, description, body }) => ({ name, description, body })),
+    builtIn: skills
+      .filter(({ alwaysAvailable }) => !alwaysAvailable)
+      .map(({ name, description, body }) => ({
+        name,
+        description,
+        origin: { kind: 'bundle' as const, body },
+      })),
+    workspace: [],
+    server: [],
+  });
+  assert.equal(systemPromptWith(section), system);
 });
 
 void test('sends the exact OpenRouter chat body the stage-1 host sent for a fresh Thread', async () => {
@@ -296,7 +338,10 @@ void test('sends the exact OpenRouter chat body the stage-1 host sent for a fres
     execution: { maxTurns: 16 },
   };
 
-  const { system, bodies } = await runFresh(configuration, chatStream);
+  const { system, bodies, toolNames } = await runFresh(
+    configuration,
+    chatStream,
+  );
 
   assert.equal(bodies.length, 1);
   assert.equal(
@@ -307,6 +352,12 @@ void test('sends the exact OpenRouter chat body the stage-1 host sent for a fres
   assert.deepEqual(sent.fields, recorded.fields);
   assert.equal(sent.system, system);
   assert.deepEqual(sent.tools, recorded.tools);
+  assert.deepEqual(
+    (
+      sent.tools as readonly { readonly function: { readonly name: string } }[]
+    ).map(({ function: tool }) => tool.name),
+    toolNames,
+  );
   assert.deepEqual(sent.nonSystemMessages, recorded.nonSystemMessages);
 });
 
@@ -334,7 +385,10 @@ void test('sends the exact OpenAI Responses body the stage-1 host sent', async (
     execution: { maxTurns: 16 },
   };
 
-  const { system, bodies } = await runFresh(configuration, responsesStream);
+  const { system, bodies, toolNames } = await runFresh(
+    configuration,
+    responsesStream,
+  );
 
   assert.equal(bodies.length, 1);
   assert.equal(
@@ -345,6 +399,12 @@ void test('sends the exact OpenAI Responses body the stage-1 host sent', async (
   assert.deepEqual(sent.fields, recorded.fields);
   assert.equal(sent.system, system);
   assert.deepEqual(sent.tools, recorded.tools);
+  assert.deepEqual(
+    (sent.tools as readonly { readonly name: string }[]).map(
+      ({ name }) => name,
+    ),
+    toolNames,
+  );
   // The recorded body continued a long Thread; its first input is the
   // same fresh user request this run sends.
   assert.deepEqual(sent.nonSystemMessages, [recorded.firstMessage]);

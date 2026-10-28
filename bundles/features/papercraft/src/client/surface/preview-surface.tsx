@@ -1,39 +1,67 @@
 // `preview-surface.tsx` — the component that hosts the artifact (spec: "Uma
-// superfície, duas molduras").
+// superfície, duas molduras"; docs/architecture/bundles/papercraft/
+// isolamento.md).
 //
-// No iframe, in either frame: the preview is mounted in the app itself, in a
-// React-owned host with its own open shadow root. The surface:
+// Every preview renders in its own sandboxed, opaque-origin iframe
+// (`live-frame.tsx`), which runs the bundle's preview runtime and speaks to
+// the app only through the frame protocol. The surface:
 //
 //   - provisions nothing of the app's theme: the module's sheet carries its
 //     own (the Project's, or the generic one), and only the reader's light or
-//     dark mode reaches it, through `mount`;
+//     dark mode reaches it — at `init`, and again whenever the app's mode
+//     changes;
 //   - when the revision's entries name a compiled module (`index.js`, path B),
 //     first has the revision's entries written into the desktop's verified
-//     cache (`ensure`, which reaches `artifacts.cache/v1`), then injects its
-//     `index.css` (when named) by `<link rel="stylesheet">` and imports the
-//     module from the app origin —
-//     `doric://app/artifacts/<artifactId>@<revision>/index.js` — calling
-//     `mount(root, { theme })` and keeping the unmount it returns; when that
-//     revision cannot be cached or its module does not load, the built markup
-//     of path A stands in, with the
-//     discreet one-line notice of decision 10, because the canvas is never
-//     empty;
-//   - sizes the host by Storybook's layout: a component hugs what it renders
-//     (`centered`), unless its module states `padded` or `fullscreen` on the
-//     root, which lay it out at the canvas's width, as an html page is;
-//   - keeps the module's portal container (`[data-papercraft-portal]`, which
-//     `mount` creates beside its React root) inside the content's containing
-//     block, and reports the content again when an overlay opens in it;
-//   - when the entries name no module — what the host builds today, which is
-//     path A's `index.html` only — mounts that markup directly, with no import
-//     to attempt and no notice to show.
+//     cache (`ensure`, which reaches `artifacts.cache/v1`), and only then
+//     initialises the frame with the module's URL —
+//     `doric://app/artifacts/<artifactId>@<revision>/index.js` — its sheet's
+//     (when named) and path A's markup as the fallback the frame renders when
+//     the module does not load or mount; a revision that cannot be cached
+//     renders that markup straight away. Either way the one-line notice of
+//     decision 10 shows, because the canvas is never empty;
+//   - when the entries name no module — path A's `index.html` only — renders
+//     that markup in the frame, with no module to load and no notice;
+//   - sizes the iframe by Storybook's layout, as the frame reports it: a
+//     component hugs what it renders (`centered`: the reported width, up to
+//     the canvas's), `padded` and `fullscreen` (and an html page) take the
+//     canvas's width; the height is always the content's;
+//   - hands on what the frame derives and reports (the scene, its input) and
+//     keeps the last scene, size and mode of each revision (`frame-memory.ts`);
+//   - keeps a live frame only while the preview holds one of the window's
+//     live frames (`live`, `live-frames.ts`). A dead preview draws its
+//     stand-in (`stand-in.tsx`): its snapshot, else a placeholder with its
+//     size and title, and hands the canvas the last scene its frame reported,
+//     so pins, outlines and comments keep drawing. A promoted preview keeps
+//     its stand-in over the new frame until the frame says it mounted;
+//   - captures a live frame once it is stable on screen (`snapshots.ts`);
+//   - gives a frame `readyTimeout` to say it mounted: past it, the stand-in
+//     shows and the surface reports `fallback`, so the canvas is never empty
+//     and the failure notice of decision 10 shows; a later `mounted` clears
+//     both.
 //
-// The module shares the window's React through the import map, so errors inside
-// it are contained here: the import and the mount are guarded, a stale import
-// (the revision changed, or the surface unmounted, while it loaded) is never
-// mounted, and the unmount runs once.
+// The frame is keyed by revision: a revision change, or the surface going,
+// disposes the old frame (its unmount runs once, in the frame) and a stale
+// frame's messages never reach the canvas, since its port is closed with it.
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import type {
+  FrameContent,
+  FrameMessage,
+  InputCapture,
+  PreviewLayout,
+  PreviewTheme,
+  SceneNodeData,
+} from '../frame-protocol.js';
+import { previewFrameSrc } from '../frame-url.js';
+import { type FrameSize, lastFrameOf, rememberFrame } from './frame-memory.js';
+import { type FrameCursor, LiveFrame } from './live-frame.js';
+import {
+  type SurfaceSnapshots,
+  snapshotOf,
+  useSnapshotCapture,
+} from './snapshots.js';
+import { StandIn } from './stand-in.js';
 
 /** The contract a compiled artifact module exports ("O que o build entrega"). */
 export interface PapercraftModule {
@@ -55,69 +83,61 @@ export const artifactStylesUrl = (
   revision: number,
 ): string => `doric://app/artifacts/${artifactId}@${revision}/index.css`;
 
-/** The theme the app is in, as a mounted surface reads it. */
-export const appTheme = (): 'light' | 'dark' =>
+/** The theme the app is in now. */
+export const appTheme = (): PreviewTheme =>
   typeof document !== 'undefined' &&
   document.documentElement.classList.contains('dark')
     ? 'dark'
     : 'light';
 
 /**
- * Renders one built markup document into a root. The built markup is a whole
- * document, and assigning it to `innerHTML` drops the `html`/`head`/`body`
- * wrappers, so the document's `body { … }` rules would match nothing. The
- * parser keeps the parts the shadow tree needs: the document's `style` nodes
- * become siblings of a real `body` element, which CSS selectors do match
- * inside a shadow root.
+ * The theme the app is in, followed live: the app switches its mode by the
+ * `dark` class of its root element, so the surface watches that class.
  */
-export const renderMarkup = (surface: HTMLElement, markup: string): void => {
-  const parsed = new DOMParser().parseFromString(markup, 'text/html');
-  const body = document.createElement('body');
+export const useAppTheme = (): PreviewTheme => {
+  const [theme, setTheme] = useState<PreviewTheme>(appTheme);
 
-  // The body's own attributes (its origin stamp, a class the styles key on)
-  // survive the mount, as its children do.
-  for (const attribute of [...parsed.body.attributes]) {
-    body.setAttribute(attribute.name, attribute.value);
-  }
+  useEffect(() => {
+    setTheme(appTheme());
 
-  body.innerHTML = parsed.body.innerHTML;
+    if (
+      typeof document === 'undefined' ||
+      typeof MutationObserver === 'undefined'
+    )
+      return;
 
-  surface.replaceChildren(...parsed.head.querySelectorAll('style'), body);
+    const observer = new MutationObserver(() => setTheme(appTheme()));
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  return theme;
 };
 
 /**
- * The shadow root's first sheet. Inherited properties cross a shadow
- * boundary, so without it the artifact would take the conversation's text
- * colour and font; the host starts from initial values instead, as a
- * standalone document does, and the artifact's own rules come after this one
- * and win. Custom properties cannot be reset this way: the module's sheet
- * defines its theme's tokens on `:host`, over the ones the app lets it
- * inherit.
+ * How long a frame has to say it mounted, once it was told what to render,
+ * before the surface shows its stand-in and reports the fallback.
  */
-export const SURFACE_RESET = [
-  // `all` resets the cursor too; the canvas's cursor still reaches inside.
-  // The host hugs what the preview renders, Storybook's `centered` layout.
-  ':host { all: initial; display: block; width: fit-content; color-scheme: light; cursor: inherit; }',
-  // The layouts that fill lay the preview out at the canvas's width, as a page.
-  ':host([data-layout="padded"]), :host([data-layout="fullscreen"]) { width: auto; }',
-  // While a tool owns the pointer, no element of the artifact overrides it.
-  ':host([data-cursor="locked"]) * { cursor: inherit !important; }',
-  // The content is the containing block of the module's portaled overlays
-  // (`fixed`/`absolute` dialogs, popovers): they stay inside the preview,
-  // under the canvas's zoom, instead of spanning the window.
-  '.papercraft-content { display: block; min-height: 100%; position: relative; contain: layout; }',
-  'body { display: block; margin: 8px; background: Canvas; color: CanvasText; }',
-].join('\n');
+export const READY_TIMEOUT_MS = 10_000;
 
-const resetSheet = (): HTMLStyleElement => {
-  const style = document.createElement('style');
-  style.textContent = SURFACE_RESET;
-
-  return style;
+/**
+ * Says on the window's console why a revision fell back to its markup: the
+ * notice on the canvas names no cause, and each one has its own remedy.
+ */
+const warnFallback = (
+  artifactId: string,
+  revision: number,
+  reason: string,
+): void => {
+  console.warn(
+    `papercraft: ${artifactId}@${String(revision)} shows its markup: ${reason}`,
+  );
 };
-
-/** The window's own dynamic import, resolved against the import map. */
-const importModule = (url: string): Promise<unknown> => import(url);
 
 /** The entry a revision names when it carries path B's compiled module. */
 export const MODULE_ENTRY = 'index.js';
@@ -135,223 +155,431 @@ export type SurfaceMode = 'module' | 'markup' | 'fallback';
  * Storybook's layout the preview is sized by: `centered` hugs the content;
  * `padded` and `fullscreen` lay it out at the canvas's width.
  */
-export type SurfaceLayout = 'centered' | 'padded' | 'fullscreen';
+export type SurfaceLayout = PreviewLayout;
 
-/** The attribute a mounted module states its story's layout in. */
-export const LAYOUT_ATTRIBUTE = 'data-papercraft-layout';
-
-/**
- * The layout a mode starts from: a component hugs its content, and an html
- * revision is a page, as wide as the canvas. A live module may state another.
- */
-const layoutOf = (mode: SurfaceMode, content: HTMLElement): SurfaceLayout => {
-  if (mode === 'markup') return 'fullscreen';
-
-  const stated = content.getAttribute(LAYOUT_ATTRIBUTE);
-
-  return mode === 'module' && (stated === 'padded' || stated === 'fullscreen')
-    ? stated
-    : 'centered';
-};
+/** The frame's messages the canvas acts on: its input and its focus. */
+export type FrameInput = Extract<
+  FrameMessage,
+  { kind: 'pointer' | 'wheel' | 'key' | 'focus' }
+>;
 
 export interface PreviewSurfaceProps {
   readonly artifactId: string;
   readonly revision: number;
   /** The path-A built markup of the revision, as `papercraft.previews/v1` read it. */
   readonly markup: string | undefined;
-  /** The paths of the revision's entries; a module is imported only when named. */
+  /** The paths of the revision's entries; a module is loaded only when named. */
   readonly entries?: readonly string[];
-  /** How a module URL is imported; the window's own `import()` by default. */
-  readonly load?: (url: string) => Promise<unknown>;
   /**
-   * Makes the revision's entries servable at the app origin before its module
-   * is imported (the desktop's verified cache); a rejection falls back to the
-   * markup. Called only when the entries name a module; read when the
+   * Makes the revision's entries servable at the app origin before the frame
+   * loads its module (the desktop's verified cache); a rejection falls back
+   * to the markup. Called only when the entries name a module; read when the
    * revision mounts, so a new identity never remounts the artifact.
    */
   readonly ensure?: (artifactId: string, revision: number) => Promise<void>;
+  /** A fixed height for the iframe; the content's height otherwise. */
   readonly height?: number;
-  /**
-   * Reports the shadow root once the revision's content is in it, so the
-   * frame derives the scene graph of what is actually rendered.
-   */
-  readonly onContent?: (root: ShadowRoot | undefined) => void;
+  /** The canvas's size, in surface pixels: the width a page lays out at. */
+  readonly area?: { readonly width: number; readonly height: number };
+  /** Who handles the preview's pointer and keys. */
+  readonly capture?: InputCapture;
+  /** The ids of the current scene's nodes to hide. */
+  readonly hidden?: ReadonlySet<string>;
+  /** The canvas's cursor, which wins over every cursor the artifact declares. */
+  readonly cursor?: FrameCursor;
+  /** Bumped to ask the frame for a fresh scene (the canvas resized). */
+  readonly measureRequest?: number;
+  /** Reports each scene the frame derives; undefined when the frame goes. */
+  readonly onScene?: (nodes: readonly SceneNodeData[] | undefined) => void;
   /** Reports what the surface mounted: the live module, or the fallback. */
   readonly onMode?: (mode: SurfaceMode) => void;
-  /** The canvas's cursor wins over every cursor the artifact declares. */
-  readonly lockCursor?: boolean;
+  /** Reports the frame's pointer, wheel, keys and focus. */
+  readonly onInput?: (message: FrameInput) => void;
+  /** The frame document; the bundle's preview runtime by default. */
+  readonly frameSrc?: string;
+  /**
+   * Whether the preview holds one of the window's live frames
+   * (`live-frames.ts`); a dead preview draws its stand-in. Live by default.
+   */
+  readonly live?: boolean;
+  /** The preview's name, which its placeholder shows. */
+  readonly title?: string;
+  /** The window's capture of a stable live frame; without it, none is taken. */
+  readonly snapshots?: SurfaceSnapshots;
+  /** How long a frame may take to say it mounted (`READY_TIMEOUT_MS`). */
+  readonly readyTimeout?: number;
 }
 
-/**
- * The artifact host. Everything inside the shadow root is imperative — React
- * renders the host div and never the shadow tree — because the module mounts
- * its own React root there.
- */
+/** What the surface knows of the revision's content, per mount. */
+interface Content {
+  /** One per mount of the revision: the frame's key; 0 before the first. */
+  readonly generation: number;
+  /** The revision the content is of. */
+  readonly artifactId: string;
+  readonly revision: number;
+  readonly content: FrameContent | undefined;
+  /** The cache refused the revision: its markup stands in. */
+  readonly uncached: boolean;
+}
+
+const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
+const UNLOCKED: FrameCursor = { locked: false };
+
+/** The artifact host: the live frame, sized by the layout it reports. */
 export function PreviewSurface({
   artifactId,
   revision,
   markup,
   entries,
-  load = importModule,
   ensure,
   height,
-  onContent,
+  area,
+  capture = 'all',
+  hidden = NOTHING_HIDDEN,
+  cursor = UNLOCKED,
+  measureRequest = 0,
+  onScene,
   onMode,
-  lockCursor = false,
+  onInput,
+  frameSrc,
+  live = true,
+  title,
+  snapshots,
+  readyTimeout = READY_TIMEOUT_MS,
 }: PreviewSurfaceProps) {
-  const host = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<SurfaceMode>('markup');
-  const [layout, setLayout] = useState<SurfaceLayout>(() =>
-    entries?.includes(MODULE_ENTRY) === true ? 'centered' : 'fullscreen',
-  );
-
-  // The reporters are read when a mount settles, so a new callback identity
-  // never remounts the artifact.
-  const reporters = useRef({ onContent, onMode, ensure });
-  reporters.current = { onContent, onMode, ensure };
-
   const hasModule = entries?.includes(MODULE_ENTRY) === true;
   const hasStyles = entries?.includes(STYLES_ENTRY) === true;
 
+  const [mode, setMode] = useState<SurfaceMode>('markup');
+  const [layout, setLayout] = useState<SurfaceLayout>(
+    hasModule ? 'centered' : 'fullscreen',
+  );
+  const [size, setSize] = useState<FrameSize | undefined>(undefined);
+  const [content, setContent] = useState<Content>({
+    generation: 0,
+    artifactId,
+    revision,
+    content: undefined,
+    uncached: false,
+  });
+  const theme = useAppTheme();
+  const src = useRef(frameSrc ?? previewFrameSrc()).current;
+  const host = useRef<HTMLDivElement>(null);
+
+  // Each time the preview turns live again its frame is a new one: the
+  // frame's key counts the mounts of the revision and the promotions.
+  const [epoch, setEpoch] = useState({ live, count: 0 });
+
+  if (epoch.live !== live) {
+    setEpoch({ live, count: live ? epoch.count + 1 : epoch.count });
+  }
+
+  const frameKey = `${String(content.generation)}.${String(epoch.count)}`;
+  /** The frame that said it mounted, and the one that did not in time. */
+  const [mountedKey, setMountedKey] = useState<string | undefined>(undefined);
+  const [stalledKey, setStalledKey] = useState<string | undefined>(undefined);
+  const mounted = mountedKey === frameKey;
+  const stalled = stalledKey === frameKey;
+
+  // The reporters are read when a message arrives, so a new callback
+  // identity never remounts the artifact.
+  const reporters = useRef({ onScene, onMode, onInput, ensure });
+  reporters.current = { onScene, onMode, onInput, ensure };
+
+  /** The frame (its key) that last said what it mounted, or failed to. */
+  const settled = useRef<string | undefined>(undefined);
+  /** The mode last reported for the current mount, reported once each. */
+  const reported = useRef<SurfaceMode | undefined>(undefined);
+  const generations = useRef(0);
+
+  const report = useCallback((next: SurfaceMode): void => {
+    setMode(next);
+    if (reported.current === next) return;
+    reported.current = next;
+    reporters.current.onMode?.(next);
+  }, []);
+
   useEffect(() => {
-    const element = host.current;
-
-    if (element === null) return;
-
-    // One open shadow root per host, reused across revisions.
-    const shadow =
-      (element.shadowRoot as ShadowRoot | null) ??
-      (element.attachShadow({ mode: 'open' }) as ShadowRoot);
-
-    // The reader's mode, the one thing of the app the module renders in.
-    const theme = appTheme();
-
-    const content = document.createElement('div');
-    content.className = 'papercraft-content';
-
     let disposed = false;
-    let unmount: (() => void) | undefined;
+    generations.current += 1;
+    const generation = generations.current;
+
+    reported.current = undefined;
+    setSize(undefined);
+    setLayout(hasModule ? 'centered' : 'fullscreen');
+    setContent({
+      generation,
+      artifactId,
+      revision,
+      content: undefined,
+      uncached: false,
+    });
 
     const settle = (next: SurfaceMode): void => {
-      if (disposed) return;
       setMode(next);
-      setLayout(layoutOf(next, content));
+      reported.current = next;
       reporters.current.onMode?.(next);
-      reporters.current.onContent?.(shadow);
     };
 
-    const showMarkup = (next: SurfaceMode): void => {
-      if (markup !== undefined) renderMarkup(content, markup);
-      settle(next);
+    const show = (next: FrameContent | undefined, uncached = false): void => {
+      if (disposed) return;
+      setContent({ generation, artifactId, revision, content: next, uncached });
     };
 
-    // A module renders after `mount` returns (its React root renders
-    // asynchronously) and keeps changing — a section opens, an overlay
-    // portals into its container inside the content — so the content is
-    // reported again on every change, and the frame's scene graph, its fit
-    // and comments follow what actually rendered. Attribute changes are not
-    // watched: the frame writes its own (hidden layers) into this tree.
-    let contentObserver: MutationObserver | undefined;
-
-    const watchContent = (): void => {
-      if (typeof MutationObserver === 'undefined') return;
-
-      let queued = false;
-      contentObserver = new MutationObserver(() => {
-        if (queued) return;
-        queued = true;
-        queueMicrotask(() => {
-          queued = false;
-          if (!disposed) reporters.current.onContent?.(shadow);
-        });
-      });
-      contentObserver.observe(content, {
-        childList: true,
-        characterData: true,
-        subtree: true,
-      });
-    };
-
-    shadow.replaceChildren(resetSheet(), content);
+    const markupContent: FrameContent | undefined =
+      markup === undefined ? undefined : { kind: 'markup', markup };
 
     if (!hasModule) {
       // A revision without a module: path A's markup is the revision.
-      showMarkup('markup');
+      settle('markup');
+      show(markupContent);
     } else {
       void (async () => {
         try {
           // The route serves only what the cache verified: the revision's
-          // entries reach it first.
+          // entries reach it before the frame is told the module's URL.
           await reporters.current.ensure?.(artifactId, revision);
 
+          show({
+            kind: 'module',
+            module: artifactModuleUrl(artifactId, revision),
+            ...(hasStyles
+              ? { styles: artifactStylesUrl(artifactId, revision) }
+              : {}),
+            ...(markup === undefined ? {} : { fallback: markup }),
+          });
+        } catch (error) {
           if (disposed) return;
-
-          if (hasStyles) {
-            // The revision's compiled sheet, once cached; the CSP allows
-            // `'self'`.
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = artifactStylesUrl(artifactId, revision);
-            shadow.insertBefore(link, content);
-          }
-
-          const loaded = (await load(
-            artifactModuleUrl(artifactId, revision),
-          )) as PapercraftModule;
-
-          // The revision changed, or the surface unmounted, while the module
-          // loaded: a stale module is never mounted.
-          if (disposed) return;
-
-          if (typeof loaded.mount !== 'function')
-            throw new TypeError('the artifact module exports no mount');
-
-          const dispose = loaded.mount(content, { theme });
-
-          unmount =
-            typeof dispose === 'function'
-              ? dispose
-              : () => content.replaceChildren();
-
-          settle('module');
-          watchContent();
-        } catch {
-          // The revision could not be cached, or its module did not load —
-          // the canvas is never empty: the built markup of path A stands in
-          // (decision 10).
-          if (!disposed) showMarkup('fallback');
+          // The revision could not be cached — the canvas is never empty:
+          // the built markup of path A stands in (decision 10).
+          warnFallback(
+            artifactId,
+            revision,
+            `the revision could not be cached (${error instanceof Error ? error.message : String(error)})`,
+          );
+          settle('fallback');
+          setLayout('centered');
+          show(markupContent, true);
         }
       })();
     }
 
     return () => {
       disposed = true;
-      contentObserver?.disconnect();
-
-      const release = unmount;
-      unmount = undefined;
-
-      try {
-        release?.();
-      } catch {
-        // A module that fails to unmount takes nothing with it.
-      }
-
-      reporters.current.onContent?.(undefined);
-      shadow.replaceChildren();
+      reporters.current.onScene?.(undefined);
     };
-  }, [artifactId, revision, markup, hasModule, hasStyles, load]);
+  }, [artifactId, revision, markup, hasModule, hasStyles]);
+
+  const uncached = content.uncached;
+
+  const areaWidth =
+    area !== undefined && area.width > 0 ? area.width : undefined;
+  const areaHeight =
+    area !== undefined && area.height > 0 ? area.height : undefined;
+
+  // `centered` hugs the reported width, up to the canvas's; the layouts that
+  // fill take the canvas's width. Before the first size the frame lays out
+  // at the canvas's size, so a page has a viewport to fill.
+  const frameWidth =
+    layout === 'centered' && size !== undefined
+      ? areaWidth === undefined
+        ? size.width
+        : Math.min(size.width, areaWidth)
+      : areaWidth;
+  const frameHeight = height ?? size?.height ?? areaHeight;
+
+  // A frame that never says it mounted — its document did not load, its
+  // runtime never answered, its content never came — would leave the canvas
+  // empty: past the timeout its stand-in shows, with the failure notice.
+  useEffect(() => {
+    if (!live || content.generation === 0 || mounted) return;
+
+    const timer = setTimeout(() => {
+      warnFallback(
+        artifactId,
+        revision,
+        `its frame did not say it mounted within ${String(readyTimeout)} ms`,
+      );
+      setStalledKey(frameKey);
+      report('fallback');
+    }, readyTimeout);
+
+    return () => clearTimeout(timer);
+  }, [
+    live,
+    content.generation,
+    mounted,
+    frameKey,
+    readyTimeout,
+    report,
+    artifactId,
+    revision,
+  ]);
+
+  // A dead preview hands the canvas the last scene its frame reported, so
+  // the pins, outlines and comments keep drawing over its stand-in.
+  useEffect(() => {
+    if (live || content.generation === 0) return;
+
+    const record = lastFrameOf(artifactId, revision);
+
+    if (record?.scene !== undefined) reporters.current.onScene?.(record.scene);
+    if (record?.mode !== undefined) report(record.mode);
+  }, [live, content.generation, artifactId, revision, report]);
+
+  const { sceneChanged } = useSnapshotCapture({
+    host,
+    target:
+      live &&
+      mounted &&
+      hidden.size === 0 &&
+      frameWidth !== undefined &&
+      frameWidth > 0 &&
+      frameHeight !== undefined &&
+      frameHeight > 0
+        ? {
+            artifactId,
+            revision,
+            theme,
+            width: frameWidth,
+            height: frameHeight,
+          }
+        : undefined,
+    snapshots,
+  });
+
+  /* The stand-in: what the frame last showed, at the size it had ----------- */
+
+  const memory =
+    content.generation === 0 ? undefined : lastFrameOf(artifactId, revision);
+  const standInWidth = memory?.width ?? frameWidth;
+  const snapshot =
+    standInWidth === undefined
+      ? undefined
+      : snapshotOf({ artifactId, revision, theme, width: standInWidth });
+  const standIn: 'none' | 'alone' | 'over' =
+    content.generation === 0
+      ? 'none'
+      : !live
+        ? 'alone'
+        : !mounted && (snapshot !== undefined || stalled)
+          ? 'over'
+          : 'none';
+
+  const onMessage = (message: FrameMessage): void => {
+    switch (message.kind) {
+      case 'mounted': {
+        // A module that did not load, by the frame's word or the cache's,
+        // is the fallback; it hugs its markup as a component does.
+        const next: SurfaceMode = uncached ? 'fallback' : message.mode;
+
+        if (message.mode === 'fallback') {
+          warnFallback(
+            content.artifactId,
+            content.revision,
+            'its frame could not load or mount the module (see the frame console)',
+          );
+        }
+        const shown: SurfaceLayout =
+          next === 'fallback' ? 'centered' : message.layout;
+
+        settled.current = frameKey;
+        setMountedKey(frameKey);
+        report(next);
+        setLayout(shown);
+        rememberFrame(content.artifactId, content.revision, {
+          mode: next,
+          layout: shown,
+          theme,
+        });
+
+        return;
+      }
+      case 'error':
+        // A revision that fails before it mounted is the fallback's case;
+        // an error after it rendered is the preview's own, contained.
+        if (settled.current !== frameKey) {
+          warnFallback(
+            content.artifactId,
+            content.revision,
+            `its frame failed before it mounted (${message.message})`,
+          );
+          settled.current = frameKey;
+          report('fallback');
+        }
+
+        return;
+      case 'size':
+        setSize({ width: message.width, height: message.height });
+        rememberFrame(content.artifactId, content.revision, {
+          size: { width: message.width, height: message.height },
+        });
+
+        return;
+      case 'scene':
+        reporters.current.onScene?.(message.nodes);
+        sceneChanged();
+        rememberFrame(content.artifactId, content.revision, {
+          scene: message.nodes,
+          theme,
+          ...(frameWidth === undefined ? {} : { width: frameWidth }),
+        });
+
+        return;
+      case 'ready':
+        return;
+      default:
+        reporters.current.onInput?.(message);
+    }
+  };
 
   return (
     <div
       ref={host}
-      className="papercraft-surface-host"
-      style={
-        height === undefined ? undefined : { height: `${String(height)}px` }
-      }
+      className="papercraft-surface-host relative"
       data-mode={mode}
       data-layout={layout}
-      data-cursor={lockCursor ? 'locked' : undefined}
-    />
+      data-cursor={cursor.locked ? 'locked' : undefined}
+      data-live={live ? 'true' : 'false'}
+    >
+      {standIn === 'none' ? null : (
+        <StandIn
+          snapshot={snapshot}
+          width={standInWidth}
+          height={height ?? memory?.size?.height ?? frameHeight}
+          title={title}
+          over={standIn === 'over'}
+        />
+      )}
+      {/* The live boundary: one frame per mount of a revision, while the
+          preview holds one of the window's live frames. */}
+      {content.generation === 0 || !live ? null : (
+        <LiveFrame
+          key={frameKey}
+          src={src}
+          content={content.content}
+          theme={theme}
+          capture={capture}
+          hidden={[...hidden]}
+          cursor={cursor}
+          measureRequest={measureRequest}
+          style={{
+            ...(frameWidth === undefined
+              ? {}
+              : { width: `${String(frameWidth)}px` }),
+            ...(frameHeight === undefined
+              ? {}
+              : { height: `${String(frameHeight)}px` }),
+            // The frame document's scheme (the runtime sets the same one):
+            // an iframe whose scheme differs from its document's is painted
+            // opaque. Until the frame mounted, its document is still the
+            // blank one loading, so the frame is not shown at all.
+            colorScheme: theme,
+            ...(mounted ? {} : { visibility: 'hidden' }),
+          }}
+          onMessage={onMessage}
+        />
+      )}
+    </div>
   );
 }

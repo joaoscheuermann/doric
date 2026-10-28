@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-19
+Last reviewed: 2026-10-27
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -260,7 +260,8 @@ chevron. The prefix never wraps, and long titles truncate with an ellipsis.
 The title navigates independently of the toggle. Opening reveals the recorded
 status and read-only Markdown. Mouse and keyboard share the node's open state,
 which survives transcript updates.
-The packaged CSP permits downloaded fonts from `self` only. App surfaces use
+The packaged CSP permits downloaded fonts from `self` only (a Papercraft
+preview frame, whose origin is opaque, from `doric://app`). App surfaces use
 the macOS system sans stack with vendored Noto Sans as fallback, while the
 conversation body uses vendored IBM Plex Mono. The sidebar
 tree follows the selected Project's live
@@ -660,9 +661,21 @@ The default agent — the executor formerly named Direct — and its system prom
 live in `/bundles/runtime/default` (bundle `default`, renamed from `direct` on
 2026-10-19); the
 former one-module-per-coordination-tool set ships in `/bundles/features/threads`. The
-system prompt file exports only one constant literal template string; dynamic
-bundle skills are appended by the executor, not encoded as arrays of prompt
-lines. The `default` bundle owns `default.hooks/v1`, an extension point with no
+system prompt file (`prompts/system.ts`) exports only one constant literal
+template string; the executor appends the run's `# Skills` section, which
+`src/host/skills` builds once per prompt run from the constant literal strings
+of `prompts/skills.ts`, not from arrays of prompt lines, and which stays the
+same for the whole run. Before every model request after the first, the
+executor reads the Thread's working directory (optional
+`runtime.workspace/v1`) and the MCP servers again through `packages/agent`'s
+`beforeRequest`, and a change in the skills it can load reaches the model as
+one `<bundle-instruction bundle="default" reason="skills-changed">` message
+stored in the history. The skills a run lists to load are read through
+`load_skill`, a per-run tool the executor adds last to the run's tools and
+never registers in `tools/v1`; its `name` is a plain string checked against
+the run's live list on every call, an unknown id fails the call, a skill the
+history already holds unchanged answers a short note, and its answer is exempt
+from the tool result cap. The `default` bundle owns `default.hooks/v1`, an extension point with no
 handler of its own: its `onBeforeModelRequestHook` (`transform`, input
 `{ system }`) runs before every model request of a prompt, under the prompt's
 call, and `packages/agent` accepts a `system` function that it calls before
@@ -683,7 +696,13 @@ model reads does not hold it yet. The executor records each retained steer it
 stores in `meta.retained` (`<bundleId>:<reason>` to the message's index),
 compaction keeps those messages verbatim after the summary and out of the
 summarizer's input and re-bases their indexes like the turn boundaries, and a
-rewind forgets those past its boundary, so the workflow is given again only
+rewind forgets those past its boundary. One retained message is written by the
+compaction itself and replaced rather than kept by the next one:
+`default:loaded-skills`, a `<bundle-instruction bundle="default"
+reason="loaded-skills">` message holding the skills loaded in the condensed
+span and not loaded again in the kept tail (each cut at 20 000 characters,
+within min(100 000, `charBudget` / 4) characters in all), so they stay in
+effect after the summary. The coding workflow is kept verbatim, so it is given again only
 after a rewind removed it. The main Thread delegates each step to a child
 Thread whose title and instruction name its type, except for trivial changes,
 and a delegated `<parent-instruction>` step is done by the child itself. It
@@ -785,7 +804,10 @@ payload)` to the same bundle in every other live generation. The kernel names
   (`path`) the window's shell renders, or a page on the host (`view`, naming the
   path main resolves against the host origin and the session partition the
   page's own `WebContents` keeps to itself). `doric.windows/v1` focuses a key's
-  window and, since 1.1.0, navigates a view window to another host path. A
+  window, since 1.1.0 navigates a view window to another host path, and since
+  1.2.0 captures a rectangle of an open path window (CSS px of its viewport)
+  as a PNG through `webContents.capturePage`, which takes in its preview
+  frames; a view window cannot be captured. A
   descriptor may also set `primary`: the main process accepts
   one primary window per catalog and refuses a primary request for an already
   open window that was opened without the flag, with `registration_conflict`.
@@ -807,7 +829,12 @@ their bundle ID (Nx projects `bundle-<id>`); each owns its package metadata, a
 v1 `manifest.json`, a TypeScript build to `bundles/<id>/dist` and a public
 `<id>/contracts` entrypoint. The bundle build CLI of `packages/bundle`
 validates the manifest and skills, dry-activates the host part to write the
-contract descriptor (`dist/contracts.json`) and per-contract JSON Schemas; it
+contract descriptor (`dist/contracts.json`) and per-contract JSON Schemas
+(a client's `src/client/frames/*.ts` build to `dist/client/frames/<name>.js`,
+modules for documents outside the window such as a Papercraft preview frame:
+only the frame import map's specifiers stay external, the window's other
+import-map specifiers are refused except `zod`, which a frame bundles, the
+dry activation never loads them, and they ship with the client's files); it
 does not compare them with any baseline: no `contracts.published.json` is
 committed, and the `baseline` command and its Nx targets are removed until
 publishing (stage 11) compares against the registry. `doric-host:build-bundles` then stages each `dist` into
@@ -823,9 +850,14 @@ reported to diagnostics; log records name the calling bundle, its version,
 generation, call scope, trace and environment, have every stored or added
 credential secret replaced with `[REDACTED]` in the message and the string
 fields, and reach the host's pino destinations through the platform's
-`doric.log/v1`; tools and skills are kept in bundle order with globally unique
-names, and skill `allowed-tools` resolve against the whole `tools/v1` catalog after
-activation. The other four are facades over the chosen backends. `storage/v1`
+`doric.log/v1`; tools and skills are kept in bundle order, skill names are
+globally unique and tool names unique per scope (`tools/v1` 1.3.0): an unscoped
+tool's name is taken everywhere, a tool registered with a `projectId` collides
+only with an unscoped tool or another tool of the same Project, and `list` and
+`catalog` show a Project's tools only to calls whose `scope.projectId` names it;
+skill `allowed-tools` resolve against the whole `tools/v1` catalog after
+activation. The core is 1.11.0 and provides `tools/v1@1.3.0` and
+`secrets/v1@1.2.0`. The other four are facades over the chosen backends. `storage/v1`
 lets a bundle define the storage types its namespace names and lists in
 `provides`, validates every write against the type's schema, lets only the
 owner read or write a type and only the bundle a stream's first segment names
@@ -1162,10 +1194,10 @@ esbuild reads the Project's files from the sandbox's own disk with no read
 budget; a sandbox without a lease, `node` or that esbuild, or a runner that
 breaks, falls back to the host bundling the entry and reading each file
 through `files/v1`, under a budget of 1,500 reads and 8 MiB. Either way the
-bundle leaves external only what the window shares: the React `mount`
-renders with (`react`, `react/jsx-runtime`, `react/jsx-dev-runtime`,
-`react-dom`, `react-dom/client`) and each `@base-ui/react` specifier the
-window's import map serves (the host checks once per specifier that its own
+bundle leaves external only what the preview frame's import map serves: the
+React `mount` renders with (`react`, `react/jsx-runtime`,
+`react/jsx-dev-runtime`, `react-dom`, `react-dom/client`) and each
+`@base-ui/react` specifier of the platform's map (the host checks once per specifier that its own
 copy bundles with React external, as the platform build does), wraps the chosen export (`entry`, else
 `default`, else the single PascalCase export) in `mount(root, { theme })`, and
 compiles its Tailwind sheet; the revision's entries are `index.html` (fallback
@@ -1182,9 +1214,9 @@ Nothing is special to Doric: when the Project is Doric, its `desktop/ui`,
 `bundle/contracts`, `<id>/contracts`, zod, Lexical and `radix-ui` are Project
 code too, so
 a component it edits or adds previews as the Project has it. No import is
-refused for what it names: the module
-already runs in the app window's realm, where main's checks on every bridge
-call and the CSP are the boundary. Only what cannot run in a window fails,
+refused for what it names: the module runs in the preview's own frame, a
+sandboxed iframe of opaque origin with no preload and no reach into the app,
+whose isolation and CSP are the boundary. Only what cannot run in a window fails,
 naming the import: a Node built-in, a package missing from the Project, or a
 build past the read budget. The Project's preview harness is a versioned
 Project file: the
@@ -1194,48 +1226,93 @@ decorators wrap every component preview, and a harness that does not compile
 is left out with a warning. A `*.stories.*` source (or a default export shaped
 like CSF meta) mounts one CSF story (`entry`, else the first in source order)
 with Storybook's decorator order and `args` merge; `@storybook/addon-themes` is
-a built-in stand-in (the real addon needs Storybook's runtime). The sheet's
+a built-in stand-in (the real addon needs Storybook's runtime) whose theme
+decorators set their class or attribute on `parentSelector` (`html` by
+default), as the real addon does. The sheet's
 base is a generic theme, Tailwind's theme variables, preflight and
 utilities with a neutral shadcn token set in light and dark, belonging to no
 application; the CSS the harness imports (a `.css` import is always compiled
 into the sheet, never left to the window) replaces it, compiled with Tailwind
-v4 through `files/v1` (`tailwindcss` itself from the host). Either base has
-its `:root` rules also on `:host` and the module's theme wrapper, over the
-variables the app's page lets the host inherit; the surface copies none of the
-app's theme onto the preview, and only the reader's light or dark mode
-reaches `mount`. Components' CSS imports are appended; Tailwind v3 or a sheet
-that does not compile falls back to the generic theme with a warning. `mount`
-creates a portal container beside its React root, inside the shadow root, and
-hands it to decorators and stories as `context.papercraft.portalContainer`;
-the Project's harness passes it on to its components (Doric's harnesses, to
-`desktop/ui`'s `PortalContainerProvider`, so `desktop/ui` overlays portal
-there); the surface's content is the containing block of portaled overlays. The surface sizes the preview by
-Storybook's layout, which `mount` states on its root as
-`data-papercraft-layout` from the story's merged `parameters.layout`:
-`centered`, papercraft's default, makes the shadow host hug what the preview
-renders (`width: fit-content`, so content wider than the canvas still wraps at
-the canvas's width), and `padded` and `fullscreen` lay the preview out at the
-canvas's width; Storybook's padding is not reproduced. A component whose module
-did not load hugs its fallback markup, and an `html` revision, a page, is laid
-out at the canvas's width. The frame measures each element only by the part
-its clipping ancestors leave visible (those that hide their overflow on its
-containing-block chain), and an element with no area, such as the module's
-own `display: contents` wrappers, which a browser measures at the window's
-corner, neither bounds the content nor answers a pointer; so the fit and
+v4 through `files/v1` (`tailwindcss` itself from the host). A relative
+`url()` in a stylesheet (a font, an image) is written for its own file's
+place, which the compiled sheet does not keep: each is rebased as its sheet
+loads, read as bytes (`files/v1`'s base64 read, 1.1.0, for a Project file) and
+stored with the revision as `assets/<sha256>.<ext>`, the `url()` pointing at
+that copy; one that cannot be read or is too large (4 MiB each, 16 MiB a
+sheet) stays as written, with a warning. The sheet is
+linked in the preview frame's own document, so either base applies as
+written: `:root` is the frame's `<html>`, which carries `class="dark"` in the
+dark mode; the surface copies none of the app's theme onto the preview, and
+only the reader's light or dark mode reaches the frame and `mount`.
+Components' CSS imports are appended; Tailwind v3 or a sheet that does not
+compile falls back to the generic theme with a warning. Portaled overlays
+render in the frame's `document.body`, Base UI's and Radix's default:
+`context.papercraft` (also `context.parameters.papercraft`) still carries
+`theme` and `root`, and its `portalContainer` is `undefined`, so a harness
+that passes it on leaves overlays on the body. The surface sizes the preview
+by Storybook's layout, which `mount` states on its root as
+`data-papercraft-layout` from the story's merged `parameters.layout` and the
+frame reports: `centered`, papercraft's default, gives the iframe the width
+the frame reports for what the preview renders, up to the canvas's (content
+wider than the canvas still wraps at the canvas's width), and `padded` and
+`fullscreen` lay the preview out at the canvas's width; the height is always
+the content's, and Storybook's padding is not reproduced. A component whose
+module did not load hugs its fallback markup, and an `html` revision, a page,
+is laid out at the canvas's width. The preview frame derives the scene from
+its own DOM and sends it serialized, with bounds in CSS px of its document
+(the canvas scales the iframe by `transform`, so no measure depends on the
+zoom). It measures each element only by the part its clipping ancestors leave
+visible (those that hide their overflow on its containing-block chain), and an
+element with no area, such as the module's own `display: contents` wrappers,
+neither bounds the content nor answers a pointer; so the fit and
 `Centralizar` centre what is shown, and fitting again does not drift. An
-`html` source still builds `index.html` only. Before
-importing a module, the window reads the revision's bytes through
-`artifacts/v1.read` and writes them into the verified cache with
-`artifacts.cache/v1.ensure`; the module is then imported from
+`html` source still builds `index.html` only. Before a module loads, the
+window reads the revision's bytes through `artifacts/v1.read` and writes them
+into the verified cache with `artifacts.cache/v1.ensure`; the frame then
+imports the module from
 `doric://app/artifacts/<artifactId>@<revision>/index.js`, and the markup stands
 in when either step fails.
+
+Every Papercraft preview, in the conversation node and in the canvas window,
+renders in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`
+(`docs/architecture/bundles/papercraft/isolamento.md`): an opaque origin, its
+own realm, no preload, no persistent storage and no access to the app's DOM.
+The iframe loads `doric://app/frame/index.html?entry=` naming papercraft's
+frame runtime (`client/frames/preview.js`); the app and the runtime speak only
+over one `MessageChannel` per frame (`src/client/frame-protocol.ts`), whose
+port the app hands over in a single window message, and the app parses every
+frame message as untrusted data. The runtime installs in-memory
+`localStorage` and `sessionStorage` (an opaque origin has none), links
+`index.css`, sets the theme on `<html>` and calls `mount(root, { theme })` on a
+`#root` in its `<body>`, or renders path A's markup; it reports the scene,
+the content size, the layout and errors, and applies the hidden layers, the
+cursor lock and the input capture the app asks for. Revisions compiled before
+the frame keep their own `mount`, with its portal container and its `:root`
+rules also on `:host`, and mount in the frame unchanged. A chat window keeps
+at most three live frames, the three used last (a revision's first
+appearance, a live frame staying visible, or a pointer or click on it; a dead
+preview scrolling into view is not promoted, and the canvas window's open
+revision always stays live); the others show a snapshot of the same size,
+taken once a live frame has rendered and stays settled, wholly on screen, taken through papercraft's desktopMain `papercraft.snapshot/v1`
+(over `doric.windows/v1.capture` for the calling window's own key, so a
+window captures only itself) and keyed
+by artifact, revision, theme and width, with the last serialized scene so
+pins, outlines and comments still draw, or a placeholder of the preview's
+size and title before one exists; a pointer or click on one mounts a live
+frame again, under the snapshot until it reports `mounted`. A frame that does
+not report `mounted` within ten seconds shows the same stand-in with the
+fallback notice. On 2026-10-27 the user approved this frame isolation and
+its decisions (in-memory storage, three live frames, CORS by path prefix
+rather than per-artifact capabilities, the runtime as a `papercraft` bundle
+asset, and each frame evaluating its own React) as the explicit change to the
+sandbox and CSP boundary under HC-007 and to the renderer process layout under
+HC-003.
 
 Doric's own UI is previewed the same way. Every package with React components
 has a `.storybook/preview.tsx` harness at its root (a bundle's imports
 `desktop/ui/theme.css`, then its own client stylesheet; `packages/desktop`'s
-imports its own `src/styles/theme.css`; each hands
-`context.papercraft.portalContainer` to `desktop/ui`'s
-`PortalContainerProvider`) and CSF stories under
+imports its own `src/styles/theme.css`; none wires a portal container,
+since a preview's overlays portal into its frame's body) and CSF stories under
 `stories/`, mirroring the path under `src/` without a leading `client/`
 (`src/client/components/molecules/x.tsx` →
 `stories/components/molecules/x.stories.tsx`). Stories never live in `src/`,
@@ -1292,7 +1369,7 @@ names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
 `runtime`,
 `default`,
 `openai`, `openrouter`, `codex`, `claude`, `claude-login`, `docker`, `notifications`, `layout`,
-`settings`, `chat`, `history`, `artifacts`, `comments` and `papercraft`, and chooses
+`settings`, `chat`, `history`, `artifacts`, `comments`, `papercraft` and `mcp`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
 list names the installed host parts that run in the native host process rather
 than in a generation process: `host-config`, which owns the configuration's
@@ -1317,7 +1394,8 @@ stage 1 ends in the existing fatal startup path after logging `Bundle recovery
 mode` with every bundle's state and reasons. The catalog and diagnostics are
 read through `doric.catalog/v1` and `doric.diagnostics/v1` (no HTTP route).
 Doric reads the active generation's `tools/v1` and `skills/v1` for `GET /tools`
-and for each prompt; `Bundles loaded`
+and for each prompt; `GET /tools` carries no Project scope, so it lists the
+unscoped tools alone and never a Project's own; `Bundles loaded`
 reports the activated installed bundles (24 in the shipped composition; the
 embedded ones are not counted) and the registered tools and skills. Because
 activation opens no database, so the startup work runs in the start hooks.
@@ -1476,9 +1554,16 @@ Migration stage 8 ("Plataforma desktop") moves the desktop onto the bundle
 platform; decisions S8-1 to S8-23 are recorded in `implementation-decisions.md`.
 Every app window loads only `doric://app/<path>`, a privileged standard scheme whose
 handler serves the shell, the platform files under `/platform/`, verified bundle
-artifacts from the local cache and their schemas, and answers 404, never the
-shell, for missing files; sender checks compare protocol `doric:` and host `app`
-(S8-1). A view window loads the host's own origin instead and carries no
+artifacts from the local cache and their schemas, the Papercraft preview frame
+document and its boot script under `/frame/`, and answers 404, never the
+shell, for missing files. The shell answers only a navigation: Electron hands a
+custom scheme's handler no `Sec-Fetch-Dest`, so a request at an app path that
+does not accept HTML (a font, an image, a fetch) is a 404 too, never the shell
+read as the font it asked for. Sender checks compare protocol `doric:` and host
+`app` (S8-1). Only what a preview frame loads answers
+`Access-Control-Allow-Origin: *`: `/frame/*`, `/platform/*` (not the shell's
+own assets), `/artifacts/*` and `/bundles/<id>@<version>/client/frames/*`; the
+rest of `/bundles/`, `/schemas/` and the shell stay same-origin. A view window loads the host's own origin instead and carries no
 preload, so no sender check applies to it. In development the windows still open through `doric://app` and the
 handler forwards the shell and its assets to the renderer dev server
 (`http://localhost:4200`, overridden by `DORIC_RENDERER_DEV_URL`). Before any
@@ -1508,13 +1593,28 @@ also exported by `desktop/ui`) names, else into `document.body`, while a
 window-main API. `app/desktop/doric-platform` builds the platform files and
 import map (React, ReactDOM, Lexical, Base UI, zod, `desktop/ui` and
 `bundle/contracts`); Base UI (`@base-ui/react` and each exported subpath) is
-served once per window like React, so `desktop/ui`, client parts and
-Papercraft previews share one instance, and an ESM package's subpath whose
+served once per window like React, so `desktop/ui` and client parts share one
+instance, and an ESM package's subpath whose
 code imports a package the workspace does not install (Base UI's date-fns and
-Luxon adapters) is left out of the map, and the build names it.
-The CSP adds `worker-src 'self'` and the import
-map's script hash, and carves out no frame origin: no window frames a foreign
-origin any more, so frames fall back to the default source. The renderer's local storage, including the selected Thread,
+Luxon adapters) is left out of the map, and the build names it. The preview
+frame document has an import map of its own with only React, ReactDOM and
+the Base UI specifiers, as absolute `doric://app/platform/…` URLs: a preview
+loads the same platform files and evaluates its own instance. Its `boot.js`
+imports only a `doric://app/bundles/<id>@<version>/client/frames/<name>.js`
+module its `?entry=` names, and its header CSP is `default-src 'none';
+script-src doric://app 'sha256-<map>'; style-src doric://app 'unsafe-inline';
+font-src doric://app; img-src doric://app data: blob:; connect-src 'none';
+base-uri 'none'; form-action 'none'; frame-ancestors doric://app` (the origin
+is opaque, so `'self'` would match nothing).
+The shell CSP adds `worker-src 'self'`, the import
+map's script hash and `frame-src doric://app/frame/`: no window frames a
+foreign origin, the only frame a shell may embed is the preview frame, and
+the splash frames nothing. The navigation guard keeps every subframe of an app
+window at `doric://app/frame/index.html` (`will-frame-navigate`), whoever
+starts the navigation; main's dispatcher refuses calls from subframes and the
+preload does not run in them. In Electron 44.4.3 sandboxed iframes run in a
+renderer process of their own by default (`IsolateSandboxedIframes`), which
+`doric-e2e` asserts; the realm and origin isolation do not depend on it. The renderer's local storage, including the selected Thread,
 migrates once from the packaged `file://` origin to `doric://app`: the core's
 `onAppReadyHook` asks the platform through `doric.migrations/v1.storage` to copy
 its own key, and awaits the answer before it opens the primary window. The
@@ -1541,7 +1641,8 @@ and the execution picker as a `layout.footer` item; `history` (desktopMain)
 keeps the per-Thread snapshot cache over `doric.cache/v1`. The new platform
 contracts are `doric.elements/v1`, `doric.connection/v1`, the transitional
 client form of `doric.notifications/v1` and `doric.windows/v1`, whose focus and
-`navigate` (1.1.0) re-point the window a key names. The
+`navigate` (1.1.0) re-point the window a key names and whose `capture` (1.2.0)
+takes a PNG of a rectangle of an open path window. The
 selected Thread is the window path; the old `localStorage['doric.selection']`
 is converted once into a path and removed. The shell's stylesheet keeps only the
 window-wide rules and the sorted utility set; each UI bundle ships its own
@@ -1562,16 +1663,22 @@ shown page, one of the `layout.dashboard.page` region items drawn instead of the
 project list, beside the `layout.dashboard.nav` groups of its sidebar. The layout
 imports the shared widgets from `desktop/ui/workspace` and `desktop/ui/code`.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
-frontmatter key) is recorded and never consulted: every registered tool is
-bound on every prompt, and Doric includes every canonical skill body in its
-default agent's system prompt in bundle order. `bundle/contracts` publicly owns the
+frontmatter key) is recorded and, for tools, never consulted: every registered
+tool is bound on every prompt. For skills it decides where the default agent
+puts them: an always-available skill's canonical body goes in its system
+prompt, in bundle order, within a fixed budget, and every other skill is a row
+of the prompt's catalog that the model loads with `load_skill`. `bundle/contracts` publicly owns the
 JSON-Schema-compatible `SkillSchema`, whose input is normalized into a
 canonical `SkillRecord` with trimmed fields, stable unique `allowedTools`, and
 a recalculated `indexText`. `packages/tool` publicly owns `defineTool`, whose
 `execute(payload, call, services)` receives the validated payload, the prompt
 `Call` and the services of the bundle that registered it; registering the
 definition with `tools/v1` binds it to those services, and `toTool(call)`
-gives the agent-loop tool for one prompt. It also owns the
+gives the agent-loop tool for one prompt. Its `inputSchema` option replaces the
+JSON Schema derived from `input` with an object schema used verbatim as the
+definition's `inputSchema` (anything else throws `invalid_schema`); `input`
+still validates every payload, so a tool whose schema comes from elsewhere (an
+MCP server) passes a permissive `input` and `strict: false`. It also owns the
 JSON-Schema-compatible `ToolDefinitionSchema`, whose runtime descriptors carry
 both `inputSchema` and `outputSchema`, plus strict-output-compatible
 `ToolMetadataSchema` and JSON value schemas used by structured consumers.
@@ -1663,9 +1770,48 @@ scope, any bundle that requires them and builds a scope naming a running
 prompt reaches that prompt's controls; every stage-1 bundle is first-party and
 external bundles remain deferred. Because a tool result goes to the model, the
 contracts expose capabilities, never credential reads; secrets stay in the
-host's credential store, and no shipped tool bundle requires `secrets/v1`.
-Tool names stay globally unique in `tools/v1`, so a bundle tool cannot collide
-with another bundle's.
+host's credential store, and no shipped tool bundle requires `secrets/v1`
+except `mcp`, which resolves only a server's own credentials, at connect time,
+into that server's headers or environment, never into a tool payload or
+result. Tool names are unique per scope in `tools/v1`: an unscoped bundle tool
+cannot collide with another bundle's, and a Project-scoped tool collides only
+with an unscoped one or one of its own Project.
+
+`/bundles/features/mcp` connects a Project to MCP (Model Context Protocol)
+servers and provides `mcp/v1` (scoped by `projectId`; every method reachable
+from a desktop window but `readSkill`, host only since 1.1.0) and the
+`mcp.server/v1` storage type, one document per
+server. Servers belong to the Project they were created in, never to the
+host. An `http` server is reached from the generation process over Streamable
+HTTP, with a fallback to the older HTTP+SSE transport, and carries its own
+headers only. A `stdio` server runs only in the Project's sandbox, started
+through `runtime.lease/v1` and `Sandbox.start` on the sandbox the Project
+holds; it is never a host process, and its environment is the sandbox image's
+plus its own entries alone. A header or environment entry is a literal value
+or the id of a stored credential whose secret is read when that server
+connects; the host refuses an entry naming an `MCP_TOKEN` credential, which
+holds one server's sign-in. An `http` server that asks for OAuth signs in
+through the browser with a loopback callback on the host's `127.0.0.1`, as
+the Claude login does, so it works only where the browser's loopback is the
+host's; its access, refresh and client secrets are `MCP_TOKEN` credentials,
+a kind the bundle registers, deleted with the server or when its transport
+kind or URL changes, and never stored for a URL other than the one they
+were earned for. A connected server's tools are registered with `tools/v1`
+under its Project as `mcp__<server slug>__<tool>`, with the server's input
+schema verbatim. The default agent lists the skills a connected server lists
+through the MCP Skills extension and loads one only on demand, through the
+host-only `mcp/v1.readSkill`: a `resources/read` of a URI the connected server
+lists now, when asked and never before. Doric does not apply SEP-2640's
+per-skill approval or integrity (digest) checks to these skills: execution
+stays in the Project's sandbox. Servers connect when a
+window watches their Project (the client part's MCP pane in the sidebar's
+stack does), when a prompt of the Project starts (which waits up to ten
+seconds for them), when a sign-in finishes, and when the Project's sandbox
+becomes ready for a server waiting for it; a tool call that loses its
+connection moves the server to `needs-sign-in` or reconnects it. A closing
+Project stops them and a deleted one loses them. The user
+explicitly approved this expansion of network access from the host, command
+execution in the sandbox and credential handling under HC-004 and HC-007.
 
 `packages/okf` is the explicitly requested embeddable TypeScript library for
 generating local Open Knowledge Format bundles. Its public `generate` API
@@ -2376,7 +2522,8 @@ A thrown handler does not end the run: `tool.failed` is still emitted, and the
 call is answered with a short Markdown failure envelope (no observation ID)
 whose text is what the handler threw and each cause under it, one per line,
 with their codes, the tool registry's `handler_failed` wrapper unwrapped, under
-the same `maxToolResultChars` cap. The batch and the run continue, so the model
+the same `maxToolResultChars` cap (a number for every tool, or a function of the
+tool name where `undefined` leaves that call uncapped). The batch and the run continue, so the model
 reads why the call failed and corrects it, works around it or reports it; the
 run's turn limit bounds a model that keeps calling a failing tool. A handler
 that fails while the run's signal is already aborted ends the run with its
@@ -2405,6 +2552,11 @@ and emitting one streamed `agent.steered` event per message; a message that
 arrives during the final answer therefore continues the run. It is never called
 when no turn is left or when a structured run submits its result, so those
 messages stay with the caller.
+Agent runs may also pass a `beforeRequest` callback whose messages are stored
+as user messages right before every provider request, repair turns included,
+after the turn is counted and before the tool definitions, system prompt and
+history are read for it. It emits no `agent.steered` event, uses no turn, is
+never called when no request follows, and a rejection ends the run.
 Agent runs may declare an optional positive safe-integer `maxTurns`; omission
 keeps the loop unbounded. Invalid values fail with `TypeError` before message
 storage or provider activity. The budget is checked immediately before every
@@ -2599,9 +2751,10 @@ Thread whose Project holds no lease still takes itself and its subtree through
 Thread without prompting it first. A fresh Agent per prompt
 receives a fresh tool-call store, every registered bundle tool bound to a
 prompt `Call` scoped to that prompt (its sandbox and per-prompt host facade
-attached to that scope for the run), the deterministic
-all-skills system prompt, passed through `default.hooks/v1` before each model
-request, and
+attached to that scope for the run) and the run's `load_skill`, offered once
+the run can load a skill and checking the run's live list on every call, the
+system prompt with its skills section computed once per prompt run, passed through
+`default.hooks/v1` before each model request, and
 `createMessageStorage(...)` initialized from that Thread's exact persisted
 provider-ready history. Success and failure both persist the resulting complete
 or partial history, redacting configured credentials and replacing the

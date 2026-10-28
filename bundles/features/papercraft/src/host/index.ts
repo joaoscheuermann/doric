@@ -47,11 +47,7 @@ export {
   WINDOW_PACKAGES,
 } from './bundle.js';
 export { type CompiledComponent, compileComponent } from './compile.js';
-export {
-  type CompiledStyles,
-  compileStyles,
-  scopeRootSelectors,
-} from './css.js';
+export { type CompiledStyles, compileStyles } from './css.js';
 export { isStoriesFile, storyOrder } from './entry.js';
 export { findHarness, HARNESS_DIRS, harnessCandidates } from './harness.js';
 export type {

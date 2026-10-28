@@ -94,6 +94,9 @@ const bootGeneration = async (
       lastPath: (key) => lastPaths.get(key) ?? null,
       focus: () => false,
       navigate: async () => undefined,
+      capture: async () => {
+        throw new Error('unused');
+      },
     },
     menus: {
       setSkeleton: (generation, skeleton) =>

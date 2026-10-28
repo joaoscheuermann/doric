@@ -38,7 +38,7 @@ export const TreePanel = memo(function TreePanel({
       className="papercraft-tree absolute top-(--doric-titlebar-height) bottom-24 left-0 z-10 w-56 overflow-auto border-r border-border bg-background/80 backdrop-blur"
       aria-label="estrutura"
     >
-      <div className="px-2 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+      <div className="px-2 py-1.5 text-[10px] font-normal tracking-wide text-muted-foreground uppercase">
         estrutura
       </div>
       {(graph?.nodes ?? []).map((node: SceneNode) => (
@@ -51,7 +51,7 @@ export const TreePanel = memo(function TreePanel({
             'flex items-center gap-1 py-0.5 pr-1 font-mono text-xs hover:bg-muted',
             node.depth > 0 &&
               `papercraft-tree-indent papercraft-tree-depth-${String(Math.min(node.depth, 8))}`,
-            selectedId === node.id ? 'bg-muted font-semibold' : undefined,
+            selectedId === node.id ? 'bg-muted' : undefined,
             hidden.has(node.id)
               ? 'text-muted-foreground line-through'
               : undefined,

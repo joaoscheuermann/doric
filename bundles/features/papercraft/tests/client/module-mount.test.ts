@@ -1,36 +1,41 @@
 // Path B's module contract, live: the `index.js` a component preview
-// compiles to is imported as the window imports it — bare specifiers resolved
-// to the one React the page has — and `mount(root, { theme })` renders the
-// component, stamps its elements with their Project origin, follows the
-// theme, contains a render error and unmounts.
+// compiles to is imported as the preview frame imports it — bare specifiers
+// resolved to the one React the page has — and mounted the way the frame's
+// runtime mounts it: `mount(root, { theme })` on a `#root` in the body of a
+// document the preview owns, with the theme on `<html>` (`class="dark"`).
+// It renders the component, stamps its elements with their Project origin,
+// contains a render error and unmounts.
 //
 // Contract matrix:
 // - mount renders the component (hooks work: one React instance), every
 //   element the Project's code wrote carries `path:line`, and the returned
 //   function unmounts it;
-// - `theme: 'dark'` puts the rendered tree under `.dark`;
+// - the theme reaches decorators and stories as `globals.theme` and
+//   `papercraft.theme`;
 // - a component that throws renders an error in place of the preview instead
-//   of escaping `mount`;
+//   of escaping `mount`, and a render error React recovers from goes to the
+//   console, never to the window;
 // - the Project harness's decorators wrap a plain component, with the
 //   preview's theme in `context.globals`;
 // - a CSF story renders under its own, its meta's and the harness's
 //   decorators (the harness outermost) with `args` merged harness < meta <
 //   story;
-// - `@storybook/addon-themes` follows the preview's theme;
-// - the portal container lives in the shadow root the module is mounted in,
-//   and an element a story portals into it renders there, under `.dark`
-//   when the preview is dark;
+// - `@storybook/addon-themes` puts the preview's theme on `<html>`;
 // - an overlay of the Project's own `desktop/ui` (the workspace's real
 //   `packages/desktop`, reached through the Project's `customConditions`)
-//   renders in that portal container once the harness hands it to
-//   `desktop/ui`'s provider, as Doric's harnesses do;
+//   renders in the document's body when the harness hands `desktop/ui`'s
+//   provider `context.papercraft?.portalContainer`, as Doric's harnesses do;
 // - mount states the story's Storybook layout on its root: the merged
-//   `parameters.layout` when it is one of Storybook's, else `centered`.
+//   `parameters.layout` when it is one of Storybook's, else `centered`;
+// - a revision compiled before the frame (`tests/fixtures/old-revision`, the
+//   bytes of a story that portals into `context.papercraft.portalContainer`)
+//   still mounts in the frame's `#root`, its overlay in its own portal
+//   container inside the root.
 
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { after, before, test } from 'node:test';
+import { after, afterEach, before, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Window } from 'happy-dom';
@@ -170,12 +175,20 @@ const compile = async (
   const js = built.files.find((file) => file.path === 'index.js');
   assert.ok(js !== undefined);
 
+  return load(path, Buffer.from(js.base64, 'base64'));
+};
+
+/** Imports a module's bytes from the scratch directory, where `react` resolves. */
+const load = async (
+  name: string,
+  bytes: Uint8Array,
+): Promise<PreviewModule> => {
   compiled += 1;
   const file = join(
     scratch,
-    `${path.replaceAll('/', '_')}-${String(compiled)}.mjs`,
+    `${name.replaceAll('/', '_')}-${String(compiled)}.mjs`,
   );
-  await writeFile(file, Buffer.from(js.base64, 'base64'));
+  await writeFile(file, bytes);
 
   return (await import(pathToFileURL(file).href)) as PreviewModule;
 };
@@ -193,24 +206,47 @@ const COUNTER = [
   '}',
 ].join('\n');
 
-const rootElement = (): HTMLElement => {
-  const root = document.createElement('div');
-  document.body.append(root);
+const mounted: (() => void)[] = [];
 
-  return root;
+/**
+ * Mounts a module as the frame's runtime does: the theme on `<html>`, then
+ * `mount` on a `#root` in an otherwise empty body.
+ */
+const mountInFrame = async (
+  module: PreviewModule,
+  theme: 'light' | 'dark' = 'light',
+): Promise<{ root: HTMLElement; unmount: undefined | (() => void) }> => {
+  document.documentElement.className = theme === 'dark' ? 'dark' : '';
+  const root = document.createElement('div');
+  root.id = 'root';
+  document.body.replaceChildren(root);
+  let unmount: undefined | (() => void);
+
+  await act(async () => {
+    unmount = module.mount(root, { theme });
+  });
+  if (unmount !== undefined) mounted.push(unmount);
+
+  return { root, unmount };
 };
+
+afterEach(async () => {
+  await act(async () => {
+    for (const unmount of mounted.splice(0)) unmount();
+    await Promise.resolve();
+  });
+  document.body.replaceChildren();
+  for (const name of [...document.documentElement.getAttributeNames()]) {
+    document.documentElement.removeAttribute(name);
+  }
+});
 
 test('mount renders the component with origin stamps, and unmounts', async () => {
   const module = await compile(
     { 'src/Counter.tsx': COUNTER },
     'src/Counter.tsx',
   );
-  const root = rootElement();
-  let unmount: undefined | (() => void);
-
-  await act(async () => {
-    unmount = module.mount(root, { theme: 'light' });
-  });
+  const { root, unmount } = await mountInFrame(module);
 
   const count = root.querySelector('#count');
   assert.equal(count?.textContent, '2');
@@ -222,7 +258,6 @@ test('mount renders the component with origin stamps, and unmounts', async () =>
     root.querySelector('.p-4')?.getAttribute('data-papercraft-source'),
     'src/Counter.tsx:6',
   );
-  assert.equal(root.querySelector('.dark'), null);
 
   assert.equal(typeof unmount, 'function');
   await act(async () => {
@@ -232,15 +267,24 @@ test('mount renders the component with origin stamps, and unmounts', async () =>
   assert.equal(root.querySelector('#count'), null);
 });
 
-test("the dark theme puts the preview under '.dark'", async () => {
-  const module = await compile({ 'src/Dark.tsx': COUNTER }, 'src/Dark.tsx');
-  const root = rootElement();
+test('the theme reaches the story as its globals and papercraft context', async () => {
+  const module = await compile(
+    {
+      'src/Theme.stories.tsx': [
+        'export default {};',
+        'export const Shown = {',
+        '  render: (_args, context) => (',
+        '    <output id="theme">{context.globals.theme}/{context.papercraft.theme}</output>',
+        '  ),',
+        '};',
+      ].join('\n'),
+    },
+    'src/Theme.stories.tsx',
+  );
 
-  await act(async () => {
-    module.mount(root, { theme: 'dark' });
-  });
+  const { root } = await mountInFrame(module, 'dark');
 
-  assert.ok(root.querySelector('.dark #count') !== null);
+  assert.equal(root.querySelector('#theme')?.textContent, 'dark/dark');
 });
 
 test('a component that throws renders an error instead of escaping mount', async () => {
@@ -251,14 +295,12 @@ test('a component that throws renders an error instead of escaping mount', async
     },
     'src/Boom.tsx',
   );
-  const root = rootElement();
   const quiet = console.error;
   console.error = () => undefined;
+  let root: HTMLElement;
 
   try {
-    await act(async () => {
-      module.mount(root, { theme: 'light' });
-    });
+    ({ root } = await mountInFrame(module));
   } finally {
     console.error = quiet;
   }
@@ -266,6 +308,55 @@ test('a component that throws renders an error instead of escaping mount', async
   assert.match(
     root.querySelector('[data-papercraft-error]')?.textContent ?? '',
     /boom-in-render/,
+  );
+});
+
+test("a render error React recovers from stays the preview's: on the console, never the window's", async () => {
+  // Fails only its first render, so React retries it and reports the error
+  // as one it recovered from.
+  const module = await compile(
+    {
+      'src/Flaky.tsx': [
+        'let renders = 0;',
+        'export default function Flaky() {',
+        '  renders += 1;',
+        "  if (renders === 1) throw new Error('flaky-first-render');",
+        '  return <span id="flaky">steady</span>;',
+        '}',
+      ].join('\n'),
+    },
+    'src/Flaky.tsx',
+  );
+  const windowErrors: unknown[] = [];
+  const onError = (event: unknown) => windowErrors.push(event);
+  window.addEventListener('error', onError);
+  const logged: unknown[][] = [];
+  const quiet = console.error;
+  console.error = (...args: unknown[]) => {
+    logged.push(args);
+  };
+
+  let root: HTMLElement;
+
+  try {
+    ({ root } = await mountInFrame(module));
+  } finally {
+    console.error = quiet;
+    window.removeEventListener('error', onError);
+  }
+
+  assert.equal(root.querySelector('#flaky')?.textContent, 'steady');
+  assert.equal(windowErrors.length, 0, 'The preview raised a window error.');
+  const causes = logged.flat().flatMap((value) => {
+    const chain: string[] = [];
+    for (let at = value; at instanceof Error; at = at.cause) {
+      chain.push(at.message);
+    }
+    return chain;
+  });
+  assert.ok(
+    causes.includes('flaky-first-render'),
+    'The console never named what the preview threw.',
   );
 });
 
@@ -288,11 +379,7 @@ test("the harness's decorators wrap a plain component", async () => {
     },
     'src/Counter.tsx',
   );
-  const root = rootElement();
-
-  await act(async () => {
-    module.mount(root, { theme: 'light' });
-  });
+  const { root } = await mountInFrame(module);
 
   assert.equal(
     root.querySelector(
@@ -338,11 +425,7 @@ test('a story renders under its, its meta and the harness decorators, with merge
     'src/Label.stories.tsx',
     'Second',
   );
-  const root = rootElement();
-
-  await act(async () => {
-    module.mount(root, { theme: 'light' });
-  });
+  const { root } = await mountInFrame(module);
 
   const label = root.querySelector(
     '[data-layer="preview"] [data-layer="meta"] [data-layer="story"] #label',
@@ -367,11 +450,7 @@ test("mount states the story's layout on its root, centred unless a parameter na
     ].join('\n'),
   };
   const layoutOf = async (module: PreviewModule): Promise<string | null> => {
-    const root = rootElement();
-
-    await act(async () => {
-      module.mount(root, { theme: 'light' });
-    });
+    const { root } = await mountInFrame(module);
 
     return root.getAttribute('data-papercraft-layout');
   };
@@ -394,64 +473,35 @@ test("mount states the story's layout on its root, centred unless a parameter na
   );
 });
 
-test("@storybook/addon-themes follows the preview's theme", async () => {
+test("@storybook/addon-themes puts the preview's theme on the document", async () => {
   const module = await compile(
     {
       'src/Counter.tsx': COUNTER,
       '.storybook/preview.ts': [
-        "import { withThemeByClassName } from '@storybook/addon-themes';",
+        "import { withThemeByClassName, withThemeByDataAttribute } from '@storybook/addon-themes';",
         'export const decorators = [',
         "  withThemeByClassName({ themes: { light: 'theme-light', dark: 'theme-dark' }, defaultTheme: 'light' }),",
+        "  withThemeByDataAttribute({ themes: { light: 'day', dark: 'night' }, attributeName: 'data-mode' }),",
         '];',
       ].join('\n'),
     },
     'src/Counter.tsx',
   );
-  const root = rootElement();
+  const { root } = await mountInFrame(module, 'dark');
 
-  await act(async () => {
-    module.mount(root, { theme: 'dark' });
-  });
-
-  assert.ok(root.querySelector('.theme-dark #count') !== null);
+  const html = document.documentElement;
+  assert.equal(root.querySelector('#count')?.textContent, '2');
+  assert.ok(html.classList.contains('theme-dark'));
+  assert.ok(!html.classList.contains('theme-light'));
+  assert.equal(html.getAttribute('data-mode'), 'night');
 });
 
-test('a portaled element renders in the portal container inside the shadow root', async () => {
-  const module = await compile(
-    {
-      'src/Overlay.stories.tsx': [
-        "import { createPortal } from 'react-dom';",
-        'export default {};',
-        'export const Open = {',
-        '  render: (_args, context) =>',
-        '    createPortal(<div id="overlay">open</div>, context.papercraft.portalContainer),',
-        '};',
-      ].join('\n'),
-    },
-    'src/Overlay.stories.tsx',
-  );
-  const host = rootElement();
-  const shadow = host.attachShadow({ mode: 'open' });
-  const content = document.createElement('div');
-  shadow.append(content);
-
-  await act(async () => {
-    module.mount(content, { theme: 'dark' });
-  });
-
-  const overlay = shadow.querySelector('[data-papercraft-portal] #overlay');
-  assert.equal(overlay?.textContent, 'open');
-  assert.equal(overlay?.getRootNode(), shadow);
-  // Under the preview's theme, as the rendered tree is.
-  assert.ok(shadow.querySelector('.dark > #overlay') !== null);
-});
-
-test("the Project's desktop/ui overlay renders in the portal container its harness hands it", async () => {
+test("the Project's desktop/ui overlay renders in the document's body through the harness's provider", async () => {
   const module = await compile(
     {
       'tsconfig.json': DORIC_TSCONFIG,
       // The harness Doric's packages have: it hands `desktop/ui`'s provider
-      // the container the preview gives it.
+      // the container the preview gives it, none in the frame.
       '.storybook/preview.tsx': [
         "import { PortalContainerProvider } from 'desktop/ui/portal-container';",
         'export default {',
@@ -480,16 +530,33 @@ test("the Project's desktop/ui overlay renders in the portal container its harne
     },
     'src/Menu.tsx',
   );
-  const host = rootElement();
-  const shadow = host.attachShadow({ mode: 'open' });
-  const content = document.createElement('div');
-  shadow.append(content);
+  const { root } = await mountInFrame(module);
+
+  const body = document.querySelector('#menu-body');
+  assert.equal(body?.textContent, 'menu');
+  // Portaled out of the React root, to the document's body.
+  assert.equal(root.contains(body), false);
+  assert.equal(document.body.contains(body), true);
+});
+
+test('a revision compiled before the frame still mounts in its #root, with its own portal container', async () => {
+  // The bytes of a story compiled by the shadow-root `mount`: it renders
+  // `#anchor` and portals `#overlay` into `context.papercraft.portalContainer`,
+  // with `parameters.layout: 'padded'`.
+  const bytes = await readFile(
+    new URL('../../../tests/fixtures/old-revision/index.js', import.meta.url),
+  );
+  const module = await load('old-revision', bytes);
+
+  const { root, unmount } = await mountInFrame(module, 'dark');
+
+  assert.equal(root.querySelector('#anchor') !== null, true);
+  assert.equal(root.querySelector('#overlay')?.textContent, 'open');
+  assert.equal(root.getAttribute('data-papercraft-layout'), 'padded');
 
   await act(async () => {
-    module.mount(content, { theme: 'light' });
+    unmount?.();
+    await Promise.resolve();
   });
-
-  const body = shadow.querySelector('[data-papercraft-portal] #menu-body');
-  assert.equal(body?.textContent, 'menu');
-  assert.equal(document.querySelector('#menu-body'), null);
+  assert.equal(root.querySelector('#overlay'), null);
 });

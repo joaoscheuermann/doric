@@ -35,12 +35,21 @@ const byOrder = (
 export const createTools = () => {
   const registered: Entry[] = [];
 
-  /** The registered tools one call's generation view sees, in order. */
+  /**
+   * The registered tools one call's generation view sees, in order: the
+   * unscoped ones and those of the call's Project (1.3.0).
+   */
   const seen = (call: Call, services: Services) => {
     const view = viewOf(call, services);
+    const projectId = call.scope?.projectId;
 
     return registered
-      .filter((entry) => seenBy(entry.generation, view))
+      .filter(
+        (entry) =>
+          (entry.registered.projectId === undefined ||
+            entry.registered.projectId === projectId) &&
+          seenBy(entry.generation, view),
+      )
       .sort(byOrder)
       .map((entry) => entry.registered);
   };
@@ -59,6 +68,9 @@ export const createTools = () => {
         const taken = registered.find(
           (entry) =>
             entry.registered.tool.name === tool.name &&
+            (options.projectId === undefined ||
+              entry.registered.projectId === undefined ||
+              entry.registered.projectId === options.projectId) &&
             collidesIn(entry.generation, view),
         )?.registered;
 
@@ -75,6 +87,9 @@ export const createTools = () => {
             bundleId,
             alwaysAvailable: options.alwaysAvailable,
             ...(options.order === undefined ? {} : { order: options.order }),
+            ...(options.projectId === undefined
+              ? {}
+              : { projectId: options.projectId }),
             tool,
           }),
         };

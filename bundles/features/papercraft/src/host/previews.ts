@@ -77,9 +77,11 @@ export const MODULE_ENTRY = 'index.js';
 /** The entry path of a component revision's Tailwind sheet (path B). */
 export const STYLES_ENTRY = 'index.css';
 
-/** The sha256 of a built payload, as `git`'s object hashes are written. */
-export const sha256 = (value: string): string =>
-  createHash('sha256').update(value, 'utf8').digest('hex');
+/** The sha256 of a built payload (text as UTF-8), as `git`'s object hashes are written. */
+export const sha256 = (value: string | Uint8Array): string =>
+  createHash('sha256').update(value).digest('hex');
+
+const utf8 = (text: string): Uint8Array => Buffer.from(text, 'utf8');
 
 /** Leading whitespace and `<!-- … -->` comments, which may precede a doctype. */
 const LEADING_TRIVIA = /^(?:\s+|<!--[\s\S]*?-->)*/;
@@ -376,6 +378,30 @@ export const probeSource = async (
   return read.content;
 };
 
+/**
+ * Reads one Project file's bytes through `files/v1` (base64, files/v1 1.1.0):
+ * what a preview's sheet names, a font or an image. Anything short of the
+ * whole file answers `undefined`, and the sheet goes without it.
+ */
+export const probeBytes = async (
+  services: Services,
+  call: Call,
+  path: string,
+): Promise<Uint8Array | undefined> => {
+  const outcome = await services
+    .use(FilesV1, call.scope)
+    .content({ path, encoding: 'base64' }, call)
+    .catch(() => undefined);
+
+  if (outcome?.status !== 'ready') return undefined;
+
+  const read = outcome.value;
+
+  return read.status === 'read' && !read.truncated
+    ? Buffer.from(read.content, 'base64')
+    : undefined;
+};
+
 /** One revision's built payload: the markup, its entries and their bytes. */
 export interface PreviewSnapshot {
   readonly markup: string;
@@ -406,8 +432,8 @@ export const snapshotPreview = async (
 ): Promise<PreviewSnapshot> => {
   const content = await readSource(services, call, input.path);
   const markup = deriveMarkup(input.source, input.path, content);
-  const built: { path: string; text: string }[] = [
-    { path: MARKUP_ENTRY, text: markup },
+  const built: { path: string; bytes: Uint8Array }[] = [
+    { path: MARKUP_ENTRY, bytes: utf8(markup) },
   ];
   let warnings: readonly string[] = [];
 
@@ -422,21 +448,23 @@ export const snapshotPreview = async (
         ...(input.entry === undefined ? {} : { entry: input.entry }),
       },
       sandboxBundler(services, call),
+      (path) => probeBytes(services, call, path),
     );
 
     built.push(
-      { path: MODULE_ENTRY, text: compiled.js },
-      { path: STYLES_ENTRY, text: compiled.css },
+      { path: MODULE_ENTRY, bytes: utf8(compiled.js) },
+      { path: STYLES_ENTRY, bytes: utf8(compiled.css) },
+      ...compiled.assets,
     );
     warnings = compiled.warnings;
   }
 
   return {
     markup,
-    entries: built.map(({ path, text }) => ({ path, sha256: sha256(text) })),
-    files: built.map(({ path, text }) => ({
+    entries: built.map(({ path, bytes }) => ({ path, sha256: sha256(bytes) })),
+    files: built.map(({ path, bytes }) => ({
       path,
-      base64: Buffer.from(text, 'utf8').toString('base64'),
+      base64: Buffer.from(bytes).toString('base64'),
     })),
     warnings,
   };

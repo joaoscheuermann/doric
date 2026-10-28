@@ -81,6 +81,10 @@ export const createAgent = (options: AgentOptions): Agent => {
     runOptions: AgentRunOptions<Output>,
     outputTool?: StructuredOutputTool,
   ): Promise<ProviderRequest<Output>> => {
+    /** Caller messages come first, so the definitions and history below see them. */
+    for (const content of (await runOptions.beforeRequest?.()) ?? []) {
+      options.messages.push({ role: 'user', content });
+    }
     /** Executable definitions come from the caller-owned tool storage. */
     const definitions = options.tools.definitions();
     const prompt =
@@ -157,21 +161,34 @@ export const createAgent = (options: AgentOptions): Agent => {
     pendingCalls.delete(callId);
   };
 
+  /** The cap for one tool's answer: the number itself, or the function's for that tool. */
+  const toolResultCap = (
+    maxChars: AgentRunOptions['maxToolResultChars'],
+    toolName: string,
+  ): number | undefined =>
+    typeof maxChars === 'function' ? maxChars(toolName) : maxChars;
+
   const observedToolResult =
-    (maxChars?: number) =>
+    (maxChars: AgentRunOptions['maxToolResultChars']) =>
     (record: ToolCallRecord): string => {
-      const content = toolResultEnvelope(record, maxChars);
+      const content = toolResultEnvelope(
+        record,
+        toolResultCap(maxChars, record.toolName),
+      );
       pushToolResult(record.callId, content);
       return content;
     };
 
   /** A thrown handler answers its call with the failure, never a record. */
   const observedToolFailure =
-    (maxChars?: number) =>
+    (maxChars: AgentRunOptions['maxToolResultChars']) =>
     (call: ToolCall, error: unknown): void => {
       pushToolResult(
         call.id,
-        toolFailureEnvelope(describeToolFailure(error), maxChars),
+        toolFailureEnvelope(
+          describeToolFailure(error),
+          toolResultCap(maxChars, call.name),
+        ),
       );
     };
 

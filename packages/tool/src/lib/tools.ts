@@ -41,10 +41,22 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     });
   }
 
+  if (
+    options.inputSchema !== undefined &&
+    options.inputSchema.type !== 'object'
+  ) {
+    throw new ToolErrorObject({
+      code: 'invalid_schema',
+      toolName: options.name,
+      message: `Tool inputSchema must be an object JSON Schema: ${options.name}`,
+    });
+  }
+
   const definition: ToolDefinition = {
     name: options.name,
     description: options.description,
-    inputSchema: jsonSchema(options.name, options.input, true),
+    inputSchema:
+      options.inputSchema ?? jsonSchema(options.name, options.input, true),
     outputSchema: jsonSchema(options.name, options.output, false),
     strict: options.strict ?? true,
   };

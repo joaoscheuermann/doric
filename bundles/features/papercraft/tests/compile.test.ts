@@ -168,8 +168,8 @@ describe('component previews (path B)', () => {
     const css = textOf(built, 'index.css');
     assert.match(css, /\.bg-primary\s*\{[^}]*var\(--primary\)/);
     assert.match(css, /\.p-4\s*\{/);
-    // No theme token is defined as itself: under `:host` that cycle would
-    // void the token the shadow host inherits.
+    // No theme token is defined as itself: that cycle would void the token
+    // wherever it won the cascade.
     assert.doesNotMatch(css, /(--[\w-]+):\s*var\(\1\)/);
 
     // The fallback is still the source text, stamped with its origin.

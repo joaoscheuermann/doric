@@ -15,6 +15,35 @@
 @source '../chrome-bar.tsx';
 
 /*
+ * Borders and outlines take the theme's colours by default, wherever a sheet
+ * or a preview draws them, instead of the foreground.
+ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  /*
+   * Running text is light; labels and titles set the regular weight. The rule
+   * is on `:root`, so every element of the document inherits it, a Papercraft
+   * preview's frame document included.
+   */
+  :root {
+    font-weight: 300;
+  }
+
+  /* A heading is the regular weight, never the browser's bold: its size and place name it. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: var(--font-weight-normal);
+  }
+}
+
+/*
  * Every chrome bar is the Papermache app bar's 40px height, stated once by
  * the tokens. A 28px control has 6px of air on each side.
  */

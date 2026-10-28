@@ -31,6 +31,27 @@ void test('parses local OAuth callback paths and query parameters', async () => 
   }
 });
 
+void test('passes the redirect iss parameter through to the callback', async () => {
+  const server = await createLocalCallbackServer({ path: '/oauth/callback' });
+
+  try {
+    const waiting = server.waitForCallback('state-123');
+
+    const response = await fetch(
+      `${server.redirectUri}?code=code-123&state=state-123&iss=${encodeURIComponent('https://as.example')}`,
+    );
+    const callback = await waiting;
+
+    assert.equal(response.status, 200);
+
+    assert.equal(callback.code, 'code-123');
+
+    assert.equal(callback.iss, 'https://as.example');
+  } finally {
+    await server.close();
+  }
+});
+
 void test('closes local OAuth callback connections after a completed callback', async () => {
   const server = await createLocalCallbackServer({ path: '/oauth/callback' });
   const agent = new Agent({ keepAlive: true });
