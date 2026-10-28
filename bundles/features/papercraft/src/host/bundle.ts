@@ -22,10 +22,11 @@
 // `node_modules`. Nothing is special to any Project:
 // when it is Doric itself, its `desktop/ui` and `bundle/contracts` are Project
 // code like any other, so a component it edits or adds previews as the
-// Project has it. No specifier is refused for what it is: the module already
-// runs in the app window's realm, where the main process's checks on every
-// bridge call and the CSP are the boundary, so a refusal would protect
-// nothing. What cannot run in a window fails, naming the import.
+// Project has it. No specifier is refused for what it is: the module runs
+// in the preview's own frame, a sandboxed iframe of opaque origin with no
+// preload and no access to the app, whose isolation and CSP are the
+// boundary, so a refusal would protect nothing. What cannot run in a window
+// fails, naming the import.
 //
 // 1. What the window shares stays external and resolves through its import
 //    map: React and ReactDOM by the exact specifiers `previewExternals`

@@ -20,6 +20,10 @@ how bundles work.
 - **Real code, not mockups.** A preview is either a self-contained HTML page or
   one of your Project's own React components, compiled and mounted live.
   State, hooks and interactions work, so you judge the actual thing.
+- **Isolated from the app.** Each preview runs in a sandboxed iframe with an
+  opaque origin: its own JavaScript realm and document, no access to the
+  app's DOM, globals or bridge, and in-memory `localStorage` and
+  `sessionStorage` that nothing persists.
 - **Comments that land on the code.** Every element your Project renders is
   stamped with its source file and line. A comment pinned on a button tells
   the agent exactly which `file:line` to change, so your feedback becomes an
@@ -81,10 +85,16 @@ how bundles work.
 - **UI:** the `papercraft-preview` node inside the conversation and the canvas
   window at `/papercraft/:projectId/:threadId/:artifactId`, which follows the
   Thread live.
-- **Contracts:** `papercraft.previews/v1` and the canvas commands
+- **Contracts:** `papercraft.previews/v1`, the canvas commands
   (`papercraft.open-canvas/v1`, `papercraft.approve/v1`, the `select`,
   `comment` and `pan` tools, `isolate`, `show-all`, the zoom commands and
-  `select-revision`).
+  `select-revision`) and `papercraft.snapshot/v1`, with which a window
+  captures its own pixels.
+- **Frame runtime:** `client/frames/preview.js`, the module the preview
+  iframe loads. It mounts the revision and talks to the app over one
+  `MessageChannel` (`src/client/frame-protocol.ts`). A chat window keeps at
+  most three previews live, the ones used last; the others show a snapshot,
+  with their pins and comments, until a pointer or click brings them back.
 
 ## Previewing your components
 
@@ -98,17 +108,21 @@ how bundles work.
   parameters and args, in Storybook's order. `@storybook/addon-themes`
   decorators work; most other addons do not.
 - **Imports resolve like your app.** Relative imports and `tsconfig.json`
-  `paths` aliases resolve. `react`, `react-dom` and `@base-ui/react` are the
-  app's own, `lucide-react` comes from the host, and other packages are read
-  from the Project's `node_modules` when small enough.
+  `paths` aliases resolve. `react`, `react-dom` and `@base-ui/react` come from
+  the frame's import map (the platform's files, evaluated in the frame),
+  `lucide-react` comes from the host, and other packages are read from the
+  Project's `node_modules` when small enough.
 - **Styles are your Project's.** The global CSS the harness imports is compiled
   with Tailwind v4. Without one, the preview uses the utilities its sources use
-  over a generic neutral theme. A Tailwind v3 sheet is skipped with a warning.
-- **Overlays stay inside the preview** when they portal into
-  `context.papercraft.portalContainer`.
-- **Layout follows Storybook.** A preview is as wide as its content by default;
-  `parameters: { layout: 'fullscreen' }` or `'padded'` lays it out at the
-  canvas width.
+  over a generic neutral theme. The sheet applies as written in the frame's
+  document, and dark mode is `class="dark"` on its `<html>`. A Tailwind v3
+  sheet is skipped with a warning.
+- **Overlays stay inside the preview.** The frame's document belongs to the
+  preview, so dialogs, popovers and tooltips portal into its `document.body`
+  as they would in your app; no portal container needs wiring.
+- **Layout follows Storybook.** A preview is as wide as its content by default
+  (up to the canvas width); `parameters: { layout: 'fullscreen' }` or
+  `'padded'` lays it out at the canvas width.
 
 Component sources are bundled with esbuild inside the Project's sandbox when
 the sandbox image installs it under `/opt/doric/bundler`, as the image

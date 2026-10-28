@@ -2,17 +2,19 @@
 //
 // The preview is code, not JSON: the agent never authors a structure. When the
 // canvas needs to interact — hit-test under pan/zoom, selection, layers, an
-// anchor for a comment — it derives the tree from the DOM the revision
-// rendered inside the shadow root, as Glide keeps its in-memory scene graph.
-// This is local canvas cache, rebuilt on every render: never a contract, never
-// an event payload, asking nothing of the agent.
+// anchor for a comment — it uses the tree the preview's frame derived from the
+// DOM the revision rendered, as Glide keeps its in-memory scene graph. The
+// frame runs in its own sandboxed realm, so the tree reaches the app as data
+// (a `scene` message of `frame-protocol.ts`), never as live elements: this is
+// local canvas cache, rebuilt on every scene, never a contract or an event
+// payload, asking nothing of the agent.
 //
 // The hit-test never reads `document.elementFromPoint`: a canvas with a
-// transform breaks the direct position test. Bounds are measured through an
-// injectable `boundsOf` so a caller can cache them and a test can supply
-// synthetic geometry (happy-dom measures everything as zero).
+// transform breaks the direct position test, and the app cannot see inside the
+// frame anyway. Bounds come through a `boundsOf` so a scene answers from the
+// frame's measures and a test can supply synthetic geometry.
 
-import { STAMP_ATTRIBUTE } from '../anchor.js';
+import type { SceneNodeData } from '../frame-protocol.js';
 
 /** The origin stamp a stamped element carries, as `path:line`. */
 export interface SourceStamp {
@@ -20,15 +22,20 @@ export interface SourceStamp {
   readonly line?: number;
 }
 
-/** One derived node of the mounted preview. */
+/** One derived node of the mounted preview, as the frame serialized it. */
 export interface SceneNode {
   /** A stable id within one derivation: `n0`, `n1`, … in document order. */
   readonly id: string;
   readonly tag: string;
   readonly classes: readonly string[];
+  /** The element's `id` attribute, when it has one. */
+  readonly elementId?: string;
+  /** Its own `data-papercraft-source` value, exactly as the element carries it. */
+  readonly source?: string;
+  /** The stamp that names it: its own, else the nearest stamped ancestor's. */
   readonly stamp?: SourceStamp;
-  /** The rendered element, inside the preview's shadow root. */
-  readonly element: Element;
+  /** Its text, whitespace collapsed and cut short, as the frame read it. */
+  readonly text: string;
   readonly depth: number;
   readonly parentId?: string;
 }
@@ -40,9 +47,8 @@ export interface SceneGraph {
   readonly childrenOf: ReadonlyMap<string | undefined, readonly SceneNode[]>;
 }
 
-const SKIP_TAGS = new Set(['STYLE', 'LINK', 'SCRIPT', 'META', 'TITLE']);
-
-const stampOf = (value: string): SourceStamp => {
+/** A stamp value (`path:line`, else a bare path) read as its parts. */
+export const stampOf = (value: string): SourceStamp => {
   const match = /^(.*?):(\d+)$/.exec(value);
   if (match === null) return { path: value };
 
@@ -53,75 +59,63 @@ const stampOf = (value: string): SourceStamp => {
     : { path: value };
 };
 
-const stampOfElement = (element: Element): SourceStamp | undefined => {
-  const stamp = element.getAttribute(STAMP_ATTRIBUTE);
-
-  return stamp !== null && stamp !== '' ? stampOf(stamp) : undefined;
-};
-
-const inheritedStamp = (
-  element: Element,
-  parent: SceneNode | undefined,
-): SourceStamp | undefined => {
-  const own = stampOfElement(element);
-
-  if (own !== undefined) return own;
-  if (parent === undefined) return undefined;
-
-  // The stamp walks down from the stamped ancestor, so a comment on a child
-  // still names the source file it came from.
-  return parent.stamp;
-};
+/** A node's own stamp, when the element itself carries one. */
+export const ownStampOf = (node: SceneNode): SourceStamp | undefined =>
+  node.source === undefined ? undefined : stampOf(node.source);
 
 /**
- * Derives the tree of everything the revision rendered under `root`, bounded
- * by `limit` nodes: the derivation is a cache, not a promise to render every
- * node of an unbounded document.
+ * The tree of the nodes a frame serialized, in document order. The frame is
+ * the Project's code's word, so the tree trusts only what it can check: a
+ * repeated id is dropped, a parent must come before its child (else the node
+ * hangs from the root), and each depth and inherited stamp is derived here
+ * from the parent chain, not read from the message.
  */
-export const buildSceneGraph = (root: ParentNode, limit = 400): SceneGraph => {
+export const sceneGraphOf = (data: readonly SceneNodeData[]): SceneGraph => {
   const nodes: SceneNode[] = [];
   const byId = new Map<string, SceneNode>();
   const childrenOf = new Map<string | undefined, SceneNode[]>();
 
-  const visit = (parent: ParentNode, depth: number, parentNode?: SceneNode) => {
-    for (const child of parent.children) {
-      if (nodes.length >= limit) return;
-      if (SKIP_TAGS.has(child.tagName)) continue;
+  for (const each of data) {
+    if (byId.has(each.id)) continue;
 
-      const node: SceneNode = {
-        id: `n${nodes.length}`,
-        tag: child.tagName.toLowerCase(),
-        classes: (child.getAttribute('class') ?? '')
-          .trim()
-          .split(/\s+/)
-          .filter((name) => name !== ''),
-        stamp: inheritedStamp(child, parentNode),
-        element: child,
-        depth,
-        ...(parentNode === undefined ? {} : { parentId: parentNode.id }),
-      };
+    const parent =
+      each.parentId === undefined ? undefined : byId.get(each.parentId);
+    const source =
+      each.stamp === undefined || each.stamp === '' ? undefined : each.stamp;
+    // The stamp walks down from the stamped ancestor, so a comment on a child
+    // still names the source file it came from.
+    const stamp = source === undefined ? parent?.stamp : stampOf(source);
+    const elementId =
+      each.elementId === undefined || each.elementId === ''
+        ? undefined
+        : each.elementId;
 
-      nodes.push(node);
-      byId.set(node.id, node);
+    const node: SceneNode = {
+      id: each.id,
+      tag: each.tag.toLowerCase(),
+      classes: each.classes.filter((name) => name !== ''),
+      ...(elementId === undefined ? {} : { elementId }),
+      ...(source === undefined ? {} : { source }),
+      ...(stamp === undefined ? {} : { stamp }),
+      text: each.text,
+      depth: parent === undefined ? 0 : parent.depth + 1,
+      ...(parent === undefined ? {} : { parentId: parent.id }),
+    };
 
-      const siblings = childrenOf.get(parentNode?.id) ?? [];
-      siblings.push(node);
-      childrenOf.set(parentNode?.id, siblings);
+    nodes.push(node);
+    byId.set(node.id, node);
 
-      visit(child, depth + 1, node);
-    }
-  };
-
-  visit(root, 0);
+    const siblings = childrenOf.get(parent?.id) ?? [];
+    siblings.push(node);
+    childrenOf.set(parent?.id, siblings);
+  }
 
   return { nodes, byId, childrenOf };
 };
 
 /** The label a derived node shows in the tree: `tag#id`, `tag.a`, else `tag`. */
 export const nodeLabel = (node: SceneNode): string => {
-  const id = node.element.getAttribute('id');
-
-  if (id !== null && id !== '') return `${node.tag}#${id}`;
+  if (node.elementId !== undefined) return `${node.tag}#${node.elementId}`;
 
   return node.classes.length === 0
     ? node.tag
@@ -227,25 +221,6 @@ export interface Bounds {
 }
 
 export type BoundsOf = (node: SceneNode) => Bounds;
-
-/**
- * The cached bounds index of one derivation: `boundsOf` runs once per node
- * and the result stays until the derivation is rebuilt.
- */
-export const boundsIndex = (measure: BoundsOf): BoundsOf => {
-  const cache = new Map<string, Bounds>();
-
-  return (node) => {
-    const cached = cache.get(node.id);
-
-    if (cached !== undefined) return cached;
-
-    const bounds = measure(node);
-    cache.set(node.id, bounds);
-
-    return bounds;
-  };
-};
 
 /** An ancestor that hides its overflow: its box, and the axes it clips on. */
 export interface Clip {

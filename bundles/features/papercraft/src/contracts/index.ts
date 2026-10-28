@@ -155,8 +155,9 @@ export type LeaseOutcome<T> =
  * `call.scope.projectId`; no read acquires a lease.
  */
 export interface Files {
+  /** `encoding: 'base64'` (1.1.0) reads the file's bytes, a font or an image. */
   content(
-    input: { readonly path: string },
+    input: { readonly path: string; readonly encoding?: 'utf8' | 'base64' },
     call?: CallArg,
   ): Promise<LeaseOutcome<FilesContentRead>>;
 }
@@ -689,3 +690,79 @@ export interface RevisionReading {
   /** Whether the revision on screen is already approved. */
   readonly approved: boolean;
 }
+
+/* papercraft.snapshot/v1 ---------------------------------------------------- */
+
+// The desktopMain capture of a window's own pixels (isolamento.md, "O
+// snapshot"): a window asks for a rectangle of its viewport and gets a PNG,
+// which it keeps as the stand-in of a preview frame it unmounts. The main
+// process captures the window's contents, so the opaque-origin preview frames
+// inside the rectangle are in the picture. A window captures only itself: the
+// window is the one the call left, never an input.
+
+/** The longest side of a rectangle one capture takes, in CSS px. */
+export const SNAPSHOT_MAX_SIDE = 4096;
+
+/** A side of the rectangle: positive, finite, at most `SNAPSHOT_MAX_SIDE`. */
+const snapshotSideSchema = z.number().positive().max(SNAPSHOT_MAX_SIDE);
+
+/**
+ * The rectangle to capture, in CSS px of the calling window's viewport (the
+ * coordinates `getBoundingClientRect` answers in the window's own document).
+ * It must lie inside the viewport; main refuses one that does not.
+ */
+export const snapshotRectSchema = z
+  .object({
+    x: z.number().nonnegative(),
+    y: z.number().nonnegative(),
+    width: snapshotSideSchema,
+    height: snapshotSideSchema,
+  })
+  .strict();
+
+export type SnapshotRect = z.output<typeof snapshotRectSchema>;
+
+export const snapshotCaptureInputSchema = z
+  .object({ rect: snapshotRectSchema })
+  .strict();
+
+export type SnapshotCaptureInput = z.input<typeof snapshotCaptureInputSchema>;
+
+/**
+ * One captured rectangle: the PNG bytes as base64 (what the bridge carries as
+ * a string, as `artifacts/v1` carries its bytes), its size in device pixels,
+ * and the device pixels per CSS px it was taken at.
+ */
+export const snapshotSchema = z
+  .object({
+    png: z.string().min(1),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    scale: z.number().positive(),
+  })
+  .strict();
+
+export type Snapshot = z.output<typeof snapshotSchema>;
+
+/**
+ * `papercraft.snapshot/v1` (desktopMain): captures a rectangle of the calling
+ * window. It fails `invalid_input` for a rectangle that is not one or lies
+ * outside the viewport, `unavailable` for a call that did not leave a window
+ * or a capture main could not take, and `not_found` when the window closed.
+ */
+export interface PapercraftSnapshot {
+  capture(input: SnapshotCaptureInput, call?: CallArg): Promise<Snapshot>;
+}
+
+export const papercraftSnapshotMethods = {
+  capture: {
+    input: snapshotCaptureInputSchema,
+    output: snapshotSchema,
+    expose: 'desktop',
+  },
+} as const satisfies MethodSpecs;
+
+/** `papercraft.snapshot/v1`, as the `papercraft` bundle's desktop part provides it. */
+export const PapercraftSnapshotV1 = ref<PapercraftSnapshot>(
+  'papercraft.snapshot/v1',
+);

@@ -6,8 +6,9 @@
 //
 // Contract matrix:
 // - a harness that imports the Project's Tailwind v4 entry replaces Doric's
-//   theme: the Project's own tokens and utilities, its `:root` rules also
-//   under `:host`, and none of the generic theme's mapping;
+//   theme: the Project's own tokens and utilities, its `:root` rules as
+//   written (the sheet is linked in the preview's own document), and none of
+//   the generic theme's mapping;
 // - without a harness, the generic theme is the base, with its own light
 //   and dark tokens, never the app's;
 // - the nearest harness wins, walking up from the previewed file, and
@@ -26,6 +27,7 @@
 //   another, and an unknown story fails naming the stories.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { describe, test } from 'node:test';
 
 import { ContractError } from 'bundle/contracts';
@@ -34,30 +36,53 @@ import { compileComponent } from '../src/host/compile.js';
 import { type PreviewSnapshot, snapshotPreview } from '../src/host/previews.js';
 import { servicesFor, testCall } from './support/services.js';
 
-const filesService = (files: Record<string, string>) => ({
-  content: async ({ path }: { readonly path: string }) =>
-    files[path] === undefined
-      ? { status: 'ready', value: { status: 'not_found' } }
-      : {
-          status: 'ready',
-          value: {
-            status: 'read',
-            path,
-            content: files[path],
-            truncated: false,
-            binary: false,
-          },
-        },
+/** `files/v1` over text files and, read as base64 only, binary ones. */
+const filesService = (
+  files: Record<string, string>,
+  binaries: Record<string, Uint8Array> = {},
+) => ({
+  content: async ({
+    path,
+    encoding,
+  }: {
+    readonly path: string;
+    readonly encoding?: 'utf8' | 'base64';
+  }) => {
+    const bytes =
+      binaries[path] ??
+      (files[path] === undefined ? undefined : Buffer.from(files[path]));
+    if (bytes === undefined) {
+      return { status: 'ready', value: { status: 'not_found' } };
+    }
+    const binary = path in binaries;
+
+    return {
+      status: 'ready',
+      value: {
+        status: 'read',
+        path,
+        content:
+          encoding === 'base64'
+            ? Buffer.from(bytes).toString('base64')
+            : binary
+              ? ''
+              : files[path],
+        truncated: false,
+        binary,
+      },
+    };
+  },
 });
 
 const snapshot = (
   files: Record<string, string>,
   path: string,
   entry?: string,
+  binaries?: Record<string, Uint8Array>,
 ): Promise<PreviewSnapshot> =>
   snapshotPreview(
     servicesFor((id) => {
-      if (id === 'files/v1') return filesService(files);
+      if (id === 'files/v1') return filesService(files, binaries);
       throw new Error(`unexpected contract ${id}`);
     }),
     testCall,
@@ -133,11 +158,77 @@ describe('the preview harness and the Project CSS', () => {
     const css = textOf(built, 'index.css');
 
     assert.match(css, /\.bg-brand\s*\{[^}]*var\(--brand\)/);
-    // The Project's `:root` tokens also apply inside the shadow root.
-    assert.match(css, /:root,\s*:host[^{]*\{\s*--brand:\s*#123456/);
+    // The Project's `:root` tokens stay on `:root`, the preview document's.
+    assert.match(css, /:root\s*\{\s*--brand:\s*#123456/);
+    assert.doesNotMatch(css, /data-papercraft-theme/);
     // The generic mapping is not the base: the Project defines no `primary`.
     assert.doesNotMatch(css, /\.bg-primary\s*\{/);
     assert.match(textOf(built, 'index.js'), /data-harness/);
+  });
+
+  test("the fonts and images the Project's sheets name are stored with the preview", async () => {
+    const font = Uint8Array.from([0x77, 0x4f, 0x46, 0x32, 0x00, 0x01]);
+    const picture = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x02]);
+    const built = await snapshot(
+      {
+        'src/Badge.tsx': BADGE,
+        'src/index.css': [
+          '@import "tailwindcss";',
+          '@import "./styles/fonts.css";',
+          ':root { --brand: #123456; }',
+          '.hero { background: url("/public/hero.png?v=2#top"); }',
+        ].join('\n'),
+        // Written for its own place, as `desktop/ui`'s faces are.
+        'src/styles/fonts.css': [
+          "@font-face { font-family: 'Face'; src: url('../../assets/fonts/face.woff2') format('woff2'); }",
+          "@font-face { font-family: 'Face2'; src: url(../../assets/fonts/face.woff2); }",
+          "@font-face { font-family: 'Gone'; src: url('./missing.woff2'); }",
+          '.remote { background: url(https://example.com/a.png); }',
+          '.inline { background: url("data:image/png;base64,AAAA"); }',
+        ].join('\n'),
+        '.papercraft/preview.tsx': harness(
+          'root',
+          "import '../src/index.css';",
+        ),
+        '.doric/artifacts/drafts/badge.tsx': BADGE_PREVIEW,
+      },
+      '.doric/artifacts/drafts/badge.tsx',
+      undefined,
+      {
+        'assets/fonts/face.woff2': font,
+        'public/hero.png': picture,
+      },
+    );
+    const css = textOf(built, 'index.css');
+    const stored = (bytes: Uint8Array, extension: string) => {
+      const path = `assets/${createHash('sha256').update(bytes).digest('hex')}.${extension}`;
+      const file = built.files.find((candidate) => candidate.path === path);
+      assert.ok(file !== undefined, `${path} is not stored with the preview`);
+      assert.deepEqual(Buffer.from(file.base64, 'base64'), Buffer.from(bytes));
+      assert.ok(built.entries.some((entry) => entry.path === path));
+      return path;
+    };
+
+    const fontPath = stored(font, 'woff2');
+    const picturePath = stored(picture, 'png');
+    // One copy for a file named twice; every reference points at it.
+    assert.equal(css.split(`url("./${fontPath}")`).length - 1, 2);
+    assert.equal(
+      built.files.filter((file) => file.path === fontPath).length,
+      1,
+    );
+    assert.match(css, new RegExp(`url\\("\\./${picturePath}\\?v=2#top"\\)`));
+    // What is not the Project's stays as written.
+    assert.match(css, /url\(https:\/\/example\.com\/a\.png\)/);
+    assert.match(css, /url\("data:image\/png;base64,AAAA"\)/);
+    // A file that cannot be read keeps its reference, and the build says so.
+    assert.match(css, /url\('\.\/missing\.woff2'\)/);
+    assert.ok(
+      built.warnings.some((warning) =>
+        warning.includes('src/styles/missing.woff2'),
+      ),
+    );
+    assert.doesNotMatch(css, /\.\.\/\.\.\/assets\/fonts/);
   });
 
   test('without a harness, the generic theme is the base, with its own tokens', async () => {
@@ -153,11 +244,8 @@ describe('the preview harness and the Project CSS', () => {
     assert.match(css, /\.bg-primary\s*\{[^}]*var\(--primary\)/);
     assert.doesNotMatch(css, /\.bg-brand\s*\{/);
     // The tokens are the theme's own, in light and dark, defined on the
-    // shadow host: nothing of the app's theme is provisioned.
-    assert.match(
-      css,
-      /:root,\s*:host[^{]*\{[^}]*--primary:\s*oklch\(0\.205 0 0\)/,
-    );
+    // preview document's root: nothing of the app's theme is provisioned.
+    assert.match(css, /:root\s*\{[^}]*--primary:\s*oklch\(0\.205 0 0\)/);
     assert.match(css, /\.dark\s*\{[^}]*--primary:\s*oklch\(0\.922 0 0\)/);
   });
 
@@ -252,10 +340,7 @@ describe('the preview harness and the Project CSS', () => {
       'src/Badge.tsx',
     );
 
-    assert.match(
-      textOf(built, 'index.css'),
-      /:root,\s*:host[^{]*\{\s*--brand:\s*#123456/,
-    );
+    assert.match(textOf(built, 'index.css'), /:root\s*\{\s*--brand:\s*#123456/);
     // A window cannot import a stylesheet as a module: it would fail the load.
     assert.doesNotMatch(textOf(built, 'index.js'), /theme\.css/);
   });

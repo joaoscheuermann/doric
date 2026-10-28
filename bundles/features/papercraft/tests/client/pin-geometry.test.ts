@@ -28,13 +28,17 @@ import {
 import {
   type Bounds,
   type BoundsOf,
-  buildSceneGraph,
   type PseudoBoundsOf,
   type SceneGraph,
+  sceneGraphOf,
 } from '../../src/client/surface/scene-graph.js';
 import type { CommentAnchor } from '../../src/contracts/index.js';
+import { sceneNodesOf } from './support/fake-frame.js';
 
-/** One rendered revision, with synthetic geometry (happy-dom measures zero). */
+/**
+ * One rendered revision, as its frame's scene reaches the canvas, with
+ * synthetic geometry (happy-dom measures zero).
+ */
 interface Revision {
   readonly graph: SceneGraph;
   readonly bounds: BoundsOf;
@@ -60,17 +64,22 @@ const render = (markup: string): Revision => {
   const root = document.createElement('div');
   root.innerHTML = markup;
 
-  return {
-    graph: buildSceneGraph(root),
-    bounds: (node) => {
+  const { nodes, elements } = sceneNodesOf(root);
+  const boxes = new Map(
+    nodes.map((node, index) => {
       const [x = 0, y = 0, width = 0, height = 0] = (
-        node.element.getAttribute('data-box') ?? ''
+        elements[index]?.getAttribute('data-box') ?? ''
       )
         .split(' ')
         .map(Number);
 
-      return { x, y, width, height };
-    },
+      return [node.id, { x, y, width, height }] as const;
+    }),
+  );
+
+  return {
+    graph: sceneGraphOf(nodes),
+    bounds: (node) => boxes.get(node.id) ?? { x: 0, y: 0, width: 0, height: 0 },
   };
 };
 
@@ -114,14 +123,13 @@ const landsOn = (
       const boxB = revision.bounds(b);
 
       return boxA.width * boxA.height - boxB.width * boxB.height;
-    })[0]
-    ?.element.textContent?.trim();
+    })[0]?.text;
 };
 
 /** The anchor a click at the centre of the element with `text` records. */
 const clickOn = (revision: Revision, text: string): CommentAnchor => {
   const node = revision.graph.nodes.find(
-    (candidate) => candidate.element.textContent === text,
+    (candidate) => candidate.text === text,
   );
   assert.ok(node !== undefined, `no element reads ${text}`);
 
@@ -129,7 +137,7 @@ const clickOn = (revision: Revision, text: string): CommentAnchor => {
   const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
   return anchorOf(
-    node.element,
+    node,
     offsetIn(box, point),
     point,
     anchorIndexOf(revision.graph, node),
@@ -280,7 +288,7 @@ test('unstamped cells commented by selector do not collapse onto the first one',
 
 test('an anchor on a pseudo-element keeps its host and names the pseudo', () => {
   const { graph } = render(el('div', 'id="pay"', 42, '0 0 100 40', 'Pagar'));
-  const element = graph.nodes[0]?.element;
+  const element = graph.nodes[0];
   assert.ok(element);
 
   const offset = { x: 0.25, y: 0.75 };

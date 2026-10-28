@@ -2,18 +2,20 @@
 // the previewed source, the Project's harness decorators and, for a CSF
 // stories file, the chosen story.
 //
-// `mount` puts two containers in the root it is given (the surface's content
-// element, inside the preview's shadow root): the React root's own, and a
-// portal container beside it. Portaled overlays (dialogs, popovers,
-// tooltips…) that are handed the portal container render inside the shadow
-// root — in the zoomed canvas, under the preview's sheet, where comments can
-// anchor to them — instead of in `document.body`. Neither Base UI nor Radix
-// has a global default for a portal's container, and the preview assumes
-// nothing of the Project's components, so the container is handed to the
-// decorators and stories as `context.papercraft.portalContainer` (also
-// `context.parameters.papercraft.portalContainer`), and the Project's
-// harness passes it on to its components (Doric's, to `desktop/ui`'s
-// `PortalContainerProvider`).
+// The module runs in its own document: the preview frame, a sandboxed
+// iframe of opaque origin whose runtime links `index.css`, states the theme
+// on `<html>` (`class="dark"` when dark) and calls `mount` on a `#root` in
+// its `<body>`. The document is the preview's, so `mount` renders as an app
+// would: the React root is a container in `root`, the sheet's `:root` rules
+// and `.dark` apply as written, and portaled overlays (dialogs, popovers,
+// tooltips…) render in `document.body`, Base UI's and Radix's default.
+// `context.papercraft` is still handed to decorators and stories (also as
+// `context.parameters.papercraft`), with `theme`, `root` and a
+// `portalContainer` that is `undefined`, so a harness that passes it on
+// (Doric's, to `desktop/ui`'s `PortalContainerProvider`) leaves overlays on
+// the body. Revisions compiled before the frame keep their own `mount`,
+// which brings a portal container inside `root` and a `.dark` wrapper; they
+// mount in the frame unchanged.
 //
 // CSF (Storybook's Component Story Format, v3 objects and v2 functions): the
 // story renders `story.render(args, context)`, else `meta.render`, else
@@ -29,8 +31,8 @@
 // `mount` also states the story's Storybook layout on the root as
 // `data-papercraft-layout`: the merged `parameters.layout` when it is
 // `centered`, `padded` or `fullscreen`, else `centered`, papercraft's
-// default. The surface sizes the preview by it: `centered` hugs the content,
-// the other two lay it out at the canvas's width. Storybook's padding is not
+// default. The preview is sized by it: `centered` hugs the content, the
+// other two lay it out at the canvas's width. Storybook's padding is not
 // reproduced, since the canvas already surrounds the preview.
 
 /** The virtual module of the previewed source. */
@@ -244,26 +246,18 @@ class PreviewBoundary extends Component {
   }
 }
 
-const container = (attribute, theme) => {
-  const element = document.createElement('div');
-  element.setAttribute(attribute, '');
-  element.setAttribute('data-papercraft-theme', theme);
-  element.style.display = 'contents';
-  return element;
-};
-
 export function mount(root, options) {
   const theme = options && options.theme === 'dark' ? 'dark' : 'light';
-  const app = container('data-papercraft-root', theme);
-  const portalContainer = container('data-papercraft-portal', theme);
-  if (theme === 'dark') portalContainer.className = 'dark';
-  root.append(app, portalContainer);
+  const app = document.createElement('div');
+  app.setAttribute('data-papercraft-root', '');
+  app.style.display = 'contents';
+  root.append(app);
 
   let prepared;
   const prepare = () => {
     if (prepared !== undefined) return prepared;
     const spec = describe();
-    const papercraft = { portalContainer, theme, root };
+    const papercraft = { portalContainer: undefined, theme, root };
     const context = {
       id: spec.id,
       name: spec.name,
@@ -296,27 +290,28 @@ export function mount(root, options) {
   }
   root.setAttribute('data-papercraft-layout', layout);
 
-  const reactRoot = createRoot(app);
-  reactRoot.render(
-    createElement(
-      'div',
-      {
-        className: theme === 'dark' ? 'dark' : undefined,
-        'data-papercraft-theme': theme,
-        style: { display: 'contents' },
-      },
-      createElement(PreviewBoundary, null, createElement(PapercraftPreview)),
-    ),
-  );
+  // The preview's React errors go to the console under this module's URL
+  // (its artifact and revision), never to the window as React's defaults
+  // would: an error event or \`reportError\` the runtime would take for one
+  // that escaped the preview, while the boundary below already contains it.
+  const report = (what) => (error, info) => {
+    const stack = info && info.componentStack;
+    console.error('papercraft: ' + what + ' in ' + import.meta.url, error, ...(stack ? [stack] : []));
+  };
+  const reactRoot = createRoot(app, {
+    onRecoverableError: report('a render error React recovered from'),
+    onCaughtError: report('a render error'),
+    onUncaughtError: report('an uncaught render error'),
+  });
+  reactRoot.render(createElement(PreviewBoundary, null, createElement(PapercraftPreview)));
   let mounted = true;
   return () => {
     if (!mounted) return;
     mounted = false;
-    // Deferred: the surface unmounts from inside React's own commit.
+    // Deferred: the caller may unmount from inside React's own commit.
     queueMicrotask(() => {
       reactRoot.unmount();
       app.remove();
-      portalContainer.remove();
       root.removeAttribute('data-papercraft-layout');
     });
   };

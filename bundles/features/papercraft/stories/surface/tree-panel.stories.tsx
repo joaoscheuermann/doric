@@ -1,22 +1,63 @@
 import { type ComponentType, useMemo, useState } from 'react';
 
-import { renderMarkup } from '../../src/client/surface/preview-surface.js';
+import type { SceneNodeData } from '../../src/client/frame-protocol.js';
 import {
-  buildSceneGraph,
   isolateHiddenIds,
   type SceneGraph,
+  sceneGraphOf,
 } from '../../src/client/surface/scene-graph.js';
 import { TreePanel } from '../../src/client/surface/tree-panel.js';
 import { CanvasArea } from '../support/frame.js';
 import { checkoutMarkup } from '../support/preview.js';
 
-/** The tree the canvas derives from the checkout's rendered revision. */
-const checkoutGraph = (): SceneGraph => {
-  const root = document.createElement('div');
-  renderMarkup(root, checkoutMarkup(2));
+const SKIPPED = new Set(['STYLE', 'LINK', 'SCRIPT', 'META', 'TITLE']);
 
-  return buildSceneGraph(root);
+/**
+ * The scene the preview's frame would send for the checkout's rendered
+ * revision: its body's elements in document order (the tree draws no
+ * geometry, so every box is empty).
+ */
+const checkoutNodes = (): SceneNodeData[] => {
+  const body = new DOMParser().parseFromString(
+    checkoutMarkup(2),
+    'text/html',
+  ).body;
+  const nodes: SceneNodeData[] = [];
+  const visit = (parent: Element, depth: number, parentId?: string): void => {
+    for (const child of parent.children) {
+      if (SKIPPED.has(child.tagName)) continue;
+
+      const id = `n${String(nodes.length)}`;
+      const elementId = child.getAttribute('id');
+      const stamp = child.getAttribute('data-papercraft-source');
+
+      nodes.push({
+        id,
+        ...(parentId === undefined ? {} : { parentId }),
+        depth,
+        tag: child.tagName.toLowerCase(),
+        classes: (child.getAttribute('class') ?? '')
+          .split(/\s+/)
+          .filter((name) => name !== ''),
+        ...(elementId === null ? {} : { elementId }),
+        ...(stamp === null ? {} : { stamp }),
+        text: (child.textContent ?? '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 120),
+        bounds: { x: 0, y: 0, width: 0, height: 0 },
+      });
+      visit(child, depth + 1, id);
+    }
+  };
+
+  visit(body, 0);
+
+  return nodes;
 };
+
+/** The tree the canvas derives from the checkout's rendered revision. */
+const checkoutGraph = (): SceneGraph => sceneGraphOf(checkoutNodes());
 
 /** The id of the pay button in the derived tree, the last node of the card. */
 const payButtonOf = (graph: SceneGraph): string | undefined =>

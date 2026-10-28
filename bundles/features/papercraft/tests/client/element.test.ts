@@ -1,6 +1,9 @@
 // The preview frame as the conversation mounts it (the node chrome) and as
-// the route mounts it (the canvas chrome): the built markup lands in the
-// shadow root, every host call carries the preview's Project scope, the header
+// the route mounts it (the canvas chrome): the built markup is rendered by
+// the preview's sandboxed frame (a fake speaking the frame protocol over a
+// real `MessageChannel`, `support/fake-frame.ts`; the canvas hears its
+// pointer as the frame reports it), every host call carries the preview's
+// Project scope, the header
 // overlays the canvas, the comment flow is Figma's — an inline input at the
 // pin, and the composer stack only hears of a note once it is confirmed; a
 // comment that is never sent never becomes an event — sent comments stay as
@@ -23,7 +26,14 @@ import {
 import { Window } from 'happy-dom';
 import { createElement } from 'react';
 
-const window = new Window();
+import {
+  delivered,
+  type FakeFrame,
+  type FakeOptions,
+  fakeFrames,
+} from './support/fake-frame.js';
+
+const window = new Window({ settings: { disableIframePageLoading: true } });
 const installed = [
   'window',
   'document',
@@ -97,7 +107,12 @@ before(async () => {
   ).PreviewContainer;
 });
 
+/** How the fake frames lay the preview out; a test may set it for its length. */
+const frameOptions: { layout?: FakeOptions['layout'] } = {};
+const frames = fakeFrames(window as never, frameOptions);
+
 after(async () => {
+  frames.dispose();
   await window.happyDOM.abort();
   await window.happyDOM.close();
 });
@@ -151,11 +166,14 @@ const baseRecord = () => ({
   createdAt: '2024-01-01T00:00:00Z',
 });
 
-const previewStateOf = (revision: number) => ({
+const previewStateOf = (revision: number, module = false) => ({
   artifactId: 'checkout-7f3a',
   revision,
   kind: 'preview' as const,
-  files: [{ path: 'index.html', sha256: 'abc' }],
+  files: [
+    { path: 'index.html', sha256: 'abc' },
+    ...(module ? [{ path: 'index.js', sha256: 'def' }] : []),
+  ],
   markup: MARKUP,
 });
 
@@ -195,6 +213,8 @@ interface Harness {
   composer: unknown;
   /** Every `chat.send/v1.send` the frame asked for, with its scope. */
   readonly sends: { input: unknown; scope: unknown }[];
+  /** Whether the revisions name a compiled module (path B). */
+  module: boolean;
   mount(
     chrome: 'node' | 'canvas',
     props: Record<string, unknown>,
@@ -203,6 +223,7 @@ interface Harness {
 
 const harness = (): Harness => {
   const record = baseRecord();
+  const built = { module: false };
   const reads: { artifactId: string; revision: number }[] = [];
   const executes: [string, unknown][] = [];
   const comments: unknown[] = [];
@@ -243,7 +264,7 @@ const harness = (): Harness => {
             read: async (input: { artifactId: string; revision: number }) => {
               reads.push(input);
 
-              return previewStateOf(input.revision);
+              return previewStateOf(input.revision, built.module);
             },
           };
         case 'artifacts/v1':
@@ -349,8 +370,9 @@ const harness = (): Harness => {
           } as never),
         );
       });
-      await tick();
-      await tick();
+      // The preview's frame rendered the revision, and the canvas has its
+      // scene.
+      await untilRendered(frame);
     };
 
     await render(props);
@@ -361,6 +383,7 @@ const harness = (): Harness => {
       unmount: async () => {
         await react.act(async () => {
           root.unmount();
+          await delivered();
         });
       },
     };
@@ -386,6 +409,12 @@ const harness = (): Harness => {
     },
     scopes,
     sends,
+    get module() {
+      return built.module;
+    },
+    set module(value: boolean) {
+      built.module = value;
+    },
     get composer() {
       return state.composer;
     },
@@ -396,13 +425,69 @@ const harness = (): Harness => {
   };
 };
 
-const shadowOf = (frame: HTMLElement): ShadowRoot => {
-  const host = frame.querySelector('.papercraft-surface-host') as HTMLElement;
+/**
+ * Waits, a delivery at a time, until the preview under `root` has a frame
+ * that rendered its revision, and the canvas heard it. Each wait is its own
+ * `act`, so the renders the frame's messages cause are committed between.
+ */
+const untilRendered = async (root: Element): Promise<void> => {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    await react.act(delivered);
 
-  assert.ok(host?.shadowRoot !== null && host.shadowRoot !== undefined);
+    if (frames.latest(root)?.rendered === true) {
+      await react.act(delivered);
 
-  return host.shadowRoot;
+      return;
+    }
+  }
+
+  throw new Error('the preview frame never rendered');
 };
+
+/** The live frame of the preview mounted under `root`. */
+const frameIn = (root: Element): FakeFrame => {
+  const found = frames.latest(root);
+
+  assert.ok(found !== undefined, 'the preview has no live frame');
+
+  return found;
+};
+
+/** An element the preview's frame renders, by selector. */
+interface InPreview {
+  readonly root: Element;
+  readonly selector: string;
+}
+
+const inPreview = (root: Element, selector: string): InPreview => ({
+  root,
+  selector,
+});
+
+/** What a test's pointer init says, as the frame reports it. */
+const reportOf = (init: Record<string, unknown>) => ({
+  x: typeof init.clientX === 'number' ? init.clientX : 0,
+  y: typeof init.clientY === 'number' ? init.clientY : 0,
+  altKey: init.altKey === true,
+  ctrlKey: init.ctrlKey === true,
+  metaKey: init.metaKey === true,
+  shiftKey: init.shiftKey === true,
+});
+
+/** The frame reports a pointer event over an element of the preview. */
+const report = (
+  target: InPreview,
+  type: 'move' | 'down' | 'up' | 'click' | 'leave',
+  init: Record<string, unknown> = {},
+) =>
+  (async () => {
+    // The frame reports over what it rendered: wait until it did.
+    await untilRendered(target.root as HTMLElement);
+    await react.act(async () => {
+      frameIn(target.root).pointer(type, target.selector, reportOf(init));
+      await delivered();
+    });
+  })();
 
 /** One item of the fake composer's stack. */
 interface StackItem {
@@ -563,38 +648,26 @@ const key = (
     );
   });
 
-/** A click on an element of the preview, inside its shadow root. */
-const clickIn = (target: Element, init: Record<string, unknown> = {}) =>
-  react.act(async () => {
-    target.dispatchEvent(
-      new window.MouseEvent('click', {
-        bubbles: true,
-        composed: true,
-        cancelable: true,
-        ...init,
-      }) as never,
-    );
-  });
+/** A click on an element of the preview, as its frame reports it. */
+const clickIn = (target: InPreview, init: Record<string, unknown> = {}) =>
+  report(target, 'click', init);
+
+/** The pointer moves over an element of the preview. */
+const moveOn = (target: InPreview, init: Record<string, unknown> = {}) =>
+  report(target, 'move', init);
 
 /**
- * A press on an element of the frame, the way a pointer makes one: the
- * pointer-down, then the click.
+ * A press on an element of the preview, the way a pointer makes one: the
+ * pointer-down, the release, then the click.
  */
-const press = (target: Element, init: Record<string, unknown> = {}) =>
-  react.act(async () => {
-    const options = { bubbles: true, composed: true, cancelable: true };
-
-    target.dispatchEvent(
-      new window.PointerEvent('pointerdown', { ...options, ...init }) as never,
-    );
-    target.dispatchEvent(
-      new window.MouseEvent('click', { ...options, ...init }) as never,
-    );
-  });
+const press = async (target: InPreview, init: Record<string, unknown> = {}) => {
+  await report(target, 'down', init);
+  await report(target, 'up', init);
+  await report(target, 'click', init);
+};
 
 /** The reader's first press on the node, which only focuses it. */
-const focusNode = (frame: HTMLElement) =>
-  press(shadowOf(frame).querySelector('#title') as Element);
+const focusNode = (frame: HTMLElement) => press(inPreview(frame, '#title'));
 
 /** Mounts a node with chat's composer on, focused, in comment mode. */
 const commenting = async (
@@ -619,12 +692,15 @@ const inputOf = (frame: HTMLElement) =>
     'textarea',
   ) as HTMLTextAreaElement | null;
 
-test('the node renders the markup in its shadow root, in the preview scope', async () => {
+test('the node renders the markup in its frame, in the preview scope', async () => {
   const h = harness();
   const mounted = await h.mount('node', { blockRevision: 1 });
 
-  const shadow = shadowOf(mounted.frame);
-  assert.match(shadow.innerHTML, /<h1 id="title"[^>]*>Checkout<\/h1>/);
+  // The frame was handed the revision's built markup, whole.
+  assert.deepEqual(frameIn(mounted.frame).init?.content, {
+    kind: 'markup',
+    markup: MARKUP,
+  });
   assert.deepEqual(h.reads, [{ artifactId: 'checkout-7f3a', revision: 1 }]);
 
   // Every host call named the preview's Project.
@@ -632,10 +708,6 @@ test('the node renders the markup in its shadow root, in the preview scope', asy
   for (const scope of h.scopes) {
     assert.equal((scope as { projectId: string }).projectId, 'p1');
   }
-
-  // The path A markup keeps its styles and a real body element.
-  assert.ok(shadow.querySelector('style') !== null);
-  assert.ok(shadow.querySelector('body #title') !== null);
 
   // The revision names no module: the markup is the revision, no notice.
   assert.equal(
@@ -720,7 +792,7 @@ test('the first press on the node only focuses it, and its controls come with th
     '.papercraft-container',
   ) as HTMLElement;
   const canvas = mounted.frame.querySelector('.papercraft-canvas');
-  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+  const pay = inPreview(mounted.frame, '#pay');
 
   // Unfocused, the node shows its title but none of its controls.
   assert.equal(activeOf(mounted.frame), 'false');
@@ -754,16 +826,8 @@ test('the first press on the node only focuses it, and its controls come with th
 test('the tools armed on the node wait out the blur and return with the focus', async () => {
   const h = harness();
   const { mounted } = await commenting(h);
-  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
-  const hover = () =>
-    react.act(async () => {
-      pay.dispatchEvent(
-        new window.PointerEvent('pointermove', {
-          bubbles: true,
-          composed: true,
-        }) as never,
-      );
-    });
+  const pay = inPreview(mounted.frame, '#pay');
+  const hover = () => moveOn(pay);
   const toolOf = () =>
     (mounted.frame.querySelector('[data-tool]') as HTMLElement).dataset.tool;
 
@@ -829,7 +893,7 @@ test('without the composer the comment control is disabled and nothing is drafte
     'select',
   );
 
-  await clickIn(shadowOf(mounted.frame).querySelector('#title') as Element);
+  await clickIn(inPreview(mounted.frame, '#title'));
   assert.equal(query(mounted.frame, 'papercraft-comment-input'), null);
   assert.equal(h.comments.length, 0);
 
@@ -864,17 +928,8 @@ test('the comment control, C and Esc toggle comment mode', async () => {
 test('the element a comment would land on is outlined unlike the selection; Alt clears it', async () => {
   const h = harness();
   const { mounted } = await commenting(h);
-  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
-  const move = (init: Record<string, unknown> = {}) =>
-    react.act(async () => {
-      pay.dispatchEvent(
-        new window.PointerEvent('pointermove', {
-          bubbles: true,
-          composed: true,
-          ...init,
-        }) as never,
-      );
-    });
+  const pay = inPreview(mounted.frame, '#pay');
+  const move = (init: Record<string, unknown> = {}) => moveOn(pay, init);
 
   await move();
   const hover = query(mounted.frame, 'papercraft-hover') as HTMLElement;
@@ -898,13 +953,13 @@ test('the element a comment would land on is outlined unlike the selection; Alt 
 test('the element under the pointer is outlined in any mode, never while the canvas pans', async () => {
   const h = harness();
   const mounted = await h.mount('node', { blockRevision: 1 });
-  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+  const pay = inPreview(mounted.frame, '#pay');
   const canvas = mounted.frame.querySelector('.papercraft-canvas') as Element;
-  const pointer = (target: Element, type: string) =>
+  const leaveCanvas = () =>
     react.act(async () => {
-      target.dispatchEvent(
-        new window.PointerEvent(type, {
-          bubbles: type !== 'pointerleave',
+      canvas.dispatchEvent(
+        new window.PointerEvent('pointerleave', {
+          bubbles: false,
           composed: true,
         }) as never,
       );
@@ -912,7 +967,7 @@ test('the element under the pointer is outlined in any mode, never while the can
 
   // Not focused, not commenting: the outline and its label still follow.
   assert.equal(activeOf(mounted.frame), 'false');
-  await pointer(pay, 'pointermove');
+  await moveOn(pay);
   assert.match(
     (query(mounted.frame, 'papercraft-hover') as HTMLElement).className,
     /border-dashed/,
@@ -923,13 +978,13 @@ test('the element under the pointer is outlined in any mode, never while the can
   );
 
   // The pointer leaves the canvas: nothing stays outlined.
-  await pointer(canvas, 'pointerleave');
+  await leaveCanvas();
   assert.equal(query(mounted.frame, 'papercraft-hover'), null);
 
   // The space bar pans: nothing is outlined under the hand.
   await focusNode(mounted.frame);
   await key(canvas, ' ');
-  await pointer(pay, 'pointermove');
+  await moveOn(pay);
   assert.equal(query(mounted.frame, 'papercraft-hover'), null);
 
   await mounted.unmount();
@@ -937,7 +992,7 @@ test('the element under the pointer is outlined in any mode, never while the can
 
 /* Pseudo-elements: their own targets ---------------------------------------- */
 
-/** `#pay`'s border box, in viewport (and, at the identity view, content) px. */
+/** `#pay`'s border box, in content px (and, at the identity view, surface px). */
 const PAY = { x: 100, y: 50, width: 120, height: 40 } as const;
 /** Its `::after`: a strip 6px tall right below it (top 40, bottom -6). */
 const PAY_AFTER = { x: 100, y: 90, width: 120, height: 6 } as const;
@@ -945,124 +1000,21 @@ const PAY_AFTER = { x: 100, y: 90, width: 120, height: 6 } as const;
 const ON_STRIP = { clientX: 160, clientY: 93 } as const;
 const ON_PAY = { clientX: 160, clientY: 70 } as const;
 
-const declarationOf = (values: Record<string, string>) => ({
-  ...values,
-  getPropertyValue: (name: string): string =>
-    values[
-      name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
-    ] ?? '',
-});
-
 /**
- * Lays the preview out for the length of `run`: happy-dom lays nothing out
- * and computes no pseudo-element, so the layout is the boundary faked — the
- * content at the origin, `#pay` positioned at `PAY` with an absolute
- * `::after` strip below it; every other element measures as happy-dom does.
- * In place before the mount, which measures the scene as it fits the view.
- * The frame `run` keeps is unmounted, and chat's composer turned off, even
- * when an assertion fails, so nothing leaks into the next test.
+ * Lays the preview out for the length of `run`: happy-dom lays nothing out,
+ * and the frame measures the layout, so the fake frame reports it — `#pay`
+ * at `PAY`, with an absolute `::after` strip below it; every other element
+ * measures empty. In place before the mount, whose frame reports it with its
+ * first scene. The frame `run` keeps is unmounted, and chat's composer
+ * turned off, even when an assertion fails, so nothing leaks into the next
+ * test.
  */
 const withPayStrip = async (
   run: (keep: (mounted: Mounted) => Mounted) => Promise<void>,
 ): Promise<void> => {
   const kept: Mounted[] = [];
-  const proto = window.HTMLElement.prototype as unknown as {
-    getBoundingClientRect: () => DOMRect;
-  };
-  const ownRect = Object.getOwnPropertyDescriptor(
-    proto,
-    'getBoundingClientRect',
-  );
-  const realRect = proto.getBoundingClientRect;
-  const ownStyle = Object.getOwnPropertyDescriptor(window, 'getComputedStyle');
-  const realStyle = window.getComputedStyle.bind(window) as unknown as (
-    element: unknown,
-    pseudo?: string | null,
-  ) => unknown;
-  const rectOf = ({
-    x,
-    y,
-    width,
-    height,
-  }: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }) => ({
-    x,
-    y,
-    width,
-    height,
-    left: x,
-    top: y,
-    right: x + width,
-    bottom: y + height,
-    toJSON: () => ({}),
-  });
 
-  Object.defineProperty(proto, 'getBoundingClientRect', {
-    configurable: true,
-    writable: true,
-    value(this: HTMLElement) {
-      if (this.id === 'pay') return rectOf(PAY);
-      if (this.classList.contains('papercraft-content'))
-        return rectOf({ x: 0, y: 0, width: 800, height: 600 });
-
-      return realRect.call(this);
-    },
-  });
-  Object.defineProperty(window, 'getComputedStyle', {
-    configurable: true,
-    writable: true,
-    value: (element: Element, pseudo?: string | null) => {
-      const kind = (pseudo ?? '').replace(/^:+/, '');
-
-      // The rest of the preview: static boxes that clip nothing and draw no
-      // pseudo-element (happy-dom computes neither).
-      if (element.id !== 'pay')
-        return element.closest('.papercraft-content') === null
-          ? realStyle(element, pseudo)
-          : declarationOf(
-              kind === ''
-                ? {
-                    display: 'block',
-                    position: 'static',
-                    overflowX: 'visible',
-                    overflowY: 'visible',
-                  }
-                : { content: 'none', position: 'static' },
-            );
-
-      if (kind === 'after')
-        return declarationOf({
-          display: 'block',
-          content: '""',
-          position: 'absolute',
-          left: '0px',
-          top: '40px',
-          right: '0px',
-          bottom: '-6px',
-          marginLeft: '0px',
-          marginTop: '0px',
-          marginRight: '0px',
-          marginBottom: '0px',
-        });
-      if (kind === 'before')
-        return declarationOf({ content: 'none', position: 'static' });
-
-      return declarationOf({
-        display: 'inline-block',
-        position: 'relative',
-        overflowX: 'visible',
-        overflowY: 'visible',
-        borderLeftWidth: '0px',
-        borderTopWidth: '0px',
-        borderRightWidth: '0px',
-        borderBottomWidth: '0px',
-      });
-    },
-  });
+  frameOptions.layout = { '#pay': { box: PAY, after: PAY_AFTER } };
 
   try {
     await run((mounted) => {
@@ -1073,13 +1025,7 @@ const withPayStrip = async (
   } finally {
     for (const mounted of kept) await mounted.unmount();
     comment.setComposerAvailable(false);
-    if (ownRect === undefined)
-      delete (proto as { getBoundingClientRect?: unknown })
-        .getBoundingClientRect;
-    else Object.defineProperty(proto, 'getBoundingClientRect', ownRect);
-    if (ownStyle === undefined)
-      delete (window as { getComputedStyle?: unknown }).getComputedStyle;
-    else Object.defineProperty(window, 'getComputedStyle', ownStyle);
+    delete frameOptions.layout;
   }
 };
 
@@ -1096,25 +1042,16 @@ const boxOfOutline = (outline: HTMLElement | null) => {
 };
 
 const pointerOn = (
-  target: Element,
-  type: string,
+  target: InPreview,
+  _type: 'pointermove',
   init: Record<string, unknown>,
-) =>
-  react.act(async () => {
-    target.dispatchEvent(
-      new window.PointerEvent(type, {
-        bubbles: true,
-        composed: true,
-        ...init,
-      }) as never,
-    );
-  });
+) => moveOn(target, init);
 
 test('the pointer on an absolute ::after outlines and names the pseudo-element, on its host the host', async () => {
   await withPayStrip(async (keep) => {
     const h = harness();
     const mounted = keep(await h.mount('node', { blockRevision: 1 }));
-    const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+    const pay = inPreview(mounted.frame, '#pay');
 
     // Nothing fits an area happy-dom measures as empty: the view stays the
     // identity, so a content box is drawn at its own surface pixels.
@@ -1144,7 +1081,7 @@ test('a click with the select tool on an absolute ::after selects the pseudo-ele
   await withPayStrip(async (keep) => {
     const h = harness();
     const mounted = keep(await h.mount('node', { blockRevision: 1 }));
-    const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+    const pay = inPreview(mounted.frame, '#pay');
 
     await focusNode(mounted.frame);
     await press(pay, ON_STRIP);
@@ -1161,7 +1098,7 @@ test('a comment on an absolute ::after anchors to the pseudo-element of its host
     const h = harness();
     const { mounted, composer } = await commenting(h);
     keep(mounted);
-    const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+    const pay = inPreview(mounted.frame, '#pay');
 
     await clickIn(pay, ON_STRIP);
     const field = inputOf(mounted.frame);
@@ -1196,16 +1133,9 @@ test('a comment on an absolute ::after anchors to the pseudo-element of its host
 test('the new comment opens in a popover, and the hover label steps aside while it is open', async () => {
   const h = harness();
   const { mounted } = await commenting(h);
-  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+  const pay = inPreview(mounted.frame, '#pay');
 
-  await react.act(async () => {
-    pay.dispatchEvent(
-      new window.PointerEvent('pointermove', {
-        bubbles: true,
-        composed: true,
-      }) as never,
-    );
-  });
+  await moveOn(pay);
   assert.ok(query(mounted.frame, 'papercraft-hover-label') !== null);
 
   await clickIn(pay);
@@ -1235,7 +1165,7 @@ test('a click opens the inline input; Enter confirms one draft with its note', a
   const h = harness();
   const { mounted, composer } = await commenting(h);
 
-  await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element);
+  await clickIn(inPreview(mounted.frame, '#pay'));
 
   const field = inputOf(mounted.frame);
   assert.ok(field !== null, 'the inline input never opened');
@@ -1325,7 +1255,7 @@ test('a click opens the inline input; Enter confirms one draft with its note', a
 test('an empty input that loses focus is discarded, and Esc cancels a written one', async () => {
   const h = harness();
   const { mounted, composer } = await commenting(h);
-  const pay = shadowOf(mounted.frame).querySelector('#pay') as Element;
+  const pay = inPreview(mounted.frame, '#pay');
 
   await clickIn(pay);
   await react.act(async () => inputOf(mounted.frame)?.blur());
@@ -1350,7 +1280,7 @@ test('Alt forces a free point over an element', async () => {
   const h = harness();
   const { mounted, composer } = await commenting(h);
 
-  await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element, {
+  await clickIn(inPreview(mounted.frame, '#pay'), {
     altKey: true,
   });
   const field = inputOf(mounted.frame) as HTMLTextAreaElement;
@@ -1712,7 +1642,7 @@ test('threads and drafts of an earlier revision carry over to the newest, keepin
   await key(replyFieldOf(mounted.frame) as HTMLTextAreaElement, 'Escape');
 
   // A new comment is written against the revision on screen, numbered next.
-  await clickIn(shadowOf(mounted.frame).querySelector('#title') as Element);
+  await clickIn(inPreview(mounted.frame, '#title'));
   const input = inputOf(mounted.frame) as HTMLTextAreaElement;
   await react.act(async () => type(input, 'novo'));
   await key(input, 'Enter');
@@ -2029,7 +1959,7 @@ test('in the conversation the canvas never sends on Cmd+Enter: chat does, after 
   const h = harness();
   const { mounted, composer } = await commenting(h);
 
-  await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element);
+  await clickIn(inPreview(mounted.frame, '#pay'));
   const field = inputOf(mounted.frame) as HTMLTextAreaElement;
   await react.act(async () => type(field, 'manda já'));
 
@@ -2073,7 +2003,7 @@ test('in the canvas window Cmd+Enter (`papercraft.send/v1`) confirms the open no
   await react.act(async () => {
     await commands.execute('papercraft.comment/v1', {});
   });
-  await clickIn(shadowOf(mounted.frame).querySelector('#pay') as Element);
+  await clickIn(inPreview(mounted.frame, '#pay'));
   const field = inputOf(mounted.frame) as HTMLTextAreaElement;
   await react.act(async () => type(field, 'manda já'));
 
@@ -2149,7 +2079,7 @@ test('the body the frame mounts arms its comment mode, even when chat comes late
     'the late composer never armed the gesture',
   );
 
-  await clickIn(shadowOf(body).querySelector('#pay') as Element);
+  await clickIn(inPreview(body, '#pay'));
   const field = inputOf(body) as HTMLTextAreaElement;
   await react.act(async () => type(field, 'aumenta o respiro do botão'));
   await key(field, 'Enter');
@@ -2367,10 +2297,10 @@ test('the canvas draws the toolbar groups and the tree, and obeys the policy', a
   );
 
   // Selecting an element enables Isolar; isolating enables Mostrar tudo.
-  const shadow = shadowOf(mounted.frame);
-  (shadow.querySelector('#pay') as HTMLElement).click();
-  await tick();
-  await tick();
+  const live = frameIn(mounted.frame);
+  const hiddenNow = () =>
+    live.received.filter((message) => message.kind === 'hidden').at(-1);
+  await clickIn(inPreview(mounted.frame, '#pay'));
 
   assert.ok(
     mounted.frame.querySelector('[data-testid="papercraft-selection"]') !==
@@ -2401,10 +2331,11 @@ test('the canvas draws the toolbar groups and the tree, and obeys the policy', a
     ).disabled,
     false,
   );
-  // The hidden layer is applied to the derived tree's DOM.
-  assert.equal(
-    (shadow.querySelector('#title') as HTMLElement).style.visibility,
-    'hidden',
+  // The frame is told to hide the layers around the selection.
+  assert.ok(
+    hiddenNow()?.kind === 'hidden' &&
+      hiddenNow()?.ids.includes(live.nodeId('#title')) &&
+      !hiddenNow()?.ids.includes(live.nodeId('#pay')),
   );
 
   (
@@ -2414,10 +2345,7 @@ test('the canvas draws the toolbar groups and the tree, and obeys the policy', a
   ).click();
   await tick();
   await tick();
-  assert.equal(
-    (shadow.querySelector('#title') as HTMLElement).style.visibility,
-    '',
-  );
+  assert.deepEqual(hiddenNow(), { kind: 'hidden', ids: [] });
 
   // The tree highlights the selected node, and selecting from it lights the
   // element in the canvas.
@@ -2428,6 +2356,153 @@ test('the canvas draws the toolbar groups and the tree, and obeys the policy', a
   (row.querySelector('button') as HTMLElement).click();
   await tick();
   assert.equal(row.dataset.selected, 'true');
+
+  await mounted.unmount();
+});
+
+/* The preview's frame ---------------------------------------------------- */
+
+/** What the canvas told the preview's frame, of one kind, in order. */
+const toldOf = <K extends string>(root: Element, kind: K) =>
+  frameIn(root).received.filter((message) => message.kind === kind) as Extract<
+    FakeFrame['received'][number],
+    { kind: K }
+  >[];
+
+/** The capture the frame is in now: its `init`'s, else the last it was told. */
+const captureOf = (root: Element) =>
+  toldOf(root, 'capture').at(-1)?.capture ?? frameIn(root).init?.capture;
+
+test('the frame swallows only the first press of an unfocused node, then all of its input', async () => {
+  const h = harness();
+  const mounted = await h.mount('node', { blockRevision: 1 });
+
+  // Unfocused, the press that focuses the node never reaches the preview.
+  assert.equal(captureOf(mounted.frame), 'first');
+
+  await focusNode(mounted.frame);
+  assert.equal(activeOf(mounted.frame), 'true');
+  // Focused, every tool inspects the preview: its input is the canvas's.
+  assert.equal(captureOf(mounted.frame), 'all');
+  assert.equal(query(mounted.frame, 'papercraft-selection'), null);
+
+  // The focus goes elsewhere in the app: the next press focuses it again.
+  const elsewhere = document.createElement('button');
+  document.body.append(elsewhere);
+  await react.act(async () => {
+    elsewhere.focus();
+    await delivered();
+  });
+  assert.equal(captureOf(mounted.frame), 'first');
+
+  elsewhere.remove();
+  await mounted.unmount();
+
+  // The window is always focused: always the canvas's.
+  const window_ = await harness().mount('canvas', {});
+  assert.equal(captureOf(window_.frame), 'all');
+  await window_.unmount();
+});
+
+test('the frame shows the canvas tool cursor over the preview', async () => {
+  const h = harness();
+  const { mounted } = await commenting(h);
+  const canvas = mounted.frame.querySelector('.papercraft-canvas') as Element;
+  const cursor = () => toldOf(mounted.frame, 'cursor').at(-1);
+
+  await react.act(delivered);
+  assert.deepEqual(cursor(), {
+    kind: 'cursor',
+    locked: true,
+    cursor: 'crosshair',
+  });
+
+  // The space bar pans: the hand, whatever the preview declares.
+  await key(canvas, ' ');
+  await react.act(delivered);
+  assert.deepEqual(cursor(), { kind: 'cursor', locked: true, cursor: 'grab' });
+
+  await react.act(async () => {
+    canvas.dispatchEvent(
+      new window.KeyboardEvent('keyup', { key: ' ', bubbles: true }) as never,
+    );
+    await delivered();
+  });
+  await key(canvas, 'Escape');
+  await react.act(delivered);
+  assert.deepEqual(cursor(), { kind: 'cursor', locked: false });
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('the keys the frame reports while the preview has the focus are the canvas keys', async () => {
+  const h = harness();
+  const { mounted } = await commenting(h);
+  const toolOf = () =>
+    (mounted.frame.querySelector('[data-tool]') as HTMLElement).dataset.tool;
+  const typed = (name: string) =>
+    react.act(async () => {
+      frameIn(mounted.frame).key('keydown', name);
+      await delivered();
+    });
+
+  assert.equal(toolOf(), 'comment');
+  await typed('c');
+  assert.equal(toolOf(), 'select');
+  await typed('C');
+  assert.equal(toolOf(), 'comment');
+  await typed('Escape');
+  assert.equal(toolOf(), 'select');
+
+  comment.setComposerAvailable(false);
+  await mounted.unmount();
+});
+
+test('the wheel over the preview pans the focused node and zooms with the modifier', async () => {
+  const h = harness();
+  const mounted = await h.mount('node', { blockRevision: 1 });
+  const viewport = () =>
+    (mounted.frame.querySelector('.papercraft-viewport') as HTMLElement).style
+      .transform;
+  const wheel = (delta: { deltaY: number }, modifiers = {}) =>
+    react.act(async () => {
+      frameIn(mounted.frame).wheel({ x: 10, y: 10 }, delta, modifiers);
+      await delivered();
+    });
+
+  // Unfocused, the wheel is the conversation's.
+  const still = viewport();
+  await wheel({ deltaY: 40 });
+  assert.equal(viewport(), still);
+
+  await focusNode(mounted.frame);
+  await wheel({ deltaY: 40 });
+  assert.match(viewport(), /translate\(0px, -40px\) scale\(1\)/);
+
+  await wheel({ deltaY: -40 }, { ctrlKey: true });
+  assert.match(
+    query(mounted.frame, 'papercraft-zoom-reset')?.textContent ?? '',
+    /110%/,
+  );
+
+  await mounted.unmount();
+});
+
+test('a module that could not be cached shows its markup, with the one-line notice', async () => {
+  const h = harness();
+  h.module = true;
+  const mounted = await h.mount('node', { blockRevision: 1 });
+
+  // The canvas is never empty: the markup stands in (decision 10).
+  assert.deepEqual(frameIn(mounted.frame).init?.content, {
+    kind: 'markup',
+    markup: MARKUP,
+  });
+  assert.match(
+    query(mounted.frame, 'papercraft-notice')?.textContent ?? '',
+    /não carregou/,
+  );
 
   await mounted.unmount();
 });
