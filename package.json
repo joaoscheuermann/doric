@@ -13,7 +13,7 @@
     "codex:oauth": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/codex-oauth.mjs",
     "claude:oauth": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/claude-oauth.mjs",
     "okf": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/okf.mjs",
-    "doric:dev": "nx run doric-app:build-runner && concurrently --kill-others --success first --names renderer,electron \"nx serve doric-renderer\" \"wait-on tcp:127.0.0.1:4200 && nx serve doric-app\"",
+    "doric:dev": "nx run doric-app:build-runner && nx run drawio-webapp:build && concurrently --kill-others --success first --names renderer,electron \"nx serve doric-renderer\" \"wait-on tcp:127.0.0.1:4200 && nx serve doric-app\"",
     "doric:docker:build": "docker compose -p doric --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml --profile docker up -d --build"
   },
   "private": true,

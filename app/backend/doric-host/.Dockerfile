@@ -77,6 +77,7 @@ RUN npm ci --ignore-scripts \
       bundles/features/artifacts/tsconfig.json \
       bundles/features/comments/tsconfig.json \
       bundles/features/papercraft/tsconfig.json \
+      bundles/features/drawio/tsconfig.json \
       bundles/features/mcp/tsconfig.json \
       --force \
  && npx tsc -p bundles/desktop/settings/tsconfig.json \
@@ -92,7 +93,7 @@ RUN npm ci --ignore-scripts \
       bundles/runtime/runtime bundles/runtime/default bundles/providers/openai bundles/providers/openrouter \
       bundles/providers/codex bundles/providers/claude bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web \
       bundles/features/terminal bundles/features/claude-login bundles/features/usage bundles/features/resources bundles/features/screen bundles/features/screen-relay bundles/desktop/notifications \
-      bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/artifacts bundles/features/comments bundles/features/papercraft bundles/features/mcp bundles/foundation/transport bundles/foundation/host-config \
+      bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/artifacts bundles/features/comments bundles/features/papercraft bundles/features/drawio bundles/features/mcp bundles/foundation/transport bundles/foundation/host-config \
  && mkdir -p app/backend/doric-host/dist/src \
  && mv app/backend/doric-host/dist/index.* app/backend/doric-host/dist/src/ \
  && mv app/backend/doric-host/dist/lib app/backend/doric-host/dist/src/

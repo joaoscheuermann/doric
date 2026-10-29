@@ -80,9 +80,11 @@ desktop development processes from the repository root:
 npm run doric:dev
 ```
 
-That builds the generation runner, serves `doric-renderer` on
+That builds the generation runner, vendors the draw.io webapp
+(`drawio-webapp:build`), serves `doric-renderer` on
 `http://localhost:4200`, waits for it, and starts Electron through
-`nx serve doric-app`.
+`nx serve doric-app`. `nx serve doric-app` builds `doric-app` without its
+`dependsOn` targets, so those two steps run first.
 
 | Variable                    | Default                 | Meaning                                                     |
 | --------------------------- | ----------------------- | ----------------------------------------------------------- |
