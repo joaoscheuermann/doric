@@ -10,7 +10,10 @@ import {
   type Services,
   ToolsV1,
 } from 'bundle/contracts';
-import { ConfigurationV1 } from 'host-config/contracts';
+import {
+  ConfigurationV1,
+  defaultMaxToolResultChars,
+} from 'host-config/contracts';
 import type { LlmProvider, ProviderMessage } from 'llms';
 import { createMessageStorage } from 'messages';
 import type {
@@ -473,7 +476,8 @@ export const runPrompt = async (
       maxToolResultChars: (name) =>
         name === LOAD_SKILL_TOOL
           ? undefined
-          : configuration.execution.maxToolResultChars,
+          : (configuration.execution.maxToolResultChars ??
+            defaultMaxToolResultChars),
       beforeRequest: async () => {
         // The first request reads the agents and skills the system prompt lists.
         if (!checked) {

@@ -145,7 +145,7 @@ export function SettingsExecution({ draft, onChange }: SettingsExecutionProps) {
         />
         <FieldDescription>
           The most characters of one tool result that reach the model. Leave it
-          empty for no cap; the full result is still recorded.
+          empty for the default of 50,000; the full result is still recorded.
         </FieldDescription>
       </Field>
     </FieldGroup>

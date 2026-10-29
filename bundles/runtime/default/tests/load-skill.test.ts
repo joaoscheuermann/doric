@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { HooksV1, type RegisteredTool } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
+import { defaultMaxToolResultChars } from 'host-config/contracts';
 import type { ProviderMessage, ProviderRequest } from 'llms';
 import type { ConfigurationValue, LeaseExecInput } from 'runtime/contracts';
 import { defineTool } from 'tool';
@@ -135,7 +136,7 @@ const inspectTool = () =>
 const inspecting: ToolCallStep = { name: 'inspect', arguments: '{}' };
 
 /** A registered tool whose result is 500 characters long. */
-const longTool = (): RegisteredTool => ({
+const longTool = (length = 500): RegisteredTool => ({
   bundleId: 'tools-owner',
   alwaysAvailable: false,
   tool: defineTool({
@@ -143,7 +144,7 @@ const longTool = (): RegisteredTool => ({
     description: 'Answer a long text.',
     input: z.object({}),
     output: z.string(),
-    execute: async () => 'y'.repeat(500),
+    execute: async () => 'y'.repeat(length),
   }).bind(createTestServices({ bundle: { id: 'tools-owner' } }).services),
 });
 
@@ -545,4 +546,18 @@ void test('K3 sends a loaded skill whole past the tool result cap, which still c
   assert.ok(String(results[0]?.content).includes(`# Skill: big\n\n${body}`));
   assert.ok(String(results[1]?.content).includes('y'.repeat(100)));
   assert.ok(!String(results[1]?.content).includes('y'.repeat(101)));
+});
+
+void test('K3 caps a tool result at the default when the configuration names no cap', async () => {
+  const { requests } = await run({
+    tools: [longTool(defaultMaxToolResultChars + 1000)],
+    steps: [{ name: 'long', arguments: '{}' }],
+  });
+
+  const result = (requests[1]?.messages ?? []).find(
+    ({ role }) => role === 'tool',
+  );
+  const content = String(result?.content);
+  assert.ok(content.includes('y'.repeat(defaultMaxToolResultChars)));
+  assert.ok(!content.includes('y'.repeat(defaultMaxToolResultChars + 1)));
 });
