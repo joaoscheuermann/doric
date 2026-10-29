@@ -907,6 +907,48 @@ export const DoricElementsV1 = ref<DoricElements>('doric.elements/v1');
 export const DoricConnectionV1 = ref<DoricConnection>('doric.connection/v1');
 export const DoricBrowserV1 = ref<DoricBrowser>('doric.browser/v1');
 
+/**
+ * The fixed origin of the vendored draw.io editor (S1), and the only place
+ * this value is defined. The editor document is always
+ * `${DRAWIO_ORIGIN}/index.html`; desktopMain serves it from
+ * `assets/drawio/webapp/` and resolves nothing over the network.
+ */
+export const DRAWIO_ORIGIN = 'https://drawio.doric.invalid';
+
+/** Whether the editor origin can be used, as `doric.drawio/v1.describe` reports it. */
+export interface DrawioDescription {
+  /** Whether the origin answers: the webapp exists and the handler was registered. */
+  readonly available: boolean;
+  /** The version of the vendored webapp, from `assets/drawio/manifest.json`. Present exactly when `available` is true. */
+  readonly version?: string;
+  /**
+   * Why the origin is unavailable. Present exactly when `available` is false:
+   * `missing-assets` when the manifest is absent or unreadable,
+   * `handler-failed` when registering the protocol handler threw.
+   */
+  readonly reason?: 'missing-assets' | 'handler-failed';
+}
+
+export const drawioDescriptionSchema: z.ZodType<DrawioDescription> = z
+  .object({
+    available: z.boolean(),
+    version: z.string().optional(),
+    reason: z.enum(['missing-assets', 'handler-failed']).optional(),
+  })
+  .strict();
+
+/**
+ * The editor origin's state (desktopMain only). `describe` takes no input
+ * and never rejects for an unavailable origin: it resolves with
+ * `available: false` and the reason. The value is fixed for the life of the
+ * main process, so repeated calls give the same answer.
+ */
+export interface DoricDrawio {
+  describe(call?: CallArg): Promise<DrawioDescription>;
+}
+
+export const DoricDrawioV1 = ref<DoricDrawio>('doric.drawio/v1');
+
 const noInput = z.tuple([]);
 
 const elementSchema = z.custom<object>(
@@ -1141,6 +1183,10 @@ export const platformContracts = Object.freeze({
   'doric.browser/v1': {
     environments: ['client'],
     methods: { open: { input: browserUrlSchema, output: z.void() } },
+  },
+  'doric.drawio/v1': {
+    environments: ['desktopMain'],
+    methods: { describe: { input: noInput, output: drawioDescriptionSchema } },
   },
 } satisfies Record<string, PlatformContractSpec>);
 

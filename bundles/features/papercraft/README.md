@@ -10,7 +10,7 @@ it points at, answers it, and publishes a new revision next to the old one. You
 see "what I asked" and "what came back" side by side, and the code follows.
 
 It is a feature bundle with a host part (the tool that builds previews), a
-desktop part and a client part (the preview node and its canvas window),
+desktop part and a client part (the preview node and its expanded modal),
 loaded by the `bundle` platform. See the [main README](../../../README.md) for
 Doric as a whole and [`packages/bundle`](../../../packages/bundle/README.md) for
 how bundles work.
@@ -55,8 +55,8 @@ how bundles work.
    reading a diff, the agent calls `papercraft_preview` with an HTML file or a
    component, story or draft story. The preview appears as a node in the
    conversation.
-2. **You explore.** Interact with the preview in place, or open it in its own
-   canvas window to pan, zoom, fit, isolate an element, browse the element tree
+2. **You explore.** Interact with the preview in place, or expand it into a
+   modal over the conversation to pan, zoom, fit, isolate an element, browse the element tree
    and switch between revisions, from the toolbar or the keyboard.
 3. **You comment.** Arm the comment tool and click an element. A dashed outline
    labeled `element · file:line` shows where the comment will land; hold `Alt`
@@ -82,11 +82,15 @@ how bundles work.
 - **Artifact kind:** `preview`, registered with the `artifacts` registry, so
   every preview has a stable id, immutable revisions and anchored comments
   from the `comments` bundle.
-- **UI:** the `papercraft-preview` node inside the conversation and the canvas
-  window at `/papercraft/:projectId/:threadId/:artifactId`, which follows the
-  Thread live.
+- **UI:** the `papercraft-preview` node inside the conversation and, behind its
+  `Expandir` button, a modal (`CanvasModal` from `desktop/ui/canvas`) with a
+  second surface that follows the Thread live, opened at the revision the node
+  shows. Keys in the modal dispatch the bar commands; `Esc` closes the comment
+  input, disarms the comment tool or closes the thread popover, and an `Esc`
+  nothing takes (including one the preview frame reports) closes the modal.
+  `Esc` does not undo isolation; `Shift+I` (show all) does.
 - **Contracts:** `papercraft.previews/v1`, the canvas commands
-  (`papercraft.open-canvas/v1`, `papercraft.approve/v1`, the `select`,
+  (`papercraft.send/v1`, `papercraft.approve/v1`, the `select`,
   `comment` and `pan` tools, `isolate`, `show-all`, the zoom commands and
   `select-revision`) and `papercraft.snapshot/v1`, with which a window
   captures its own pixels.

@@ -65,10 +65,19 @@ A CSP empacotada mantém a política atual, acrescenta `worker-src 'self'` para 
 ```text
 default-src 'none'; script-src 'self' 'sha256-<hash do import map>'; worker-src 'self';
 style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';
-connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none';
+frame-src doric://app/frame/ https://drawio.doric.invalid/
 ```
 
 Bundles não acrescentam diretivas de CSP.
+
+O `frame-src` do shell também aceita a origem do editor draw.io, `https://drawio.doric.invalid` (`DRAWIO_ORIGIN`).
+
+## Origem do editor draw.io
+
+**Estado:** implementado (plataforma 1.1.0), ao contrário do resto deste documento; o contrato atual está em `GROUNDING.md` e em [diagramas draw.io nas Threads](../../features/threads-drawio-diagrams.md).
+
+O processo principal do Electron (`DesktopPlatform`, em `app.ts`, chama `startDrawioOrigin`) intercepta todo `https:` da sessão padrão por `protocol.handle`. O host `drawio.doric.invalid` serve o webapp do draw.io empacotado em `assets/drawio/webapp/` (`Resources.drawioRoot`), com a `drawioCsp` (`script-src 'self'`, sem `'unsafe-eval'`), `X-Content-Type-Options: nosniff` e `Cache-Control: no-cache`; `.xml` está em `mime.ts`. Qualquer outro host passa por `net.fetch` com `bypassCustomProtocolHandlers`; a única diferença é que uma falha nessa passagem chega ao chamador como `net::ERR_UNEXPECTED`, não com o código original. A guarda de navegação aceita subframes nessa origem; `window.open` continua negado. O webapp vem do projeto `app/desktop/drawio-webapp`, descrito no seu [README](../../../app/desktop/drawio-webapp/README.md). A disponibilidade do editor é lida por `doric.drawio/v1.describe()` (ver [o spec](../../designs/threads-drawio-diagrams.md)).
 
 ## IPC e pontes
 

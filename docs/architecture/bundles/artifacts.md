@@ -104,14 +104,15 @@ Uma revisão é **imutável**: revisar publica um evento novo e um node novo, e 
 
 Serviço de host fornecido pelo bundle `artifacts`, cardinalidade `one` como os demais. Os métodos que uma janela chama declaram `desktopScope` com `['projectId', 'threadId', 'promptId']` e `expose: 'desktop'`, como `resources/v1` e `screen.views/v1`.
 
-| Método    | O que faz                                                                                                           |
-| --------- | ------------------------------------------------------------------------------------------------------------------- |
-| `create`  | Pede ao provedor do tipo a materialização, grava a primeira revisão e o manifesto, e publica `artifacts.created/v1` |
-| `revise`  | Materializa a revisão seguinte sobre a mesma identidade, sem tocar na anterior, e publica `artifacts.revised/v1`    |
-| `read`    | Devolve o registro (título, tipo, revisão, âncoras) e as entradas `{ path, sha256, base64 }` da revisão             |
-| `list`    | Lista os artefatos do Project e, quando o escopo traz Thread, os daquela Thread                                     |
-| `approve` | Grava `artifacts.approved/v1` com o escopo autorizado — só é chamado sob a política `request`                       |
-| `apply`   | Grava `artifacts.applied/v1` quando a mudança foi escrita                                                           |
+| Método                | O que faz                                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create`              | Pede ao provedor do tipo a materialização, grava a primeira revisão e o manifesto, e publica `artifacts.created/v1`                                        |
+| `revise`              | Materializa a revisão seguinte sobre a mesma identidade, sem tocar na anterior, e publica `artifacts.revised/v1`                                           |
+| `read`                | Devolve o registro (título, tipo, revisão, âncoras) e as entradas `{ path, sha256, base64 }` da revisão                                                    |
+| `list`                | Lista os artefatos do Project e, quando o escopo traz Thread, os daquela Thread                                                                            |
+| `approve`             | Grava `artifacts.approved/v1` com o escopo autorizado — só é chamado sob a política `request`                                                              |
+| `apply`               | Grava `artifacts.applied/v1` quando a mudança foi escrita                                                                                                  |
+| `policy`, `setPolicy` | Leem e gravam a [política de revisão](#a-política-de-revisão) do Project; desde a 1.1.0 devolvem `{ policy, exemptKinds }`, e `setPolicy` muda só `policy` |
 
 `read` devolve as entradas em base64 pelo mesmo motivo que `doric.catalog/v1.artifact` — o envelope é JSON — e quem grava no cache verifica o hash antes de servir, como o desktop já faz com os bundles. O registro **lê e escreve o `.doric/` pelo lease**, como o `files` faz: sem lease não há cópia de trabalho, e o serviço responde estado em vez de falhar, como `files/v1`.
 
@@ -134,17 +135,17 @@ Um artefato sem tipo é um arquivo. O **tipo** é que diz o que o agente pode pe
 | `plan`        | **Não**    | O plano já é o texto do agente na conversa; um artefato seria a mesma coisa renderizada duas vezes                             |
 | `walkthrough` | **Não**    | É o resumo final, e ele já é a última mensagem da Thread                                                                       |
 | `diff`        | **Não**    | O diff tem casa: o painel de mudanças do `git`, com o editor e as cores que a plataforma já fornece                            |
-| `diagram`     | **Não**    | Markdown com diagrama já renderiza na conversa; só um diagrama interativo precisaria de superfície própria                     |
+| `diagram`     | **Sim**    | O diagrama draw.io interativo, com comentários por célula e revisões: o bundle [`drawio`](../../../bundles/features/drawio/README.md) |
 | `recording`   | **Talvez** | Uma gravação é mídia que a conversa não mostra — mas o dono natural é o bundle que produz a captura (`screen`), não o registro |
 
-O que a tabela compra: o registro **não é uma taxonomia copiada do Antigravity**. Ele existe pelo que a conversa não consegue mostrar, e a lista encolheu de seis tipos para um — o `preview` — mais a porta aberta para quem tiver uma superfície de verdade. Um `screen` que grave a execução de um app pode registrar `recording` no mesmo contrato, com o seu próprio `blockType` e o seu próprio `materialize`.
+O que a tabela compra: o registro **não é uma taxonomia copiada do Antigravity**. Ele existe pelo que a conversa não consegue mostrar, e a lista encolheu de seis tipos para dois — o `preview` e o `diagram` — mais a porta aberta para quem tiver uma superfície de verdade. Um `screen` que grave a execução de um app pode registrar `recording` no mesmo contrato, com o seu próprio `blockType` e o seu próprio `materialize`.
 
 ## O node
 
 - **Um bloco por revisão**, com identidade estável: o replay reconstrói todos os blocos e nenhuma revisão some.
 - **O `blockType` é do tipo**, registrado no client com `registerRenderer({ blockType, elementTag })` ([eventos e nodes](./events-and-nodes.md)); o elemento leva o prefixo do bundle dono, como manda a [UI composta por bundles](./ui-composition.md).
-- **A moldura é do registro, o corpo é do tipo.** Título, tipo, leitura da revisão e a ação de comentar com a contagem são do bundle `artifacts` — as mesmas em todo artefato; o tipo renderiza o corpo (o canvas do preview, a mídia de uma gravação). A moldura tem variantes de chrome, como o papercraft desenha: a do node na conversa e a da janela em tela cheia. A ação de autorizar só aparece sob a política `request`. Um tipo cujo corpo sobrepõe o próprio cabeçalho declara `header: 'body'` (o padrão é `'frame'`): a moldura então não desenha a barra — título, tipo, revisão, estado e `Comentar` são do corpo — e mantém abaixo do corpo só o que é do registro, `Autorizar` (sob `request`, numa revisão aberta). A moldura não desenha lista de revisões: cada revisão é um node da conversa, e a conversa — com as respostas do agente — é o histórico. O `preview` do papercraft declara `header: 'body'`.
-- **Um redutor só.** O bundle `artifacts` reduz `artifacts.*` a um estado por artefato — revisão atual, comentários pendentes —, e o mesmo redutor serve o node e a janela.
+- **A moldura é do registro, o corpo é do tipo.** Título, tipo, leitura da revisão e a ação de comentar com a contagem são do bundle `artifacts` — as mesmas em todo artefato; o tipo renderiza o corpo (o canvas do preview, a mídia de uma gravação). A moldura tem variantes de chrome, como o papercraft desenha: a do node na conversa e a do modal do canvas expandido. A ação de autorizar só aparece sob a política `request`, e nunca para um tipo isento (`exemptKinds`). Um tipo cujo corpo sobrepõe o próprio cabeçalho declara `header: 'body'` (o padrão é `'frame'`): a moldura então não desenha a barra — título, tipo, revisão, estado e `Comentar` são do corpo — e mantém abaixo do corpo só o que é do registro, `Autorizar` (sob `request`, numa revisão aberta). A moldura não desenha lista de revisões: cada revisão é um node da conversa, e a conversa — com as respostas do agente — é o histórico. O `preview` do papercraft e o `diagram` do drawio declaram `header: 'body'`.
+- **Um redutor só.** O bundle `artifacts` reduz `artifacts.*` a um estado por artefato — revisão atual, comentários pendentes —, e o mesmo redutor serve o node e o modal.
 
 ## Revisão: comentários
 
@@ -164,6 +165,8 @@ A revisão prévia existe como **escolha do Project**, declarada com `defineSett
 | `request`          | O agente publica, devolve o estado e **espera** o `artifacts.approved/v1` antes de escrever no código do Project |
 
 A política é do Project porque um repositório de produção pode querer o portão que um protótipo não quer — mas o portão é exceção, não regra, e o desenho não depende dele: sem `request`, o botão de autorizar não existe, o evento de aprovação não existe, e a conversa continua sendo o lugar do ajuste. O que `proceed` significa exatamente fica em aberto (decisão 4).
+
+Desde a 1.1.0, o setting guarda também `exemptKinds` (padrão `['diagram']`): um tipo isento roda sob `proceed` em todo Project, qualquer que seja a escolha dele, e a moldura não mostra `Autorizar` para ele. `policy()` devolve `{ policy, exemptKinds }`; `setPolicy` muda só a escolha e mantém a lista guardada. A lista só muda por `settings/v1`; não há UI para ela.
 
 ## A tool do agente
 
@@ -232,5 +235,5 @@ O bundle entra em `enabled` na composição (`app/backend/doric-host/composition
 - [Composição e distribuição pelo host](./composition-and-distribution.md): o catálogo, o cache verificado e o sentido de "artefato" na plataforma.
 - [Serviços entre bundles e canais de mensagens](./services-and-channels.md): cardinalidade `one` e `many`, `desktopScope`, `expose: 'desktop'`.
 - [Contextos e capacidades](./contexts.md): o `call` com `scope` e o `caller` de cada salto.
-- [Papercraft](./papercraft/README.md): o tipo `preview`, o canvas no node e na janela.
+- [Papercraft](./papercraft/README.md): o tipo `preview`, o canvas no node e no modal.
 - [Comentários](./comments.md): o spec do conceito que o artefato usa como estado de revisão.

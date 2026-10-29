@@ -3,11 +3,20 @@
 // doric.catalog/v1 and the environments widened by [S8-7].
 
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
-import { DoricNotificationsV1 } from '../src/contracts/index.js';
+import {
+  DoricDrawioV1,
+  DoricNotificationsV1,
+  DRAWIO_ORIGIN,
+  drawioDescriptionSchema,
+} from '../src/contracts/index.js';
 import { platformContracts } from '../src/contracts/platform.js';
-import { platformSchemaDocuments } from '../src/index.js';
+import { platformSchemaDocuments, writePlatformSchemas } from '../src/index.js';
+import { PLATFORM_VERSION } from '../src/runtime/version.js';
 
 void test('doric.notifications/v1 is a desktopMain contract only (WP-10N), taking exactly a title and a body', () => {
   const spec = platformContracts['doric.notifications/v1'];
@@ -75,4 +84,75 @@ void test('the platform schema documents include the new contract members', () =
   ]);
   assert.ok(Object.hasOwn(windows?.$defs as object, 'lastPath.output'));
   assert.ok(Object.hasOwn(catalog?.$defs as object, 'watch.input'));
+});
+
+void test('doric.drawio/v1 is a desktopMain contract only, describing the editor origin', () => {
+  const spec = platformContracts['doric.drawio/v1'];
+
+  assert.equal(DoricDrawioV1.id, 'doric.drawio/v1');
+  assert.equal(DRAWIO_ORIGIN, 'https://drawio.doric.invalid');
+  assert.deepEqual(spec.environments, ['desktopMain']);
+});
+
+void test('doric.drawio/v1 describe answers available with a version, or unavailable with a known reason', () => {
+  const { output } = platformContracts['doric.drawio/v1'].methods.describe;
+
+  for (const accepted of [
+    { available: true, version: '32.6.1' },
+    { available: false, reason: 'missing-assets' },
+    { available: false, reason: 'handler-failed' },
+  ]) {
+    assert.equal(
+      output.safeParse(accepted).success,
+      true,
+      JSON.stringify(accepted),
+    );
+    assert.equal(
+      drawioDescriptionSchema.safeParse(accepted).success,
+      true,
+      JSON.stringify(accepted),
+    );
+  }
+
+  for (const refused of [
+    { available: true, version: '32.6.1', extra: 1 },
+    { available: false, reason: 'offline' },
+    { version: '32.6.1' },
+    { available: 'yes' },
+  ]) {
+    assert.equal(
+      output.safeParse(refused).success,
+      false,
+      JSON.stringify(refused),
+    );
+  }
+});
+
+void test('the platform schema documents include doric.drawio/v1', () => {
+  const drawio = platformSchemaDocuments().get(
+    'contracts/doric.drawio/v1.json',
+  );
+
+  assert.ok(drawio !== undefined);
+  assert.ok(Object.hasOwn(drawio.$defs as object, 'describe.output'));
+});
+
+void test('the build writes contracts/doric.drawio/v1.json', async () => {
+  const out = await mkdtemp(join(tmpdir(), 'bundle-schemas-'));
+
+  try {
+    await writePlatformSchemas(out);
+
+    const written = JSON.parse(
+      await readFile(join(out, 'contracts', 'doric.drawio', 'v1.json'), 'utf8'),
+    ) as { $defs?: object };
+
+    assert.ok(Object.hasOwn(written.$defs ?? {}, 'describe.output'));
+  } finally {
+    await rm(out, { recursive: true, force: true });
+  }
+});
+
+void test('desktop/ui/canvas raises the platform one minor, to 1.2.0', () => {
+  assert.equal(PLATFORM_VERSION, '1.2.0');
 });

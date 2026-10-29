@@ -4,9 +4,10 @@
 // the selection (a solid outline). Both draw a box in content coordinates
 // through the viewport.
 
+import type { Viewport } from 'desktop/ui/canvas';
+
 import type { Bounds, SceneTarget } from './scene-graph.js';
 import { targetLabel } from './scene-graph.js';
-import type { Viewport } from './viewport.js';
 
 /** The label the armed comment tool shows over a target: `button#pay · Checkout.tsx:42`, `span.badge::after · Checkout.tsx:42`. It is `targetLabel(target)`, followed by ` · ` and the host stamp's file name (and `:line`) when the host is stamped. A pseudo-element shares its host's stamp. Pure. */
 export const hoverLabelOf = (target: SceneTarget): string => {

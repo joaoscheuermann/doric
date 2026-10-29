@@ -10,9 +10,11 @@
 @import './fonts.css';
 @import './tokens.css';
 @import 'tailwindcss/utilities.css' layer(utilities);
+@import './canvas.css';
 
 @source '../components';
 @source '../chrome-bar.tsx';
+@source '../canvas';
 
 /*
  * Borders and outlines take the theme's colours by default, wherever a sheet

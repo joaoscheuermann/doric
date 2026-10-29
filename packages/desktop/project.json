@@ -31,7 +31,7 @@
         "commands": [
           "tsc -p packages/desktop/tsconfig.spec.json",
           "node packages/desktop/scripts/verify-provenance.mjs",
-          "node --test packages/desktop/dist-tests/tests/*.test.js packages/desktop/dist-tests/tests/client/*.test.js packages/desktop/dist-tests/tests/reads/*.test.js"
+          "node --test packages/desktop/dist-tests/tests/*.test.js packages/desktop/dist-tests/tests/client/*.test.js packages/desktop/dist-tests/tests/reads/*.test.js packages/desktop/dist-tests/tests/canvas/*.test.js"
         ],
         "parallel": false
       }

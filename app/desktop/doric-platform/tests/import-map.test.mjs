@@ -5,6 +5,7 @@ import { dirname, join, relative } from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { PLATFORM_VERSION } from 'bundle/runtime';
 import * as esbuild from 'esbuild';
 
 const project = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -120,9 +121,12 @@ describe('the platform import map', () => {
     );
     assert.equal(
       imports['bundle/contracts'],
-      `${prefix}bundle@1.0.0/contracts.js`,
+      `${prefix}bundle@${PLATFORM_VERSION}/contracts.js`,
     );
-    assert.equal(imports['desktop/ui/'], `${prefix}desktop@1.0.0/`);
+    assert.equal(
+      imports['desktop/ui/'],
+      `${prefix}desktop@${PLATFORM_VERSION}/`,
+    );
   });
 
   test('maps every Lexical specifier the client bundles import', () => {
@@ -232,7 +236,7 @@ describe('the platform import map', () => {
     ]) {
       assert.equal(
         imports[`desktop/ui/${name}`],
-        `${prefix}desktop@1.0.0/${name}.js`,
+        `${prefix}desktop@${PLATFORM_VERSION}/${name}.js`,
       );
     }
   });
@@ -326,7 +330,7 @@ describe('a window module loaded through the map', () => {
 });
 
 describe('the desktop/ui stylesheet', () => {
-  const folder = join(platform, 'desktop@1.0.0');
+  const folder = join(platform, `desktop@${PLATFORM_VERSION}`);
   const theme = readFileSync(join(folder, 'theme.css'), 'utf8');
 
   test('resolves every url() to a font the build copied', () => {

@@ -28,7 +28,12 @@
 // None of this is application state: each reading is reconstructed from the
 // services, and the view state of the canvas stays in the frame.
 
-import type { Services } from 'bundle/contracts';
+import {
+  type DoricConnection,
+  DoricConnectionV1,
+  type Services,
+} from 'bundle/contracts';
+import { type ThreadWatchSource, watchThreadComments } from 'desktop/ui/canvas';
 import {
   useCallback,
   useEffect,
@@ -70,7 +75,6 @@ import {
   threadsOf,
 } from '../domain/preview-state.js';
 import { MODULE_ENTRY } from './preview-surface.js';
-import { watchThreadComments } from './thread-log.js';
 
 export type { PreviewDraft };
 
@@ -123,7 +127,7 @@ export interface PreviewDataInput {
   readonly chrome: 'node' | 'canvas';
   readonly scope: PreviewScope | undefined;
   readonly artifactId: string;
-  /** The node's revision; the window opens at the newest. */
+  /** The revision to show: the node's own, or, in the modal, the one the node showed when it opened. */
   readonly blockRevision?: number;
 }
 
@@ -348,9 +352,28 @@ export function usePreviewData({
   useEffect(() => {
     if (projectId === undefined || threadId === undefined) return;
 
+    const scope = { projectId, threadId };
+    let source: ThreadWatchSource;
+    let connection: DoricConnection | undefined;
+
+    try {
+      source = services.use(RuntimeThreadsV1, scope);
+    } catch {
+      // A composition without the Thread's watch: the list stands in.
+      return;
+    }
+
+    try {
+      connection = services.use(DoricConnectionV1);
+    } catch {
+      // A window without the connection status cannot tell when to retry.
+      connection = undefined;
+    }
+
     const release = watchThreadComments(
-      services,
-      { projectId, threadId },
+      source,
+      connection,
+      scope,
       setLogEvents,
     );
 

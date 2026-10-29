@@ -19,8 +19,8 @@
 // through the conversation never evicts the frames just used. Interacting
 // with it promotes it, and the least recently used live frame dies.
 //
-// The registry is per window (this module's state): the canvas window is a
-// window of its own, and its open revision never joins it (it stays live).
+// The registry is per window (this module's state): the canvas modal's open
+// revision never joins it (it stays live).
 
 import { type RefObject, useCallback, useLayoutEffect, useState } from 'react';
 
@@ -160,7 +160,7 @@ export const joinLiveFrames = (
 /**
  * One preview's liveness in the window, for as long as the component is
  * mounted. `key` is the revision on screen; `undefined` keeps the preview
- * live outside the registry (the canvas window's open revision). The pointer
+ * live outside the registry (the open revision of a node's modal). The pointer
  * moving or pressing over `element` uses the preview, and its visibility is
  * observed when the window has an `IntersectionObserver`.
  */

@@ -7,6 +7,8 @@
  * the values here, never in the generated files.
  */
 
+import { PLATFORM_VERSION } from 'bundle/runtime';
+
 /** CSS custom properties by name, each with its CSS value. */
 export interface TokenSet {
   readonly [cssVar: `--${string}`]: string;
@@ -45,7 +47,7 @@ const trafficLightInsetX = 14;
 const trafficLightGap = 8;
 
 export const tokens: Tokens = {
-  version: '1.0.0',
+  version: PLATFORM_VERSION,
   defaultVariant: 'light',
   variants: {
     light: {

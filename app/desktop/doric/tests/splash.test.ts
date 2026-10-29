@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, test } from 'node:test';
 
+import { PLATFORM_VERSION } from 'bundle/runtime';
+
 import {
   remainingSplashMs,
   splashMinimumMs,
@@ -24,7 +26,9 @@ describe('splash screen', () => {
     assert.match(markup, /content="light dark"/u);
     assert.match(markup, /<title>Doric<\/title>/u);
     assert.match(markup, /<div class="splash-title">Doric<\/div>/u);
-    assert.match(markup, /href="\/platform\/desktop@1\.0\.0\/theme\.css"/u);
+    assert.ok(
+      markup.includes(`href="/platform/desktop@${PLATFORM_VERSION}/theme.css"`),
+    );
     assert.match(css, /justify-content: center/u);
     assert.match(css, /align-items: center/u);
     assert.match(css, /background: var\(--background\)/u);

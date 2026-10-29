@@ -15,12 +15,15 @@ const SHELL_URL = 'doric://app/projects/p1';
 /** Fake web contents: emits Electron's navigation events at the guard. */
 const guarded = () => {
   const listeners = new Map<string, (...args: never[]) => void>();
+  let openHandler: (() => { action: string }) | undefined;
   const contents = {
     getURL: () => SHELL_URL,
     on: (event: string, listener: (...args: never[]) => void) => {
       listeners.set(event, listener);
     },
-    setWindowOpenHandler: () => undefined,
+    setWindowOpenHandler: (handler: () => { action: string }) => {
+      openHandler = handler;
+    },
   } as unknown as GuardedAppContents;
 
   installNavigationGuard(contents);
@@ -48,6 +51,8 @@ const guarded = () => {
     mainFrame: (url: string) =>
       prevented('will-frame-navigate', { url, isMainFrame: true }) ||
       prevented('will-navigate', url),
+    /** What the window answers to `window.open`. */
+    windowOpen: () => openHandler?.(),
   };
 };
 
@@ -92,5 +97,46 @@ describe('an app window guards its subframes', () => {
     assert.equal(guard.mainFrame(SHELL_URL), false);
     assert.equal(guard.mainFrame('doric://app/frame/index.html'), true);
     assert.equal(guard.mainFrame('https://example.com/'), true);
+  });
+});
+
+describe('an app window may frame the draw.io editor origin', () => {
+  test('a subframe may load any document of the editor origin', () => {
+    const guard = guarded();
+
+    for (const url of [
+      'https://drawio.doric.invalid/index.html',
+      'https://drawio.doric.invalid/index.html?embed=1&proto=json&spin=1',
+      'https://drawio.doric.invalid/js/viewer/nested/page.html',
+    ]) {
+      assert.equal(guard.subframe(url), false, url);
+    }
+  });
+
+  test('a subframe of another origin, or the editor host over http, is refused', () => {
+    const guard = guarded();
+
+    for (const url of [
+      'https://evil.example/',
+      'http://drawio.doric.invalid/',
+      'http://drawio.doric.invalid/index.html',
+    ]) {
+      assert.equal(guard.subframe(url), true, url);
+    }
+  });
+
+  test('the main frame may not go to the editor origin', () => {
+    const guard = guarded();
+
+    assert.equal(
+      guard.mainFrame('https://drawio.doric.invalid/index.html'),
+      true,
+    );
+  });
+
+  test('window.open stays denied', () => {
+    const guard = guarded();
+
+    assert.deepEqual(guard.windowOpen(), { action: 'deny' });
   });
 });

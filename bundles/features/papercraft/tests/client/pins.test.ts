@@ -5,18 +5,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { PreviewDraft } from '../../src/client/comment.js';
-import { threadsOf } from '../../src/client/domain/preview-state.js';
 import {
   INPUT_HEIGHT,
   inputPlacement,
-} from '../../src/client/surface/pins-layer.js';
-import { popoverPlacement } from '../../src/client/surface/thread-popover.js';
-import {
   nextPinOf,
   openCountOf,
   pinsOf,
-} from '../../src/client/surface/threads-view.js';
+  popoverPlacement,
+} from 'desktop/ui/canvas';
+
+import type { PreviewDraft } from '../../src/client/comment.js';
+import { threadsOf } from '../../src/client/domain/preview-state.js';
 
 const area = { width: 800, height: 600 };
 

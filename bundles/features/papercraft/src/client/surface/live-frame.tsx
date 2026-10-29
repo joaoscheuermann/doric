@@ -24,6 +24,7 @@
 // the surface (`frame-memory.ts`); nothing outside this component holds the
 // iframe or its port.
 
+import type { CanvasTheme } from 'desktop/ui/canvas';
 import { type CSSProperties, useEffect, useLayoutEffect, useRef } from 'react';
 
 import {
@@ -35,7 +36,6 @@ import {
   type InputCapture,
   isHello,
   PROTOCOL,
-  type PreviewTheme,
 } from '../frame-protocol.js';
 
 /** The cursor the app locks every element of the preview to. */
@@ -50,7 +50,7 @@ export interface LiveFrameProps {
   readonly src: string;
   /** What to render; the frame is initialised once it is known. */
   readonly content: FrameContent | undefined;
-  readonly theme: PreviewTheme;
+  readonly theme: CanvasTheme;
   readonly capture: InputCapture;
   /** The ids of the last scene's nodes to hide. */
   readonly hidden: readonly string[];
@@ -73,7 +73,7 @@ const CONNECT: ConnectMessage = { papercraft: PROTOCOL, kind: 'connect' };
 interface Sent {
   ready: boolean;
   initialised: boolean;
-  theme?: PreviewTheme;
+  theme?: CanvasTheme;
   capture?: InputCapture;
   hidden: string;
   cursor: string;

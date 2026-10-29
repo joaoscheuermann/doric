@@ -213,6 +213,7 @@ void test('every basic and platform method has a stated way across the envelope'
     'doric.network/v1': { register: 'refused' },
     'doric.tokens/v1': { get: 'crosses' },
     'doric.notifications/v1': { show: 'crosses' },
+    'doric.drawio/v1': { describe: 'crosses' },
     // Client-only (stage 9): elements and callbacks stay in the window.
     'doric.elements/v1': {
       define: 'refused',

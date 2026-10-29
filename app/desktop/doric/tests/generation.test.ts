@@ -109,6 +109,9 @@ const bootGeneration = async (
     migrateStorage: async () => 'none',
     tokens: () => ({ '--background': 'x' }),
     notify: () => undefined,
+    drawio: {
+      describe: () => ({ available: false, reason: 'missing-assets' }),
+    },
     log: silentLog,
   });
 

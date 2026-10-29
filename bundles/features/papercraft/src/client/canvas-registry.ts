@@ -71,3 +71,7 @@ export const controllerFor = (
 
 /** Which canvas the reader last touched. */
 export const activeCanvasId = (): string | undefined => lastActive;
+
+/** Whether a canvas of `artifactId` is registered in this window — in the conversation's window, its node's modal is open. */
+export const canvasOpen = (artifactId: string): boolean =>
+  canvases.has(artifactId);

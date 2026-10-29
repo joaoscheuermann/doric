@@ -1,24 +1,21 @@
 // `controller.ts` — what the command bar's commands (and the node's footer)
 // do to one frame: the armed tool, isolation, the viewport and the revision
 // on screen. One stable controller per frame, registered with the window's
-// canvas registry while the frame is the canvas window; and how the frame
+// canvas registry while the frame is the canvas modal; and how the frame
 // dispatches a command itself (`commands/v1.execute`, the path the bar's
-// controls and the node's `abrir` take).
+// controls take).
 
 import { type Commands, CommandsV1, type Services } from 'bundle/contracts';
+import { IDENTITY, type Viewport, ZOOM_STEP, zoomAt } from 'desktop/ui/canvas';
 import { type RefObject, useCallback, useEffect, useMemo } from 'react';
 
-import {
-  OPEN_CANVAS_COMMAND,
-  type PreviewTool,
-} from '../../contracts/index.js';
+import type { PreviewTool } from '../../contracts/index.js';
 import {
   type PreviewController,
   registerController,
 } from '../canvas-registry.js';
 import type { Scene } from './scene.js';
 import { isolateHiddenIds, targetById } from './scene-graph.js';
-import { IDENTITY, type Viewport, ZOOM_STEP, zoomAt } from './viewport.js';
 
 /** What the controller reads of the latest render when a command runs. */
 export interface FrameReading {
@@ -140,18 +137,14 @@ export const usePreviewController = ({
   return controller;
 };
 
-/** How the frame dispatches a command, and the node's `abrir`: the canvas window. */
+/** How the frame dispatches a command: `commands/v1.execute`, errors dropped. */
 export const useCommandDispatch = (
   services: Services,
-  artifactId: string,
-  scopeProject: string | undefined,
-  scopeThread: string | undefined,
 ): {
   readonly execute: (
     command: Parameters<Commands['execute']>[0],
     input?: unknown,
   ) => void;
-  readonly openCanvas: () => void;
 } => {
   const execute = useCallback(
     (command: Parameters<Commands['execute']>[0], input?: unknown) => {
@@ -163,15 +156,5 @@ export const useCommandDispatch = (
     [services],
   );
 
-  const openCanvas = useCallback(() => {
-    if (scopeProject === undefined || scopeThread === undefined) return;
-
-    execute(OPEN_CANVAS_COMMAND, {
-      artifactId,
-      projectId: scopeProject,
-      threadId: scopeThread,
-    });
-  }, [execute, artifactId, scopeProject, scopeThread]);
-
-  return { execute, openCanvas };
+  return { execute };
 };

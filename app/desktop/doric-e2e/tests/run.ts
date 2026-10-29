@@ -21,6 +21,16 @@ const files = readdirSync(__dirname)
   .sort()
   .map((name) => join(__dirname, name));
 
+// The draw.io editor must run without the network (spec A1): with its test
+// in the run, no host name resolves. The fake host listens on 127.0.0.1, an
+// address the rules never touch.
+if (files.some((file) => file.endsWith('drawio-editor.test.js'))) {
+  app.commandLine.appendSwitch(
+    'host-resolver-rules',
+    'MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
+  );
+}
+
 // A profile of this run only: no storage leaks between runs or into the
 // developer's Electron profile.
 const profile = mkdtempSync(join(tmpdir(), 'doric-electron-tests-'));

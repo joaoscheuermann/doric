@@ -17,7 +17,8 @@
 //   also when the conversation mounts it again;
 // - a promoted preview keeps its snapshot over the new frame until the frame
 //   says it mounted;
-// - the canvas window's revision is live outside the count.
+// - a node's expanded modal is live outside the count, and the nodes stay
+//   live.
 
 import assert from 'node:assert/strict';
 import { after, afterEach, before, test } from 'node:test';
@@ -51,6 +52,20 @@ for (const name of [
   Object.defineProperty(globalThis, name, {
     configurable: true,
     value: window[name as keyof Window],
+    writable: true,
+  });
+}
+
+// The node's modal (base-ui's dialog) measures its popup and schedules its
+// open and close transitions on animation frames.
+for (const name of [
+  'getComputedStyle',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+] as const) {
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    value: window[name].bind(window),
     writable: true,
   });
 }
@@ -237,7 +252,7 @@ const windowOf = () => {
 
   const mounted: (() => Promise<void>)[] = [];
 
-  /** Mounts one preview of the window, as the conversation or the route does. */
+  /** Mounts one preview of the window, as the conversation does. */
   const mount = async (
     name: string,
     chrome: 'node' | 'canvas' = 'node',
@@ -577,19 +592,57 @@ test('a promoted preview keeps its snapshot over the new frame until the frame m
   await w.close();
 });
 
-test("the canvas window's revision is live outside the count", async () => {
+test("a node's expanded modal is live outside the count, and the nodes stay live", async () => {
   const w = windowOf();
-  const canvas = await w.mount('open', 'canvas');
-
-  await canvas.rendered();
-
   const [a, b, c] = await mountAll(w, ['a', 'b', 'c']);
 
   assert.ok(a !== undefined && b !== undefined && c !== undefined);
+
+  // The reader's first press on `a` focuses it and brings its controls.
+  for (const type of ['down', 'up', 'click'] as const)
+    await react.act(async () => {
+      frames
+        .latest(a.host)
+        ?.pointer(type, '#title', {
+          x: 10,
+          y: 10,
+          altKey: false,
+          ctrlKey: false,
+          metaKey: false,
+          shiftKey: false,
+        });
+      await delivered();
+    });
+  const expand = await settle(
+    () => a.host.querySelector<HTMLElement>('[data-testid="papercraft-expand"]'),
+    (found) => found !== null,
+    'the focused node never showed expandir',
+  );
+  await react.act(async () => {
+    expand?.focus();
+    expand?.click();
+    await delivered();
+  });
+
+  const dialog = await settle(
+    () => document.body.querySelector('[role="dialog"]'),
+    (found) => found !== null,
+    'expandir never opened the modal',
+  );
+  await settle(
+    () => frames.latest(dialog as Element)?.rendered === true,
+    (rendered) => rendered,
+    "the modal's preview never rendered",
+  );
   assert.deepEqual(
-    [canvas.live(), a.live(), b.live(), c.live()],
+    [
+      dialog?.querySelector('iframe') !== null,
+      a.live(),
+      b.live(),
+      c.live(),
+    ],
     [true, true, true, true],
-    'the canvas took one of the three live frames',
+    'the modal took one of the three live frames',
   );
 
   await w.close();

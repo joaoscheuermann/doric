@@ -1,5 +1,5 @@
-// The canvas window's chords and `papercraft.approve/v1` as its keybinding
-// dispatches it: `CmdOrCtrl+Enter` is the window's send, the approval is
+// The canvas's chords and `papercraft.approve/v1` as its chord dispatches it:
+// `CmdOrCtrl+Enter` names chat's send, the approval is
 // `CmdOrCtrl+Shift+Enter`, which carries no input, so it targets the canvas
 // the reader touched last, at the revision it shows, in that canvas's Project
 // and Thread.
@@ -59,7 +59,7 @@ const servicesRecording = (
     },
   }) as unknown as Services;
 
-test('in the canvas window CmdOrCtrl+Enter sends, and the approval is CmdOrCtrl+Shift+Enter', () => {
+test('the bar chords: CmdOrCtrl+Enter names the send, and the approval is CmdOrCtrl+Shift+Enter', () => {
   const commandOf = (key: string) =>
     PAPERCRAFT_KEYBINDINGS.filter((binding) => binding.key === key).map(
       (binding) => binding.command,
@@ -109,4 +109,100 @@ test('with no canvas open the approval writes nothing', async () => {
   );
 
   assert.deepEqual(approvals, []);
+});
+
+/* The modal's keys (`keyCommandOf`) and whether a canvas is open (`canvasOpen`) */
+
+const chord = (
+  key: string,
+  more: Partial<import('../../src/client/commands.js').KeyChord> = {},
+): import('../../src/client/commands.js').KeyChord => ({
+  key,
+  code: '',
+  metaKey: false,
+  ctrlKey: false,
+  altKey: false,
+  shiftKey: false,
+  defaultPrevented: false,
+  ...more,
+});
+
+test('in the modal every bar chord but CmdOrCtrl+Enter dispatches its command, with Cmd or Ctrl', async () => {
+  const [commands] = await load();
+  const plain: [string, Partial<import('../../src/client/commands.js').KeyChord>, string][] = [
+    ['v', { code: 'KeyV' }, 'papercraft.select/v1'],
+    ['c', { code: 'KeyC' }, 'papercraft.comment/v1'],
+    ['h', { code: 'KeyH' }, 'papercraft.pan/v1'],
+    ['i', { code: 'KeyI' }, 'papercraft.isolate/v1'],
+    ['I', { code: 'KeyI', shiftKey: true }, 'papercraft.show-all/v1'],
+    ['!', { code: 'Digit1', shiftKey: true }, 'papercraft.zoom-fit/v1'],
+  ];
+  for (const [key, more, command] of plain)
+    assert.equal(commands.keyCommandOf(chord(key, more)), command, key);
+
+  const cmdOrCtrl: [string, Partial<import('../../src/client/commands.js').KeyChord>, string][] = [
+    ['-', { code: 'Minus' }, 'papercraft.zoom-out/v1'],
+    ['0', { code: 'Digit0' }, 'papercraft.zoom-reset/v1'],
+    ['=', { code: 'Equal' }, 'papercraft.zoom-in/v1'],
+    ['Enter', { code: 'Enter', shiftKey: true }, 'papercraft.approve/v1'],
+  ];
+  for (const modifier of [{ metaKey: true }, { ctrlKey: true }])
+    for (const [key, more, command] of cmdOrCtrl)
+      assert.equal(
+        commands.keyCommandOf(chord(key, { ...more, ...modifier })),
+        command,
+        `${JSON.stringify(modifier)} ${key}`,
+      );
+
+  // Every chord of the bar is covered above but chat's send.
+  const covered = new Set([...plain, ...cmdOrCtrl].map(([, , command]) => command));
+  assert.deepEqual(
+    new Set(
+      PAPERCRAFT_KEYBINDINGS.map((binding) => binding.command).filter(
+        (command) => command !== 'papercraft.send/v1',
+      ),
+    ),
+    covered,
+  );
+});
+
+test('in the modal a taken key, CmdOrCtrl+Enter, an Alt chord or an unknown key dispatch nothing', async () => {
+  const [commands] = await load();
+
+  assert.equal(
+    commands.keyCommandOf(chord('v', { code: 'KeyV', defaultPrevented: true })),
+    undefined,
+    'already taken',
+  );
+  assert.equal(
+    commands.keyCommandOf(chord('Enter', { code: 'Enter', metaKey: true })),
+    undefined,
+    'Cmd+Enter is chat’s',
+  );
+  assert.equal(
+    commands.keyCommandOf(chord('Enter', { code: 'Enter', ctrlKey: true })),
+    undefined,
+    'Ctrl+Enter is chat’s',
+  );
+  assert.equal(
+    commands.keyCommandOf(chord('v', { code: 'KeyV', altKey: true })),
+    undefined,
+    'Alt+V',
+  );
+  assert.equal(
+    commands.keyCommandOf(chord('q', { code: 'KeyQ' })),
+    undefined,
+    'unknown key',
+  );
+});
+
+test('a canvas is open while its controller is registered', async () => {
+  const [, registry] = await load();
+
+  assert.equal(registry.canvasOpen('open-1'), false);
+  const release = registry.registerController(controller('open-1', 1, []));
+  assert.equal(registry.canvasOpen('open-1'), true);
+  assert.equal(registry.canvasOpen('other-2'), false);
+  release();
+  assert.equal(registry.canvasOpen('open-1'), false);
 });

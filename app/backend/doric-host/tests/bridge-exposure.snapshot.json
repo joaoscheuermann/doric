@@ -24,6 +24,7 @@
       "watch"
     ],
     "doric.diagnostics/v1": ["report"],
+    "drawio.diagrams/v1": ["export", "read", "save"],
     "files/v1": ["content", "directory", "tree"],
     "git.commands/v1": [
       "branches",

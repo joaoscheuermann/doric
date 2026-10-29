@@ -157,6 +157,9 @@
       "path": "./bundles/features/papercraft"
     },
     {
+      "path": "./bundles/features/drawio"
+    },
+    {
       "path": "./bundles/features/artifacts"
     },
     {

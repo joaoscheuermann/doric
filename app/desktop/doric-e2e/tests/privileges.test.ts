@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { promisify } from 'node:util';
 
+import { PLATFORM_VERSION } from 'bundle/runtime';
 import { BrowserWindow, protocol } from 'electron';
 
 import {
@@ -32,7 +33,7 @@ const run = promisify(execFile);
 const SHELL = `<!doctype html>
 <html lang="en" class="dark">
   <head><meta charset="utf-8" /><title>Doric</title></head>
-  <body><script type="module" src="/platform/shell@1.0.0/probe.js"></script></body>
+  <body><script type="module" src="/platform/shell@${PLATFORM_VERSION}/probe.js"></script></body>
 </html>
 `;
 
@@ -50,8 +51,8 @@ const results = {};
 results.zod = z.string().parse('parsed');
 results.contracts = new ContractError('unavailable', 'x').code;
 results.part = (await import('/bundles/probe@1.0.0/client/index.js')).value;
-results.classic = await worker('/platform/shell@1.0.0/classic.js');
-results.module = await worker('/platform/shell@1.0.0/module.js', { type: 'module' });
+results.classic = await worker('/platform/shell@${PLATFORM_VERSION}/classic.js');
+results.module = await worker('/platform/shell@${PLATFORM_VERSION}/module.js', { type: 'module' });
 localStorage.setItem('doric.probe', 'kept');
 results.storage = localStorage.getItem('doric.probe');
 results.fetch = await fetch('doric://app/platform/importmap.platform.json').then(
@@ -134,7 +135,7 @@ describe('doric:// privileges', () => {
               template: () => readFile(join(shellRoot, 'shell.html'), 'utf8'),
               generation: () => 1,
               importMap: () => importMap,
-              themeHref: '/platform/desktop@1.0.0/theme.css',
+              themeHref: `/platform/desktop@${PLATFORM_VERSION}/theme.css`,
               devServerOrigin: 'http://localhost:4200',
             }).render(),
         },

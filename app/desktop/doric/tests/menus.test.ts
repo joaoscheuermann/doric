@@ -296,6 +296,9 @@ describe('doric.notifications/v1 (broker)', () => {
             }),
           },
         }),
+      drawio: {
+        describe: () => ({ available: false, reason: 'missing-assets' }),
+      },
       log: silentLog,
     });
 
@@ -361,6 +364,9 @@ describe('doric.windows/v1 focus (broker)', () => {
       migrateStorage: async () => 'none',
       tokens: () => ({}),
       notify: () => undefined,
+      drawio: {
+        describe: () => ({ available: false, reason: 'missing-assets' }),
+      },
       log: silentLog,
     });
 

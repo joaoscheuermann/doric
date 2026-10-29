@@ -7,7 +7,10 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { artifactReviewPolicy } from '../src/contracts/index.js';
+import {
+  artifactReviewPolicy,
+  reviewPolicyOf,
+} from '../src/contracts/index.js';
 import { artifactsHarness } from './support/harness.js';
 
 const at = {
@@ -30,6 +33,7 @@ describe('artifacts.review-policy/v1', () => {
     try {
       assert.deepEqual(await harness.artifacts.policy(harness.call()), {
         policy: 'proceed',
+        exemptKinds: ['diagram'],
       });
       assert.deepEqual(harness.settings.registered, [artifactReviewPolicy.id]);
 
@@ -39,6 +43,7 @@ describe('artifacts.review-policy/v1', () => {
 
       assert.deepEqual(await harness.artifacts.policy(harness.call()), {
         policy: 'request',
+        exemptKinds: ['diagram'],
       });
     } finally {
       await harness.close();
@@ -60,15 +65,18 @@ describe('artifacts.review-policy/v1', () => {
 
       assert.deepEqual(await harness.artifacts.policy(harness.call()), {
         policy: 'request',
+        exemptKinds: ['diagram'],
       });
       assert.deepEqual(await harness.artifacts.policy(harness.call(other)), {
         policy: 'proceed',
+        exemptKinds: ['diagram'],
       });
 
       await harness.artifacts.setPolicy({ policy: 'proceed' }, harness.call());
 
       assert.deepEqual(await harness.artifacts.policy(harness.call()), {
         policy: 'proceed',
+        exemptKinds: ['diagram'],
       });
     } finally {
       await harness.close();
@@ -383,6 +391,150 @@ describe('artifacts/v1.awaitApproval and apply under request', () => {
         'artifacts.approved/v1',
         'artifacts.applied/v1',
       ]);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// D21: a kind in `exemptKinds` (default `['diagram']`) runs under `proceed` in
+// every Project — no approval to record, nothing to wait for, nothing to
+// refuse. Removing the kind from the list gates it again.
+describe('artifacts.review-policy/v1 exemptKinds', () => {
+  const diagram = { ...at, artifactId: 'flow-1', kind: 'diagram' };
+
+  test('reviewPolicyOf answers proceed for an exempt kind, and the Project choice otherwise', () => {
+    const settings = {
+      policy: 'proceed' as const,
+      projects: { p: 'request' as const },
+      exemptKinds: ['diagram'],
+    };
+
+    assert.equal(reviewPolicyOf(settings, 'p', 'diagram'), 'proceed');
+    assert.equal(reviewPolicyOf(settings, 'p', 'preview'), 'request');
+    assert.equal(reviewPolicyOf(settings, 'p'), 'request');
+  });
+
+  test('under request, approving a diagram records nothing and keeps it open', async () => {
+    const harness = await artifactsHarness({ policy: 'request' });
+
+    try {
+      await harness.artifacts.create(diagram, harness.call());
+
+      const approved = await harness.artifacts.approve(
+        { artifactId: diagram.artifactId, revision: 1 },
+        harness.call(),
+      );
+
+      assert.equal(approved?.state, 'open');
+      assert.deepEqual(types(harness), ['artifacts.created/v1']);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test('under request, awaitApproval on a diagram resolves at once', {
+    timeout: 2000,
+  }, async () => {
+    const harness = await artifactsHarness({ policy: 'request' });
+
+    try {
+      await harness.artifacts.create(diagram, harness.call());
+
+      const released = await harness.artifacts.awaitApproval(
+        { artifactId: diagram.artifactId, revision: 1 },
+        harness.call(),
+      );
+
+      assert.equal(released?.revision, 1);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test('under request, apply does not refuse a diagram nobody approved', async () => {
+    const harness = await artifactsHarness({ policy: 'request' });
+
+    try {
+      await harness.artifacts.create(diagram, harness.call());
+
+      await harness.artifacts.apply(
+        {
+          artifactId: diagram.artifactId,
+          revision: 1,
+          files: ['docs/flow.drawio'],
+        },
+        harness.call(),
+      );
+
+      assert.deepEqual(types(harness), [
+        'artifacts.created/v1',
+        'artifacts.applied/v1',
+      ]);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test('with diagram removed from exemptKinds, a diagram is gated again', async () => {
+    const harness = await artifactsHarness();
+    const apply = {
+      artifactId: diagram.artifactId,
+      revision: 1,
+      files: ['docs/flow.drawio'],
+    };
+
+    harness.settings.values.set(artifactReviewPolicy.id, {
+      policy: 'request',
+      exemptKinds: [],
+    });
+
+    try {
+      await harness.artifacts.create(diagram, harness.call());
+
+      await assert.rejects(harness.artifacts.apply(apply, harness.call()), {
+        code: 'invalid_input',
+      });
+      assert.equal(
+        (
+          await harness.artifacts.awaitApproval(
+            { artifactId: diagram.artifactId, revision: 1, timeoutMs: 5 },
+            harness.call(),
+          )
+        )?.state,
+        'open',
+      );
+
+      const approved = await harness.artifacts.approve(
+        { artifactId: diagram.artifactId, revision: 1 },
+        harness.call(),
+      );
+
+      assert.equal(approved?.state, 'approved');
+      assert.deepEqual(types(harness), [
+        'artifacts.created/v1',
+        'artifacts.approved/v1',
+      ]);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test('setPolicy keeps the stored exemptKinds', async () => {
+    const harness = await artifactsHarness();
+
+    harness.settings.values.set(artifactReviewPolicy.id, {
+      policy: 'request',
+      exemptKinds: ['x'],
+    });
+
+    try {
+      await harness.artifacts.setPolicy({ policy: 'proceed' }, harness.call());
+
+      assert.deepEqual(await harness.artifacts.policy(harness.call()), {
+        policy: 'proceed',
+        exemptKinds: ['x'],
+      });
     } finally {
       await harness.close();
     }

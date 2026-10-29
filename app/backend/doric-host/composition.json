@@ -30,6 +30,7 @@
     "artifacts",
     "comments",
     "papercraft",
+    "drawio",
     "mcp"
   ],
   "providers": {

@@ -11,7 +11,7 @@
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Noto+Sans:wght@400;500;600&display=swap"
   />
   <style>
-    /* Layout: the papercraft canvas window as the app draws it (overlay header, "estrutura" panel, floating
+    /* Layout: the papercraft canvas as the expanded modal draws it (overlay header, "estrutura" panel, floating
    command bar, dot grid), then the square node inside the conversation. Tokens mirror
    packages/desktop/src/styles/tokens.css; chrome classes mirror bundles/features/papercraft/src/client. */
     :root {
@@ -498,17 +498,6 @@
       align-items: center;
       gap: 8px;
       padding: 0 8px 0 0;
-    }
-    .lights {
-      display: flex;
-      gap: 8px;
-      padding: 0 14px 0 14px;
-    }
-    .lights span {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--border);
     }
     .titlebar .name {
       font-size: 14px;
@@ -1070,7 +1059,7 @@
     </header>
 
     <section aria-labelledby="w">
-      <h2 id="w">Janela do canvas</h2>
+      <h2 id="w">Modal do canvas</h2>
       <p class="sub">
         Clique num frame na estrutura ou no nome dele no canvas para dar zoom. O
         botão novo <b>4 estados</b> na barra de comandos escolhe os estados, o
@@ -1083,9 +1072,6 @@
           </div>
         </div>
         <div class="titlebar">
-          <div class="lights" aria-hidden="true">
-            <span></span><span></span><span></span>
-          </div>
           <span class="name">src/checkout/CheckoutCard.stories.tsx</span
           ><span class="rev mono">rev 2</span>
           <div class="right">

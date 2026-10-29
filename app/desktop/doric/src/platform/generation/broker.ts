@@ -7,12 +7,14 @@
 import {
   type Call,
   DoricCacheV1,
+  DoricDrawioV1,
   DoricLogV1,
   DoricMenusV1,
   DoricMigrationsV1,
   DoricNotificationsV1,
   DoricTokensV1,
   DoricWindowsV1,
+  type DrawioDescription,
   defineMethod,
   type LogRecord,
   type MenuSkeleton,
@@ -51,6 +53,8 @@ export interface BrokerDeps {
   }) => Promise<MigrationResult>;
   readonly tokens: () => Readonly<Record<string, string>>;
   readonly notify: (request: NotificationRequest) => void;
+  /** The editor origin's state as `startDrawioOrigin` fixed it, for `doric.drawio/v1.describe`. */
+  readonly drawio: { describe(): DrawioDescription };
   readonly log: PlatformLog;
 }
 
@@ -79,6 +83,7 @@ export const provideBroker = (platform: Principal, deps: BrokerDeps): void => {
   const migrations = specs['doric.migrations/v1'].methods;
   const notifications = specs['doric.notifications/v1'].methods;
   const log = specs['doric.log/v1'].methods;
+  const drawio = specs['doric.drawio/v1'].methods;
 
   services.provide(
     definePlatformService(DoricWindowsV1, {
@@ -175,6 +180,15 @@ export const provideBroker = (platform: Principal, deps: BrokerDeps): void => {
         input: tokens.get.input,
         output: tokens.get.output,
         execute: () => Promise.resolve({ ...deps.tokens() }),
+      }),
+    }),
+  );
+  services.provide(
+    definePlatformService(DoricDrawioV1, {
+      describe: defineMethod({
+        input: drawio.describe.input,
+        output: drawio.describe.output,
+        execute: () => Promise.resolve(deps.drawio.describe()),
       }),
     }),
   );

@@ -1,0 +1,6 @@
+{
+  "version": "32.6.1",
+  "url": "https://github.com/jgraph/drawio/archive/refs/tags/v32.6.1.tar.gz",
+  "sha256": "d3aa45e4ad3588d5c25805685f34a30946c3c7586cb6a54e5d62f5d2a4b0a49f",
+  "exclude": ["WEB-INF/", "META-INF/", "templates/"]
+}

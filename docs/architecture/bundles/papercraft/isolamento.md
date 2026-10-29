@@ -68,7 +68,7 @@ Estes contratos são o que as fases implementam em paralelo; mudá-los exige com
 
 ## Virtualização
 
-- **Vivos:** os 3 frames usados por último; um preview novo despeja o menos recente. Na janela do canvas, a revisão aberta fica sempre viva.
+- **Vivos:** os 3 frames usados por último; um preview novo despeja o menos recente. A revisão aberta no modal fica sempre viva: o modal monta uma segunda superfície, fora do limite.
 - **Uso:** ser publicado, ficar visível, ou receber ponteiro ou clique. Rolar até um preview antigo não basta para promovê-lo, para não despejar os recentes.
 - **Snapshot:** quando um frame vivo fica estável na tela, a janela captura o retângulo dele por `papercraft.snapshot/v1` e guarda a imagem pela chave artifact, revisão, tema e largura (revisões são imutáveis). Um frame morto mostra o snapshot no mesmo tamanho, com o último scene serializado, então pins, contornos e comentários continuam aparecendo.
 - **Promoção:** ponteiro ou clique num preview morto o remonta; o snapshot fica até o frame novo avisar que renderizou. O estado interativo de um frame morto (uma seção aberta, um texto digitado) se perde.

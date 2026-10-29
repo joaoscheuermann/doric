@@ -2,9 +2,8 @@
 // column the node's square sits in, the canvas window, and a bare canvas area
 // (the frame's dot grid) for the overlay parts.
 
+import { gridBackground, IDENTITY } from 'desktop/ui/canvas';
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
-
-import { gridBackground, IDENTITY } from '../../src/client/surface/viewport.js';
 
 /** The conversation column a preview node sits in. */
 export function ChatColumn({ children }: { readonly children: ReactNode }) {

@@ -63,8 +63,8 @@ problems.
   **Settings → Review**, and the agent is told to wait for your approval
   before it writes the change into the Project's code.
 
-Open any preview in its own canvas window to pan, zoom, isolate elements,
-browse the element tree and switch revisions. See the
+Expand any preview into a modal over the conversation to pan, zoom, isolate
+elements, browse the element tree and switch revisions. See the
 [Papercraft bundle](bundles/features/papercraft/README.md) for details.
 
 ## What you can do
@@ -295,15 +295,15 @@ Compose volumes, including the database.
 
 Doric is a TypeScript monorepo, and its pieces are meant to be reused.
 
-| You want to…                              | Start here                                                                                                                                                                           |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Run, configure or integrate with the host | [Backend and API](app/backend/doric-host/README.md)                                                                                                                                  |
-| Work on the desktop app                   | [Desktop app](app/desktop/doric/README.md), [renderer](app/desktop/doric-renderer/README.md)                                                                                         |
-| Add tools, skills, providers or UI        | [Bundle platform](packages/bundle/README.md), [core services](bundles/foundation/core/README.md)                                                                                     |
-| See how the built-in agent tools work     | [Files](bundles/features/files/README.md), [Git](bundles/features/git/README.md), [Threads](bundles/features/threads/README.md), [Papercraft](bundles/features/papercraft/README.md) |
-| Embed an agent loop in your own app       | [Agent runtime](packages/agent/README.md), [model integrations](packages/llms/README.md)                                                                                             |
-| Run code in isolated sandboxes            | [Sandbox](packages/sandbox/README.md), [Docker](packages/docker-sandbox/README.md), [pool](packages/sandpool/README.md)                                                              |
-| Contribute to the repository              | [GROUNDING.md](GROUNDING.md) and [AGENTS.md](AGENTS.md)                                                                                                                              |
+| You want to…                              | Start here                                                                                                                                                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run, configure or integrate with the host | [Backend and API](app/backend/doric-host/README.md)                                                                                                                                                                               |
+| Work on the desktop app                   | [Desktop app](app/desktop/doric/README.md), [renderer](app/desktop/doric-renderer/README.md)                                                                                                                                      |
+| Add tools, skills, providers or UI        | [Bundle platform](packages/bundle/README.md), [core services](bundles/foundation/core/README.md)                                                                                                                                  |
+| See how the built-in agent tools work     | [Files](bundles/features/files/README.md), [Git](bundles/features/git/README.md), [Threads](bundles/features/threads/README.md), [Papercraft](bundles/features/papercraft/README.md), [drawio](bundles/features/drawio/README.md) |
+| Embed an agent loop in your own app       | [Agent runtime](packages/agent/README.md), [model integrations](packages/llms/README.md)                                                                                                                                          |
+| Run code in isolated sandboxes            | [Sandbox](packages/sandbox/README.md), [Docker](packages/docker-sandbox/README.md), [pool](packages/sandpool/README.md)                                                                                                           |
+| Contribute to the repository              | [GROUNDING.md](GROUNDING.md) and [AGENTS.md](AGENTS.md)                                                                                                                                                                           |
 
 Each package owns its technical README. Use `npx nx show projects` to discover
 the workspace and `npx nx show project <project>` to inspect its commands.

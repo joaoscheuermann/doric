@@ -258,7 +258,7 @@ export const ChatComposerV1 = ref<ChatComposer>('chat.composer/v1');
  * `chat.send/v1` (client, one per window): sends a Thread's comment stack now,
  * as its own prompt — the composer's own send path: the stack's lines with
  * their anchors become the prompt, and the stack flushes into the log only
- * after the host accepts it. The canvas window sends with it on `Cmd+Enter`.
+ * after the host accepts it. The canvas modal's send button sends with it.
  */
 export interface ChatSend {
   send(

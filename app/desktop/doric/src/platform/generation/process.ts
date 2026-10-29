@@ -45,6 +45,7 @@ export const KERNEL_CONTRACTS = [
   'doric.tokens/v1',
   'doric.notifications/v1',
   'doric.log/v1',
+  'doric.drawio/v1',
 ] as const;
 
 export interface SpawnedRunner {

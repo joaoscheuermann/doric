@@ -1,0 +1,21 @@
+{
+  "manifestVersion": 1,
+  "id": "drawio",
+  "version": "1.2.0",
+  "engines": { "doric": "^1.2.0" },
+  "description": "Diagramas draw.io como artefatos da conversa: o tipo `diagram`, a tool `drawio_diagram`, o editor no modal de canvas e a exportação para o Project.",
+  "provides": ["drawio.diagrams/v1@1.2.0", "drawio.svg/v1@1.0.0"],
+  "requires": [
+    "runtime.lease/v1@^1.1.0",
+    "runtime.workspace/v1@^1.2.0",
+    "artifacts/v1@^1.1.0",
+    "artifact.kind/v1@^1.0.0",
+    "comments/v1@^1.0.0",
+    "tools/v1@^1.0.0",
+    "ui/v1@^1.0.0"
+  ],
+  "optional": ["chat.composer/v1", "chat.send/v1", "runtime.threads/v1"],
+  "desktopScope": {
+    "drawio.diagrams/v1": ["projectId", "threadId", "promptId"]
+  }
+}

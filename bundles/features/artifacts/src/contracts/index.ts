@@ -220,6 +220,8 @@ export interface ArtifactAwaitApprovalInput {
 /** The review policy in force: `proceed` publishes and moves on, `request` waits. */
 export type ArtifactReviewPolicyValue = {
   readonly policy: 'proceed' | 'request';
+  /** 1.1.0: kinds that run under `proceed` in every Project. Absent from a 1.0.0 registry. */
+  readonly exemptKinds?: readonly string[];
 };
 
 /**
@@ -549,7 +551,10 @@ const artifactApplyInputSchema = z.looseObject({
 export const artifactPolicySchema: z.ZodType<
   ArtifactReviewPolicyValue,
   ArtifactReviewPolicyValue
-> = z.looseObject({ policy: z.enum(['proceed', 'request']) });
+> = z.looseObject({
+  policy: z.enum(['proceed', 'request']),
+  exemptKinds: z.array(z.string()).optional(),
+});
 
 /** A policy write carries the whole value: the choice names itself. */
 export const artifactPolicyInputSchema: z.ZodType<
@@ -839,6 +844,7 @@ export const artifactReviewPolicy = defineSettings({
     .object({
       policy: reviewPolicyChoice.default('proceed'),
       projects: z.record(z.string(), reviewPolicyChoice).default({}),
+      exemptKinds: z.array(z.string().min(1)).default(['diagram']),
     })
     .strict(),
 });
@@ -851,15 +857,19 @@ export type ArtifactReviewPolicySettings = z.output<
 export const defaultArtifactReviewPolicy: ArtifactReviewPolicySettings = {
   policy: 'proceed',
   projects: {},
+  exemptKinds: ['diagram'],
 };
 
-/** The policy one Project runs: its own choice, else the default. */
+/** With `kind` in `settings.exemptKinds`, 'proceed'; otherwise the Project's choice, else the default. */
 export const reviewPolicyOf = (
   settings: ArtifactReviewPolicySettings,
   projectId: string | undefined,
+  kind?: string,
 ): ArtifactReviewPolicyValue['policy'] =>
-  (projectId === undefined ? undefined : settings.projects[projectId]) ??
-  settings.policy;
+  kind !== undefined && settings.exemptKinds.includes(kind)
+    ? 'proceed'
+    : ((projectId === undefined ? undefined : settings.projects[projectId]) ??
+      settings.policy);
 
 /** The contract IDs this bundle publishes, for readers of the manifest. */
 export const artifactsContractIds = {

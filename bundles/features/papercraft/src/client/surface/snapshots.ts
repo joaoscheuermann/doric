@@ -18,6 +18,7 @@
 // covered. A capture that fails (`unavailable`, a closed window, a rectangle
 // main refuses) is silent: the preview keeps its placeholder.
 
+import type { CanvasTheme } from 'desktop/ui/canvas';
 import { type RefObject, useCallback, useEffect, useRef } from 'react';
 
 import {
@@ -25,13 +26,12 @@ import {
   type Snapshot,
   type SnapshotRect,
 } from '../../contracts/index.js';
-import type { PreviewTheme } from '../frame-protocol.js';
 
 /** What a picture is good for: one revision, in one theme, at one width. */
 export interface SnapshotKey {
   readonly artifactId: string;
   readonly revision: number;
-  readonly theme: PreviewTheme;
+  readonly theme: CanvasTheme;
   /** The iframe's width, in content pixels. */
   readonly width: number;
 }

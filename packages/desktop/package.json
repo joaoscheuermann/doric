@@ -95,6 +95,12 @@
       "import": "./dist/code/index.js",
       "default": "./dist/code/index.js"
     },
+    "./ui/canvas": {
+      "@org/source": "./src/canvas/index.ts",
+      "types": "./dist/canvas/index.d.ts",
+      "import": "./dist/canvas/index.js",
+      "default": "./dist/canvas/index.js"
+    },
     "./ui/*": {
       "@org/source": "./src/components/*.tsx",
       "types": "./dist/components/*.d.ts",
@@ -112,6 +118,7 @@
     "class-variance-authority": "^0.7.1",
     "cmdk": "^1.1.1",
     "cn": "^0.3.0",
+    "jdenticon": "^3.3.0",
     "lucide-react": "^0.544.0",
     "monaco-editor": "^0.56.0",
     "react": "^19.0.0",

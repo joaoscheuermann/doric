@@ -149,9 +149,14 @@ conversation is the history.
 | `Pedir revisão` | `request` | Publish, report the approval as pending and wait for Autorizar.  |
 
 - Approval belongs to one revision: a new revision starts `open` again.
-- The kind's tool reports the policy to the agent; `papercraft_preview`
+- `papercraft_preview` reports the policy to the agent: under `request` it
   answers at once with the approval pending and tells the agent not to
-  implement the change until it is approved.
+  implement the change until it is approved. `drawio_diagram` reports none,
+  because diagrams are exempt.
+- Since 1.1.0 the setting also holds `exemptKinds`, default `['diagram']`. An
+  exempt kind runs under `proceed` in every Project, whatever its choice, and
+  its frame never shows Autorizar. The list changes only through
+  `settings/v1`; there is no UI for it.
 - Under `proceed`, `approve` records nothing.
 - `awaitApproval` resolves at once under `proceed` or for an approved revision,
   otherwise when `approve` records it or `timeoutMs` passes.
@@ -161,7 +166,8 @@ conversation is the history.
 The settings window reads and writes the policy through `artifacts/v1`
 (`policy`, `setPolicy`), because `settings/v1` is not exposed to the desktop. A
 `setPolicy` call scoped to no Project sets the default for every Project
-without a choice of its own.
+without a choice of its own. `policy()` returns `{ policy, exemptKinds }`; `setPolicy`
+changes only `policy` and keeps the stored list.
 
 ## Desktop cache
 

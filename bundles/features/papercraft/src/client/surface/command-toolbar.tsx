@@ -24,14 +24,19 @@ import type { Commands } from 'bundle/contracts';
 import { Badge } from 'desktop/ui/badge';
 import { Button } from 'desktop/ui/button';
 import {
+  CanvasToolbar,
+  ToolbarButton,
+  ToolbarGroup,
+  ToolbarSeparator,
+  ToolbarTooltip,
+} from 'desktop/ui/canvas';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from 'desktop/ui/dropdown-menu';
-import { Separator } from 'desktop/ui/separator';
 import { ToggleGroup, ToggleGroupItem } from 'desktop/ui/toggle-group';
-import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
 import { cn } from 'desktop/ui/utils';
 import {
   CheckIcon,
@@ -44,7 +49,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from 'lucide-react';
-import { memo, type ReactElement, type ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 
 import {
   APPROVE_COMMAND,
@@ -68,42 +73,6 @@ export type Execute = (
   input?: unknown,
 ) => void;
 
-/** The tooltip content of one control: its name and its `<kbd>` shortcut. */
-function ShortcutTooltip({
-  label,
-  shortcut,
-  children,
-}: {
-  readonly label: string;
-  readonly shortcut?: string;
-  /** The control the tooltip names, rendered as the tooltip's trigger. */
-  readonly children: ReactElement;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={children} />
-      <TooltipContent className="flex items-center gap-1.5">
-        <span>{label}</span>
-        {shortcut === undefined ? null : (
-          <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">
-            {shortcut}
-          </kbd>
-        )}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-/** A divider between two groups, shorter than the bar. */
-function ToolbarDivider() {
-  return (
-    <Separator
-      orientation="vertical"
-      className="mx-1 h-4 data-vertical:self-center"
-    />
-  );
-}
-
 /** What one command control is: a ghost icon button with a tooltip. */
 function CommandButton({
   label,
@@ -123,18 +92,15 @@ function CommandButton({
   readonly children: ReactNode;
 }) {
   return (
-    <ShortcutTooltip label={label} shortcut={shortcut}>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        data-command={command}
-        aria-label={label}
-        disabled={disabled === true}
-        onClick={() => execute(command, { artifactId })}
-      >
-        {children}
-      </Button>
-    </ShortcutTooltip>
+    <ToolbarButton
+      label={label}
+      {...(shortcut === undefined ? {} : { shortcut })}
+      data-command={command}
+      disabled={disabled === true}
+      onClick={() => execute(command, { artifactId })}
+    >
+      {children}
+    </ToolbarButton>
   );
 }
 
@@ -174,11 +140,10 @@ export const CommandToolbar = memo(function CommandToolbar({
   approvalNeeded,
 }: CommandToolbarProps) {
   return (
-    <div
-      role="toolbar"
-      aria-label="comandos do canvas"
+    <CanvasToolbar
+      label="comandos do canvas"
       data-tool={tool}
-      className="papercraft-command-bar absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-background/80 p-1 shadow-md backdrop-blur"
+      className="papercraft-command-bar absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
     >
       {/* Ferramenta: a radio group, one tool armed at a time. */}
       <ToggleGroup
@@ -197,7 +162,7 @@ export const CommandToolbar = memo(function CommandToolbar({
           );
         }}
       >
-        <ShortcutTooltip label="Selecionar" shortcut="V">
+        <ToolbarTooltip label="Selecionar" shortcut="V">
           <ToggleGroupItem
             value="select"
             aria-label="Selecionar"
@@ -205,8 +170,8 @@ export const CommandToolbar = memo(function CommandToolbar({
           >
             <MousePointer2Icon aria-hidden="true" />
           </ToggleGroupItem>
-        </ShortcutTooltip>
-        <ShortcutTooltip label="Comentar" shortcut="C">
+        </ToolbarTooltip>
+        <ToolbarTooltip label="Comentar" shortcut="C">
           <ToggleGroupItem
             value="comment"
             aria-label="Comentar"
@@ -224,8 +189,8 @@ export const CommandToolbar = memo(function CommandToolbar({
               </Badge>
             )}
           </ToggleGroupItem>
-        </ShortcutTooltip>
-        <ShortcutTooltip label="Mão" shortcut="H">
+        </ToolbarTooltip>
+        <ToolbarTooltip label="Mão" shortcut="H">
           <ToggleGroupItem
             value="pan"
             aria-label="Mão"
@@ -233,136 +198,140 @@ export const CommandToolbar = memo(function CommandToolbar({
           >
             <HandIcon aria-hidden="true" />
           </ToggleGroupItem>
-        </ShortcutTooltip>
+        </ToolbarTooltip>
       </ToggleGroup>
 
-      <ToolbarDivider />
+      <ToolbarSeparator />
 
       {/* Seleção */}
-      <CommandButton
-        label="Isolar"
-        command={ISOLATE_COMMAND}
-        shortcut="I"
-        disabled={!hasSelection}
-        execute={execute}
-        artifactId={artifactId}
-      >
-        <FocusIcon aria-hidden="true" />
-      </CommandButton>
-      <CommandButton
-        label="Mostrar tudo"
-        command={SHOW_ALL_COMMAND}
-        shortcut="Shift+I"
-        disabled={!hasHidden}
-        execute={execute}
-        artifactId={artifactId}
-      >
-        <EyeIcon aria-hidden="true" />
-      </CommandButton>
+      <ToolbarGroup label="Seleção">
+        <CommandButton
+          label="Isolar"
+          command={ISOLATE_COMMAND}
+          shortcut="I"
+          disabled={!hasSelection}
+          execute={execute}
+          artifactId={artifactId}
+        >
+          <FocusIcon aria-hidden="true" />
+        </CommandButton>
+        <CommandButton
+          label="Mostrar tudo"
+          command={SHOW_ALL_COMMAND}
+          shortcut="Shift+I"
+          disabled={!hasHidden}
+          execute={execute}
+          artifactId={artifactId}
+        >
+          <EyeIcon aria-hidden="true" />
+        </CommandButton>
+      </ToolbarGroup>
 
-      <ToolbarDivider />
+      <ToolbarSeparator />
 
       {/* Viewport */}
-      <CommandButton
-        label="Menos zoom"
-        command={ZOOM_OUT_COMMAND}
-        shortcut="CmdOrCtrl+-"
-        execute={execute}
-        artifactId={artifactId}
-      >
-        <ZoomOutIcon aria-hidden="true" />
-      </CommandButton>
-      <ShortcutTooltip label="Zoom 100%" shortcut="CmdOrCtrl+0">
-        <Button
-          variant="ghost"
+      <ToolbarGroup label="Viewport">
+        <CommandButton
+          label="Menos zoom"
+          command={ZOOM_OUT_COMMAND}
+          shortcut="CmdOrCtrl+-"
+          execute={execute}
+          artifactId={artifactId}
+        >
+          <ZoomOutIcon aria-hidden="true" />
+        </CommandButton>
+        <ToolbarButton
+          label="Zoom 100%"
+          shortcut="CmdOrCtrl+0"
           size="sm"
           data-command={ZOOM_RESET_COMMAND}
-          aria-label="Zoom 100%"
           className={cn('min-w-12 px-1.5 font-mono text-xs tabular-nums')}
           onClick={() => execute(ZOOM_RESET_COMMAND, { artifactId })}
         >
           {zoom}
-        </Button>
-      </ShortcutTooltip>
-      <CommandButton
-        label="Mais zoom"
-        command={ZOOM_IN_COMMAND}
-        shortcut="CmdOrCtrl+="
-        execute={execute}
-        artifactId={artifactId}
-      >
-        <ZoomInIcon aria-hidden="true" />
-      </CommandButton>
-      <CommandButton
-        label="Ajustar"
-        command={ZOOM_FIT_COMMAND}
-        shortcut="Shift+1"
-        execute={execute}
-        artifactId={artifactId}
-      >
-        <MaximizeIcon aria-hidden="true" />
-      </CommandButton>
+        </ToolbarButton>
+        <CommandButton
+          label="Mais zoom"
+          command={ZOOM_IN_COMMAND}
+          shortcut="CmdOrCtrl+="
+          execute={execute}
+          artifactId={artifactId}
+        >
+          <ZoomInIcon aria-hidden="true" />
+        </CommandButton>
+        <CommandButton
+          label="Ajustar"
+          command={ZOOM_FIT_COMMAND}
+          shortcut="Shift+1"
+          execute={execute}
+          artifactId={artifactId}
+        >
+          <MaximizeIcon aria-hidden="true" />
+        </CommandButton>
+      </ToolbarGroup>
 
-      <ToolbarDivider />
+      <ToolbarSeparator />
 
       {/* Proposta: the revision reading, and `Autorizar` under `request`. */}
-      {revisions.total > 1 ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label="Revisão"
-                className={cn('min-w-16 font-mono text-xs tabular-nums')}
-              />
-            }
-          >
+      <ToolbarGroup label="Proposta">
+        {revisions.total > 1 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Revisão"
+                  className={cn('min-w-16 font-mono text-xs tabular-nums')}
+                />
+              }
+            >
+              rev {String(revisions.current)}/{String(revisions.total)}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {revisions.list.map((revision) => (
+                <DropdownMenuItem
+                  key={revision}
+                  onClick={() =>
+                    execute(SELECT_REVISION_COMMAND, {
+                      artifactId,
+                      revision,
+                    })
+                  }
+                >
+                  rev {String(revision)}
+                  {revision === revisions.current ? (
+                    <CheckIcon aria-hidden="true" />
+                  ) : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <span className="px-2 font-mono text-xs text-muted-foreground tabular-nums">
             rev {String(revisions.current)}/{String(revisions.total)}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {revisions.list.map((revision) => (
-              <DropdownMenuItem
-                key={revision}
-                onClick={() =>
-                  execute(SELECT_REVISION_COMMAND, {
-                    artifactId,
-                    revision,
-                  })
-                }
-              >
-                rev {String(revision)}
-                {revision === revisions.current ? (
-                  <CheckIcon aria-hidden="true" />
-                ) : null}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <span className="px-2 font-mono text-xs text-muted-foreground tabular-nums">
-          rev {String(revisions.current)}/{String(revisions.total)}
-        </span>
-      )}
+          </span>
+        )}
 
-      {approvalNeeded ? (
-        <Button
-          size="sm"
-          variant="default"
-          aria-label="Autorizar"
-          onClick={() => execute(APPROVE_COMMAND, { artifactId })}
-        >
-          <CheckIcon aria-hidden="true" />
-          Autorizar
-        </Button>
-      ) : revisions.approved ? (
-        <span
-          className="px-2 text-xs text-muted-foreground"
-          data-approved="true"
-        >
-          Autorizado
-        </span>
-      ) : null}
-    </div>
+        {approvalNeeded ? (
+          <Button
+            size="sm"
+            variant="default"
+            aria-label="Autorizar"
+            onClick={() => execute(APPROVE_COMMAND, { artifactId })}
+          >
+            <CheckIcon aria-hidden="true" />
+            Autorizar
+          </Button>
+        ) : revisions.approved ? (
+          <span
+            className="px-2 text-xs text-muted-foreground"
+            data-approved="true"
+          >
+            Autorizado
+          </span>
+        ) : null}
+      </ToolbarGroup>
+    </CanvasToolbar>
   );
 });

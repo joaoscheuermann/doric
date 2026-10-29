@@ -30,7 +30,7 @@
           "inspect": false
         }
       },
-      "dependsOn": ["^build", "doric-platform:build", "build-runner"]
+      "dependsOn": ["^build", "doric-platform:build", "build-runner", "drawio-webapp:build"]
     },
     "build-runner": {
       "executor": "nx:run-commands",
@@ -48,7 +48,7 @@
         "{workspaceRoot}/dist/app/desktop/doric/assets/generation-runner-main.mjs",
         "{workspaceRoot}/dist/app/desktop/doric/assets/generation-contracts.mjs",
         "{workspaceRoot}/dist/app/desktop/doric/assets/generation-chunks",
-        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/splash@1.0.0"
+        "{workspaceRoot}/dist/app/desktop/doric/assets/platform/splash@1.2.0"
       ],
       "options": {
         "command": "node app/desktop/doric/build-runner.mjs --out dist/app/desktop/doric/assets"

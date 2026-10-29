@@ -2,13 +2,15 @@
 // development shell policies are today's strings plus `worker-src 'self'`,
 // the hash of the import map the shell carries and `frame-src` for the
 // preview frame document (docs/architecture/bundles/papercraft/
-// isolamento.md): no window embeds a foreign origin, and the only frame a
-// shell may embed is `doric://app/frame/`. The splash frames nothing.
+// isolamento.md) and the draw.io editor origin: a shell may embed only
+// `doric://app/frame/` and `DRAWIO_ORIGIN`. The splash frames nothing.
+
+import { DRAWIO_ORIGIN } from 'bundle/contracts';
 
 import { DORIC_ORIGIN } from './scheme';
 
-/** The one document a shell may frame: the preview frame. */
-const FRAME_SRC = `frame-src ${DORIC_ORIGIN}/frame/`;
+/** What a shell may frame: the preview frame and the draw.io editor origin. */
+const FRAME_SRC = `frame-src ${DORIC_ORIGIN}/frame/ ${DRAWIO_ORIGIN}/`;
 
 const packaged = (importMapHash: string | undefined, frames: boolean): string =>
   [
@@ -56,3 +58,24 @@ export const frameCsp = (importMapHash: string): string =>
     "form-action 'none'",
     `frame-ancestors ${DORIC_ORIGIN}`,
   ].join('; ');
+
+/**
+ * The policy of every HTML response from the editor origin. Only the shell
+ * (`doric://app`) and the editor itself may embed it. Phase 0 may add only
+ * `'unsafe-inline'` and `'unsafe-eval'` to `script-src`, and only when the
+ * e2e violation log shows the editor needs them.
+ */
+export const drawioCsp: string = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "worker-src 'self' blob:",
+  "frame-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'",
+  `frame-ancestors ${DORIC_ORIGIN} 'self'`,
+].join('; ');

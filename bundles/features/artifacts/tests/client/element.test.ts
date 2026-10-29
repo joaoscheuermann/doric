@@ -444,3 +444,79 @@ test('the comment gesture goes to a surface that takes it, else to the body', as
   assert.deepEqual(taken, [detail]);
   assert.deepEqual(asked, [detail]);
 });
+
+/** The registry's `artifacts/v1` under a given policy, with revision 1 open. */
+const artifactsUnder = (policy: unknown) => ({
+  policy: async () => policy,
+  revisions: async () => [
+    { artifactId: 'checkout-7f3a', revision: 1, state: 'open' },
+  ],
+  approve: async () => undefined,
+});
+
+/** Mounts the frame for `block` and answers whether Autorizar is offered. */
+const authorizeHiddenFor = async (
+  policy: unknown,
+  block: typeof frameBlock,
+  header?: 'frame' | 'body',
+) => {
+  const artifacts = artifactsUnder(policy);
+  const frame = mount(defineFrameElement);
+
+  frame.services = bodiedServices(
+    [],
+    (id) => (id === ArtifactsV1.id ? artifacts : undefined),
+    header,
+  );
+  frame.block = block;
+  await settle();
+
+  const root = shadowOf(frame);
+
+  return {
+    authorize: (root.querySelector('.artifacts-authorize') as HTMLButtonElement)
+      .hidden,
+    below: (root.querySelector('.artifacts-below') as HTMLElement).hidden,
+  };
+};
+
+const previewBlock = {
+  ...frameBlock,
+  data: { ...frameBlock.data, kind: 'preview' },
+};
+
+test('under request, the frame hides Autorizar for an exempt kind', async () => {
+  const policy = { policy: 'request', exemptKinds: ['diagram'] };
+
+  assert.equal((await authorizeHiddenFor(policy, frameBlock)).authorize, true);
+
+  const bodyHeader = await authorizeHiddenFor(policy, frameBlock, 'body');
+
+  assert.equal(bodyHeader.authorize, true);
+  assert.equal(bodyHeader.below, true);
+});
+
+test('under request, the frame still offers Autorizar for a kind not exempt', async () => {
+  const policy = { policy: 'request', exemptKinds: ['diagram'] };
+
+  assert.equal(
+    (await authorizeHiddenFor(policy, previewBlock)).authorize,
+    false,
+  );
+});
+
+test('under request, a diagram is gated when exemptKinds is absent or empty', async () => {
+  assert.equal(
+    (await authorizeHiddenFor({ policy: 'request' }, frameBlock)).authorize,
+    false,
+  );
+  assert.equal(
+    (
+      await authorizeHiddenFor(
+        { policy: 'request', exemptKinds: [] },
+        frameBlock,
+      )
+    ).authorize,
+    false,
+  );
+});

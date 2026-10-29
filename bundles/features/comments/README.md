@@ -8,8 +8,8 @@ changed or asks what is unclear, and resolves the comment when it is done.
 It is a feature bundle with a host part only: the comment registry, its two
 durable events and the `comment_reply` tool, loaded by the `bundle` platform.
 Drafting and drawing comments belong to the bundles that own each target: the
-chat composer and conversation, and the
-[`papercraft`](../papercraft/README.md) canvas. See the
+chat composer and conversation, the [`papercraft`](../papercraft/README.md)
+canvas and the [`drawio`](../drawio/README.md) diagram. See the
 [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
 
@@ -28,7 +28,8 @@ chat composer and conversation, and the
 
 - **Tool:** `comment_reply`, always available, at global model-visible
   position 1800. The bundle ships no skill; the tool's description says when
-  to use it, and `papercraft_preview` points the agent to it.
+  to use it, and `papercraft_preview` and `drawio_diagram` point the agent to
+  it.
 - **Contract:** `comments/v1` (host) with `add`, `list` and `resolve`, exposed
   to the desktop with the `projectId`, `threadId` and `promptId` scope.
 - **Events:** `comments.added/v1` and `comments.resolved/v1`.
@@ -66,8 +67,10 @@ A comment's target names what it is about; the bundle that owns the target's
 | `range`     | `text`          | A selection of the target's text                |
 
 Each form may also carry the other optional fields (`line`, `label`, …). Today
-the targets are a `papercraft` preview revision (kind `artifact`) and a chat
-message (kind `message`, anchor `range`).
+the targets are a `papercraft` preview revision and a `drawio` diagram
+revision (kind `artifact`; a diagram anchors a cell with `selector`
+`page/<p>/cell/<id>` or a page point), and a chat message (kind `message`,
+anchor `range`).
 
 ## How it works
 

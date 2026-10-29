@@ -1,5 +1,5 @@
 // The preview frame as the conversation mounts it (the node chrome) and as
-// the route mounts it (the canvas chrome): the built markup is rendered by
+// its modal mounts it (the canvas chrome): the built markup is rendered by
 // the preview's sandboxed frame (a fake speaking the frame protocol over a
 // real `MessageChannel`, `support/fake-frame.ts`; the canvas hears its
 // pointer as the frame reports it), every host call carries the preview's
@@ -7,14 +7,14 @@
 // overlays the canvas, the comment flow is Figma's — an inline input at the
 // pin, and the composer stack only hears of a note once it is confirmed; a
 // comment that is never sent never becomes an event — sent comments stay as
-// pins, `Cmd+Enter` is the window's send (chat's in the conversation, which
-// the open note joins first; `papercraft.send/v1` in the canvas window), the
+// pins, `Cmd+Enter` is chat's send, which the open note joins first
+// (`papercraft.send/v1` confirms it and sends the stack too), the
 // command bar shows
 // its four groups and obeys the `request` policy, and the revision reading
 // switches the revision on screen.
 
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
+import { after, afterEach, before, test } from 'node:test';
 
 import {
   type Call,
@@ -118,6 +118,19 @@ after(async () => {
 });
 
 const tick = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+/**
+ * The frames a test mounted and did not unmount, because an assertion failed
+ * before it could: unmounted after the test, so a failure does not leak a
+ * node (and its listeners) into the tests that follow.
+ */
+const leaked = new Set<() => Promise<void>>();
+
+afterEach(async () => {
+  if (leaked.size === 0) return;
+  for (const unmount of [...leaked]) await unmount();
+  comment.setComposerAvailable(false);
+});
 
 /**
  * Polls until `read()` holds: the frame is driven by effects the test cannot
@@ -375,17 +388,21 @@ const harness = (): Harness => {
       await untilRendered(frame);
     };
 
+    const unmount = async () => {
+      leaked.delete(unmount);
+      await react.act(async () => {
+        root.unmount();
+        await delivered();
+      });
+    };
+    leaked.add(unmount);
+
     await render(props);
 
     return {
       frame,
       rerender: render,
-      unmount: async () => {
-        await react.act(async () => {
-          root.unmount();
-          await delivered();
-        });
-      },
+      unmount,
     };
   };
 
@@ -715,24 +732,24 @@ test('the node renders the markup in its frame, in the preview scope', async () 
     null,
   );
 
-  // [ abrir ] opens the canvas window through the command, once the node
-  // is focused and shows its controls.
+  // The node has no approve button: under `request` it is a reading only.
+  assert.equal(mounted.frame.querySelector('[aria-label="Autorizar"]'), null);
+
+  // [ expandir ] opens the node's modal, once the node is focused and shows
+  // its controls; no command is asked for.
   await focusNode(mounted.frame);
   (
     mounted.frame.querySelector(
-      '[data-testid="papercraft-open"]',
+      '[data-testid="papercraft-expand"]',
     ) as HTMLElement
   ).click();
   await tick();
-  assert.deepEqual(h.executes, [
-    [
-      'papercraft.open-canvas/v1',
-      { artifactId: 'checkout-7f3a', projectId: 'p1', threadId: 't-123' },
-    ],
-  ]);
-
-  // The node has no approve button: under `request` it is a reading only.
-  assert.equal(mounted.frame.querySelector('[aria-label="Autorizar"]'), null);
+  await settle(
+    () => document.body.querySelector('[role="dialog"]'),
+    (dialog) => dialog !== null,
+    'expandir never opened the modal',
+  );
+  assert.deepEqual(h.executes, []);
 
   await mounted.unmount();
 });
@@ -750,8 +767,8 @@ test('the header overlays the canvas with the title, the revision and icon contr
   );
   // Icon buttons, named for the reader and the tooltips.
   assert.equal(
-    query(header, 'papercraft-open')?.getAttribute('aria-label'),
-    'Abrir',
+    query(header, 'papercraft-expand')?.getAttribute('aria-label'),
+    'Expandir',
   );
   const control = query(header, 'papercraft-comment') as HTMLButtonElement;
   assert.equal(control.getAttribute('aria-label'), 'Comentar');
@@ -800,7 +817,7 @@ test('the first press on the node only focuses it, and its controls come with th
     query(mounted.frame, 'papercraft-header')?.textContent ?? '',
     /src\/checkout\.html/,
   );
-  assert.equal(query(mounted.frame, 'papercraft-open'), null);
+  assert.equal(query(mounted.frame, 'papercraft-expand'), null);
   assert.equal(query(mounted.frame, 'papercraft-comment'), null);
   assert.equal(query(mounted.frame, 'papercraft-footer'), null);
   assert.doesNotMatch(container.className, /\boutline-primary\b/);
@@ -812,7 +829,7 @@ test('the first press on the node only focuses it, and its controls come with th
   assert.equal(activeOf(mounted.frame), 'true');
   assert.match(container.className, /\boutline-primary\b/);
   assert.equal(query(mounted.frame, 'papercraft-selection'), null);
-  assert.ok(query(mounted.frame, 'papercraft-open') !== null);
+  assert.ok(query(mounted.frame, 'papercraft-expand') !== null);
   assert.ok(query(mounted.frame, 'papercraft-comment') !== null);
   assert.ok(query(mounted.frame, 'papercraft-footer') !== null);
 
@@ -2028,14 +2045,14 @@ test('the conversation opens a thread of this preview, and only of its own revis
   await mounted.unmount();
 });
 
-test('the window opens the asked thread on the revision on screen', async () => {
+test('the canvas chrome opens the asked thread on the revision on screen', async () => {
   const h = harness();
   h.durable.push(sentOf('c1', 'na revisão um'));
   const mounted = await h.mount('canvas', {});
   await settle(
     () => h.reads.at(-1)?.revision,
     (revision) => revision === 2,
-    'the window never opened at the newest revision',
+    'the canvas never opened at the newest revision',
   );
 
   await askThread(document.body, {
@@ -2111,7 +2128,7 @@ test('in the conversation the canvas never sends on Cmd+Enter: chat does, after 
   await react.act(async () => type(field, 'manda já'));
 
   // The chord reaches the field and the canvas, and neither sends: the
-  // window's one send is chat's.
+  // canvas's one send is chat's.
   await key(field, 'Enter', { metaKey: true });
   await key(
     mounted.frame.querySelector('.papercraft-canvas') as Element,
@@ -2139,7 +2156,7 @@ test('in the conversation the canvas never sends on Cmd+Enter: chat does, after 
   await mounted.unmount();
 });
 
-test('in the canvas window Cmd+Enter (`papercraft.send/v1`) confirms the open note and sends the stack through chat', async () => {
+test('papercraft.send/v1 confirms the open note and sends the stack through chat', async () => {
   const h = harness();
   const composer = fakeComposer();
   h.composer = composer.api;
@@ -2390,7 +2407,7 @@ test('the canvas draws the toolbar groups and the tree, and obeys the policy', a
   const h = harness();
   const mounted = await h.mount('canvas', {});
 
-  // The window opens at the newest revision.
+  // The canvas opens at the newest revision.
   assert.match(
     mounted.frame.querySelector('[role="toolbar"]')?.textContent ?? '',
     /rev 2\/2/,
@@ -2545,10 +2562,10 @@ test('the frame swallows only the first press of an unfocused node, then all of 
   elsewhere.remove();
   await mounted.unmount();
 
-  // The window is always focused: always the canvas's.
-  const window_ = await harness().mount('canvas', {});
-  assert.equal(captureOf(window_.frame), 'all');
-  await window_.unmount();
+  // The canvas chrome is always focused: always the canvas's.
+  const canvas_ = await harness().mount('canvas', {});
+  assert.equal(captureOf(canvas_.frame), 'all');
+  await canvas_.unmount();
 });
 
 test('the frame shows the canvas tool cursor over the preview', async () => {
@@ -2683,14 +2700,14 @@ test('the node footer zooms, returns to 100% and centres', async () => {
   await press('papercraft-zoom-reset');
   assert.match(reading(), /100%/);
 
-  // The window has its own command bar, not this footer.
-  const window_ = await h.mount('canvas', {});
+  // The canvas chrome has its own command bar, not this footer.
+  const canvas_ = await h.mount('canvas', {});
   assert.equal(
-    window_.frame.querySelector('[data-testid="papercraft-footer"]'),
+    canvas_.frame.querySelector('[data-testid="papercraft-footer"]'),
     null,
   );
 
-  await window_.unmount();
+  await canvas_.unmount();
   await mounted.unmount();
 });
 
@@ -2800,7 +2817,7 @@ test('Autorizar lives in the bar, and turns into the reading once approved', asy
   await mounted.unmount();
 });
 
-test('the window sends its drafts from the header, having no prompt of its own', async () => {
+test('the canvas chrome sends its drafts from the header and has no expandir', async () => {
   const h = harness();
   const composer = fakeComposer([draftOf('d1', 2, 'ajuste o botão')]);
   h.composer = composer.api;
@@ -2813,8 +2830,8 @@ test('the window sends its drafts from the header, having no prompt of its own',
     'the send button never showed for the draft',
   );
   assert.match(send?.textContent ?? '', /Enviar ao agente \(1\)/);
-  // The window has no `abrir`: it is the window.
-  assert.equal(query(mounted.frame, 'papercraft-open'), null);
+  // The canvas chrome has no `expandir`: it is already the canvas.
+  assert.equal(query(mounted.frame, 'papercraft-expand'), null);
 
   await react.act(async () => send?.click());
   await settle(
@@ -2826,4 +2843,373 @@ test('the window sends its drafts from the header, having no prompt of its own',
 
   comment.setComposerAvailable(false);
   await mounted.unmount();
+});
+
+/* The node's modal (`expandir`, spec D17): the canvas over the conversation - */
+
+/** The open modal, wherever it portals in the document, or `null`. */
+const dialogOf = (): HTMLElement | null =>
+  document.body.querySelector<HTMLElement>('[role="dialog"]');
+
+/**
+ * Focuses the node and presses its `expandir` the way a pointer does (the
+ * button takes the focus, then the click); waits for the modal's preview
+ * to render its revision.
+ */
+const expand = async (
+  mounted: Mounted,
+): Promise<{ dialog: HTMLElement; button: HTMLElement }> => {
+  await focusNode(mounted.frame);
+  const button = query(mounted.frame, 'papercraft-expand');
+  assert.ok(button !== null, 'the focused node has no expandir');
+  await react.act(async () => {
+    button.focus();
+    button.click();
+  });
+  const dialog = await settle(
+    dialogOf,
+    (found) => found !== null,
+    'expandir never opened the modal',
+  );
+  assert.ok(dialog !== null);
+  await untilRendered(dialog);
+
+  return { dialog, button };
+};
+
+/** The modal's canvas, focused: the element its keys act on. */
+const modalCanvasOf = async (dialog: HTMLElement): Promise<HTMLElement> => {
+  const canvas = dialog.querySelector<HTMLElement>('.papercraft-canvas');
+  assert.ok(canvas !== null, 'the modal has no canvas');
+  await react.act(async () => canvas.focus());
+
+  return canvas;
+};
+
+const modalToolOf = (dialog: HTMLElement) =>
+  dialog.querySelector<HTMLElement>('[data-tool]')?.dataset.tool;
+
+/** A keydown at `target`, and whether something took it. */
+const keyTaken = async (
+  target: EventTarget,
+  name: string,
+  init: Record<string, unknown> = {},
+): Promise<boolean> => {
+  const event = new window.KeyboardEvent('keydown', {
+    key: name,
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  await react.act(async () => {
+    target.dispatchEvent(event as never);
+  });
+
+  return event.defaultPrevented;
+};
+
+/** Mounts a node with chat's composer on, and expands it. */
+const expanded = async (h: Harness, composer = fakeComposer()) => {
+  h.composer = composer.api;
+  comment.setComposerAvailable(true);
+  const mounted = await h.mount('node', { blockRevision: 1 });
+  const { dialog, button } = await expand(mounted);
+
+  return { mounted, composer, dialog, button };
+};
+
+test('expandir opens a modal with the canvas chrome of the node’s revision', async () => {
+  const h = harness();
+  const { mounted, dialog } = await expanded(h);
+  try {
+    assert.ok(document.body.contains(dialog));
+    assert.ok(
+      dialog.querySelector('.papercraft-container[data-chrome="canvas"]') !==
+        null,
+      'the modal holds no canvas chrome',
+    );
+    assert.ok(dialog.querySelector('.papercraft-tree') !== null, 'no tree');
+    assert.ok(
+      dialog.querySelector('[role="toolbar"]') !== null,
+      'no command toolbar',
+    );
+    assert.match(
+      query(dialog, 'papercraft-revision')?.textContent ?? '',
+      /rev 1/,
+    );
+    assert.equal(frameIn(dialog).init?.content?.kind, 'markup');
+    assert.deepEqual(h.executes, []);
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
+});
+
+test('the modal’s keys dispatch the bar commands for its artifact; C toggles comment mode once', async () => {
+  const h = harness();
+  const { mounted, dialog } = await expanded(h);
+  try {
+    const canvas = await modalCanvasOf(dialog);
+    const chords: [string, Record<string, unknown>][] = [
+      ['v', { code: 'KeyV' }],
+      ['h', { code: 'KeyH' }],
+      ['i', { code: 'KeyI' }],
+      ['I', { code: 'KeyI', shiftKey: true }],
+      ['!', { code: 'Digit1', shiftKey: true }],
+      ['=', { code: 'Equal', ctrlKey: true }],
+      ['-', { code: 'Minus', ctrlKey: true }],
+      ['0', { code: 'Digit0', ctrlKey: true }],
+      ['Enter', { code: 'Enter', ctrlKey: true, shiftKey: true }],
+    ];
+    for (const [name, init] of chords) await key(canvas, name, init);
+
+    const target = { artifactId: 'checkout-7f3a' };
+    assert.deepEqual(h.executes, [
+      ['papercraft.select/v1', target],
+      ['papercraft.pan/v1', target],
+      ['papercraft.isolate/v1', target],
+      ['papercraft.show-all/v1', target],
+      ['papercraft.zoom-fit/v1', target],
+      ['papercraft.zoom-in/v1', target],
+      ['papercraft.zoom-out/v1', target],
+      ['papercraft.zoom-reset/v1', target],
+      ['papercraft.approve/v1', target],
+    ]);
+
+    // C is the canvas's own key: one toggle, no second one by the command.
+    const before = h.executes.length;
+    await key(canvas, 'c', { code: 'KeyC' });
+    await tick();
+    assert.equal(modalToolOf(dialog), 'comment');
+    assert.equal(h.executes.length, before);
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
+});
+
+test('a letter typed in the modal’s comment input is the input’s, not a command', async () => {
+  const h = harness();
+  const { mounted, dialog } = await expanded(h);
+  try {
+    const canvas = await modalCanvasOf(dialog);
+    await key(canvas, 'c', { code: 'KeyC' });
+    await clickIn(inPreview(dialog, '#pay'));
+    const field = inputOf(dialog);
+    assert.ok(field !== null, 'the modal’s inline input never opened');
+
+    assert.equal(await keyTaken(field, 'v', { code: 'KeyV' }), false);
+    await tick();
+    assert.deepEqual(h.executes, []);
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
+});
+
+test('the modal’s keys come only from inside it, and only while it is open', async () => {
+  const h = harness();
+  const { mounted, dialog } = await expanded(h);
+  const outside = document.createElement('textarea');
+  document.body.append(outside);
+  try {
+    // Open, a key outside the modal is not the modal's.
+    await key(document.body, 'v', { code: 'KeyV' });
+    await tick();
+    assert.deepEqual(h.executes, []);
+
+    // Closed, a key in a field of the conversation is the field's.
+    await react.act(async () => {
+      query(dialog, 'canvas-modal-close')?.click();
+    });
+    await settle(dialogOf, (found) => found === null, 'the modal never closed');
+    await react.act(async () => outside.focus());
+    assert.equal(await keyTaken(outside, 'v', { code: 'KeyV' }), false);
+    await tick();
+    assert.deepEqual(h.executes, []);
+  } finally {
+    outside.remove();
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
+});
+
+test('a comment in the modal joins the stack on the revision, and the modal’s header sends it through chat', async () => {
+  const h = harness();
+  const { mounted, composer, dialog } = await expanded(h);
+  try {
+    const canvas = await modalCanvasOf(dialog);
+    await key(canvas, 'c', { code: 'KeyC' });
+    await clickIn(inPreview(dialog, '#pay'));
+    const field = inputOf(dialog);
+    assert.ok(field !== null, 'the modal’s inline input never opened');
+    await react.act(async () => type(field, 'mais respiro'));
+    await key(field, 'Enter');
+    await settle(
+      () => composer.added.length,
+      (length) => length === 1,
+      'the modal’s note never joined the stack',
+    );
+    const added = composer.added[0] as {
+      threadId: string;
+      data: { target: { kind: string; id: string; revision: number } };
+    };
+    assert.equal(added.threadId, 't-123');
+    assert.equal(added.data.target.kind, 'artifact');
+    assert.equal(added.data.target.id, 'checkout-7f3a');
+    assert.equal(added.data.target.revision, 1);
+
+    // Cmd/Ctrl+Enter in the modal is chat's, not `papercraft.send/v1`.
+    await key(await modalCanvasOf(dialog), 'Enter', {
+      code: 'Enter',
+      ctrlKey: true,
+    });
+    await tick();
+    assert.ok(
+      !h.executes.some(([command]) => command === 'papercraft.send/v1'),
+      'the modal dispatched papercraft.send/v1',
+    );
+
+    const send = await settle(
+      () => query(dialog, 'papercraft-send'),
+      (found) => found !== null,
+      'the modal’s header never offered to send the draft',
+    );
+    assert.match(send?.textContent ?? '', /Enviar ao agente \(1\)/);
+    await react.act(async () => send?.click());
+    await settle(
+      () => h.sends.length,
+      (length) => length === 1,
+      'the stack was never sent',
+    );
+    assert.deepEqual(h.sends[0]?.input, { projectId: 'p1', threadId: 't-123' });
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
+});
+
+test('a thread the conversation opens while the modal is open opens in the modal', async () => {
+  const h = harness();
+  h.durable.push(sentOf('c1', 'mais respiro'));
+  const { mounted, dialog } = await expanded(h);
+  try {
+    await askThread(document.body, {
+      commentId: 'c1',
+      target: { kind: 'artifact', id: 'checkout-7f3a', revision: 1 },
+    });
+    await settle(
+      () => threadOf(dialog),
+      (found) => found !== null,
+      'the asked thread never opened in the modal',
+    );
+    assert.equal(threadOf(mounted.frame), null);
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
+});
+
+test('Esc, the backdrop and the close button close the modal, back on expandir of a still active node', async () => {
+  const closers: [string, (dialog: HTMLElement) => Promise<void>][] = [
+    [
+      'Esc',
+      async (dialog) => key(await modalCanvasOf(dialog), 'Escape'),
+    ],
+    [
+      'the backdrop',
+      async () => {
+        const backdrop = query(document.body, 'canvas-modal-backdrop');
+        assert.ok(backdrop !== null, 'the modal has no backdrop');
+        await react.act(async () => {
+          const init = { bubbles: true, cancelable: true, button: 0 };
+          backdrop.dispatchEvent(new window.PointerEvent('pointerdown', init) as never);
+          backdrop.dispatchEvent(new window.MouseEvent('mousedown', init) as never);
+          backdrop.dispatchEvent(new window.PointerEvent('pointerup', init) as never);
+          backdrop.dispatchEvent(new window.MouseEvent('mouseup', init) as never);
+          backdrop.dispatchEvent(new window.MouseEvent('click', init) as never);
+        });
+      },
+    ],
+    [
+      'the close button',
+      async (dialog) =>
+        react.act(async () => {
+          query(dialog, 'canvas-modal-close')?.click();
+        }),
+    ],
+  ];
+
+  for (const [closer, close] of closers) {
+    const h = harness();
+    const { mounted, dialog } = await expanded(h);
+    try {
+      await close(dialog);
+      await settle(
+        dialogOf,
+        (found) => found === null,
+        `${closer} never closed the modal`,
+      );
+      const button = query(mounted.frame, 'papercraft-expand');
+      await settle(
+        () => document.activeElement,
+        (focused) => focused !== null && focused === button,
+        `${closer}: the focus should be back on expandir, but it is on ${nameOf(document.activeElement)}`,
+      );
+      assert.equal(activeOf(mounted.frame), 'true', `${closer}: node inactive`);
+    } finally {
+      comment.setComposerAvailable(false);
+      await mounted.unmount();
+    }
+  }
+});
+
+test('Esc in the modal closes what is open first; an Esc the frame reports with nothing open closes the modal', async () => {
+  const h = harness();
+  const { mounted, dialog } = await expanded(h);
+  try {
+    const canvas = await modalCanvasOf(dialog);
+    await key(canvas, 'c', { code: 'KeyC' });
+    await clickIn(inPreview(dialog, '#pay'));
+    const field = inputOf(dialog);
+    assert.ok(field !== null, 'the modal’s inline input never opened');
+
+    await key(field, 'Escape');
+    await tick();
+    assert.equal(query(dialog, 'papercraft-comment-input'), null);
+    assert.ok(dialogOf() !== null, 'the Esc that closed the input closed the modal');
+
+    // The comment tool is still armed: the next Esc disarms it, only.
+    await key(await modalCanvasOf(dialog), 'Escape');
+    await tick();
+    assert.equal(modalToolOf(dialog), 'select');
+    assert.ok(dialogOf() !== null, 'the Esc that disarmed the tool closed the modal');
+
+    // Nothing left: the Esc the preview's frame reports closes the modal.
+    await react.act(async () => {
+      frameIn(dialog).key('keydown', 'Escape');
+      await delivered();
+    });
+    await settle(
+      dialogOf,
+      (found) => found === null,
+      'the frame’s Esc never closed the modal',
+    );
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
+});
+
+test('the modal’s header is no drag region', async () => {
+  const h = harness();
+  const { mounted, dialog } = await expanded(h);
+  try {
+    const header = query(dialog, 'papercraft-header');
+    assert.ok(header !== null, 'the modal has no header');
+    assert.doesNotMatch(header.className, /app-region:drag/);
+  } finally {
+    comment.setComposerAvailable(false);
+    await mounted.unmount();
+  }
 });

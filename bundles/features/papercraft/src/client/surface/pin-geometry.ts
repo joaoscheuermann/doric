@@ -14,6 +14,8 @@
 // only one, the one under the recorded point, the nearest line — and never to
 // an element of another selector.
 
+import type { ContentPoint } from 'desktop/ui/canvas';
+
 import type { CommentAnchor } from '../../contracts/index.js';
 import {
   type AnchorOffset,
@@ -32,12 +34,6 @@ import {
   type SceneNode,
   targetBounds,
 } from './scene-graph.js';
-
-/** A point in content coordinates. */
-export interface ContentPoint {
-  readonly x: number;
-  readonly y: number;
-}
 
 /**
  * The elements an anchor can still mean: those of its selector stamped from

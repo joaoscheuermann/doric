@@ -43,6 +43,7 @@
 // disposes the old frame (its unmount runs once, in the frame) and a stale
 // frame's messages never reach the canvas, since its port is closed with it.
 
+import { useAppTheme } from 'desktop/ui/canvas';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
@@ -50,7 +51,6 @@ import type {
   FrameMessage,
   InputCapture,
   PreviewLayout,
-  PreviewTheme,
   SceneNodeData,
 } from '../frame-protocol.js';
 import { previewFrameSrc } from '../frame-url.js';
@@ -82,42 +82,6 @@ export const artifactStylesUrl = (
   artifactId: string,
   revision: number,
 ): string => `doric://app/artifacts/${artifactId}@${revision}/index.css`;
-
-/** The theme the app is in now. */
-export const appTheme = (): PreviewTheme =>
-  typeof document !== 'undefined' &&
-  document.documentElement.classList.contains('dark')
-    ? 'dark'
-    : 'light';
-
-/**
- * The theme the app is in, followed live: the app switches its mode by the
- * `dark` class of its root element, so the surface watches that class.
- */
-export const useAppTheme = (): PreviewTheme => {
-  const [theme, setTheme] = useState<PreviewTheme>(appTheme);
-
-  useEffect(() => {
-    setTheme(appTheme());
-
-    if (
-      typeof document === 'undefined' ||
-      typeof MutationObserver === 'undefined'
-    )
-      return;
-
-    const observer = new MutationObserver(() => setTheme(appTheme()));
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
-  return theme;
-};
 
 /**
  * How long a frame has to say it mounted, once it was told what to render,

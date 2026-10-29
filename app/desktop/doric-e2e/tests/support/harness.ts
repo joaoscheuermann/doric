@@ -8,8 +8,15 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import type { DistributionCatalog } from 'bundle/runtime';
-import type { BrowserWindow, WebContents } from 'electron';
+import { DRAWIO_ORIGIN } from 'bundle/contracts';
+import { type DistributionCatalog, PLATFORM_VERSION } from 'bundle/runtime';
+import {
+  type BrowserWindow,
+  type Session,
+  session,
+  type WebContents,
+  type WebFrameMain,
+} from 'electron';
 import { Server, type Socket } from 'socket.io';
 
 import { DesktopPlatform } from '../../../doric/src/platform/app';
@@ -198,7 +205,7 @@ const SHELL = `<!doctype html>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/platform/shell@1.0.0/bootstrap.js"></script>
+    <script type="module" src="/platform/shell@${PLATFORM_VERSION}/bootstrap.js"></script>
   </body>
 </html>
 `;
@@ -400,3 +407,165 @@ export const bootPlatform = async (input: {
     },
   };
 };
+
+export interface RecordedRequest {
+  readonly url: string;
+  readonly resourceType: string;
+}
+
+export interface RecordedResponse {
+  readonly url: string;
+  readonly statusCode: number;
+}
+
+export interface RequestLog {
+  /** Every request the session started, in order. */
+  readonly requests: RecordedRequest[];
+  /** Every request that completed, with its status. */
+  readonly responses: RecordedResponse[];
+  stop(): void;
+}
+
+/**
+ * Records every request of a session through `webRequest` (the session's
+ * only `onBeforeRequest` and `onCompleted` listeners while it records).
+ */
+export const recordRequests = (
+  target: Session = session.defaultSession,
+): RequestLog => {
+  const requests: RecordedRequest[] = [];
+  const responses: RecordedResponse[] = [];
+
+  target.webRequest.onBeforeRequest((details, callback) => {
+    requests.push({ url: details.url, resourceType: details.resourceType });
+    callback({});
+  });
+  target.webRequest.onCompleted((details) => {
+    responses.push({ url: details.url, statusCode: details.statusCode });
+  });
+
+  return {
+    requests,
+    responses,
+    stop: () => {
+      target.webRequest.onBeforeRequest(null);
+      target.webRequest.onCompleted(null);
+    },
+  };
+};
+
+export interface CspIssue {
+  readonly violatedDirective: string;
+  /** `kInlineViolation`, `kEvalViolation`, `kURLViolation`, … */
+  readonly violationType: string;
+  readonly blockedURL?: string;
+  readonly isReportOnly: boolean;
+}
+
+export interface CspIssueLog {
+  readonly issues: CspIssue[];
+  stop(): void;
+}
+
+interface AuditsIssue {
+  readonly code: string;
+  readonly details?: {
+    readonly contentSecurityPolicyIssueDetails?: {
+      readonly violatedDirective: string;
+      readonly contentSecurityPolicyViolationType: string;
+      readonly blockedURL?: string;
+      readonly isReportOnly: boolean;
+    };
+  };
+}
+
+/**
+ * The CSP problems Chromium reports for a window and every frame in it, out
+ * of process ones included: the CDP `Audits` domain on the window's
+ * debugger, auto-attached to each child target.
+ */
+export const cspIssues = async (
+  contents: WebContents,
+): Promise<CspIssueLog> => {
+  const issues: CspIssue[] = [];
+  const debug = contents.debugger;
+  const onMessage = (
+    _event: unknown,
+    method: string,
+    params: Record<string, unknown>,
+  ) => {
+    if (method === 'Target.attachedToTarget') {
+      const child = params.sessionId as string;
+
+      void debug
+        .sendCommand('Audits.enable', {}, child)
+        .then(() =>
+          debug.sendCommand(
+            'Target.setAutoAttach',
+            { autoAttach: true, waitForDebuggerOnStart: true, flatten: true },
+            child,
+          ),
+        )
+        .finally(() =>
+          debug.sendCommand('Runtime.runIfWaitingForDebugger', {}, child),
+        )
+        .catch(() => undefined);
+
+      return;
+    }
+
+    if (method !== 'Audits.issueAdded') {
+      return;
+    }
+
+    const issue = params.issue as AuditsIssue;
+    const details = issue.details?.contentSecurityPolicyIssueDetails;
+
+    if (issue.code === 'ContentSecurityPolicyIssue' && details !== undefined) {
+      issues.push({
+        violatedDirective: details.violatedDirective,
+        violationType: details.contentSecurityPolicyViolationType,
+        ...(details.blockedURL === undefined
+          ? {}
+          : { blockedURL: details.blockedURL }),
+        isReportOnly: details.isReportOnly,
+      });
+    }
+  };
+
+  if (!debug.isAttached()) {
+    debug.attach('1.3');
+  }
+
+  debug.on('message', onMessage);
+  await debug.sendCommand('Audits.enable');
+  await debug.sendCommand('Target.setAutoAttach', {
+    autoAttach: true,
+    waitForDebuggerOnStart: true,
+    flatten: true,
+  });
+
+  return {
+    issues,
+    stop: () => {
+      debug.off('message', onMessage);
+
+      if (debug.isAttached()) {
+        debug.detach();
+      }
+    },
+  };
+};
+
+/** The frame of a window at the draw.io editor origin, by its iframe name. */
+export const editorFrame = (
+  contents: WebContents,
+  name?: string,
+): WebFrameMain | undefined =>
+  contents.mainFrame.framesInSubtree.find(
+    (frame) =>
+      frame !== contents.mainFrame &&
+      (frame.url === DRAWIO_ORIGIN ||
+        frame.url.startsWith(`${DRAWIO_ORIGIN}/`)) &&
+      (name === undefined || frame.name === name),
+  );

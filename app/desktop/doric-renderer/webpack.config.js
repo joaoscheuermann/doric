@@ -8,7 +8,7 @@ const { showsInOverlay } = require('./overlay-errors');
  * build's files under `/platform/shell@<version>/`. The version is the
  * platform's (`PLATFORM_VERSION`), so the shell's URLs are fixed per release.
  */
-const shellPath = '/platform/shell@1.0.0/';
+const shellPath = '/platform/shell@1.2.0/';
 
 module.exports = {
   // rehype-harden publishes a map for src/index.ts without shipping that source.

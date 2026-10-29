@@ -10,6 +10,7 @@ import {
   CommandsV1,
   ContractError,
   type Diagnostics,
+  type DrawioDescription,
   type NotificationRequest,
 } from 'bundle/contracts';
 import {
@@ -62,6 +63,7 @@ import {
   resolveDistribution,
 } from './catalog/resolve';
 import { loadCatalogSnapshot, saveCatalogSnapshot } from './catalog/snapshot';
+import { startDrawioOrigin } from './drawio';
 import { provideBroker } from './generation/broker';
 import { utilityTransport } from './generation/electron-transport';
 import { encodeRunnerArguments } from './generation/module-hooks';
@@ -187,6 +189,7 @@ export class DesktopPlatform {
   #splash: SplashWindow | undefined;
   #watching: (() => void) | undefined;
   #refreshing: Promise<void> | undefined;
+  #drawio: DrawioDescription = { available: false, reason: 'missing-assets' };
   #lastGood:
     | { id: string; version: string; bundle: DistributionBundle }
     | undefined;
@@ -335,6 +338,7 @@ export class DesktopPlatform {
         ),
       tokens: () => this.tokens.variables(),
       notify: (request: NotificationRequest) => this.notify(request),
+      drawio: { describe: () => this.#drawio },
       log: this.log,
     });
     this.dispatcher = new Dispatcher({
@@ -522,6 +526,18 @@ export class DesktopPlatform {
       artifacts: { root: this.#paths.artifacts },
       ...(devProxy === undefined ? {} : { devProxy }),
     });
+    this.#drawio = await startDrawioOrigin(protocol, {
+      root: this.resources.drawioRoot,
+      passThrough: (request) =>
+        net.fetch(request, { bypassCustomProtocolHandlers: true }),
+    });
+
+    if (this.#drawio.reason === 'handler-failed') {
+      this.log.warn(
+        { reason: this.#drawio.reason },
+        'The draw.io editor origin is unavailable',
+      );
+    }
     ipcMain.handle('doric:desktop', (event, request: unknown) =>
       this.dispatcher.handle(event as never, request),
     );
@@ -1260,6 +1276,10 @@ export class DesktopPlatform {
     await this.stop();
     ipcMain.removeHandler('doric:desktop');
     protocol.unhandle('doric');
+
+    if (protocol.isProtocolHandled('https')) {
+      protocol.unhandle('https');
+    }
   }
 
   /** Stops every generation (quit). */

@@ -1,18 +1,18 @@
 {
   "manifestVersion": 1,
   "id": "artifacts",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "engines": { "doric": "^1.0.0" },
   "description": "The Project's reviewable deliverables: stable identity, immutable revisions, their events and the review policy.",
   "provides": [
-    "artifacts/v1@1.0.0",
+    "artifacts/v1@1.1.0",
     "artifact.kind/v1@1.0.0",
     "artifacts.cache/v1@1.0.0",
     "artifacts.created/v1@1.0.0",
     "artifacts.revised/v1@1.0.0",
     "artifacts.applied/v1@1.0.0",
     "artifacts.approved/v1@1.0.0",
-    "artifacts.review-policy/v1@1.0.0"
+    "artifacts.review-policy/v1@1.1.0"
   ],
   "requires": [
     "events/v1@^1.0.0",

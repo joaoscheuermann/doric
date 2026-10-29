@@ -82,9 +82,9 @@ const WINDOWS = {
     png: 'd29ya3NwYWNl',
     scale: 2,
   },
-  'canvas-a1': {
+  settings: {
     viewport: { width: 1200, height: 800 },
-    png: 'Y2FudmFz',
+    png: 'c2V0dGluZ3M=',
     scale: 1,
   },
 } as const satisfies Record<string, FakeWindow>;
@@ -131,8 +131,8 @@ test('a window gets the PNG of its own rectangle, at its device scale', async ()
       { png: WINDOWS.workspace.png, width: 640, height: 400, scale: 2 },
     );
     assert.deepEqual(
-      await harness.capture({ rect: RECT }, { windowKey: 'canvas-a1' }),
-      { png: WINDOWS['canvas-a1'].png, width: 320, height: 200, scale: 1 },
+      await harness.capture({ rect: RECT }, { windowKey: 'settings' }),
+      { png: WINDOWS.settings.png, width: 320, height: 200, scale: 1 },
     );
   } finally {
     await harness.dispose();
@@ -149,7 +149,7 @@ test('a window cannot name another window to capture', async () => {
       { rect: RECT, windowKey: 'workspace' },
     ]) {
       assert.equal(
-        await codeOf(harness.capture(input, { windowKey: 'canvas-a1' })),
+        await codeOf(harness.capture(input, { windowKey: 'settings' })),
         'invalid_input',
         JSON.stringify(input),
       );

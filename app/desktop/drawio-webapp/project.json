@@ -1,0 +1,24 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "drawio-webapp",
+  "projectType": "application",
+  "sourceRoot": "app/desktop/drawio-webapp",
+  "tags": ["type:app"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["{projectRoot}/vendor.mjs", "{projectRoot}/drawio.lock.json"],
+      "outputs": ["{workspaceRoot}/dist/app/desktop/doric/assets/drawio"],
+      "options": {
+        "command": "node app/desktop/drawio-webapp/vendor.mjs --out dist/app/desktop/doric/assets/drawio"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test app/desktop/drawio-webapp/tests/*.test.mjs"
+      }
+    }
+  }
+}

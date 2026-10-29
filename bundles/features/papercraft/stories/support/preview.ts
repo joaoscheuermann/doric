@@ -4,8 +4,7 @@
 // contracts here, so a story of a part that reads no contract stays free of
 // them.
 
-import type { CommentPin } from '../../src/client/surface/pins-layer.js';
-import type { ThreadMessage } from '../../src/client/surface/thread-popover.js';
+import type { CommentPin, ThreadMessage } from 'desktop/ui/canvas';
 
 export const PROJECT_ID = 'doric-web';
 export const THREAD_ID = 'thread-checkout-redesign';

@@ -190,6 +190,7 @@ void test('the default composition exposes the pre-migration tools, in order, by
         'thread-restart',
         'ask',
         'papercraft_preview',
+        'drawio_diagram',
         'comment_reply',
       ],
     );
@@ -271,10 +272,11 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // `screen-relay` bundle is one too: it is the resident half of the screen,
     // which serves the relay on the host's own listener, and the `artifacts`,
     // `comments` and `papercraft` features are the review registry, its
-    // anchored comments and the live preview over them. The `mcp` feature is
+    // anchored comments and the live preview over them, and `drawio` the
+    // draw.io diagrams over the same registry. The `mcp` feature is
     // the Project's MCP servers and the tools they bring. No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 30);
+    assert.equal(host.bundleCount, 31);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -316,6 +318,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         artifacts: ['active', 'others'],
         comments: ['active', 'others'],
         papercraft: ['active', 'others'],
+        drawio: ['active', 'others'],
         mcp: ['active', 'others'],
       },
     );
@@ -341,6 +344,8 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['claude-login', 'settings'],
       ['artifacts', 'papercraft'],
       ['comments', 'papercraft'],
+      ['artifacts', 'drawio'],
+      ['comments', 'drawio'],
       ['runtime', 'mcp'],
     ] as const)
       assert.ok(
@@ -348,6 +353,37 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         `${provider} before ${consumer}: ${order.join(', ')}`,
       );
     await structural(host.platform);
+  });
+});
+
+void test('papercraft 2.0.0 provides no canvas window and requires no windows, navigation or menus contract', async () => {
+  await withHost(async (host) => {
+    const papercraft = host.platform
+      .catalog()
+      .bundles.find(({ id }) => id === 'papercraft');
+
+    assert.ok(papercraft, 'papercraft is not in the catalog');
+    assert.equal(papercraft.state, 'active');
+    assert.equal(papercraft.version, '2.0.0');
+
+    const provides = papercraft.manifest?.provides ?? [];
+    const requires = papercraft.manifest?.requires ?? [];
+
+    // The canvas is the node's modal now: no window to open.
+    assert.ok(
+      !provides.some((entry) => entry.startsWith('papercraft.open-canvas/v1@')),
+      `papercraft still provides the canvas window: ${provides.join(', ')}`,
+    );
+    for (const contract of ['windows/v1', 'navigation/v1', 'menus/v1'])
+      assert.ok(
+        !requires.some((entry) => entry.startsWith(`${contract}@`)),
+        `papercraft still requires ${contract}: ${requires.join(', ')}`,
+      );
+    // The send it gives chat stays.
+    assert.ok(
+      provides.includes('papercraft.send/v1@1.0.0'),
+      `papercraft no longer provides papercraft.send/v1: ${provides.join(', ')}`,
+    );
   });
 });
 

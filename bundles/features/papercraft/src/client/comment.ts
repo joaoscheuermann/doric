@@ -17,8 +17,7 @@
 // place the real `chat.composer/v1.registerFlush` serves — it carries a
 // function, so a window never reaches it. This client module only writes the
 // stack's items, and sends the stack now through chat's own send
-// (`chat.send/v1`) when the reader asks (the canvas window's
-// `Cmd/Ctrl+Enter`, or its send button).
+// (`chat.send/v1`) when the reader asks (the canvas modal's send button).
 //
 // The composer is chat's, consulted with `services.whenAvailable` like
 // `ChatViewsV1`: while it is not active the gesture is unavailable, and a frame
@@ -28,6 +27,11 @@
 // conversation's own composer shows.
 
 import type { Services } from 'bundle/contracts';
+import type {
+  CanvasDraft,
+  CommentOutcome,
+  CommentStore,
+} from 'desktop/ui/canvas';
 
 import {
   CHAT_COMMENT_LINE_TAG,
@@ -37,10 +41,11 @@ import {
   type ComposerItem,
 } from '../contracts/chat.js';
 import {
+  type CommentAnchor,
   CommentsV1,
-  type CommentTarget,
   callScopeOf,
   PAPERCRAFT_COMMENT_KIND,
+  PROMPT_SEND_EVENT,
   type PreviewItemData,
   type PreviewScope,
   previewItemTargetOf,
@@ -125,17 +130,7 @@ export interface PendingComment {
 }
 
 /** One draft of the stack on a preview, read off its item. */
-export interface PreviewDraft {
-  /** The item's id: the comment's id once the send flushes it. */
-  readonly id: string;
-  readonly note: string;
-  readonly author?: string;
-  readonly target: CommentTarget;
-  readonly pin?: number;
-  /** The root (comment or draft) this reply answers; absent on a root. */
-  readonly inReplyTo?: string;
-  readonly point?: { readonly x: number; readonly y: number };
-}
+export type PreviewDraft = CanvasDraft<CommentAnchor>;
 
 const pointOf = (
   value: unknown,
@@ -184,9 +179,7 @@ export const draftOfItem = (
   };
 };
 
-export type CommentOutcome =
-  | { readonly kind: 'stack'; readonly itemId: string }
-  | { readonly kind: 'unavailable' };
+export type { CommentOutcome } from 'desktop/ui/canvas';
 
 /**
  * What one confirmed note becomes — a new comment, or a reply to a thread when
@@ -244,8 +237,7 @@ export const removeComment = async (
 };
 
 /**
- * Sends the Thread's stack now (the canvas window's `Cmd+Enter`, or its send
- * button):
+ * Sends the Thread's stack now (the canvas modal's send button):
  * the composer's own send, through `chat.send/v1` — the drafts become the
  * prompt and, once the host accepts it, the durable comments. Without chat's
  * send there is nothing to send with, and the drafts stay where they are.
@@ -300,3 +292,22 @@ export const resolveComment = async (
     return 'unavailable';
   }
 };
+
+/**
+ * The preview comment kind's stack for the comment flow, bound to `scope`:
+ * `begin`, `edit`, `remove`, `send` and `resolve` are `beginComment`,
+ * `editComment`, `removeComment`, `sendComments` and `resolveComment` with
+ * `services` and `scope`, and so answer `unavailable` without chat's composer,
+ * a Thread or the registry. `promptSendEvent` is `PROMPT_SEND_EVENT`.
+ */
+export const papercraftCommentStore = (
+  services: Services,
+  scope: PreviewScope | undefined,
+): CommentStore<PreviewItemData> => ({
+  begin: (data, note) => beginComment(services, scope, { data, note }),
+  edit: (itemId, note) => editComment(services, scope, itemId, note),
+  remove: (itemId) => removeComment(services, scope, itemId),
+  send: () => sendComments(services, scope),
+  resolve: (input) => resolveComment(services, scope, input),
+  promptSendEvent: PROMPT_SEND_EVENT,
+});

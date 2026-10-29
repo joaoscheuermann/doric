@@ -6,8 +6,11 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { constants, Script } from 'node:vm';
 
+import { PLATFORM_VERSION } from 'bundle/runtime';
+
 import {
   developmentCsp,
+  drawioCsp,
   packagedCsp,
   splashCsp,
 } from '../src/platform/protocol/csp';
@@ -42,7 +45,7 @@ const TEMPLATE = `<!doctype html>
   <head>
     <meta charset="utf-8" />
     <title>Doric</title>
-    <link rel="stylesheet" href="/platform/shell@1.0.0/styles.css" />
+    <link rel="stylesheet" href="/platform/shell@${PLATFORM_VERSION}/styles.css" />
   </head>
   <body><div id="root"></div></body>
 </html>
@@ -73,8 +76,8 @@ const platformMap: ImportMap = {
     'react-is': 'doric://app/platform/react-is@19.2.8/index.js',
     zod: 'doric://app/platform/zod@4.4.3/index.js',
     lexical: 'doric://app/platform/lexical@0.51.0/index.js',
-    'desktop/ui': 'doric://app/platform/desktop@1.0.0/ui/index.js',
-    'bundle/contracts': 'doric://app/platform/bundle@1.0.0/contracts.js',
+    'desktop/ui': `doric://app/platform/desktop@${PLATFORM_VERSION}/ui/index.js`,
+    'bundle/contracts': `doric://app/platform/bundle@${PLATFORM_VERSION}/contracts.js`,
     'core/contracts': 'doric://app/bundles/core@1.3.0/contracts/index.js',
   },
 };
@@ -105,7 +108,7 @@ const deps = (overrides: Partial<ProtocolDeps> = {}): ProtocolDeps => ({
     template: async () => TEMPLATE,
     generation: () => 3,
     importMap: () => map,
-    themeHref: '/platform/desktop@1.0.0/theme.css',
+    themeHref: `/platform/desktop@${PLATFORM_VERSION}/theme.css`,
     devServerOrigin: 'http://localhost:4200',
   }),
   frame: renderFrameDocument(frameImportMap(platformMap)),
@@ -121,10 +124,13 @@ before(async () => {
     platformRoot: join(root, 'platform'),
     schemasRoot: join(root, 'schemas'),
     shellRoot: join(root, 'renderer'),
-    shellVersion: '1.0.0',
+    shellVersion: PLATFORM_VERSION,
+    drawioRoot: join(root, 'drawio'),
   };
   await mkdir(join(root, 'platform', 'react@19.2.8'), { recursive: true });
-  await mkdir(join(root, 'platform', 'splash@1.0.0'), { recursive: true });
+  await mkdir(join(root, 'platform', `splash@${PLATFORM_VERSION}`), {
+    recursive: true,
+  });
   await mkdir(join(root, 'schemas', 'contracts'), { recursive: true });
   await mkdir(join(root, 'renderer'), { recursive: true });
   await mkdir(join(root, 'cache', 'probe@1.0.0', 'client'), {
@@ -135,7 +141,7 @@ before(async () => {
     'export {};',
   );
   await writeFile(
-    join(root, 'platform', 'splash@1.0.0', 'index.html'),
+    join(root, 'platform', `splash@${PLATFORM_VERSION}`, 'index.html'),
     '<!doctype html>',
   );
   await writeFile(join(root, 'schemas', 'contracts', 'a.json'), '{}');
@@ -194,7 +200,10 @@ describe('doric://app routing', () => {
     for (const [url, type] of [
       ['doric://app/platform/react@19.2.8/index.js', 'text/javascript'],
       ['doric://app/schemas/contracts/a.json', 'application/json'],
-      ['doric://app/platform/shell@1.0.0/main.js', 'text/javascript'],
+      [
+        `doric://app/platform/shell@${PLATFORM_VERSION}/main.js`,
+        'text/javascript',
+      ],
       ['doric://app/bundles/probe@1.0.0/client/index.js', 'text/javascript'],
       ['doric://app/artifacts/checkout-7f3a@1/index.js', 'text/javascript'],
       ['doric://app/artifacts/checkout-7f3a@1/assets/theme.css', 'text/css'],
@@ -320,7 +329,9 @@ describe('doric://app routing', () => {
   });
 
   test('serves the splash page with the packaged CSP without a hash', async () => {
-    const response = await get('doric://app/platform/splash@1.0.0/index.html');
+    const response = await get(
+      `doric://app/platform/splash@${PLATFORM_VERSION}/index.html`,
+    );
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-security-policy'), splashCsp());
@@ -329,7 +340,7 @@ describe('doric://app routing', () => {
   test('forwards shell assets to the dev server in development', async () => {
     const forwarded: string[] = [];
     const response = await get(
-      'doric://app/platform/shell@1.0.0/main.hot-update.js',
+      `doric://app/platform/shell@${PLATFORM_VERSION}/main.hot-update.js`,
       {
         devProxy: {
           origin: 'http://localhost:4200',
@@ -347,7 +358,9 @@ describe('doric://app routing', () => {
     );
 
     assert.equal(await response.text(), 'hot');
-    assert.deepEqual(forwarded, ['/platform/shell@1.0.0/main.hot-update.js']);
+    assert.deepEqual(forwarded, [
+      `/platform/shell@${PLATFORM_VERSION}/main.hot-update.js`,
+    ]);
   });
 });
 
@@ -360,7 +373,7 @@ describe('content security policy', () => {
         "script-src 'self' 'sha256-HASH'; worker-src 'self'",
       ).replace(
         "font-src 'self'",
-        "font-src 'self'; frame-src doric://app/frame/",
+        "font-src 'self'; frame-src doric://app/frame/ https://drawio.doric.invalid/",
       ),
     );
   });
@@ -383,26 +396,33 @@ describe('content security policy', () => {
         "'unsafe-eval' 'sha256-HASH'",
       ).replace(
         "font-src 'self'",
-        "font-src 'self'; frame-src doric://app/frame/",
+        "font-src 'self'; frame-src doric://app/frame/ https://drawio.doric.invalid/",
       ),
     );
   });
 
-  test('a development shell answer frames only the frame document too', async () => {
+  test('the draw.io editor documents carry the spec policy, verbatim', () => {
+    assert.equal(
+      drawioCsp,
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors doric://app 'self'",
+    );
+  });
+
+  test('a development shell answer frames only the frame document and the editor too', async () => {
     const response = await get('doric://app/', {
       shell: createShellRenderer({
         mode: 'development',
         template: async () => TEMPLATE,
         generation: () => 3,
         importMap: () => map,
-        themeHref: '/platform/desktop@1.0.0/theme.css',
+        themeHref: `/platform/desktop@${PLATFORM_VERSION}/theme.css`,
         devServerOrigin: 'http://localhost:4200',
       }),
     });
 
     assert.match(
       response.headers.get('content-security-policy') ?? '',
-      /; frame-src doric:\/\/app\/frame\/;/u,
+      /; frame-src doric:\/\/app\/frame\/ https:\/\/drawio\.doric\.invalid\/;/u,
     );
   });
 
@@ -430,7 +450,7 @@ describe('shell document', () => {
     const { html } = renderShell(TEMPLATE, {
       generation: 7,
       importMap: map,
-      themeHref: '/platform/desktop@1.0.0/theme.css',
+      themeHref: `/platform/desktop@${PLATFORM_VERSION}/theme.css`,
     });
     const head = html.slice(html.indexOf('<head>') + '<head>'.length);
 
@@ -441,8 +461,8 @@ describe('shell document', () => {
     );
     assert.ok(
       head.indexOf(
-        '<link rel="stylesheet" href="/platform/desktop@1.0.0/theme.css">',
-      ) < head.indexOf('/platform/shell@1.0.0/styles.css'),
+        `<link rel="stylesheet" href="/platform/desktop@${PLATFORM_VERSION}/theme.css">`,
+      ) < head.indexOf(`/platform/shell@${PLATFORM_VERSION}/styles.css`),
     );
     assert.match(html, /<html lang="en" class="dark">/u);
     assert.match(html, /<title>Doric<\/title>/u);
@@ -665,8 +685,8 @@ describe('CORS for preview frames', () => {
       'doric://app/',
       'doric://app/settings',
       'doric://app/schemas/contracts/a.json',
-      'doric://app/platform/splash@1.0.0/index.html',
-      'doric://app/platform/shell@1.0.0/main.js',
+      `doric://app/platform/splash@${PLATFORM_VERSION}/index.html`,
+      `doric://app/platform/shell@${PLATFORM_VERSION}/main.js`,
       'doric://app/bundles/probe@1.0.0/client/index.js',
       'doric://app/bundles/probe@1.0.0/client/framesake.js',
       'doric://app/bundles/probe@1.0.0/desktop/index.js',

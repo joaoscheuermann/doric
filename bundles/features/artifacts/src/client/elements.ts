@@ -504,7 +504,10 @@ export const defineFrameElement = () => {
         (candidate) => candidate.revision === data.revision,
       );
       const approved = record?.state === 'approved';
-      const authorizable = policy?.policy === 'request' && !approved;
+      const authorizable =
+        policy?.policy === 'request' &&
+        !(policy.exemptKinds ?? []).includes(data.kind) &&
+        !approved;
 
       view.bar.hidden = bodyHeader;
       if (bodyHeader) view.below.append(view.authorize);

@@ -6,9 +6,9 @@
 // conversation (`chrome: 'node'`) the surface is the body of the `artifacts`
 // registry's frame, and it draws its own header (the kind declares
 // `header: 'body'`): the frame keeps only `Autorizar` below it. The node is
-// a square — as tall as it is wide. The window (`chrome: 'canvas'`) draws
-// the same surface full-screen, with the tree on the left and the command
-// bar centred on the bottom edge.
+// a square — as tall as it is wide. The modal (`chrome: 'canvas'`) draws
+// the same surface over the conversation, with the tree on the left and the
+// command bar centred on the bottom edge.
 //
 // What is view state here — the armed tool, pan/zoom, selection, isolation,
 // hidden layers, the open input — is local to the frame; what is durable stays
@@ -21,7 +21,7 @@
 // The node lives inside the conversation, so it never takes the page's wheel
 // or focus by passing over it: only the focused node shows its controls and
 // the tool it had armed (`frame-focus.ts`), and the wheel pans only the
-// focused node. The window is always focused.
+// focused node. The modal is always focused.
 //
 // The preview itself renders in a sandboxed iframe (`preview-surface.tsx`,
 // `live-frame.tsx`): the canvas reads what it rendered from the scene the
@@ -30,7 +30,7 @@
 // conversation the node keeps a live frame only while it is one of the
 // window's most recently used (`live-frames.ts`); otherwise the surface draws
 // its snapshot (`snapshots.ts`), which the canvas takes with its own drawings
-// concealed. The canvas window's revision is always live.
+// concealed. The canvas modal's revision is always live.
 //
 // The frame composes its parts: the scene (`scene.ts`), the fit (`fit.ts`),
 // the focus (`frame-focus.ts`), the gestures and keys (`gestures.ts`), the
@@ -42,52 +42,71 @@
 // not the chrome around them.
 
 import type { Services } from 'bundle/contracts';
+import {
+  CanvasFooter,
+  CanvasHeader,
+  CanvasModal,
+  CommentOverlay,
+  type CommentPin,
+  canvasKeys,
+  DETACHED_STEP,
+  gridBackground,
+  IDENTITY,
+  openCountOf,
+  pinsOf,
+  useCanvasGestures,
+  useCommentFlow,
+  useCommentRequest,
+  useFit,
+  useThreadOpenRequests,
+  type Viewport,
+  viewportTransform,
+  zoomPercent,
+} from 'desktop/ui/canvas';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import { cn } from 'desktop/ui/utils';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import {
+  ArtifactsV1,
+  COMMENT_THREAD_OPEN_EVENT,
+  type CommentAnchor,
+  callScopeOf,
   PapercraftSnapshotV1,
   type PreviewScope,
   type PreviewTool,
 } from '../../contracts/index.js';
-import { touchController } from '../canvas-registry.js';
+import { canvasOpen, touchController } from '../canvas-registry.js';
+import { keyCommandOf } from '../commands.js';
+import { papercraftCommentStore } from '../comment.js';
 import { CommandToolbar } from './command-toolbar.js';
-import { useCommentFlow, useCommentRequest } from './comment-flow.js';
-import { CommentOverlay } from './comment-overlay.js';
 import {
   type FrameReading,
   useCommandDispatch,
   usePreviewController,
 } from './controller.js';
-import { useFit } from './fit.js';
 import { useFrameFocus } from './frame-focus.js';
-import { canvasKeys, useCanvasGestures } from './gestures.js';
 import { useLiveFrame } from './live-frames.js';
-import { NodeFooter } from './node-footer.js';
 import { HoverOutline, SelectionOutline } from './overlays.js';
 import { anchorResolver } from './pin-geometry.js';
-import type { CommentPin } from './pins-layer.js';
 import { ensureRevisionCached, usePreviewData } from './preview-data.js';
-import { PreviewHeader } from './preview-header.js';
 import {
   type FrameInput,
   PreviewSurface,
   type SurfaceMode,
 } from './preview-surface.js';
 import { useScene } from './scene.js';
-import { targetBounds, targetById } from './scene-graph.js';
+import { targetBounds, targetById, visualBounds } from './scene-graph.js';
+import { sceneHitTester } from './scene-hit.js';
 import type { SurfaceSnapshots } from './snapshots.js';
-import { useThreadOpenRequests } from './thread-open.js';
-import { DETACHED_STEP, openCountOf, pinsOf } from './threads-view.js';
+import { anchorTextOf, anchorTitleOf } from './threads-view.js';
 import { TreePanel } from './tree-panel.js';
-import {
-  gridBackground,
-  IDENTITY,
-  type Viewport,
-  viewportTransform,
-  zoomPercent,
-} from './viewport.js';
 
 /** Which frame the surface sits in. */
 export type PreviewChrome = 'node' | 'canvas';
@@ -98,13 +117,15 @@ export interface PreviewContainerProps {
   /** The Project and Thread of the preview: every host call's scope. */
   readonly scope: PreviewScope | undefined;
   readonly artifactId: string;
-  /** The node shows the revision its block was created with; the window opens at the newest. */
+  /** The node shows the revision its block was created with; the modal opens at the one the node shows, else the newest. */
   readonly blockRevision?: number;
   /**
    * Bumped by each comment gesture of the registry's frame (the node is the
    * body inside it): every change toggles the comment tool.
    */
   readonly commentRequest?: number;
+  /** An `Esc` reported by the preview's frame that nothing on the canvas took: the modal's close request. */
+  readonly onFrameEscape?: () => void;
 }
 
 const FALLBACK_NOTICE = 'o preview não carregou · mostrando o markup';
@@ -120,7 +141,7 @@ interface Latest extends FrameReading {
   readonly tool: PreviewTool;
 }
 
-/** One frame of a preview: header, canvas, gesture, tree (window), bar (window). */
+/** One frame of a preview: header, canvas, gesture, tree (modal), bar (modal). */
 export function PreviewContainer({
   services,
   chrome,
@@ -128,6 +149,7 @@ export function PreviewContainer({
   artifactId,
   blockRevision,
   commentRequest,
+  onFrameEscape,
 }: PreviewContainerProps) {
   const {
     record,
@@ -157,6 +179,11 @@ export function PreviewContainer({
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>('markup');
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [showResolved, setShowResolved] = useState(true);
+  /**
+   * The node's modal: open, or closing until the focus is back on the node's
+   * `expandir` (the node stays active so the button is there to take it).
+   */
+  const [modal, setModal] = useState<'closed' | 'open' | 'closing'>('closed');
 
   const container = useRef<HTMLDivElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -201,8 +228,12 @@ export function PreviewContainer({
       focusCanvas,
     });
 
-  /** Whether the frame shows its controls and tools: the window always is. */
-  const active = chrome === 'canvas' || focused;
+  /**
+   * Whether the frame shows its controls and tools: the modal always is, and
+   * the node while its modal is open or handing the focus back.
+   */
+  const active = chrome === 'canvas' || focused || modal !== 'closed';
+  if (modal === 'closing' && focused) setModal('closed');
 
   const recordTitle = record?.title;
   const recordPath = record?.path;
@@ -216,9 +247,14 @@ export function PreviewContainer({
   );
   const showResolvedPins = useCallback(() => setShowResolved(true), []);
 
-  const flow = useCommentFlow({
-    services,
-    scope,
+  const store = useMemo(
+    () => papercraftCommentStore(services, scope),
+    [services, scope],
+  );
+
+  const flow = useCommentFlow<CommentAnchor>({
+    store,
+    threadId: scope?.threadId,
     artifactId,
     revision: selectedRevision,
     threads,
@@ -230,27 +266,49 @@ export function PreviewContainer({
   });
   const inputOpen = flow.open !== undefined;
 
+  // The newest revision, asked of the registry: a node's own reading may
+  // predate a later revision.
+  const latestRevision = useCallback(async (): Promise<number | undefined> => {
+    if (scope === undefined) return undefined;
+
+    const latest = await services
+      .use(ArtifactsV1, callScopeOf(scope))
+      .read({ artifactId });
+
+    return latest?.revision;
+  }, [services, scope, artifactId]);
+
   useThreadOpenRequests({
     chrome,
     artifactId,
     ownRevision: blockRevision ?? selectedRevision,
     knownRevisions: record?.revisions,
-    services,
-    scope,
-    showThread: flow.showThread,
+    latestRevision,
+    eventName: COMMENT_THREAD_OPEN_EVENT,
+    // While the node's modal is open, the modal's canvas opens the thread.
+    showThread: (id) => {
+      if (chrome !== 'node' || !canvasOpen(artifactId)) flow.showThread(id);
+    },
   });
 
   const contentKey = `${artifactId}@${String(selectedRevision ?? blockRevision ?? 1)}`;
 
   // The node holds a live frame only among the window's most recently used;
-  // the canvas window's revision stays live outside that count.
+  // the canvas modal's revision stays live outside that count.
   const { live, use: markUsed } = useLiveFrame(
     chrome === 'node' ? contentKey : undefined,
     container,
   );
+  // What the fit frames: the element, not the page around it — one
+  // measurement per scene.
+  const content = useMemo(
+    () =>
+      scene === undefined ? undefined : visualBounds(scene.graph, scene.bounds),
+    [scene],
+  );
   const { areaSize, area, fitContent } = useFit({
     wrapper,
-    scene,
+    content,
     viewport,
     contentKey,
     requestMeasure,
@@ -277,12 +335,7 @@ export function PreviewContainer({
     reload,
     sendNow: flow.sendNow,
   });
-  const { execute, openCanvas } = useCommandDispatch(
-    services,
-    artifactId,
-    scopeProject,
-    scopeThread,
-  );
+  const { execute } = useCommandDispatch(services);
 
   /* The view-state actions the chrome and the gestures share ------------------ */
 
@@ -313,13 +366,14 @@ export function PreviewContainer({
     });
   }, []);
 
+  const hits = useMemo(() => sceneHitTester(scene, hidden), [scene, hidden]);
+
   const { panning, framePointer, frameWheel } = useCanvasGestures({
     wrapper,
     chrome,
     focusedRef,
-    scene,
+    hits,
     viewport,
-    hidden,
     tool,
     active,
     spaceHeld,
@@ -378,7 +432,16 @@ export function PreviewContainer({
               ? latestKeys.current.onKeyDown
               : latestKeys.current.onKeyUp;
 
-          handle({ ...message, preventDefault: () => undefined });
+          let taken = false;
+          handle({
+            ...message,
+            preventDefault: () => {
+              taken = true;
+            },
+          });
+          // An `Esc` nothing on the canvas took is the modal's to close on.
+          if (message.type === 'keydown' && message.key === 'Escape' && !taken)
+            onFrameEscape?.();
 
           return;
         }
@@ -388,12 +451,19 @@ export function PreviewContainer({
           return;
       }
     },
-    [consumeFramePointer, framePointer, frameWheel, onFrameFocus, markUsed],
+    [
+      consumeFramePointer,
+      framePointer,
+      frameWheel,
+      onFrameFocus,
+      markUsed,
+      onFrameEscape,
+    ],
   );
 
   // A snapshot is taken only while nothing moves the canvas or covers it,
   // with the canvas's drawings concealed for the capture (styles.css). The
-  // canvas window's frame never dies, so it takes none.
+  // canvas modal's frame never dies while it is open, so it takes none.
   const busy = useRef<() => boolean>(() => false);
   busy.current = () => panning() || inputOpen;
   const snapshots = useMemo<SurfaceSnapshots | undefined>(
@@ -445,6 +515,13 @@ export function PreviewContainer({
     [threads, drafts, showResolved, resolve, viewport.scale],
   );
 
+  /** The popover's title: the component the anchor names, else the source's. */
+  const sourcePath = record?.path;
+  const titleOf = useCallback(
+    (anchor: CommentAnchor) => anchorTitleOf(anchor, sourcePath),
+    [sourcePath],
+  );
+
   /** What the comment control counts: the open threads and the draft pins. */
   const commentCount = openCountOf(threads, drafts);
 
@@ -474,6 +551,25 @@ export function PreviewContainer({
         ? { shown: showResolved, onToggle: toggleShowResolved }
         : undefined,
     [hasResolved, showResolved, toggleShowResolved],
+  );
+
+  /* The node's modal: its canvas expanded over the conversation ------------- */
+
+  const expand = useCallback(() => setModal('open'), []);
+  const collapse = useCallback(
+    () => setModal((current) => (current === 'open' ? 'closing' : current)),
+    [],
+  );
+  /** The bar's keys typed in the modal, as commands on this artifact. */
+  const modalKeys = useCallback(
+    (event: KeyboardEvent<HTMLElement>) => {
+      const command = keyCommandOf(event);
+      if (command === undefined) return;
+
+      event.preventDefault();
+      execute(command, { artifactId });
+    },
+    [execute, artifactId],
   );
 
   /** The canvas's cursor: the frame's own document shows it over the preview. */
@@ -519,15 +615,15 @@ export function PreviewContainer({
         data-tool={tool}
         data-active={active ? 'true' : 'false'}
       >
-        <PreviewHeader
-          chrome={chrome}
+        <CanvasHeader
+          host={chrome === 'node' ? 'node' : 'modal'}
           title={title}
           controls={active}
           {...(selectedRevision === undefined
             ? {}
             : { revision: selectedRevision })}
-          canOpen={scopeThread !== undefined}
-          onOpen={openCanvas}
+          canExpand={scopeThread !== undefined}
+          onExpand={expand}
           commentActive={tool === 'comment'}
           canComment={canComment}
           commentCount={commentCount}
@@ -623,7 +719,8 @@ export function PreviewContainer({
             resolve={resolve}
             viewport={viewport}
             area={areaSize()}
-            sourcePath={record?.path}
+            titleOf={titleOf}
+            textOf={anchorTextOf}
             threaded={scopeThread !== undefined}
             showResolved={showResolved}
             onToggleShowResolved={toggleShowResolved}
@@ -642,7 +739,7 @@ export function PreviewContainer({
         ) : null}
 
         {chrome === 'node' && active ? (
-          <NodeFooter
+          <CanvasFooter
             zoom={zoomPercent(viewport)}
             onZoomOut={controller.zoomOut}
             onZoomReset={controller.zoomReset}
@@ -678,6 +775,26 @@ export function PreviewContainer({
           </>
         ) : null}
       </div>
+
+      {chrome === 'node' ? (
+        <CanvasModal
+          open={modal === 'open'}
+          title={title}
+          onCloseRequest={collapse}
+          onKeyDown={modalKeys}
+        >
+          <PreviewContainer
+            services={services}
+            scope={scope}
+            artifactId={artifactId}
+            chrome="canvas"
+            {...(selectedRevision === undefined && blockRevision === undefined
+              ? {}
+              : { blockRevision: selectedRevision ?? blockRevision })}
+            onFrameEscape={collapse}
+          />
+        </CanvasModal>
+      ) : null}
     </TooltipProvider>
   );
 }

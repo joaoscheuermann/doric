@@ -21,6 +21,7 @@
 // origin: the app scales the iframe with the canvas's `transform`, so a frame
 // never measures the zoom.
 
+import type { CanvasTheme as PreviewTheme } from 'desktop/ui/canvas';
 import { z } from 'zod';
 
 import {
@@ -50,7 +51,7 @@ export interface ConnectMessage {
   readonly kind: 'connect';
 }
 
-export type PreviewTheme = 'light' | 'dark';
+export type { CanvasTheme as PreviewTheme } from 'desktop/ui/canvas';
 
 /** Storybook's layouts, as a revision's `mount` states them. */
 export type PreviewLayout = 'centered' | 'padded' | 'fullscreen';

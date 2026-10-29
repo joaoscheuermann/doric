@@ -113,7 +113,7 @@ concept, and the bundles own their own.
 Projects and independent chat Threads through REST and Socket.IO, while the
 reusable agent loop remains in `packages/agent`.
 
-`app/desktop/doric` is the Electron desktop application. Serving it — the `serve` target `nx serve doric-app`, which `npm run doric:dev` drives through `nxe:serve:backend` — launches Electron with Chromium's sandbox disabled (`--no-sandbox`) only when the process runs as root, the case a root container is, or when `DORIC_ELECTRON_NO_SANDBOX=1` opts in explicitly; a normal user keeps the sandbox. Its sandboxed, context-isolated
+`app/desktop/doric` is the Electron desktop application. Serving it — the `serve` target `nx serve doric-app`, which `npm run doric:dev` drives through `nxe:serve:backend` — launches Electron with Chromium's sandbox disabled (`--no-sandbox`) only when the process runs as root, the case a root container is, or when `DORIC_ELECTRON_NO_SANDBOX=1` opts in explicitly; a normal user keeps the sandbox. Its `build` target (`nx build doric-app`) depends on `drawio-webapp:build`, which on a cold cache downloads the pinned draw.io archive; the offline cache is `node_modules/.cache/drawio/<sha256>.tar.gz` ([app/desktop/drawio-webapp/README.md](app/desktop/drawio-webapp/README.md)). Its sandboxed, context-isolated
 windows load the shell built by `app/desktop/doric-renderer`, which since migration
 stage 9 only boots the client bundles; the UI described below is drawn by the
 `layout`, `chat` and `settings` client bundles, the feature bundles' client parts
@@ -794,7 +794,7 @@ processes, windows, and IPC. It never knows a bundle's concepts (Project,
 Thread, prompt, queue, Git, settings) or their methods and storage formats, and
 a field of a generic schema that names one is a leak. The platform is
 `packages/bundle`, `packages/storage`, `packages/desktop`, `app/desktop/doric`,
-`app/desktop/doric-renderer`, `app/desktop/doric-platform`, and the kernel `app/backend/doric-host`.
+`app/desktop/doric-renderer`, `app/desktop/doric-platform`, `app/desktop/drawio-webapp` (owned by the desktop platform), and the kernel `app/backend/doric-host`.
 Bundles reach one another only through published contracts; a bundle may import
 another bundle's `<id>/contracts` entrypoint, never its source.
 
@@ -864,6 +864,16 @@ payload)` to the same bundle in every other live generation. The kernel names
   it validates again, in the operating system's browser through
   `doric.shell/v1.openExternal`; every other scheme is refused with
   `invalid_input`, and a window still may not open windows of its own.
+- **draw.io editor.** Since platform 1.1.0, `doric.drawio/v1` (desktopMain
+  only) has `describe()`, which returns `{ available, version?, reason? }`, with
+  `reason` `missing-assets` or `handler-failed`. Main serves the vendored
+  draw.io webapp on `DRAWIO_ORIGIN` (`https://drawio.doric.invalid`) through
+  `protocol.handle('https')`, which handles every `https:` request in the
+  default session: every other host passes through `net.fetch` with
+  `bypassCustomProtocolHandlers`, except that a failed pass-through reaches
+  the caller as `net::ERR_UNEXPECTED`, not as the original code. The shell may
+  frame that origin; it may not `window.open` it
+  ([feature doc](docs/features/threads-drawio-diagrams.md)).
 - **Windows.** A window descriptor names one of two contents: an app route
   (`path`) the window's shell renders, or a page on the host (`view`, naming the
   path main resolves against the host origin and the session partition the
@@ -1018,7 +1028,11 @@ describes below. Migration stages 5 to 7 are described below.
 `artifact.kind/v1`, the desktop byte cache `artifacts.cache/v1`, the events
 `artifacts.created/v1`, `artifacts.revised/v1`, `artifacts.approved/v1` and
 `artifacts.applied/v1`, and the review-policy setting
-`artifacts.review-policy/v1`. An artifact's bytes live in the Project
+`artifacts.review-policy/v1` (since 1.1.0 it also holds `exemptKinds`,
+default `['diagram']`: an exempt kind runs under `proceed` in every Project and
+its frame shows no "Autorizar"; `policy()` answers `{ policy, exemptKinds }`
+and `setPolicy` keeps the stored list; the list changes only through
+`settings/v1`, with no UI). An artifact's bytes live in the Project
 workspace under `.doric/artifacts/<artifactId>/<revision>/<path>` (reads fall
 back to the older `<artifactId>/<path>` layout and serve only bytes whose hash
 matches), written through `runtime.lease/v1.withLease`; without a lease reads
@@ -1231,6 +1245,26 @@ comment's where passages overlap; a sent comment's passage answers neither
 the click nor the pointer. On `doric:prompt-send` a note whose item is
 still being added hands that add to `waitUntil`.
 
+`/bundles/features/drawio` (1.2.0) owns the `diagram` artifact kind
+(`header: 'body'`, one entry `diagram.drawio`), the `drawio_diagram` tool
+(order 1750: create from a draft, revise with `base_revision`, `checkout`),
+`normalizeDiagram`, the host service `drawio.diagrams/v1` 1.2.0 (`read`, `save`, `export`) and the
+`drawio-diagram` skill (order 3410). Its desktopMain part provides
+`drawio.svg/v1` (`status`, `get`, `put`), the cache of drawn pages keyed by
+revision, entry hash, page and theme with a per-revision first-page pointer,
+and registers the `drawio-diagram` flush in `chat.composer/v1`. Its client
+draws pages with a hidden `@drawio/react` renderer, one page per export,
+sanitizes and measures them in a sandboxed frame (text-only `foreignObject`
+stays), and draws the `<drawio-diagram>` node (`<img>`, pins, `pág P/N` under
+the header, dashed outlines on changed cells, Comentar, Expandir without a
+Thread) and the modal: Revisar (page and revision menus, toolbar, keys) and
+Editar (`E`, the draw.io editor in `EditorFrame`, `CmdOrCtrl+S` saves a new
+revision, in-memory autosave, exit dialog).
+Comments on another page show as detached pins. Salvar no Project (`export`)
+writes `<path>.drawio` and `<path>.drawio.svg` (page 1 only), answering
+`written`, `exists` (Substituir) or `blocked`; it checks entries with `test`,
+never `getFile`, and never replaces a folder, link or special entry. See `docs/features/threads-drawio-diagrams.md`.
+
 `/bundles/features/papercraft` owns the `preview` artifact kind, the
 `papercraft.previews/v1` service, the `papercraft_preview` tool (order 1700)
 and the `papercraft-preview` skill (order 3400). The tool snapshots a
@@ -1239,8 +1273,9 @@ revises it), and answers the preview state with the unresolved comments and
 the review state; under `request` it reports `review.pending` and never
 blocks. Its desktop part draws the `papercraft-preview` body inside the
 artifacts frame (the kind declares `header: 'body'`; the node is a square)
-and the canvas window at `/papercraft/:projectId/:threadId/:artifactId`, both
-under an overlaid header with icon controls. A comment is written in an inline
+and, behind the node's `Expandir` button, a `CanvasModal` (`desktop/ui/canvas`)
+over the conversation, opened at the revision the node shows, with a second surface (`chrome: 'canvas'`, outside the
+three-live-frame limit), both under an overlaid header with icon controls. A comment is written in an inline
 input at its pin, in a popover with the thread popover's surface (the send
 button outside the field, inside the popover; the hover label hides while it
 or a thread is open), and joins
@@ -1249,9 +1284,9 @@ the composer stack only when confirmed; the stack item carries
 chat's `chat-comment-line`. It stays a draft until a prompt is sent. In the
 conversation `Cmd/Ctrl+Enter` is chat's send, before which the open note joins
 the stack (`doric:prompt-send`); neither the canvas nor its fields answer the
-chord. In the canvas window `Cmd/Ctrl+Enter` is `papercraft.send/v1` (the
-approval is `Cmd/Ctrl+Shift+Enter`), which, like the window's send button,
-confirms the open note and sends the stack through `chat.send/v1`; the flush writes `commentId` and `inReplyTo` and still reads
+chord. The modal's "Enviar ao agente (n)" button is `papercraft.send/v1`,
+which has no key chord (`Cmd/Ctrl+Enter` in the modal stays chat's; the
+approval is `Cmd/Ctrl+Shift+Enter`); it confirms the open note and sends the stack through `chat.send/v1`; the flush writes `commentId` and `inReplyTo` and still reads
 old-format drafts. Comments are grouped into threads from the Thread log (one
 shared `watchThread` per Thread per window, `comments/v1.list` as fallback).
 Threads and drafts carry over revisions: every revision on screen shows every
@@ -1288,8 +1323,7 @@ with avatar, name and time; a reply field): replies go to the stack with
 listens for `doric:comment-thread-open`: a target with a `revision` opens on
 that revision's node, and a target without one means the latest, so only the
 node of the artifact's newest revision (asked of `artifacts/v1.read`) opens
-it; the separate canvas window does not receive the chat's DOM event, a known
-limitation. `papercraft_preview` returns
+it; the modal lives in the conversation's document and receives it too. `papercraft_preview` returns
 the unresolved root comments with their `replies`, and the skill tells the
 agent to answer with `comment_reply` and resolve when done. Every window call carries the
 Project and Thread scope, and `chat.composer/v1`, `chat.send/v1` and
@@ -1383,7 +1417,7 @@ imports the module from
 `doric://app/artifacts/<artifactId>@<revision>/index.js`, and the markup stands
 in when either step fails.
 
-Every Papercraft preview, in the conversation node and in the canvas window,
+Every Papercraft preview, in the conversation node and in the canvas modal,
 renders in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`
 (`docs/architecture/bundles/papercraft/isolamento.md`): an opaque origin, its
 own realm, no preload, no persistent storage and no access to the app's DOM.
@@ -1401,8 +1435,8 @@ the frame keep their own `mount`, with its portal container and its `:root`
 rules also on `:host`, and mount in the frame unchanged. A chat window keeps
 at most three live frames, the three used last (a revision's first
 appearance, a live frame staying visible, or a pointer or click on it; a dead
-preview scrolling into view is not promoted, and the canvas window's open
-revision always stays live); the others show a snapshot of the same size,
+preview scrolling into view is not promoted, and the revision open in the
+modal always stays live); the others show a snapshot of the same size,
 taken once a live frame has rendered and stays settled, wholly on screen, taken through papercraft's desktopMain `papercraft.snapshot/v1`
 (over `doric.windows/v1.capture` for the calling window's own key, so a
 window captures only itself) and keyed
@@ -1721,11 +1755,12 @@ font-src doric://app; img-src doric://app data: blob:; connect-src 'none';
 base-uri 'none'; form-action 'none'; frame-ancestors doric://app` (the origin
 is opaque, so `'self'` would match nothing).
 The shell CSP adds `worker-src 'self'`, the import
-map's script hash and `frame-src doric://app/frame/`: no window frames a
-foreign origin, the only frame a shell may embed is the preview frame, and
-the splash frames nothing. The navigation guard keeps every subframe of an app
-window at `doric://app/frame/index.html` (`will-frame-navigate`), whoever
-starts the navigation; main's dispatcher refuses calls from subframes and the
+map's script hash and `frame-src doric://app/frame/ https://drawio.doric.invalid/`:
+the only frames a shell may embed are the preview frame and the draw.io
+editor origin (`DRAWIO_ORIGIN`), and the splash frames nothing. The navigation
+guard keeps every subframe of an app window at `doric://app/frame/index.html`
+or on the draw.io editor origin (`isDrawioOriginUrl`, `will-frame-navigate`),
+whoever starts the navigation; main's dispatcher refuses calls from subframes and the
 preload does not run in them. In Electron 44.4.3 sandboxed iframes run in a
 renderer process of their own by default (`IsolateSandboxedIframes`), which
 `doric-e2e` asserts; the realm and origin isolation do not depend on it. The renderer's local storage, including the selected Thread,
@@ -1854,6 +1889,19 @@ the stage-9 window bundles' sources, so a shared class never lands after a
 responsive variant of another sheet, and `desktop/ui/sidebar` exports
 `SidebarScope`, the sidebar context alone, for an element that draws sidebar
 rows from its own React root.
+
+Since platform 1.2.0 (`PLATFORM_VERSION`, which `packages/desktop/src/tokens/tokens.ts`
+also reads), `desktop/ui/canvas` (`packages/desktop/src/canvas/`) exports the
+anchor-agnostic canvas pieces papercraft used to own: the viewport, gestures
+(the `CanvasHitTester` port), fit, threads and their view, the shared Thread log
+(`watchThreadComments` and `watchArtifactRevisions`, module state per Project
+and Thread), the comment flow (the `CommentStore` port), thread opening, the
+toolbar, `CanvasHeader` (host `'node'` or `'modal'`), the footer, the comment
+field, the pins layer, the thread popover, the avatar, the comment overlay,
+`useAppTheme` and `CanvasModal`, a base-ui dialog 12 px from the window's edge
+that never closes by itself: `Esc`, the backdrop and the close button report
+`onCloseRequest(reason)`. Their CSS is `packages/desktop/src/styles/canvas.css`,
+imported by `theme.css`, with the `papercraft-` class names kept.
 
 The `Host` capability facade the runtime's runner builds for every prompt is
 the `runtime` bundle's own contract: its types live in
@@ -2334,8 +2382,8 @@ resubscribes from its cursor when the connection reports `connected` again,
 or after one second when it already reads `connected` — the connection status
 follows a socket of its own that can return before the bridge does, as after
 the machine sleeps — and again for as long as each attempt ends the same way.
-The selected-Project tree watch, the terminal watches and the canvas window's
-shared Thread log (which then extends its events from the replay) recover the
+The selected-Project tree watch, the terminal watches and the shared Thread log
+of `desktop/ui/canvas`'s `thread-log` (which then extends its events from the replay) recover the
 same way from the same three codes; any other end stays ended.
 
 The `postgres` bundle owns the Prisma ORM 7 schema, generated client

@@ -3,8 +3,9 @@
 // A subframe of an app window is a preview frame
 // (docs/architecture/bundles/papercraft/isolamento.md): it may only be at the
 // frame document, whoever starts the navigation — the shell setting `src` or
-// the Project's code in the frame.
+// the Project's code in the frame — or on the draw.io editor origin.
 
+import { isDrawioOriginUrl } from '../drawio';
 import { isFrameDocumentUrl } from '../protocol/frame';
 import { viewNavigationAllowed } from './view';
 
@@ -41,7 +42,11 @@ export const installNavigationGuard = (contents: GuardedAppContents): void => {
   });
   // `will-navigate` covers the main frame; this covers every subframe.
   contents.on('will-frame-navigate', (details) => {
-    if (!details.isMainFrame && !isFrameDocumentUrl(details.url)) {
+    if (
+      !details.isMainFrame &&
+      !isFrameDocumentUrl(details.url) &&
+      !isDrawioOriginUrl(details.url)
+    ) {
       details.preventDefault();
     }
   });

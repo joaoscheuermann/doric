@@ -17,11 +17,12 @@ for (const name of ['window', 'document', 'Element', 'Node'] as const) {
   });
 }
 
+import type { ContentPoint } from 'desktop/ui/canvas';
+
 import { anchorOf, pseudoOf } from '../../src/client/anchor.js';
 import {
   anchorIndexOf,
   anchorResolver,
-  type ContentPoint,
   offsetIn,
   pinPointOf,
 } from '../../src/client/surface/pin-geometry.js';

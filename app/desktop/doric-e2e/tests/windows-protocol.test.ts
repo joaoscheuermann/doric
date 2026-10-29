@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 
+import { PLATFORM_VERSION } from 'bundle/runtime';
 import { type BrowserWindow, net } from 'electron';
 
 import { desktopPaths } from '../../doric/src/platform/paths';
@@ -64,7 +65,7 @@ describe('doric://app through Electron, and open() semantics', () => {
 
   test('a real platform, bundle and schema file answers 200 with its type', async () => {
     const splash = await fetchStatus(
-      'doric://app/platform/splash@1.0.0/index.html',
+      `doric://app/platform/splash@${PLATFORM_VERSION}/index.html`,
     );
 
     assert.equal(splash.status, 200);

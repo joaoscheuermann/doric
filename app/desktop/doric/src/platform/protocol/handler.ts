@@ -56,7 +56,7 @@ const notFound: RouteDecision = Object.freeze({ type: 'not-found' });
  * Decoded path segments under a prefix; undefined when one is empty, `.`,
  * `..`, or carries NUL, a slash or a backslash once decoded.
  */
-const segmentsOf = (path: string): string[] | undefined => {
+export const segmentsOf = (path: string): string[] | undefined => {
   const raw = path.split('/');
   const decoded: string[] = [];
 

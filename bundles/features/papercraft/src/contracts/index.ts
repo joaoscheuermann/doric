@@ -502,8 +502,8 @@ export type ThreadWatchItem =
   | { readonly kind: 'updated' | 'deleted' };
 
 /**
- * `runtime.threads/v1`, only the stream the canvas window reads its preview's
- * durable state from (spec: "De onde vêm os dados"). Optional: a window
+ * `runtime.threads/v1`, only the stream the canvas modal reads its preview's
+ * durable state from (spec: "De onde vêm os dados"). Optional: a modal
  * without it reads the registry and stays at that reading.
  */
 export interface ThreadsWatch {
@@ -524,12 +524,9 @@ export const PREVIEW_BLOCK_TYPE = 'papercraft.preview/v1';
 /** The node element tag; the `papercraft` owner prefixes every tag. */
 export const PAPERCRAFT_PREVIEW_TAG = 'papercraft-preview';
 
-/** The canvas element tag of the canvas route. */
-export const PAPERCRAFT_CANVAS_TAG = 'papercraft-canvas';
-
 /**
  * The Project and the Thread a preview belongs to: what every host call of the
- * node and the window carries as its scope (the host's lease needs the
+ * node and the modal carries as its scope (the host's lease needs the
  * `projectId`), and what the composer stack is keyed by.
  */
 export interface PreviewScope {
@@ -543,33 +540,13 @@ export const callScopeOf = (scope: PreviewScope): CallScope => ({
   ...(scope.threadId === undefined ? {} : { threadId: scope.threadId }),
 });
 
-/** The window command that opens or focuses the canvas at a preview. */
-export const OPEN_CANVAS_COMMAND = 'papercraft.open-canvas/v1';
-
-/**
- * The path window the canvas opens as. The window is opened from a
- * conversation, and it carries that conversation in its path: the Project
- * scopes every host call, and the Thread is the composer stack its comments
- * join and the log it watches.
- */
-export const CANVAS_ROUTE = '/papercraft/:projectId/:threadId/:artifactId';
-
-export const canvasPathOf = (input: {
-  readonly projectId: string;
-  readonly threadId: string;
-  readonly artifactId: string;
-}): string =>
-  `/papercraft/${encodeURIComponent(input.projectId)}/${encodeURIComponent(
-    input.threadId,
-  )}/${encodeURIComponent(input.artifactId)}`;
-
 /** The command that approves a revision under the `request` policy. */
 export const APPROVE_COMMAND = 'papercraft.approve/v1';
 
 /**
- * The canvas window's send: confirms the open note and sends the Thread's
- * stack through chat's `chat.send/v1`. In the conversation, the window's
- * `CmdOrCtrl+Enter` is chat's own send instead.
+ * The canvas modal's send: confirms the open note and sends the Thread's
+ * stack through chat's `chat.send/v1`. The canvas header's send action runs
+ * it; in the conversation, `CmdOrCtrl+Enter` is chat's own send.
  */
 export const SEND_COMMAND = 'papercraft.send/v1';
 

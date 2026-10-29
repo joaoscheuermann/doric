@@ -5,6 +5,7 @@ const types: Readonly<Record<string, string>> = {
   '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
+  '.xml': 'application/xml',
   '.map': 'application/json',
   '.html': 'text/html',
   '.woff2': 'font/woff2',

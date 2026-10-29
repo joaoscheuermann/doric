@@ -12,6 +12,8 @@ export interface Resources {
   readonly shellRoot: string;
   /** `PLATFORM_VERSION`: the shell's URL prefix is `/platform/shell@<v>/`. */
   readonly shellVersion: string;
+  /** `assets/drawio/`: `manifest.json`, `LICENSE`, `NOTICE` when the release has one, and the `webapp/` served at `DRAWIO_ORIGIN`. */
+  readonly drawioRoot: string;
 }
 
 /**
@@ -24,6 +26,7 @@ export const resourcesFor = (mainDir: string): Resources => ({
   schemasRoot: join(mainDir, 'assets', 'schemas'),
   shellRoot: join(mainDir, '..', 'doric-renderer'),
   shellVersion: PLATFORM_VERSION,
+  drawioRoot: join(mainDir, 'assets', 'drawio'),
 });
 
 export const shellPrefix = (resources: Resources): string =>

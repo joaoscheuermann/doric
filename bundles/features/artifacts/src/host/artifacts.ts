@@ -378,10 +378,12 @@ const policySettings = async (
 const policyOf = async (
   services: Services,
   call: Call,
+  kind?: string,
 ): Promise<ArtifactReviewPolicyValue['policy']> =>
   reviewPolicyOf(
     await policySettings(services, call),
     readRuntimeScope(call).projectId,
+    kind,
   );
 
 /** Read and list answer the lease state as "nothing there", never a failure. */
@@ -465,7 +467,8 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) => {
 
     const record = recordOf(found.artifact, entry);
     const cleared =
-      entry.approved === true || (await policyOf(services, call)) !== 'request';
+      entry.approved === true ||
+      (await policyOf(services, call, found.artifact.kind)) !== 'request';
 
     return { status: cleared ? 'cleared' : 'open', record };
   };
@@ -748,7 +751,7 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) => {
           // revision: either way nothing is recorded.
           if (
             entry.approved === true ||
-            (await policyOf(services, call)) !== 'request'
+            (await policyOf(services, call, artifact.kind)) !== 'request'
           ) {
             return recordOf(artifact, entry);
           }
@@ -853,10 +856,14 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) => {
     policy: defineMethod({
       expose: 'desktop',
       ...artifactsMethods.policy,
-      execute: async (_input: readonly [], call, services) =>
-        ({
-          policy: await policyOf(services, call),
-        }) satisfies ArtifactReviewPolicyValue,
+      execute: async (_input: readonly [], call, services) => {
+        const settings = await policySettings(services, call);
+
+        return {
+          policy: reviewPolicyOf(settings, readRuntimeScope(call).projectId),
+          exemptKinds: settings.exemptKinds,
+        } satisfies ArtifactReviewPolicyValue;
+      },
     }),
     setPolicy: defineMethod({
       expose: 'desktop',
@@ -934,7 +941,7 @@ export const artifactsService = (kinds: ArtifactKindRegistryState) => {
 
           if (
             entry.approved !== true &&
-            (await policyOf(services, call)) === 'request'
+            (await policyOf(services, call, artifact.kind)) === 'request'
           ) {
             throw new ContractError(
               'invalid_input',

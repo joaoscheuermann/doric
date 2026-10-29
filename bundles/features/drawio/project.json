@@ -1,0 +1,49 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "bundle-drawio",
+  "projectType": "library",
+  "sourceRoot": "bundles/features/drawio/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/drawio/tsconfig.json",
+          "tsc -p bundles/features/drawio/tsconfig.parts.json",
+          "tsc -p bundles/features/drawio/tsconfig.client.json",
+          "node packages/bundle/dist/build/cli.js build bundles/features/drawio"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "options": {
+        "commands": [
+          "tsc --build bundles/features/drawio/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/drawio/tsconfig.parts.json",
+          "tsc -p bundles/features/drawio/tsconfig.client.json"
+        ],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "rm -rf bundles/features/drawio/dist-tests",
+          "tsc -p bundles/features/drawio/tsconfig.spec.json",
+          "tsc -p bundles/features/drawio/tsconfig.client-spec.json",
+          "node --test bundles/features/drawio/dist-tests/tests/*.test.js bundles/features/drawio/dist-tests/tests/client/*.test.js"
+        ],
+        "parallel": false
+      }
+    }
+  },
+  "tags": ["type:bundle"]
+}

@@ -233,6 +233,9 @@ describe('doric.windows/v1 capture (broker)', () => {
       migrateStorage: async () => 'none',
       tokens: () => ({}),
       notify: () => undefined,
+      drawio: {
+        describe: () => ({ available: false, reason: 'missing-assets' }),
+      },
       log: silentLog,
     });
 

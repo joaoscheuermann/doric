@@ -129,6 +129,7 @@ const deps = (): ProtocolDeps => ({
     schemasRoot: join(root, 'schemas'),
     shellRoot: join(root, 'renderer'),
     shellVersion: '1.0.0',
+    drawioRoot: join(root, 'drawio'),
   },
   bundles: { file: () => undefined },
   artifacts: { root },

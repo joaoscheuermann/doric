@@ -137,9 +137,11 @@ void test('desktop providers expose exactly the operations used by clients', asy
       'watch',
     ],
     'core.commands/v1': ['execute'],
+    'drawio.svg/v1': ['get', 'put', 'status'],
     'history.snapshots/v1': ['read', 'write'],
     'menus/v1': ['addItem', 'addKeybinding', 'setContext'],
     'notifications.observations/v1': ['report'],
+    'papercraft.snapshot/v1': ['capture'],
     'screen.views/v1': [
       'add',
       'deliver',
