@@ -909,6 +909,41 @@ test('a comment alone is something to send: the send carries the stack', async (
   assert.equal(noteOf(window, 1), null);
 });
 
+test('a sent comment opens the sent turn at once, before its write reaches the log', async () => {
+  // The write is still out: the log does not hold the comment yet.
+  let land: (() => void) | undefined;
+  const { window, composer: fake } = await boot({
+    'comments/v1.add': () =>
+      new Promise((resolve) => {
+        land = () => resolve(undefined);
+      }),
+  });
+  const watch = composerWatch(window);
+  fake.streams.push(watch);
+
+  fake.add(messageComment('essa resposta está desatualizada'));
+  await settle(50);
+
+  const region = await footer(window);
+  await type('Atualiza a resposta, por favor');
+  button(region, 'Send (Cmd+Enter)')?.click();
+  await settle(150);
+
+  assert.equal(window.received('comments/v1.add').length, 1);
+  const sentTurn = window.document.querySelector('[data-turn-comments]');
+  assert.match(
+    sentTurn?.textContent ?? '',
+    /essa resposta está desatualizada/,
+    'the sent turn wears the comment',
+  );
+  assert.equal(
+    noteOf(window, 1),
+    null,
+    'and the stack above the prompt no longer draws it',
+  );
+  land?.();
+});
+
 test('a send the host refuses restores the words and keeps the stack where it was', async () => {
   const { window, composer: fake } = await boot({
     'runtime.threads/v1.prompt': () => {

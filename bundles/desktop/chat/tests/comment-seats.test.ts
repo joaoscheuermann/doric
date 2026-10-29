@@ -13,7 +13,9 @@ import {
   type SeatWant,
   seatWantOf,
   seatWantsKey,
+  sentSeatWants,
 } from '../src/client/domain/comment-seats.js';
+import type { CommentThreads } from '../src/client/domain/comment-threads.js';
 
 /** A stack item with the given id and data. */
 const item = (id: string, data: unknown) => ({
@@ -212,5 +214,96 @@ describe('bySeatPlace', () => {
       [...seats].sort(bySeatPlace).map((seat) => seat.id),
       ['comment-a', 'comment-b'],
     );
+  });
+});
+
+describe('sentSeatWants', () => {
+  /** The log's threads, each a root comment with the given author and target. */
+  const threads = (
+    roots: readonly {
+      readonly id: string;
+      readonly target: unknown;
+      readonly author?: string;
+    }[],
+  ): CommentThreads =>
+    new Map(
+      roots.map((root) => [
+        root.id,
+        {
+          rootId: root.id,
+          target: root.target,
+          resolved: false,
+          messages: [
+            {
+              commentId: root.id,
+              target: root.target,
+              text: 'a note',
+              ...(root.author === undefined ? {} : { author: root.author }),
+            },
+          ],
+        },
+      ]),
+    );
+  const onAnswer = (anchor: Record<string, unknown>) => ({
+    kind: 'message',
+    id: 'prompt-1',
+    anchor: { form: 'range', text: 'src/parser.ts', ...anchor },
+  });
+
+  test('seats every comment the reader sent on a place of an answer', () => {
+    const wanted = sentSeatWants(
+      threads([
+        {
+          id: 'comment-a',
+          target: onAnswer({ turn: 't1', block: 2, at: 7, item: 1 }),
+        },
+      ]),
+    );
+
+    assert.deepEqual(
+      wanted.map(({ id, turn, block, quote, at, startItem, sent }) => ({
+        id,
+        turn,
+        block,
+        quote,
+        at,
+        startItem,
+        sent,
+      })),
+      [
+        {
+          id: 'comment-a',
+          turn: 't1',
+          block: 2,
+          quote: 'src/parser.ts',
+          at: 7,
+          startItem: 1,
+          sent: true,
+        },
+      ],
+    );
+  });
+
+  test("seats no agent reply, no other kind's comment and no range without a place", () => {
+    const wanted = sentSeatWants(
+      threads([
+        {
+          id: 'comment-agent',
+          target: onAnswer({ turn: 't1', block: 0 }),
+          author: 'agent',
+        },
+        {
+          id: 'comment-preview',
+          target: {
+            kind: 'preview',
+            id: 'art_1',
+            anchor: { form: 'range', text: 'x', turn: 't1', block: 0 },
+          },
+        },
+        { id: 'comment-unplaced', target: onAnswer({}) },
+      ]),
+    );
+
+    assert.deepEqual(wanted, []);
   });
 });

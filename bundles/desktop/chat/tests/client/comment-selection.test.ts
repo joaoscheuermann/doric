@@ -289,11 +289,9 @@ const open = async (
       for (const each of streams) each.end(error);
     },
   } as OpenStream);
-  // Main's watch opens on the stack it holds.
-  if (stacked.length > 0) {
-    for (const each of streams) {
-      each.push({ kind: 'snapshot', threadId, text: '', items: [...stacked] });
-    }
+  // Main's watch opens on the stack it holds, an empty one included.
+  for (const each of streams) {
+    each.push({ kind: 'snapshot', threadId, text: '', items: [...stacked] });
   }
 
   opened.watches().at(-1)?.push({
@@ -1222,22 +1220,75 @@ test('the passage of the comment being written wears the stronger highlight for 
   assert.deepEqual(stronger(), ['src/parser.ts'], 'edited again');
 });
 
-test('once the send flushes the comment off the stack, its seat and highlight leave the transcript', async () => {
+/** The log's `comments.added/v1` for a comment the reader wrote. */
+const logged = (sequence: number, written: StackItem) =>
+  event(sequence, {
+    type: 'comments.added/v1',
+    commentId: written.id,
+    target: (written.data as { target: unknown }).target,
+    text: written.note,
+    author: READER_NAME,
+  });
+
+test('once the send has written the comment, it stays where it was written, read-only, its passage still highlighted', async () => {
   const window = await open();
   const highlights = installHighlights(window);
   await comment('src/parser.ts', 'a note');
 
   const fake = composer;
   assert.ok(fake);
-  const { id } = onlyItem();
+  const written = onlyItem();
+  // The send: the log holds the comment, and the stack lets go of it.
+  window
+    .watches()
+    .at(-1)
+    ?.push({ kind: 'event', event: logged(3, written) });
+  await settle(150);
   fake.items = [];
   for (const stream of fake.streams) {
-    stream.push({ kind: 'removed', threadId, id });
+    stream.push({ kind: 'removed', threadId, id: written.id });
   }
   await settle(100);
 
-  assert.equal(seat(window), null);
-  assert.deepEqual(highlighted(highlights), []);
+  const sent = seat(window);
+  assert.ok(sent, 'the comment stands in the answer');
+  assert.match(sent.textContent ?? '', /a note/);
+  assert.equal(entryOf(window), null, 'its note is no longer edited');
+  assert.deepEqual(highlighted(highlights), ['src/parser.ts']);
+  assert.deepEqual(window.received('chat.composer/v1.addItem').length, 1);
+
+  // A click on its passage takes the caret nowhere.
+  await click(window, 'src/parser.ts', 3);
+  assert.equal(
+    sent.contains(window.document.activeElement),
+    false,
+    'no note takes the focus',
+  );
+});
+
+test('a conversation opened on a log that holds a comment on its answer draws it there, read-only and highlighted', async () => {
+  const first = await open();
+  await comment('src/parser.ts', 'sent last time');
+  const written = { ...onlyItem() };
+  await first.close();
+  opened = undefined;
+
+  const window = await open([...exchange, logged(3, written)]);
+  const highlights = installHighlights(window);
+  await settle(100);
+  // The registry was given after the window booted: the next update paints in
+  // it, as the platform's own would have from the start.
+  conversationEditor().update(() => $getRoot().markDirty(), {
+    discrete: true,
+  });
+  await settle(50);
+
+  const sent = seat(window);
+  assert.ok(sent, 'the comment stands in the answer');
+  assert.match(sent.textContent ?? '', /sent last time/);
+  assert.equal(entryOf(window), null);
+  assert.deepEqual(highlighted(highlights), ['src/parser.ts']);
+  assert.equal(stackSection(window), null, 'nothing is left to send');
 });
 
 test('the window’s send finds the note as last written, even while its item is still being added', async () => {

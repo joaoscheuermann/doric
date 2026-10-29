@@ -140,6 +140,7 @@ describe('the store send from outside the conversation', () => {
       history: { write: () => undefined },
       flush: async (input) => {
         flushes.push(input);
+        return [];
       },
     });
 

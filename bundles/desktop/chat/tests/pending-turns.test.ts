@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { withPendingTurns } from '../src/client/domain/pending-turns.js';
+import {
+  type SentComment,
+  withPendingTurns,
+  withSentThreads,
+} from '../src/client/domain/pending-turns.js';
 import type {
   AgentTurn,
   Turn,
@@ -122,5 +126,64 @@ describe('the turns a surface waits for', () => {
     const sent = drawn.at(-1);
     assert.equal(sent?.type === 'user' && sent.text, 'next');
     assert.equal(sent?.type === 'user' && sent.accepted, false);
+  });
+});
+
+const comment = (commentId: string, text = 'a note') => ({
+  commentId,
+  target: { kind: 'message', id: 'zero', anchor: { form: 'range', text } },
+  text,
+});
+
+const sent = (promptId: string, commentId: string): SentComment => ({
+  promptId,
+  comment: comment(commentId),
+});
+
+const commentIds = (turn: Turn | undefined): readonly string[] =>
+  turn?.type === 'user' ? turn.comments.map((held) => held.commentId) : [];
+
+describe('the comments a surface draws before the log holds them', () => {
+  test('a sent prompt wears the comments it carries above its words', () => {
+    const drawn = withPendingTurns([prompt('hi')], {
+      text: 'next',
+      before: 1,
+      comments: [comment('comment-a'), comment('comment-b')],
+    });
+
+    assert.deepEqual(commentIds(drawn[1]), ['comment-a', 'comment-b']);
+  });
+
+  test('an accepted prompt wears its sent comments after the ones its log holds', () => {
+    const logged: UserTurn = {
+      ...prompt('hi'),
+      comments: [comment('comment-a')],
+    };
+    const drawn = withPendingTurns([logged, answer()], undefined, [
+      sent('one', 'comment-a'),
+      sent('one', 'comment-b'),
+      sent('other', 'comment-c'),
+    ]);
+
+    assert.deepEqual(commentIds(drawn[0]), ['comment-a', 'comment-b']);
+  });
+
+  test('leaves the log its own turns once it holds every comment sent', () => {
+    const turns = [{ ...prompt('hi'), comments: [comment('comment-a')] }];
+    assert.equal(
+      withPendingTurns(turns, undefined, [sent('one', 'comment-a')]),
+      turns,
+    );
+  });
+
+  test('folds the comments sent into the threads, as the log will', () => {
+    const threads = withSentThreads(new Map(), [sent('one', 'comment-a')]);
+
+    assert.deepEqual(
+      threads.get('comment-a')?.messages.map((held) => held.text),
+      ['a note'],
+    );
+    const none = new Map();
+    assert.equal(withSentThreads(none, []), none);
   });
 });

@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla';
 
-import type { ThreadUpdateInput } from '../../contracts/index.js';
+import type { ThreadUpdateInput, TurnComment } from '../../contracts/index.js';
 import { composerFeed } from '../api/composer.js';
 import { type HistoryFeed, historyFeed } from '../api/history.js';
 import { type ThreadWatch, threadWatch } from '../api/thread-watch.js';
@@ -10,7 +10,7 @@ import {
   threadsApi,
 } from '../api/threads-api.js';
 import { messageFrom } from '../domain/errors.js';
-import { promptMessage } from '../domain/prompt-envelope.js';
+import { promptMessage, sentComments } from '../domain/prompt-envelope.js';
 import { queueChanged } from '../domain/queue.js';
 import {
   applyThreadEvents,
@@ -18,6 +18,8 @@ import {
   clearPending,
   emptyThreadChats,
   openThread,
+  sendComments,
+  settleSentComments,
   showThread,
   startPending,
   type ThreadChatEffect,
@@ -27,6 +29,7 @@ import {
 } from '../domain/thread-chats.js';
 import type { Thread, ThreadEvent, ThreadUpdate } from '../domain/workspace.js';
 import { chatHooks } from '../services/chat-hooks.js';
+import { composerStackStore } from './composer-stack.js';
 
 const queueListeners = new Map<string, Set<() => void>>();
 /** Observe queue invalidations through the existing Thread watch. */
@@ -124,13 +127,19 @@ export interface ThreadChatsDependencies {
    * The send flush: runs once the host accepted a prompt, flushing the
    * composer's comment stack — the drafts above the prompt — into durable
    * comment events, and only then emptying it. `undefined` when the composer's
-   * service is unreachable, which leaves the drafts drafted.
+   * service is unreachable, which leaves the drafts drafted. Answers the ids
+   * of the comments it wrote.
    */
   readonly flush?: (input: {
     readonly threadId: string;
     readonly projectId: string;
     readonly promptId: string;
-  }) => Promise<void>;
+  }) => Promise<readonly string[]>;
+  /**
+   * The comments a prompt about to be sent carries, as the log will hold them
+   * (`sentComments`), read from the Thread's stack; none by default.
+   */
+  readonly comments?: (id: string, text: string) => readonly TurnComment[];
   /**
    * R-9.6: told every live event of a held Thread as it is received, and
    * every `updated` record (`chat.hooks/v1.onThreadUpdateHook`).
@@ -317,9 +326,10 @@ export const createThreadChatsStore = (
     ): Promise<boolean> => {
       const words = text.trim();
       if (words.length === 0) return false;
-      // The pending turn draws the reader's words, as the log's turn will:
-      // the envelope's `<message>`, never its comments.
-      setChats(startPending(get().chats, id, promptMessage(words)));
+      // The pending turn draws the reader's words, as the log's turn will —
+      // the envelope's `<message>` — with the comments it carries above them.
+      const comments = dependencies.comments?.(id, text) ?? [];
+      setChats(startPending(get().chats, id, promptMessage(words), comments));
       // The receipt is what carries the flush: the host's prompt id, which
       // the comment events land below once the stack empties into them.
       let receipt: PromptReceipt | undefined;
@@ -340,15 +350,20 @@ export const createThreadChatsStore = (
         // The flush runs only after the acceptance: the host took the prompt,
         // so each draft of the stack becomes a durable comment of this
         // prompt, and the stack empties into the log.
+        // Until the log holds them, the comments are drawn as sent.
+        const { promptId } = receipt;
+        setChats(sendComments(get().chats, id, promptId, comments));
         const projectId =
           get().chats.chats.get(id)?.thread.projectId ?? fallbackProjectId;
-        if (projectId !== undefined) {
-          await dependencies.flush?.({
-            threadId: id,
-            projectId,
-            promptId: receipt.promptId,
-          });
-        }
+        const written =
+          projectId === undefined
+            ? []
+            : await dependencies.flush?.({
+                threadId: id,
+                projectId,
+                promptId,
+              });
+        setChats(settleSentComments(get().chats, id, promptId, written ?? []));
       }
       return true;
     };
@@ -468,6 +483,8 @@ export const threadChatsStore: ThreadChatsStore = createThreadChatsStore({
   // The send flush: the composer's stack empties into the log once the host
   // accepted the prompt, with the writes the send performs (`api/composer.ts`).
   flush: (input) => composerFeed.flushAfterSend(input),
+  comments: (id, text) =>
+    sentComments(text, composerStackStore.getState().stack(id)),
   observe: (input) => {
     const hooks = chatHooks();
     if (hooks === undefined) return;

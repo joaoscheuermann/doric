@@ -2,12 +2,15 @@ import { useCallback, useEffect } from 'react';
 import { useStore } from 'zustand/react';
 
 import type { CommentThreads } from '../domain/comment-threads.js';
-import type { PendingSend } from '../domain/pending-turns.js';
+import type { PendingSend, SentComment } from '../domain/pending-turns.js';
 import { emptyProjection, type Turn } from '../domain/projector.js';
 import { queueItems } from '../domain/queue.js';
 import type { Thread, ThreadEvent } from '../domain/workspace.js';
 import { threadChatsStore } from '../stores/thread-chats.js';
 import { useThreadQueue } from './use-thread-queue.js';
+
+/** No sent comment waiting for the log: one frozen array, stable across renders. */
+const noOutbox: readonly SentComment[] = [];
 
 /** What a conversation surface needs from one Thread's chat. */
 export type ThreadChat = {
@@ -28,6 +31,11 @@ export type ThreadChat = {
    * can draw them at once. `undefined` when nothing is in flight.
    */
   readonly pending: PendingSend | undefined;
+  /**
+   * The comments sent with accepted prompts that the log does not hold yet,
+   * so a surface draws them from the send on.
+   */
+  readonly outbox: readonly SentComment[];
   /** Sends a prompt through `threads.prompt`, and reports whether it was accepted. */
   readonly prompt: (text: string) => Promise<boolean>;
   /**
@@ -136,6 +144,7 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
     sending: chat?.sending ?? false,
     sendError: chat?.sendError,
     pending: chat?.pending,
+    outbox: chat?.outbox ?? noOutbox,
     prompt,
     steer,
     rewind,

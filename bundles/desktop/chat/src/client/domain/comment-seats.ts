@@ -4,12 +4,13 @@
 // the stack item), so a block can hold any number of them. The stack is the
 // record of every comment written in the answer: each of its items that names
 // a seat (`data.seat`) stands at it while its turn is in the transcript, and
-// the seats the reader opened and has not let go of yet stand beside them.
-// Anything else the transcript holds — a seat an undo brought back, one whose
-// comment was sent — goes, and a seat the transcript lost — a remount, an undo
-// — comes back.
+// the seats the reader opened and has not let go of yet stand beside them, and
+// so does every comment sent on an answer, which stays in it, read-only.
+// Anything else the transcript holds — a seat an undo brought back — goes, and
+// a seat the transcript lost — a remount, an undo — comes back.
 
-import type { ComposerItem } from '../../contracts/index.js';
+import { type ComposerItem, MESSAGE_KIND } from '../../contracts/index.js';
+import { type CommentThreads, isAgentComment } from './comment-threads.js';
 import { anchorOf, isIndex, itemData, type SeatRef } from './composer-stack.js';
 
 /** A seat the transcript should hold: which comment, where, which words. */
@@ -28,6 +29,11 @@ export interface SeatWant extends SeatRef {
    * the comment's anchor names, for a reader who goes to its passage.
    */
   readonly startItem?: number;
+  /**
+   * A sent comment's: its target names no place to stand, so `after` is its
+   * block until the seat opens, where the end of its words is found again.
+   */
+  readonly sent?: true;
 }
 
 /** What the transcript does to hold the seats it should. */
@@ -70,6 +76,50 @@ export const seatWantOf = (item: ComposerItem): SeatWant | undefined => {
 };
 
 /**
+ * The seats the comments sent on an answer ask for: every root comment the
+ * reader wrote on a `message` target whose range names its turn and block.
+ */
+export const sentSeatWants = (threads: CommentThreads): SeatWant[] =>
+  [...threads.values()].flatMap((thread) => {
+    const root = thread.messages[0];
+    if (
+      root === undefined ||
+      root.commentId !== thread.rootId ||
+      isAgentComment(root) ||
+      (root.target as { kind?: unknown } | undefined)?.kind !== MESSAGE_KIND
+    )
+      return [];
+    // A `message` range names where in the answer it stands (`targetOf` in
+    // `comment-entry.tsx`).
+    const anchor = anchorOf(root.target) as
+      | Readonly<Record<string, unknown>>
+      | undefined;
+    const turn = anchor?.turn;
+    const block = anchor?.block;
+    const quote = anchor?.text;
+    if (
+      typeof turn !== 'string' ||
+      !isIndex(block) ||
+      typeof quote !== 'string'
+    )
+      return [];
+    const at = anchor?.at;
+    const startItem = anchor?.item;
+    return [
+      {
+        id: root.commentId,
+        turn,
+        block,
+        quote,
+        at: isIndex(at) ? at : 0,
+        after: block,
+        ...(isIndex(startItem) ? { startItem } : {}),
+        sent: true,
+      },
+    ];
+  });
+
+/**
  * What decides the seats a list of wanted seats opens: every field `planSeats`
  * and an opened seat read, so two lists with the same key seat the same
  * comments in the same places. A note's words are not part of it.
@@ -85,6 +135,7 @@ export const seatWantsKey = (wanted: readonly SeatWant[]): string =>
       seat.after,
       seat.item ?? null,
       seat.startItem ?? null,
+      seat.sent ?? false,
     ]),
   );
 

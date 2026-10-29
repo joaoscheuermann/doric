@@ -6,6 +6,8 @@ import {
   emptyThreadChats,
   MAX_OPEN_THREADS,
   openThread,
+  sendComments,
+  settleSentComments,
   showThread,
   startPending,
   type ThreadChatEffect,
@@ -390,5 +392,77 @@ describe('the chats the surface holds', () => {
 
     assert.equal(settled.chats.chats.get('one')?.pending, undefined);
     assert.equal(settled.chats.chats.get('two')?.pending?.text, 'second');
+  });
+});
+
+describe('the comments sent with a prompt', () => {
+  const note = (commentId: string) => ({
+    commentId,
+    target: { kind: 'message', id: 'prompt', anchor: { form: 'range' } },
+    text: 'a note',
+  });
+  const opened = openThread(emptyThreadChats, thread('one'), null).chats;
+  const outboxIds = (chats: ThreadChats): readonly string[] =>
+    chats.chats.get('one')?.outbox.map((sent) => sent.comment.commentId) ?? [];
+
+  test('are drawn with the pending words until the host accepts them', () => {
+    const pending = startPending(opened, 'one', 'words', [note('comment-a')]);
+
+    assert.deepEqual(
+      pending.chats
+        .get('one')
+        ?.pending?.comments?.map((held) => held.commentId),
+      ['comment-a'],
+    );
+  });
+
+  test('keep only the ones the flush wrote', () => {
+    const sent = sendComments(opened, 'one', 'prompt', [
+      note('comment-a'),
+      note('comment-b'),
+    ]);
+    assert.deepEqual(outboxIds(sent), ['comment-a', 'comment-b']);
+
+    // comment-b's write failed: it went back on the stack, a draft again.
+    const settled = settleSentComments(sent, 'one', 'prompt', ['comment-a']);
+    assert.deepEqual(outboxIds(settled), ['comment-a']);
+  });
+
+  test('leave the pending words when the flush did not write them', () => {
+    const pending = startPending(opened, 'one', 'words', [
+      note('comment-a'),
+      note('comment-b'),
+    ]);
+    const sent = sendComments(pending, 'one', 'prompt', [
+      note('comment-a'),
+      note('comment-b'),
+    ]);
+    const settled = settleSentComments(sent, 'one', 'prompt', ['comment-a']);
+
+    assert.deepEqual(
+      settled.chats
+        .get('one')
+        ?.pending?.comments?.map((comment) => comment.commentId),
+      ['comment-a'],
+    );
+  });
+
+  test('leave once the log holds them', () => {
+    const sent = sendComments(opened, 'one', 'prompt', [
+      note('comment-a'),
+      note('comment-b'),
+    ]);
+    const logged = applyThreadUpdate(sent, 'one', {
+      kind: 'event',
+      event: {
+        ...event('one', 1, {
+          type: 'comments.added/v1',
+          ...note('comment-a'),
+        }),
+        type: 'comments.added/v1',
+      },
+    });
+
+    assert.deepEqual(outboxIds(logged.chats), ['comment-b']);
   });
 });

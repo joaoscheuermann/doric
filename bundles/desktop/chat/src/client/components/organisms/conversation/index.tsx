@@ -39,7 +39,10 @@ import {
   isReadOnlyBlock,
   isUndeletableBlock,
 } from '../../../domain/conversation-nodes.js';
-import { withPendingTurns } from '../../../domain/pending-turns.js';
+import {
+  withPendingTurns,
+  withSentThreads,
+} from '../../../domain/pending-turns.js';
 import { composerAction } from '../../../domain/queue.js';
 import type { Thread } from '../../../domain/workspace.js';
 import { CommentThreadsContext } from '../../../hooks/use-comment-threads.js';
@@ -372,8 +375,14 @@ export const Conversation = memo(function Conversation({
   // waiting for — the reader's words before the host accepts them, and the
   // agent's first step while it has produced nothing.
   const turns = useMemo(
-    () => withPendingTurns(chat.turns, chat.pending),
-    [chat.turns, chat.pending],
+    () => withPendingTurns(chat.turns, chat.pending, chat.outbox),
+    [chat.turns, chat.pending, chat.outbox],
+  );
+  // The comment threads, with the comments sent that the log does not hold
+  // yet: a sent comment stays in the answer from the send on.
+  const threads = useMemo(
+    () => withSentThreads(chat.threads, chat.outbox),
+    [chat.threads, chat.outbox],
   );
   // The prompt the Thread is running. The shell reads the same Thread for its
   // own control; the keyboard needs it here, where the editor is.
@@ -410,7 +419,7 @@ export const Conversation = memo(function Conversation({
           transcript grows from the top of the scroll view. */}
         <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-80 text-sm font-light">
           <ConversationThreadContext.Provider value={threadInfo}>
-            <CommentThreadsContext.Provider value={chat.threads}>
+            <CommentThreadsContext.Provider value={threads}>
               <ChatBlocksContext.Provider value={blocksSource}>
                 <LexicalExtensionComposer
                   extension={extension}

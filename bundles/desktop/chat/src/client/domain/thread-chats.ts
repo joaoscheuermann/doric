@@ -1,4 +1,5 @@
-import type { PendingSend } from './pending-turns.js';
+import type { TurnComment } from '../../contracts/index.js';
+import type { PendingSend, SentComment } from './pending-turns.js';
 import {
   emptyProjection,
   type Projection,
@@ -35,6 +36,12 @@ export type ThreadChat = {
   readonly sending: boolean;
   readonly sendError: string | undefined;
   readonly pending: PendingSend | undefined;
+  /**
+   * The comments sent with accepted prompts that the log does not hold yet:
+   * each leaves once the log holds it, or once the send's flush did not write
+   * it (it went back on the stack, a draft again).
+   */
+  readonly outbox: readonly SentComment[];
   readonly subscribed: boolean;
 };
 
@@ -111,16 +118,37 @@ const bounded = (state: ThreadChats): ThreadChatsChange => {
 const ownPrompts = (projection: Projection): number =>
   acceptedHumanInputs(projection.inputs);
 
+/** The ids of every comment the log holds. */
+const loggedComments = (projection: Projection): ReadonlySet<string> =>
+  new Set(
+    [...projection.threads.values()].flatMap((thread) =>
+      thread.messages.map((message) => message.commentId),
+    ),
+  );
+
 /**
  * Drops a pending send once the log holds one more prompt of the reader's own:
  * one more of them than there were when it left is the send being accepted,
- * whatever else the log has done since.
+ * whatever else the log has done since. A sent comment leaves the outbox once
+ * the log holds it.
  */
-const settled = (chat: ThreadChat): ThreadChat =>
-  chat.pending !== undefined &&
-  ownPrompts(chat.projection) > chat.pending.before
-    ? { ...chat, pending: undefined }
-    : chat;
+const settled = (chat: ThreadChat): ThreadChat => {
+  const accepted =
+    chat.pending !== undefined &&
+    ownPrompts(chat.projection) > chat.pending.before;
+  const logged =
+    chat.outbox.length === 0 ? undefined : loggedComments(chat.projection);
+  const outbox =
+    logged === undefined
+      ? chat.outbox
+      : chat.outbox.filter((sent) => !logged.has(sent.comment.commentId));
+  if (!accepted && outbox.length === chat.outbox.length) return chat;
+  return {
+    ...chat,
+    ...(accepted ? { pending: undefined } : {}),
+    outbox,
+  };
+};
 
 /**
  * Marks the Thread the reader is looking at: its record is refreshed from the one
@@ -169,6 +197,7 @@ export const openThread = (
     sending: false,
     sendError: undefined,
     pending: undefined,
+    outbox: [],
     subscribed: true,
   };
   const chats = new Map(state.chats).set(thread.id, chat);
@@ -308,18 +337,82 @@ export const applyThreadUpdate = (
   }
 };
 
-/** Records the words the reader has sent, which the log does not hold yet. */
+/**
+ * Records the words the reader has sent, which the log does not hold yet, with
+ * the comments the prompt carries.
+ */
 export const startPending = (
   state: ThreadChats,
   id: string,
   text: string,
+  comments: readonly TurnComment[] = [],
 ): ThreadChats => {
   const chat = state.chats.get(id);
   if (chat === undefined) return state;
   return withChat(state, id, {
     ...chat,
-    pending: { text, before: ownPrompts(chat.projection) },
+    pending: {
+      text,
+      before: ownPrompts(chat.projection),
+      ...(comments.length === 0 ? {} : { comments }),
+    },
   });
+};
+
+/**
+ * The host accepted the prompt `promptId`: the comments it carries are sent,
+ * and the surface draws them as the log's until the log holds them.
+ */
+export const sendComments = (
+  state: ThreadChats,
+  id: string,
+  promptId: string,
+  comments: readonly TurnComment[],
+): ThreadChats => {
+  const chat = state.chats.get(id);
+  if (chat === undefined || comments.length === 0) return state;
+  return withChat(
+    state,
+    id,
+    settled({
+      ...chat,
+      outbox: [
+        ...chat.outbox,
+        ...comments.map((comment) => ({ promptId, comment })),
+      ],
+    }),
+  );
+};
+
+/**
+ * The send's flush of the prompt `promptId` ended: of the comments sent with
+ * it, only the ones it wrote (`written`) stay sent — in the outbox, and on the
+ * pending words while the log does not hold them; any other went back on the
+ * stack, or was never written.
+ */
+export const settleSentComments = (
+  state: ThreadChats,
+  id: string,
+  promptId: string,
+  written: readonly string[],
+): ThreadChats => {
+  const chat = state.chats.get(id);
+  if (chat === undefined) return state;
+  const kept = new Set(written);
+  const outbox = chat.outbox.filter(
+    (sent) => sent.promptId !== promptId || kept.has(sent.comment.commentId),
+  );
+  const comments = chat.pending?.comments?.filter((comment) =>
+    kept.has(comment.commentId),
+  );
+  const pending =
+    chat.pending === undefined ||
+    comments?.length === chat.pending.comments?.length
+      ? chat.pending
+      : { ...chat.pending, comments };
+  if (outbox.length === chat.outbox.length && pending === chat.pending)
+    return state;
+  return withChat(state, id, { ...chat, outbox, pending });
 };
 
 /** Puts the words back when the host refused the send. */

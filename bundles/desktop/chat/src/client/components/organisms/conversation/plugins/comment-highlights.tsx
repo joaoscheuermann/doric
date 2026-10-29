@@ -2,7 +2,9 @@
 // for as long as the comment stands — while it is written, after it is
 // committed, while it is edited again — and the way back from the words to it:
 // a click strictly inside a highlighted passage puts the caret at the end of
-// its comment. Where passages overlap, the newest comment answers. The passage
+// its comment. Where passages overlap, the newest comment answers. A sent
+// comment's passage stays highlighted, but its note is not to be edited, so it
+// answers neither the click nor the pointer. The passage
 // under the pointer shows it can be clicked: the element under the pointer
 // takes `data-comment-hover` (the pointer cursor) and the passage a second
 // highlight, `chat-comment-hover`, painted above the first. The passage of the
@@ -337,14 +339,21 @@ export function CommentHighlights() {
       relight();
     };
 
+    /** The note a seat's comment is edited in; `null` once it is sent. */
+    const noteOf = (key: NodeKey): HTMLElement | null =>
+      editor
+        .getElementByKey(key)
+        ?.querySelector<HTMLElement>(`[${STACK_NOTE_ATTRIBUTE}]`) ?? null;
+
     /**
-     * The comment whose passage holds a DOM point strictly inside it; where
-     * passages overlap, the newest comment's — the one the reader wrote last.
+     * The comment, still to be edited, whose passage holds a DOM point
+     * strictly inside it; where passages overlap, the newest comment's — the
+     * one the reader wrote last.
      */
     const hit = (node: Node, offset: number): NodeKey | undefined => {
       let found: NodeKey | undefined;
       for (const [key, passage] of painted) {
-        if (!inside(passage, node, offset)) continue;
+        if (!inside(passage, node, offset) || noteOf(key) === null) continue;
         if (
           found === undefined ||
           (born.get(key) ?? 0) > (born.get(found) ?? 0)
@@ -437,11 +446,8 @@ export function CommentHighlights() {
       )
         return;
       const key = hit(node, selection.anchorOffset);
-      if (key === undefined) return;
-      const note = editor
-        .getElementByKey(key)
-        ?.querySelector<HTMLElement>(`[${STACK_NOTE_ATTRIBUTE}]`);
-      if (note === null || note === undefined) return;
+      const note = key === undefined ? null : noteOf(key);
+      if (note === null) return;
       event.preventDefault();
       placeCaret(note, true);
     };

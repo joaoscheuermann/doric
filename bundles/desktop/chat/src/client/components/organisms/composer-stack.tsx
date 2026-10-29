@@ -50,6 +50,7 @@ import {
   useComposerStack,
 } from '../../hooks/use-composer-stack.js';
 import { useGoToComment } from '../../hooks/use-go-to-comment.js';
+import { useSendingComments } from '../../hooks/use-sending-comments.js';
 import { composerStackStore } from '../../stores/composer-stack.js';
 import {
   caretOnFirstLine,
@@ -352,6 +353,12 @@ const StackLine = memo(function StackLine({
 export function ComposerStack({ thread }: { readonly thread: StackThread }) {
   const [editor] = useLexicalComposerContext();
   const stack = useComposerStack(thread);
+  // A comment being sent is drawn on the sent turn, not here.
+  const sending = useSendingComments(thread.id);
+  const items = useMemo(
+    () => stack.items.filter((item) => !sending.has(item.id)),
+    [stack.items, sending],
+  );
   const [open, setOpen] = useState(true);
 
   // The cards' callbacks stay the same from one keystroke to the next, so a
@@ -384,7 +391,7 @@ export function ComposerStack({ thread }: { readonly thread: StackThread }) {
     if (asking) setOpen(true);
   }, [asking]);
 
-  if (stack.items.length === 0) return null;
+  if (items.length === 0) return null;
 
   // The header is a stop of the caret's walk: down to the first note (the
   // prompt's start when the stack is folded), Escape back to the prompt.
@@ -451,14 +458,14 @@ export function ComposerStack({ thread }: { readonly thread: StackThread }) {
 
   return (
     <CommentGroup
-      count={stack.items.length}
+      count={items.length}
       open={open}
       onOpenChange={setOpen}
       label="Comments to send"
       onHeaderKeyDown={onHeaderKeyDown}
     >
       <ol data-composer-stack-list="" className="flex flex-col gap-1.5">
-        {stack.items.map((item, index) => line(item, index))}
+        {items.map((item, index) => line(item, index))}
       </ol>
     </CommentGroup>
   );

@@ -17,7 +17,7 @@
 // prompt the log stores is this text, so every place the chat shows a stored
 // prompt as the reader's words reads it back through `promptMessage`.
 
-import type { ComposerItem } from '../../contracts/index.js';
+import type { ComposerItem, TurnComment } from '../../contracts/index.js';
 import { anchorOf, itemData, targetKey } from './composer-stack.js';
 
 /** The longest selected text a `range` comment quotes. */
@@ -403,6 +403,36 @@ export const parsePromptEnvelope = (
 /** The reader's words of a stored prompt: the `<message>` body, else the text. */
 export const promptMessage = (text: string): string =>
   parsePromptEnvelope(text)?.message ?? text;
+
+/**
+ * The comments a prompt carries, as the log will hold them once the send's
+ * flush has written them: each stack item the envelope names, in stack order
+ * (the order the flush writes), with the note the envelope sent. A surface
+ * draws them from the moment of the send rather than when the writes land.
+ */
+export const sentComments = (
+  text: string,
+  items: readonly ComposerItem[],
+): TurnComment[] => {
+  const sent = new Set(
+    parsePromptEnvelope(text)?.comments.flatMap((comment) =>
+      comment.id === undefined ? [] : [comment.id],
+    ),
+  );
+  return items.flatMap((item) => {
+    const data = itemData(item);
+    if (!sent.has(item.id) || data.target === undefined) return [];
+    return [
+      {
+        commentId: item.id,
+        target: data.target,
+        text: item.note.trim(),
+        ...(item.author === undefined ? {} : { author: item.author }),
+        ...(data.inReplyTo === undefined ? {} : { inReplyTo: data.inReplyTo }),
+      },
+    ];
+  });
+};
 
 /**
  * Words that stand for a stored prompt on a one-line surface (a queue row, a

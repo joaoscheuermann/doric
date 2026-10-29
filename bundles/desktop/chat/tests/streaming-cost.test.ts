@@ -139,6 +139,7 @@ const openChat = (state: ThreadChats, events: readonly ThreadEvent[]) =>
             sending: false,
             sendError: undefined,
             pending: undefined,
+            outbox: [],
             subscribed: true,
           },
         ],

@@ -1145,7 +1145,13 @@ where they happened in the agent turn as collapsible `Replied to [pin]` rows
 winning), and successful `comment_reply` tool rows are hidden; a user turn's
 comments (the `comments.added/v1` of its prompt, joined to it wherever the
 compaction or the agent turns of that prompt already stand) open its block as
-the stack's group does (its mark, the header, the
+the stack's group does. A send draws them from its first moment: the pending
+turn wears the comments its envelope carries (the stack items it names, in
+stack order), and once the host accepts the prompt the turn wears every one
+the send's flush has not seen land yet, after the ones the log holds, until
+the log holds it; a comment whose write failed returns to the stack and
+leaves the turn. Meanwhile the stack inside the prompt leaves out the comments
+being sent, so none is drawn twice (its mark, the header, the
 same cards, the passage read from the target its `comments.added/v1` carries,
 which the `<comments>` envelope also names), and its cards draw no state (the
 state is read out to screen readers only, from visually hidden text). A reply
@@ -1188,10 +1194,15 @@ data carrying its `seat` (`turn`, `block` and `at` for the words, `after` and
 hands the caret to the prompt, Shift+Enter writes a newline, and Escape, or
 Backspace and Delete on an empty note, remove the item, the highlight and the
 seat; leaving the note keeps one with words and removes an empty one. These are
-the only gestures that take a comment off the stack: once its item leaves the
-stack (the send's flush) the seat leaves the transcript too, and a stack the
-window no longer holds — the view unmounting, the part deactivating — removes
-nothing. Each comment is a seat (a decorator inside the agent turn or its list
+the only gestures that take a comment off the stack. Once the send's flush
+takes its item, the comment is sent and stays where it was written: the same
+element, its passage still highlighted, its note drawn read-only (no editing
+host, no keys of its own); every root comment the reader sent on a `message`
+target whose range names its `turn` and `block` — the log's, or one still on
+its way — is seated so, a remounted conversation included, standing after the
+block (or at the end of the list item) that holds the end of its words, found
+again in the answer's text. A stack the window no longer holds — the view
+unmounting, the part deactivating — removes nothing. Each comment is a seat (a decorator inside the agent turn or its list
 item) named by the comment's id, so a block or item holds any number of
 comments, in the order of their passages (`at`), and a rebuilt turn puts them
 back there: a streamed delta keeps the blocks and, in a list still growing, the
@@ -1199,9 +1210,9 @@ items it does not change, so a comment being written is never moved, and a
 redraw that does move a focused note gives it back its caret. The seats are a
 view of the stack: every item whose data names a `seat` stands at it while its
 turn is in the transcript, beside the comments the reader opened and still
-holds, so a remounted conversation or an undo gets its comments back, and an
-undo never revives a removed or sent one; the seat edits stay out of the undo
-history. The stack inside the prompt lists every item, seated or not, and an
+holds and the comments sent, so a remounted conversation or an undo gets its
+comments back, and an undo never revives a removed one; the seat edits stay out of the undo
+history. The stack inside the prompt lists every item not being sent, seated or not, and an
 edit made on its card shows in the inline comment. Every comment's words stay
 highlighted while it stands, through the CSS Custom Highlight API
 (`::highlight(chat-comment)`) with one range per text run of the answer, so
@@ -1216,7 +1227,8 @@ transcript per hover) `data-comment-hover`, the pointer cursor; the passage of
 the comment whose note holds the focus wears the same highlight, without the
 cursor. A click strictly inside a highlight,
 outside any comment, puts the caret at the end of its comment, the newest
-comment's where passages overlap. On `doric:prompt-send` a note whose item is
+comment's where passages overlap; a sent comment's passage answers neither
+the click nor the pointer. On `doric:prompt-send` a note whose item is
 still being added hands that add to `waitUntil`.
 
 `/bundles/features/papercraft` owns the `preview` artifact kind, the

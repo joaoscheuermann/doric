@@ -85,7 +85,7 @@ const fakeService = (items: ComposerItem[]) => {
       held.splice(index, 1);
       echoes.push({ kind: 'removed', threadId: thread.id, id });
     },
-    flushAfterSend: async () => undefined,
+    flushAfterSend: async () => [],
   };
 
   return {

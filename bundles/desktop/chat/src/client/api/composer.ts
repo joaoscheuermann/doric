@@ -55,13 +55,14 @@ export interface ComposerFeed {
    * the flush its kind registered and the sender performs the comment writes
    * it answered, in the scope of the accepted prompt. An item whose write
    * fails goes back on the stack. A refused send never reaches here, which is
-   * what keeps the stack where it was.
+   * what keeps the stack where it was. Answers the ids of the items whose
+   * writes all landed: the comments the log now holds.
    */
   flushAfterSend(input: {
     readonly threadId: string;
     readonly projectId: string;
     readonly promptId: string;
-  }): Promise<void>;
+  }): Promise<readonly string[]>;
 }
 
 const threadScope = (thread: { id: string; projectId: string }): CallScope => ({
@@ -169,13 +170,14 @@ export const createComposerFeed = (
         }),
       );
 
-      if (flushed === undefined || flushed.length === 0) return;
+      if (flushed === undefined || flushed.length === 0) return [];
 
       const comments = services().use(CommentsV1, {
         ...scope,
         promptId: input.promptId,
       });
 
+      const written: string[] = [];
       for (const { item, writes } of flushed) {
         // Each item's writes land on their own: one that fails never keeps
         // the rest of the send behind it. The stack has already handed the
@@ -185,6 +187,7 @@ export const createComposerFeed = (
         // still names it).
         try {
           for (const write of writes) await comments.add(write);
+          if (writes.length > 0) written.push(item.id);
         } catch (error) {
           console.error(
             'Doric: a flushed comment could not be written:',
@@ -203,6 +206,7 @@ export const createComposerFeed = (
           );
         }
       }
+      return written;
     },
   };
 };

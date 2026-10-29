@@ -15,17 +15,20 @@
 // written and the prompt takes the caret. Shift+Enter is the browser's newline.
 // Escape, and Backspace or Delete on an empty note, remove the comment — its
 // item, its highlight and its seat. Leaving the note keeps a comment that holds
-// words and removes one that holds none (whitespace is no words: `hasWords`);
-// and once the send has flushed the item, the seat has nothing left to edit and
-// leaves the transcript too. A seat drawn for an item already on the stack — a
-// remounted conversation, an undo (`plugins/comment-seats.tsx`) — takes that
-// item and its note as its own, and an edit made on the stack's line shows here.
+// words and removes one that holds none (whitespace is no words: `hasWords`).
+// Once the send has flushed the item, the comment is sent: it stays where it
+// was written, its note read-only, as the log holds it. A seat drawn for an
+// item already on the stack — a remounted conversation, an undo
+// (`plugins/comment-seats.tsx`) — takes that item and its note as its own, and
+// an edit made on the stack's line shows here; one drawn for a sent comment
+// shows its note.
 //
 // The entry is an editing host of its own inside the conversation's document,
 // so every event that starts here is marked handled for the editor (`isolate`),
 // the way the composer's stack notes are.
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { cn } from 'desktop/ui/utils';
 import { HISTORIC_TAG } from 'lexical';
 import {
   type FocusEvent,
@@ -38,6 +41,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useStore } from 'zustand/react';
 
 import {
   CHAT_COMMENT_LINE_TAG,
@@ -48,6 +52,7 @@ import {
 } from '../../../contracts/index.js';
 import { commentKeyAction, hasWords } from '../../domain/comment-entry.js';
 import { READER_NAME } from '../../domain/conversation-authors.js';
+import { useCommentThreads } from '../../hooks/use-comment-threads.js';
 import { ConversationThreadContext } from '../../hooks/use-live-terminal.js';
 import { composerStackStore } from '../../stores/composer-stack.js';
 import { isolate } from '../../utility/isolate.js';
@@ -117,6 +122,20 @@ export function CommentEntry({ seat }: { readonly seat: CommentSeatBlock }) {
   /** The latest seat, for the callbacks that outlive a render. */
   const current = useRef(seat);
   current.current = seat;
+  /** The comment as sent, once the send took it: the log's, or on its way. */
+  const sent = useCommentThreads()
+    .get(seat.id)
+    ?.messages.find((message) => message.commentId === seat.id);
+  const sentRef = useRef(sent);
+  sentRef.current = sent;
+  const drafted = useStore(
+    composerStackStore,
+    (state) =>
+      thread !== null &&
+      state.stack(thread.threadId).some((item) => item.id === seat.id),
+  );
+  /** A sent comment no longer on the stack: nothing left to edit. */
+  const readOnly = sent !== undefined && !drafted;
 
   useEffect(() => isolate(host.current), []);
 
@@ -180,7 +199,8 @@ export function CommentEntry({ seat }: { readonly seat: CommentSeatBlock }) {
     const placed = item.current;
     const note = written();
     if (placed === undefined) {
-      if (hasWords(note)) add(note);
+      // A sent comment is the log's: nothing puts it on the stack again.
+      if (hasWords(note) && sentRef.current === undefined) add(note);
       return;
     }
     if (stacked(scope.id, placed)?.note !== note) {
@@ -266,10 +286,12 @@ export function CommentEntry({ seat }: { readonly seat: CommentSeatBlock }) {
     mirror(found.note);
   };
 
-  // Once the send flushed the item — or anything else took it off the stack —
-  // the seat has nothing left to edit, and leaves the transcript; the stack is
-  // never written for it. A stack this window no longer holds (the view is
-  // unmounting, the part deactivating) says nothing about the comment.
+  // Once the send flushed the item, the comment is sent and stays, read-only;
+  // should a failed write put it back on the stack, it is taken up again. An
+  // item anything else took off the stack has nothing left to edit, and its
+  // seat leaves the transcript; the stack is never written for it. A stack this
+  // window no longer holds (the view is unmounting, the part deactivating)
+  // says nothing about the comment.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `forget` acts on refs; the subscription is the Thread's
   useEffect(() => {
     if (scope === undefined) return;
@@ -285,6 +307,9 @@ export function CommentEntry({ seat }: { readonly seat: CommentSeatBlock }) {
       if (held !== undefined) {
         seen.current = true;
         if (held.note !== written()) mirror(held.note);
+      } else if (seen.current && sentRef.current !== undefined) {
+        item.current = undefined;
+        seen.current = false;
       } else if (seen.current) forget();
     });
   }, [scope]);
@@ -408,25 +433,37 @@ export function CommentEntry({ seat }: { readonly seat: CommentSeatBlock }) {
     placeCaret(element, true);
   };
 
+  // A sent comment is drawn as it was written, without the note's editing
+  // host; the frame stays the same element, so it never moves or blinks.
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the press and the keys act on the note, the entry's own textbox
     <div
       ref={host}
       data-comment-entry=""
-      className="-mx-2.5 flex cursor-text items-start gap-2 rounded-none border border-l-3 border-primary px-2.5 py-0.75 font-conversation text-sm font-light focus-within:bg-primary/10"
-      onKeyDown={onKeyDown}
-      onFocus={onFocus}
-      onBlur={onBlur}
-      onMouseDown={onMouseDown}
+      {...(readOnly ? { 'data-comment-sent': '' } : {})}
+      className={cn(
+        '-mx-2.5 flex items-start gap-2 rounded-none border border-l-3 border-primary px-2.5 py-0.75 font-conversation text-sm font-light',
+        !readOnly && 'cursor-text focus-within:bg-primary/10',
+      )}
+      onKeyDown={readOnly ? undefined : onKeyDown}
+      onFocus={readOnly ? undefined : onFocus}
+      onBlur={readOnly ? undefined : onBlur}
+      onMouseDown={readOnly ? undefined : onMouseDown}
     >
       <ReaderAvatar name={READER_NAME} className="mt-0.75" />
-      <StackNote
-        id={seat.id}
-        ref={field}
-        note={text}
-        label={label}
-        onText={onText}
-      />
+      {readOnly ? (
+        <span className="min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere py-0.5 leading-normal text-muted-foreground">
+          {sent.text}
+        </span>
+      ) : (
+        <StackNote
+          id={seat.id}
+          ref={field}
+          note={text}
+          label={label}
+          onText={onText}
+        />
+      )}
     </div>
   );
 }

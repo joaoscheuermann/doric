@@ -12,7 +12,9 @@
 // - a built envelope reads back as the same message and comments, a
 //   plain-text prompt reads back as itself, and an edited message keeps the
 //   comments it was sent with;
-// - the host's cut preview still reads as the reader's words.
+// - the host's cut preview still reads as the reader's words;
+// - the comments a prompt carries read as the log will hold them: the items
+//   it names, in stack order, with their notes as sent.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -23,6 +25,7 @@ import {
   promptEnvelope,
   promptMessage,
   promptSummary,
+  sentComments,
   withPromptMessage,
 } from '../src/client/domain/prompt-envelope.js';
 import type { ComposerItem } from '../src/contracts/index.js';
@@ -396,5 +399,47 @@ describe('reading a stored prompt', () => {
       'mais respiro no título',
     );
     assert.equal(previewSummary('texto simples'), 'texto simples');
+  });
+});
+
+describe('the comments a prompt carries', () => {
+  test('are the items it names, in stack order, as the log will hold them', () => {
+    const reply = papercraft('comment-r', 'feito', {
+      target: sourceTarget,
+      inReplyTo: 'comment-a',
+    });
+    const drafted = { ...messageComment('x', '   '), id: 'comment-empty' };
+    const items = [pointComment, messageComment('src/parser.ts'), reply];
+    // Grouped by target, the envelope names them in another order.
+    const prompt = promptEnvelope('Ajusta', items);
+
+    assert.deepEqual(sentComments(prompt, [...items, drafted]), [
+      {
+        commentId: 'comment-b',
+        target: (pointComment.data as { target: unknown }).target,
+        text: 'alinha com a coluna',
+        author: 'jao.scheuermann',
+      },
+      {
+        commentId: 'comment-m',
+        target: messageComment('src/parser.ts').data.target,
+        text: 'está desatualizada',
+      },
+      {
+        commentId: 'comment-r',
+        target: sourceTarget,
+        text: 'feito',
+        author: 'jao.scheuermann',
+        inReplyTo: 'comment-a',
+      },
+    ]);
+  });
+
+  test('are none for a prompt of words alone', () => {
+    assert.deepEqual(
+      sentComments(promptEnvelope('Ajusta', []), [messageComment('x')]),
+      [],
+    );
+    assert.deepEqual(sentComments('texto simples', [messageComment('x')]), []);
   });
 });

@@ -776,6 +776,7 @@ export const openThreads = (
       sending: false,
       sendError: undefined,
       pending: undefined,
+      outbox: [],
       subscribed: true,
     });
   }
