@@ -744,7 +744,10 @@ stored in the history. The skills a run lists to load are read through
 never registers in `tools/v1`; its `name` is a plain string checked against
 the run's live list on every call, an unknown id fails the call, a skill the
 history already holds unchanged answers a short note, and its answer is exempt
-from the tool result cap. The `default` bundle owns `default.hooks/v1`, an extension point with no
+from the tool result cap. Every other tool answer is capped at
+`execution.maxToolResultChars`, or at `host-config`'s `defaultMaxToolResultChars`
+(50,000 characters) when the configuration names none, so one oversized answer
+cannot fill the context by itself. The `default` bundle owns `default.hooks/v1`, an extension point with no
 handler of its own: its `onBeforeModelRequestHook` (`transform`, input
 `{ system }`) runs before every model request of a prompt, under the prompt's
 call, and `packages/agent` accepts a `system` function that it calls before
@@ -966,7 +969,9 @@ working directory and moves it, and says whether that directory is a repository
 root ([docs/features/cwd-tool.md](docs/features/cwd-tool.md)), and a relative path a tool is given resolves
 against that directory rather than the workspace root, exactly as `cd`
 resolves one against the current directory; a move that resolves outside the
-workspace root changes nothing. Its `view-image` tool reads an image file of the
+workspace root changes nothing. The `tree` tool shows `depth` levels below its
+path (three by default), and a directory at the last level shows how many
+entries it holds instead of its children. Its `view-image` tool reads an image file of the
 sandbox as bytes (`runtime.lease/v1.readFileBytes`), keeps it as an attachment of
 the Project and answers the attachment's reference line, so the model sees the
 image with the call's result and the transcript draws it in the tool's row.
@@ -2136,8 +2141,9 @@ does: its guest disks live under the per-run state directory. The durable volume
 holds its files on the host's own storage, so a sandbox's `diskMiB` bounds only
 the container's writable layer. It also owns the
 one implementation of the workspace visibility rules — root confinement,
-`.gitignore` handling with negation, hidden entries except `.agents`, and
-directories-first ordering — which the `/bundles/features/files` `tree` tool and Doric's
+`.gitignore` handling with negation, `node_modules` and `__pycache__` ignored as
+rules of the workspace root that a `.gitignore` negation can reopen, hidden
+entries except `.agents`, and directories-first ordering — which the `/bundles/features/files` `tree` tool and Doric's
 Project file routes both consume, so neither can drift from the other; a scoped
 diff is expressed through `SandboxDiffInput.paths` rather than by callers
 building Git argv. Every sandbox has

@@ -95,8 +95,9 @@ After `dispose`, every other session operation fails.
   effective provider-facing one.
 - `listSandboxDirectory`, `listSandboxTree`, `listSandboxRepos` and
   `workspacePathKind` read a workspace through any `SandboxReader`. They apply
-  root confinement, scoped `.gitignore` rules with negation, hide dot entries
-  except `.agents`, and order directories first.
+  root confinement, scoped `.gitignore` rules with negation, ignore
+  `node_modules` and `__pycache__` unless a `.gitignore` negation reopens them,
+  hide dot entries except `.agents`, and order directories first.
 - `createVmRegistry(name, provider)` wraps a provider and tracks its running
   runtimes until their disposal completes.
 - `captureProcessOutput`, `processTerminationScript` and `quote` are shared

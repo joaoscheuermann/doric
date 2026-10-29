@@ -232,8 +232,9 @@ reason="agents-changed">` message (`agents-changed.md`), before any "Skills
   parts, and the `comment_reply` tool.
 - **Tools:** every tool `tools/v1` lists, bound to the prompt's call, then
   the run's `load_skill` from the first request at which the run lists a skill
-  to load, and from then on. The `execution.maxToolResultChars` cap applies to
-  every tool but `load_skill`, whose answer reaches the model whole.
+  to load, and from then on. The `execution.maxToolResultChars` cap, or
+  `defaultMaxToolResultChars` when it is absent, applies to every tool but
+  `load_skill`, whose answer reaches the model whole.
   A prompt whose tool settings are unmet is refused before the model is called.
 - **Model:** the configured execution provider, model and effort, read from
   `host-config/v1` and resolved through `models/v1`. A Thread's own model and

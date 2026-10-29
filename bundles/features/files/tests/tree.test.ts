@@ -86,6 +86,38 @@ void describe('tree tool', () => {
 
     await rm(root, { recursive: true, force: true });
   });
+
+  void test('stops at three levels by default, counting what a last-level directory holds', async () => {
+    const root = await workspace('tree-depth');
+
+    await write(root, 'a/b/c/d/deep.ts', 'deep');
+
+    await write(root, 'a/b/c/near.ts', 'near');
+
+    await mkdir(path.join(root, 'a/b/empty'), { recursive: true });
+
+    const tool = bindTool(factory, createFakeSandbox(root), fakeHost());
+    const shallow = await tool.execute({ path: '.' });
+
+    assert.match(shallow, /c\/ \(2 entries not shown\)/);
+
+    assert.match(shallow, /empty\/ \(empty\)/);
+
+    assert.doesNotMatch(shallow, /near\.ts|deep\.ts/);
+
+    const deep = await tool.execute({ path: '.', depth: 5 });
+
+    assert.match(deep, /near\.ts/);
+
+    assert.match(deep, /deep\.ts/);
+
+    assert.match(
+      await tool.execute({ path: '.', depth: 1 }),
+      /a\/ \(1 entry not shown\)/,
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
 });
 
 const workspace = (name: string): Promise<string> =>

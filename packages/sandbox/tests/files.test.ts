@@ -57,6 +57,41 @@ void describe('workspace listing', () => {
     );
   });
 
+  void test('ignores dependency installs without a .gitignore, which a negation brings back', async (context) => {
+    const root = await workspace('listing-defaults');
+    context.after(() => rm(root, { recursive: true, force: true }));
+    await write(root, 'node_modules/pkg/unused.js', 'unused');
+    await write(root, 'app/node_modules/pkg/unused.js', 'unused');
+    await write(root, 'app/__pycache__/main.pyc', 'unused');
+    await write(root, 'app/main.py', 'main');
+    const sandbox = createLocalSandbox(root);
+    const received: string[] = [];
+    const listing = await listSandboxTree({
+      ...sandbox,
+      exec: async (input) => {
+        const output = await sandbox.exec(input);
+        received.push(output.stdout);
+        return output;
+      },
+    });
+
+    assert.deepEqual(
+      listing.status === 'listed' ? visible(listing.entries) : [],
+      ['app', 'app/main.py'],
+    );
+    assert.equal(received.join('\n').includes('unused.js'), false);
+
+    await write(root, '.gitignore', '!node_modules/\n');
+    const reopened = await listSandboxDirectory(sandbox);
+
+    assert.deepEqual(
+      reopened.status === 'listed'
+        ? reopened.entries.map(({ path: value }) => value)
+        : [],
+      ['app', 'node_modules'],
+    );
+  });
+
   void test('lists one level with names, relative paths, sizes and ordering', async () => {
     const root = await workspace('listing');
 

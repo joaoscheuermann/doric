@@ -15,13 +15,20 @@ import type { SandboxReader } from './types/sandbox.js';
 
 /**
  * The one implementation of the workspace visibility rules: root confinement,
- * `.gitignore` handling with negation, hidden entries except `.agents`, and
- * directories-first alphabetical ordering. The `tree` tool and the host's file
+ * `.gitignore` handling with negation, default-ignored dependency directories,
+ * hidden entries except `.agents`, and directories-first alphabetical ordering. The `tree` tool and the host's file
  * routes both consume it, so neither can drift from the other.
  */
 
 /** Hidden entries stay hidden except the agent skills directory. */
 const HIDDEN_EXCEPTIONS = new Set(['.agents']);
+
+/**
+ * Dependency installs no workspace means to show, ignored without a `.gitignore`
+ * naming them. They read as rules of the workspace root placed before every
+ * `.gitignore`, so a `!node_modules/` there brings the directory back.
+ */
+const DEFAULT_IGNORES = ['node_modules/', '__pycache__/'];
 
 /** `wc` argument batches stay well below the platform argument-list limit. */
 const SIZE_BATCH = 256;
@@ -192,12 +199,21 @@ const listVisible = async (
   }
 
   const { root, excludes } = gates;
-  const { ignores, directories } = await ignoreDump(
+  const dump = await ignoreDump(
     sandbox,
     root.path,
     ancestorDirs(sandbox.root, root.path),
     deep,
   );
+  const { directories } = dump;
+  const ignores = [
+    ...DEFAULT_IGNORES.map((pattern) => ({
+      base: sandbox.root,
+      pattern,
+      negated: false,
+    })),
+    ...dump.ignores,
+  ];
   const scan = await entryDump(
     sandbox,
     root.path,

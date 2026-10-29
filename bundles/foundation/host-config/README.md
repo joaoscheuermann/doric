@@ -42,7 +42,7 @@ It requires `hooks/v1`, `settings/v1`, `secrets/v1`, `models/v1` and
 | `providers`                    | At least one provider: a unique `id`, a `kind` from the `llms` catalog, exactly that kind's values, and its model list. |
 | `models.execution`             | The `providerId`, `model` and optional `effort` prompts run with; the provider must be one listed above.                |
 | `execution.maxTurns`           | The turn limit of one prompt.                                                                                           |
-| `execution.maxToolResultChars` | Optional cap on one tool result.                                                                                        |
+| `execution.maxToolResultChars` | Optional cap on one tool result; when absent, the consumer applies `defaultMaxToolResultChars` (50,000).                |
 | `execution.contextCompaction`  | Optional compaction policy; when absent, the consumer applies `defaultContextCompaction`.                               |
 | `tools`                        | Per-tool values, keyed by tool name and then by the field keys the tool declares.                                       |
 | `gitCredentialId`              | Optional `GIT` credential used as the Git identity.                                                                     |
@@ -124,7 +124,8 @@ itself does no I/O.
 ## Entrypoints
 
 - `host-config/contracts` — `ConfigurationV1`, the value types and Zod
-  schemas, `configurationMethods` and `defaultContextCompaction`.
+  schemas, `configurationMethods`, `defaultContextCompaction` and
+  `defaultMaxToolResultChars`.
 - `host-config/kernel` — `createHostConfig`, the bundle as an embedded
   definition for kernel and test compositions, plus `configurationSettingsId`,
   `referencedCredentialIds` and `boundTools`.

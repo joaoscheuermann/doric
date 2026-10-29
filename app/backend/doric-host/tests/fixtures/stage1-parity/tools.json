@@ -564,7 +564,7 @@
   {
     "definition": {
       "name": "tree",
-      "description": "Display directory structure as an ASCII tree. Directories are listed first, then files, both sorted alphabetically. Respects .gitignore and excludes hidden files except .agents. A relative path resolves against the current working directory.",
+      "description": "Display directory structure as an ASCII tree. Directories are listed first, then files, both sorted alphabetically. Respects .gitignore, ignores node_modules and __pycache__ unless a .gitignore negation brings them back, and excludes hidden files except .agents. A relative path resolves against the current working directory. Shows `depth` levels below the path (default 3); a directory at the last level shows how many entries it holds instead of its children, so call tree on it to look deeper.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -577,6 +577,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "depth": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "additionalProperties": false

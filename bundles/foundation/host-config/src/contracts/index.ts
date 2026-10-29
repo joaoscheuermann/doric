@@ -47,6 +47,13 @@ export const defaultContextCompaction: ContextCompactionConfig = {
 };
 
 /**
+ * The cap an absent `execution.maxToolResultChars` stands for: one tool result
+ * stays a small share of the compaction `charBudget`, so a single oversized
+ * answer cannot fill the context by itself.
+ */
+export const defaultMaxToolResultChars = 50000;
+
+/**
  * The profile a configuration carries, mirrored structurally from the
  * bundle's schema. The provider is the one that validates: `name` is trimmed,
  * 1–100 characters, one line; `timezone` is an IANA zone the host knows.
