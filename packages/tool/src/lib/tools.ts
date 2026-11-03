@@ -61,6 +61,10 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     strict: options.strict ?? true,
   };
   const settings = options.settings ?? [];
+  const modalities =
+    options.resultModalities === undefined
+      ? {}
+      : { resultModalities: Object.freeze([...options.resultModalities]) };
 
   const bind = (services: Services): BoundTool<Input, Output> => {
     const execute = async (
@@ -97,6 +101,7 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
       output: options.output,
       definition,
       settings,
+      ...modalities,
       execute,
       check,
       toTool: (call: Call): Tool<Input, Output> => ({
@@ -118,6 +123,7 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     output: options.output,
     definition,
     settings,
+    ...modalities,
     bind,
     [bindRegistrant]: bind,
   });

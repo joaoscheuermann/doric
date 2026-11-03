@@ -424,6 +424,11 @@ export interface HarnessOptions {
   readonly builtInAgents?: readonly AgentFile[];
   /** A `runtime.workspace/v1` provider; without it the contract is unprovided. */
   readonly workspace?: FakeWorkspace;
+  /**
+   * What `models/v1.inputModalities` answers for every model. Default:
+   * `undefined`, a catalog that does not say.
+   */
+  readonly inputModalities?: readonly string[];
 }
 
 /**
@@ -542,6 +547,11 @@ export const bundleServices = (options: HarnessOptions) => {
           input: modelsMethods.contextWindow.input,
           output: modelsMethods.contextWindow.output,
           execute: () => undefined,
+        }),
+        inputModalities: defineMethod({
+          input: modelsMethods.inputModalities.input,
+          output: modelsMethods.inputModalities.output,
+          execute: () => options.inputModalities,
         }),
       }),
       defineService(ToolsV1.id, {

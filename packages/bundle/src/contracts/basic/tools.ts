@@ -36,6 +36,11 @@ export interface ContractTool {
   readonly definition: ContractToolDefinition;
   /** Configuration field metadata (the `tool` package's ConfigField); opaque here. */
   readonly settings: readonly object[];
+  /**
+   * 1.4.0: what the tool's results hand the model besides text (`image`, ...).
+   * A model whose catalog says it reads none of them is not offered the tool.
+   */
+  readonly resultModalities?: readonly string[];
   /** Exact payload validation in the tool's own process; asynchronous only for remote tools. */
   check?(payload: unknown): ToolPayloadCheck | Promise<ToolPayloadCheck>;
   execute(payload: unknown, call: Call): Promise<unknown>;

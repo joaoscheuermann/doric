@@ -672,3 +672,71 @@ void test('contextWindow never throws: a failed catalog, a missing or invalid ca
     }, catalogAnswer(answer));
   }
 });
+
+// models/v1.inputModalities (1.2.0): what a model reads, from the same live,
+// cached catalog contextWindow reads.
+
+void test('inputModalities answers what the one catalog provider lists the model as reading', async () => {
+  await withModels(
+    async ({ models, token }) => {
+      const id = await token('openrouter', 'sk-or');
+
+      await models.prepare(
+        listedSnapshot(1, [
+          { ...openai('direct', id), models: [{ name: 'text-only' }] },
+          router('router', id, ['text-only', 'vision']),
+        ]),
+      );
+
+      assert.deepEqual(
+        await models.inputModalities({
+          providerId: 'router',
+          model: 'text-only',
+        }),
+        ['text'],
+      );
+      assert.deepEqual(await models.inputModalities({ model: 'vision' }), [
+        'text',
+        'image',
+      ]);
+      // A kind without a live catalog says nothing about its models.
+      assert.equal(
+        await models.inputModalities({
+          providerId: 'direct',
+          model: 'text-only',
+        }),
+        undefined,
+      );
+    },
+    catalogAnswer([
+      { id: 'text-only', architecture: { input_modalities: ['text'] } },
+      { id: 'vision', architecture: { input_modalities: ['text', 'image'] } },
+    ]),
+  );
+});
+
+void test('inputModalities never throws: a failed catalog or a model it does not describe leave it unknown', async () => {
+  await withModels(async ({ models }) => {
+    assert.equal(await models.inputModalities({ model: 'm' }), undefined);
+  });
+  await withModels(
+    async ({ models, token }) => {
+      const id = await token('openrouter', 'sk-or');
+
+      await models.prepare(listedSnapshot(1, [router('router', id, ['m'])]));
+      assert.equal(await models.inputModalities({ model: 'm' }), undefined);
+    },
+    catalogAnswer([], 500),
+  );
+  for (const answer of [
+    [{ id: 'other', architecture: { input_modalities: ['text'] } }],
+    [{ id: 'm', architecture: { modality: 'text->text' } }],
+  ]) {
+    await withModels(async ({ models, token }) => {
+      const id = await token('openrouter', 'sk-or');
+
+      await models.prepare(listedSnapshot(1, [router('router', id, ['m'])]));
+      assert.equal(await models.inputModalities({ model: 'm' }), undefined);
+    }, catalogAnswer(answer));
+  }
+});

@@ -92,6 +92,10 @@ const usageOver = async (
             return capacity(request);
           },
         }),
+        inputModalities: defineMethod({
+          ...modelsMethods.inputModalities,
+          execute: unexpected,
+        }),
       }),
     ],
   });

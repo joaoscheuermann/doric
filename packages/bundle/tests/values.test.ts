@@ -148,6 +148,7 @@ void test('every basic and platform method has a stated way across the envelope'
       catalog: 'crosses',
       prepare: 'crosses',
       contextWindow: 'crosses',
+      inputModalities: 'crosses',
     },
     'models.provider/v1': {
       kind: 'crosses',
@@ -441,6 +442,7 @@ const readTool = (calls: Call[]) => ({
       strict: true,
     },
     settings: [{ key: 'root', label: 'Root', kind: 'text', required: false }],
+    resultModalities: ['image'],
     execute: async (payload, call) => {
       calls.push(call);
 
@@ -458,7 +460,7 @@ const toolsWorld = () => {
   return world;
 };
 
-void test('a generation tool reaches the kernel with its definition and settings as registered', async () => {
+void test('a generation tool reaches the kernel with its definition, settings and result modalities as registered', async () => {
   const world = toolsWorld();
   const calls: Call[] = [];
   const tool = readTool(calls);
@@ -480,6 +482,7 @@ void test('a generation tool reaches the kernel with its definition and settings
     JSON.stringify(local.definition),
   );
   assert.deepEqual(remote.settings, local.settings);
+  assert.deepEqual(remote.resultModalities, ['image']);
   assert.equal(remote.name, 'read');
   assert.equal(remote.description, 'Reads a file.');
 });

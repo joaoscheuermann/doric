@@ -56,8 +56,9 @@ The host part provides these basic contracts from `bundle/contracts`:
   provider bundles register: `kinds` lists the advertised kinds, `kind`
   resolves any kind by id, `catalog` reads a kind's live model catalog with its
   stored credential, `prepare` builds the configured providers, `resolve`
-  answers a provider's language model, and `contextWindow` reads a model's
-  context capacity from a cached provider's catalog.
+  answers a provider's language model, and `contextWindow` and
+  `inputModalities` (1.2.0) read a model's context capacity and what it reads
+  (`text`, `image`, ...) from a cached provider's catalog.
 - `storage/v1` — a facade over the chosen `storage.backend/v1`. A storage
   type is defined by the bundle its namespace names, and only when it lists
   the type in `provides`. Only the owner reads or writes the type's documents,

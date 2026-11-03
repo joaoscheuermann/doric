@@ -52,7 +52,21 @@ const model = (value: Record<string, unknown>): Model => {
       (architecture === undefined
         ? undefined
         : numberField(architecture, 'context_length')),
+    ...inputModalities(architecture),
     provider: 'openrouter',
     raw: value,
+  };
+};
+
+/** What `architecture.input_modalities` lists, when the entry carries a list. */
+const inputModalities = (
+  architecture: Record<string, unknown> | undefined,
+): Pick<Model, 'inputModalities'> => {
+  const listed = architecture?.input_modalities;
+  if (!Array.isArray(listed)) return {};
+  return {
+    inputModalities: listed.filter(
+      (value): value is string => typeof value === 'string',
+    ),
   };
 };

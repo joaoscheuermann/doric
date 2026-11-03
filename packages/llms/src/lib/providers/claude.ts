@@ -24,6 +24,7 @@ import {
   arrayField,
   asRecord,
   numberField,
+  recordField,
   stringField,
 } from '../utils/json.js';
 import { parseSseEvents } from '../utils/sse.js';
@@ -355,16 +356,28 @@ const claudeAuthHeaders = async (
   return { authorization: `Bearer ${value}` };
 };
 
-/** A catalog entry as a model, its context window read from `max_input_tokens`. */
+/**
+ * A catalog entry as a model, its context window read from `max_input_tokens`
+ * and what it reads from `capabilities.image_input`: text alone when that
+ * capability is marked unsupported, text and images when it is marked
+ * supported, and unknown when the listing does not say.
+ */
 const claudeModel = (
   model: Record<string, unknown>,
   provider: string,
 ): Model => {
   const contextWindow = numberField(model, 'max_input_tokens');
+  const images = recordField(
+    recordField(model, 'capabilities') ?? {},
+    'image_input',
+  )?.supported;
   return {
     id: stringField(model, 'id') ?? '',
     name: stringField(model, 'display_name'),
     ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(typeof images === 'boolean'
+      ? { inputModalities: images ? ['text', 'image'] : ['text'] }
+      : {}),
     provider,
     raw: model,
   };

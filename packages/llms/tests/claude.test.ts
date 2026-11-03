@@ -1004,6 +1004,41 @@ void test('injects the schema into the system prompt when the flag is set', asyn
   ]);
 });
 
+void test('a listed Claude model reads images when its capabilities mark image input supported', async () => {
+  const transport = fakeTransport({
+    responses: [
+      response({
+        data: [
+          {
+            id: 'claude-vision',
+            capabilities: { image_input: { supported: true } },
+          },
+          {
+            id: 'claude-text',
+            capabilities: { image_input: { supported: false } },
+          },
+          { id: 'claude-unstated', capabilities: {} },
+        ],
+        has_more: false,
+      }),
+    ],
+  });
+  const provider = createClaudeProvider({
+    transport,
+    authorization: 'Bearer claude-token',
+    logger: silentLogger,
+  });
+
+  assert.deepEqual(
+    (await provider.models()).map((model) => [model.id, model.inputModalities]),
+    [
+      ['claude-vision', ['text', 'image']],
+      ['claude-text', ['text']],
+      ['claude-unstated', undefined],
+    ],
+  );
+});
+
 void test('lists every model page with its context window and validates a named model', async () => {
   const sonnet = {
     id: 'claude-sonnet-4-5-20250929',

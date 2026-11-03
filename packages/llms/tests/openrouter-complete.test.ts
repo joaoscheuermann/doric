@@ -471,6 +471,39 @@ void test('fetches and validates OpenRouter models with context fallback', async
   assert.equal((await provider.validateModel('b')).contextWindow, 4096);
 });
 
+void test('lists what each OpenRouter model reads, and nothing for a model whose entry does not say', async () => {
+  const provider = createOpenRouterProvider({
+    transport: fakeTransport({
+      responses: [
+        response({
+          data: [
+            {
+              id: 'text-only',
+              architecture: { input_modalities: ['text'] },
+            },
+            {
+              id: 'vision',
+              architecture: { input_modalities: ['text', 'image', 'video'] },
+            },
+            { id: 'unstated', architecture: { modality: 'text->text' } },
+          ],
+        }),
+      ],
+    }),
+    apiKey: 'key',
+    maxStructuredOutputRepairs: 0,
+  });
+
+  assert.deepEqual(
+    (await provider.models()).map((model) => [model.id, model.inputModalities]),
+    [
+      ['text-only', ['text']],
+      ['vision', ['text', 'image', 'video']],
+      ['unstated', undefined],
+    ],
+  );
+});
+
 void test('rejects schema-invalid OpenRouter structured JSON', async () => {
   const provider = createOpenRouterProvider({
     transport: fakeTransport({

@@ -19,11 +19,15 @@ export type AttachmentReader = (
  * carries, and a tool's is the line its result does. Only the request a model
  * reads turns each line the Project holds into the image itself, where the
  * line was, behind a short `[Image: name]` so the words around it can name it.
- * A line the Project does not hold stays the text it is.
+ * A line the Project does not hold stays the text it is. For a model that
+ * reads no images, every line becomes a note in its place that names the
+ * image and says the model was not shown it, so the request never carries an
+ * image the provider would refuse.
  */
 const resolveMessage = async (
   message: ProviderMessage,
   read: AttachmentReader,
+  readsImages: boolean,
 ): Promise<ProviderMessage> => {
   if (
     (message.role !== 'user' && message.role !== 'tool') ||
@@ -33,6 +37,7 @@ const resolveMessage = async (
   const text = message.content;
   const references = attachmentReferences(text);
   if (references.length === 0) return message;
+  if (!readsImages) return { ...message, content: withImageNotes(text) };
 
   const parts: ProviderContentPart[] = [];
   let pending = '';
@@ -61,23 +66,40 @@ const resolveMessage = async (
   return { ...message, content: parts };
 };
 
+/** The text with every reference as a note that the model was not shown it. */
+const withImageNotes = (text: string): string => {
+  let noted = '';
+  let cursor = 0;
+  for (const reference of attachmentReferences(text)) {
+    noted += `${text.slice(cursor, reference.start)}[Image: ${reference.name} (not shown: this model does not read images)]`;
+    cursor = reference.end;
+  }
+  return noted + text.slice(cursor);
+};
+
 const resolveRequest = async <Request extends ProviderRequest<unknown>>(
   request: Request,
   read: AttachmentReader,
+  readsImages: boolean,
 ): Promise<Request> => ({
   ...request,
   messages: await Promise.all(
-    request.messages.map((message) => resolveMessage(message, read)),
+    request.messages.map((message) =>
+      resolveMessage(message, read, readsImages),
+    ),
   ),
 });
 
 /**
  * The provider the run talks to, reading each request's attachments first.
- * Every attachment is read once per run, however many turns carry it.
+ * Every attachment is read once per run, however many turns carry it. A run
+ * whose model reads no images (`readsImages: false`) reads none and sends a
+ * note in each image's place.
  */
 export const withAttachments = (
   provider: LlmProvider,
   read: AttachmentReader,
+  readsImages = true,
 ): LlmProvider => {
   const cache = new Map<string, Promise<AttachmentContent | undefined>>();
   const cached: AttachmentReader = (id) => {
@@ -98,10 +120,12 @@ export const withAttachments = (
     },
     complete: (async (request: ProviderRequest<unknown>) =>
       await provider.complete(
-        await resolveRequest(request, cached),
+        await resolveRequest(request, cached, readsImages),
       )) as LlmProvider['complete'],
     stream: async function* (request: ProviderRequest<unknown>) {
-      yield* provider.stream(await resolveRequest(request, cached));
+      yield* provider.stream(
+        await resolveRequest(request, cached, readsImages),
+      );
     } as LlmProvider['stream'],
     embedding: (request) => provider.embedding(request),
     rerank: (request) => provider.rerank(request),

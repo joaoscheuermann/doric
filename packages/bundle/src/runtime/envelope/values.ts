@@ -90,6 +90,7 @@ export type WireValue =
       readonly description?: string;
       readonly definition: ContractTool['definition'];
       readonly settings: readonly object[];
+      readonly resultModalities?: readonly string[];
     };
 
 /** What a process exports behind a handle. */
@@ -338,6 +339,9 @@ export const encodeValue = (
           : { description: current.description }),
         definition: current.definition,
         settings: current.settings,
+        ...(current.resultModalities === undefined
+          ? {}
+          : { resultModalities: current.resultModalities }),
       } satisfies WireValue;
     }
 
@@ -640,6 +644,7 @@ export class RemoteTool implements ContractTool {
   readonly output: z.ZodType = z.unknown();
   readonly definition: ContractTool['definition'];
   readonly settings: readonly object[];
+  readonly resultModalities?: readonly string[];
   readonly #handle: string;
   readonly #host: CodecHost;
 
@@ -652,6 +657,11 @@ export class RemoteTool implements ContractTool {
 
     this.definition = wire.definition;
     this.settings = wire.settings;
+
+    if (wire.resultModalities !== undefined) {
+      this.resultModalities = wire.resultModalities;
+    }
+
     this.#handle = wire.handle;
     this.#host = host;
     tag(this, wire);

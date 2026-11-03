@@ -222,6 +222,20 @@ const offeringSkills = (
   };
 };
 
+/**
+ * Whether the run's model reads everything a tool's results hand it besides
+ * text. A tool that declares nothing, or a model whose catalog does not say,
+ * keeps the tool offered.
+ */
+const readable = (
+  tool: BoundTool,
+  modalities: readonly string[] | undefined,
+): boolean =>
+  modalities === undefined ||
+  (tool.resultModalities ?? []).every((modality) =>
+    modalities.includes(modality),
+  );
+
 /** The tools of the prompt's generation; each must be one `defineTool` bound. */
 const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
   tools.map(({ tool }) => {
@@ -337,13 +351,22 @@ export const runPrompt = async (
     call,
   );
   const textProvider = languageModel as unknown as LlmProvider;
+  // What the model reads, as its provider's live catalog says; a catalog
+  // that does not say leaves the run as if it reads everything.
+  const modalities = await services
+    .use(ModelsV1)
+    .inputModalities({ providerId: execution.providerId, model }, call);
   // The run reads attachments through its session; compaction keeps the
   // reference lines as text, so a summary never carries image bytes.
   const attachment = session.attachment?.bind(session);
   const provider =
     attachment === undefined
       ? textProvider
-      : withAttachments(textProvider, attachment);
+      : withAttachments(
+          textProvider,
+          attachment,
+          modalities === undefined || modalities.includes('image'),
+        );
   const messages = createMessageStorage(repaired(stored));
   /**
    * The retained steers the run took and has not found in its storage yet,
@@ -402,7 +425,9 @@ export const runPrompt = async (
           resolveToolConfigs(tools, configuration);
 
           return [
-            ...tools.map((tool) => tool.toTool(call)),
+            ...tools
+              .filter((tool) => readable(tool, modalities))
+              .map((tool) => tool.toTool(call)),
             loadSkillTool(
               () => live.listed(),
               () => messages.list(),
