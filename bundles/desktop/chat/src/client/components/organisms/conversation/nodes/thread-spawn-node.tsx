@@ -73,10 +73,33 @@ function SpawnedLink({ threadId }: { readonly threadId: string }) {
 }
 
 /**
+ * The agent, model and effort the call names, muted, as the header's last words:
+ * what the work is comes first, how it runs after. `className` sets the space
+ * before it, which differs by the row it sits in.
+ */
+function SpawnMeta({
+  className,
+  meta,
+}: {
+  readonly className: string;
+  readonly meta: readonly string[];
+}) {
+  return (
+    <span
+      data-slot="spawn-meta"
+      className={`min-w-0 truncate font-light text-muted-foreground/70 ${className}`}
+    >
+      · {meta.join(' · ')}
+    </span>
+  );
+}
+
+/**
  * The call as the reader meets it: the verb the call is at, the child it started
  * once the result names one, and the prompt the agent handed down — with the
- * error beside it when the call failed. The header notes the agent, model and
- * effort the call names, beside the verb.
+ * error under it when the call failed. The header ends with the agent, model
+ * and effort the call names: after the child once there is one, after the verb
+ * until then.
  */
 function ThreadSpawnRow({
   args,
@@ -100,30 +123,33 @@ function ThreadSpawnRow({
   const meta = [parsed.agent, parsed.model, parsed.effort].filter(
     (value) => value !== undefined,
   );
+  const verb = <span className="font-normal">{spawnVerb(status)}</span>;
   return (
     <CollapsibleBlock
       label={
-        <>
-          <span className="font-normal">{spawnVerb(status)}</span>
-          {meta.length > 0 && (
-            <>
-              {' '}
-              <span
-                data-slot="spawn-meta"
-                className="inline-block max-w-60 truncate align-bottom font-light text-muted-foreground/70"
-              >
-                · {meta.join(' · ')}
-              </span>
-            </>
-          )}
-        </>
+        child !== undefined || meta.length === 0 ? (
+          verb
+        ) : (
+          // A space's width before the note, as between its own words.
+          <span className="flex min-w-0 items-baseline whitespace-nowrap">
+            {verb} <SpawnMeta className="ml-2" meta={meta} />
+          </span>
+        )
       }
       action={
         child === undefined
           ? undefined
           : {
               toggleLabel: 'Toggle thread spawn',
-              content: <SpawnedLink threadId={child.threadId} />,
+              content: (
+                <>
+                  <SpawnedLink threadId={child.threadId} />
+                  {/* The header's gap-1 plus ml-1: a space's width. */}
+                  {meta.length === 0 ? null : (
+                    <SpawnMeta className="ml-1" meta={meta} />
+                  )}
+                </>
+              ),
             }
       }
       chosen={chosen}
@@ -131,10 +157,14 @@ function ThreadSpawnRow({
       onChosenChange={onChosenChange}
       openness={spawnOpenness(status)}
     >
-      <ReadonlyMarkdown text={parsed.prompt} />
-      {error === undefined ? null : (
-        <div className="text-destructive">{error}</div>
-      )}
+      <div className="flex flex-col gap-2">
+        <ReadonlyMarkdown text={parsed.prompt} />
+        {error === undefined ? null : (
+          <div className="whitespace-pre-wrap break-words text-destructive">
+            {error}
+          </div>
+        )}
+      </div>
     </CollapsibleBlock>
   );
 }

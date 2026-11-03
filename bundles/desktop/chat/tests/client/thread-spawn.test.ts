@@ -299,7 +299,7 @@ test('a finished spawn names the agent, model and effort of its child in the hea
 
   const spawn = block(window);
   assert.notEqual(spawn, null);
-  assert.equal(toggle(spawn)?.textContent, 'Spawned · reviewer · gpt-5 · high');
+  assert.equal(toggle(spawn)?.textContent, 'Spawned');
   assert.equal(meta(spawn)?.textContent, '· reviewer · gpt-5 · high');
   // The note is part of the header line, not of the folded detail.
   assert.equal(meta(spawn)?.closest('[data-slot="collapsible-content"]'), null);
@@ -308,6 +308,8 @@ test('a finished spawn names the agent, model and effort of its child in the hea
   const link = spawn?.querySelector(`button[title="${childId}"]`) ?? null;
   assert.notEqual(link, null);
   assert.match(link?.textContent ?? '', /Accent audit/);
+  // The note closes the header: what the work is first, how it runs after.
+  assert.equal(link?.nextElementSibling, meta(spawn));
   // Folded as before: the prompt is the detail, and it is not drawn.
   assert.doesNotMatch(spawn?.textContent ?? '', /Audit the contrast/);
 });
