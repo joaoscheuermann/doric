@@ -11,6 +11,7 @@ import { type RefObject, useEffect, useRef } from 'react';
 
 import {
   type AuthorDraft,
+  type AuthorMark,
   READER_NAME,
 } from '../../../../domain/conversation-authors.js';
 import { scrollPlan } from '../../../../domain/conversation-scroll.js';
@@ -249,18 +250,20 @@ const $createBlock = (
  * Whether the turn trails the author line it should: a turn gains one it lacks
  * and loses one it should not wear. Its block stays where it is, so the line is
  * inserted after the block rather than regenerated with the root, and a line
- * that is only out of date keeps its element and takes the new time. The same
- * draft names the mark the block draws in its gutter, so the line and the mark
- * are set together and a turn that wears no line wears no mark. Returns the line
- * the turn now trails, so the sync can place the next block after it.
+ * that is only out of date keeps its element and takes the new time. The mark
+ * the block draws in its gutter is planned on its own: the reader's turn wears
+ * it with its line, while the agent's run wears it on its first answer and the
+ * line on its last turn. Returns the line the turn now trails, so the sync can
+ * place the next block after it.
  */
 const $syncAuthor = (
   unit: TurnUnit,
   draft: AuthorDraft | null,
+  mark: AuthorMark | null,
 ): TurnAuthorNode | null => {
   const current = unit.author;
   const avatar: TurnAvatar =
-    draft === null ? null : { role: draft.role, name: draft.name };
+    mark === null ? null : { role: mark.role, name: mark.name };
   if ($isUserTurnNode(unit.block) || $isAgentTurnNode(unit.block))
     unit.block.setAvatar(avatar);
 
@@ -712,6 +715,7 @@ export function InsertThreadTurnNodes({
         readonly turn: Turn;
         readonly authorAt: string | undefined;
         readonly authorRole: AuthorDraft['role'] | null;
+        readonly markRole: AuthorMark['role'] | null;
       }
     >(),
   );
@@ -782,11 +786,13 @@ export function InsertThreadTurnNodes({
               const currentAuthorRole = unit.author?.__role ?? null;
               const nextAuthorRole = step.author?.role ?? null;
               const nextAuthorAt = step.author?.at;
+              const nextMarkRole = step.mark?.role ?? null;
               if (
                 last !== undefined &&
                 turnEquals(last.turn, step.turn) &&
                 last.authorRole === nextAuthorRole &&
                 last.authorAt === nextAuthorAt &&
+                last.markRole === nextMarkRole &&
                 currentAuthorRole === nextAuthorRole
               ) {
                 continue;
@@ -794,13 +800,14 @@ export function InsertThreadTurnNodes({
               if (last === undefined || !turnEquals(last.turn, step.turn)) {
                 $applyTurn(unit.block, step.turn);
               }
-              const author = $syncAuthor(unit, step.author);
+              const author = $syncAuthor(unit, step.author, step.mark);
               $syncTurnComments(unit.block, step.turn);
               tails.set(step.key, author ?? unit.block);
               syncedTurns.current.set(unit.block.getLatest(), {
                 turn: step.turn,
                 authorRole: nextAuthorRole,
                 authorAt: nextAuthorAt,
+                markRole: nextMarkRole,
               });
               continue;
             }
@@ -820,13 +827,18 @@ export function InsertThreadTurnNodes({
                 else first.insertBefore(block);
               }
             }
-            const author = $syncAuthor({ author: null, block }, step.author);
+            const author = $syncAuthor(
+              { author: null, block },
+              step.author,
+              step.mark,
+            );
             $syncTurnComments(block, step.turn);
             tails.set(step.key, author ?? block);
             syncedTurns.current.set(block, {
               turn: step.turn,
               authorRole: step.author?.role ?? null,
               authorAt: step.author?.at,
+              markRole: step.mark?.role ?? null,
             });
           }
 

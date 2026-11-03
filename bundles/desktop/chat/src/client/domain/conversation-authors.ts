@@ -21,3 +21,13 @@ export type AuthorDraft = {
   readonly name: string;
   readonly at: string | undefined;
 };
+
+/**
+ * The mark a block wears in the gutter as the sync plans it: who wrote it. The
+ * reader's turn wears it with its author line; the agent's run wears it on the
+ * run's first answer while the line trails the run's last turn.
+ */
+export type AuthorMark = {
+  readonly role: AuthorRole;
+  readonly name: string;
+};

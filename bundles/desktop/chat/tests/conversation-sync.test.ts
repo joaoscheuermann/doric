@@ -345,6 +345,83 @@ describe('bringing the blocks in step with the turns', () => {
     );
   });
 
+  test("wears the agent's mark on the first answer of its run, with the line on the last turn", () => {
+    const spawn = (sequence: number): ToolTurn => ({
+      ...tool('one', sequence),
+      name: 'thread_spawn',
+    });
+    const turns = [
+      user('one', 1),
+      agent('one', 2, 'I will run three searches'),
+      spawn(3),
+      spawn(4),
+      spawn(5),
+      agent('one', 6, 'Started all three'),
+    ];
+
+    const plan = syncPlan([], turns, Number.MAX_SAFE_INTEGER);
+
+    assert.deepEqual(
+      plan.steps.map((step) => step.mark?.role ?? null),
+      ['user', 'agent', null, null, null, null],
+    );
+    assert.deepEqual(
+      plan.steps.map((step) => step.author?.role ?? null),
+      ['user', null, null, null, null, 'agent'],
+    );
+  });
+
+  test('keeps one agent mark across the inputs other Threads relay into its run', () => {
+    const relayed = (sequence: number): UserTurn => ({
+      ...user('relayed', sequence),
+      text: '',
+      delegated: { kind: 'result', threadId: 'child', text: 'Search done' },
+    });
+    const turns = [
+      user('one', 1),
+      agent('one', 2),
+      relayed(3),
+      tool('relayed', 4),
+      agent('relayed', 5),
+      relayed(6),
+      agent('relayed', 7),
+    ];
+
+    const plan = syncPlan([], turns, Number.MAX_SAFE_INTEGER);
+
+    assert.deepEqual(
+      plan.steps.map((step) => step.mark?.role ?? null),
+      ['user', 'agent', null, null, null, null, null],
+    );
+  });
+
+  test("wears the agent's mark on its first answer when the run opens with activity", () => {
+    const turns = [user('one', 1), activity('one', 2), agent('one', 3)];
+
+    const plan = syncPlan([], turns, Number.MAX_SAFE_INTEGER);
+
+    assert.deepEqual(
+      plan.steps.map((step) => step.mark?.role ?? null),
+      ['user', null, 'agent'],
+    );
+  });
+
+  test('starts a new agent mark after each prompt the reader sends', () => {
+    const turns = [
+      user('one', 1),
+      agent('one', 2),
+      user('two', 3),
+      agent('two', 4),
+    ];
+
+    const plan = syncPlan([], turns, Number.MAX_SAFE_INTEGER);
+
+    assert.deepEqual(
+      plan.steps.map((step) => step.mark?.role ?? null),
+      ['user', 'agent', 'user', 'agent'],
+    );
+  });
+
   test("keeps a streaming turn's key stable while its text grows", () => {
     const run = agent('one', 1);
     const grown: AgentTurn = {

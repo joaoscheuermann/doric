@@ -1106,6 +1106,11 @@ read included) and when the window stops showing the Thread. Removing the
 comment drops it, and an echo of an older write never overwrites a note written
 since.
 
+The reader's turn wears its mark beside its words. The agent wears one mark per
+stretch of work between two prompts the reader (or a bundle) sent, on that
+stretch's first answer: tool calls, spawns, inputs relayed from other Threads
+or background terminals, and further answers after it wear none, while each
+author line still trails the last turn before the next input.
 A turn's mark (the reader's initials, the agent's bot) is 1.375rem in every
 pane and hangs in the column's left gutter 0.5rem before the text, its centre
 on the centre of the block's first line (a heading that opens the block drops

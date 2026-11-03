@@ -20,6 +20,7 @@
 import {
   AGENT_NAME,
   type AuthorDraft,
+  type AuthorMark,
   READER_NAME,
 } from './conversation-authors.js';
 import type { Turn } from './projector.js';
@@ -51,7 +52,8 @@ const isChrome = (turn: Turn): boolean =>
  * — the one before the next user turn — so the line trails the run's whole
  * reasoning, tool calls and answer rather than its first turn. A lifecycle or
  * failure row wears none and does not end the run a line trails, so a pause
- * between two halves of one job leaves the line where the job ends.
+ * between two halves of one job leaves the line where the job ends. The run's
+ * mark is not the line's: `markFor` puts it where the run starts.
  */
 const authorFor = (
   turns: readonly Turn[],
@@ -86,12 +88,47 @@ const authorFor = (
     : null;
 };
 
+/**
+ * Whether a turn hands the conversation back to the agent from outside it:
+ * another Thread's input or a background terminal's answer. Neither is the
+ * reader speaking, so neither starts a new stretch of the agent's work.
+ */
+const isRelayedInput = (turn: Turn): boolean =>
+  turn.type === 'user' &&
+  (turn.delegated !== undefined || turn.terminal !== undefined);
+
+/**
+ * The mark a turn wears in the gutter, or `null` when it wears none. The
+ * reader's own turn wears it beside its words, with its author line. The
+ * agent wears it once per stretch of work between two turns the reader (or a
+ * bundle) sent: on the stretch's first answer, however many tool calls,
+ * spawns, relayed inputs and further answers follow it, while each author line
+ * still trails the turn that ends its run.
+ */
+const markFor = (turns: readonly Turn[], index: number): AuthorMark | null => {
+  const turn = turns[index];
+  if (turn === undefined) return null;
+  if (turn.type === 'user') {
+    const author = authorFor(turns, index);
+    return author === null ? null : { role: author.role, name: author.name };
+  }
+  if (turn.type !== 'agent') return null;
+  for (let previous = index - 1; previous >= 0; previous -= 1) {
+    const earlier = turns[previous];
+    if (earlier === undefined) continue;
+    if (earlier.type === 'agent') return null;
+    if (earlier.type === 'user' && !isRelayedInput(earlier)) break;
+  }
+  return { role: 'agent', name: AGENT_NAME };
+};
+
 /** A block the sync creates: what it holds, and where it goes. */
 export type SyncCreate = {
   readonly kind: 'create';
   readonly turn: Turn;
   readonly key: string;
   readonly author: AuthorDraft | null;
+  readonly mark: AuthorMark | null;
   /**
    * Where the block goes: after the tail of the unit `after` names — its author
    * line when it wears one — or, when nothing precedes it, before the block
@@ -107,6 +144,7 @@ export type SyncUpdate = {
   readonly turn: Turn;
   readonly key: string;
   readonly author: AuthorDraft | null;
+  readonly mark: AuthorMark | null;
 };
 
 export type SyncStep = SyncCreate | SyncUpdate;
@@ -159,17 +197,19 @@ export const syncPlan = (
     const key = keys[index];
     const turn = turns[index];
     const author = authorFor(turns, index);
+    const mark = markFor(turns, index);
     if (chosen.has(index)) {
       steps.push({
         kind: 'create',
         turn,
         key,
         author,
+        mark,
         after: previous,
         before: before[index],
       });
     } else if (heldKeys.has(key)) {
-      steps.push({ kind: 'update', turn, key, author });
+      steps.push({ kind: 'update', turn, key, author, mark });
     }
     if (heldKeys.has(key) || chosen.has(index)) previous = key;
   }
