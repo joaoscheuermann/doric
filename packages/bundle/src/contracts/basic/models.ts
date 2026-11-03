@@ -155,6 +155,16 @@ export interface Models {
     request: { readonly providerId?: string; readonly model: string },
     call?: CallArg,
   ): Promise<number | undefined>;
+  /**
+   * 1.2.0: what a model reads (`text`, `image`, ...) from its provider's live
+   * catalog, found the way `contextWindow` finds its capacity. Answers
+   * `undefined` when no single candidate provider lists the model with its
+   * input modalities; it never throws.
+   */
+  inputModalities(
+    request: { readonly providerId?: string; readonly model: string },
+    call?: CallArg,
+  ): Promise<readonly string[] | undefined>;
 }
 
 export const ModelsV1 = ref<Models>('models/v1');
@@ -177,6 +187,11 @@ const resolvedModelSchema = z
   .strict();
 
 const configurationValuesSchema = z.record(z.string(), z.string());
+
+/** A model `contextWindow` and `inputModalities` look up in a live catalog. */
+const catalogModelRequestSchema = z
+  .object({ providerId: z.string().optional(), model: z.string() })
+  .strict();
 
 export const modelsMethods = {
   resolve: { input: modelRequestSchema, output: resolvedModelSchema },
@@ -202,10 +217,12 @@ export const modelsMethods = {
     output: z.void(),
   },
   contextWindow: {
-    input: z
-      .object({ providerId: z.string().optional(), model: z.string() })
-      .strict(),
+    input: catalogModelRequestSchema,
     output: z.number().optional(),
+  },
+  inputModalities: {
+    input: catalogModelRequestSchema,
+    output: z.array(z.string()).optional(),
   },
 } as const satisfies MethodSpecs;
 

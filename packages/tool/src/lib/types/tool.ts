@@ -140,6 +140,13 @@ export interface DefineToolOptions<
    * values themselves are read through `settings/v1` once it exists.
    */
   readonly settings?: readonly ConfigField[];
+  /**
+   * What this tool's results hand the model besides text, such as `image` for
+   * a tool that answers an attachment's reference line. A run whose model's
+   * catalog says it reads none of these leaves the tool out of what the model
+   * is offered; a model the catalog says nothing about is offered it.
+   */
+  readonly resultModalities?: readonly string[];
 }
 
 /**
@@ -157,6 +164,7 @@ export interface BoundTool<
   readonly output: Output;
   readonly definition: ToolDefinition;
   readonly settings: readonly ConfigField[];
+  readonly resultModalities?: readonly string[];
   execute(payload: z.output<Input>, call: Call): Promise<z.output<Output>>;
   /** Validates a payload against `input` without executing the tool. */
   check(payload: unknown): ToolPayloadCheck;
@@ -178,6 +186,7 @@ export interface ToolDefinitionObject<
   readonly output: Output;
   readonly definition: ToolDefinition;
   readonly settings: readonly ConfigField[];
+  readonly resultModalities?: readonly string[];
   bind(services: Services): BoundTool<Input, Output>;
 }
 

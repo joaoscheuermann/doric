@@ -23,6 +23,9 @@ export const tool = defineTool({
   description,
   input,
   output,
+  // The result is an attachment's reference line, which reaches the model as
+  // the image itself.
+  resultModalities: ['image'],
   execute: async (input, call, services): Promise<string> => {
     const cwd = await currentDirectory(services, call);
     const filePath = path.normalize(

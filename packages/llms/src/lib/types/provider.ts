@@ -32,6 +32,12 @@ export interface Model {
   readonly id: string;
   readonly name?: string;
   readonly contextWindow?: number;
+  /**
+   * What the model reads, as its catalog states it (`text`, `image`, ...).
+   * Absent when the catalog does not say, which a caller reads as unknown,
+   * never as text alone.
+   */
+  readonly inputModalities?: readonly string[];
   readonly provider?: string;
   readonly raw?: unknown;
 }

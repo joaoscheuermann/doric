@@ -25,9 +25,10 @@ const catUrl = 'data:image/png;base64,iVBORw0KGgo=';
 
 /**
  * A default-agent run whose model answers once, or first calls `show` when the
- * prompt asks for it; every request it was sent is kept.
+ * prompt asks for it; every request it was sent is kept. `inputModalities` is
+ * what the model's catalog says it reads; absent, the catalog does not say.
  */
-const imageHarness = () => {
+const imageHarness = (inputModalities?: readonly string[]) => {
   const requests: ProviderRequest[] = [];
   const state = fakeThreadState();
   const provider = {
@@ -59,11 +60,22 @@ const imageHarness = () => {
     name: 'show',
     input: z.object({}),
     output: z.string(),
+    resultModalities: ['image'],
     execute: () => attachmentReference('cat.png', catId),
+  }).bind(owner.services);
+  const count = defineTool({
+    name: 'count',
+    input: z.object({}),
+    output: z.number(),
+    execute: () => 1,
   }).bind(owner.services);
   const services = bundleServices({
     provider,
-    tools: [{ bundleId: 'tools-owner', alwaysAvailable: false, tool: show }],
+    tools: [
+      { bundleId: 'tools-owner', alwaysAvailable: false, tool: show },
+      { bundleId: 'tools-owner', alwaysAvailable: false, tool: count },
+    ],
+    ...(inputModalities === undefined ? {} : { inputModalities }),
   });
   services.activate();
 
@@ -136,4 +148,44 @@ void test('an image a tool returns reaches the model with that call result', asy
   assert.ok(
     result.some((part) => part.type === 'image' && part.imageUrl === catUrl),
   );
+});
+
+const offered = (request: ProviderRequest | undefined) =>
+  request?.tools?.map(({ name }) => name) ?? [];
+
+void test('a model whose catalog says it reads no images is not offered a tool whose results are images', async () => {
+  const { requests, state, services } = imageHarness(['text']);
+
+  await runPrompt(services, state, 'Hello.');
+
+  assert.equal(offered(requests[0]).includes('show'), false);
+  assert.ok(offered(requests[0]).includes('count'));
+});
+
+void test('a tool whose results are images is offered to a model that reads images, or whose catalog does not say', async () => {
+  for (const modalities of [['text', 'image'], undefined]) {
+    const { requests, state, services } = imageHarness(modalities);
+
+    await runPrompt(services, state, 'Hello.');
+
+    assert.ok(offered(requests[0]).includes('show'), String(modalities));
+  }
+});
+
+void test('a reader image reaches a model that reads no images as a note that names it', async () => {
+  const { requests, state, services } = imageHarness(['text']);
+  state.attach(cat);
+
+  await runPrompt(
+    services,
+    state,
+    `Before.\n\n${attachmentReference('cat.png', catId)}\n\nAfter.`,
+  );
+
+  const content = lastUserParts(requests[0]);
+  assert.equal(typeof content, 'string');
+  assert.match(String(content), /Before\.[\s\S]*cat\.png[\s\S]*After\./u);
+  assert.match(String(content), /not shown/u);
+  assert.equal(String(content).includes('doric-attachment:'), false);
+  assert.equal(JSON.stringify(requests).includes(cat.bytes), false);
 });

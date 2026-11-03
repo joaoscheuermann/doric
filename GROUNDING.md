@@ -1,6 +1,6 @@
 # Doric Grounding
 
-Last reviewed: 2026-10-27
+Last reviewed: 2026-11-03
 
 This is Doric's repository validity contract. Every agent working in this
 repository must read it before non-trivial planning, reviewing, artifact
@@ -975,6 +975,8 @@ entries it holds instead of its children. Its `view-image` tool reads an image f
 sandbox as bytes (`runtime.lease/v1.readFileBytes`), keeps it as an attachment of
 the Project and answers the attachment's reference line, so the model sees the
 image with the call's result and the transcript draws it in the tool's row.
+It declares `resultModalities: ['image']`, so a run whose model's catalog says
+it reads no images is not offered it (see the default executor below).
 `/bundles/features/git` owns the routable `git` tool
 plus focused skills for cloning, commit preparation, conflict resolution,
 rebasing, remote synchronization, and linked worktrees. The Git tool executes
@@ -1576,7 +1578,10 @@ on 2026-10-28 `runtime.workspace/v1` 1.2.0 adds `location()`, whose repository
 hint probe is bounded at 5000 ms, so a move (also via `PATCH /threads/:id`)
 rejects instead of hanging when the probe times out
 ([docs/features/cwd-tool.md](docs/features/cwd-tool.md)); the core adds
-`models/v1.contextWindow` over `models.provider/v1.catalogCapacity` and the
+`models/v1.contextWindow` over `models.provider/v1.catalogCapacity` (and, on
+2026-11-03, `models/v1` 1.2.0 `inputModalities`, what a model reads from the
+same cached catalog: OpenRouter's `architecture.input_modalities`, Claude's
+`capabilities.image_input`, `undefined` when no single candidate says) and the
 `secrets/v1.watchRedactions` stream. It persists Projects, Threads and
 histories as `runtime.project/v1`, `runtime.thread/v1` and
 `runtime.history/v1` documents, the images a Project holds as
@@ -1792,7 +1797,15 @@ gives the agent-loop tool for one prompt. Its `inputSchema` option replaces the
 JSON Schema derived from `input` with an object schema used verbatim as the
 definition's `inputSchema` (anything else throws `invalid_schema`); `input`
 still validates every payload, so a tool whose schema comes from elsewhere (an
-MCP server) passes a permissive `input` and `strict: false`. It also owns the
+MCP server) passes a permissive `input` and `strict: false`. Its
+`resultModalities` option (carried by `tools/v1` 1.4.0 tools, across processes
+too) names what the tool's results hand the model besides text, such as
+`image`. Each run of the default executor asks `models/v1.inputModalities` for
+its model: it leaves out every tool whose result modalities the model does not
+read, and for a model that reads no images it sends each attachment reference
+of a user or tool message as a text note naming the image instead of the
+image. A model whose catalog does not say is treated as reading everything,
+as before. It also owns the
 JSON-Schema-compatible `ToolDefinitionSchema`, whose runtime descriptors carry
 both `inputSchema` and `outputSchema`, plus strict-output-compatible
 `ToolMetadataSchema` and JSON value schemas used by structured consumers.

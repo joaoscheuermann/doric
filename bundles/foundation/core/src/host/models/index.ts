@@ -11,7 +11,7 @@ import {
   type Services,
 } from 'bundle/contracts';
 
-import { contextWindow } from './capacity.js';
+import { contextWindow, inputModalities } from './capacity.js';
 import { type ConfiguredProvider, createProviderCache } from './providers.js';
 import { createKindRegistry } from './registry.js';
 
@@ -163,6 +163,10 @@ export const createModels = (services: Services) => {
     contextWindow: defineMethod({
       ...modelsMethods.contextWindow,
       execute: (request) => contextWindow(registry, cache, request),
+    }),
+    inputModalities: defineMethod({
+      ...modelsMethods.inputModalities,
+      execute: (request) => inputModalities(registry, cache, request),
     }),
   });
 };
