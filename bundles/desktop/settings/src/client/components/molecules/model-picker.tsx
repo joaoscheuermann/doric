@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import { type ModelGroup, searchModelGroups } from '../../domain/config.js';
 import { ChoiceList } from './choice-list.js';
+import { ModelIcon } from './model-icon.js';
 
 /** Reasoning stays visible even when the selected model cannot use it. */
 type Reasoning = {
@@ -27,6 +28,11 @@ type ModelPickerProps = {
   readonly groups: readonly ModelGroup[];
   /** What the trigger reads: the selected model's name, or a placeholder. */
   readonly label: string;
+  /**
+   * The selected model's icon, drawn before the trigger's label; without one
+   * the trigger keeps no empty slot.
+   */
+  readonly icon?: string;
   readonly onSelect: (value: string) => void;
   /** The model's reasoning, offered from the same popover as the model is. */
   readonly reasoning: Reasoning;
@@ -49,6 +55,7 @@ export function ModelPicker({
   ariaLabel,
   groups,
   label,
+  icon,
   onSelect,
   reasoning,
   value,
@@ -75,6 +82,7 @@ export function ModelPicker({
           />
         }
       >
+        {icon !== undefined && <ModelIcon svg={icon} inlineStart />}
         <span className="truncate">{label}</span>
       </PopoverTrigger>
       <PopoverContent
@@ -112,6 +120,7 @@ export function ModelPicker({
                   </div>
                 )}
                 <ChoiceList
+                  iconSlot
                   choices={group.choices}
                   value={value}
                   onSelect={(next) => {

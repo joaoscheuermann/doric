@@ -83,44 +83,67 @@ const commentMethods: Readonly<Record<string, number | null>> = {
   resolve: null,
 };
 
-const hostCandidate: CatalogCandidate = {
-  id: 'host',
-  source: { kind: 'installed', dir: 'host@1.0.0' },
-  manifest: {
-    manifestVersion: 1,
+/** A version of `models/v1` the host can expose: 1.3.0 answers `icons`. */
+export type ModelsV1Version = '1.2.0' | '1.3.0';
+
+/** The host bundle, with `models/v1` at `modelsV1` when it is given. */
+const hostCandidateFor = (modelsV1?: ModelsV1Version): CatalogCandidate => {
+  const contracts: readonly (readonly [string, string])[] = [
+    ['storage.backend/v1', '1.0.0'],
+    ['secrets.backend/v1', '1.0.0'],
+    ['runtime.threads/v1', '1.3.0'],
+    ['runtime.attachments/v1', '1.0.0'],
+    ['comments/v1', '1.0.0'],
+    ...(modelsV1 === undefined ? [] : [['models/v1', modelsV1] as const]),
+  ];
+  return {
     id: 'host',
-    version: '1.0.0',
-    engines: { doric: '^1.0.0' },
-    provides: [
-      'storage.backend/v1@1.0.0',
-      'secrets.backend/v1@1.0.0',
-      'runtime.threads/v1@1.3.0',
-      'runtime.attachments/v1@1.0.0',
-      'comments/v1@1.0.0',
-    ],
-    requires: [],
-  },
-  descriptor: {
-    descriptorVersion: 1,
-    bundle: { id: 'host', version: '1.0.0' },
-    contracts: [
-      ['storage.backend/v1', '1.0.0'],
-      ['secrets.backend/v1', '1.0.0'],
-      ['runtime.threads/v1', '1.3.0'],
-      ['runtime.attachments/v1', '1.0.0'],
-      ['comments/v1', '1.0.0'],
-    ].map(([id, version]) => ({
-      id,
-      version,
-      kind: 'service' as const,
-      environment: 'host' as const,
-      cardinality: 'one' as const,
-      local: false,
-      schema: `schemas/${id}.json`,
-    })),
-  },
-  errors: [],
+    source: { kind: 'installed', dir: 'host@1.0.0' },
+    manifest: {
+      manifestVersion: 1,
+      id: 'host',
+      version: '1.0.0',
+      engines: { doric: '^1.0.0' },
+      provides: contracts.map(([id, version]) => `${id}@${version}`),
+      requires: [],
+    },
+    descriptor: {
+      descriptorVersion: 1,
+      bundle: { id: 'host', version: '1.0.0' },
+      contracts: contracts.map(([id, version]) => ({
+        id,
+        version,
+        kind: 'service' as const,
+        environment: 'host' as const,
+        cardinality: 'one' as const,
+        local: false,
+        schema: `schemas/${id}.json`,
+      })),
+    },
+    errors: [],
+  };
 };
+
+/**
+ * `models/v1` as main routes it at `version`: tuple length per method. Only
+ * 1.3.0 has `icons`, so at 1.2.0 the window's own stub refuses it.
+ */
+const modelsRemote = (version: ModelsV1Version): RemoteContract => ({
+  id: 'models/v1',
+  environment: 'host',
+  bundleId: 'host',
+  version: '1.0.0',
+  contractVersion: version,
+  cardinality: 'one',
+  methods: Object.fromEntries(
+    Object.entries({
+      kinds: 0,
+      kind: 1,
+      catalog: null,
+      ...(version === '1.3.0' ? { icons: null } : {}),
+    }).map(([name, tuple]) => [name, { tuple, local: false, stream: false }]),
+  ),
+});
 
 const threadsRemote: RemoteContract = {
   id: 'runtime.threads/v1',
@@ -304,6 +327,11 @@ export const openChatWindow = async (input: {
   readonly url: string;
   readonly host: Readonly<Record<string, HostAnswer>>;
   readonly probe?: Probe;
+  /**
+   * The version of `models/v1` the host exposes, answered by the
+   * `models/v1.<method>` handlers of `host`; without it the host has none.
+   */
+  readonly modelsV1?: ModelsV1Version;
 }): Promise<ChatWindow> => {
   const window = new Window({ url: input.url, width: 1280, height: 800 });
   // happy-dom runs no Web Animations and implements `getAnimations` on shadow
@@ -367,7 +395,7 @@ export const openChatWindow = async (input: {
       descriptor: coreDescriptor,
       errors: [],
     },
-    hostCandidate,
+    hostCandidateFor(input.modelsV1),
     {
       id: 'chat',
       source: { kind: 'installed', dir: `chat@${chatManifest.version}` },
@@ -404,6 +432,7 @@ export const openChatWindow = async (input: {
       composerRemote,
       commentsRemote,
       menusRemote,
+      ...(input.modelsV1 === undefined ? [] : [modelsRemote(input.modelsV1)]),
     ],
     hostId: 'host-1',
     storageGeneration: 1,

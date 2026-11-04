@@ -57,6 +57,12 @@ const promptEvents = (
     { type: 'prompt.started' },
     { type: 'agent.started', model: 'model', input: `Question ${index}` },
   ];
+  const response = (): Record<string, unknown> => ({
+    type: 'response.started',
+    providerId: pick(next, ['or', 'local', '']),
+    model: pick(next, ['a', 'b']),
+  });
+  events.push(response());
   let calls = 0;
   const steps = Math.floor(next() * 60);
   for (let step = 0; step < steps; step += 1) {
@@ -85,6 +91,7 @@ const promptEvents = (
         record: { output: 'ok' },
         error: { message: 'failed' },
       });
+      events.push(response());
     } else events.push({ type: 'usage', usage: { inputTokens: 1 } });
   }
   const ending = next();
@@ -187,7 +194,30 @@ const batches = (log: readonly ThreadEvent[], next: Draw): ThreadEvent[][] => {
   return out;
 };
 
+/** The answering model of each agent turn, `undefined` for any other turn. */
+const answered = (turns: readonly Turn[]) =>
+  turns.map((turn) => (turn.type === 'agent' ? turn.answeredBy : undefined));
+
 describe('projection of a coalesced log', () => {
+  test('the generated logs give agent turns with and without an answering model', () => {
+    const models = Array.from({ length: 300 }, (_value, index) =>
+      answered(
+        project(tokenLog(random((index + 1) * 7919))).turns.filter(
+          (turn) => turn.type === 'agent',
+        ),
+      ),
+    ).flat();
+
+    assert.ok(
+      models.some((model) => model !== undefined),
+      'some agent turn wears a model',
+    );
+    assert.ok(
+      models.some((model) => model === undefined),
+      'some agent turn wears none',
+    );
+  });
+
   test('draws the same turns as the token log, each opened at the same place and last written at the same time', () => {
     for (let seed = 1; seed <= 300; seed += 1) {
       const next = random(seed * 7919);
@@ -200,6 +230,11 @@ describe('projection of a coalesced log', () => {
         actual.map(drawn),
         expected.map(drawn),
         `seed ${seed}: turns`,
+      );
+      assert.deepEqual(
+        answered(actual),
+        answered(expected),
+        `seed ${seed}: the model each agent turn wears`,
       );
       assert.deepEqual(
         actual.map((turn) => turn.events[0]?.sequence),
@@ -227,6 +262,11 @@ describe('projection of a coalesced log', () => {
         live.turns,
         project(coalesced).turns,
         `seed ${seed}: live batches`,
+      );
+      assert.deepEqual(
+        answered(live.turns),
+        answered(project(coalesced).turns),
+        `seed ${seed}: the model each agent turn wears, live`,
       );
     }
   });

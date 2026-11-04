@@ -1,6 +1,7 @@
 export * from './lib/classes/http-error.js';
 export * from './lib/classes/provider-error.js';
 export * from './lib/http.js';
+export * from './lib/icons/index.js';
 export { claudeCatalogModel } from './lib/providers/claude/models.js';
 export * from './lib/providers/claude.js';
 export * from './lib/providers/codex.js';

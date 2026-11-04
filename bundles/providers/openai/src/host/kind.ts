@@ -1,4 +1,4 @@
-import { createOpenAiProvider, openAiMetadata } from 'llms';
+import { createOpenAiProvider, modelNameIcon, openAiMetadata } from 'llms';
 
 import {
   baseUrl,
@@ -6,6 +6,20 @@ import {
   type KindDefinition,
   tokenField,
 } from './provider.js';
+
+const openAiOrigin = new URL(openAiMetadata.baseUrl).origin;
+
+/** Whether an `openai` provider talks to OpenAI itself rather than a compatible server. */
+const isOpenAiEndpoint = (endpoint: string | undefined): boolean => {
+  const value = (endpoint ?? '').trim();
+  if (value === '') return true;
+
+  try {
+    return new URL(value).origin === openAiOrigin;
+  } catch {
+    return false;
+  }
+};
 
 /** The llms `openai` kind, moved verbatim from the closed llms catalog. */
 export const openAiKind: KindDefinition = {
@@ -34,4 +48,8 @@ export const openAiKind: KindDefinition = {
       apiKey: values.token ?? '',
       ...baseUrl(values),
     }),
+  icons: ({ configuration, models }) =>
+    isOpenAiEndpoint(configuration.endpoint)
+      ? { provider: 'openai', models: models.map(() => 'openai') }
+      : { models: models.map((model) => modelNameIcon(model)) },
 };

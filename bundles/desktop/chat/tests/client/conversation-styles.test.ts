@@ -152,11 +152,19 @@ const rem = (value: string | undefined): number => {
   return Number(match[1]);
 };
 
-const MARKS = [
-  ".conversation-scroll [data-lexical-editor] > [data-turn-avatar='agent']::before",
-  ".conversation-scroll [data-lexical-editor] > [data-turn-avatar='user']::after",
-  ".conversation-scroll [data-lexical-editor] > [data-turn-avatar='agent']::after",
-];
+/** The reader's gutter mark. */
+const READER_MARK =
+  ".conversation-scroll [data-lexical-editor] > [data-turn-avatar='user']::after";
+
+/** The agent's gutter mark: its answering model's icon. */
+const AGENT_MARK =
+  ".conversation-scroll [data-lexical-editor] > [data-turn-avatar='agent']::after";
+
+const MARKS = [READER_MARK, AGENT_MARK];
+
+/** Whether a selector names the agent block's `::before`. */
+const agentBefore = (selector: string): boolean =>
+  /\[data-turn-avatar='agent'\]::before$/.test(selector);
 
 /** The conversation's line: `text-sm`, 1.25rem tall. */
 const LINE = 1.25;
@@ -187,6 +195,60 @@ test('every gutter mark wears one size, centred on the first line of its block, 
     rule.selectors.some((selector) => selector.includes('[data-turn-avatar')),
   );
   assert.deepEqual(moved, []);
+});
+
+test("the agent's mark paints the foreground through its icon at 18px inside the unchanged box, and no rule draws its ::before", async () => {
+  const sheet = await readFile(stylesheet, 'utf8');
+  const wide = uncommented(sheet).replace(narrowBlock(sheet), '');
+  const agent = declared(wide, AGENT_MARK);
+
+  assert.equal(rem(agent.get('inline-size')), MARK);
+  assert.equal(rem(agent.get('block-size')), MARK);
+  assert.equal(agent.get('background-color'), 'var(--foreground)');
+  assert.equal(
+    agent.get('mask'),
+    'var(--turn-avatar-icon) center / 1.125rem no-repeat',
+  );
+  assert.equal(
+    agent.get('-webkit-mask'),
+    'var(--turn-avatar-icon) center / 1.125rem no-repeat',
+  );
+  const drawn = rulesIn(sheet)
+    .filter((rule) => {
+      const content = rule.body.get('content');
+      return content !== undefined && content !== 'none';
+    })
+    .flatMap((rule) => rule.selectors)
+    .filter(agentBefore);
+  assert.deepEqual(drawn, []);
+});
+
+test('the reader’s mark has 25% corners and no mark is a circle; the moved-mark rule names no agent ::before', async () => {
+  const sheet = await readFile(stylesheet, 'utf8');
+  const wide = uncommented(sheet).replace(narrowBlock(sheet), '');
+
+  assert.equal(declared(wide, READER_MARK).get('border-radius'), '25%');
+  const circles = rulesIn(sheet)
+    .filter(
+      (rule) =>
+        rule.body.get('border-radius') === '9999px' &&
+        rule.selectors.some((selector) =>
+          selector.includes('[data-turn-avatar'),
+        ),
+    )
+    .flatMap((rule) => rule.selectors);
+  assert.deepEqual(circles, [], 'no mark is a circle');
+  const moved = rulesIn(sheet)
+    .filter((rule) => rule.body.get('content') === 'none')
+    .flatMap((rule) => rule.selectors)
+    .filter((selector) => selector.includes('[data-turn-avatar-moved]'));
+  assert.ok(
+    moved.includes(
+      '.conversation-scroll [data-lexical-editor] > [data-turn-avatar-moved][data-turn-avatar]::after',
+    ),
+    'a moved mark still hides',
+  );
+  assert.deepEqual(moved.filter(agentBefore), []);
 });
 
 test('a narrow pane widens the column’s left padding to hold the whole mark', async () => {

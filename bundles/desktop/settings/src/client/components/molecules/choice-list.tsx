@@ -2,16 +2,25 @@ import { Button } from 'desktop/ui/button';
 import { cn } from 'desktop/ui/utils';
 import { CheckIcon } from 'lucide-react';
 
+import { ModelIcon } from './model-icon.js';
+
 type ChoiceListProps = {
   readonly choices: readonly {
     readonly label: string;
     /** A mark the row wears beside its label, such as the model's own default. */
     readonly note?: string;
     readonly value: string;
+    /** The SVG of the row's icon, drawn when the list has an icon slot. */
+    readonly icon?: string;
   }[];
   readonly onSelect: (value: string) => void;
   /** Denser effort menu rows; model lists keep their usual size. */
   readonly compact?: boolean;
+  /**
+   * Every row draws a `ModelIcon` before its label, empty without an icon;
+   * off by default, so the effort rows get no icon and no slot.
+   */
+  readonly iconSlot?: boolean;
   /** The current value, checked in the list. */
   readonly value?: string;
 };
@@ -25,6 +34,7 @@ type ChoiceListProps = {
 export function ChoiceList({
   choices,
   compact = false,
+  iconSlot = false,
   onSelect,
   value,
 }: ChoiceListProps) {
@@ -44,6 +54,7 @@ export function ChoiceList({
           onClick={() => onSelect(choice.value)}
         >
           <span className="flex min-w-0 items-center gap-1.5">
+            {iconSlot && <ModelIcon svg={choice.icon} />}
             <span className="truncate">{choice.label}</span>
             {choice.note !== undefined && (
               <span

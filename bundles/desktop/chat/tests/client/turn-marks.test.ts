@@ -16,7 +16,19 @@ import { dirname, resolve } from 'node:path';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { type ChatWindow, openChatWindow, settle } from './support/window.js';
+import { svgMask } from 'desktop/ui/svg-mask';
+
+import {
+  type AgentMarkIcon,
+  applyTurnAvatar,
+} from '../../src/client/components/organisms/conversation/nodes/turn-avatar.js';
+import {
+  type ChatWindow,
+  type HostAnswer,
+  type ModelsV1Version,
+  openChatWindow,
+  settle,
+} from './support/window.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const stylesheet = resolve(here, '../../../src/client/styles.css');
@@ -101,7 +113,13 @@ const deliver = async (
 };
 
 /** Opens the Thread and delivers its log. */
-const open = async (events: readonly unknown[]): Promise<ChatWindow> => {
+const open = async (
+  events: readonly unknown[],
+  models?: {
+    readonly version: ModelsV1Version;
+    readonly icons?: HostAnswer;
+  },
+): Promise<ChatWindow> => {
   opened = await openChatWindow({
     url,
     host: {
@@ -112,7 +130,11 @@ const open = async (events: readonly unknown[]): Promise<ChatWindow> => {
         stopping: false,
         items: [],
       }),
+      ...(models?.icons === undefined
+        ? {}
+        : { 'models/v1.icons': models.icons }),
     },
+    ...(models === undefined ? {} : { modelsV1: models.version }),
   });
   await deliver(opened, events);
   return opened;
@@ -223,4 +245,112 @@ test('a turn drawn before its comments arrive gives its mark to them as they ope
   assert.equal(words(window), before, 'the words keep their block');
   assert.equal(await wearsMark(comments), true);
   assert.equal(await wearsMark(words(window)), false);
+});
+
+// The agent's mark is the icon of the model that answered the turn wearing it:
+// the `response.started` before the run's first answer names it, and the
+// window reads it from the host's `models/v1.icons`.
+
+/** A model's icon, as the host answers it; its `id`s find any copy drawn as markup. */
+const MODEL_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" id="model-icon-fixture" viewBox="0 0 24 24"><path id="model-icon-fixture-path" d="M4 4h16v16H4z"/></svg>';
+
+/** The run that answers the prompt: one response of `or`'s model `a`. */
+const answered = [
+  prompt,
+  event(2, { type: 'prompt.started' }),
+  event(3, { type: 'agent.started', model: 'a' }),
+  event(4, { type: 'response.started', providerId: 'or', model: 'a' }),
+  event(5, { type: 'text.delta', delta: 'Vou ajustar.' }),
+  event(6, {
+    type: 'prompt.finished',
+    status: 'completed',
+    text: 'Vou ajustar.',
+  }),
+];
+
+/** The host's answer naming `MODEL_SVG` for the model asked. */
+const iconAnswer = {
+  svgs: { openrouter: MODEL_SVG },
+  answers: [{ provider: 'openrouter', models: ['openrouter'] }],
+};
+
+/** The block that wears the agent's mark. */
+const agentBlock = (window: ChatWindow): HTMLElement => {
+  const blocks = window.document.querySelectorAll<HTMLElement>(
+    '[data-lexical-editor] > [data-turn-avatar="agent"]',
+  );
+  assert.equal(blocks.length, 1, "one block wears the agent's mark");
+  return blocks[0] as HTMLElement;
+};
+
+/** The icon an agent mark wears, as its block's custom property. */
+const iconOf = (block: HTMLElement): string =>
+  block.style.getPropertyValue('--turn-avatar-icon').trim();
+
+/**
+ * The icon an agent mark in `icon`'s state wears, read off a scratch block:
+ * always a mask, the empty one included, so the box stays drawn.
+ */
+const iconIn = (window: ChatWindow, icon: AgentMarkIcon): string => {
+  const scratch = window.document.createElement('div');
+  applyTurnAvatar(scratch, { role: 'agent', name: 'agent', icon });
+  const value = iconOf(scratch);
+  assert.match(value, /^url\("data:image\/svg\+xml,/, `a ${icon.kind} mask`);
+  return value;
+};
+
+test("the agent's mark is empty while its icon loads, then wears it without its turn changing", async () => {
+  let release: (answer: unknown) => void = () => undefined;
+  const held = new Promise((done) => {
+    release = done;
+  });
+  const window = await open(answered, {
+    version: '1.3.0',
+    icons: () => held,
+  });
+
+  const block = agentBlock(window);
+  const text = block.textContent;
+  assert.equal(iconOf(block), iconIn(window, { kind: 'pending' }));
+
+  release(iconAnswer);
+  await settle(200);
+
+  assert.equal(agentBlock(window), block, 'the turn keeps its block');
+  assert.equal(block.textContent, text, 'the turn keeps its words');
+  assert.equal(iconOf(block), svgMask(MODEL_SVG));
+});
+
+test("a failed icon read leaves the agent's mark empty, not the bot glyph", async () => {
+  const window = await open(answered, {
+    version: '1.3.0',
+    icons: () => {
+      throw { code: 'unavailable', message: 'Doric backend is unavailable.' };
+    },
+  });
+
+  const icon = iconOf(agentBlock(window));
+  assert.equal(icon, iconIn(window, { kind: 'pending' }));
+  assert.notEqual(icon, iconIn(window, { kind: 'fallback' }));
+});
+
+test('a host without models/v1 icons draws the bot glyph', async () => {
+  const window = await open(answered, { version: '1.2.0' });
+
+  assert.equal(
+    iconOf(agentBlock(window)),
+    iconIn(window, { kind: 'fallback' }),
+  );
+});
+
+test("the transcript holds no element of the icon's SVG", async () => {
+  const window = await open(answered, {
+    version: '1.3.0',
+    icons: () => iconAnswer,
+  });
+
+  assert.equal(iconOf(agentBlock(window)), svgMask(MODEL_SVG));
+  assert.equal(window.document.getElementById('model-icon-fixture'), null);
+  assert.equal(window.document.getElementById('model-icon-fixture-path'), null);
 });

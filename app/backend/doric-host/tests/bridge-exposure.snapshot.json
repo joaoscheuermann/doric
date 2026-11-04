@@ -43,7 +43,7 @@
       "update",
       "watch"
     ],
-    "models/v1": ["catalog", "kind", "kinds"],
+    "models/v1": ["catalog", "icons", "kind", "kinds"],
     "papercraft.previews/v1": ["build", "read"],
     "resources/v1": ["host", "project"],
     "runtime.attachments/v1": ["attach", "read"],

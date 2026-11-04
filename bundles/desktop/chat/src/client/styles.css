@@ -214,7 +214,6 @@
   margin-block-start: 0;
 }
 
-.conversation-scroll [data-lexical-editor] > [data-turn-avatar='agent']::before,
 .conversation-scroll [data-lexical-editor] > [data-turn-avatar='user']::after {
   position: absolute;
   inset-block-start: -0.0625rem;
@@ -222,7 +221,7 @@
   inline-size: 1.375rem;
   block-size: 1.375rem;
   border: 1px solid var(--turn-avatar-ring);
-  border-radius: 9999px;
+  border-radius: 25%;
   display: grid;
   place-items: center;
   font-size: 0.5625rem;
@@ -236,17 +235,9 @@
   color: var(--foreground);
 }
 
-/* The agent wears a face, a rim and its glyph: the circle the reader's initials
-   would fill, with the bot drawn on top of it. */
-.conversation-scroll
-  [data-lexical-editor]
-  > [data-turn-avatar='agent']::before {
-  content: '';
-  background: var(--turn-avatar-face);
-}
-
-/* The glyph is a mask, not a picture: it takes the surface's own colour, so the
-   bot reads as a cut-out of the face and never as a second palette. */
+/* The agent wears the icon of the model that answered its turn, with no face
+   or rim: a mask, not a picture, so the icon paints the text colour in light
+   and dark alike and never brings a palette of its own. */
 .conversation-scroll [data-lexical-editor] > [data-turn-avatar='agent']::after {
   content: '';
   position: absolute;
@@ -254,9 +245,9 @@
   inset-inline-start: -1.875rem;
   inline-size: 1.375rem;
   block-size: 1.375rem;
-  background-color: var(--background);
-  mask: var(--turn-avatar-mark) center / 55% no-repeat;
-  -webkit-mask: var(--turn-avatar-mark) center / 55% no-repeat;
+  background-color: var(--foreground);
+  mask: var(--turn-avatar-icon) center / 1.125rem no-repeat;
+  -webkit-mask: var(--turn-avatar-icon) center / 1.125rem no-repeat;
   pointer-events: none;
 }
 
@@ -275,9 +266,6 @@
   [data-lexical-editor]
   > [data-composer-stack]:not(:empty)
   ~ [data-prompt-input]::after,
-.conversation-scroll
-  [data-lexical-editor]
-  > [data-turn-avatar-moved][data-turn-avatar='agent']::before,
 .conversation-scroll
   [data-lexical-editor]
   > [data-turn-avatar-moved][data-turn-avatar]::after {

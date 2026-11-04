@@ -5,6 +5,7 @@
 // would, and keeps every write in memory. Nothing here reaches a network.
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ModelIconAnswers } from 'bundle/contracts';
 import { Toaster } from 'desktop/ui/sonner';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import { type ReactNode, useState } from 'react';
@@ -17,6 +18,10 @@ import type {
   ProviderKind,
   ToolCatalogEntry,
 } from '../../src/client/domain/config.js';
+import {
+  iconLookupFrom,
+  modelIconRequests,
+} from '../../src/client/domain/model-icons.js';
 import { sectionPath } from '../../src/client/domain/section-route.js';
 import { queryKeys } from '../../src/client/queries/keys.js';
 import {
@@ -28,6 +33,7 @@ import {
   storedConfiguration,
   toolCatalog,
 } from './fixtures.js';
+import { storyIconAnswers } from './icons.js';
 
 /** The services the settings surfaces are handed, typed from their own API. */
 export type StoryServices = NonNullable<Parameters<typeof initSettingsApi>[0]>;
@@ -46,6 +52,11 @@ export type StoryHost = {
   readonly tools?: Answer<readonly ToolCatalogEntry[]>;
   readonly credentials?: Answer<readonly Credential[]>;
   readonly catalog?: Answer<readonly CatalogModel[]>;
+  /**
+   * The icons `models/v1.icons` answers; by default the square for each
+   * provider and the circle for each model but an `acme/` one.
+   */
+  readonly icons?: Answer<ModelIconAnswers>;
   /** The message a configuration save is refused with, if any. */
   readonly refuseSave?: string;
   /** The route the window shows, `/settings/<section>`. */
@@ -187,6 +198,9 @@ export const createStoryServices = (host: StoryHost = {}): StoryServices => {
                   (input.kind === 'claude' ? claudeCatalog : openRouterCatalog),
               ),
             },
+      icons: (input: {
+        readonly requests: readonly { readonly models: readonly string[] }[];
+      }) => answer(host.icons ?? storyIconAnswers(input)),
     },
     'tools/v1': { catalog: () => answer(host.tools ?? toolCatalog) },
     'secrets/v1': {
@@ -275,6 +289,18 @@ export const seedQueries = (client: QueryClient, host: StoryHost): void => {
   ];
   for (const [key, value] of seeds) {
     if (value !== undefined) client.setQueryData(key, value);
+  }
+
+  // The execution picker's icons, for the configuration the host stores.
+  const stored = settled(host.config ?? storedConfiguration());
+  if (stored === undefined) return;
+  const requests = modelIconRequests(stored.configuration);
+  const icons = settled(host.icons ?? storyIconAnswers({ requests }));
+  if (requests.length > 0 && icons !== undefined) {
+    client.setQueryData(
+      queryKeys.modelIcons(requests),
+      iconLookupFrom(requests, icons),
+    );
   }
 };
 

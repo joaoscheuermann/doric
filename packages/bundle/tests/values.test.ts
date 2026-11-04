@@ -149,6 +149,7 @@ void test('every basic and platform method has a stated way across the envelope'
       prepare: 'crosses',
       contextWindow: 'crosses',
       inputModalities: 'crosses',
+      icons: 'crosses',
     },
     'models.provider/v1': {
       kind: 'crosses',
@@ -156,6 +157,7 @@ void test('every basic and platform method has a stated way across the envelope'
       catalog: 'crosses',
       create: 'crosses via callback+object',
       catalogCapacity: 'crosses',
+      icons: 'crosses',
     },
     'commands/v1': { register: 'refused', execute: 'crosses' },
     'ui/v1': { define: 'refused', create: 'refused', dispose: 'refused' },

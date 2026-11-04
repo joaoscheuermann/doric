@@ -37,7 +37,11 @@ const line = (role: AuthorRole, name: string, at: () => string | undefined) => (
               'Fix the Pay button in dark mode.',
               true,
             );
-      block.setAvatar({ role, name });
+      block.setAvatar(
+        role === 'agent'
+          ? { role, name, icon: { kind: 'fallback' } }
+          : { role, name },
+      );
       $getRoot().append(block, $createTurnAuthorNode(role, name, at()));
     }}
   />

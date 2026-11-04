@@ -14,6 +14,7 @@ import { Toaster } from 'desktop/ui/sonner';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import type { ReactNode } from 'react';
 
+import { setModelsApi } from '../../src/client/api/model-icons.js';
 import type { ThreadQueue } from '../../src/client/domain/queue.js';
 import type { Thread, ThreadEvent } from '../../src/client/domain/workspace.js';
 import { chatQueryClient } from '../../src/client/queries/client.js';
@@ -30,6 +31,7 @@ import {
   emptyQueue,
   project,
   projectId,
+  storyModels,
   threadDrafts,
   threadEvents,
   threadIds,
@@ -399,6 +401,7 @@ export const installChatHost = (): Services => {
   if (installed) return services;
   installed = true;
   initChat(services);
+  setModelsApi(storyModels);
   setWorkspace(workspace);
   for (const thread of records.values())
     chatQueryClient.setQueryData(

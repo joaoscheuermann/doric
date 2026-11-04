@@ -1,3 +1,5 @@
+import type { IconRequest } from '../domain/model-icons.js';
+
 /**
  * Every key a settings read or write caches under, in one place. The shapes
  * are trivial on purpose: a key names what the host was asked, so the
@@ -20,5 +22,14 @@ export const queryKeys = {
     'models',
     instance,
     read,
+  ],
+  /**
+   * The icons of the providers and models a surface draws, keyed by what it
+   * asked.
+   */
+  modelIcons: (requests: readonly IconRequest[]) => [
+    'providers',
+    'icons',
+    requests,
   ],
 };

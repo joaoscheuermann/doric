@@ -15,6 +15,7 @@ import {
   resolvedFrom,
   type ThreadComment,
 } from './comment-threads.js';
+import type { AnsweredBy } from './conversation-authors.js';
 import type { DelegatedInput } from './delegated.js';
 import { failureText } from './errors.js';
 import { type PromptExecution, readExecution } from './projector-execution.js';
@@ -111,6 +112,12 @@ export type AgentTurn = TurnBase & {
   readonly text: string;
   /** The job's lifecycle, so a surface can show progress, failure, cancellation. */
   readonly status: PromptStatus;
+  /**
+   * The model whose response this answer is: the prompt's latest
+   * `response.started` read before the turn opened. Absent when no such event
+   * named a provider and a model. A later response never changes it.
+   */
+  readonly answeredBy?: AnsweredBy;
 };
 
 /** A run of the agent's reasoning, kept apart from the text it produced. */
@@ -265,6 +272,13 @@ export type Projection = {
    * the state each comment is in now, wherever the comment was drawn.
    */
   readonly threads: CommentThreads;
+  /**
+   * Per prompt id, the answering model of the prompt's latest
+   * `response.started` read so far. A `response.started` without a non-empty
+   * `providerId` and `model` clears the prompt's entry, so the agent turns
+   * opened after it carry no `answeredBy`.
+   */
+  readonly answers: ReadonlyMap<string, AnsweredBy>;
 };
 
 const terminalStatus = (status: string): PromptStatus => {
@@ -306,6 +320,7 @@ export type Draft =
       events: ThreadEvent[];
       text: string;
       status: PromptStatus;
+      answeredBy?: AnsweredBy;
     }
   | {
       type: 'thinking';
@@ -626,6 +641,15 @@ const statedByRun = (
  * one written, so reasoning, text and tools that interleave stay in order. The
  * job's lifecycle is one value, carried by each of its agent turns.
  */
+/** The `answeredBy` an agent turn the prompt opens now carries, if any. */
+const answeredOf = (
+  answers: ReadonlyMap<string, AnsweredBy>,
+  promptId: string,
+): { answeredBy?: AnsweredBy } => {
+  const answeredBy = answers.get(promptId);
+  return answeredBy === undefined ? {} : { answeredBy };
+};
+
 /**
  * Reads one event of the log into the turns being built. A turn the event
  * changes is written where it sits, which is safe because the read owns its
@@ -643,6 +667,7 @@ const readEvent = (
   comments: Map<string, TurnComment[]>,
   threads: Map<string, CommentThread>,
   users: UserDrafts,
+  answers: Map<string, AnsweredBy>,
   item: ThreadEvent,
 ): void => {
   if (isTruncation(item)) return;
@@ -714,7 +739,17 @@ const readEvent = (
     return;
   }
 
-  if (event?.type === 'reasoning.delta') {
+  if (event?.type === 'response.started') {
+    const { providerId, model } = event;
+    if (
+      typeof providerId === 'string' &&
+      providerId.length > 0 &&
+      typeof model === 'string' &&
+      model.length > 0
+    )
+      answers.set(promptId, { providerId, model });
+    else answers.delete(promptId);
+  } else if (event?.type === 'reasoning.delta') {
     const delta = typeof event.delta === 'string' ? event.delta : '';
     // A delta that carries no text says nothing changed, so it neither opens a
     // turn nor ends the run it sits inside. A provider that emits one beside
@@ -749,6 +784,7 @@ const readEvent = (
         events: [item],
         text: delta,
         status: 'streaming',
+        ...answeredOf(answers, promptId),
       });
     }
   } else if (event?.type === 'tool.started') {
@@ -801,6 +837,7 @@ const readEvent = (
           events: [item],
           text: finished,
           status: terminal,
+          ...answeredOf(answers, promptId),
         });
       }
     }
@@ -973,6 +1010,7 @@ const project = (events: readonly ThreadEvent[]): Projection => {
   const comments = new Map<string, TurnComment[]>();
   const threads = new Map<string, CommentThread>();
   const users: UserDrafts = new Map();
+  const answers = new Map<string, AnsweredBy>();
   for (const item of events)
     readEvent(
       drafts,
@@ -982,6 +1020,7 @@ const project = (events: readonly ThreadEvent[]): Projection => {
       comments,
       threads,
       users,
+      answers,
       item,
     );
   settle(drafts, status, executions, inputs);
@@ -993,6 +1032,7 @@ const project = (events: readonly ThreadEvent[]): Projection => {
     inputs,
     comments,
     threads,
+    answers,
     turns: grouped(drafts, status),
   };
 };
@@ -1036,6 +1076,7 @@ const readInto = (
   // The user turns the batch's comments join are the copies it reads into;
   // only a comment reads them, so a batch without one needs no index of them.
   const users: UserDrafts = touchesComments ? userDraftsOf(drafts) : new Map();
+  const answers = new Map(current.answers);
   for (const item of incoming)
     readEvent(
       drafts,
@@ -1045,6 +1086,7 @@ const readInto = (
       comments,
       threads,
       users,
+      answers,
       item,
     );
   settle(drafts, status, executions, inputs);
@@ -1056,6 +1098,7 @@ const readInto = (
     inputs,
     comments,
     threads,
+    answers,
     turns: grouped(drafts, status),
   };
 };
@@ -1166,6 +1209,7 @@ export const emptyProjection: Projection = {
   inputs: new Map(),
   comments: new Map(),
   threads: new Map(),
+  answers: new Map(),
 };
 
 /** The tool calls that can change the sandbox a Project's Threads share. */

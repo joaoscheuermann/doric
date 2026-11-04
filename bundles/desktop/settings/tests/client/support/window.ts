@@ -48,7 +48,7 @@ const hostContracts: Readonly<
 > = {
   'claude.login/v1': { start: 0, finish: 0 },
   'host-config/v1': { current: 0, replace: null },
-  'models/v1': { kinds: 0, kind: 1, catalog: null },
+  'models/v1': { kinds: 0, kind: 1, catalog: null, icons: null },
   'tools/v1': { catalog: 0 },
   'secrets/v1': { list: 0, create: null, update: 2, delete: null },
 };
@@ -57,6 +57,8 @@ const hostContracts: Readonly<
 const hostContractVersions: Readonly<Record<string, string>> = {
   // The configuration that carries the optional profile (DORIC-86).
   'host-config/v1': '1.1.0',
+  // The icons of providers and models (model icons).
+  'models/v1': '1.3.0',
 };
 
 const hostContractVersion = (id: string): string =>

@@ -12,6 +12,7 @@ import {
   createFetchTransport,
   type HttpTransport,
   type LlmProvider,
+  type ModelIconName,
   type SecretSource,
 } from 'llms';
 import type { Logger } from 'pino';
@@ -25,6 +26,12 @@ export interface KindDeps {
   readonly logger: Logger;
   /** The provider's own id, which a compatible factory reports as its identity. */
   readonly identity: { readonly id: string; readonly name: string };
+}
+
+/** A kind's choice of icons, by name; `models` has the input's length and order. */
+export interface KindIcons {
+  readonly provider?: ModelIconName;
+  readonly models: readonly (ModelIconName | null)[];
 }
 
 /** One provider kind: its descriptor, its traits and how it is built and listed. */
@@ -43,6 +50,14 @@ export interface KindDefinition {
     },
     transport: HttpTransport,
   ) => Promise<CatalogResult>;
+  /**
+   * The icons this kind chooses for a provider's values and some of its
+   * models; pure, no I/O, never a secret (D3). A throw makes `icons` reject.
+   */
+  readonly icons: (input: {
+    readonly configuration: Readonly<Record<string, string>>;
+    readonly models: readonly string[];
+  }) => KindIcons;
 }
 
 /** A provider built for a kind answers the kind and the fields it was built from. */
@@ -142,6 +157,11 @@ export const createKindProvider = (
       catalogCapacity: defineMethod({
         ...modelsProviderMethods.catalogCapacity,
         execute: () => Promise.resolve(definition.catalogCapacity),
+      }),
+      icons: defineMethod({
+        ...modelsProviderMethods.icons,
+        execute: (input) =>
+          Promise.resolve().then(() => definition.icons(input)),
       }),
     },
     { cardinality: 'many' },

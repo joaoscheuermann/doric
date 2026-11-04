@@ -1,4 +1,5 @@
 import { Input } from 'desktop/ui/input';
+import { useMemo } from 'react';
 
 import {
   effortLabel,
@@ -11,7 +12,9 @@ import {
   setExecutionEffort,
   updateModel,
 } from '../../domain/config.js';
+import { modelIconRequests } from '../../domain/model-icons.js';
 import { useConfig } from '../../hooks/use-config.js';
+import { useModelIcons } from '../../hooks/use-model-icons.js';
 import { useProviderKinds } from '../../hooks/use-provider-kinds.js';
 import { EffortPicker } from '../molecules/effort-picker.js';
 import { ModelPicker } from '../molecules/model-picker.js';
@@ -25,6 +28,12 @@ export function ExecutionPicker() {
   const kinds = useProviderKinds();
   const config = useConfig(true, kinds.list);
   const draft = config.draft;
+  // One request list per configuration, so the icons' query key stays stable.
+  const requests = useMemo(
+    () => (draft === undefined ? [] : modelIconRequests(draft)),
+    [draft],
+  );
+  const icons = useModelIcons(requests);
 
   if (draft === undefined) return null;
 
@@ -33,7 +42,7 @@ export function ExecutionPicker() {
   const efforts = modelEfforts(draft, providerId, model).filter(
     (value) => value !== 'none',
   );
-  const groups = modelGroups(draft);
+  const groups = modelGroups(draft, icons);
   const hasChoices = groups.some((group) => group.choices.length > 0);
   const effortName =
     efforts.length === 0 ? 'Unavailable' : effortLabel(effort ?? 'none');
@@ -62,6 +71,7 @@ export function ExecutionPicker() {
           ariaLabel="Execution model"
           groups={groups}
           label={model === '' ? 'Choose model' : model}
+          icon={icons?.model(providerId, model)}
           value={modelChoiceKey(providerId, model)}
           onSelect={(key) => config.setDraft(selectModelChoice(draft, key))}
           reasoning={{

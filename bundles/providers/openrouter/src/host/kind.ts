@@ -2,6 +2,7 @@ import {
   createOpenRouterProvider,
   defaultStructuredOutputRepairs,
   openRouterMetadata,
+  openRouterModelIcon,
 } from 'llms';
 
 import { readCatalog } from './catalog.js';
@@ -87,4 +88,8 @@ export const openRouterKind: KindDefinition = {
     });
   },
   catalog: (input, transport) => readCatalog(input, transport),
+  icons: ({ models }) => ({
+    provider: 'openrouter',
+    models: models.map((model) => openRouterModelIcon(model)),
+  }),
 };

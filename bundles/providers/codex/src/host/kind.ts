@@ -72,4 +72,8 @@ export const codexKind: KindDefinition = {
       ...baseUrl(values),
     });
   },
+  icons: ({ models }) => ({
+    provider: 'openai',
+    models: models.map(() => 'openai'),
+  }),
 };

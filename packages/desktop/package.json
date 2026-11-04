@@ -71,6 +71,12 @@
       "import": "./dist/react-element.js",
       "default": "./dist/react-element.js"
     },
+    "./ui/svg-mask": {
+      "@org/source": "./src/svg-mask.ts",
+      "types": "./dist/svg-mask.d.ts",
+      "import": "./dist/svg-mask.js",
+      "default": "./dist/svg-mask.js"
+    },
     "./ui/utils": {
       "@org/source": "./src/lib/utils.ts",
       "types": "./dist/lib/utils.d.ts",

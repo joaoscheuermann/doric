@@ -11,6 +11,7 @@ import {
   type HttpResponse,
   type HttpTransport,
   type LlmProvider,
+  modelIconSvg,
   providerKind,
   providerKinds,
 } from 'llms';
@@ -739,4 +740,63 @@ void test('inputModalities never throws: a failed catalog or a model it does not
       assert.equal(await models.inputModalities({ model: 'm' }), undefined);
     }, catalogAnswer(answer));
   }
+});
+
+void test("icons answers a draft openrouter provider each model's lab, else its own icon, with each SVG once", async () => {
+  await withModels(async ({ models }) => {
+    assert.deepEqual(
+      await models.icons({
+        requests: [
+          {
+            kind: 'openrouter',
+            configuration: {},
+            models: ['anthropic/claude-sonnet-4', 'acme/coder-7b'],
+          },
+        ],
+      }),
+      {
+        svgs: {
+          claude: modelIconSvg('claude'),
+          openrouter: modelIconSvg('openrouter'),
+        },
+        answers: [{ provider: 'openrouter', models: ['claude', 'openrouter'] }],
+      },
+    );
+  });
+});
+
+void test('icons answers a draft openai provider on a local endpoint no own icon and none for a model of no family', async () => {
+  await withModels(async ({ models }) => {
+    assert.deepEqual(
+      await models.icons({
+        requests: [
+          {
+            kind: 'openai',
+            configuration: { endpoint: 'http://localhost:11434/v1' },
+            models: ['phi4'],
+          },
+        ],
+      }),
+      { svgs: {}, answers: [{ models: [null] }] },
+    );
+  });
+});
+
+void test('icons resolves a configured provider by id, and an unknown kind answers no icon', async () => {
+  await withModels(async ({ models }) => {
+    await models.prepare(snapshot(1, [openai('a')]));
+
+    assert.deepEqual(
+      await models.icons({
+        requests: [
+          { providerId: 'a', models: ['gpt-5', 'phi4'] },
+          { kind: 'nope', configuration: {}, models: ['gpt-5'] },
+        ],
+      }),
+      {
+        svgs: { openai: modelIconSvg('openai') },
+        answers: [{ models: ['openai', null] }, { models: [null] }],
+      },
+    );
+  });
 });

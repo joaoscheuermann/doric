@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
   "id": "codex",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "engines": { "doric": "^1.0.0" },
   "description": "Codex provider kind (internal, not advertised).",
-  "provides": ["models.provider/v1@1.1.0"],
+  "provides": ["models.provider/v1@1.2.0"],
   "requires": ["log/v1@^1.0.0"]
 }

@@ -165,6 +165,17 @@ export interface Models {
     request: { readonly providerId?: string; readonly model: string },
     call?: CallArg,
   ): Promise<readonly string[] | undefined>;
+  /**
+   * 1.3.0: the icons of some models and of their providers. A request names a
+   * provider of the active configuration (`providerId`) or a draft (`kind` and
+   * its values). Every name an answer uses is a key of `svgs`. An unknown
+   * provider or kind, or a provider whose `icons` fails or is slow, answers no
+   * provider icon and `null` for each model; it never throws for those.
+   */
+  icons(
+    input: { readonly requests: readonly ModelIconRequest[] },
+    call?: CallArg,
+  ): Promise<ModelIconAnswers>;
 }
 
 export const ModelsV1 = ref<Models>('models/v1');
@@ -192,6 +203,74 @@ const configurationValuesSchema = z.record(z.string(), z.string());
 const catalogModelRequestSchema = z
   .object({ providerId: z.string().optional(), model: z.string() })
   .strict();
+
+/** models/v1 1.3.0: the longest SVG an icon may be, in characters. */
+export const MODEL_ICON_MAX_LENGTH = 16_384;
+/**
+ * models/v1 1.3.0, models.provider/v1 1.2.0: the most model names one icon
+ * request may list.
+ */
+export const MODEL_ICON_MAX_MODELS = 1000;
+/**
+ * models/v1 1.3.0, models.provider/v1 1.2.0: the longest model name an icon
+ * request may list, in characters.
+ */
+export const MODEL_ICON_MAX_NAME = 512;
+/** models/v1 1.3.0: the most requests one `models/v1.icons` call may carry. */
+export const MODEL_ICON_MAX_REQUESTS = 64;
+
+const iconNameSchema = z.string().min(1).max(64);
+const iconModelsSchema = z
+  .array(z.string().max(MODEL_ICON_MAX_NAME))
+  .max(MODEL_ICON_MAX_MODELS);
+
+/**
+ * models/v1 1.3.0: one icon as SVG markup. The desktop draws it as a CSS mask,
+ * so only its shape counts, and never puts it in the document.
+ */
+export const modelIconSvgSchema = z
+  .string()
+  .max(MODEL_ICON_MAX_LENGTH)
+  .startsWith('<svg');
+
+/**
+ * models/v1 1.3.0, models.provider/v1 1.2.0: the icons a provider chooses, by
+ * name: its own (absent for none) and, per requested model in the same order
+ * and length, that model's own or `null`.
+ */
+export const modelIconChoiceSchema = z
+  .object({
+    provider: iconNameSchema.optional(),
+    models: z.array(iconNameSchema.nullable()),
+  })
+  .strict();
+export type ModelIconChoice = z.output<typeof modelIconChoiceSchema>;
+
+/** models/v1 1.3.0: a configured provider by id, or a draft by kind and values. */
+export const modelIconRequestSchema = z.union([
+  z.object({ providerId: z.string(), models: iconModelsSchema }).strict(),
+  z
+    .object({
+      kind: z.string(),
+      configuration: configurationValuesSchema,
+      models: iconModelsSchema,
+    })
+    .strict(),
+]);
+export type ModelIconRequest = z.output<typeof modelIconRequestSchema>;
+
+/**
+ * models/v1 1.3.0: the answers to one `icons` call, in request order, by icon
+ * name, with the fallback applied to each model; `svgs` holds the SVG of every
+ * name the answers use, once.
+ */
+export const modelIconAnswersSchema = z
+  .object({
+    svgs: z.record(iconNameSchema, modelIconSvgSchema),
+    answers: z.array(modelIconChoiceSchema),
+  })
+  .strict();
+export type ModelIconAnswers = z.output<typeof modelIconAnswersSchema>;
 
 export const modelsMethods = {
   resolve: { input: modelRequestSchema, output: resolvedModelSchema },
@@ -223,6 +302,15 @@ export const modelsMethods = {
   inputModalities: {
     input: catalogModelRequestSchema,
     output: z.array(z.string()).optional(),
+  },
+  icons: {
+    input: z
+      .object({
+        requests: z.array(modelIconRequestSchema).max(MODEL_ICON_MAX_REQUESTS),
+      })
+      .strict(),
+    output: modelIconAnswersSchema,
+    expose: 'desktop',
   },
 } as const satisfies MethodSpecs;
 
@@ -260,6 +348,17 @@ export interface ModelsProvider {
    * (`models/v1.contextWindow`). A provider that fails to answer has none.
    */
   catalogCapacity(call?: CallArg): Promise<boolean>;
+  /**
+   * 1.2.0: the icons this kind chooses for a provider's values, by name: its
+   * own and, per listed model, that model's own. No fallback.
+   */
+  icons(
+    input: {
+      readonly configuration: Readonly<Record<string, string>>;
+      readonly models: readonly string[];
+    },
+    call?: CallArg,
+  ): Promise<ModelIconChoice>;
 }
 
 export const ModelsProviderV1 = ref<ModelsProvider>('models.provider/v1');
@@ -289,4 +388,13 @@ export const modelsProviderMethods = {
     output: languageModelSchema,
   },
   catalogCapacity: { input: noInput, output: z.boolean() },
+  icons: {
+    input: z
+      .object({
+        configuration: configurationValuesSchema,
+        models: iconModelsSchema,
+      })
+      .strict(),
+    output: modelIconChoiceSchema,
+  },
 } as const satisfies MethodSpecs;

@@ -64,6 +64,7 @@ import {
   updateProvider,
   updateTurnLimit,
 } from '../src/client/domain/config.js';
+import type { IconLookup } from '../src/client/domain/model-icons.js';
 
 /** A stored credential of the kind the id names, as the host would answer it. */
 const credential = (
@@ -1216,6 +1217,77 @@ describe('the models the execution picker offers', () => {
     );
     assert.deepEqual(searchModelGroups(groups, '  '), groups);
     assert.deepEqual(searchModelGroups(groups, 'nope'), []);
+  });
+
+  test("model groups put each model's icon on its choice, and on the added row of an unlisted execution model", () => {
+    const listedSvg = '<svg id="listed"></svg>';
+    const unlistedSvg = '<svg id="unlisted"></svg>';
+    // The host answers an icon for two openai names and none for the rest.
+    const icons: IconLookup = {
+      provider: () => undefined,
+      model: (providerId, model) =>
+        providerId !== 'openai'
+          ? undefined
+          : model === 'gpt-5'
+            ? listedSvg
+            : model === 'unlisted'
+              ? unlistedSvg
+              : undefined,
+    };
+    const base = withExecution(
+      withProviders(configuration(), [
+        {
+          ...provider('openai'),
+          models: [{ name: 'gpt-5' }, { name: 'gpt-5-mini' }],
+        },
+      ]),
+      { providerId: 'openai', model: 'unlisted' },
+    );
+
+    const choices = modelGroups(base, icons)[0]?.choices ?? [];
+
+    assert.deepEqual(choices, [
+      {
+        label: 'unlisted',
+        value: modelChoiceKey('openai', 'unlisted'),
+        icon: unlistedSvg,
+      },
+      {
+        label: 'gpt-5',
+        value: modelChoiceKey('openai', 'gpt-5'),
+        icon: listedSvg,
+      },
+      { label: 'gpt-5-mini', value: modelChoiceKey('openai', 'gpt-5-mini') },
+    ]);
+    assert.equal('icon' in (choices[2] ?? {}), false);
+  });
+
+  test('searching model groups keeps their icons', () => {
+    const svg = '<svg id="gpt"></svg>';
+    const icons: IconLookup = {
+      provider: () => undefined,
+      model: (providerId, model) =>
+        providerId === 'openai' && model === 'gpt-5' ? svg : undefined,
+    };
+    const base = withProviders(configuration(), [
+      { ...provider('openai'), models: [{ name: 'gpt-5' }] },
+      { ...provider('anthropic'), models: [{ name: 'claude-sonnet' }] },
+    ]);
+
+    assert.deepEqual(
+      searchModelGroups(modelGroups(base, icons), 'gpt').map(
+        (group) => group.choices,
+      ),
+      [
+        [
+          {
+            label: 'gpt-5',
+            value: modelChoiceKey('openai', 'gpt-5'),
+            icon: svg,
+          },
+        ],
+      ],
+    );
   });
 
   test("names the effort a model's own catalog calls its default, and none otherwise", () => {

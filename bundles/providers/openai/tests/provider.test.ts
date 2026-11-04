@@ -119,3 +119,82 @@ void test('the secret source is read before every request, so a rotation reaches
     await world.dispose();
   }
 });
+
+void test("on OpenAI's own endpoint the openai record chooses OpenAI for the provider and every model", async () => {
+  const { world, provider } = await providerWorld('openai');
+  const ownEndpoints: Record<string, string>[] = [
+    {},
+    { endpoint: '' },
+    { endpoint: 'https://api.openai.com/v1' },
+    { endpoint: 'https://api.openai.com:443/v1' },
+  ];
+
+  try {
+    for (const configuration of ownEndpoints) {
+      assert.deepEqual(
+        await provider.icons({ configuration, models: ['a', 'phi4'] }),
+        { provider: 'openai', models: ['openai', 'openai'] },
+        JSON.stringify(configuration),
+      );
+    }
+  } finally {
+    await world.dispose();
+  }
+});
+
+void test("on a compatible endpoint the openai record has no own icon and chooses each model's family by name", async () => {
+  const { world, provider } = await providerWorld('openai');
+
+  try {
+    const choice = await provider.icons({
+      configuration: { endpoint: 'http://localhost:11434/v1' },
+      models: [
+        'Llama3.2',
+        'qwen2.5-coder',
+        'deepseek-r1-distill-qwen',
+        'gemini-pro',
+        'gemma3:12b',
+        'gpt-oss:20b',
+        'claude-3',
+        'phi4',
+      ],
+    });
+
+    assert.deepEqual(choice, {
+      models: [
+        'meta',
+        'qwen',
+        'deepseek',
+        'gemini',
+        'gemma',
+        'openai',
+        'claude',
+        null,
+      ],
+    });
+  } finally {
+    await world.dispose();
+  }
+});
+
+void test('a look-alike host and a value that is not a URL are compatible endpoints', async () => {
+  const { world, provider } = await providerWorld('openai');
+
+  try {
+    for (const endpoint of [
+      'https://api.openai.com.example.test',
+      'not a url',
+    ]) {
+      assert.deepEqual(
+        await provider.icons({
+          configuration: { endpoint },
+          models: ['gpt-5', 'phi4'],
+        }),
+        { models: ['openai', null] },
+        endpoint,
+      );
+    }
+  } finally {
+    await world.dispose();
+  }
+});

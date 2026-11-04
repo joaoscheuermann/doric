@@ -194,3 +194,16 @@ void test('a built claude provider answers its kind and fields', async () => {
     await world.dispose();
   }
 });
+
+void test('the claude record chooses Claude for the provider and every model', async () => {
+  const { world, provider } = await providerWorld('claude');
+
+  try {
+    assert.deepEqual(
+      await provider.icons({ configuration: {}, models: ['a', 'b'] }),
+      { provider: 'claude', models: ['claude', 'claude'] },
+    );
+  } finally {
+    await world.dispose();
+  }
+});

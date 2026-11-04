@@ -3,6 +3,8 @@
 // shapes are the host's (`runtime.threads/v1`, `chat.composer/v1`), so a story
 // that seeds them sees exactly what a window fed by the host would.
 
+import type { Models } from 'bundle/contracts';
+
 import {
   emptyProjection,
   projectEvents,
@@ -730,6 +732,24 @@ export const threadEvents: Readonly<Record<string, readonly ThreadEvent[]>> = {
 /** The turns the conversation projects from one Thread's log. */
 export const turnsOf = (threadId: string): readonly Turn[] =>
   projectEvents(emptyProjection, threadEvents[threadId] ?? []).turns;
+
+// Model icons --------------------------------------------------------------
+
+/** A model's icon, as the host's `models/v1.icons` answers it. */
+export const modelIconSvg =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2 22 12 12 22 2 12z"/></svg>';
+
+/** The story host's `models/v1`: every model it is asked for wears `modelIconSvg`. */
+export const storyModels: Pick<Models, 'icons'> = {
+  icons: ({ requests }) =>
+    Promise.resolve({
+      svgs: { story: modelIconSvg },
+      answers: requests.map((request) => ({
+        provider: 'story',
+        models: request.models.map(() => 'story'),
+      })),
+    }),
+};
 
 // Queues -------------------------------------------------------------------
 

@@ -12,6 +12,8 @@ import {
   type CredentialUpdate,
   defineMethod,
   defineService,
+  type ModelIconAnswers,
+  type ModelIconRequest,
   type ModelKindDescriptor,
   ModelsV1,
   modelsMethods,
@@ -49,6 +51,9 @@ export interface FakeHost {
     kind: string;
     configuration: Readonly<Record<string, string>>;
   }) => CatalogResult;
+  icons?: (input: {
+    readonly requests: readonly ModelIconRequest[];
+  }) => ModelIconAnswers;
   tools?: () => readonly ToolCatalogEntry[];
   list?: () => readonly CredentialDescription[];
   create?: (input: CredentialCreate) => CredentialDescription;
@@ -109,6 +114,8 @@ export const settingsOver = async (
         kind: string;
         configuration: Record<string, string>;
       }) => (host.catalog ?? unanswered)(input),
+      icons: (input: { requests: ModelIconRequest[] }) =>
+        (host.icons ?? unanswered)(input),
     }),
     fake(ToolsV1.id, toolsMethods, {
       catalog: () => [...(host.tools ?? unanswered)()],

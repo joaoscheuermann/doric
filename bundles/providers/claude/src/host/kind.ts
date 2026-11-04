@@ -49,6 +49,10 @@ export const claudeKind: KindDefinition = {
       ...baseUrl(values),
     }),
   catalog: (input, deps) => readClaudeCatalog(input, deps),
+  icons: ({ models }) => ({
+    provider: 'claude',
+    models: models.map(() => 'claude'),
+  }),
 };
 
 /**
