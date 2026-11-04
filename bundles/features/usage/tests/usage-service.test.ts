@@ -96,6 +96,7 @@ const usageOver = async (
           ...modelsMethods.inputModalities,
           execute: unexpected,
         }),
+        icons: defineMethod({ ...modelsMethods.icons, execute: unexpected }),
       }),
     ],
   });

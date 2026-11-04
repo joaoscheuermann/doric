@@ -78,10 +78,11 @@ const once = (dispose: () => void): Disposable => {
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-const timedOut = Symbol('timed-out');
+/** What `bounded` answers when the deadline passes before the handler settles. */
+export const timedOut = Symbol('timed-out');
 
 /** Waits for one handler, bounded by `deadlineMs` (0 means no deadline). */
-const bounded = async (
+export const bounded = async (
   run: () => unknown,
   deadlineMs: number,
 ): Promise<unknown> => {

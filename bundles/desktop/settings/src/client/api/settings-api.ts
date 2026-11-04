@@ -19,7 +19,9 @@ import {
   type Disposable,
   DoricBrowserV1,
   isContractError,
+  MODEL_ICON_MAX_LENGTH,
   type ModelField,
+  type ModelIconAnswers,
   type ModelKindDescriptor,
   ModelsV1,
   ref,
@@ -60,6 +62,7 @@ import {
   type ToolConfigField,
   type ToolConfigFieldKind,
 } from '../domain/config.js';
+import type { IconRequest } from '../domain/model-icons.js';
 
 /**
  * `host-config/v1` (the `/config` pipeline). The ref is declared here by id:
@@ -895,6 +898,57 @@ const catalogFrom = (value: unknown): readonly CatalogModel[] => {
   });
 };
 
+/**
+ * The host's icon answers to `requests`, or "Doric returned an invalid
+ * response." when the value is not an object; when `svgs` is not a record of
+ * strings, each starting with `<svg` and at most `MODEL_ICON_MAX_LENGTH` long;
+ * when `answers` has another length than `requests`, or an answer's `models`
+ * another length than its request's; or when a name it uses is not an own key
+ * of `svgs`.
+ */
+const iconAnswersFrom = (
+  value: unknown,
+  requests: readonly IconRequest[],
+): ModelIconAnswers => {
+  if (!isRecord(value) || Array.isArray(value)) return invalidResponse();
+  const { svgs, answers } = value;
+  if (!isRecord(svgs) || Array.isArray(svgs)) return invalidResponse();
+  const svgsValid = Object.values(svgs).every(
+    (svg) =>
+      typeof svg === 'string' &&
+      svg.startsWith('<svg') &&
+      svg.length <= MODEL_ICON_MAX_LENGTH,
+  );
+  if (!svgsValid) return invalidResponse();
+  if (!Array.isArray(answers) || answers.length !== requests.length)
+    return invalidResponse();
+
+  const named = (name: unknown): boolean =>
+    typeof name === 'string' && Object.hasOwn(svgs, name);
+
+  const read = answers.map((answer: unknown, index) => {
+    const request = requests[index];
+    if (
+      request === undefined ||
+      !isRecord(answer) ||
+      !Array.isArray(answer.models) ||
+      answer.models.length !== request.models.length ||
+      (answer.provider !== undefined && !named(answer.provider)) ||
+      !answer.models.every((model: unknown) => model === null || named(model))
+    ) {
+      return invalidResponse();
+    }
+    return {
+      ...(answer.provider === undefined
+        ? {}
+        : { provider: answer.provider as string }),
+      models: answer.models as (string | null)[],
+    };
+  });
+
+  return { svgs: svgs as Record<string, string>, answers: read };
+};
+
 const toolConfigFieldKindValues = new Set<string>([
   'text',
   'url',
@@ -1002,6 +1056,16 @@ export interface SettingsApi {
   readonly providers: {
     kinds(): Promise<readonly ProviderKind[]>;
     models(values: ProviderValuesRef): Promise<readonly CatalogModel[]>;
+    /**
+     * Every request's icons, in one host call and request order; the provider
+     * id never leaves the renderer. Each answer lists as many models as its
+     * request, and every name it uses is a key of `svgs`. An empty list
+     * answers `{ svgs: {}, answers: [] }` without a host call. Fails with a
+     * `SettingsApiError`: "Doric returned an invalid response." for an answer
+     * that breaks these rules, and the adapter's usual messages when the host
+     * is out of reach or refuses the call.
+     */
+    icons(requests: readonly IconRequest[]): Promise<ModelIconAnswers>;
   };
   readonly credentials: {
     list(): Promise<readonly Credential[]>;
@@ -1082,6 +1146,22 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
       if (read.status !== 'read')
         return fail('The provider model catalog could not be read.');
       return catalogFrom(read.models);
+    },
+    icons: async (requests) => {
+      if (requests.length === 0) return { svgs: {}, answers: [] };
+      return iconAnswersFrom(
+        await reach(() =>
+          services.use(ModelsV1).icons({
+            // Copies, since the contract's request is not read-only.
+            requests: requests.map(({ kind, configuration, models }) => ({
+              kind,
+              configuration: { ...configuration },
+              models: [...models],
+            })),
+          }),
+        ),
+        requests,
+      );
     },
   },
   credentials: {

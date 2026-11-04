@@ -11,7 +11,12 @@
  * and `hasSecret` is what stands in for the value.
  */
 
-/** The host's vocabulary, mirrored: this app imports no workspace package. */
+import { type IconLookup, noIcons } from './model-icons.js';
+
+/**
+ * The host's vocabulary, mirrored: these rules are not imported from the
+ * host's contracts.
+ */
 export const reasoningEfforts = [
   'none',
   'minimal',
@@ -296,6 +301,8 @@ export type ModelExecution = {
 export type ModelChoice = {
   readonly label: string;
   readonly value: string;
+  /** The SVG of the model's icon, after the fallback; absent when it has none. */
+  readonly icon?: string;
 };
 
 /**
@@ -1464,19 +1471,31 @@ const modelEntry = (
  * provider the profile names, so the surface never hides the value it is set
  * to: the profile keeps a model the catalog does not describe, and the picker
  * says so rather than reading as empty.
+ *
+ * Each choice takes `icons.model(providerId, name)`, the added row included;
+ * a choice without an icon has no `icon` key. Without `icons`, no choice has
+ * one.
  */
 export const modelGroups = (
   configuration: Configuration,
+  icons: IconLookup = noIcons,
 ): readonly ModelGroup[] => {
   // One provider needs no naming: its models are the only ones there are.
   const single = configuration.providers.length === 1;
   const { providerId, model } = configuration.models.execution;
+  const choiceOf = (owner: string, name: string): ModelChoice => {
+    const icon = icons.model(owner, name);
+    return {
+      label: name,
+      value: modelChoiceKey(owner, name),
+      ...(icon === undefined ? {} : { icon }),
+    };
+  };
   const groups = configuration.providers.map((provider, index) => ({
     label: single ? undefined : providerLabel(provider, index),
-    choices: (provider.models ?? []).map((entry) => ({
-      label: entry.name,
-      value: modelChoiceKey(provider.id, entry.name),
-    })),
+    choices: (provider.models ?? []).map((entry) =>
+      choiceOf(provider.id, entry.name),
+    ),
   }));
 
   if (model === '') return groups;
@@ -1490,7 +1509,7 @@ export const modelGroups = (
     return groups;
   }
 
-  const choice = { label: model, value: current };
+  const choice = choiceOf(providerId, model);
   const own = configuration.providers.findIndex(
     (provider) => provider.id === providerId,
   );

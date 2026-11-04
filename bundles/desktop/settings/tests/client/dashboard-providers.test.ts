@@ -61,7 +61,7 @@ const openai = {
   lists: [],
 };
 
-/** A kind the provider icon has no mark of its own for. */
+/** A kind the host answers no icon for. */
 const acme = {
   id: 'acme',
   label: 'Acme',
@@ -99,6 +99,35 @@ const configuration = {
   execution: { maxTurns: 32 },
 };
 
+/**
+ * The SVG the host answers for OpenRouter's own icon. Its unique `id` tells
+ * whether any of its markup reached the document.
+ */
+const openrouterSvg =
+  '<svg id="fixture-icon-openrouter" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>';
+
+type IconsInput = {
+  readonly requests: readonly {
+    readonly kind: string;
+    readonly models: readonly string[];
+  }[];
+};
+
+/**
+ * `models/v1.icons` as the host answers it: an own icon for an `openrouter`
+ * provider and none for any other kind, nor for any model.
+ */
+const answerIcons = (input: unknown) => {
+  const { requests } = input as IconsInput;
+  return {
+    svgs: { openrouter: openrouterSvg },
+    answers: requests.map((request) => ({
+      ...(request.kind === 'openrouter' ? { provider: 'openrouter' } : {}),
+      models: request.models.map(() => null),
+    })),
+  };
+};
+
 /** A host with the configuration stored; a replace stores what it gets. */
 const host = (): Record<string, HostAnswer> => {
   let revision = 1;
@@ -123,6 +152,7 @@ const host = (): Record<string, HostAnswer> => {
       };
     },
     'models/v1.kinds': () => [openrouter, openai, acme],
+    'models/v1.icons': answerIcons,
     'secrets/v1.list': () => [openrouterToken],
     'tools/v1.catalog': () => [],
   };
@@ -301,8 +331,9 @@ const openProviderPage = async (name: string) => {
   return dashboard;
 };
 
-test('the Providers group lists every configured provider by its name and mark', async () => {
+test("the Providers group draws the host's icon for a provider, a server for one it answers none, and no inline brand path", async () => {
   const { window } = await openDashboard();
+  await settle(20);
 
   const labels = [
     ...window.document.querySelectorAll(
@@ -312,22 +343,29 @@ test('the Providers group lists every configured provider by its name and mark',
   assert.deepEqual(labels, ['Providers']);
   assert.deepEqual(rowNames(window), ['openrouter', 'lmstudio', 'acme']);
 
-  const local = rowOf(window, 'lmstudio');
-  assert.ok(
-    local.querySelector('svg.lucide-monitor') !== null,
-    'The local provider is not drawn as a local machine.',
+  const icon = rowOf(window, 'openrouter').querySelector<HTMLElement>(
+    '[data-slot="model-icon"]',
   );
-  const unknown = rowOf(window, 'acme');
-  assert.ok(
-    unknown.querySelector('svg.lucide-server') !== null,
-    'The unknown kind is not drawn as a server.',
-  );
-  const remote = rowOf(window, 'openrouter');
-  assert.ok(
-    remote.querySelector('svg') !== null &&
-      remote.querySelector('svg.lucide-monitor, svg.lucide-server') === null,
-    'OpenRouter is not drawn by its own mark.',
-  );
+  assert.ok(icon !== null, "OpenRouter does not draw the host's icon.");
+  assert.match(icon.style.mask, /data:image\/svg\+xml/);
+
+  // The host answers no own icon for these, a local endpoint included.
+  for (const name of ['lmstudio', 'acme']) {
+    assert.ok(
+      rowOf(window, name).querySelector('svg.lucide-server') !== null,
+      `${name} is not drawn as a server.`,
+    );
+  }
+
+  for (const row of rows(window)) {
+    assert.equal(
+      row.querySelector('svg:not(.lucide) path'),
+      null,
+      `${row.textContent?.trim()} draws an inline brand path.`,
+    );
+  }
+  // The SVG reaches only a mask's URL, never the document.
+  assert.equal(window.document.getElementById('fixture-icon-openrouter'), null);
 });
 
 test('a provider row opens its page in the dashboard and is the active row', async () => {

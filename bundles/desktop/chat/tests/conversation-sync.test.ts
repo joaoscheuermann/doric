@@ -422,6 +422,68 @@ describe('bringing the blocks in step with the turns', () => {
     );
   });
 
+  test("the agent's mark carries the model of the stretch's first answer, also when a later answer has another", () => {
+    const first: AgentTurn = {
+      ...agent('one', 2, 'I will look'),
+      answeredBy: { providerId: 'or', model: 'a' },
+    };
+    const later: AgentTurn = {
+      ...agent('one', 4, 'Found it'),
+      answeredBy: { providerId: 'local', model: 'b' },
+    };
+    const turns = [user('one', 1), first, tool('one', 3), later];
+
+    const plan = syncPlan([], turns, Number.MAX_SAFE_INTEGER);
+
+    assert.deepEqual(
+      plan.steps.map((step) => step.mark),
+      [
+        { role: 'user', name: READER_NAME },
+        {
+          role: 'agent',
+          name: AGENT_NAME,
+          answeredBy: { providerId: 'or', model: 'a' },
+        },
+        null,
+        null,
+      ],
+    );
+  });
+
+  test("an agent turn without an answering model gives a mark without one; a bundle instruction's agent mark carries none; no author line carries one", () => {
+    const instruction: UserTurn = {
+      ...user('instruction', 3),
+      instruction: { bundleId: 'default', reason: 'coding-workflow' },
+    };
+    const answered: AgentTurn = {
+      ...agent('instruction', 4),
+      answeredBy: { providerId: 'or', model: 'a' },
+    };
+    const turns = [user('one', 1), agent('one', 2), instruction, answered];
+
+    const plan = syncPlan([], turns, Number.MAX_SAFE_INTEGER);
+
+    assert.deepEqual(plan.steps[1]?.mark, { role: 'agent', name: AGENT_NAME });
+    assert.deepEqual(plan.steps[2]?.mark, {
+      role: 'agent',
+      name: 'default · coding-workflow',
+    });
+    assert.deepEqual(plan.steps[3]?.mark?.answeredBy, {
+      providerId: 'or',
+      model: 'a',
+    });
+    for (const step of plan.steps)
+      assert.ok(
+        step.author === null || !('answeredBy' in step.author),
+        'an author line names no model',
+      );
+    assert.deepEqual(plan.steps[3]?.author, {
+      role: 'agent',
+      name: AGENT_NAME,
+      at: '2026-01-01T00:00:00.000Z',
+    });
+  });
+
   test("keeps a streaming turn's key stable while its text grows", () => {
     const run = agent('one', 1);
     const grown: AgentTurn = {

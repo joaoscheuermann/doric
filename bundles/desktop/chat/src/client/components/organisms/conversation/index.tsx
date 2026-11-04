@@ -45,6 +45,7 @@ import {
 } from '../../../domain/pending-turns.js';
 import { composerAction } from '../../../domain/queue.js';
 import type { Thread } from '../../../domain/workspace.js';
+import { useAgentIcons } from '../../../hooks/use-agent-icons.js';
 import { CommentThreadsContext } from '../../../hooks/use-comment-threads.js';
 import { useExternalBlocks } from '../../../hooks/use-external-blocks.js';
 import { ConversationThreadContext } from '../../../hooks/use-live-terminal.js';
@@ -378,6 +379,7 @@ export const Conversation = memo(function Conversation({
     () => withPendingTurns(chat.turns, chat.pending, chat.outbox),
     [chat.turns, chat.pending, chat.outbox],
   );
+  const agentIcons = useAgentIcons(turns);
   // The comment threads, with the comments sent that the log does not hold
   // yet: a sent comment stays in the answer from the send on.
   const threads = useMemo(
@@ -440,6 +442,7 @@ export const Conversation = memo(function Conversation({
                     autoFocus={autoFocus}
                     thread={threadScope}
                     turns={turns}
+                    agentIcons={agentIcons}
                     blocks={external.placed}
                     onResume={chat.resume}
                     navigating={navigating}

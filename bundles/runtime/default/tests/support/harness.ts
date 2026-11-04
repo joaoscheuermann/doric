@@ -553,6 +553,16 @@ export const bundleServices = (options: HarnessOptions) => {
           output: modelsMethods.inputModalities.output,
           execute: () => options.inputModalities,
         }),
+        icons: defineMethod({
+          input: modelsMethods.icons.input,
+          output: modelsMethods.icons.output,
+          execute: ({ requests }) => ({
+            svgs: {},
+            answers: requests.map(({ models }) => ({
+              models: models.map(() => null),
+            })),
+          }),
+        }),
       }),
       defineService(ToolsV1.id, {
         register: defineMethod({

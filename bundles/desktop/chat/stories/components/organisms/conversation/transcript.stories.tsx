@@ -14,6 +14,10 @@ import {
   $createChatBlockNode,
   type DrawnBlock,
 } from '../../../../src/client/components/organisms/conversation/nodes/chat-block-node.js';
+import {
+  type AgentIcons,
+  answeredKey,
+} from '../../../../src/client/components/organisms/conversation/nodes/turn-avatar.js';
 import { EditQueuePrompt } from '../../../../src/client/components/organisms/conversation/plugins/edit-queue-prompt.js';
 import { GENERIC_BLOCK_TYPE } from '../../../../src/client/domain/external-blocks.js';
 import type {
@@ -55,6 +59,7 @@ import {
 import {
   backgroundResult,
   failingTests,
+  modelIconSvg,
   passingTests,
 } from '../../../support/fixtures.js';
 
@@ -441,6 +446,46 @@ export const AgentTurns = {
   render: () => (
     <TurnsEditor
       turns={agentTurns.turns.filter((turn) => turn.type === 'agent')}
+    />
+  ),
+};
+
+// The agent's mark ----------------------------------------------------------
+
+const iconModel = { providerId: 'story', model: 'with-icon' };
+const pendingModel = { providerId: 'story', model: 'still-loading' };
+
+const markedTurns = projectLog((log) => {
+  const icon = promptIdOf(4251);
+  log.prompt(icon, 'Which model answered this?');
+  log.push(icon, { type: 'response.started', ...iconModel });
+  answer(log, icon, 'One whose icon the host knows: the mark wears it.');
+
+  const fallback = promptIdOf(4252);
+  log.prompt(fallback, 'And this one?');
+  answer(log, fallback, 'The log names no model, so the mark is the bot.');
+
+  const pending = promptIdOf(4253);
+  log.prompt(pending, 'And the last one?');
+  log.push(pending, { type: 'response.started', ...pendingModel });
+  answer(log, pending, 'Its icon is still being read: the mark is empty.');
+});
+
+/** The icons the story host has read: one model's, and none yet for the other. */
+const markedIcons: AgentIcons = new Map([
+  [answeredKey(iconModel), { kind: 'icon', svg: modelIconSvg }],
+]);
+
+/**
+ * The agent's mark in its three states: the answering model's icon, the bot
+ * glyph when no model is known, and empty while the icon is read.
+ */
+export const AgentMarks = {
+  render: () => (
+    <ConversationEditor
+      seed={() => {
+        $appendTurns(markedTurns.turns, undefined, markedIcons);
+      }}
     />
   ),
 };

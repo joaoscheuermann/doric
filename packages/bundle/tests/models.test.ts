@@ -13,6 +13,7 @@ import {
   type ModelsProvider,
   ModelsProviderV1,
   ModelsV1,
+  modelIconSvgSchema,
   modelsMethods,
   modelsProviderMethods,
   type ResolvedModel,
@@ -275,5 +276,24 @@ void test('tools listed from the generation are the registered tools at home and
   assert.deepEqual(
     await byName.get('kernel-tool')?.tool.execute({ path: 'a' }, promptCall()),
     { name: 'kernel-tool', payload: { path: 'a' } },
+  );
+});
+
+void test('an icon is SVG markup of at most 16,384 characters, and an icon request names models of at most 512 characters', () => {
+  const svgOf = (length: number) => `<svg${'x'.repeat(length - 4)}`;
+  const requestNaming = (model: string) => ({
+    requests: [{ providerId: 'p', models: [model] }],
+  });
+
+  assert.equal(modelIconSvgSchema.safeParse('<path/>').success, false);
+  assert.equal(modelIconSvgSchema.safeParse(svgOf(16_385)).success, false);
+  assert.equal(modelIconSvgSchema.safeParse(svgOf(16_384)).success, true);
+  assert.equal(
+    modelsMethods.icons.input.safeParse(requestNaming('m'.repeat(513))).success,
+    false,
+  );
+  assert.equal(
+    modelsMethods.icons.input.safeParse(requestNaming('m'.repeat(512))).success,
+    true,
   );
 });

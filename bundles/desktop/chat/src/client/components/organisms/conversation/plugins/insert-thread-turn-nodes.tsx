@@ -105,7 +105,13 @@ import {
   $isTurnAuthorNode,
   type TurnAuthorNode,
 } from '../nodes/turn-author-node.js';
-import { READER_AVATAR, type TurnAvatar } from '../nodes/turn-avatar.js';
+import {
+  type AgentIcons,
+  type AgentMarkIcon,
+  answeredKey,
+  READER_AVATAR,
+  type TurnAvatar,
+} from '../nodes/turn-avatar.js';
 import {
   $createUserPromptNode,
   $getUserPromptNode,
@@ -247,6 +253,30 @@ const $createBlock = (
 };
 
 /**
+ * The icon an agent mark draws: the bot glyph when the log names no answering
+ * model, else that model's icon as read so far (`pending` until it is). `null`
+ * for a reader's mark, or none.
+ */
+const agentIconOf = (
+  mark: AuthorMark | null,
+  agentIcons: AgentIcons,
+): AgentMarkIcon | null => {
+  if (mark?.role !== 'agent') return null;
+  if (mark.answeredBy === undefined) return { kind: 'fallback' };
+  return agentIcons.get(answeredKey(mark.answeredBy)) ?? { kind: 'pending' };
+};
+
+/** What a synced block remembers of its mark's icon: its SVG, else its kind. */
+const markIconOf = (
+  mark: AuthorMark | null,
+  agentIcons: AgentIcons,
+): string | null => {
+  const icon = agentIconOf(mark, agentIcons);
+  if (icon === null) return null;
+  return icon.kind === 'icon' ? icon.svg : icon.kind;
+};
+
+/**
  * Whether the turn trails the author line it should: a turn gains one it lacks
  * and loses one it should not wear. Its block stays where it is, so the line is
  * inserted after the block rather than regenerated with the root, and a line
@@ -260,10 +290,16 @@ const $syncAuthor = (
   unit: TurnUnit,
   draft: AuthorDraft | null,
   mark: AuthorMark | null,
+  agentIcons: AgentIcons,
 ): TurnAuthorNode | null => {
   const current = unit.author;
+  const icon = agentIconOf(mark, agentIcons);
   const avatar: TurnAvatar =
-    mark === null ? null : { role: mark.role, name: mark.name };
+    mark === null
+      ? null
+      : icon === null
+        ? { role: 'user', name: mark.name }
+        : { role: 'agent', name: mark.name, icon };
   if ($isUserTurnNode(unit.block) || $isAgentTurnNode(unit.block))
     unit.block.setAvatar(avatar);
 
@@ -292,7 +328,12 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
   switch (left.type) {
     case 'agent': {
       const other = right as Extract<Turn, { type: 'agent' }>;
-      return left.status === other.status && left.text === other.text;
+      return (
+        left.status === other.status &&
+        left.text === other.text &&
+        left.answeredBy?.providerId === other.answeredBy?.providerId &&
+        left.answeredBy?.model === other.answeredBy?.model
+      );
     }
     case 'thinking': {
       const other = right as Extract<Turn, { type: 'thinking' }>;
@@ -687,6 +728,7 @@ const noBlocks: readonly PlacedBlock[] = Object.freeze([]);
 export function InsertThreadTurnNodes({
   thread,
   turns,
+  agentIcons,
   onResume,
   navigating,
   following,
@@ -697,6 +739,8 @@ export function InsertThreadTurnNodes({
   readonly thread: { readonly id: string; readonly projectId: string };
   readonly autoFocus?: boolean;
   readonly turns: readonly Turn[];
+  /** The icon of each answering model the turns name (`useAgentIcons`). */
+  readonly agentIcons: AgentIcons;
   /** Other bundles' blocks, in log order (`chat.views/v1`). */
   readonly blocks?: readonly PlacedBlock[];
   /** What a marker's Resume action asks the surface for. */
@@ -716,6 +760,7 @@ export function InsertThreadTurnNodes({
         readonly authorAt: string | undefined;
         readonly authorRole: AuthorDraft['role'] | null;
         readonly markRole: AuthorMark['role'] | null;
+        readonly markIcon: string | null;
       }
     >(),
   );
@@ -787,12 +832,14 @@ export function InsertThreadTurnNodes({
               const nextAuthorRole = step.author?.role ?? null;
               const nextAuthorAt = step.author?.at;
               const nextMarkRole = step.mark?.role ?? null;
+              const nextMarkIcon = markIconOf(step.mark, agentIcons);
               if (
                 last !== undefined &&
                 turnEquals(last.turn, step.turn) &&
                 last.authorRole === nextAuthorRole &&
                 last.authorAt === nextAuthorAt &&
                 last.markRole === nextMarkRole &&
+                last.markIcon === nextMarkIcon &&
                 currentAuthorRole === nextAuthorRole
               ) {
                 continue;
@@ -800,7 +847,12 @@ export function InsertThreadTurnNodes({
               if (last === undefined || !turnEquals(last.turn, step.turn)) {
                 $applyTurn(unit.block, step.turn);
               }
-              const author = $syncAuthor(unit, step.author, step.mark);
+              const author = $syncAuthor(
+                unit,
+                step.author,
+                step.mark,
+                agentIcons,
+              );
               $syncTurnComments(unit.block, step.turn);
               tails.set(step.key, author ?? unit.block);
               syncedTurns.current.set(unit.block.getLatest(), {
@@ -808,6 +860,7 @@ export function InsertThreadTurnNodes({
                 authorRole: nextAuthorRole,
                 authorAt: nextAuthorAt,
                 markRole: nextMarkRole,
+                markIcon: nextMarkIcon,
               });
               continue;
             }
@@ -831,6 +884,7 @@ export function InsertThreadTurnNodes({
               { author: null, block },
               step.author,
               step.mark,
+              agentIcons,
             );
             $syncTurnComments(block, step.turn);
             tails.set(step.key, author ?? block);
@@ -839,6 +893,7 @@ export function InsertThreadTurnNodes({
               authorRole: step.author?.role ?? null,
               authorAt: step.author?.at,
               markRole: step.mark?.role ?? null,
+              markIcon: markIconOf(step.mark, agentIcons),
             });
           }
 
@@ -889,6 +944,7 @@ export function InsertThreadTurnNodes({
       frame.current = null;
     };
   }, [
+    agentIcons,
     autoFocus,
     blocks,
     editor,

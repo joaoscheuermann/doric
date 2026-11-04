@@ -14,12 +14,15 @@ import {
   SidebarMenuSkeleton,
 } from 'desktop/ui/sidebar';
 import { ChevronRightIcon, PlusIcon } from 'lucide-react';
+import { useMemo } from 'react';
 
 import {
   type Configuration,
   type ProviderKind,
   providerLabel,
 } from '../../domain/config.js';
+import { providerIconRequest } from '../../domain/model-icons.js';
+import { useModelIcons } from '../../hooks/use-model-icons.js';
 import { ProviderIcon } from '../molecules/provider-icon.js';
 
 /**
@@ -42,6 +45,14 @@ export function DashboardProvidersGroup({
   readonly onOpen: (index: number) => void;
   readonly onAdd: () => void;
 }) {
+  // One request per provider shown, kept while the providers are the same.
+  const providers = draft?.providers;
+  const requests = useMemo(
+    () => (providers ?? []).map(providerIconRequest),
+    [providers],
+  );
+  const icons = useModelIcons(requests);
+
   return (
     <Collapsible defaultOpen className="group/collapsible">
       <SidebarGroup>
@@ -76,8 +87,12 @@ export function DashboardProvidersGroup({
                       className="data-active:font-normal [&_svg]:size-3.5"
                     >
                       <ProviderIcon
-                        kind={provider.kind}
-                        endpoint={provider.configuration.endpoint}
+                        svg={
+                          icons === undefined
+                            ? undefined
+                            : (icons.provider(provider.id) ?? null)
+                        }
+                        className="size-3.5"
                       />
                       <span className="font-light">
                         {providerLabel(provider, index)}

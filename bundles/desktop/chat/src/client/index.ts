@@ -10,6 +10,7 @@ import {
   CommandsV1,
   HooksV1,
   MenusV1,
+  ModelsV1,
   NavigationV1,
   RegionsV1,
   UiV1,
@@ -18,6 +19,7 @@ import { RuntimeTerminalsV1 } from 'runtime/contracts';
 
 import { ChatHooksV1, SEND_PROMPT_COMMAND } from '../contracts/index.js';
 import { HistorySnapshotsV1 } from './api/history-contract.js';
+import { setModelsApi } from './api/model-icons.js';
 import {
   fromRuntimeTerminals,
   fromTerminalService,
@@ -109,6 +111,10 @@ export function activate({ services }: ClientContext): Cleanup {
     setHistory(api);
     return () => setHistory(undefined);
   });
+  const models = services.whenAvailable(ModelsV1, (api) => {
+    setModelsApi(api);
+    return () => setModelsApi(undefined);
+  });
   const terminalService = services.whenAvailable(TerminalServiceV1, (api) => {
     setTerminalServiceApi(fromTerminalService(api));
     return () => setTerminalServiceApi(undefined);
@@ -125,6 +131,7 @@ export function activate({ services }: ClientContext): Cleanup {
     runtimeTerminals.dispose();
     terminalService.dispose();
     history.dispose();
+    models.dispose();
     workspace.dispose();
     composer.dispose();
     sendCommand.dispose();

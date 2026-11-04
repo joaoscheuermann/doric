@@ -81,3 +81,16 @@ void test('a built codex provider answers its kind and fields', async () => {
     await world.dispose();
   }
 });
+
+void test('the codex record chooses OpenAI for the provider and every model', async () => {
+  const { world, provider } = await providerWorld('codex');
+
+  try {
+    assert.deepEqual(
+      await provider.icons({ configuration: {}, models: ['a', 'b'] }),
+      { provider: 'openai', models: ['openai', 'openai'] },
+    );
+  } finally {
+    await world.dispose();
+  }
+});

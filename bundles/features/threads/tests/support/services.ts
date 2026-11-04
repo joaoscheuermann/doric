@@ -167,6 +167,16 @@ const spawnProviders = (fakes: SpawnFakes): AnyServiceDefinition[] => {
         output: modelsMethods.inputModalities.output,
         execute: () => undefined,
       }),
+      icons: defineMethod({
+        input: modelsMethods.icons.input,
+        output: modelsMethods.icons.output,
+        execute: ({ requests }) => ({
+          svgs: {},
+          answers: requests.map(({ models }) => ({
+            models: models.map(() => null),
+          })),
+        }),
+      }),
     }),
     ...(agents === undefined
       ? []

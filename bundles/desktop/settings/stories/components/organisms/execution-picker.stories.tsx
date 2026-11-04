@@ -4,7 +4,7 @@ import {
   storedConfiguration,
 } from '../../support/fixtures.js';
 import { footerFrame } from '../../support/frames.js';
-import { SettingsHost, type StoryHost } from '../../support/host.js';
+import { pending, SettingsHost, type StoryHost } from '../../support/host.js';
 import { OpenOnMount, type OpenStep } from '../../support/open-on-mount.js';
 
 /** The picker in the footer, over a story host that stores what it saves. */
@@ -82,6 +82,43 @@ export const SaveRefused = {
         { selector: '[aria-label="Execution model"]' },
         { selector: '[role="dialog"] button', text: 'deepseek/deepseek-v3.2' },
       ]}
+    />
+  ),
+};
+
+/** The model rows and the trigger wear the icons the host answers. */
+export const Icons = {
+  render: () => (
+    <Picker open={[{ selector: '[aria-label="Execution model"]' }]} />
+  ),
+};
+
+/**
+ * A model the host answers no icon for: its row keeps an empty slot, so the
+ * labels stay aligned, and the trigger wears none.
+ */
+export const RowWithoutIcon = {
+  render: () => (
+    <Picker
+      host={{
+        config: storedConfiguration({
+          ...storedConfiguration().configuration,
+          models: {
+            execution: { providerId: 'openrouter', model: 'acme/coder-7b' },
+          },
+        }),
+      }}
+      open={[{ selector: '[aria-label="Execution model"]' }]}
+    />
+  ),
+};
+
+/** The icons have not arrived yet: every row keeps an empty slot. */
+export const IconsPending = {
+  render: () => (
+    <Picker
+      host={{ icons: pending }}
+      open={[{ selector: '[aria-label="Execution model"]' }]}
     />
   ),
 };

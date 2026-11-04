@@ -12,6 +12,7 @@ import {
 } from 'bundle/contracts';
 
 import { contextWindow, inputModalities } from './capacity.js';
+import { modelIcons } from './icons.js';
 import { type ConfiguredProvider, createProviderCache } from './providers.js';
 import { createKindRegistry } from './registry.js';
 
@@ -167,6 +168,10 @@ export const createModels = (services: Services) => {
     inputModalities: defineMethod({
       ...modelsMethods.inputModalities,
       execute: (request) => inputModalities(registry, cache, request),
+    }),
+    icons: defineMethod({
+      ...modelsMethods.icons,
+      execute: (input) => modelIcons(registry, cache, input),
     }),
   });
 };

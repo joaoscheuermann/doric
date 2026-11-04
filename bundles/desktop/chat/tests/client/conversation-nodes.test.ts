@@ -115,7 +115,11 @@ const markOf = (marked: object, plain: object): unknown[] => {
 };
 
 const reader = { role: 'user', name: 'jao.scheuermann' } as const;
-const agent = { role: 'agent', name: 'agent' } as const;
+const agent = {
+  role: 'agent',
+  name: 'agent',
+  icon: { kind: 'fallback' },
+} as const;
 
 describe('the mark a conversation block carries through its serialized form', () => {
   test('a reader turn keeps its avatar', () => {

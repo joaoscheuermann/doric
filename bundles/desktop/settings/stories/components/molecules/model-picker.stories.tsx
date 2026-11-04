@@ -10,6 +10,7 @@ import {
 } from '../../../src/client/domain/config.js';
 import { configuration } from '../../support/fixtures.js';
 import { footerFrame } from '../../support/frames.js';
+import { storyIcons } from '../../support/icons.js';
 import { OpenOnMount } from '../../support/open-on-mount.js';
 
 const reasoningChoices = [
@@ -21,7 +22,7 @@ const reasoningChoices = [
 /** The picker over a configuration's groups, with its own model and effort. */
 function Picker({
   efforts = reasoningChoices,
-  groups = modelGroups(configuration),
+  groups = modelGroups(configuration, storyIcons),
   initial = modelChoiceKey('openrouter', 'anthropic/claude-sonnet-4.5'),
 }: {
   readonly efforts?: typeof reasoningChoices;
@@ -30,10 +31,10 @@ function Picker({
 }) {
   const [value, setValue] = useState(initial);
   const [effort, setEffort] = useState<string | undefined>('medium');
-  const label =
-    groups
-      .flatMap((group) => group.choices)
-      .find((choice) => choice.value === value)?.label ?? 'Choose model';
+  const selected = groups
+    .flatMap((group) => group.choices)
+    .find((choice) => choice.value === value);
+  const label = selected?.label ?? 'Choose model';
   const effortName =
     efforts.length === 0
       ? 'Unavailable'
@@ -45,6 +46,7 @@ function Picker({
       ariaLabel="Execution model"
       groups={groups}
       label={label}
+      icon={selected?.icon}
       value={value}
       onSelect={setValue}
       reasoning={{
@@ -96,7 +98,7 @@ export const ReasoningOpen = {
 export const SingleProviderOpen = {
   render: () => (
     <OpenOnMount steps={[{ selector: '[aria-label="Execution model"]' }]}>
-      <Picker groups={modelGroups(single)} />
+      <Picker groups={modelGroups(single, storyIcons)} />
     </OpenOnMount>
   ),
 };

@@ -903,6 +903,113 @@ describe('thread event projection', () => {
   });
 });
 
+describe('the model that answered an agent turn', () => {
+  const answeredOf = (turn: Turn | undefined) =>
+    turn?.type === 'agent' ? turn.answeredBy : undefined;
+
+  test('an agent turn wears the provider and model of the response.started before it', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'agent.started', model: 'a' }),
+      event(2, 'one', {
+        type: 'response.started',
+        providerId: 'or',
+        model: 'a',
+      }),
+      event(3, 'one', { type: 'text.delta', delta: 'answer' }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['agent']);
+    assert.deepEqual(answeredOf(projection.turns[0]), {
+      providerId: 'or',
+      model: 'a',
+    });
+  });
+
+  test('after a second response.started the next agent turn wears that model and the first keeps its own', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'response.started',
+        providerId: 'or',
+        model: 'a',
+      }),
+      event(2, 'one', { type: 'text.delta', delta: 'first' }),
+      event(3, 'one', {
+        type: 'tool.started',
+        call: call('x', 'terminal'),
+      }),
+      event(4, 'one', {
+        type: 'tool.finished',
+        call: call('x', 'terminal'),
+        record: { output: 'done' },
+      }),
+      event(5, 'one', {
+        type: 'response.started',
+        providerId: 'local',
+        model: 'b',
+      }),
+      event(6, 'one', { type: 'text.delta', delta: 'second' }),
+    ]);
+    const answers = projection.turns.filter((turn) => turn.type === 'agent');
+
+    assert.deepEqual(answers.map(textOf), ['first', 'second']);
+    assert.deepEqual(answeredOf(answers[0]), { providerId: 'or', model: 'a' });
+    assert.deepEqual(answeredOf(answers[1]), {
+      providerId: 'local',
+      model: 'b',
+    });
+  });
+
+  test('a response.started without a providerId leaves the next agent turn without one', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'response.started',
+        providerId: 'or',
+        model: 'a',
+      }),
+      event(2, 'one', { type: 'text.delta', delta: 'first' }),
+      event(3, 'one', {
+        type: 'tool.started',
+        call: call('x', 'terminal'),
+      }),
+      event(4, 'one', {
+        type: 'tool.finished',
+        call: call('x', 'terminal'),
+        record: { output: 'done' },
+      }),
+      event(5, 'one', { type: 'response.started', model: 'b' }),
+      event(6, 'one', { type: 'text.delta', delta: 'second' }),
+    ]);
+    const answers = projection.turns.filter((turn) => turn.type === 'agent');
+
+    assert.deepEqual(answers.map(textOf), ['first', 'second']);
+    assert.deepEqual(answeredOf(answers[0]), { providerId: 'or', model: 'a' });
+    assert.equal(answeredOf(answers[1]), undefined);
+  });
+
+  test('an answer produced only by prompt.finished wears the model', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'response.started',
+        providerId: 'or',
+        model: 'a',
+      }),
+      event(2, 'one', { type: 'reasoning.delta', delta: 'thought' }),
+      event(3, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: 'answer',
+        source: {},
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['thinking', 'agent']);
+    assert.deepEqual(answeredOf(projection.turns[1]), {
+      providerId: 'or',
+      model: 'a',
+    });
+  });
+});
+
 describe('the prompt lifecycle in a log', () => {
   test('waits for an interrupted prompt to start again and never labels queued first execution as resumed', () => {
     const log = [

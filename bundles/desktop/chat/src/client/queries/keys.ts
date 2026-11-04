@@ -5,4 +5,11 @@
  */
 export const queryKeys = {
   threadQueue: (threadId: string | undefined) => ['thread', threadId, 'queue'],
+  /** One answering model's icon, by provider id and model name. */
+  modelIcon: (providerId: string, model: string) => [
+    'models',
+    'icon',
+    providerId,
+    model,
+  ],
 };

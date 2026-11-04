@@ -12,6 +12,7 @@
 
 import { QueryClient } from '@tanstack/react-query';
 
+import { setModelsApi } from '../../src/client/api/model-icons.js';
 import type {
   ChatTerminalsApi,
   Terminal,
@@ -59,6 +60,7 @@ import {
   promptIdOf,
   queueItem,
   stackItem,
+  storyModels,
   terminalArgs,
   terminalResult,
   testCommand,
@@ -716,6 +718,7 @@ export const installStoryHost = (host: StoryHost = {}): void => {
     whenAvailable: () => disposable,
   };
   initChat(services);
+  setModelsApi(storyModels);
 
   const workspace: LayoutWorkspace = {
     thread: (threadId) =>

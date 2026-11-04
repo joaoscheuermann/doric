@@ -35,7 +35,7 @@ const stackOf = (items: readonly ComposerItem[], words = '') => (
         'a0000000-0000-4000-8000-000000001001',
         'completed',
         ANSWER,
-        { role: 'agent', name: 'Agent' },
+        { role: 'agent', name: 'Agent', icon: { kind: 'fallback' } },
       );
       const prompt = $createUserPromptNode({ role: 'user', name: READER_NAME });
       if (words.length > 0) prompt.append($createTextNode(words));

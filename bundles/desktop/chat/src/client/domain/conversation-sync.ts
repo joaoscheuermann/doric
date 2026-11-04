@@ -103,7 +103,9 @@ const isRelayedInput = (turn: Turn): boolean =>
  * agent wears it once per stretch of work between two turns the reader (or a
  * bundle) sent: on the stretch's first answer, however many tool calls,
  * spawns, relayed inputs and further answers follow it, while each author line
- * still trails the turn that ends its run.
+ * still trails the turn that ends its run. The agent's mark carries the
+ * `answeredBy` of the answer wearing it, and none when that answer has none; a
+ * mark taken from a user turn carries only its role and name.
  */
 const markFor = (turns: readonly Turn[], index: number): AuthorMark | null => {
   const turn = turns[index];
@@ -119,7 +121,9 @@ const markFor = (turns: readonly Turn[], index: number): AuthorMark | null => {
     if (earlier.type === 'agent') return null;
     if (earlier.type === 'user' && !isRelayedInput(earlier)) break;
   }
-  return { role: 'agent', name: AGENT_NAME };
+  return turn.answeredBy === undefined
+    ? { role: 'agent', name: AGENT_NAME }
+    : { role: 'agent', name: AGENT_NAME, answeredBy: turn.answeredBy };
 };
 
 /** A block the sync creates: what it holds, and where it goes. */

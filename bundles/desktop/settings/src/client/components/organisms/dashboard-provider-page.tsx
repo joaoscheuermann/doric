@@ -1,6 +1,7 @@
 import { Button } from 'desktop/ui/button';
 import { toast } from 'desktop/ui/sonner';
 import { ExternalLinkIcon } from 'lucide-react';
+import { useMemo } from 'react';
 
 import { api } from '../../api/settings-api.js';
 import {
@@ -10,8 +11,10 @@ import {
   providerLabel,
 } from '../../domain/config.js';
 import { messageFrom } from '../../domain/errors.js';
+import { providerIconRequest } from '../../domain/model-icons.js';
 import { providerSite } from '../../domain/provider-icon.js';
 import type { ClaudeLogin } from '../../hooks/use-claude-login.js';
+import { useModelIcons } from '../../hooks/use-model-icons.js';
 import { ProviderIcon } from '../molecules/provider-icon.js';
 import { SettingsProviderScreen } from './settings-provider.js';
 
@@ -39,6 +42,13 @@ export function DashboardProviderPage({
   readonly onFlush: () => void;
 }) {
   const site = providerSite(draft.kind);
+  // The page's one request, kept while the provider's id, kind and values are.
+  const { id, kind, configuration } = draft;
+  const requests = useMemo(
+    () => [providerIconRequest({ id, kind, configuration })],
+    [id, kind, configuration],
+  );
+  const icons = useModelIcons(requests);
   const openSite = (url: string): void => {
     void api()
       .openBrowser(url)
@@ -51,8 +61,9 @@ export function DashboardProviderPage({
     <>
       <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-6">
         <ProviderIcon
-          kind={draft.kind}
-          endpoint={draft.configuration.endpoint}
+          svg={
+            icons === undefined ? undefined : (icons.provider(draft.id) ?? null)
+          }
           className="size-4 shrink-0"
         />
         <h1 className="min-w-0 flex-1 truncate text-base">

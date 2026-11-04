@@ -117,6 +117,11 @@ import {
   TurnAuthorNode,
 } from '../../src/client/components/organisms/conversation/nodes/turn-author-node.js';
 import {
+  type AgentIcons,
+  answeredKey,
+  type TurnAvatar,
+} from '../../src/client/components/organisms/conversation/nodes/turn-avatar.js';
+import {
   $createUserPromptNode,
   UserPromptNode,
 } from '../../src/client/components/organisms/conversation/nodes/user-prompt-node.js';
@@ -137,7 +142,10 @@ import { TableBlocksPlugin } from '../../src/client/components/organisms/convers
 import { UndeletableBlocksPlugin } from '../../src/client/components/organisms/conversation/plugins/undeletable-blocks.js';
 import { conversationTheme } from '../../src/client/components/organisms/conversation/theme.js';
 import type { CommentThreads } from '../../src/client/domain/comment-threads.js';
-import { READER_NAME } from '../../src/client/domain/conversation-authors.js';
+import {
+  type AuthorMark,
+  READER_NAME,
+} from '../../src/client/domain/conversation-authors.js';
 import {
   isReadOnlyBlock,
   isUndeletableBlock,
@@ -457,6 +465,27 @@ export function TurnsEditor({
 
 const noResume: ResumePrompt = () => undefined;
 
+/**
+ * The mark a planned turn wears, as the sync builds it: an agent's icon is the
+ * one `agentIcons` holds for its answering model (`pending` while it holds
+ * none), and the bot glyph when the log names no model.
+ */
+const avatarOf = (
+  mark: AuthorMark | null,
+  agentIcons: AgentIcons,
+): TurnAvatar => {
+  if (mark === null) return null;
+  if (mark.role === 'user') return { role: 'user', name: mark.name };
+  return {
+    role: 'agent',
+    name: mark.name,
+    icon:
+      mark.answeredBy === undefined
+        ? { kind: 'fallback' }
+        : (agentIcons.get(answeredKey(mark.answeredBy)) ?? { kind: 'pending' }),
+  };
+};
+
 /** The block a turn becomes: the switch `InsertThreadTurnNodes` creates with. */
 const $createTurnBlock = (
   turn: Turn,
@@ -548,6 +577,7 @@ const $createTurnBlock = (
 export const $appendTurns = (
   turns: readonly Turn[],
   onResume: ResumePrompt = noResume,
+  agentIcons: AgentIcons = new Map(),
 ): readonly LexicalNode[] => {
   const root = $getRoot();
   const blocks: LexicalNode[] = [];
@@ -563,11 +593,11 @@ export const $appendTurns = (
       root.append($createCommentLinesNode(turn.promptId, turn.comments));
     const block = $createTurnBlock(turn, step.key, onResume);
     root.append(block);
+    // The mark the block draws in its gutter is planned on its own, as the
+    // sync plans it: the agent's on the first answer of its run.
+    if ($isUserTurnNode(block) || $isAgentTurnNode(block))
+      block.setAvatar(avatarOf(step.mark, agentIcons));
     if (step.author !== null) {
-      // The mark the block draws in its gutter is the author line's own author,
-      // so a story seeds both together, as the sync does.
-      if ($isUserTurnNode(block) || $isAgentTurnNode(block))
-        block.setAvatar({ role: step.author.role, name: step.author.name });
       root.append(
         $createTurnAuthorNode(
           step.author.role,

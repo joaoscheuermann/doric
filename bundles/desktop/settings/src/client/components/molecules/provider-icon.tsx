@@ -1,37 +1,21 @@
-import { MonitorIcon, ServerIcon } from 'lucide-react';
+import { ServerIcon } from 'lucide-react';
 
-import { providerMark } from '../../domain/provider-icon.js';
-import { providerIconPaths } from './provider-icon-paths.js';
+import { ModelIcon } from './model-icon.js';
 
 /**
- * The mark of a configured provider, in `currentColor` and hidden from
- * assistive technology (the row or heading beside it names the provider): a
- * computer when its endpoint is local, else its kind's brand mark, else a
- * generic server.
+ * A provider's own icon as the host answers it, hidden from assistive
+ * technology (the row or heading beside it names the provider). An SVG draws a
+ * `ModelIcon`; `null`, meaning the host answered none, draws lucide's
+ * `ServerIcon`; `undefined`, meaning no answer yet, draws an empty slot of the
+ * same size.
  */
 export function ProviderIcon({
-  kind,
-  endpoint,
+  svg,
   className,
 }: {
-  readonly kind: string;
-  readonly endpoint: string | undefined;
+  readonly svg: string | null | undefined;
   readonly className?: string;
 }) {
-  const mark = providerMark(kind, endpoint);
-  if (mark === 'local')
-    return <MonitorIcon aria-hidden className={className} />;
-  if (mark === 'server')
-    return <ServerIcon aria-hidden className={className} />;
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      fillRule={mark === 'codex' ? 'evenodd' : undefined}
-      className={className}
-    >
-      <path d={providerIconPaths[mark]} />
-    </svg>
-  );
+  if (svg === null) return <ServerIcon aria-hidden className={className} />;
+  return <ModelIcon svg={svg} className={className} />;
 }

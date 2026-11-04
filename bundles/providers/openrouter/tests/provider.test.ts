@@ -58,3 +58,19 @@ void test('a built openrouter provider answers its kind and fields', async () =>
     await world.dispose();
   }
 });
+
+void test("the openrouter record chooses OpenRouter as its own icon and each model's lab", async () => {
+  const { world, provider } = await providerWorld('openrouter');
+
+  try {
+    assert.deepEqual(
+      await provider.icons({
+        configuration: {},
+        models: ['anthropic/claude-sonnet-4', 'acme/coder-7b'],
+      }),
+      { provider: 'openrouter', models: ['claude', null] },
+    );
+  } finally {
+    await world.dispose();
+  }
+});
