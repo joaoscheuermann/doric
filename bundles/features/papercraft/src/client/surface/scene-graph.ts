@@ -38,6 +38,10 @@ export interface SceneNode {
   readonly text: string;
   readonly depth: number;
   readonly parentId?: string;
+  /** Protocol 2 (D6): the nearest statement wrapper's statement name. */
+  readonly statement?: string;
+  /** Protocol 2: the nearest statement wrapper's component name. */
+  readonly component?: string;
 }
 
 export interface SceneGraph {
@@ -70,7 +74,12 @@ export const ownStampOf = (node: SceneNode): SourceStamp | undefined =>
  * hangs from the root), and each depth and inherited stamp is derived here
  * from the parent chain, not read from the message.
  */
-export const sceneGraphOf = (data: readonly SceneNodeData[]): SceneGraph => {
+export const sceneGraphOf = (
+  data: readonly (SceneNodeData & {
+    readonly statement?: string;
+    readonly component?: string;
+  })[],
+): SceneGraph => {
   const nodes: SceneNode[] = [];
   const byId = new Map<string, SceneNode>();
   const childrenOf = new Map<string | undefined, SceneNode[]>();
@@ -100,6 +109,8 @@ export const sceneGraphOf = (data: readonly SceneNodeData[]): SceneGraph => {
       text: each.text,
       depth: parent === undefined ? 0 : parent.depth + 1,
       ...(parent === undefined ? {} : { parentId: parent.id }),
+      ...(each.statement === undefined ? {} : { statement: each.statement }),
+      ...(each.component === undefined ? {} : { component: each.component }),
     };
 
     nodes.push(node);

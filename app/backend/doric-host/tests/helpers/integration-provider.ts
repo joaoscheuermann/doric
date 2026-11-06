@@ -32,10 +32,37 @@ type Turn =
 export const heldPrompt = 'Answer after the host lost this request.';
 export const heldAnswer = 'Answered after the generation came back.';
 
+/**
+ * PC23's prompts (papercraft-openui.md, R36): the first loads the `papercraft`
+ * skill through `default`'s `load_skill` and answers; the next two answer.
+ */
+export const papercraftPrompts = {
+  load: 'PC23 prompt 1: load the papercraft skill.',
+  second: 'PC23 prompt 2: the library job starts.',
+  third: 'PC23 prompt 3: the library instruct arrives.',
+} as const;
+
 export const scriptedTurn = (messages: readonly ChatMessage[]): Turn => {
   const input = messages.filter(({ role }) => role === 'user').at(-1)?.content;
   if (typeof input !== 'string') throw new Error('Expected a text prompt');
   if (input.includes(heldPrompt)) return { text: heldAnswer };
+  // The PC23 prompt this turn answers: the last user message naming one (an
+  // instruct the host gave may follow it as a message of its own).
+  const pc23 = messages
+    .filter(
+      ({ role, content }) => role === 'user' && typeof content === 'string',
+    )
+    .map(({ content }) => content as string)
+    .reverse()
+    .find((text) =>
+      Object.values(papercraftPrompts).some((prompt) => text.includes(prompt)),
+    );
+  if (pc23?.includes(papercraftPrompts.load) === true) {
+    return messages.at(-1)?.role === 'tool'
+      ? { text: 'Loaded the papercraft skill.' }
+      : { call: 'load_skill', args: { name: 'papercraft' } };
+  }
+  if (pc23 !== undefined) return { text: 'Noted.' };
   const tool = messages.at(-1);
   if (tool?.role === 'tool') {
     // The fixture has one JSON result; surrounding readable Markdown is presentation.

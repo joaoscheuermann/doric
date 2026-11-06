@@ -9,28 +9,37 @@ import { Window } from 'happy-dom';
 import {
   type AppMessage,
   type FrameMessage,
+  type FrameProtocol,
   frameMessage,
   PROTOCOL,
+  type ProgramAppMessage,
+  type ProgramFrameMessage,
 } from '../../../src/client/frame-protocol.js';
+import { startProgramFrame } from '../../../src/client/frames/openui/runtime.js';
 import {
   type FrameWindow,
   startPreviewFrame,
 } from '../../../src/client/frames/preview/runtime.js';
 
-export interface Frame {
+/** A frame of protocol 1 (`M` = `FrameMessage`) or 2 (`ProgramFrameMessage`). */
+export interface Frame<M extends { readonly kind: string } = FrameMessage> {
   readonly win: FrameWindow;
   readonly document: Document;
-  /** Every frame message so far, parsed. */
-  readonly messages: FrameMessage[];
+  /** The protocol the frame's entry speaks. */
+  readonly protocol: FrameProtocol;
+  /** Every frame message so far, parsed with the frame's protocol. */
+  readonly messages: M[];
   /** Frame messages the app's schema refused. */
   readonly invalid: unknown[];
-  readonly send: (message: AppMessage | Record<string, unknown>) => void;
+  readonly send: (
+    message: AppMessage | ProgramAppMessage | Record<string, unknown>,
+  ) => void;
   /**
    * The first message from index `from` on that `accept`s, waiting for it
    * when it has not arrived.
    */
-  readonly waitFor: <T extends FrameMessage>(
-    accept: (message: FrameMessage) => message is T,
+  readonly waitFor: <T extends M>(
+    accept: (message: M) => message is T,
     from?: number,
   ) => Promise<T>;
   /** Lets queued messages and microtasks settle. */
@@ -43,6 +52,14 @@ export const kind =
   (message: FrameMessage): message is Extract<FrameMessage, { kind: K }> =>
     message.kind === wanted;
 
+/** `kind` for the messages of a protocol-2 frame. */
+export const programKind =
+  <K extends ProgramFrameMessage['kind']>(wanted: K) =>
+  (
+    message: ProgramFrameMessage,
+  ): message is Extract<ProgramFrameMessage, { kind: K }> =>
+    message.kind === wanted;
+
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
 
 export interface OpenOptions {
@@ -52,23 +69,45 @@ export interface OpenOptions {
   readonly connect?: boolean;
 }
 
+/**
+ * A protocol-2 frame: `startProgramFrame` starts with `sheets` instead of
+ * `startPreviewFrame`, and its messages parse with protocol 2.
+ */
+export interface ProgramOpenOptions extends OpenOptions {
+  readonly protocol: 2;
+  /** The CSS texts the frame is started with (`[]` by default). */
+  readonly sheets?: readonly string[];
+}
+
 /** A frame, connected (`ready` received) unless `connect` is false. */
-export const openFrame = async (options: OpenOptions = {}): Promise<Frame> => {
+export function openFrame(options?: OpenOptions): Promise<Frame>;
+export function openFrame(
+  options: ProgramOpenOptions,
+): Promise<Frame<ProgramFrameMessage>>;
+export async function openFrame(
+  options: OpenOptions & {
+    readonly protocol?: FrameProtocol;
+    readonly sheets?: readonly string[];
+  } = {},
+): Promise<Frame<FrameMessage> | Frame<ProgramFrameMessage>> {
+  const protocol: FrameProtocol = options.protocol ?? PROTOCOL;
   const win = new Window({
     url: 'https://frame.test/',
     settings: { disableCSSFileLoading: true },
   }) as unknown as FrameWindow;
 
   options.before?.(win);
-  startPreviewFrame(win);
+  if (protocol === PROTOCOL) startPreviewFrame(win);
+  else startProgramFrame(win, options.sheets ?? []);
 
+  type Message = { readonly kind: string };
   const channel = new MessageChannel();
-  const messages: FrameMessage[] = [];
+  const messages: Message[] = [];
   const invalid: unknown[] = [];
   const waiters = new Set<() => void>();
 
   channel.port1.onmessage = (event: MessageEvent) => {
-    const parsed = frameMessage(event.data);
+    const parsed: Message | undefined = frameMessage(event.data, protocol);
 
     if (parsed === undefined) invalid.push(event.data);
     else messages.push(parsed);
@@ -76,8 +115,8 @@ export const openFrame = async (options: OpenOptions = {}): Promise<Frame> => {
     for (const wake of [...waiters]) wake();
   };
 
-  const waitFor = <T extends FrameMessage>(
-    accept: (message: FrameMessage) => message is T,
+  const waitFor = <T extends Message>(
+    accept: (message: Message) => message is T,
     from = 0,
   ): Promise<T> =>
     new Promise<T>((resolve, reject) => {
@@ -106,9 +145,10 @@ export const openFrame = async (options: OpenOptions = {}): Promise<Frame> => {
       if (!look()) waiters.add(wake);
     });
 
-  const frame: Frame = {
+  const frame: Frame<Message> = {
     win,
     document: win.document,
+    protocol,
     messages,
     invalid,
     send: (message) => channel.port1.postMessage(message),
@@ -128,17 +168,17 @@ export const openFrame = async (options: OpenOptions = {}): Promise<Frame> => {
 
   if (options.connect !== false) {
     connect(frame, channel.port2);
-    await waitFor(kind('ready'));
+    await waitFor((message): message is Message => message.kind === 'ready');
   }
 
-  return frame;
-};
+  return frame as Frame<FrameMessage> | Frame<ProgramFrameMessage>;
+}
 
 /** Posts the `connect` window message, with `port` when given. */
 export const connect = (
-  frame: Frame,
+  frame: Pick<Frame<{ readonly kind: string }>, 'win' | 'protocol'>,
   port?: MessagePort,
-  data: unknown = { papercraft: PROTOCOL, kind: 'connect' },
+  data: unknown = { papercraft: frame.protocol, kind: 'connect' },
 ): void => {
   const win = frame.win as unknown as {
     MessageEvent: typeof MessageEvent;
@@ -159,7 +199,7 @@ export const revisionUrl = (variant = 'card'): string =>
 
 /** What the fixture recorded on the frame's window. */
 export const fixtureLog = (
-  frame: Frame,
+  frame: Pick<Frame<{ readonly kind: string }>, 'win'>,
 ): { readonly mounts: readonly string[]; readonly unmounts: number } =>
   (
     frame.win as unknown as {

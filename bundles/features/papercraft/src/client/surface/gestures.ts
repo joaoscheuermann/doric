@@ -30,7 +30,7 @@ import {
 } from 'react';
 
 import type { CommentAnchor, PreviewTool } from '../../contracts/index.js';
-import { anchorOf, pointAnchorOf } from '../anchor.js';
+import { anchorOf, pointAnchorOf, programAnchorOf } from '../anchor.js';
 import type { FrameMessage } from '../frame-protocol.js';
 import { anchorIndexOf, type ContentPoint, offsetIn } from './pin-geometry.js';
 import { OVERLAY_ATTRIBUTE } from './pins-layer.js';
@@ -73,6 +73,8 @@ export interface GestureInput {
   readonly resolveInput: () => void;
   /** A click in comment mode: the anchor it resolved to, and the point. */
   readonly onComment: (anchor: CommentAnchor, point: ContentPoint) => void;
+  /** A papercraft program's canvas: a comment anchors to its statement, else its point (D19). */
+  readonly program?: boolean;
 }
 
 type FramePointer = Extract<FrameMessage, { kind: 'pointer' }>;
@@ -294,22 +296,24 @@ const click = (
   const point = pointer.content;
   const scene = input.scene;
   const anchor =
-    target === undefined
-      ? pointAnchorOf(point, nearestNodeOf(input, point))
-      : anchorOf(
-          target.node,
-          scene === undefined
-            ? undefined
-            : offsetIn(
-                targetBounds(target, scene.bounds, scene.pseudoBounds),
-                point,
-              ),
-          point,
-          scene === undefined
-            ? undefined
-            : anchorIndexOf(scene.graph, target.node),
-          target.pseudo,
-        );
+    input.program === true
+      ? programAnchorOf(target?.node, point)
+      : target === undefined
+        ? pointAnchorOf(point, nearestNodeOf(input, point))
+        : anchorOf(
+            target.node,
+            scene === undefined
+              ? undefined
+              : offsetIn(
+                  targetBounds(target, scene.bounds, scene.pseudoBounds),
+                  point,
+                ),
+            point,
+            scene === undefined
+              ? undefined
+              : anchorIndexOf(scene.graph, target.node),
+            target.pseudo,
+          );
 
   input.onComment(anchor, point);
 };

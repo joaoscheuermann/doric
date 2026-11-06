@@ -312,8 +312,10 @@ export class DesktopPlatform {
           // The artifacts bundle's `doric.cache/v1` directory is the tree the
           // protocol serves to windows under `/artifacts/<artifactId>@<revision>/`
           // (`artifacts.md`, stage 2), so the kernel places it directly under
-          // `userData` (`userData/artifacts/`), not under `bundle-cache/`.
-          bundleId === 'artifacts'
+          // `userData` (`userData/artifacts/`), not under `bundle-cache/`. The
+          // papercraft bundle's is the tree served under
+          // `/papercraft-modules/<dir>/<file>` (D14): `userData/papercraft/`.
+          bundleId === 'artifacts' || bundleId === 'papercraft'
             ? this.#paths.userData
             : this.#paths.bundleCache,
           bundleId,
@@ -520,6 +522,7 @@ export class DesktopPlatform {
       frame: renderFrameDocument(frameImportMap(this.#platformMap)),
       bundles: this.cache,
       artifacts: { root: this.#paths.artifacts },
+      modules: { root: this.#paths.papercraftModules },
       ...(devProxy === undefined ? {} : { devProxy }),
     });
     ipcMain.handle('doric:desktop', (event, request: unknown) =>

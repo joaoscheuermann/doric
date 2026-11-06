@@ -20,9 +20,16 @@
 import type {
   AppMessage,
   FrameContent,
+  FrameProtocol,
   PreviewLayout,
+  ProgramAppMessage,
+  ProgramSceneNodeData,
   SceneNodeData,
 } from '../../../src/client/frame-protocol.js';
+
+/** The statement wrapper of a protocol-2 frame (D6). */
+const STATEMENT_ATTRIBUTE = 'data-papercraft-statement';
+const COMPONENT_ATTRIBUTE = 'data-papercraft-component';
 
 export interface Box {
   readonly x: number;
@@ -52,6 +59,19 @@ export interface FakeOptions {
   readonly layout?: Readonly<Record<string, Placed>>;
   /** The content size the frame reports. */
   readonly size?: { readonly width: number; readonly height: number };
+  /**
+   * The protocol the fake speaks (by default the one of the entry its
+   * iframe loads: 2 for `frames/openui.js`, else 1): it takes only the `connect`
+   * of that number, and its `hello` and `ready` carry it. Under 2 it renders
+   * nothing on `init`, and on each `program` the markup `program` returns
+   * (nothing when absent), its scene nodes carrying `statement` and
+   * `component` from their nearest statement wrapper, never `stamp`.
+   */
+  readonly protocol?: FrameProtocol;
+  /** What a protocol-2 fake renders for one `program` message. */
+  readonly program?: (
+    message: Extract<ProgramAppMessage, { kind: 'program' }>,
+  ) => string | undefined;
 }
 
 type InitMessage = Extract<AppMessage, { kind: 'init' }>;
@@ -65,8 +85,12 @@ interface Modifiers {
 
 export interface FakeFrame {
   readonly iframe: HTMLIFrameElement;
-  /** Every message the app posted on the channel, in order. */
+  /** The protocol the fake speaks. */
+  readonly protocol: FrameProtocol;
+  /** Every message the app posted on the channel, in order (protocol 1). */
   readonly received: readonly AppMessage[];
+  /** The same messages, as protocol 2 types them. */
+  readonly programReceived: readonly ProgramAppMessage[];
   /** The app's `init`, once it came. */
   readonly init: InitMessage | undefined;
   /** Whether the app handed the frame its port. */
@@ -102,6 +126,14 @@ export interface FakeFrame {
   ): void;
   key(type: 'keydown' | 'keyup', key: string, modifiers?: Modifiers): void;
   focus(focused: boolean): void;
+  /** Posts a protocol-2 `errors` message. */
+  errors(
+    errors: readonly {
+      readonly code: string;
+      readonly statementId?: string;
+      readonly message: string;
+    }[],
+  ): void;
   /** Lays elements out (and sends the scene again when rendered). */
   lay(layout: Readonly<Record<string, Placed>>): void;
   /** Closes the channel, as a frame that goes does. */
@@ -146,9 +178,12 @@ export const sceneNodesOf = (
   options: {
     readonly includeRoot?: boolean;
     readonly layout?: Readonly<Record<string, Placed>>;
+    /** 2: no `stamp`; `statement`/`component` from the nearest wrapper. */
+    readonly protocol?: FrameProtocol;
   } = {},
 ): { readonly nodes: SceneNodeData[]; readonly elements: Element[] } => {
-  const nodes: SceneNodeData[] = [];
+  const protocol = options.protocol ?? 1;
+  const nodes: (SceneNodeData | ProgramSceneNodeData)[] = [];
   const elements: Element[] = [];
   const layout = options.layout ?? {};
 
@@ -164,6 +199,12 @@ export const sceneNodesOf = (
 
   const visit = (element: Element, depth: number, parentId?: string) => {
     if (SKIPPED.has(element.tagName)) return;
+    // A statement wrapper has no box of its own: its children are the nodes.
+    if (protocol === 2 && element.hasAttribute(STATEMENT_ATTRIBUTE)) {
+      for (const child of element.children) visit(child, depth, parentId);
+
+      return;
+    }
 
     const id = `n${String(nodes.length)}`;
     const placed = boxesOf(element);
@@ -184,7 +225,11 @@ export const sceneNodesOf = (
         .split(/\s+/)
         .filter((name) => name !== ''),
       ...(elementId === null || elementId === '' ? {} : { elementId }),
-      ...(stamp === null || stamp === '' ? {} : { stamp }),
+      ...(protocol === 2
+        ? wrapperOf(element)
+        : stamp === null || stamp === ''
+          ? {}
+          : { stamp }),
       text: (element.textContent ?? '')
         .replace(/\s+/g, ' ')
         .trim()
@@ -199,7 +244,21 @@ export const sceneNodesOf = (
   if (options.includeRoot === true) visit(root, 0);
   else for (const child of root.children) visit(child, 0);
 
-  return { nodes, elements };
+  return { nodes: nodes as SceneNodeData[], elements };
+};
+
+/** The names of the nearest statement wrapper around `element`, if any. */
+const wrapperOf = (
+  element: Element,
+): { readonly statement?: string; readonly component?: string } => {
+  const wrapper = element.parentElement?.closest(`[${STATEMENT_ATTRIBUTE}]`);
+  const statement = wrapper?.getAttribute(STATEMENT_ATTRIBUTE);
+  const component = wrapper?.getAttribute(COMPONENT_ATTRIBUTE);
+
+  return {
+    ...(statement == null || statement === '' ? {} : { statement }),
+    ...(component == null || component === '' ? {} : { component }),
+  };
 };
 
 interface HappyWindow {
@@ -237,6 +296,15 @@ const attach = (
     bodyNode: true,
   };
   const auto = options.auto ?? true;
+  // Without a stated protocol, the entry the iframe loads says it:
+  // `frames/openui.js` speaks 2, `frames/preview.js` 1.
+  const protocolOf = (): FrameProtocol =>
+    options.protocol ??
+    (decodeURIComponent(iframe.getAttribute('src') ?? '').includes(
+      '/frames/openui.js',
+    )
+      ? 2
+      : 1);
   let moduleLayout: PreviewLayout | undefined;
 
   const post = (data: unknown): void => state.port?.postMessage(data);
@@ -250,6 +318,7 @@ const attach = (
     const derived = sceneNodesOf(document.body, {
       includeRoot: state.bodyNode,
       layout: state.layout,
+      protocol: protocolOf(),
     });
 
     state.elements = derived.elements;
@@ -259,7 +328,11 @@ const attach = (
 
   const frame: FakeFrame = {
     iframe,
+    get protocol() {
+      return protocolOf();
+    },
     received,
+    programReceived: received as unknown as readonly ProgramAppMessage[],
     get init() {
       return state.init;
     },
@@ -273,7 +346,7 @@ const attach = (
       return state.closed;
     },
     post,
-    ready: () => post({ kind: 'ready', protocol: 1 }),
+    ready: () => post({ kind: 'ready', protocol: protocolOf() }),
     render: (markup, mode) => {
       state.document = new window.DOMParser().parseFromString(
         markup,
@@ -337,6 +410,7 @@ const attach = (
       });
     },
     focus: (focused) => post({ kind: 'focus', focused }),
+    errors: (errors) => post({ kind: 'errors', errors }),
     lay: (layout) => {
       state.layout = { ...state.layout, ...layout };
       if (state.rendered) frame.sendScene();
@@ -377,6 +451,19 @@ const attach = (
 
     if (!auto) return;
 
+    if (protocolOf() === 2) {
+      const message = data as unknown as ProgramAppMessage;
+
+      if (message.kind === 'program') {
+        const markup = options.program?.(message);
+
+        if (markup !== undefined) frame.render(markup, 'module');
+      }
+      if (message.kind === 'measure' && state.rendered) frame.sendScene();
+
+      return;
+    }
+
     if (data.kind === 'init') onInit(data.content);
     if (data.kind === 'measure' && state.rendered) frame.sendScene();
   };
@@ -396,7 +483,8 @@ const attach = (
         const message = data as { papercraft?: unknown; kind?: unknown };
         const port = transfer?.[0];
 
-        if (message.papercraft !== 1 || message.kind !== 'connect') return;
+        if (message.papercraft !== protocolOf() || message.kind !== 'connect')
+          return;
         if (port === undefined) return;
         // As the runtime: a `connect` before it listens is lost.
         if (!listening) return;
@@ -425,7 +513,7 @@ const attach = (
       listening = true;
       window.dispatchEvent(
         new window.MessageEvent('message', {
-          data: { papercraft: 1, kind: 'hello' },
+          data: { papercraft: protocolOf(), kind: 'hello' },
           source: iframe.contentWindow as never,
         }),
       );

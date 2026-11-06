@@ -438,20 +438,29 @@ describe('artifacts/v1.create', () => {
     }
   });
 
-  test('borns .doric/ Git-ignored and keeps an ignore the user changed', async () => {
+  // D8: the store ignores only its own directory, so `.doric/papercraft/`
+  // (the repository library's schemas) stays versionable.
+  test('borns .doric/artifacts/ Git-ignored, leaves .doric/ alone and keeps an ignore the user changed', async () => {
     const harness = await artifactsHarness();
 
     try {
       await harness.artifacts.create(checkout, harness.call());
 
       assert.equal(
-        await readFile(join(harness.root, '.doric/.gitignore'), 'utf8'),
+        await readFile(
+          join(harness.root, '.doric/artifacts/.gitignore'),
+          'utf8',
+        ),
         '*\n',
+      );
+      await assert.rejects(
+        readFile(join(harness.root, '.doric/.gitignore'), 'utf8'),
+        { code: 'ENOENT' },
       );
 
       await writeFile(
-        join(harness.root, '.doric/.gitignore'),
-        '*\n!.doric/artifacts/\n',
+        join(harness.root, '.doric/artifacts/.gitignore'),
+        '*\n!checkout-7f3a/\n',
         'utf8',
       );
       await harness.artifacts.create(
@@ -460,8 +469,15 @@ describe('artifacts/v1.create', () => {
       );
 
       assert.equal(
-        await readFile(join(harness.root, '.doric/.gitignore'), 'utf8'),
-        '*\n!.doric/artifacts/\n',
+        await readFile(
+          join(harness.root, '.doric/artifacts/.gitignore'),
+          'utf8',
+        ),
+        '*\n!checkout-7f3a/\n',
+      );
+      await assert.rejects(
+        readFile(join(harness.root, '.doric/.gitignore'), 'utf8'),
+        { code: 'ENOENT' },
       );
     } finally {
       await harness.close();

@@ -156,7 +156,11 @@ export const threadViewOf = (
   rootId: string,
   threads: readonly PreviewThread[],
   drafts: readonly PreviewDraft[],
-  target: { readonly artifactId: string; readonly revision?: number },
+  target: {
+    readonly kind?: string;
+    readonly artifactId: string;
+    readonly revision?: number;
+  },
 ): ThreadView | undefined => {
   const replies = drafts
     .filter((draft) => draft.inReplyTo === rootId)
@@ -174,7 +178,7 @@ export const threadViewOf = (
       rootId,
       pin: sent.pin,
       target: {
-        kind: ARTIFACT_TARGET_KIND,
+        kind: target.kind ?? ARTIFACT_TARGET_KIND,
         id: target.artifactId,
         ...(revision === undefined ? {} : { revision }),
         anchor,

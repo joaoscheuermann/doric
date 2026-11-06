@@ -10,40 +10,90 @@
 // registered whenever it is active, and a composition without chat still opens
 // the canvas.
 
+import { join } from 'node:path';
+
 import {
+  type Call,
   type Cleanup,
   CommandsV1,
   type DesktopContext,
+  DoricCacheV1,
+  defineMethod,
+  defineService,
+  type Services,
 } from 'bundle/contracts';
 
+import {
+  type ModuleCacheEntry,
+  PapercraftCacheV1,
+  papercraftCacheMethods,
+} from '../contracts/cache.js';
 import { ChatComposerV1 } from '../contracts/chat.js';
-import { PAPERCRAFT_COMMENT_KIND } from '../contracts/index.js';
+import {
+  PAPERCRAFT_COMMENT_KIND,
+  PROGRAM_COMMENT_KIND,
+} from '../contracts/index.js';
+import { ModulesCache } from './cache.js';
 import { openCanvas } from './commands.js';
-import { papercraftFlush } from './comment-flush.js';
+import { papercraftFlush, programFlush } from './comment-flush.js';
 import { snapshotService } from './snapshot.js';
 
 export const activate = ({ services }: DesktopContext): Cleanup => {
   const command = services.use(CommandsV1).register(openCanvas);
   const snapshot = services.provide(snapshotService());
 
-  const flush = services.whenAvailable(ChatComposerV1, (composer) => {
-    const registration = composer.registerFlush({
-      kind: PAPERCRAFT_COMMENT_KIND,
-      flush: papercraftFlush,
-    });
+  // `papercraft.cache/v1` (D14): the directory is read at the first call,
+  // since this activation also runs at build time, where `doric.*` answers
+  // nothing.
+  let cache: Promise<ModulesCache> | undefined;
+  const cacheOf = (call: Call, used: Services) => {
+    cache ??= used
+      .use(DoricCacheV1)
+      .directory(call)
+      .then((root) => new ModulesCache(root, join(root, '.tmp')));
 
-    return () => registration.dispose();
+    return cache;
+  };
+  const modules = services.provide(
+    defineService(PapercraftCacheV1, {
+      ensure: defineMethod({
+        ...papercraftCacheMethods.ensure,
+        execute: (
+          input: { readonly entries: readonly ModuleCacheEntry[] },
+          call: Call,
+          used: Services,
+        ) => cacheOf(call, used).then((one) => one.ensure(input)),
+      }),
+    }),
+  );
+
+  const flush = services.whenAvailable(ChatComposerV1, (composer) => {
+    const registrations = [
+      composer.registerFlush({
+        kind: PAPERCRAFT_COMMENT_KIND,
+        flush: papercraftFlush,
+      }),
+      composer.registerFlush({
+        kind: PROGRAM_COMMENT_KIND,
+        flush: programFlush,
+      }),
+    ];
+
+    return () => {
+      for (const registration of registrations) registration.dispose();
+    };
   });
 
   return () => {
     flush.dispose();
+    modules.dispose();
     snapshot.dispose();
     command.dispose();
   };
 };
 
 export { openCanvas, openCanvasInput } from './commands.js';
-export { papercraftFlush } from './comment-flush.js';
+export { papercraftFlush, programFlush } from './comment-flush.js';
 export {
   platformCapture,
   snapshotService,

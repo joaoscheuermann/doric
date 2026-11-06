@@ -594,3 +594,73 @@ test("the canvas window's revision is live outside the count", async () => {
 
   await w.close();
 });
+
+// PC30 (papercraft-openui.md D6, "Frame cap"): the window keeps one warm
+// frame, a protocol-2 frame booted with no program, so a fence's first
+// program draws at once. It counts as one of the three live frames, and the
+// next papercraft fence takes it as its own live frame. The client part
+// activates with the Generative UI setting on (`support/fence-host.ts`),
+// over this file's fake frames.
+
+/** The protocol-2 frames in the document that hold their channel. */
+const programFrames = () =>
+  frames.all.filter(
+    (frame) =>
+      frame.protocol === 2 && frame.iframe.isConnected && !frame.closed,
+  );
+
+test('PC30: a warm frame counts as one of the three live frames', async () => {
+  const { startHost } = await import('./support/fence-host.js');
+  const host = await startHost({ frames });
+
+  const [warm] = await settle(
+    programFrames,
+    (found) => found.some((frame) => frame.connected),
+    'the window booted no warm program frame',
+  );
+  assert.ok(warm !== undefined);
+  assert.deepEqual(
+    warm.programReceived.filter((message) => message.kind === 'program'),
+    [],
+    'a warm frame has no program',
+  );
+
+  const w = windowOf();
+  await mountAll(w, ['a', 'b', 'c']);
+  const live = () =>
+    frames.all.filter((frame) => frame.iframe.isConnected && !frame.closed)
+      .length;
+  await settle(live, (count) => count <= 3, 'more than three frames are live');
+
+  await w.close();
+  await host.dispose();
+});
+
+test("PC30: the warm frame becomes the next fence's live frame", async () => {
+  const { programFence, startHost, viewOf } = await import(
+    './support/fence-host.js'
+  );
+  const host = await startHost({ frames });
+  const [warm] = await settle(
+    programFrames,
+    (found) => found.some((frame) => frame.connected),
+    'the window booted no warm program frame',
+  );
+  assert.ok(warm !== undefined);
+
+  await host.mountFence(
+    viewOf(programFence('root = Stack([TextContent("Warm")])')),
+  );
+  const drawn = await settle(
+    () =>
+      frames.all.find((frame) =>
+        frame.programReceived.some((message) => message.kind === 'program'),
+      ),
+    (found) => found !== undefined,
+    'the fence never drew its program',
+  );
+
+  assert.equal(drawn, warm, 'the fence booted a frame of its own');
+
+  await host.dispose();
+});

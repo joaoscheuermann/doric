@@ -142,7 +142,9 @@ const harness = (() => {
   };
 })();
 
-const describe = () => {
+// \`given\`: the args \`mount\` was called with (D16's \`Export\` props), spread
+// over the story's args, or the props of a plain component.
+const describe = (given) => {
   const meta = Source.default;
   if (!STORIES_FILE && !isMeta(meta)) {
     const Preview = Source[EXPORT_NAME];
@@ -150,8 +152,8 @@ const describe = () => {
       id: EXPORT_NAME,
       name: EXPORT_NAME,
       title: undefined,
-      render: () => createElement(Preview),
-      args: { ...harness.args },
+      render: () => createElement(Preview, given),
+      args: { ...harness.args, ...given },
       argTypes: harness.argTypes,
       parameters: harness.parameters,
       decorators: harness.decorators,
@@ -178,7 +180,7 @@ const describe = () => {
     name: story.name ?? storyName(exportName),
     title: metaObject.title,
     render,
-    args: merge(harness.args, metaObject.args, story.args),
+    args: merge(harness.args, metaObject.args, story.args, given),
     argTypes: merge(harness.argTypes, metaObject.argTypes, story.argTypes),
     parameters: mergeParameters(harness.parameters, metaObject.parameters, story.parameters),
     decorators: [...list(story.decorators), ...list(metaObject.decorators), ...harness.decorators],
@@ -248,6 +250,7 @@ class PreviewBoundary extends Component {
 
 export function mount(root, options) {
   const theme = options && options.theme === 'dark' ? 'dark' : 'light';
+  const given = options && isObject(options.args) ? options.args : {};
   const app = document.createElement('div');
   app.setAttribute('data-papercraft-root', '');
   app.style.display = 'contents';
@@ -256,7 +259,7 @@ export function mount(root, options) {
   let prepared;
   const prepare = () => {
     if (prepared !== undefined) return prepared;
-    const spec = describe();
+    const spec = describe(given);
     const papercraft = { portalContainer: undefined, theme, root };
     const context = {
       id: spec.id,

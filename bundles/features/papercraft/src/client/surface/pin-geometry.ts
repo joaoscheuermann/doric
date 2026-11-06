@@ -190,6 +190,14 @@ export const nodeOfAnchor = (
     return graph.nodes.find((node) => node.source === stamp);
   }
 
+  // A program's selector anchor names a statement (D19): the first node of
+  // that statement's wrapper.
+  const statement = graph.nodes.find(
+    (node) => node.statement === anchor.selector,
+  );
+
+  if (statement !== undefined) return statement;
+
   const peers = peersOf(graph, anchor.selector, path);
 
   if (path !== undefined && anchor.line !== undefined) {

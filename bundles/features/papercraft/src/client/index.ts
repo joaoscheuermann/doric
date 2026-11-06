@@ -7,7 +7,7 @@
 // `chat.composer/v1` is active (`whenAvailable`, as `threads` does), so
 // the comment gesture joins its stack (the flush that answers the
 // `comments/v1.add` writes is the desktop part's); registers the canvas route
-// (`/papercraft/:projectId/:threadId/:artifactId`); and registers the
+// (`/papercraft/:projectId/:threadId/:identity`); and registers the
 // commands of the command bar plus their `menus/v1` keybindings, each pointing
 // at the command id it dispatches, filtered to the canvas route.
 
@@ -20,8 +20,9 @@ import {
   type RouteRegistration,
   UiV1,
 } from 'bundle/contracts';
+import { OpenuiSettingV1 } from 'openui/contracts';
 
-import { ChatComposerV1 } from '../contracts/chat.js';
+import { ChatComposerV1, ChatViewsV1 } from '../contracts/chat.js';
 import {
   CANVAS_ROUTE,
   PAPERCRAFT_CANVAS_TAG,
@@ -30,11 +31,32 @@ import {
 } from '../contracts/index.js';
 import { approveCommand, canvasCommands } from './commands.js';
 import { setComposerAvailable } from './comment.js';
+import { cwdProjector } from './cwd-projector.js';
 import {
   defineCanvasElement,
   definePreviewElement,
   PAPERCRAFT_TAGS,
 } from './elements.js';
+import { defineFenceElement, FENCE_TAG, PAPERCRAFT_FENCE } from './fence.js';
+import {
+  connectMessage,
+  frameMessage,
+  isHello,
+  PROGRAM_PROTOCOL,
+} from './frame-protocol.js';
+import { programFrameSrc } from './frame-url.js';
+import { bootWarmFrame } from './surface/live-frames.js';
+
+/** Boots the window's warm program frame (D6), when the window has a document. */
+const bootWarm = (): (() => void) =>
+  typeof document === 'undefined'
+    ? () => undefined
+    : bootWarmFrame(document, programFrameSrc(), {
+        isHello: (data) => isHello(data, PROGRAM_PROTOCOL),
+        connect: connectMessage(PROGRAM_PROTOCOL),
+        isReady: (data) =>
+          frameMessage(data, PROGRAM_PROTOCOL)?.kind === 'ready',
+      });
 
 /**
  * The canvas window's route. It stands alone, as `/settings` does: under the
@@ -58,6 +80,45 @@ export function activate({ services }: ClientContext): Cleanup {
     definePreviewElement(),
   );
   const canvasElement = ui.define(PAPERCRAFT_CANVAS_TAG, defineCanvasElement());
+  const fenceElement = ui.define(FENCE_TAG, defineFenceElement());
+
+  // Chat's views: the `papercraft.cwd/v1` projector always (D10), and the
+  // `papercraft` fence renderer and the warm frame only while the Generative
+  // UI setting is on (D6, D24).
+  const views = services.whenAvailable(ChatViewsV1, (chat) => {
+    let projector: { dispose(): void } | undefined;
+    try {
+      projector = chat.registerProjector(cwdProjector);
+    } catch {
+      // Another bundle claimed the event first; its projection stands.
+    }
+
+    let renderer: { dispose(): void } | undefined;
+    let dropWarm: (() => void) | undefined;
+    const watch = services.use(OpenuiSettingV1).watch(({ enabled }) => {
+      if (enabled && renderer === undefined) {
+        renderer = chat.registerFenceRenderer({
+          tag: PAPERCRAFT_FENCE,
+          elementTag: FENCE_TAG,
+        });
+        dropWarm = bootWarm();
+      } else if (!enabled && renderer !== undefined) {
+        renderer.dispose();
+        renderer = undefined;
+        dropWarm?.();
+        dropWarm = undefined;
+      }
+    });
+
+    return () => {
+      watch.dispose();
+      renderer?.dispose();
+      renderer = undefined;
+      dropWarm?.();
+      dropWarm = undefined;
+      projector?.dispose();
+    };
+  });
 
   const route = services
     .use(NavigationV1)
@@ -93,9 +154,11 @@ export function activate({ services }: ClientContext): Cleanup {
   });
 
   return () => {
+    views.dispose();
     composer.dispose();
     for (const command of registered.reverse()) command.dispose();
     route.dispose();
+    fenceElement.dispose();
     canvasElement.dispose();
     previewElement.dispose();
   };

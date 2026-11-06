@@ -24,9 +24,20 @@ const SKIP_TAGS = new Set(['STYLE', 'LINK', 'SCRIPT', 'META', 'TITLE']);
 
 const PSEUDO_KINDS: readonly PseudoKind[] = ['::before', '::after'];
 
+/** The statement wrapper a protocol-2 frame renders around a named statement (D6, D19). */
+export const STATEMENT_ATTRIBUTE = 'data-papercraft-statement';
+export const COMPONENT_ATTRIBUTE = 'data-papercraft-component';
+
+/** A statement or component name, as protocol 2 carries it. */
+const NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
+
 /** One derived element, with the element itself, kept inside the frame. */
 export interface FrameNode {
-  readonly data: SceneNodeData;
+  /** Protocol 1 carries `stamp`; protocol 2 `statement` and `component` instead. */
+  readonly data: SceneNodeData & {
+    readonly statement?: string;
+    readonly component?: string;
+  };
   readonly element: Element;
 }
 
@@ -276,11 +287,30 @@ const attributeWithin = (
 
 const hasArea = (rect: Rect): boolean => rect.width > 0 || rect.height > 0;
 
+/** The names of `wrapper`'s statement wrapper attributes that match the pattern. */
+const namesOf = (
+  wrapper: Element | null | undefined,
+): { readonly statement?: string; readonly component?: string } => {
+  const statement = wrapper?.getAttribute(STATEMENT_ATTRIBUTE) ?? '';
+  const component = wrapper?.getAttribute(COMPONENT_ATTRIBUTE) ?? '';
+
+  return {
+    ...(NAME_PATTERN.test(statement) ? { statement } : {}),
+    ...(NAME_PATTERN.test(component) ? { component } : {}),
+  };
+};
+
 /**
  * Derives and measures the scene of the elements in `tops` (each a node at
- * depth 0) and their descendants, in document order.
+ * depth 0) and their descendants, in document order. Under protocol 1 a node
+ * carries its own origin stamp; under protocol 2 (D6) it carries the names of
+ * its nearest statement wrapper (its own, for a wrapper) and no stamp, and a
+ * wrapper's bounds are the union of its children's boxes.
  */
-export const deriveScene = (tops: Iterable<Element>): FrameScene => {
+export const deriveScene = (
+  tops: Iterable<Element>,
+  protocol: 1 | 2 = 1,
+): FrameScene => {
   const nodes: FrameNode[] = [];
   const byElement = new Map<Element, FrameNode>();
   const byId = new Map<string, FrameNode>();
@@ -343,16 +373,23 @@ export const deriveScene = (tops: Iterable<Element>): FrameScene => {
 
     const elementId = attributeWithin(element, 'id', 256);
     const stamp = attributeWithin(element, STAMP_ATTRIBUTE, 1024);
-    const data: SceneNodeData = {
+    const wrapper = protocol === 2 && element.hasAttribute(STATEMENT_ATTRIBUTE);
+    const data: FrameNode['data'] = {
       id: `n${String(nodes.length)}`,
       ...(parent === undefined ? {} : { parentId: parent.data.id }),
       depth,
       tag: element.tagName.toLowerCase().slice(0, 64),
       classes: classesOf(element),
       ...(elementId === undefined ? {} : { elementId }),
-      ...(stamp === undefined ? {} : { stamp }),
+      ...(protocol === 2
+        ? namesOf(element.closest(`[${STATEMENT_ATTRIBUTE}]`))
+        : stamp === undefined
+          ? {}
+          : { stamp }),
       text: textOf(element),
-      bounds: toDocument(boxOf(element), element),
+      bounds: wrapper
+        ? unionOf(childBoxesOf(element).map((box) => toDocument(box, element)))
+        : toDocument(boxOf(element), element),
       ...(Object.keys(pseudo).length === 0 ? {} : { pseudo }),
     };
     const node: FrameNode = { data, element };
@@ -367,6 +404,31 @@ export const deriveScene = (tops: Iterable<Element>): FrameScene => {
   for (const top of tops) visit(top, 0, undefined);
 
   return { nodes, byElement, byId };
+};
+
+/** The boxes a wrapper's children paint: a `display: contents` child gives its own children's. */
+const childBoxesOf = (element: Element): Rect[] =>
+  [...element.children].flatMap((child) =>
+    SKIP_TAGS.has(child.tagName)
+      ? []
+      : child.ownerDocument.defaultView?.getComputedStyle(child).display ===
+          'contents'
+        ? childBoxesOf(child)
+        : [boxOf(child)],
+  );
+
+/** The smallest rect holding every box with an area; an empty rect when none has one. */
+const unionOf = (boxes: readonly Rect[]): Rect => {
+  const shown = boxes.filter(hasArea);
+
+  if (shown.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+
+  const left = Math.min(...shown.map((box) => box.x));
+  const top = Math.min(...shown.map((box) => box.y));
+  const right = Math.max(...shown.map((box) => box.x + box.width));
+  const bottom = Math.max(...shown.map((box) => box.y + box.height));
+
+  return { x: left, y: top, width: right - left, height: bottom - top };
 };
 
 /**

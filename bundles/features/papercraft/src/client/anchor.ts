@@ -136,12 +136,32 @@ export const targetOf = (
   artifactId: string,
   revision: number,
   anchor: CommentAnchor,
+  kind: string = ARTIFACT_TARGET_KIND,
 ): CommentTarget => ({
-  kind: ARTIFACT_TARGET_KIND,
+  kind,
   id: artifactId,
   revision,
   anchor,
 });
+
+/**
+ * The anchor of a click on a papercraft program (D19): the statement of the
+ * nearest wrapper around the clicked node, labelled by its component, else
+ * the clicked point (a portal, or no node at all). Never throws.
+ */
+export const programAnchorOf = (
+  node: SceneNode | undefined,
+  point: { readonly x: number; readonly y: number },
+): CommentAnchor =>
+  node?.statement === undefined
+    ? { form: 'point', x: point.x, y: point.y }
+    : {
+        form: 'selector',
+        selector: node.statement,
+        label: node.component ?? node.tag,
+        x: point.x,
+        y: point.y,
+      };
 
 /**
  * The anchor of a click on empty space: the point still resolves against the

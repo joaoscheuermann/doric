@@ -21,7 +21,10 @@ import {
 } from 'bundle/contracts';
 import { z } from 'zod';
 
+export * from './cache.js';
 export * from './chat.js';
+export * from './cwd.js';
+export * from './programs.js';
 
 /* papercraft.previews/v1 ---------------------------------------------------- */
 
@@ -456,6 +459,13 @@ export interface CommentAddInput {
 /** The target kind a preview comment carries; read by whoever owns the target. */
 export const ARTIFACT_TARGET_KIND = 'artifact';
 
+/**
+ * The comment target kind of a papercraft program (D19): a comment's target is
+ * `{ kind: PROGRAM_TARGET_KIND, id: <identity>, revision, anchor }`. It never
+ * equals `ARTIFACT_TARGET_KIND`, so program and artifact comments never match.
+ */
+export const PROGRAM_TARGET_KIND = 'papercraft-program';
+
 /** The identity of a target, as `comments/v1.list` filters by it. */
 export interface CommentTargetKey {
   readonly kind: string;
@@ -550,18 +560,21 @@ export const OPEN_CANVAS_COMMAND = 'papercraft.open-canvas/v1';
  * The path window the canvas opens as. The window is opened from a
  * conversation, and it carries that conversation in its path: the Project
  * scopes every host call, and the Thread is the composer stack its comments
- * join and the log it watches.
+ * join and the log it watches. The last segment (D26) is an artifact id (a
+ * UUID naming an artifact of the Thread: the old path's canvas) or a
+ * papercraft program's identity.
  */
-export const CANVAS_ROUTE = '/papercraft/:projectId/:threadId/:artifactId';
+export const CANVAS_ROUTE = '/papercraft/:projectId/:threadId/:identity';
 
+/** The canvas window's path; `segment` is an artifact id or an identity. */
 export const canvasPathOf = (input: {
   readonly projectId: string;
   readonly threadId: string;
-  readonly artifactId: string;
+  readonly segment: string;
 }): string =>
   `/papercraft/${encodeURIComponent(input.projectId)}/${encodeURIComponent(
     input.threadId,
-  )}/${encodeURIComponent(input.artifactId)}`;
+  )}/${encodeURIComponent(input.segment)}`;
 
 /** The command that approves a revision under the `request` policy. */
 export const APPROVE_COMMAND = 'papercraft.approve/v1';
@@ -610,6 +623,14 @@ export const PAPERCRAFT_KEYBINDINGS = [
 
 /** The composer stack item kind of a papercraft comment draft. */
 export const PAPERCRAFT_COMMENT_KIND = 'papercraft-preview';
+
+/**
+ * The composer stack item kind of a comment draft on a papercraft program
+ * (D19), flushed by `programFlush`. Its `data` is a `PreviewItemData` whose
+ * `target` has the kind `PROGRAM_TARGET_KIND` and whose `refs` is
+ * `{ title: <identity> }`.
+ */
+export const PROGRAM_COMMENT_KIND = 'papercraft-program';
 
 /**
  * What one composer stack item of the papercraft kind carries (`data`): the

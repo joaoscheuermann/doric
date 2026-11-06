@@ -44,6 +44,12 @@ export type RouteDecision =
       readonly revision: number;
       readonly segments: readonly string[];
     }
+  /** `/papercraft-modules/<dir>/<file>`: a verified papercraft module file. */
+  | {
+      readonly type: 'module';
+      readonly dir: string;
+      readonly segments: readonly string[];
+    }
   | { readonly type: 'schema'; readonly segments: readonly string[] }
   /** `/frame/index.html`: the preview frame document. */
   | { readonly type: 'frame-document' }
@@ -109,6 +115,17 @@ export const route = (
     }
 
     return notFound;
+  }
+
+  if (pathname.startsWith('/papercraft-modules/')) {
+    const segments = segmentsOf(pathname.slice('/papercraft-modules/'.length));
+    const [dir, ...rest] = segments ?? [];
+
+    // A module directory is its file list's SHA-256 (D14), and holds files.
+    if (dir === undefined || !/^[0-9a-f]{64}$/u.test(dir) || rest.length === 0)
+      return notFound;
+
+    return { type: 'module', dir, segments: rest };
   }
 
   for (const prefix of [
@@ -222,6 +239,18 @@ export interface ServedArtifacts {
   readonly root: string;
 }
 
+/**
+ * The verified papercraft modules the protocol may serve under
+ * `/papercraft-modules/`: `userData/papercraft/<dir>/<file>`, written by the
+ * `papercraft` bundle's desktopMain part (`papercraft.cache/v1`) only after
+ * each file's SHA-256 is confirmed, served with `Access-Control-Allow-Origin:
+ * *` for frames. Any path that resolves outside this root is a 404.
+ */
+export interface ServedModules {
+  /** The cache root, `userData/papercraft/`. */
+  readonly root: string;
+}
+
 export interface ProtocolDeps {
   readonly resources: Resources;
   readonly shell: ShellRenderer;
@@ -230,6 +259,8 @@ export interface ProtocolDeps {
   readonly bundles: ServedBundles;
   /** Verified artifact revisions (`/artifacts/<artifactId>@<revision>/…`). */
   readonly artifacts: ServedArtifacts;
+  /** Verified papercraft modules (`/papercraft-modules/<dir>/<file>`); without it, a 404. */
+  readonly modules?: ServedModules;
   /** Unpackaged only. */
   readonly devProxy?: DevProxy;
   readonly readFile?: (path: string) => Promise<Uint8Array>;
@@ -242,6 +273,7 @@ const framesMayLoad = (decision: RouteDecision): boolean => {
     case 'frame-boot':
     case 'platform':
     case 'artifact':
+    case 'module':
       return true;
     case 'bundle':
       return (
@@ -282,6 +314,10 @@ const navigates = (headers: Headers | undefined): boolean => {
 
   return /\b(?:text\/html|application\/xhtml\+xml)\b/iu.test(accept);
 };
+
+/** Whether a path's last segment names a file: it carries an extension. */
+const namesFile = (pathname: string): boolean =>
+  /\.[A-Za-z0-9]+$/u.test(pathname.slice(pathname.lastIndexOf('/') + 1));
 
 /** Answers one request; every failure is a 404, never the shell. */
 export const respond = async (
@@ -328,7 +364,10 @@ export const respond = async (
     case 'not-found':
       return notFoundResponse();
     case 'shell': {
-      if (!navigates(request.headers)) return notFoundResponse();
+      // A path naming a file (`/secret.txt`, which a dot segment under a
+      // served root resolves to) is a file nothing serves, not a page.
+      if (!navigates(request.headers) || namesFile(url.pathname))
+        return notFoundResponse();
 
       const { html, csp } = await deps.shell.render();
 
@@ -394,6 +433,15 @@ export const respond = async (
           decision.segments,
         ),
       );
+    case 'module':
+      return deps.modules === undefined
+        ? notFoundResponse()
+        : await serve(
+            insideRoot(
+              join(deps.modules.root, decision.dir),
+              decision.segments,
+            ),
+          );
   }
 };
 

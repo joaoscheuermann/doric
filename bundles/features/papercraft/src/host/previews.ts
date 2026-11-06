@@ -388,9 +388,12 @@ export const probeBytes = async (
   call: Call,
   path: string,
 ): Promise<Uint8Array | undefined> => {
-  const outcome = await services
-    .use(FilesV1, call.scope)
-    .content({ path, encoding: 'base64' }, call)
+  const outcome = await Promise.resolve()
+    .then(() =>
+      services
+        .use(FilesV1, call.scope)
+        .content({ path, encoding: 'base64' }, call),
+    )
     .catch(() => undefined);
 
   if (outcome?.status !== 'ready') return undefined;
@@ -400,6 +403,30 @@ export const probeBytes = async (
   return read.status === 'read' && !read.truncated
     ? Buffer.from(read.content, 'base64')
     : undefined;
+};
+
+/**
+ * Whether a Project directory is a repository root, through `files/v1`: its
+ * `.git` reads as a file (a worktree's) or is a directory (D15). The harness
+ * search stops after such a directory. A failed read answers `false`.
+ */
+export const probeRepositoryRoot = async (
+  services: Services,
+  call: Call,
+  dir: string,
+): Promise<boolean> => {
+  const outcome = await Promise.resolve()
+    .then(() =>
+      services
+        .use(FilesV1, call.scope)
+        .content({ path: dir === '.' ? '.git' : `${dir}/.git` }, call),
+    )
+    .catch(() => undefined);
+
+  return (
+    outcome?.status === 'ready' &&
+    (outcome.value.status === 'read' || outcome.value.status === 'not_file')
+  );
 };
 
 /** One revision's built payload: the markup, its entries and their bytes. */
@@ -449,6 +476,7 @@ export const snapshotPreview = async (
       },
       sandboxBundler(services, call),
       (path) => probeBytes(services, call, path),
+      (dir) => probeRepositoryRoot(services, call, dir),
     );
 
     built.push(

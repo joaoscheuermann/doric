@@ -9,6 +9,8 @@ export interface DesktopPaths {
   readonly staging: string;
   /** Verified artifact revisions: `artifacts/<artifactId>@<revision>/<path>`, served under `/artifacts/`. */
   readonly artifacts: string;
+  /** Verified papercraft modules: `papercraft/<dir>/<file>`, served under `/papercraft-modules/` (papercraft.cache/v1). */
+  readonly papercraftModules: string;
   /** `doric.cache/v1`: `bundle-cache/<bundleId>/`. */
   readonly bundleCache: string;
   /** `doric/state.json`: migrations, last good core. */
@@ -24,6 +26,7 @@ export const desktopPaths = (userData: string): DesktopPaths => ({
   bundles: join(userData, 'bundles'),
   staging: join(userData, 'bundles', '.tmp'),
   artifacts: join(userData, 'artifacts'),
+  papercraftModules: join(userData, 'papercraft'),
   bundleCache: join(userData, 'bundle-cache'),
   state: join(userData, 'doric', 'state.json'),
   windows: join(userData, 'doric', 'windows.json'),

@@ -1,12 +1,15 @@
 {
   "manifestVersion": 1,
   "id": "papercraft",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "engines": { "doric": "^1.0.0" },
   "description": "Live previews of a Project's code as conversation nodes: the `preview` artifact kind, its builder and its canvas window.",
   "provides": [
     "papercraft.previews/v1@1.0.0",
-    "papercraft.open-canvas/v1@1.0.0",
+    "papercraft.programs/v1@1.0.0",
+    "papercraft.cache/v1@1.0.0",
+    "papercraft.cwd/v1@1.0.0",
+    "papercraft.open-canvas/v1@1.1.0",
     "papercraft.approve/v1@1.0.0",
     "papercraft.select/v1@1.0.0",
     "papercraft.comment/v1@1.0.0",
@@ -34,10 +37,21 @@
     "commands/v1@^1.0.0",
     "menus/v1@^1.0.0",
     "hooks/v1@^1.0.0",
-    "windows/v1@^1.0.0"
+    "windows/v1@^1.0.0",
+    "openui.generative-ui/v1@^1.0.0",
+    "openui.setting/v1@^1.0.0",
+    "openui.programs/v1@^1.0.0",
+    "chat.views/v1@^1.1.0",
+    "runtime.threads/v1@^1.5.0",
+    "runtime.hooks/v1@^1.2.0",
+    "skills/v1@^1.1.0",
+    "settings/v1@^1.0.0",
+    "events/v1@^1.0.0"
   ],
-  "optional": ["chat.composer/v1", "chat.send/v1", "runtime.threads/v1"],
+  "optional": ["chat.composer/v1", "chat.send/v1"],
   "desktopScope": {
-    "papercraft.previews/v1": ["projectId", "threadId", "promptId"]
+    "papercraft.previews/v1": ["projectId", "threadId", "promptId"],
+    "papercraft.programs/v1": ["projectId", "threadId"],
+    "papercraft.cache/v1": ["projectId", "threadId"]
   }
 }

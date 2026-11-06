@@ -24,6 +24,8 @@
 
 import { type RefObject, useCallback, useLayoutEffect, useState } from 'react';
 
+import { FRAME_SANDBOX } from './live-frame.js';
+
 /** The most previews one window keeps a live frame for. */
 export const LIVE_FRAME_LIMIT = 3;
 
@@ -226,4 +228,129 @@ export const useLiveFrame = (
   const use = useCallback(() => slot?.use(), [slot]);
 
   return { live: key === undefined ? true : state.live, use };
+};
+
+/* The warm frame (D6, PC30) ------------------------------------------------ */
+
+/** A protocol-2 frame booted with no program, as a fence takes it over. */
+export interface WarmFrame {
+  readonly iframe: HTMLIFrameElement;
+  /** The app's end of the channel, once the frame said `hello`. */
+  readonly port: MessagePort | undefined;
+  /** Whether the frame answered `ready` on that port. */
+  readonly ready: boolean;
+}
+
+/** How the warm frame's handshake reads the frame: its protocol's messages. */
+export interface WarmHandshake {
+  readonly isHello: (data: unknown) => boolean;
+  readonly connect: unknown;
+  readonly isReady: (data: unknown) => boolean;
+}
+
+interface Warm {
+  readonly iframe: HTMLIFrameElement;
+  readonly src: string;
+  port: MessagePort | undefined;
+  ready: boolean;
+  slot: LiveSlot | undefined;
+  readonly detach: () => void;
+}
+
+let warm: Warm | undefined;
+
+/** Where a warm frame waits: out of sight, outside any preview. */
+const WARM_STYLE =
+  'position: fixed; left: -10000px; top: 0; width: 1px; height: 1px; visibility: hidden; pointer-events: none;';
+
+/**
+ * Boots the window's one warm frame (D6): an iframe of `src`, handshaken up
+ * to `ready` with no `init`, holding one of the window's live frames until a
+ * papercraft fence takes it (`takeWarmFrame`) or previews used more recently
+ * take its place. Returns its release: the frame goes unless a fence took it.
+ */
+export const bootWarmFrame = (
+  document: Document,
+  src: string,
+  handshake: WarmHandshake,
+): (() => void) => {
+  if (warm !== undefined) return () => undefined;
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('src', src);
+  iframe.setAttribute('sandbox', FRAME_SANDBOX);
+  iframe.setAttribute('title', 'papercraft');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.setAttribute('tabindex', '-1');
+  iframe.setAttribute('style', WARM_STYLE);
+  iframe.className = 'papercraft-frame block border-0 bg-transparent';
+
+  const view = document.defaultView;
+  let current: Warm | undefined;
+
+  const onReady = (event: MessageEvent): void => {
+    if (current !== undefined && handshake.isReady(event.data))
+      current.ready = true;
+  };
+  const onHello = (event: MessageEvent): void => {
+    if (current === undefined || event.source !== iframe.contentWindow) return;
+    if (!handshake.isHello(event.data)) return;
+
+    current.port?.close();
+    const channel = new MessageChannel();
+    current.port = channel.port1;
+    current.ready = false;
+    channel.port1.addEventListener('message', onReady);
+    channel.port1.start();
+    iframe.contentWindow?.postMessage(handshake.connect, '*', [channel.port2]);
+  };
+
+  const booted: Warm = {
+    iframe,
+    src,
+    port: undefined,
+    ready: false,
+    slot: undefined,
+    detach: () => {
+      view?.removeEventListener('message', onHello);
+      booted.port?.removeEventListener('message', onReady);
+    },
+  };
+  current = booted;
+
+  const drop = (): void => {
+    if (warm !== booted) return;
+    warm = undefined;
+    booted.detach();
+    booted.slot?.leave();
+    booted.port?.close();
+    iframe.remove();
+  };
+
+  warm = booted;
+  view?.addEventListener('message', onHello);
+  booted.slot = joinLiveFrames(`warm:${src}`, (live) => {
+    if (!live) drop();
+  });
+  document.body.append(iframe);
+
+  return drop;
+};
+
+/**
+ * Hands the warm frame of `src` to the caller, which owns it from now on:
+ * its iframe, the channel's port and whether it said `ready`. The frame
+ * leaves the registry's count; the caller joins it under its own key.
+ * `undefined` when there is none.
+ */
+export const takeWarmFrame = (src: string): WarmFrame | undefined => {
+  const taken = warm;
+
+  if (taken === undefined || taken.src !== src) return undefined;
+
+  warm = undefined;
+  taken.detach();
+  taken.slot?.leave();
+
+  return { iframe: taken.iframe, port: taken.port, ready: taken.ready };
 };

@@ -48,6 +48,7 @@
     "openui.questions/v1": ["answer", "status"],
     "openui.setting/v1": ["get", "set", "watch"],
     "papercraft.previews/v1": ["build", "read"],
+    "papercraft.programs/v1": ["export", "library", "read"],
     "resources/v1": ["host", "project"],
     "runtime.attachments/v1": ["attach", "read"],
     "runtime.lease/v1": [
@@ -123,6 +124,8 @@
   "scopeKeysByContract": {
     "openui.programs/v1": ["projectId", "threadId"],
     "openui.questions/v1": ["projectId", "threadId"],
-    "openui.setting/v1": []
+    "openui.setting/v1": [],
+    "papercraft.cache/v1": ["projectId", "threadId"],
+    "papercraft.programs/v1": ["projectId", "threadId"]
   }
 }

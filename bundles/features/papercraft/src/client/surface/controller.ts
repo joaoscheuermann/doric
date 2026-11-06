@@ -143,7 +143,8 @@ export const usePreviewController = ({
 /** How the frame dispatches a command, and the node's `abrir`: the canvas window. */
 export const useCommandDispatch = (
   services: Services,
-  artifactId: string,
+  /** What `papercraft.open-canvas/v1` names the canvas by (D26). */
+  segment: { readonly artifactId: string } | { readonly identity: string },
   scopeProject: string | undefined,
   scopeThread: string | undefined,
 ): {
@@ -167,11 +168,11 @@ export const useCommandDispatch = (
     if (scopeProject === undefined || scopeThread === undefined) return;
 
     execute(OPEN_CANVAS_COMMAND, {
-      artifactId,
+      ...segment,
       projectId: scopeProject,
       threadId: scopeThread,
     });
-  }, [execute, artifactId, scopeProject, scopeThread]);
+  }, [execute, segment, scopeProject, scopeThread]);
 
   return { execute, openCanvas };
 };

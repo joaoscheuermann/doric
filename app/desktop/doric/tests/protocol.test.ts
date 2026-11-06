@@ -96,6 +96,17 @@ const bundles: ServedBundles = {
   file: (id, version, path) => listed.get(`${id}@${version}/${path}`),
 };
 
+/** A module's cache directory: the SHA-256 of its file list (D14). */
+const MODULE_DIR = 'a'.repeat(64);
+
+/**
+ * The papercraft modules root the protocol serves under `/papercraft-modules/`
+ * (D14, `ServedModules`), passed as `ProtocolDeps.modules`. Spread through a
+ * cast: the field is the implementation step's to add to `ProtocolDeps`.
+ */
+const withModules = (): Partial<ProtocolDeps> =>
+  ({ modules: { root: join(root, 'papercraft') } }) as Partial<ProtocolDeps>;
+
 const deps = (overrides: Partial<ProtocolDeps> = {}): ProtocolDeps => ({
   resources,
   bundles,
@@ -174,6 +185,19 @@ before(async () => {
   await mkdir(join(root, 'cache', 'probe@1.0.0', 'desktop'), {
     recursive: true,
   });
+
+  await mkdir(join(root, 'papercraft', MODULE_DIR, 'assets'), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, 'papercraft', MODULE_DIR, 'index.js'),
+    'export const Button = 1;',
+  );
+  await writeFile(join(root, 'papercraft', MODULE_DIR, 'index.css'), '.btn {}');
+  await writeFile(
+    join(root, 'papercraft', MODULE_DIR, 'assets', `${'b'.repeat(64)}.woff2`),
+    'font',
+  );
 
   for (const path of [
     'client/frames/preview.js',
@@ -632,6 +656,103 @@ describe('boot.js runs only a bundle frame entry', () => {
       'react',
     ]) {
       assert.deepEqual(await boot(query(entry)), [], entry);
+    }
+  });
+});
+
+describe('/papercraft-modules/ (PC31)', () => {
+  const getModule = (url: string, origin?: string) =>
+    respond(
+      new Request(url, origin === undefined ? {} : { headers: { origin } }),
+      deps(withModules()),
+    );
+
+  test('serves a file of the modules root with its content type, to any origin', async () => {
+    for (const [path, type, body] of [
+      ['index.js', 'text/javascript', 'export const Button = 1;'],
+      ['index.css', 'text/css', '.btn {}'],
+      [`assets/${'b'.repeat(64)}.woff2`, 'font/woff2', 'font'],
+    ] as const) {
+      const url = `doric://app/papercraft-modules/${MODULE_DIR}/${path}`;
+
+      for (const response of [
+        await getModule(url),
+        await getModule(url, 'null'),
+      ]) {
+        assert.equal(response.status, 200, url);
+        assert.equal(response.headers.get('content-type'), type, url);
+        assert.equal(
+          response.headers.get('access-control-allow-origin'),
+          '*',
+          url,
+        );
+        assert.equal(await response.text(), body, url);
+      }
+    }
+  });
+
+  test('answers 404 for a missing file or a path that is not <dir>/<file>', async () => {
+    for (const url of [
+      `doric://app/papercraft-modules/${MODULE_DIR}/missing.js`,
+      `doric://app/papercraft-modules/${'c'.repeat(64)}/index.js`,
+      `doric://app/papercraft-modules/${MODULE_DIR}`,
+      `doric://app/papercraft-modules/${MODULE_DIR}/`,
+      `doric://app/papercraft-modules/${MODULE_DIR}//index.js`,
+      'doric://app/papercraft-modules/',
+    ]) {
+      const response = await getModule(url);
+
+      assert.equal(response.status, 404, url);
+    }
+  });
+
+  test('refuses every path that would leave the modules root', async () => {
+    for (const url of [
+      `doric://app/papercraft-modules/${MODULE_DIR}/%2e%2e%2f..%2f..%2fsecret.txt`,
+      `doric://app/papercraft-modules/${MODULE_DIR}/..%5c..%5c..%5csecret.txt`,
+      'doric://app/papercraft-modules/%2e%2e/secret.txt',
+      'doric://app/papercraft-modules/..%2fsecret.txt',
+    ]) {
+      const response = await getModule(url);
+
+      assert.equal(response.status, 404, url);
+    }
+
+    for (const url of [
+      `doric://app/papercraft-modules/${MODULE_DIR}/../../secret.txt`,
+      `doric://app/papercraft-modules/${MODULE_DIR}/%2e%2e/%2e%2e/secret.txt`,
+      'doric://app/papercraft-modules/../secret.txt',
+    ]) {
+      const response = await getModule(url);
+
+      assert.ok(!(await response.text()).includes('outside'), url);
+    }
+  });
+
+  test('leaves /artifacts/* as it is, and neither root is reachable through the other', async () => {
+    for (const url of [
+      'doric://app/artifacts/checkout-7f3a@1/index.js',
+      'doric://app/artifacts/checkout-7f3a@1/assets/theme.css',
+    ]) {
+      const response = await getModule(url, 'null');
+
+      assert.equal(response.status, 200, url);
+      assert.equal(
+        response.headers.get('access-control-allow-origin'),
+        '*',
+        url,
+      );
+    }
+
+    for (const url of [
+      'doric://app/artifacts/checkout-7f3a@0/index.js',
+      'doric://app/artifacts/.tmp/staged.js',
+      `doric://app/artifacts/${MODULE_DIR}/index.js`,
+      'doric://app/papercraft-modules/checkout-7f3a@1/index.js',
+    ]) {
+      const response = await getModule(url);
+
+      assert.equal(response.status, 404, url);
     }
   });
 });

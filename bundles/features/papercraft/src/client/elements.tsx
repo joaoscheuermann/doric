@@ -23,15 +23,105 @@
 
 import type { Services } from 'bundle/contracts';
 import { defineReactElement } from 'desktop/ui/react-element';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
+  ArtifactsV1,
+  callScopeOf,
   PAPERCRAFT_CANVAS_TAG,
   PAPERCRAFT_PREVIEW_TAG,
   type PreviewScope,
 } from '../contracts/index.js';
 import { previewBlockDataOf } from './block.js';
 import { locationScope } from './comment.js';
+import type { CanvasSource } from './surface/canvas-source.js';
 import { PreviewContainer } from './surface/preview-container.js';
+
+/** An artifact id as the old path wrote it in a canvas path: a UUID. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The canvas a route segment names (D26): a UUID naming an artifact of the
+ * Thread opens that artifact's canvas, every other segment is a papercraft
+ * identity; `undefined` while the artifact is being looked up.
+ */
+const useCanvasSource = (
+  services: Services,
+  scope: PreviewScope | undefined,
+  segment: string,
+): CanvasSource | undefined => {
+  const program = useMemo<CanvasSource | undefined>(
+    () =>
+      scope?.threadId === undefined
+        ? undefined
+        : { kind: 'program', threadId: scope.threadId, identity: segment },
+    [scope?.threadId, segment],
+  );
+  const [artifact, setArtifact] = useState<boolean | undefined>(
+    UUID.test(segment) ? undefined : false,
+  );
+  const projectId = scope?.projectId;
+  const threadId = scope?.threadId;
+
+  useEffect(() => {
+    if (!UUID.test(segment) || projectId === undefined) {
+      setArtifact(false);
+
+      return;
+    }
+
+    let live = true;
+    setArtifact(undefined);
+    services
+      .use(
+        ArtifactsV1,
+        callScopeOf({
+          projectId,
+          ...(threadId === undefined ? {} : { threadId }),
+        }),
+      )
+      .read({ artifactId: segment })
+      .then(
+        (record) => live && setArtifact(record !== undefined),
+        () => live && setArtifact(false),
+      );
+
+    return () => {
+      live = false;
+    };
+  }, [services, segment, projectId, threadId]);
+
+  return artifact === undefined
+    ? undefined
+    : artifact
+      ? { kind: 'artifact', artifactId: segment }
+      : (program ?? { kind: 'artifact', artifactId: segment });
+};
+
+/** The canvas window's surface for one route segment. */
+function CanvasRoute({
+  services,
+  scope,
+  segment,
+}: {
+  readonly services: Services;
+  readonly scope: PreviewScope | undefined;
+  readonly segment: string;
+}) {
+  const source = useCanvasSource(services, scope, segment);
+
+  if (source === undefined) return null;
+
+  return (
+    <PreviewContainer
+      services={services}
+      chrome="canvas"
+      scope={scope}
+      artifactId={source.kind === 'artifact' ? source.artifactId : segment}
+      {...(source.kind === 'program' ? { source } : {})}
+    />
+  );
+}
 
 interface PreviewElementProps {
   readonly block?: unknown;
@@ -109,15 +199,20 @@ export const definePreviewElement = () => {
 interface CanvasElementProps {
   readonly projectId?: string;
   readonly threadId?: string;
+  /** The route's last segment (D26): an artifact id or a papercraft identity. */
+  readonly identity?: string;
+  /** The old path's name of the segment. */
   readonly artifactId?: string;
 }
 
 /** `<papercraft-canvas>`: the full-screen route of one preview. */
 export const defineCanvasElement = () => {
   const Base = defineReactElement<CanvasElementProps>({
-    props: ['projectId', 'threadId', 'artifactId'],
-    render: ({ projectId, threadId, artifactId, services }) => {
-      if (artifactId === undefined || artifactId === '') return null;
+    props: ['projectId', 'threadId', 'identity', 'artifactId'],
+    render: ({ projectId, threadId, identity, artifactId, services }) => {
+      const segment = identity ?? artifactId;
+
+      if (segment === undefined || segment === '') return null;
 
       const scope: PreviewScope | undefined =
         projectId === undefined || projectId === ''
@@ -130,12 +225,7 @@ export const defineCanvasElement = () => {
             };
 
       return (
-        <PreviewContainer
-          services={services}
-          chrome="canvas"
-          scope={scope}
-          artifactId={artifactId}
-        />
+        <CanvasRoute services={services} scope={scope} segment={segment} />
       );
     },
   });
@@ -146,6 +236,7 @@ export const defineCanvasElement = () => {
   {
     declare projectId: string | undefined;
     declare threadId: string | undefined;
+    declare identity: string | undefined;
     declare artifactId: string | undefined;
   };
 };

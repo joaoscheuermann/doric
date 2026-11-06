@@ -12,15 +12,24 @@
 import { defineCommand, WindowsV1 } from 'bundle/contracts';
 import { z } from 'zod';
 
+import { canvasIdOf } from '../client/surface/canvas-source.js';
 import { canvasPathOf, OPEN_CANVAS_COMMAND } from '../contracts/index.js';
 
-export const openCanvasInput = z
-  .object({
-    artifactId: z.string().min(1),
-    projectId: z.string().min(1),
-    threadId: z.string().min(1),
-  })
-  .strict();
+const canvasScope = {
+  projectId: z.string().min(1),
+  threadId: z.string().min(1),
+};
+
+/**
+ * `papercraft.open-canvas/v1@1.1.0`'s input: the Project, the Thread and
+ * exactly one of `artifactId` (the old path, every 1.0.0 input) and
+ * `identity` (a papercraft program, D26). Strict: both, neither or an unknown
+ * field fail with `invalid_input`.
+ */
+export const openCanvasInput = z.union([
+  z.object({ ...canvasScope, artifactId: z.string().min(1) }).strict(),
+  z.object({ ...canvasScope, identity: z.string().min(1) }).strict(),
+]);
 
 export type OpenCanvasInput = z.output<typeof openCanvasInput>;
 
@@ -30,11 +39,18 @@ export const CANVAS_APPEARANCE = { titleBar: 'integrated' } as const;
 export const openCanvas = defineCommand({
   id: OPEN_CANVAS_COMMAND,
   input: openCanvasInput,
-  execute: async ({ artifactId, projectId, threadId }, call, services) => {
+  execute: async (input, call, services) => {
+    const { projectId, threadId } = input;
+    const source =
+      'artifactId' in input
+        ? { kind: 'artifact' as const, artifactId: input.artifactId }
+        : { kind: 'program' as const, threadId, identity: input.identity };
+    const segment = 'artifactId' in input ? input.artifactId : input.identity;
+
     await services.use(WindowsV1).open(
       {
-        key: artifactId,
-        path: canvasPathOf({ projectId, threadId, artifactId }),
+        key: canvasIdOf(source),
+        path: canvasPathOf({ projectId, threadId, segment }),
         appearance: CANVAS_APPEARANCE,
       },
       call,

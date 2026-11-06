@@ -37,6 +37,7 @@ import {
   type ComposerItem,
 } from '../contracts/chat.js';
 import {
+  ARTIFACT_TARGET_KIND,
   CommentsV1,
   type CommentTarget,
   callScopeOf,
@@ -157,12 +158,17 @@ const pointOf = (
 export const draftOfItem = (
   item: ComposerItem,
   artifactId: string,
+  kinds: { readonly item: string; readonly target: string } = {
+    item: PAPERCRAFT_COMMENT_KIND,
+    target: ARTIFACT_TARGET_KIND,
+  },
 ): PreviewDraft | undefined => {
-  if (item.kind !== PAPERCRAFT_COMMENT_KIND) return undefined;
+  if (item.kind !== kinds.item) return undefined;
 
   const target = previewItemTargetOf(item.data);
 
-  if (target?.id !== artifactId) return undefined;
+  if (target?.id !== artifactId || target.kind !== kinds.target)
+    return undefined;
 
   const data = item.data as {
     readonly pin?: unknown;
@@ -199,6 +205,7 @@ export const beginComment = async (
   services: Services,
   scope: PreviewScope | undefined,
   pending: PendingComment,
+  kind: string = PAPERCRAFT_COMMENT_KIND,
 ): Promise<CommentOutcome> => {
   const composer = composerFor(services, scope);
 
@@ -207,7 +214,7 @@ export const beginComment = async (
   // Chat draws (and edits) the line itself: the item names chat's own line.
   const item = await composer.api.addItem({
     threadId: composer.threadId,
-    kind: PAPERCRAFT_COMMENT_KIND,
+    kind,
     elementTag: CHAT_COMMENT_LINE_TAG,
     data: pending.data,
     note: pending.note,

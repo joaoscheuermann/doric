@@ -19,3 +19,10 @@ export const previewRuntimeUrl = (): string =>
 /** The `src` of every preview's iframe. */
 export const previewFrameSrc = (): string =>
   frameDocumentUrl(previewRuntimeUrl());
+
+/**
+ * The `src` of every papercraft fence's iframe: the platform's frame document
+ * running this bundle's program runtime, `…/client/frames/openui.js` (D6).
+ */
+export const programFrameSrc = (): string =>
+  frameDocumentUrl(new URL('./frames/openui.js', import.meta.url).href);

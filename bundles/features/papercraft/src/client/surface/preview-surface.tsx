@@ -47,15 +47,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   FrameContent,
+  FrameErrorsMessage,
   FrameMessage,
+  FrameProtocol,
   InputCapture,
   PreviewLayout,
   PreviewTheme,
+  ProgramFrameMessage,
   SceneNodeData,
 } from '../frame-protocol.js';
 import { previewFrameSrc } from '../frame-url.js';
 import { type FrameSize, lastFrameOf, rememberFrame } from './frame-memory.js';
-import { type FrameCursor, LiveFrame } from './live-frame.js';
+import {
+  type FrameCursor,
+  LiveFrame,
+  type ProgramContent,
+} from './live-frame.js';
 import {
   type SurfaceSnapshots,
   snapshotOf,
@@ -208,6 +215,17 @@ export interface PreviewSurfaceProps {
   readonly snapshots?: SurfaceSnapshots;
   /** How long a frame may take to say it mounted (`READY_TIMEOUT_MS`). */
   readonly readyTimeout?: number;
+  /**
+   * 2 for a papercraft program (D6): the frame is `frameSrc`, it is told
+   * `program` instead of a revision's content, and has none before it.
+   */
+  readonly protocol?: FrameProtocol;
+  /** Protocol 2: the frame's `init` and current `program`. */
+  readonly program?: ProgramContent;
+  /** Protocol 2: each `errors` message of the frame. */
+  readonly onErrors?: (errors: FrameErrorsMessage['errors']) => void;
+  /** Protocol 2: the frame may be the window's warm frame (a fence's node). */
+  readonly adopt?: boolean;
 }
 
 /** What the surface knows of the revision's content, per mount. */
@@ -246,6 +264,10 @@ export function PreviewSurface({
   title,
   snapshots,
   readyTimeout = READY_TIMEOUT_MS,
+  protocol = 1,
+  program,
+  onErrors,
+  adopt = false,
 }: PreviewSurfaceProps) {
   const hasModule = entries?.includes(MODULE_ENTRY) === true;
   const hasStyles = entries?.includes(STYLES_ENTRY) === true;
@@ -283,8 +305,8 @@ export function PreviewSurface({
 
   // The reporters are read when a message arrives, so a new callback
   // identity never remounts the artifact.
-  const reporters = useRef({ onScene, onMode, onInput, ensure });
-  reporters.current = { onScene, onMode, onInput, ensure };
+  const reporters = useRef({ onScene, onMode, onInput, ensure, onErrors });
+  reporters.current = { onScene, onMode, onInput, ensure, onErrors };
 
   /** The frame (its key) that last said what it mounted, or failed to. */
   const settled = useRef<string | undefined>(undefined);
@@ -329,7 +351,10 @@ export function PreviewSurface({
     const markupContent: FrameContent | undefined =
       markup === undefined ? undefined : { kind: 'markup', markup };
 
-    if (!hasModule) {
+    if (protocol === 2) {
+      // A program's frame is told its program, not a revision's content.
+      show(undefined);
+    } else if (!hasModule) {
       // A revision without a module: path A's markup is the revision.
       settle('markup');
       show(markupContent);
@@ -368,7 +393,7 @@ export function PreviewSurface({
       disposed = true;
       reporters.current.onScene?.(undefined);
     };
-  }, [artifactId, revision, markup, hasModule, hasStyles]);
+  }, [artifactId, revision, markup, hasModule, hasStyles, protocol]);
 
   const uncached = content.uncached;
 
@@ -466,8 +491,12 @@ export function PreviewSurface({
           ? 'over'
           : 'none';
 
-  const onMessage = (message: FrameMessage): void => {
+  const onMessage = (message: FrameMessage | ProgramFrameMessage): void => {
     switch (message.kind) {
+      case 'errors':
+        reporters.current.onErrors?.(message.errors);
+
+        return;
       case 'mounted': {
         // A module that did not load, by the frame's word or the cache's,
         // is the fallback; it hugs its markup as a component does.
@@ -553,10 +582,15 @@ export function PreviewSurface({
       )}
       {/* The live boundary: one frame per mount of a revision, while the
           preview holds one of the window's live frames. */}
-      {content.generation === 0 || !live ? null : (
+      {content.generation === 0 ||
+      !live ||
+      (protocol === 2 && program === undefined) ? null : (
         <LiveFrame
           key={frameKey}
           src={src}
+          protocol={protocol}
+          {...(program === undefined ? {} : { program })}
+          adopt={adopt}
           content={content.content}
           theme={theme}
           capture={capture}

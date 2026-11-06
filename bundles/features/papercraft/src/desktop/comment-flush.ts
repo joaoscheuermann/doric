@@ -15,6 +15,7 @@
 import type { ComposerFlush } from '../contracts/chat.js';
 import {
   type CommentAddInput,
+  PROGRAM_TARGET_KIND,
   previewItemTargetOf,
 } from '../contracts/index.js';
 
@@ -37,22 +38,42 @@ const inReplyToOf = (data: unknown): string | undefined => {
  * and, for a reply, the root it answers. The composer service hands the writes
  * to the sender, which performs the `comments/v1.add`.
  */
-export const papercraftFlush: ComposerFlush = (item) => {
-  const note = item.note.trim();
-  const target = previewItemTargetOf(item.data);
+export const papercraftFlush: ComposerFlush = (item) =>
+  Promise.resolve(writesOf(item, previewItemTargetOf(item.data)));
 
-  if (note === '' || target === undefined) {
-    return Promise.resolve([]);
-  }
+/** The one write of an item with a note and a target; none otherwise. */
+const writesOf = (
+  item: Parameters<ComposerFlush>[0],
+  target: CommentAddInput['target'] | undefined,
+): CommentAddInput[] => {
+  const note = item.note.trim();
+
+  if (note === '' || target === undefined) return [];
 
   const inReplyTo = inReplyToOf(item.data);
-  const write: CommentAddInput = {
-    target,
-    text: note,
-    commentId: item.id,
-    ...(inReplyTo === undefined ? {} : { inReplyTo }),
-    ...(item.author === undefined ? {} : { author: item.author }),
-  };
 
-  return Promise.resolve([write]);
+  return [
+    {
+      target,
+      text: note,
+      commentId: item.id,
+      ...(inReplyTo === undefined ? {} : { inReplyTo }),
+      ...(item.author === undefined ? {} : { author: item.author }),
+    },
+  ];
+};
+
+/**
+ * The `papercraft-program` flush (D19): `papercraftFlush`'s rules for an item
+ * whose `data` records a program target (`{ kind: 'papercraft-program', id:
+ * <identity>, revision, anchor }`) — no note or no target, no write; else one
+ * `comments/v1.add` with that target, the note, the item's id as the comment's
+ * id and, for a reply, the root it answers. Never rejects.
+ */
+export const programFlush: ComposerFlush = (item) => {
+  const target = previewItemTargetOf(item.data);
+
+  return Promise.resolve(
+    writesOf(item, target?.kind === PROGRAM_TARGET_KIND ? target : undefined),
+  );
 };

@@ -1,0 +1,15 @@
+{
+  "descriptorVersion": 1,
+  "bundle": { "id": "nodeless-sandbox", "version": "1.0.0" },
+  "contracts": [
+    {
+      "id": "sandbox/v1",
+      "version": "1.0.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": true,
+      "schema": "schemas/sandbox/v1.json"
+    }
+  ]
+}

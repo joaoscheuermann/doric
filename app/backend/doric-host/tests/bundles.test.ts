@@ -349,6 +349,13 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['chat', 'openui'],
       ['runtime', 'openui'],
       ['core', 'openui'],
+      // papercraft 1.3.0 requires openui's generative-ui, setting and
+      // programs contracts, chat.views/v1, the runtime's threads and hooks,
+      // and the core's skills, settings and events.
+      ['openui', 'papercraft'],
+      ['chat', 'papercraft'],
+      ['runtime', 'papercraft'],
+      ['core', 'papercraft'],
     ] as const)
       assert.ok(
         order.indexOf(provider) < order.indexOf(consumer),
@@ -682,5 +689,168 @@ void test("the structural requirement is the composition's: a contract it names 
     );
   } finally {
     await host.platform.stop();
+  }
+});
+
+// PC23 (papercraft-openui.md D28, R36): with the real `default` and
+// `papercraft` bundles and the setting on, papercraft finds the skill load in
+// the Thread log by `default`'s tool name and input. Prompt 1 loads the skill;
+// prompt 2's start finds the load and starts a library job; prompt 3's first
+// model request carries the instruct of that job's failure, which has no root,
+// so only the skill load read from the log can have brought it. A prompt runs
+// only on a Project that holds a sandbox lease, so `docker` is swapped for the
+// `nodeless-sandbox` fixture: its Project is ready without Docker, and no
+// `node` in it makes the library job fail. Prompts need the database.
+void test('PC23: a papercraft skill load read from the log brings the library instruct at the second prompt start', {
+  skip:
+    process.env.DORIC_TEST_DATABASE_URL === undefined
+      ? 'Requires DORIC_TEST_DATABASE_URL'
+      : false,
+  timeout: 180_000,
+}, async () => {
+  const connectionString = process.env.DORIC_TEST_DATABASE_URL;
+  assert.ok(connectionString);
+  const { freshDatabase } = await import('./helpers/host.js');
+  const { credentialKey } = await import('./helpers/platform.js');
+  const { papercraftPrompts, scriptedEndpoint, scriptedModel } = await import(
+    './helpers/integration-provider.js'
+  );
+  const { defaultConfig } = await import('host-config/testing');
+  const { ref } = await import('bundle/contracts');
+  const database = await freshDatabase(connectionString);
+  const model = await scriptedEndpoint();
+  const saved = {
+    url: process.env.DORIC_DATABASE_URL,
+    key: process.env.DORIC_CREDENTIAL_KEY,
+  };
+  process.env.DORIC_DATABASE_URL = database.url;
+  process.env.DORIC_CREDENTIAL_KEY = credentialKey;
+
+  const root = await stagedCopy();
+
+  try {
+    await cp(
+      join(generationFixtures, 'nodeless-sandbox'),
+      join(root, 'nodeless-sandbox'),
+      { recursive: true },
+    );
+    // The contract schema the fixture declares is the one the build staged.
+    await cp(
+      join(root, 'docker', 'schemas'),
+      join(root, 'nodeless-sandbox', 'schemas'),
+      { recursive: true },
+    );
+    const host = await startWith(root, (composition) => ({
+      ...composition,
+      enabled: composition.enabled.map((id) =>
+        id === 'docker' ? 'nodeless-sandbox' : id,
+      ),
+    }));
+
+    try {
+      const request = async <T>(
+        path: string,
+        method = 'GET',
+        body?: unknown,
+      ): Promise<T> => {
+        const response = await fetch(`${host.url}${path}`, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+        assert.ok(
+          response.ok,
+          `${method} ${path}: ${await response.clone().text()}`,
+        );
+        return (
+          response.status === 204 ? undefined : await response.json()
+        ) as T;
+      };
+      const credential = await request<{ id: string }>('/credentials', 'POST', {
+        kind: 'API_TOKEN',
+        name: 'scripted',
+        secret: 'sk-scripted',
+      });
+      await request('/config', 'PUT', {
+        ...defaultConfig,
+        providers: [
+          {
+            id: 'scripted',
+            kind: 'openrouter',
+            configuration: { endpoint: model.endpoint, token: credential.id },
+            models: [{ name: scriptedModel, reasonings: [] }],
+          },
+        ],
+        models: { execution: { providerId: 'scripted', model: scriptedModel } },
+      });
+      // The Generative UI setting, written as a window writes it.
+      await host.platform.services
+        .use(
+          ref<{ set(value: { enabled: boolean }): Promise<unknown> }>(
+            'openui.setting/v1',
+          ),
+        )
+        .set({ enabled: true });
+
+      const project = await request<{ id: string }>('/projects', 'POST', {
+        name: 'PC23',
+      });
+      const thread = await request<{ id: string }>(
+        `/projects/${project.id}/threads`,
+        'POST',
+        { name: 'PC23 thread' },
+      );
+      const finished = async (promptId: string) => {
+        for (const end = Date.now() + 120_000; Date.now() < end; ) {
+          const { events } = await request<{
+            events: { type: string; promptId: string }[];
+          }>(`/threads/${thread.id}/events`);
+          if (
+            events.some(
+              (event) =>
+                event.type === 'prompt.finished' && event.promptId === promptId,
+            )
+          ) {
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        assert.fail(`prompt ${promptId} did not finish`);
+      };
+      for (const prompt of [
+        papercraftPrompts.load,
+        papercraftPrompts.second,
+        papercraftPrompts.third,
+      ]) {
+        const { promptId } = await request<{ promptId: string }>(
+          `/threads/${thread.id}/prompt`,
+          'POST',
+          { prompt },
+        );
+        await finished(promptId);
+      }
+
+      assert.deepEqual(model.failures, []);
+      const third = model.requests.find(({ messages }) =>
+        JSON.stringify(messages).includes(papercraftPrompts.third),
+      );
+      assert.ok(third, 'prompt 3 reached the model');
+      assert.ok(
+        JSON.stringify(third.messages).includes(
+          'The repository library could not be checked: The sandbox could not run the library job: the sandbox has no `node`',
+        ),
+        'prompt 3 carries the library instruct',
+      );
+    } finally {
+      await host.platform.stop();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    process.env.DORIC_DATABASE_URL = saved.url;
+    process.env.DORIC_CREDENTIAL_KEY = saved.key;
+    if (saved.url === undefined) delete process.env.DORIC_DATABASE_URL;
+    if (saved.key === undefined) delete process.env.DORIC_CREDENTIAL_KEY;
+    await model.close();
+    await database.close();
   }
 });

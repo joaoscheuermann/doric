@@ -366,14 +366,15 @@ export function usePreviewData({
     if (!composerReady || projectId === undefined || threadId === undefined)
       return;
 
-    const composer = composerFor(services, { projectId, threadId });
-
-    if (composer === undefined) return;
-
     let current: readonly ComposerItem[] = [];
     let subscription: { dispose(): void } | undefined;
 
     try {
+      // A window whose services have no composer has no stack to read.
+      const composer = composerFor(services, { projectId, threadId });
+
+      if (composer === undefined) return;
+
       // The portrait first, then the deltas — the shape of
       // `runtime.threads/v1.watchThread`.
       subscription = composer.api.watch(composer.threadId, (watch) => {

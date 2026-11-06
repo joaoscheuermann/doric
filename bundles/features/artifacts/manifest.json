@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "artifacts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engines": { "doric": "^1.0.0" },
   "description": "The Project's reviewable deliverables: stable identity, immutable revisions, their events and the review policy.",
   "provides": [

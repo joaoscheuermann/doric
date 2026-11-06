@@ -60,17 +60,40 @@ export const harnessCandidates = (sourcePath: string): readonly string[] => {
   return candidates;
 };
 
-/** The Project's harness for one preview, or `undefined` when it has none. */
+/**
+ * The Project's harness for one preview or library, or `undefined` when it has
+ * none: the nearest candidate `read` answers, walking up from `sourcePath`.
+ * The walk stops after the first directory `isRepositoryRoot` answers `true`
+ * for (D15), so no harness above the nearest repository root is found; absent,
+ * it walks to the workspace root. A rejected `isRepositoryRoot` counts as
+ * `false`.
+ */
 export const findHarness = async (
   read: (path: string) => Promise<string | undefined>,
   sourcePath: string,
+  isRepositoryRoot?: (dir: string) => Promise<boolean>,
 ): Promise<string | undefined> => {
-  for (const candidate of harnessCandidates(sourcePath)) {
-    if (candidate === sourcePath) continue;
-    if ((await read(candidate)) !== undefined) return candidate;
-  }
+  let dir = posix.dirname(sourcePath);
 
-  return undefined;
+  for (;;) {
+    for (const candidate of harnessCandidates(`${dir}/x`)) {
+      if (posix.dirname(posix.dirname(candidate)) !== dir) break;
+      if (candidate === sourcePath) continue;
+      if ((await read(candidate)) !== undefined) return candidate;
+    }
+
+    if (dir === '.' || dir === '' || dir === '/') return undefined;
+
+    const stops =
+      isRepositoryRoot === undefined
+        ? false
+        : await Promise.resolve()
+            .then(() => isRepositoryRoot(dir))
+            .catch(() => false);
+
+    if (stops) return undefined;
+    dir = posix.dirname(dir);
+  }
 };
 
 /**

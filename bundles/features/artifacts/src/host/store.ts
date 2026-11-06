@@ -4,8 +4,9 @@
 // (`runtime.lease/v1.withLease`) exactly as `files` reaches the workspace —
 // never acquiring a lease, and answering the lease state when there is none.
 // The directory belongs to the app, not to the user's code — it is born
-// Git-ignored (`.doric/.gitignore`, `*`) — and the log stays the durable
-// truth: this manifest is regenerable and its revisions are never rewritten.
+// Git-ignored (`.doric/artifacts/.gitignore`, `*`) — and the log stays the
+// durable truth: this manifest is regenerable and its revisions are never
+// rewritten.
 //
 // A revision's bytes live in a directory of their own, so revision 2 never
 // overwrites what revision 1 named. A work copy written before that layout
@@ -37,10 +38,14 @@ import {
 /** The directory of a Project's artifacts, relative to its workspace root. */
 export const artifactsDirectory = '.doric/artifacts';
 
-/** The Git ignore that keeps the app's directory out of the user's code. */
-export const dotDoricGitignore = '.doric/.gitignore';
+/**
+ * The Git ignore that keeps the store's directory out of the user's code
+ * (papercraft-openui.md D8): each Doric folder under `.doric/` ignores itself,
+ * so `.doric/papercraft/schemas/` stays versionable.
+ */
+export const artifactsGitignore = `${artifactsDirectory}/.gitignore`;
 
-/** What `.doric/.gitignore` says: the whole directory is app state. */
+/** What `.doric/artifacts/.gitignore` says: the whole directory is app state. */
 export const DOT_DORIC_IGNORE = '*';
 
 /** The sha256 of a payload's bytes, lowercase hex. */
@@ -291,12 +296,13 @@ export const createArtifactStore = (
   };
 
   /**
-   * `.doric/` is app state in the user's Project: before the first write under
-   * it, the store makes sure `.doric/.gitignore` exists with `*` — versioning
-   * an artifact is a choice, not the default.
+   * `.doric/artifacts/` is app state in the user's Project: before the first
+   * write under it, the store makes sure `.doric/artifacts/.gitignore` exists
+   * with `*` — versioning an artifact is a choice, not the default. An ignore
+   * file that exists is left as the user wrote it.
    */
   const ensureIgnored = async (sandbox: Sandbox): Promise<void> => {
-    const ignore = `${withoutTrailingSlash(sandbox.root)}/${dotDoricGitignore}`;
+    const ignore = `${withoutTrailingSlash(sandbox.root)}/${artifactsGitignore}`;
 
     if ((await getFile(sandbox, ignore)) !== undefined) return;
 

@@ -780,3 +780,66 @@ test('caching a revision fails when its module cannot reach the cache', async ()
   );
   assert.deepEqual(unscoped.ensured, []);
 });
+
+// PC29 (papercraft-openui.md D6, D24): the old path does not change with the
+// Generative UI setting. An artifact preview, mounted by the registry's frame
+// as `<papercraft-preview>` under the client part as it activates, renders
+// through `preview.ts` on protocol 1 and takes a comment with the `artifact`
+// target on the `papercraft-preview` stack kind, with the setting off and on.
+
+const OLD_PATH_MARKUP =
+  '<!DOCTYPE html><html><body><button id="pay" data-papercraft-source="src/checkout.html:42">Pagar agora</button></body></html>';
+
+for (const setting of [false, true]) {
+  test(`PC29: an artifact preview renders through preview.ts on protocol 1 and takes an artifact comment, setting ${setting ? 'on' : 'off'}`, async () => {
+    const { commentOn, mountPreview, startHost, until } = await import(
+      './support/fence-host.js'
+    );
+    const host = await startHost({
+      setting,
+      artifacts: [
+        {
+          artifactId: 'checkout-7f3a',
+          title: 'Checkout',
+          markup: OLD_PATH_MARKUP,
+        },
+      ],
+    });
+
+    const node = await mountPreview(host, {
+      data: {
+        artifactId: 'checkout-7f3a',
+        revision: 1,
+        projectId: 'p1',
+        threadId: 't1',
+        title: 'Checkout',
+        targets: [{ path: 'src/checkout.html' }],
+      },
+    });
+    const frame = await until(
+      node.frame,
+      (found) => found?.rendered === true,
+      'the artifact preview never rendered',
+    );
+
+    assert.equal(frame?.protocol, 1);
+    assert.equal(
+      node.element.querySelector('iframe')?.getAttribute('src'),
+      frameUrl.previewFrameSrc(),
+    );
+    assert.equal(frame?.init?.content.kind, 'markup');
+
+    const draft = await commentOn(host, node, '#pay', 'mais respiro');
+    const target = (
+      draft.data as {
+        readonly target: { readonly kind: string; readonly id: string };
+      }
+    ).target;
+    assert.equal(draft.kind, 'papercraft-preview');
+    assert.equal(target.kind, 'artifact');
+    assert.equal(target.id, 'checkout-7f3a');
+
+    await node.remove();
+    await host.dispose();
+  });
+}

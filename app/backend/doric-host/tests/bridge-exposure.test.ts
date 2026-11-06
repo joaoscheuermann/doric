@@ -142,6 +142,7 @@ void test('desktop providers expose exactly the operations used by clients', asy
     'history.snapshots/v1': ['read', 'write'],
     'menus/v1': ['addItem', 'addKeybinding', 'setContext'],
     'notifications.observations/v1': ['report'],
+    'papercraft.cache/v1': ['ensure'],
     'papercraft.snapshot/v1': ['capture'],
     'screen.views/v1': [
       'add',

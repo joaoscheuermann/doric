@@ -47,7 +47,10 @@ export type OpenComment =
 export interface CommentFlowInput {
   readonly services: Services;
   readonly scope: PreviewScope | undefined;
-  readonly artifactId: string;
+  /** The comment target the canvas lists (`targetKeyOf`). */
+  readonly target: { readonly kind: string; readonly id: string };
+  /** The composer stack item kind a new comment joins as. */
+  readonly itemKind: string;
   /** The revision on screen: what a new comment is written against. */
   readonly revision: number | undefined;
   readonly threads: readonly PreviewThread[];
@@ -125,7 +128,8 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
     openRootId === undefined
       ? undefined
       : threadViewOf(openRootId, input.threads, input.drafts, {
-          artifactId: input.artifactId,
+          kind: input.target.kind,
+          artifactId: input.target.id,
           ...(input.revision === undefined ? {} : { revision: input.revision }),
         });
 
@@ -173,7 +177,12 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
       try {
         if (open?.kind === 'new') {
           if (note !== '')
-            await beginComment(services, scope, { data: open.data, note });
+            await beginComment(
+              services,
+              scope,
+              { data: open.data, note },
+              self.current.itemKind,
+            );
 
           return;
         }
@@ -192,15 +201,20 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
 
         if (note === '' || thread === undefined) return;
 
-        await beginComment(services, scope, {
-          data: {
-            target: thread.target,
-            pin: thread.pin,
-            inReplyTo: thread.rootId,
-            refs,
+        await beginComment(
+          services,
+          scope,
+          {
+            data: {
+              target: thread.target,
+              pin: thread.pin,
+              inReplyTo: thread.rootId,
+              refs,
+            },
+            note,
           },
-          note,
-        });
+          self.current.itemKind,
+        );
       } catch {
         // The stack is unreachable: the gesture leaves nothing behind.
       }
@@ -216,7 +230,7 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
     };
 
     const beginNew = (anchor: CommentAnchor, point: ContentPoint): void => {
-      const { artifactId, revision, threads, drafts, refs } = self.current;
+      const { target, revision, threads, drafts, refs } = self.current;
 
       if (revision === undefined) return;
 
@@ -226,7 +240,7 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
       setOpen({
         kind: 'new',
         data: {
-          target: targetOf(artifactId, revision, anchor),
+          target: targetOf(target.id, revision, anchor, target.kind),
           pin: nextPinOf(threads, drafts),
           point,
           refs,
