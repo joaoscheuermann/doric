@@ -1,7 +1,10 @@
-// Validation feedback in the host (openui.md D18): the errors windows report
-// through `openui.programs/v1` are kept per Thread, for both tags, and reach
-// the agent at the start of the Thread's next prompt as one `validation`
-// instruct.
+// Validation feedback in the host (openui.md D18, U50): the errors windows
+// report through `openui.programs/v1` are kept per Thread, for both tags, and
+// reach the agent in the same turn. A `closed` report is a `validation`
+// instruct 200 ms after it arrives, steering the prompt that runs now, within a
+// budget of three per prompt that a validation instruct did not start; an `unterminated` report, or
+// one the budget or a queued instruct holds, waits for the Thread's next prompt
+// start, which gives every waiting line in one instruct.
 
 import {
   type Call,
@@ -10,7 +13,7 @@ import {
   defineService,
   type Services,
 } from 'bundle/contracts';
-import { RuntimeThreadsV1 } from 'runtime/contracts';
+import { type InputSource, RuntimeThreadsV1 } from 'runtime/contracts';
 
 import {
   type OpenUIErrorCodeName,
@@ -50,14 +53,29 @@ const MAX_LINES = 50;
 /** The most Threads the host keeps an entry for. */
 const MAX_THREADS = 1000;
 
+/** How long a `closed` report waits for others before its instruct. */
+const REPORT_DELAY_MS = 200;
+
+/** The immediate instructs of one prompt that a validation instruct did not start. */
+const MAX_IMMEDIATE = 3;
+
 /** One Thread's pending lines, for both tags. */
 interface Entry {
-  readonly promptId: string;
-  readonly previousPromptId?: string;
-  readonly lines: string[];
+  promptId: string;
+  previousPromptId?: string;
+  /** Lines for the next immediate instruct. */
+  now: string[];
+  /** Lines held for the next prompt start. */
+  later: string[];
   /** Line ids already listed: tag, key, code and statement (or the cut-off mark). */
-  readonly seen: Set<string>;
+  seen: Set<string>;
   dropped: number;
+  /** Immediate instructs left until a prompt starts that a validation instruct did not start. */
+  budget: number;
+  /** The prompt an immediate instruct was queued as, until it starts. */
+  queued?: string;
+  timer?: ReturnType<typeof setTimeout>;
+  flushing: boolean;
 }
 
 /** The prompt of a fence key: the part before the first `/`. */
@@ -80,16 +98,91 @@ const scopeOf = (call: Call): { readonly threadId: string } => {
   return { threadId };
 };
 
+/** The instruct's text for `lines`, with the count of the ones not listed. */
+const promptText = (lines: readonly string[], dropped: number): string => {
+  const more =
+    dropped > 0 ? `\n\nand ${dropped} more errors were not listed` : '';
+  return `${OPENING}\n\n${lines.join('\n')}${more}`;
+};
+
+/** Whether `source` is a prompt this bundle's validation instruct queued. */
+const isValidationStart = (source: InputSource | undefined): boolean =>
+  source?.kind === 'bundle' &&
+  source.bundleId === 'openui' &&
+  source.reason === 'validation';
+
 /** The entries of every Thread, and the hook and service over them. */
-export const createValidation = () => {
+export const createValidation = (services: Services) => {
   // Insertion order is prompt start order: the first entry started longest ago.
   const entries = new Map<string, Entry>();
+  let disposed = false;
 
-  const add = (entry: Entry, id: string, line: string): void => {
+  const startTimer = (threadId: string, entry: Entry): void => {
+    if (disposed || entry.timer !== undefined) return;
+    entry.timer = setTimeout(() => {
+      void flush(threadId, entry);
+    }, REPORT_DELAY_MS);
+  };
+
+  const clearTimer = (entry: Entry): void => {
+    if (entry.timer !== undefined) clearTimeout(entry.timer);
+    delete entry.timer;
+  };
+
+  /** The timer's immediate instruct of the lines in `now`. */
+  const flush = async (threadId: string, entry: Entry): Promise<void> => {
+    clearTimer(entry);
+    if (entry.flushing || entry.now.length === 0) return;
+
+    const lines = entry.now.splice(0);
+    const { dropped } = entry;
+    entry.dropped = 0;
+    entry.flushing = true;
+    entry.budget -= 1;
+
+    const giveBack = (): void => {
+      entry.later.unshift(...lines);
+      entry.dropped += dropped;
+      entry.budget += 1;
+    };
+
+    try {
+      const result = await services.use(RuntimeThreadsV1).instruct({
+        id: threadId,
+        prompt: promptText(lines, dropped),
+        reason: 'validation',
+        promptId: entry.promptId,
+      });
+      if (result.status === 'queued') entry.queued = result.promptId;
+      else if (result.status !== 'steered') giveBack();
+    } catch {
+      // A failed instruct keeps its lines for the next prompt start.
+      giveBack();
+    } finally {
+      entry.flushing = false;
+      if (entry.now.length > 0) startTimer(threadId, entry);
+    }
+  };
+
+  const add = (
+    threadId: string,
+    entry: Entry,
+    id: string,
+    line: string,
+    immediate: boolean,
+  ): void => {
     if (entry.seen.has(id)) return;
     entry.seen.add(id);
-    if (entry.lines.length < MAX_LINES) entry.lines.push(line);
-    else entry.dropped += 1;
+    if (entry.now.length + entry.later.length >= MAX_LINES) {
+      entry.dropped += 1;
+      return;
+    }
+    if (!immediate || entry.budget === 0 || entry.queued !== undefined) {
+      entry.later.push(line);
+      return;
+    }
+    entry.now.push(line);
+    if (entry.now.length === 1) startTimer(threadId, entry);
   };
 
   const report = (threadId: string, input: ProgramErrorsInput): void => {
@@ -103,9 +196,11 @@ export const createValidation = () => {
       return;
     }
 
+    const immediate = input.state === 'closed';
     const head = `${input.tag} ${input.identity} r${input.revision}`;
     for (const error of input.errors) {
       add(
+        threadId,
         entry,
         JSON.stringify([
           input.tag,
@@ -116,53 +211,72 @@ export const createValidation = () => {
         `${head} ${error.statementId ?? '-'}: ${error.code} ${
           error.message ?? FIXED_TEXT[error.code]
         }`,
+        immediate,
       );
     }
     if (input.state === 'unterminated') {
       add(
+        threadId,
         entry,
         JSON.stringify([input.tag, input.key, 'unterminated']),
         `${head}: cut off before the fence closed`,
+        false,
       );
     }
   };
 
-  /** `onPromptStartedHook`: one instruct when the entry has lines, then a fresh entry. */
+  /** `onPromptStartedHook`: the entry moves to the new prompt and gives every waiting line in one instruct. */
   const promptStarted = async (
-    services: Services,
-    input: { readonly threadId: string; readonly promptId: string },
+    input: {
+      readonly threadId: string;
+      readonly promptId: string;
+      readonly source?: InputSource;
+    },
     call: Call,
   ): Promise<void> => {
-    const entry = entries.get(input.threadId);
+    const found = entries.get(input.threadId);
     entries.delete(input.threadId);
 
-    if (entries.size >= MAX_THREADS) {
-      const oldest = entries.keys().next().value;
-      if (oldest !== undefined) entries.delete(oldest);
+    const entry: Entry = found ?? {
+      promptId: input.promptId,
+      now: [],
+      later: [],
+      seen: new Set(),
+      dropped: 0,
+      budget: MAX_IMMEDIATE,
+      flushing: false,
+    };
+    entries.set(input.threadId, entry);
+
+    if (entries.size > MAX_THREADS) {
+      const [oldestId, oldest] = entries.entries().next().value ?? [];
+      if (oldestId !== undefined && oldest !== undefined) {
+        clearTimer(oldest);
+        entries.delete(oldestId);
+      }
     }
 
-    entries.set(input.threadId, {
-      promptId: input.promptId,
-      ...(entry === undefined ? {} : { previousPromptId: entry.promptId }),
-      lines: [],
-      seen: new Set(
-        [...(entry?.seen ?? [])].filter(
-          (id) => seenPromptOf(id) === entry?.promptId,
-        ),
-      ),
-      dropped: 0,
-    });
+    if (found !== undefined) {
+      entry.previousPromptId = found.promptId;
+      entry.promptId = input.promptId;
+      const previous = entry.previousPromptId;
+      entry.seen = new Set(
+        [...entry.seen].filter((id) => seenPromptOf(id) === previous),
+      );
+    }
+    clearTimer(entry);
+    if (entry.queued === input.promptId) delete entry.queued;
+    if (!isValidationStart(input.source)) entry.budget = MAX_IMMEDIATE;
 
-    if (entry === undefined || entry.lines.length === 0) return;
+    if (entry.flushing || entry.later.length + entry.now.length === 0) return;
 
-    const more =
-      entry.dropped > 0
-        ? `\n\nand ${entry.dropped} more errors were not listed`
-        : '';
+    const lines = [...entry.later.splice(0), ...entry.now.splice(0)];
+    const { dropped } = entry;
+    entry.dropped = 0;
     await services.use(RuntimeThreadsV1).instruct(
       {
         id: input.threadId,
-        prompt: `${OPENING}\n\n${entry.lines.join('\n')}${more}`,
+        prompt: promptText(lines, dropped),
         reason: 'validation',
         promptId: input.promptId,
       },
@@ -181,5 +295,11 @@ export const createValidation = () => {
       }),
     });
 
-  return { promptStarted, service };
+  /** Stops every pending timer; no instruct starts after. */
+  const dispose = (): void => {
+    disposed = true;
+    for (const entry of entries.values()) clearTimer(entry);
+  };
+
+  return { promptStarted, service, dispose };
 };

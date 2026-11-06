@@ -69,8 +69,12 @@ newest revision. The canvas window opens the thread on the revision on screen,
 since every revision shows every thread.
 
 A papercraft fence has no actions: `Query` and `Mutation` do not exist in it,
-and nothing in it sends anything to the conversation. Errors of a drawn fence
-reach the agent at its next prompt through `openui.programs/v1`.
+and nothing in it sends anything to the conversation. A drawn fence's errors,
+with library and `Export` notes, show in one card under it, and a complete fence
+that draws nothing says "Nothing to draw: this program has errors." Errors of a
+closed fence reach the agent through `openui.programs/v1`: while the prompt
+runs, as a steer; after it finished, as a new prompt. An unterminated fence's
+errors wait for the next prompt.
 
 ## What it provides
 

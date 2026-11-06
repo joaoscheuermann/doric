@@ -49,9 +49,12 @@ const toolStatements = (program: string): readonly string[] => {
   );
 };
 
-/** The conversation's own check of a fence's program, run once, at its report (D29). */
-export const check = (
-  view: ChatFenceView,
+/**
+ * The program half of `check`: `Query`/`Mutation`, `@OpenUrl` and an
+ * `AskForm` off the root when the fence is not a question (D29). The
+ * reader's card shows these.
+ */
+export const programCheck = (
   revision: ProgramRevision,
 ): readonly ReportedError[] => {
   const program = typeof revision.program === 'string' ? revision.program : '';
@@ -86,27 +89,43 @@ export const check = (
         });
       }
     }
-    return errors;
-  }
-
-  if (view.origin === 'agent') {
-    errors.push({
-      code: 'runtime-error',
-      statementId: 'root',
-      message: REFUSED,
-    });
-  } else if (view.fence.state === 'closed') {
-    const read = questionOf(program);
-    if (read.input === undefined) {
-      errors.push({
-        code: 'runtime-error',
-        statementId: 'root',
-        message: `Invalid question: ${read.issue ?? ''}`.slice(0, MAX_MESSAGE),
-      });
-    }
   }
   return errors;
 };
+
+/**
+ * The question half of `check`: the refusal in an agent's Thread and the
+ * invalid-question line of a closed question fence (D29).
+ */
+export const questionCheck = (
+  view: ChatFenceView,
+  revision: ProgramRevision,
+): readonly ReportedError[] => {
+  if (!revision.question) return [];
+  if (view.origin === 'agent') {
+    return [{ code: 'runtime-error', statementId: 'root', message: REFUSED }];
+  }
+  if (view.fence.state !== 'closed') return [];
+  const program = typeof revision.program === 'string' ? revision.program : '';
+  const read = questionOf(program);
+  if (read.input !== undefined) return [];
+  return [
+    {
+      code: 'runtime-error',
+      statementId: 'root',
+      message: `Invalid question: ${read.issue ?? ''}`.slice(0, MAX_MESSAGE),
+    },
+  ];
+};
+
+/** The conversation's own check of a fence's program, run once, at its report (D29). */
+export const check = (
+  view: ChatFenceView,
+  revision: ProgramRevision,
+): readonly ReportedError[] => [
+  ...programCheck(revision),
+  ...questionCheck(view, revision),
+];
 
 /** OpenUI's error as reported: its message, with D7's hint for `unknown-component`, cut to 300 characters. */
 export const map = (error: OpenUIErrorLike): ReportedError => {

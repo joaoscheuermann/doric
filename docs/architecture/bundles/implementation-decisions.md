@@ -1331,3 +1331,8 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 - **Versões.** `openui` 2.0.0, `papercraft` 1.2.0 → 2.0.0, `threads` 1.1.0 → 2.0.0, `chat` 1.5.1 → 1.6.0.
 - **Substitui.** Os registros "Tool ask: perguntas ao usuário" e "Ask: apagar a resposta livre e pular perguntas" (2026-10-28) descrevem uma tool que não existe mais; ficam como histórico.
 - **Rollback.** Só por revert do merge do estágio 4.
+
+## OpenUI: cartão de erros, erros no mesmo turno e regras das skills (estágio 5, 2026-11-06)
+
+- **Entrega dos erros (U50).** `openui.programs/v1` envia os erros de uma fence fechada 200 ms depois do relatório, como instruct `validation` que mira o último prompt da Thread: steer enquanto ele roda, novo prompt na fila depois que terminou. Cada prompt que a validação não iniciou permite no máximo 3 envios imediatos; o hook de início de prompt zera essa conta e entrega o que esperava. Os erros de uma fence `unterminated` esperam o próximo início de prompt. Ver D18 em [openui.md](../../designs/openui.md#d18-validation-feedback-u19).
+- **Cartão (U49) e skills (U51).** O leitor vê os erros num cartão sob a fence, nos dois hosts; as skills `openui` e `papercraft` ganham a regra de patch e, na `openui`, os limites do formulário de perguntas.

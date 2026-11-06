@@ -1,7 +1,7 @@
 // The `openui` bundle's host part (openui.md D17, D18, D24; conversation-openui.md
 // D22): the `openui` skill, registered at activation, the error sink
-// `openui.programs/v1` with its instruct at each prompt start, and the
-// question service.
+// `openui.programs/v1` with its `validation` instructs in the same turn (200 ms
+// after a closed report) and at each prompt start, and the question service.
 
 import { readFileSync } from 'node:fs';
 
@@ -34,7 +34,7 @@ const skill = {
 const skillOptions = { order: 3400, alwaysAvailable: false } as const;
 
 export const activate = ({ services }: HostContext): Cleanup => {
-  const validation = createValidation();
+  const validation = createValidation(services);
   services.provide(validation.service());
   services.provide(questionsService());
   services.use(EventsV1).register(answeredEvent);
@@ -43,7 +43,7 @@ export const activate = ({ services }: HostContext): Cleanup => {
     .use(HooksV1)
     .whenAvailable(RuntimeHooksV1, (registrar) => {
       const started = registrar.onPromptStartedHook((input, call) =>
-        validation.promptStarted(services, input, call),
+        validation.promptStarted(input, call),
       );
 
       return () => {
@@ -57,5 +57,6 @@ export const activate = ({ services }: HostContext): Cleanup => {
   return () => {
     registered.dispose();
     hooks.dispose();
+    validation.dispose();
   };
 };

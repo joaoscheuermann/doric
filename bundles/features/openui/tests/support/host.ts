@@ -26,6 +26,7 @@ import {
 } from 'bundle/contracts';
 import { createTestServices, type TestServices } from 'bundle/testing';
 import {
+  type InputSource,
   RuntimeThreadsV1,
   runtimeThreadsMethods,
   type Thread,
@@ -185,6 +186,7 @@ export interface HostWorld {
       readonly prompt: string;
       readonly reason: string;
       readonly promptId?: string;
+      readonly interrupt?: boolean;
       readonly retain?: boolean;
     };
     readonly inHook: boolean;
@@ -200,8 +202,15 @@ export interface HostWorld {
     };
     disposed: boolean;
   }[];
-  /** Fires `runtime.hooks/v1.onPromptStartedHook` for a prompt of a Thread and awaits its handlers. */
-  promptStarted(threadId: string, promptId: string): Promise<void>;
+  /**
+   * Fires `runtime.hooks/v1.onPromptStartedHook` for a prompt of a Thread and
+   * awaits its handlers; `source` is the prompt's, `{ kind: 'user' }` by default.
+   */
+  promptStarted(
+    threadId: string,
+    promptId: string,
+    source?: InputSource,
+  ): Promise<void>;
   /** Removes every row from the first row of `promptId` on, as the runtime's rewind does. */
   rewind(threadId: string, promptId: string): void;
   /** Appends a row to the log, as a prompt's own events would. */
@@ -394,13 +403,17 @@ export const activateHost = async (
     instructs,
     registeredEvents,
     skills,
-    promptStarted: async (threadId, promptId) => {
+    promptStarted: async (
+      threadId,
+      promptId,
+      source: InputSource = { kind: 'user' },
+    ) => {
       const thread = threads.get(threadId);
       const input = {
         projectId: thread?.projectId ?? projectId,
         threadId,
         promptId,
-        source: { kind: 'user' as const },
+        source,
         cwd: '/workspace',
       };
       const call = test.call({

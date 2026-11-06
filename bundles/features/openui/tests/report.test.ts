@@ -13,6 +13,7 @@ import {
   type ProgramErrorsInput,
   programErrorsInputSchema,
   type ReportedError,
+  shownErrors,
 } from '../src/contracts/index.js';
 
 const HINT =
@@ -276,4 +277,188 @@ test('a send that rejects raises nothing and is not called again', async () => {
 
   assert.equal(calls, 1);
   assert.deepEqual(unhandled, []);
+});
+
+// B15 (changed, U49): `sent()` tells the card's footer whether the report went.
+
+test('sent() is false before any call, after streaming calls and after a closed call with no error', () => {
+  const { reporter } = reporterWith();
+
+  assert.equal(reporter.sent(), false);
+  reporter.onError([error('no-root', 'No root')], 'streaming');
+  assert.equal(reporter.sent(), false);
+  reporter.onError([], 'closed');
+  assert.equal(reporter.sent(), false);
+});
+
+test('sent() is true after the first call that sends', () => {
+  const { reporter, sent } = reporterWith();
+
+  reporter.onError([error('no-root', 'No root')], 'streaming');
+  reporter.onError([error('no-root', 'No root')], 'closed');
+
+  assert.equal(sent.length, 1);
+  assert.equal(reporter.sent(), true);
+});
+
+test('sent() is true after an unterminated call with no error', () => {
+  const { reporter } = reporterWith();
+
+  reporter.onError([], 'unterminated');
+
+  assert.equal(reporter.sent(), true);
+});
+
+test('sent() is true once send was called, also when send rejects', async () => {
+  const { reporter } = reporterWith({
+    send: async () => {
+      throw new Error('unavailable');
+    },
+  });
+
+  reporter.onError([error('no-root', 'No root')], 'closed');
+  assert.equal(reporter.sent(), true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(reporter.sent(), true);
+});
+
+// B29 (openui.md D18, "The reader's card"): the card's lines.
+
+const MERGE_MESSAGE =
+  'This patch could not be merged into the previous revision; write the whole program again.';
+
+test("with mergeFailed the first line is D18's merge error", () => {
+  const lines = shownErrors({
+    mergeFailed: true,
+    owned: [{ code: 'tool-not-found', statementId: 'data', message: 'owned' }],
+    rendered: [error('no-root', 'No root')],
+  });
+
+  assert.deepEqual(lines, [
+    { code: 'parse-exception', message: MERGE_MESSAGE },
+    { code: 'tool-not-found', statementId: 'data', message: 'owned' },
+    { code: 'no-root', message: 'No root' },
+  ]);
+});
+
+test('owned lines come before rendered lines', () => {
+  const lines = shownErrors({
+    mergeFailed: false,
+    owned: [
+      { code: 'unknown-function', statementId: 'btn', message: 'checked' },
+    ],
+    rendered: [
+      error('unknown-component', 'Foo is unknown', { statementId: 'card' }),
+    ],
+  });
+
+  assert.deepEqual(lines, [
+    { code: 'unknown-function', statementId: 'btn', message: 'checked' },
+    { code: 'unknown-component', statementId: 'card', message: 'Foo is unknown' },
+  ]);
+});
+
+test('a rendered warning is left out and a code outside OPENUI_ERROR_CODES is kept', () => {
+  const lines = shownErrors({
+    mergeFailed: false,
+    owned: [],
+    rendered: [
+      error('missing-required', 'A warning', {
+        severity: 'warning',
+        statementId: 'a',
+      }),
+      error('made-up-code', 'Said by the renderer', { statementId: 'b' }),
+    ],
+  });
+
+  assert.deepEqual(lines, [
+    { code: 'made-up-code', statementId: 'b', message: 'Said by the renderer' },
+  ]);
+});
+
+test('of an owned and a rendered error with the same code and statement only the owned one is listed', () => {
+  const lines = shownErrors({
+    mergeFailed: false,
+    owned: [
+      {
+        code: 'unknown-component',
+        statementId: 'card',
+        message: 'Foo is unknown. With a hint.',
+      },
+    ],
+    rendered: [
+      error('unknown-component', 'Foo is unknown', { statementId: 'card' }),
+      error('unknown-component', 'Bar is unknown', { statementId: 'other' }),
+    ],
+  });
+
+  assert.deepEqual(lines, [
+    {
+      code: 'unknown-component',
+      statementId: 'card',
+      message: 'Foo is unknown. With a hint.',
+    },
+    { code: 'unknown-component', statementId: 'other', message: 'Bar is unknown' },
+  ]);
+});
+
+test('an owned error without message shows its code', () => {
+  const lines = shownErrors({
+    mergeFailed: false,
+    owned: [{ code: 'no-root', statementId: 'root' }],
+    rendered: [],
+  });
+
+  assert.deepEqual(lines, [
+    { code: 'no-root', statementId: 'root', message: 'no-root' },
+  ]);
+});
+
+test('60 errors give 50 lines', () => {
+  const lines = shownErrors({
+    mergeFailed: false,
+    owned: [],
+    rendered: Array.from({ length: 60 }, (_, index) =>
+      error('type-mismatch', `Wrong type ${index}`, {
+        statementId: `s${index}`,
+      }),
+    ),
+  });
+
+  assert.equal(lines.length, 50);
+  assert.equal(lines[0]?.statementId, 's0');
+  assert.equal(lines[49]?.statementId, 's49');
+});
+
+test('a message of 400 characters gives 300 ending in …', () => {
+  const lines = shownErrors({
+    mergeFailed: false,
+    owned: [],
+    rendered: [error('runtime-error', 'm'.repeat(400))],
+  });
+
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0]?.message.length, 300);
+  assert.equal(lines[0]?.message, `${'m'.repeat(299)}…`);
+});
+
+test('a statementId of 65 characters is removed and its line kept', () => {
+  const lines = shownErrors({
+    mergeFailed: false,
+    owned: [],
+    rendered: [
+      error('type-mismatch', 'Wrong type', {
+        statementId: `s${'a'.repeat(64)}`,
+      }),
+    ],
+  });
+
+  assert.deepEqual(lines, [{ code: 'type-mismatch', message: 'Wrong type' }]);
+});
+
+test('nothing to show gives no line', () => {
+  assert.deepEqual(
+    shownErrors({ mergeFailed: false, owned: [], rendered: [] }),
+    [],
+  );
 });

@@ -416,3 +416,159 @@ test('answersProjector gives no block for an openui.answered/v1 row', async () =
   );
   await world.deactivate();
 });
+
+// C18 (conversation-openui.md D29, "The reader's error card"; openui.md D18):
+// the fence's errors in one card under it.
+
+const CARD = 'section[aria-label="Program errors"][data-testid="openui-fence-errors"]';
+const QUERY_HINT =
+  'Query and Mutation are not available; write the data as literals.';
+const SENT = 'Sent to the agent.';
+
+/** A program with a `Query` statement `data` and a statement `card` that calls a component the library does not have. */
+const TWO_ERRORS = [
+  'root = Stack([t, card])',
+  'data = Query("list_users", {})',
+  't = TextContent("Users")',
+  'card = Chart3D("x")',
+  '',
+].join('\n');
+
+/** A program whose only error is `card`'s unknown component. */
+const ONE_ERROR = 'root = Stack([card])\ncard = Chart3D("x")\n';
+
+const mountCard = async (
+  body: string,
+  options: {
+    readonly state?: ChatFence['state'];
+    readonly origin?: 'user' | 'agent';
+    readonly question?: boolean;
+  } = {},
+) => {
+  const fence = chatFence(body, {
+    info: 'openui-lang view',
+    state: options.state ?? 'closed',
+  });
+  const { services: stub, calls } = fenceServices();
+  const mounted = await mountFence({
+    view: { fence, origin: options.origin ?? 'user', fences: [fence] },
+    revision: revisionOf(fence, {
+      identity: 'view',
+      question: options.question ?? false,
+    }),
+    services: stub,
+  });
+  await settle(20);
+  return {
+    mounted,
+    reports: () =>
+      calls.reports.map(({ input }) => input as ProgramErrorsInput),
+    cards: () => [...mounted.container.querySelectorAll(CARD)],
+  };
+};
+
+test('C18: a closed fence with two errors draws one card with D18\'s classes, "2 errors", the statement before each message, no code, and the footer once reported', async () => {
+  const { mounted, reports, cards } = await mountCard(TWO_ERRORS);
+
+  assert.equal(cards().length, 1, mounted.container.innerHTML);
+  const card = cards()[0] as HTMLElement;
+  for (const name of ['bg-card', 'border', 'border-border', 'rounded-lg'])
+    assert.ok(card.classList.contains(name), card.className);
+  const header = card.querySelector('header');
+  assert.equal(header?.textContent?.trim(), '2 errors');
+  assert.ok(header?.classList.contains('text-destructive'));
+  assert.ok(header?.classList.contains('text-xs'));
+  assert.ok(header?.querySelector('svg') !== null);
+
+  const lines = [...card.querySelectorAll('li')];
+  assert.equal(lines.length, 2);
+  const [first, second] = lines;
+  assert.equal(first?.querySelector('span.font-mono')?.textContent, 'data: ');
+  assert.equal(first?.textContent, `data: ${QUERY_HINT}`);
+  assert.equal(second?.querySelector('span.font-mono')?.textContent, 'card: ');
+  // The renderer's own message: the report's starts with it (the map appends
+  // D7's hint and cuts to 300), and the card shows it without the hint.
+  const reported = reports()
+    .flatMap(({ errors }) => errors)
+    .find(
+      ({ code, statementId }) =>
+        code === 'unknown-component' && statementId === 'card',
+    );
+  const text = second?.textContent ?? '';
+  assert.ok(text.startsWith('card: '), text);
+  const shown = text.slice('card: '.length);
+  assert.ok(shown.length > 0 && shown.length <= 300, shown);
+  assert.equal(shown.includes(HINT), false);
+  // Both keep OpenUI's message from its start; each cuts it at its own bound.
+  const shared = Math.min(200, shown.length);
+  assert.equal(
+    reported?.message?.slice(0, shared),
+    shown.slice(0, shared),
+    `${reported?.message} / ${shown}`,
+  );
+  for (const line of lines) {
+    assert.equal(line.textContent?.includes('tool-not-found'), false);
+    assert.equal(line.textContent?.includes('unknown-component'), false);
+  }
+
+  assert.equal(reports().length, 1);
+  assert.ok(card.textContent?.includes(SENT));
+  await mounted.unmount();
+});
+
+test('C18: a fence with one error reads "1 error"', async () => {
+  const { mounted, cards } = await mountCard(ONE_ERROR);
+
+  assert.equal(cards().length, 1, mounted.container.innerHTML);
+  assert.equal(cards()[0]?.querySelector('header')?.textContent?.trim(), '1 error');
+  assert.equal(cards()[0]?.querySelectorAll('li').length, 1);
+  await mounted.unmount();
+});
+
+test('C18: the same program while streaming draws no card, and a closed fence with no error draws none', async () => {
+  const streaming = await mountCard(TWO_ERRORS, { state: 'streaming' });
+  assert.equal(streaming.cards().length, 0);
+  assert.equal(
+    streaming.mounted.container.querySelector('[data-testid="openui-fence-errors"]'),
+    null,
+  );
+  await streaming.mounted.unmount();
+
+  const clean = await mountCard('root = Stack([t])\nt = TextContent("Hi")\n');
+  assert.equal(
+    clean.mounted.container.querySelector('[data-testid="openui-fence-errors"]'),
+    null,
+  );
+  await clean.mounted.unmount();
+});
+
+test("C18: a question fence in an agent Thread draws D21's block and no card line with ask's refusal text", async () => {
+  const { mounted } = await mountCard(
+    [
+      'root = AskForm([q1], "The service needs a database.")',
+      'q1 = AskQuestion("db", "Which database?", [pg, lite], false, true)',
+      'pg = AskOption("Postgres", "Relational, already used by billing", true)',
+      'lite = AskOption("SQLite", "One file, no server")',
+      '',
+    ].join('\n'),
+    { origin: 'agent', question: true },
+  );
+
+  assert.ok(
+    mounted.container.textContent?.includes(
+      'Not asked: only the main thread can ask the reader.',
+    ),
+  );
+  const lines = [
+    ...mounted.container.querySelectorAll(
+      '[data-testid="openui-fence-errors"] li',
+    ),
+  ];
+  assert.equal(
+    lines.some((line) =>
+      line.textContent?.includes('only the main thread can ask the user'),
+    ),
+    false,
+  );
+  await mounted.unmount();
+});

@@ -1013,8 +1013,11 @@ sends the formatted answers by the composer's route, then writes
 `openui.answered/v1`; the first answer is final, and an agent Thread is
 `unavailable` with nothing sent. `openui.programs/v1.reportErrors` (same scope)
 keeps the errors windows report for drawn fences of both tags (`openui-lang`
-and `papercraft`) per Thread and gives them to the agent as one `validation`
-instruct at the Thread's next prompt start (`runtime.hooks/v1`
+and `papercraft`) per Thread and gives them to the agent as `validation` instructs: a closed fence's
+errors go out 200 ms after the report, as a steer of the Thread's latest
+prompt while it runs or as a queued new prompt once it has finished, at most 3
+immediate sends per prompt not started by validation; an unterminated fence's
+errors wait for the next prompt start (`runtime.hooks/v1`
 `onPromptStartedHook`). The host registers the `openui` skill (order 3400,
 loaded on demand) at activation. See `bundles/features/openui/README.md`.
 

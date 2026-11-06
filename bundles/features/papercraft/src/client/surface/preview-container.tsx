@@ -43,6 +43,8 @@
 import type { Services } from 'bundle/contracts';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import { cn } from 'desktop/ui/utils';
+import { CircleAlertIcon } from 'lucide-react';
+import type { ShownError } from 'openui/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ChatFence } from '../../contracts/chat.js';
@@ -77,6 +79,7 @@ import type { CommentPin } from './pins-layer.js';
 import { PreviewHeader } from './preview-header.js';
 import { type FrameInput, PreviewSurface } from './preview-surface.js';
 import { type OpenUIErrorOf, useProgramData } from './program-data.js';
+import { ProgramErrorsCard } from './program-errors-card.js';
 import { useScene } from './scene.js';
 import { targetBounds, targetById } from './scene-graph.js';
 import type { SurfaceSnapshots } from './snapshots.js';
@@ -127,6 +130,10 @@ interface CanvasData {
   readonly surface: {
     readonly content: ProgramContent | undefined;
     readonly onErrors?: (errors: readonly OpenUIErrorOf[]) => void;
+    /** The card's lines, which the "Nothing to draw" notice reads (D26). */
+    readonly errors: readonly ShownError[];
+    /** The shown fence is `closed` or `unterminated`. */
+    readonly complete: boolean;
   };
 }
 
@@ -187,19 +194,17 @@ export function PreviewContainer(props: PreviewContainerProps) {
           canComment: data.canComment,
           surface: {
             content: data.content,
-            ...(data.onErrors === undefined ? {} : { onErrors: data.onErrors }),
+            onErrors: data.onErrors,
+            errors: data.errors.lines,
+            complete:
+              data.selected?.fence.state === 'closed' ||
+              data.selected?.fence.state === 'unterminated',
           },
         }}
       />
-      {data.notes.map((note) => (
-        <p
-          key={note}
-          data-testid="papercraft-program-note"
-          className="text-xs text-destructive"
-        >
-          {note}
-        </p>
-      ))}
+      {data.errors.lines.length === 0 ? null : (
+        <ProgramErrorsCard lines={data.errors.lines} sent={data.errors.sent} />
+      )}
     </div>
   );
 }
@@ -264,7 +269,30 @@ function CanvasFrame({
 
   /* The scene graph, derived by the frame from what the revision rendered --- */
 
-  const { scene, onScene } = useScene();
+  const { scene, onScene: setScene } = useScene();
+  // Whether the revision's last scene had no node; `undefined` before one.
+  const [sceneEmpty, setSceneEmpty] = useState<{
+    readonly revision: number | undefined;
+    readonly empty: boolean | undefined;
+  }>({ revision: undefined, empty: undefined });
+  const onScene = useCallback(
+    (nodes: Parameters<typeof setScene>[0]) => {
+      setScene(nodes);
+      setSceneEmpty({
+        revision: selectedRevision,
+        empty: nodes === undefined ? undefined : nodes.length === 0,
+      });
+    },
+    [setScene, selectedRevision],
+  );
+  // D26's "Nothing to draw": a complete revision whose errors leave it blank.
+  const nothingDrawn =
+    surface.complete &&
+    surface.errors.some(({ code }) => code !== undefined) &&
+    (surface.errors.some(
+      ({ code }) => code === 'no-root' || code === 'parse-failed',
+    ) ||
+      (sceneEmpty.revision === selectedRevision && sceneEmpty.empty === true));
   const requestMeasure = useCallback(
     () => setMeasureRequest((count) => count + 1),
     [],
@@ -707,6 +735,18 @@ function CanvasFrame({
               {...(snapshots === undefined ? {} : { snapshots })}
             />
           </div>
+
+          {nothingDrawn ? (
+            <div
+              data-testid="papercraft-nothing-drawn"
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            >
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-background/80 px-3 py-2 text-xs text-muted-foreground">
+                <CircleAlertIcon className="size-3.5 text-destructive" />
+                Nothing to draw: this program has errors.
+              </div>
+            </div>
+          ) : null}
 
           {scene !== undefined && hoverTarget !== undefined ? (
             <HoverOutline

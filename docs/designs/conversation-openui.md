@@ -1,7 +1,7 @@
 # Spec: OpenUI in the conversation — answers with UI, the question form and actions
 
 - Ticket: none. The work comes from the accepted concept [docs/features/papercraft.md](../features/papercraft.md); no Linear issue exists for it.
-- Status: implemented (stages 2–4 shipped on 2026-11-06; see [docs/features/papercraft.md](../features/papercraft.md#evolution)). Approved by the user, version 9 (2026-11-05), which records U48: the spike and its measurements are dropped, and each stage ships when the user accepts it; see [Revisions](#revisions).
+- Status: stages 2–4 implemented (shipped on 2026-11-06; see [docs/features/papercraft.md](../features/papercraft.md#evolution)); stage 5 implemented (built on 2026-11-06): version 11 (2026-11-06) records the conversation's part of U49–U51 ([openui.md](openui.md#stage-5-fixes-after-use-u49u51)). Approved by the user, version 9 (2026-11-05), which records U48: the spike and its measurements are dropped, and each stage ships when the user accepts it; see [Revisions](#revisions).
 - Companions: [openui.md](openui.md) (the shared base: packages, fences, fold, render hosts and routing, library and tokens, instructions, validation, setting, the `openui` bundle and phases) and [papercraft-openui.md](papercraft-openui.md) (papercraft's use of OpenUI). A decision lives in one document; the [decision map](openui.md#decision-map) lists all of them.
 - Bundles touched by this document: `openui` (new; its conversation parts), `chat` (`chat.send/v1` 1.0.0 → 1.1.0 `sendAction` and the `<ui-action>` envelope, D20; the fence contract is [D1](openui.md#d1-the-fence-in-the-chat-a-new-chat-contract)), `threads` (`ask` withheld in stage 3 and removed in stage 4), `default` (one line of its system prompt, D20), `packages/bundle` (client chunks, D29).
 - Feature docs: [docs/features/papercraft.md](../features/papercraft.md) (the concept, status `implemented`) and [docs/features/generative-ui.md](../features/generative-ui.md) (the conversation's generative UI, status `implemented`).
@@ -75,7 +75,7 @@ All of [openui.md](openui.md#decisions-already-made) bind this document. The one
 - **U12** Generative UI replaces `ask`, drawn in the current visual style of `ask`'s question block; only the main Thread asks; the answers arrive as the next user request.
 - **U17** P1 is confirmed: local interactivity and `@ToAssistant`, as [D20](#d20-actions-back-to-the-agent-p1).
 - **U18** Conversation UI renders in the shell; only papercraft renders in the frame ([D7](openui.md#d7-render-hosts-and-routing)).
-- **U19** Errors reach the agent at the start of the next prompt ([D18](openui.md#d18-validation-feedback-u19)); U23 narrows it to fences a window drew.
+- **U19** Errors reach the agent at the start of the next prompt ([D18](openui.md#d18-validation-feedback-u19)); U23 narrows it to fences a window drew, and U50 changes its timing.
 - **U20** Routing by fence tag, the `openui` bundle and the renderer loaded at a window's first fence (D29) are confirmed.
 - **U21** A conversation action sends on click, with no review step; the user accepts the prompt-injection risk of model-written button text ([R24](#risks)). U26 narrows it.
 - **U22** Papercraft fences have no actions; the action rules of both hosts are in [D7](openui.md#d7-render-hosts-and-routing).
@@ -88,6 +88,7 @@ All of [openui.md](openui.md#decisions-already-made) bind this document. The one
 - **U41** `ask` is withheld in stage 3 through `withholdTool`, not left registered until stage 4 ([D24](openui.md#d24-the-setting-and-rollback), D30).
 - **U43** (2026-11-04) The Goal "`ask`'s look is kept" is checked by markup, not pixels: each of the 12 story states renders the same `innerHTML` with `openui`'s copy as with `threads`', over the same CSS (C9, [D21](#d21-the-question-form), [D29](#d29-the-conversation-renderer-in-the-app)).
 - **U48** (2026-11-05) The spike and its measurements are dropped; each stage ships when the user accepts it ([openui.md](openui.md#decisions-already-made)). The Goals, D29, R19 and R26 cite no measure; the options a measure would have triggered (preloading at idle, renaming a leaking selector or keyframe, P2) remain risk notes without thresholds.
+- **U49–U51** (2026-11-06) Stage 5 ([openui.md](openui.md#decisions-already-made)): the fence's errors in one card under it, listing `onError`'s errors and the conversation's own check (U49, [D29](#the-readers-error-card)); errors reach the agent in the same turn, or as a new prompt after it (U50, [Error feedback](#error-feedback)); the `openui` skill's patch rule and question limits (U51, [D17](openui.md#d17-instructions-the-skills-u13-concept-q3)).
 
 ## Non-goals
 
@@ -573,11 +574,22 @@ export const isQuestionLine: (line: string) => boolean;
 - mounts `Renderer` (react-lang 1.0.2 `dist/index.d.mts:38-79`) with `response` (the text of [D5](openui.md#d5-progressive-merge-of-patches-p4)), `library` (the conversation library of [D7](openui.md#d7-render-hosts-and-routing), built with `defineQuestionBuiltins` from `openui/contracts` and react-lang's `defineComponent`, [D17](openui.md#d17-instructions-the-skills-u13-concept-q3)), `isStreaming`, `onAction` (D20), `onError` and `publishObservability={false}` ([D23](openui.md#d23-telemetry-u8)); the main-thread cost of one root per fence, with many fences mounted, is part of [R26](#risks);
 - provides the fence context (`question/fence-context.ts`) around `Renderer`: `view`, `revision`, `superseded`, `services` and `watchAnswers`, which `AskForm`'s component reads (D21);
 - wraps `Renderer` in an error boundary; a crash outside OpenUI's own `render-error` handling shows "This UI failed to draw" with the message, and is reported as a `render-error`;
-- makes one reporter with `createErrorReporter` ([D18](openui.md#d18-validation-feedback-u19)) per key and revision, with the check and map below and `send` calling `services.use(OpenuiProgramsV1, { projectId, threadId }).reportErrors(input)`, and shows the fence's errors under it;
+- makes one reporter with `createErrorReporter` ([D18](openui.md#d18-validation-feedback-u19)) per key and revision, with the check and map below and `send` calling `services.use(OpenuiProgramsV1, { projectId, threadId }).reportErrors(input)`;
+- shows the fence's errors in the card below (U49);
 - fills the width of the answer column, with no canvas, pan or zoom; its height follows its content;
 - unterminated: the footer of [D2](openui.md#d2-fence-key-states-and-the-end-of-answer-signal).
 
 **Keys.** The chat's fence node keeps keys inside the fence: as `<threads-ask>`'s section stops keydown propagation (`bundles/features/threads/src/client/ask.tsx:178-184`), the node stops it for the whole element ([D1](openui.md#d1-the-fence-in-the-chat-a-new-chat-contract), `openui.md` B4), so Backspace, Delete, the arrows and Enter typed in react-ui's `Input`, `TextArea` or `Select` reach the control and never the chat's Lexical editor. Popovers that Radix portals to `document.body` are outside the editor.
+
+#### The reader's error card
+
+Stage 5 (U49) replaces the list under the fence (`bundles/features/openui/src/client/chunks/renderer.ts:174-188`, lines of `code statementId: message`) with D18's card ([openui.md](openui.md#d18-validation-feedback-u19), "The reader's card"):
+
+- **Its lines** are `shownErrors({ mergeFailed: revision.mergeFailed === true, owned: programCheck(revision), rendered: errors })`, where `errors` is the last list `onError` gave (`renderer.ts:105,111-112`) and `programCheck` is the first part of the conversation's check ([below](#the-conversations-check-and-map)). `ConversationFence` computes them in a `useMemo` on `streaming`, `revision` and `errors`. So the reader also sees the check's results, which only the agent saw before: `Query` and `Mutation`, `@OpenUrl`, and an `AskForm` off the root.
+- **The question part of the check is left out**: D21's form already draws the agent-Thread block and, for a `closed` question fence with no `input`, the error block with `issue` ([D21](#drawing)), so the card would repeat them.
+- **When.** The card is drawn when the fence is `closed` or `unterminated` and the list has a line, where the list was, after the renderer and before the actions line and D2's footer. A `streaming` fence draws no card. The footer "Sent to the agent." is drawn while `reporter.sent()` is true. The conversation has no canvas, so it has no "Nothing to draw" notice: a fence that draws nothing shows the card alone.
+- **A crash** outside OpenUI's handling keeps its alert "This UI failed to draw" (`renderer.ts:168-172`); it is not in `onError`'s list, so the card does not repeat it.
+- **The component** is `ErrorsCard` in `bundles/features/openui/src/client/chunks/errors-card.ts`, written with `createElement` as the chunk is (`renderer.ts:140-200`), with `CircleAlertIcon` from `lucide-react` and `data-testid="openui-fence-errors"`. Only the chunk imports it, so C13's import split holds.
 
 #### Entry and chunk
 
@@ -638,7 +650,7 @@ export { questionOf, type QuestionRead } from '../question/ask-input.js';
 
 `check.ts` holds the conversation's `check` and `map` for `createErrorReporter` ([D18](openui.md#d18-validation-feedback-u19); [D7](openui.md#d7-render-hosts-and-routing) names them). One statement per line is assumed, as in D5, so a statement's name is the identifier before `=` on its line.
 
-`check()` returns, in this order, each message cut to 300 characters:
+`check.ts` exports `programCheck(revision)`, which returns items 1 to 3 below, and `questionCheck(view, revision)`, which returns items 4 and 5; `check` returns `[...programCheck(revision), ...questionCheck(view, revision)]`, so what the reporter sends does not change. The card lists `programCheck`'s results only ([above](#the-readers-error-card)). The items, in this order, each message cut to 300 characters:
 
 1. Each statement in `queryStatements` and `mutationStatements` of `createParser(library.toJSONSchema(), library.root).parse(program)` (react-lang 1.0.2 exports `createParser`, `dist/index.mjs:1351`; `ParseResult`, lang-core 1.0.2 `dist/index.d.mts:333-355`): `{ code: 'tool-not-found', statementId, message: 'Query and Mutation are not available; write the data as literals.' }`.
 2. Each statement whose line contains `@OpenUrl(`: `{ code: 'runtime-error', statementId, message: 'OpenUrl is disabled; write the link as text' }`.
@@ -701,7 +713,7 @@ The protections that let the shell draw model-written UI are stated once, in [D7
 
 ### Error feedback
 
-[D18](openui.md#d18-validation-feedback-u19) applies with the `openui` bundle as owner: the chunk reports, once per fence, what `onError` gave through the conversation's map and the results of its check ([D29](#the-conversations-check-and-map)); the host delivers them at the next prompt start. Actions report nothing at the click (D20). A repository component or `Export` in a conversation fence gets [D7](openui.md#d7-render-hosts-and-routing)'s hint.
+[D18](openui.md#d18-validation-feedback-u19) applies with the `openui` bundle as owner: the chunk reports, once per fence, what `onError` gave through the conversation's map and the results of its check ([D29](#the-conversations-check-and-map)); the host delivers them in the same turn, as a steer of the running prompt, or as a new prompt after it, within D18's bounds (U50). The reader sees them in the card ([D29](#the-readers-error-card)). Actions report nothing at the click (D20). A repository component or `Export` in a conversation fence gets [D7](openui.md#d7-render-hosts-and-routing)'s hint.
 
 ### D30. Removing `ask`
 
@@ -728,6 +740,8 @@ The stages, their gates and the shared parts are in [openui.md](openui.md#phases
 | `default` (stays 2.3.0)                                   | one line of `system.md` names `<ui-action>` (D20)                                                                                                                                                                    | —                                                                       | —                                                                                                                          |
 | `threads` (1.1.0 → 1.2.0 in stage 3 → 2.0.0 in stage 4)   | a test of its `AskQuestions` against the shared markup fixture (C9)                                                                                                                                                  | `threads.ask/v1` 1.2.0 `withholdTool`                                   | `ask`, `threads.ask/v1`, its events' registration, its UI and its contracts entry; a no-block projector for the old events |
 | `packages/bundle`                                         | client chunks (D29)                                                                                                                                                                                                  | —                                                                       | —                                                                                                                          |
+
+**Stage 5 (U49–U51)**, with [openui.md](openui.md#stage-5-fixes-after-use-u49u51): the card of [D29](#the-readers-error-card) and the split of the check land in step 1 of stage 5, with test C18. U50 and U51 change nothing in this document's files: the host side is D18's, and the skill rules are D17's.
 
 ## Files to change
 
@@ -772,6 +786,13 @@ This document's decisions only; [openui.md](openui.md#files-to-change) lists the
 | `openui` `manifest.json`, `src/host/index.ts`                                                                                                                                                                                                                                                                                                  | D30: the optional dependency and the call removed                                                                                                                                                                                                              | 4     |
 | `openui` `package.json`, `tests/questions.test.ts`                                                                                                                                                                                                                                                                                             | the `threads` devDependency and C9's schema case removed                                                                                                                                                                                                       | 4     |
 
+**Stage 5 (U49).**
+
+- `bundles/features/openui/src/client/chunks/renderer.ts`: the card in place of the list (`:174-188`), its lines from `shownErrors` of `openui/contracts`, its footer from `reporter.sent()`.
+- `bundles/features/openui/src/client/chunks/errors-card.ts` (new): `ErrorsCard`, D18's markup.
+- `bundles/features/openui/src/client/check.ts`: `programCheck` and `questionCheck`; `check` gives the same result.
+- `bundles/features/openui/tests/client/fence-element.test.ts`: C18.
+
 ## Test plan
 
 Tests follow `.agents/skills/behavioral-testing/SKILL.md`. `openui` client tests run in happy-dom, as `threads`' client tests do.
@@ -805,6 +826,10 @@ Tests follow `.agents/skills/behavioral-testing/SKILL.md`. `openui` client tests
 
 - **C11** (`bundles/features/threads/tests/threads.test.ts`): `ask` is not among the registered tools (the list at `:47` loses it), and `threads.ask/v1` is not provided.
 - **C12** (`bundles/features/threads/tests/old-asks.test.ts`): `oldAskProjector` claims exactly `threads.asked/v1` and `threads.answered/v1`, and gives no block for a row of either.
+
+### Stage 5
+
+- **C18** (`openui` `tests/client/fence-element.test.ts`, rendering `ConversationFence` with a fake `openui.programs/v1`): a `closed` fence with a `Query` statement `data` and a statement `card` that calls a component the library does not have draws one card, `section[aria-label="Program errors"][data-testid="openui-fence-errors"]` with the classes of D18's markup, whose header reads "2 errors"; its first line is `data: ` in a `font-mono` span followed by "Query and Mutation are not available; write the data as literals.", its second is `card: ` followed by OpenUI's `unknown-component` message; no line holds a code; the footer "Sent to the agent." is drawn once `reportErrors` was called. A fence with one error reads "1 error". The same program while `streaming` draws no card, and a `closed` fence with no error draws none. A question fence in an agent Thread draws D21's block and no card line with ask's refusal text.
 
 ## Alternatives considered
 
@@ -854,9 +879,11 @@ Listed here, not edited by this document. Each is updated in the stage named.
 - **[packages/bundle/README.md](../../packages/bundle/README.md)**: client chunks beside client frames (`:91-92`): where they are built from, their CSS, `BuiltParts.chunks`, and that the loader never loads one; in stage 2.
 - **[bundles/runtime/default/README.md](../../bundles/runtime/default/README.md)** (`:224-232`): the system prompt also describes the chat's `<ui-action>` part, in stage 2.
 - **[docs/architecture/bundles/implementation-decisions.md](../architecture/bundles/implementation-decisions.md)**: the stage 4 record names the end of `ask`, whose records are `:1238-1250,1292-1298`.
+- **Stage 5 (U49–U51).** [docs/features/generative-ui.md](../features/generative-ui.md): "Errors" (`:21,32`) says that errors reach the agent in the same turn or as a new prompt, and that the reader sees them in a card; an Evolution entry dated when stage 5 lands. `bundles/features/openui/README.md`: the card, beside the error delivery that [openui.md](openui.md#docs-to-update) lists.
 
 ## Revisions
 
+- **Version 11 (2026-11-06).** Follows [openui.md](openui.md) version 17 and records the conversation's part of U49–U51 as stage 5; no review gates were requested. D29: "The reader's error card", D18's card in place of the list under the fence, with `programCheck`'s results and without the question part of the check; the check is split into `programCheck` and `questionCheck`, with `check` unchanged. Error feedback: errors arrive in the same turn or as a new prompt (U50). New: C18, Phases and Files to change for stage 5, and Docs to update for stage 5. U19 is marked as changed by U50.
 - **Version 10 (2026-11-06).** Status of the feature docs set to `implemented`, and [generative-ui.md](../features/generative-ui.md) linked as this concept's feature doc. No decision changes.
 - **Version 9 (2026-11-05).** Follows [openui.md](openui.md) version 15 and records U48: the spike and its measurements are dropped, and each stage ships when the user accepts it; no D-decision changes. Goals: the three rows that cited measures name their decisions and the user's acceptance. The Spike column of the decision table, D29's "spike-dependent" note and the stage 1 row of Phases are removed; D29's notes, the P2 alternatives of D21 and D29, R19, R26 and Scale cite no measure, and the options a measure would have triggered stay as risk notes.
 - **Version 8 (2026-11-04).** Answers the repeated stage 4 Readiness and Codebase reviews and links D29 to [openui.md](openui.md) version 8's D23; no U-decision or Goal changes. D20: the action text for a form the store holds no values for (only the message), for `params` beyond `context` (react-ui's cards spread the picked item's fields there), for an empty message, and the limit counted in UTF-16 code units with a `refine`; `sendUiAction` refuses a Thread of another Project; a rejected `sendAction` shows its message and frees the fence; "Sending…" lasts until `sendAction` settles; the `Draft` variant gains no `action`; the runtime's envelope list cited from `envelope.ts` and left unchanged; the default system prompt's line 24 names `<ui-action>`, with its text; the skill's rule linked to D17 instead of repeated. D21: `questionOf` reads a question once for the table, the check and supersession; only a later closed, valid question supersedes; a streaming question with nothing parsed draws the note alone; every settled state goes through `AskQuestions`; the copy's line range, imports, `lucide-react` dependency and Storybook preview. D22: the scope check, a missing or foreign Thread, rejected runtime calls, the message and details of `unavailable`, the `call` passed on, invalid questions rejected by the contract layer, and the digest computed before the call joins its question's queue; `desktopScope` explained against `threads`'. D29: `createFenceShell`, `ChunkLoader` and the order `FenceShell` draws in; client chunks' build, CSS, `BuiltParts.chunks`, stale files, distribution and D23's define; the CSP sentence corrected. Rollback by code, without `openui` or with an older `chat`, is stated. Tests: C1–C3, C5, C7 and C8 extended; C16 (client chunks) and C17 (no dev tools in the renderer chunk) added. Line references corrected (Terms, D22's event and `status`, react-lang's action paths, `composer.test.ts`, `styles.css`).

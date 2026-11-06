@@ -42,6 +42,7 @@ import {
   flush,
   type Host,
   type HostOptions,
+  type MountedElement,
   MODULES,
   moduleRef,
   PROJECT,
@@ -106,6 +107,11 @@ const firstReportErrors = (host: Host): readonly Reported[] => {
   return (report.input as { readonly errors: readonly Reported[] }).errors;
 };
 
+/** The text of the fence's error card (D18, "The reader's card"); '' when there is none. */
+const cardText = (node: MountedElement): string =>
+  node.element.querySelector('[data-testid="papercraft-program-errors"]')
+    ?.textContent ?? '';
+
 const SIMPLE = [
   'root = Stack([title])',
   'title = TextContent("Settings")',
@@ -167,9 +173,9 @@ test('PC3: a failed library draws built-ins, shows its error, and never reports'
     'the program was never sent',
   );
   await until(
-    node.text,
+    () => cardText(node),
     (text) => text.includes('Button.tsx:3 is not a schema'),
-    'the library error is not shown',
+    'the library error is not shown in the card',
   );
 
   node
@@ -352,9 +358,9 @@ test('PC27: a ninth distinct Export shows the limit and is reported as runtime-e
     'the program was never sent',
   );
   await until(
-    node.text,
+    () => cardText(node),
     (text) => text.includes('Too many exports in one program'),
-    'the ninth Export shows no limit',
+    'the ninth Export shows no limit in the card',
   );
   node.frame()?.errors([]);
   await until(
@@ -439,9 +445,9 @@ test('PC27: a build failure shows its error in the node and is reported as rende
 
   const node = await host.mountFence(viewOf(programFence(text)));
   await until(
-    node.text,
+    () => cardText(node),
     (shown) => shown.includes('Cannot resolve ./missing'),
-    'the build failure is not shown in the node',
+    'the build failure is not shown in the card',
   );
   node.frame()?.errors([]);
   await until(
@@ -484,4 +490,369 @@ test('PC27: a streaming fence whose last line is a half-written Export asks no b
 
   assert.deepEqual(host.calls.exports, []);
   assert.equal(programs(host).at(-1)?.streaming, true);
+});
+
+// PC34 (papercraft-openui.md D26, "Errors"; openui.md D18, "The reader's
+// card"): the program's errors in one card under the canvas, in both chromes.
+
+const CARD =
+  'section[aria-label="Program errors"][data-testid="papercraft-program-errors"]';
+const SENT_LINE = 'Sent to the agent.';
+const TO_ASSISTANT =
+  '@ToAssistant is not available in papercraft fences. Actions belong in openui-lang fences; a preview changes only local state ($variables, forms, @Set, @Reset), and the reader answers with pinned comments.';
+const HELLO = 'HelloCard is not a component of the library.';
+const LIBRARY_ERROR =
+  'The schemas folder does not build: Button.tsx:3 is not a schema';
+
+/** A program whose `btn` calls `@ToAssistant` and whose `card` the frame will refuse. */
+const WITH_BUTTON = [
+  'root = Stack([btn, card])',
+  'btn = Button("Go", @ToAssistant("Tell me more"))',
+  'card = HelloCard("x")',
+].join('\n');
+
+const FRAME_CARD_ERROR = [
+  { code: 'unknown-component', statementId: 'card', message: HELLO },
+];
+
+const cardOf = (node: MountedElement): HTMLElement | null =>
+  node.element.querySelector(CARD);
+const linesOf = (node: MountedElement): readonly string[] =>
+  [...(cardOf(node)?.querySelectorAll('li') ?? [])].map(
+    (line) => line.textContent ?? '',
+  );
+const headerOf = (node: MountedElement): string =>
+  cardOf(node)?.querySelector('header')?.textContent?.trim() ?? '';
+
+const failedLibrary = async (): Promise<LibraryAnswer> => ({
+  status: 'failed',
+  root: '/workspace/app',
+  error: LIBRARY_ERROR,
+});
+
+test("PC34: a closed fence's card lists the app's check, then the frame's errors, with D18's markup and the footer once reported", async () => {
+  const host = await start();
+  const node = await host.mountFence(viewOf(programFence(WITH_BUTTON)));
+  await until(
+    () => programs(host).length,
+    (count) => count > 0,
+    'the program was never sent',
+  );
+  await until(
+    () => linesOf(node),
+    (lines) => lines.length === 1,
+    "the card never showed the app's check",
+  );
+  assert.equal(
+    cardOf(node)?.textContent?.includes(SENT_LINE),
+    false,
+    'the footer showed before the report',
+  );
+
+  node.frame()?.errors(FRAME_CARD_ERROR);
+  await until(
+    () => linesOf(node),
+    (lines) => lines.length === 2,
+    "the card never showed the frame's error",
+  );
+  await until(
+    () => host.calls.reports.length,
+    (count) => count > 0,
+    'the closed fence never reported',
+  );
+  await flush();
+
+  const card = cardOf(node) as HTMLElement;
+  assert.equal(node.element.querySelectorAll(CARD).length, 1);
+  for (const name of ['bg-card', 'border', 'border-border', 'rounded-lg'])
+    assert.ok(card.classList.contains(name), card.className);
+  const header = card.querySelector('header');
+  assert.equal(header?.textContent?.trim(), '2 errors');
+  assert.ok(header?.classList.contains('text-destructive'));
+  assert.ok(header?.classList.contains('text-xs'));
+  const [first, second] = [...card.querySelectorAll('li')];
+  assert.equal(first?.querySelector('span.font-mono')?.textContent, 'btn: ');
+  assert.equal(first?.textContent, `btn: ${TO_ASSISTANT}`);
+  assert.equal(second?.querySelector('span.font-mono')?.textContent, 'card: ');
+  assert.equal(second?.textContent, `card: ${HELLO}`);
+  for (const line of linesOf(node)) {
+    assert.equal(line.includes('unknown-function'), false, line);
+    assert.equal(line.includes('unknown-component'), false, line);
+  }
+  assert.ok(card.textContent?.includes(SENT_LINE), 'no footer after the report');
+});
+
+test("PC34: a later errors [] from the frame leaves the app's line alone and the header \"1 error\"", async () => {
+  const host = await start();
+  const node = await host.mountFence(viewOf(programFence(WITH_BUTTON)));
+  await until(
+    () => programs(host).length,
+    (count) => count > 0,
+    'the program was never sent',
+  );
+  node.frame()?.errors(FRAME_CARD_ERROR);
+  await until(
+    () => linesOf(node),
+    (lines) => lines.length === 2,
+    "the card never showed the frame's error",
+  );
+
+  node.frame()?.errors([]);
+  await until(
+    () => linesOf(node),
+    (lines) => lines.length === 1,
+    "the frame's line never went",
+  );
+
+  assert.deepEqual(linesOf(node), [`btn: ${TO_ASSISTANT}`]);
+  assert.equal(headerOf(node), '1 error');
+});
+
+test('PC34: a fence with no error draws no card and no papercraft-program-note', async () => {
+  const host = await start();
+  const node = await host.mountFence(viewOf(programFence(SIMPLE)));
+  await until(
+    () => programs(host).length,
+    (count) => count > 0,
+    'the program was never sent',
+  );
+  node.frame()?.errors([]);
+  await flush();
+
+  assert.equal(
+    node.element.querySelector('[data-testid="papercraft-program-errors"]'),
+    null,
+  );
+  assert.equal(
+    node.element.querySelector('[data-testid="papercraft-program-note"]'),
+    null,
+  );
+});
+
+test('PC34: with the library failed the first line is the library note, with no footer', async () => {
+  const host = await start({ library: failedLibrary });
+  const node = await host.mountFence(viewOf(programFence(WITH_BUTTON)));
+  await until(
+    () => programs(host).length,
+    (count) => count > 0,
+    'the program was never sent',
+  );
+  node.frame()?.errors(FRAME_CARD_ERROR);
+  await until(
+    () => linesOf(node),
+    (lines) => lines.length > 0,
+    'the card never showed',
+  );
+  await flush();
+
+  assert.equal(
+    linesOf(node)[0],
+    `Drawn without the repository library: ${LIBRARY_ERROR}`,
+  );
+  assert.equal(cardOf(node)?.textContent?.includes(SENT_LINE), false);
+  assert.deepEqual(host.calls.reports, []);
+});
+
+test('PC34: with the library failed a streaming fence shows the library note alone', async () => {
+  const host = await start({ library: failedLibrary });
+  const node = await host.mountFence(
+    viewOf(programFence(WITH_BUTTON, { state: 'streaming' })),
+  );
+  await until(
+    () => programs(host).length,
+    (count) => count > 0,
+    'the program was never sent',
+  );
+  await until(
+    () => linesOf(node),
+    (lines) => lines.length > 0,
+    'the card never showed while streaming',
+  );
+
+  assert.deepEqual(linesOf(node), [
+    `Drawn without the repository library: ${LIBRARY_ERROR}`,
+  ]);
+  assert.equal(headerOf(node), '1 error');
+  assert.equal(cardOf(node)?.textContent?.includes(SENT_LINE), false);
+});
+
+test('PC34: the canvas window draws the same lines without the footer', async () => {
+  const host = await start();
+  await host.setFences([programFence(WITH_BUTTON)]);
+  const canvas = await host.mountRoute({
+    projectId: PROJECT,
+    threadId: THREAD,
+    identity: 'settings',
+  });
+  await until(
+    () =>
+      canvas.frame()?.programReceived.some((m) => m.kind === 'program') ??
+      false,
+    (drawn) => drawn,
+    'the canvas never drew the program',
+  );
+  canvas.frame()?.errors(FRAME_CARD_ERROR);
+  await until(
+    () => linesOf(canvas),
+    (lines) => lines.length === 2,
+    "the canvas card never showed the frame's error",
+  );
+  await flush();
+
+  assert.deepEqual(linesOf(canvas), [
+    `btn: ${TO_ASSISTANT}`,
+    `card: ${HELLO}`,
+  ]);
+  assert.equal(headerOf(canvas), '2 errors');
+  assert.equal(cardOf(canvas)?.textContent?.includes(SENT_LINE), false);
+});
+
+// PC35 (papercraft-openui.md D26, "Nothing to draw"): the notice over a
+// canvas that draws nothing because of its errors.
+
+const NOTICE = '[data-testid="papercraft-nothing-drawn"]';
+const NOTICE_TEXT = 'Nothing to draw: this program has errors.';
+
+const noticeOf = (node: MountedElement): HTMLElement | null =>
+  node.element.querySelector(NOTICE);
+
+const TYPE_MISMATCH = [
+  { code: 'type-mismatch', statementId: 'title', message: 'Wrong type' },
+];
+
+/** Frames that render `markup` for every program (an empty scene for ''). */
+const rendering = (markup: string): HostOptions => ({
+  frame: { program: () => markup },
+});
+
+const scenes = (node: MountedElement): number =>
+  node.frame()?.rendered === true ? 1 : 0;
+
+test('PC35: a closed revision 1 holding only a patch (no-root) shows the notice, with pointer-events-none', async () => {
+  const host = await start();
+  const node = await host.mountFence(
+    viewOf(programFence('title = TextContent("Settings")')),
+  );
+  await until(
+    () => programs(host).length,
+    (count) => count > 0,
+    'the program was never sent',
+  );
+  node
+    .frame()
+    ?.errors([{ code: 'no-root', message: 'The program has no root.' }]);
+
+  const notice = await until(
+    () => noticeOf(node),
+    (found) => found !== null,
+    'the notice never showed for a program without root',
+  );
+  assert.ok(notice?.classList.contains('pointer-events-none'));
+  assert.ok(notice?.textContent?.includes(NOTICE_TEXT));
+});
+
+test('PC35: an empty scene with a type-mismatch shows the notice', async () => {
+  const host = await start(rendering(''));
+  const node = await host.mountFence(viewOf(programFence(SIMPLE)));
+  await until(() => scenes(node), (count) => count > 0, 'no scene came');
+  node.frame()?.errors(TYPE_MISMATCH);
+
+  await until(
+    () => noticeOf(node),
+    (found) => found !== null,
+    'the notice never showed for an empty scene with an error',
+  );
+});
+
+test('PC35: an empty scene with no error shows no notice', async () => {
+  const host = await start(rendering(''));
+  const node = await host.mountFence(viewOf(programFence(SIMPLE)));
+  await until(() => scenes(node), (count) => count > 0, 'no scene came');
+  node.frame()?.errors([]);
+  await flush();
+
+  assert.equal(noticeOf(node), null);
+});
+
+test('PC35: a streaming fence with an empty scene and a type-mismatch shows no notice', async () => {
+  const host = await start(rendering(''));
+  const node = await host.mountFence(
+    viewOf(programFence(SIMPLE, { state: 'streaming' })),
+  );
+  await until(() => scenes(node), (count) => count > 0, 'no scene came');
+  node.frame()?.errors(TYPE_MISMATCH);
+  await flush();
+
+  assert.equal(noticeOf(node), null);
+});
+
+test('PC35: a type-mismatch alone before any scene shows the card and no notice', async () => {
+  const host = await start();
+  const node = await host.mountFence(viewOf(programFence(SIMPLE)));
+  await until(
+    () => programs(host).length,
+    (count) => count > 0,
+    'the program was never sent',
+  );
+  node.frame()?.errors(TYPE_MISMATCH);
+  await until(
+    () => linesOf(node),
+    (lines) => lines.length === 1,
+    'the card never showed the type-mismatch',
+  );
+  await flush();
+
+  assert.equal(node.frame()?.rendered, false, 'the frame sent a scene');
+  assert.equal(noticeOf(node), null);
+});
+
+test("PC35: the notice goes when the next revision's scene has nodes", async () => {
+  const host = await start({
+    frame: {
+      program: (message) =>
+        message.text.includes('root =')
+          ? '<span data-papercraft-statement="title" data-papercraft-component="TextContent"><p>Settings</p></span>'
+          : undefined,
+    },
+  });
+  const first = programFence('title = TextContent("Settings")', {
+    promptId: 'p-1',
+  });
+  await host.setFences([first]);
+  const canvas = await host.mountRoute({
+    projectId: PROJECT,
+    threadId: THREAD,
+    identity: 'settings',
+  });
+  await until(
+    () =>
+      canvas.frame()?.programReceived.some((m) => m.kind === 'program') ??
+      false,
+    (drawn) => drawn,
+    'the canvas never drew revision 1',
+  );
+  canvas
+    .frame()
+    ?.errors([{ code: 'no-root', message: 'The program has no root.' }]);
+  await until(
+    () => noticeOf(canvas),
+    (found) => found !== null,
+    'the notice never showed for revision 1',
+  );
+
+  await host.setFences([
+    first,
+    programFence('root = Stack([title])', { promptId: 'p-2' }),
+  ]);
+  await until(
+    () => canvas.frame()?.rendered ?? false,
+    (rendered) => rendered,
+    "revision 2's scene never came",
+  );
+  canvas.frame()?.errors([]);
+  await until(
+    () => noticeOf(canvas),
+    (found) => found === null,
+    "the notice stayed once revision 2's scene had nodes",
+  );
 });

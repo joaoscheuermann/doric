@@ -20,12 +20,14 @@ import {
   createErrorReporter,
   OpenuiProgramsV1,
   type ProgramRevision,
+  shownErrors,
 } from '../../contracts/index.js';
 import { actionText } from '../actions.js';
 import { type ChatFenceView, ChatSendV1 } from '../chat-contract.js';
-import { check, map } from '../check.js';
+import { check, map, programCheck } from '../check.js';
 import { library } from '../library.js';
 import { FenceContext } from '../question/fence-context.js';
+import { ErrorsCard } from './errors-card.js';
 
 export interface AnswerTarget {
   readonly projectId: string;
@@ -132,6 +134,19 @@ export function ConversationFence(props: ConversationFenceProps): ReactNode {
 
   const actions = useActions({ view, revision, latest, services });
 
+  // The card's lines (D18, U49): none while the fence streams.
+  const lines = useMemo(
+    () =>
+      streaming
+        ? []
+        : shownErrors({
+            mergeFailed: revision.mergeFailed === true,
+            owned: programCheck(revision),
+            rendered: errors,
+          }),
+    [streaming, revision, errors],
+  );
+
   const context = useMemo(
     () => ({ view, revision, superseded, services, watchAnswers }),
     [view, revision, superseded, services, watchAnswers],
@@ -171,21 +186,9 @@ export function ConversationFence(props: ConversationFenceProps): ReactNode {
             `This UI failed to draw: ${failed.message || String(failed)}`,
           ),
     ),
-    errors.length === 0
+    fence.state === 'streaming' || lines.length === 0
       ? null
-      : createElement(
-          'ul',
-          { className: 'text-xs text-muted-foreground' },
-          ...errors.map((error, index) =>
-            createElement(
-              'li',
-              { key: index },
-              `${error.code}${
-                error.statementId === undefined ? '' : ` ${error.statementId}`
-              }: ${error.message}`,
-            ),
-          ),
-        ),
+      : createElement(ErrorsCard, { lines, sent: reporter.sent() }),
     actions.line === undefined
       ? null
       : createElement(

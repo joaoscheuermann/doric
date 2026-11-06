@@ -20,6 +20,8 @@ A later change to its form:
 form = AppSettingsForm("Grace Hopper", false)
 ```
 
+A fence with the same identity as an earlier fence is a patch: the app merges it into that program. A new program, under a new identity or without one, is always written whole and starts with its root statement, `root = …`. Never send a patch, or any fragment without `root`, as a new program: the app draws nothing for it.
+
 ## Export
 
 `Export(path, name?, props?)` draws a module's export from the repository:

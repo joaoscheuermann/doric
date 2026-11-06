@@ -23,6 +23,8 @@ import {
   OpenuiProgramsV1,
   type ProgramRevision,
   type ReportedError,
+  type ShownError,
+  shownErrors,
 } from 'openui/contracts';
 import {
   useCallback,
@@ -103,10 +105,17 @@ export interface ProgramData {
   readonly library: LibraryView;
   /** The frame's `init` and `program`, once the library answered. */
   readonly content: ProgramContent | undefined;
-  /** What the canvas says beside the frame: the library's and the exports' failures. */
-  readonly notes: readonly string[];
-  /** The node's report of the frame's errors (D18), when it reports. */
-  readonly onErrors?: (errors: readonly OpenUIErrorOf[]) => void;
+  /**
+   * The card under the canvas (D18, D26): the library's failure, then, once
+   * the fence is complete, the shown revision's errors; `sent` once the node
+   * reported them.
+   */
+  readonly errors: {
+    readonly lines: readonly ShownError[];
+    readonly sent: boolean;
+  };
+  /** The frame's errors: kept for the card, and reported by the node (D18) unless the library failed. */
+  readonly onErrors: (errors: readonly OpenUIErrorOf[]) => void;
   readonly threads: readonly PreviewThread[];
   readonly drafts: readonly PreviewDraft[];
   readonly reloadComments: () => void;
@@ -494,18 +503,6 @@ export function useProgramData(input: ProgramDataInput): ProgramData {
     return errors;
   }, [exports.keys, exports.calls, exports.failed]);
 
-  const notes = useMemo(
-    () => [
-      ...(library.status === 'failed'
-        ? [`Drawn without the repository library: ${library.error}`]
-        : []),
-      ...exportErrors.flatMap((error) =>
-        error.message === undefined ? [] : [error.message],
-      ),
-    ],
-    [library, exportErrors],
-  );
-
   // D18: one reporter per fence revision; the node reports, the window does
   // not, and nothing is reported for a library that failed.
   const latest = useRef({
@@ -573,15 +570,52 @@ export function useProgramData(input: ProgramDataInput): ProgramData {
     reportRevision,
     mergeFailed,
   ]);
+  const libraryFailed = library.status === 'failed';
+
+  // The frame's last list of errors, for the shown fence revision only.
+  const [frameErrors, setFrameErrors] = useState<{
+    readonly key: string | undefined;
+    readonly revision: number | undefined;
+    readonly errors: readonly OpenUIErrorOf[];
+  }>({ key: undefined, revision: undefined, errors: [] });
   const onErrors = useCallback(
     (errors: readonly OpenUIErrorOf[]) => {
+      setFrameErrors({ key: reportKey, revision: reportRevision, errors });
       const state = latest.current.state;
 
-      if (state === undefined) return;
+      if (state === undefined || libraryFailed) return;
       reporter?.onError(errors, state);
     },
-    [reporter],
+    [reporter, reportKey, reportRevision, libraryFailed],
   );
+  const lastErrors =
+    frameErrors.key === reportKey && frameErrors.revision === reportRevision
+      ? frameErrors.errors
+      : [];
+
+  const complete =
+    selected?.fence.state === 'closed' ||
+    selected?.fence.state === 'unterminated';
+  const lines = useMemo(
+    (): readonly ShownError[] => [
+      ...(library.status === 'failed'
+        ? [
+            {
+              message: `Drawn without the repository library: ${library.error}`,
+            },
+          ]
+        : []),
+      ...(complete
+        ? shownErrors({
+            mergeFailed,
+            owned: [...programErrors(program ?? ''), ...exportErrors],
+            rendered: lastErrors,
+          })
+        : []),
+    ],
+    [library, complete, mergeFailed, program, exportErrors, lastErrors],
+  );
+  const sent = reporter?.sent() ?? false;
 
   /* The durable comments of the identity, and its drafts ------------------- */
 
@@ -717,8 +751,8 @@ export function useProgramData(input: ProgramDataInput): ProgramData {
     selectRevision: setChosen,
     library,
     content,
-    notes,
-    ...(library.status === 'failed' ? {} : { onErrors }),
+    errors: { lines, sent },
+    onErrors,
     threads,
     drafts,
     reloadComments,

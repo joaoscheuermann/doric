@@ -5,7 +5,10 @@ writes an OpenUI Lang program in an `openui-lang`
 fence of its answer, and the chat draws it while the answer streams: forms,
 tables, charts, and the question form with which the agent asks the reader to
 decide something. A click on a control goes back to the agent as the reader's
-next message, and errors in a drawn program reach the agent at its next prompt.
+next message, and errors in a drawn program show in a card under
+its fence and reach the agent: while the prompt runs, as a steer; after it
+finished, as a new prompt. An unterminated fence's errors wait for the next
+prompt.
 
 It is a feature bundle with a host part (the `openui` skill, the error sink and
 the question service) and a client part (the fence element and its renderer
@@ -25,8 +28,11 @@ bundles work.
 - **Contracts** (`openui/contracts`, browser-safe: no React, no OpenUI):
   - `openui.programs/v1` (host, exposed to the desktop with the scope
     `projectId`, `threadId`): `reportErrors`. Errors a window reports for a
-    fence of either tag are kept per Thread and reach the agent at the start
-    of the Thread's next prompt as one `validation` instruct. A report for a
+    fence of either tag are kept per Thread. A closed fence's errors go out
+    200 ms after the report as one `validation` instruct to the Thread's latest
+    prompt: a steer while it runs, a queued new prompt once it finished; at
+    most 3 per prompt not started by validation. An unterminated fence's
+    errors wait for the next prompt start. A report for a
     prompt that is neither the Thread's current nor previous one is dropped,
     and each error is delivered at most once.
   - `openui.questions/v1` (host, same scope): `status` and `answer` of a
@@ -35,7 +41,8 @@ bundles work.
     prompt that took them, naming the question's prompt and digest.
   - the pure modules both fence owners import: the program identity, the fold
     of a Thread's fences into programs (`createProgramFolds`), the question
-    built-ins as data, the error codes and the error reporter.
+    built-ins as data, the error codes, `shownErrors` and the error reporter
+    (`ErrorReporter.sent()` drives the card's "Sent to the agent.").
 
 ## Programs and revisions
 

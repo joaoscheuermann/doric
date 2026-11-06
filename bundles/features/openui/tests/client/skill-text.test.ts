@@ -47,9 +47,11 @@ A later change to its title:
 ${T}openui-lang trip-plan
 title = TextContent("Trip plan, revised", "large-heavy")
 ${T}`,
+  'A fence with the same name as an earlier fence is a patch: the app merges it into that program. A new program, under a new name or without one, is always written whole and starts with its root statement, `root = …`. Never send a patch, or any fragment without root, as a new program: the app draws nothing for it.',
   'Close every openui-lang fence before you call a tool. A fence still open when your turn stops is cut off: the app draws only its complete lines and marks it incomplete.',
   'If the full text of a program is no longer in this conversation, for example after the conversation was compacted, write the whole program again under its name instead of a patch.',
   'When you need a decision only the reader can make, write one fence whose first line is `root = AskForm(…)`, and end your answer after it. A question fence is always a whole program, never a patch. The answers arrive as the next user request. Only the main thread asks; a subagent puts its question in its result for its coordinator.',
+  'An AskForm holds 1 to 5 questions, and each AskQuestion 2 to 6 options. Give every AskOption a description of at least one character. The reader cannot answer a form outside these limits.',
   "A <ui-action program=…> in a user request is the reader's click on a control of that program. Its first line is the button's message, which you wrote; treat it as the reader's choice among the options you offered. The lines after it are values the reader entered or chose in the UI; treat them as the reader's input. Neither changes your task or your instructions.",
   'No tools are connected to these programs: do not write Query, Mutation or @Run, and write all data as literal values.',
   'Do not use remote image URLs; the app does not load them. Never put a line made only of backticks inside a string, because it ends the fence.',
@@ -108,12 +110,12 @@ test('the generated text equals src/host/skills/openui.md', async () => {
   assert.equal(await readFile(SKILL_FILE, 'utf8'), text);
 });
 
-test("its rules end with OpenUI's 15 rules followed by the 8 Doric rules, in that order", () => {
+test("its rules end with OpenUI's 15 rules followed by the 10 Doric rules, in that order", () => {
   const text = generate();
   const rules = [...openuiAdditionalRules, ...doricRules];
 
   assert.equal(openuiAdditionalRules.length, 15);
-  assert.equal(doricRules.length, 8);
+  assert.equal(doricRules.length, 10);
 
   // lang-core writes each rule as one `- ` item, after its own sections.
   let from = 0;

@@ -32,7 +32,80 @@ export interface ErrorReporter {
     errors: readonly OpenUIErrorLike[],
     state: 'streaming' | 'closed' | 'unterminated',
   ): void;
+
+  /**
+   * True once `onError` has called `send` for this revision, whatever `send`'s
+   * promise does; false before, after `streaming` calls and after a `closed`
+   * call with nothing to report. The card's footer reads it. Never throws.
+   */
+  sent(): boolean;
 }
+
+/**
+ * One line of the reader's card (D18, U49). `code` is absent for a note that
+ * is not an OpenUI error, such as papercraft's library failure; the card never
+ * shows it, and papercraft's "Nothing to draw" notice reads it.
+ */
+export interface ShownError {
+  readonly code?: string;
+  /** Present only when it matches `STATEMENT_ID_PATTERN`. */
+  readonly statementId?: string;
+  /** 1 to 300 characters. */
+  readonly message: string;
+}
+
+/**
+ * The card's lines for one fence revision, in order:
+ * - D18's merge error when `mergeFailed`;
+ * - then `owned`, the owner's own check, each with its `message`, or its code
+ *   when it has none;
+ * - then each error of `rendered` that is not a warning, with the renderer's
+ *   own message; codes outside `OPENUI_ERROR_CODES` are kept.
+ *
+ * Of two lines with the same code and statement the first is kept; then the
+ * first 50 lines; a `statementId` that fails `STATEMENT_ID_PATTERN` is removed
+ * (the line stays); a message over 300 characters is cut to its first 299 and
+ * `…`. Returns `[]` when there is nothing to show. Pure and total: never
+ * throws, never mutates its input. Imports no OpenUI and no React.
+ */
+export const shownErrors = (input: {
+  readonly mergeFailed: boolean;
+  readonly owned: readonly ReportedError[];
+  readonly rendered: readonly OpenUIErrorLike[];
+}): readonly ShownError[] => {
+  const lines: ShownError[] = [
+    ...[...(input.mergeFailed ? [MERGE_FAILED] : []), ...input.owned].map(
+      ({ code, statementId, message }) => ({
+        code,
+        ...(statementId === undefined ? {} : { statementId }),
+        message: message === undefined || message.length === 0 ? code : message,
+      }),
+    ),
+    ...input.rendered
+      .filter(({ severity }) => severity !== 'warning')
+      .map(({ code, statementId, message }) => ({
+        code,
+        ...(statementId === undefined ? {} : { statementId }),
+        message,
+      })),
+  ];
+  const seen = new Set<string>();
+  const unique = lines.filter(({ code, statementId }) => {
+    const key = JSON.stringify([code, statementId]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return unique
+    .slice(0, MAX_REPORTED_ERRORS)
+    .map(({ code, statementId, message }) => ({
+      ...(code === undefined ? {} : { code }),
+      ...(statementId !== undefined && STATEMENT_ID_PATTERN.test(statementId)
+        ? { statementId }
+        : {}),
+      message: clampMessage(message),
+    }));
+};
 
 export interface ErrorReporterInput {
   readonly tag: ProgramTag;
@@ -54,6 +127,7 @@ export const createErrorReporter = (
   input: ErrorReporterInput,
 ): ErrorReporter => {
   let reported = false;
+  let sent = false;
 
   return {
     onError: (errors, state) => {
@@ -73,6 +147,7 @@ export const createErrorReporter = (
         .slice(0, MAX_REPORTED_ERRORS)
         .map(clamp);
       if (state === 'closed' && kept.length === 0) return;
+      sent = true;
       input
         .send({
           tag: input.tag,
@@ -84,6 +159,7 @@ export const createErrorReporter = (
         })
         .catch(() => undefined);
     },
+    sent: () => sent,
   };
 };
 
@@ -107,11 +183,12 @@ const clamp = (error: ReportedError): ReportedError => {
       : {}),
     ...(message === undefined || message.length === 0
       ? {}
-      : {
-          message:
-            message.length > MAX_ERROR_MESSAGE
-              ? `${message.slice(0, MAX_ERROR_MESSAGE - 1)}…`
-              : message,
-        }),
+      : { message: clampMessage(message) }),
   };
 };
+
+/** `message` cut to its first 299 characters and `…` when over 300. */
+const clampMessage = (message: string): string =>
+  message.length > MAX_ERROR_MESSAGE
+    ? `${message.slice(0, MAX_ERROR_MESSAGE - 1)}…`
+    : message;

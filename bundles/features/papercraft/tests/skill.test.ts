@@ -64,6 +64,29 @@ describe('PC18: the skill text', () => {
   });
 });
 
+// PC36 (D28, U51, stage 5): after the patch example of "The papercraft
+// fence" and before `## Export`, the skill says word for word that a fence
+// with an earlier identity is a patch and a new program is written whole;
+// the text stays within PC18's 8,000 characters.
+describe('PC36: the patch rule', () => {
+  const paragraph =
+    'A fence with the same identity as an earlier fence is a patch: the app merges it into that program. A new program, under a new identity or without one, is always written whole and starts with its root statement, `root = …`. Never send a patch, or any fragment without `root`, as a new program: the app draws nothing for it.';
+
+  test('the paragraph follows the patch example, before Export, within 8,000 characters', async () => {
+    const text = await readFile(SKILL_FILE, 'utf8');
+
+    const at = text.indexOf(`\n${paragraph}\n`);
+    assert.ok(at >= 0, 'the paragraph is present, word for word, on its own line');
+    const patchExample = text.indexOf('A later change to its form:');
+    assert.ok(patchExample >= 0, 'the patch example is present');
+    const patchEnd = text.indexOf('\n```\n', text.indexOf('```papercraft', patchExample));
+    assert.ok(patchEnd >= 0 && at > patchEnd, 'after the patch example');
+    const exportAt = text.indexOf('\n## Export\n');
+    assert.ok(exportAt >= 0 && at < exportAt, 'before ## Export');
+    assert.ok(text.length <= 8_000, String(text.length));
+  });
+});
+
 // PC18 (D25, stage 4): no setting governs the skill any more. Activation
 // registers it, before any host start, and cleanup disposes it. The world is
 // given a stored `false` for the old setting through an untyped option, so
