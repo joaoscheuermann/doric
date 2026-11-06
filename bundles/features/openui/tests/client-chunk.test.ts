@@ -61,3 +61,50 @@ test('the client entry imports no @openuidev package', async () => {
   );
   assert.equal(/["']@openuidev\//.test(entry), false);
 });
+
+// FT8 (openui-diagrams.md F6, F11; UD7, G5, CSP): the layout chunk is its own
+// file holding ELK, its source statement and both ELK notices, and nothing the
+// packaged CSP refuses; the renderer chunk holds no ELK and loads the layout
+// chunk beside it.
+
+test('the layout chunk holds ELK layered, the source statement and both Kiel notices', async () => {
+  const chunk = await read('client/chunks/layout.js');
+
+  assert.ok(chunk.includes('org.eclipse.elk.layered'));
+  for (const text of [
+    'This file contains elkjs 0.11.1 (https://github.com/kieler/elkjs)',
+    'elkjs is distributed here under the Eclipse Public License 2.0',
+    'Its Source Code is available under',
+    'https://github.com/kieler/elkjs/tree/0.11.1',
+    'https://github.com/eclipse-elk/elk.',
+    'Copyright (c) 2017 Kiel University and others.',
+    'Copyright (c) 2021 Kiel University and others.',
+  ]) {
+    assert.ok(chunk.includes(text), text);
+  }
+});
+
+// FT8, extended (openui-diagrams-phase2.md F18): the same chunk also lays
+// mind maps out with ELK's mrtree.
+test('the layout chunk holds ELK mrtree', async () => {
+  const chunk = await read('client/chunks/layout.js');
+
+  assert.ok(chunk.includes('org.eclipse.elk.mrtree'));
+});
+
+test('the layout chunk holds no new Function(, no eval( and no import', async () => {
+  const chunk = await read('client/chunks/layout.js');
+
+  assert.ok(chunk.length > 0);
+  assert.equal(chunk.includes('new Function('), false);
+  assert.equal(chunk.includes('eval('), false);
+  assert.deepEqual(specifiersOf(chunk), []);
+  assert.doesNotMatch(chunk, /(?:^|[;}\n])\s*import\s*(?:[\w$*{]|['"])/);
+});
+
+test('the renderer chunk holds no ELK and loads ./layout.js', async () => {
+  const chunk = await read('client/chunks/renderer.js');
+
+  assert.equal(chunk.includes('org.eclipse.elk'), false);
+  assert.ok(chunk.includes('./layout.js'));
+});

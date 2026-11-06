@@ -154,3 +154,14 @@ test('no module under src/contracts imports react', () => {
     );
   }
 });
+
+// FT9 (openui-diagrams.md F6): the layout chunk is a build of its own, so it
+// reaches no relative module by value; its types come by `import type`.
+test('the layout chunk reaches no relative module by value', () => {
+  const layout = join(CLIENT, 'chunks/layout.ts');
+
+  assert.deepEqual(
+    [...reachable(layout)].map((file) => relative(ROOT, file)),
+    ['src/client/chunks/layout.ts'],
+  );
+});

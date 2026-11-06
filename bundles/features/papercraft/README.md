@@ -52,7 +52,8 @@ for the concept and its decisions.
    characters). A fence without an identity starts a new program.
 2. **You explore.** Interact with the program in place, or open it in its own
    canvas window to pan, zoom, fit, isolate an element, browse the element tree
-   and switch between revisions, from the toolbar or the keyboard.
+   and switch between revisions, from the toolbar or the keyboard. The pan
+   and zoom math comes from `desktop/ui/viewport`.
 3. **You comment.** Arm the comment tool and click an element; hold `Alt` to
    pin a free point instead. Comments collect as drafts in the chat composer,
    and `Cmd/Ctrl+Enter` sends them together as your next prompt, under a

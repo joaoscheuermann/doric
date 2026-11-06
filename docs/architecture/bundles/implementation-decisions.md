@@ -1336,3 +1336,19 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 
 - **Entrega dos erros (U50).** `openui.programs/v1` envia os erros de uma fence fechada 200 ms depois do relatório, como instruct `validation` que mira o último prompt da Thread: steer enquanto ele roda, novo prompt na fila depois que terminou. Cada prompt que a validação não iniciou permite no máximo 3 envios imediatos; o hook de início de prompt zera essa conta e entrega o que esperava. Os erros de uma fence `unterminated` esperam o próximo início de prompt. Ver D18 em [openui.md](../../designs/openui.md#d18-validation-feedback-u19).
 - **Cartão (U49) e skills (U51).** O leitor vê os erros num cartão sob a fence, nos dois hosts; as skills `openui` e `papercraft` ganham a regra de patch e, na `openui`, os limites do formulário de perguntas.
+
+## OpenUI: diagramas, fase 1 (`Flowchart`, 2026-11-06)
+
+- **Componentes.** `Flowchart`, `Node`, `Edge` e `Group` na biblioteca da conversa; contorno durante o streaming e um layout ELK por revisão fechada, no chunk `client/chunks/layout.js`. Achados dos diagramas entram em `programCheck`. Spec: [openui-diagrams.md](../../designs/openui-diagrams.md); feature: [openui-diagrams.md](../../features/openui-diagrams.md).
+- **Sem Mermaid por enquanto (UD6); ELK aceito (UD7).** `elkjs` 0.11.1 fixado, EPL-2.0; o chunk mantém os avisos do ELK e uma declaração de fonte. Os textos de licença virão de uma mudança separada em `packages/bundle`; a fase 1 pode ser lançada antes dela ([FR12](../../designs/openui-diagrams.md#risks), risco aceito).
+- **Viewport compartilhado.** Os helpers de pan e zoom saíram do `papercraft` para `desktop/ui/viewport`, com `wheelGesture`; o `papercraft` os reexporta.
+- **Versões.** `openui` 2.1.0 → 2.2.0; `papercraft` e `packages/desktop` sem mudança de versão. A fase 2 está na seção seguinte.
+
+## OpenUI: diagramas, fase 2 (`SequenceDiagram`, `EntityDiagram`, `MindMap`, 2026-11-06)
+
+- **Componentes.** `SequenceDiagram` com `Participant`, `Message`, `Note`, `Fragment` e `Section`; `EntityDiagram` com `Entity`, `Field` e `Relation` (notações `er` e `class`, métodos como strings); `MindMap` com `Topic` recursivo. Leitura (`read.ts`), `useDrawn` (`view.ts`), contorno genérico e `DiagramFrame` compartilhados; checagem guiada por tabela (`DIAGRAM_PARTS`), com achados para partes fora do lugar e diagrama dentro de diagrama. Spec: [openui-diagrams-phase2.md](../../designs/openui-diagrams-phase2.md); feature: [openui-diagrams.md](../../features/openui-diagrams.md).
+- **Ainda sem Mermaid (UD6).** Os três tipos são nativos, como o `Flowchart`.
+- **Sequência sem ELK.** `sequence-layout.ts` do Doric posiciona participantes, mensagens, notas e fragmentos; um `SequenceDiagram` nunca carrega o chunk de layout.
+- **ELK `mrtree` para mapas mentais; layered com rótulos de ponta para entidades.** As cardinalidades são rótulos de ponta do ELK, com espaçamento para os marcadores; o `right` de um diagrama `class` é o layout `down` transposto, porque o `RIGHT` do ELK sobrepõe os rótulos de ponta; `er` mantém o `RIGHT` do ELK.
+- **Versão.** `openui` continua 2.2.0: as duas fases saem num commit e numa versão; nenhuma dependência nova. Rollback parcial (F24): uma 2.2.1 tira os doze componentes da fase 2 de `add` e restaura as quatro regras da fase 1 na skill; os fluxogramas continuam.
+- **Aceite pendente.** O crescimento do `renderer.js` nas duas fases mediu 100.194 bytes (5.594.179 → 5.694.373), 194 acima da meta de 100.000 do G5; fica para o aceite do usuário (FR17).

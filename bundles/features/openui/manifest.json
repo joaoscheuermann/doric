@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
   "id": "openui",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "engines": { "doric": "^1.0.0" },
-  "description": "Answers with UI in the conversation: OpenUI Lang fences drawn while the agent writes, the question form, actions back to the agent and validation feedback.",
+  "description": "Answers with UI in the conversation: OpenUI Lang fences drawn while the agent writes, diagrams laid out by the app, the question form, actions back to the agent and validation feedback.",
   "provides": [
     "openui.programs/v1@1.0.0",
     "openui.questions/v1@1.0.0",

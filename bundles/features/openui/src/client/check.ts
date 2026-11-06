@@ -10,6 +10,7 @@ import type {
   ReportedError,
 } from '../contracts/index.js';
 import type { ChatFenceView } from './chat-contract.js';
+import { diagramCheck, mergeDiagramErrors } from './diagram/check.js';
 import { parseProgram } from './library.js';
 import { questionOf } from './question/ask-input.js';
 
@@ -35,38 +36,44 @@ const statements = (
     return name === undefined ? [] : [{ name, line }];
   });
 
-/** The `Query` and `Mutation` statements of `program`; none when it does not parse. */
-const toolStatements = (program: string): readonly string[] => {
-  let parsed: ReturnType<typeof parseProgram>;
+type Parsed = ReturnType<typeof parseProgram> | undefined;
+
+/** `program` parsed once for the whole check; `undefined` when it does not parse. */
+const parse = (program: string): Parsed => {
   try {
-    parsed = parseProgram(program);
+    return parseProgram(program);
   } catch {
     // A program the parser cannot read reaches `onError` as OpenUI's own error.
-    return [];
+    return undefined;
   }
-  return [...parsed.queryStatements, ...parsed.mutationStatements].map(
-    ({ statementId }) => statementId,
-  );
 };
 
+/** The `Query` and `Mutation` statements of a parse; none when it did not parse. */
+const toolStatements = (parsed: Parsed): readonly string[] =>
+  parsed === undefined
+    ? []
+    : [...parsed.queryStatements, ...parsed.mutationStatements].map(
+        ({ statementId }) => statementId,
+      );
+
+const programOf = (revision: ProgramRevision): string =>
+  typeof revision.program === 'string' ? revision.program : '';
+
 /**
- * The program half of `check`: `Query`/`Mutation`, `@OpenUrl` and an
- * `AskForm` off the root when the fence is not a question (D29). The
- * reader's card shows these.
+ * `Query`/`Mutation`, `@OpenUrl` and an `AskForm` off the root when the
+ * fence is not a question (D29), without the diagram findings.
  */
-export const programCheck = (
+const ownErrors = (
   revision: ProgramRevision,
+  parsed: Parsed,
 ): readonly ReportedError[] => {
-  const program = typeof revision.program === 'string' ? revision.program : '';
-  const lines = statements(program);
-  const errors: ReportedError[] = toolStatements(program).map(
-    (statementId) => ({
-      code: 'tool-not-found',
-      statementId,
-      message:
-        'Query and Mutation are not available; write the data as literals.',
-    }),
-  );
+  const lines = statements(programOf(revision));
+  const errors: ReportedError[] = toolStatements(parsed).map((statementId) => ({
+    code: 'tool-not-found',
+    statementId,
+    message:
+      'Query and Mutation are not available; write the data as literals.',
+  }));
 
   for (const { name, line } of lines) {
     if (line.includes('@OpenUrl(')) {
@@ -94,6 +101,22 @@ export const programCheck = (
 };
 
 /**
+ * The program half of `check`: `Query`/`Mutation`, `@OpenUrl`, an `AskForm`
+ * off the root when the fence is not a question (D29), and the diagram
+ * findings merged into them (openui-diagrams.md F3). The reader's card
+ * shows these.
+ */
+export const programCheck = (
+  revision: ProgramRevision,
+): readonly ReportedError[] => {
+  const parsed = parse(programOf(revision));
+  return mergeDiagramErrors(
+    ownErrors(revision, parsed),
+    diagramCheck(parsed?.root),
+  );
+};
+
+/**
  * The question half of `check`: the refusal in an agent's Thread and the
  * invalid-question line of a closed question fence (D29).
  */
@@ -106,8 +129,7 @@ export const questionCheck = (
     return [{ code: 'runtime-error', statementId: 'root', message: REFUSED }];
   }
   if (view.fence.state !== 'closed') return [];
-  const program = typeof revision.program === 'string' ? revision.program : '';
-  const read = questionOf(program);
+  const read = questionOf(programOf(revision));
   if (read.input !== undefined) return [];
   return [
     {
@@ -122,10 +144,13 @@ export const questionCheck = (
 export const check = (
   view: ChatFenceView,
   revision: ProgramRevision,
-): readonly ReportedError[] => [
-  ...programCheck(revision),
-  ...questionCheck(view, revision),
-];
+): readonly ReportedError[] => {
+  const parsed = parse(programOf(revision));
+  return mergeDiagramErrors(
+    [...ownErrors(revision, parsed), ...questionCheck(view, revision)],
+    diagramCheck(parsed?.root),
+  );
+};
 
 /** OpenUI's error as reported: its message, with D7's hint for `unknown-component`, cut to 300 characters. */
 export const map = (error: OpenUIErrorLike): ReportedError => {

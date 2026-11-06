@@ -1,6 +1,7 @@
 // The conversation library (openui.md D7, D17; conversation-openui.md D21,
 // D29), in the renderer chunk: react-ui's library with the three question
-// built-ins added and `Modal` drawn inside the fence (U28).
+// built-ins and the diagram components added (openui-diagrams.md F1) and
+// `Modal` drawn inside the fence (U28).
 
 import {
   type ComponentRenderProps,
@@ -13,6 +14,16 @@ import { openuiLibrary } from '@openuidev/react-ui/genui-lib';
 import { createElement, type ReactNode } from 'react';
 
 import { defineQuestionBuiltins } from '../contracts/index.js';
+import {
+  defineDiagramBuiltins,
+  defineEntityBuiltins,
+  defineMindMapBuiltins,
+  defineSequenceBuiltins,
+} from './diagram/definitions.js';
+import { EntityView } from './diagram/entity.js';
+import { FlowchartView } from './diagram/flowchart.js';
+import { MindMapView } from './diagram/mindmap.js';
+import { SequenceView } from './diagram/sequence.js';
 import { AskFormView } from './question/ask-form.js';
 
 const none = () => null;
@@ -21,6 +32,37 @@ const none = () => null;
 const [AskOption, AskQuestion, AskForm] = defineQuestionBuiltins(
   defineComponent,
   { AskOption: none, AskQuestion: none, AskForm: AskFormView },
+);
+
+/** Node, Edge and Group draw nothing themselves: `Flowchart` reads its parts from its own props (F1). */
+const [Node, Edge, Group, Flowchart] = defineDiagramBuiltins(defineComponent, {
+  Node: none,
+  Edge: none,
+  Group: none,
+  Flowchart: FlowchartView,
+});
+
+/** The sequence parts draw nothing themselves: `SequenceDiagram` reads its parts from its own props. */
+const [Participant, Message, Note, Section, Fragment, SequenceDiagram] =
+  defineSequenceBuiltins(defineComponent, {
+    Participant: none,
+    Message: none,
+    Note: none,
+    Section: none,
+    Fragment: none,
+    SequenceDiagram: SequenceView,
+  });
+
+/** Topic draws nothing itself: `MindMap` reads its topics from its own props. */
+const [Topic, MindMap] = defineMindMapBuiltins(defineComponent, {
+  Topic: none,
+  MindMap: MindMapView,
+});
+
+/** Field, Entity and Relation draw nothing themselves: `EntityDiagram` reads its parts from its own props. */
+const [Field, Entity, Relation, EntityDiagram] = defineEntityBuiltins(
+  defineComponent,
+  { Field: none, Entity: none, Relation: none, EntityDiagram: EntityView },
 );
 
 const modal = openuiLibrary.components.Modal;
@@ -55,9 +97,32 @@ const Modal = defineComponent({
   component: InlineModal,
 });
 
-/** The conversation library: react-ui's, the question built-ins, and `Modal` inline. */
+/** The conversation library: react-ui's, the question built-ins, the diagram components, and `Modal` inline. */
 export const library = openuiLibrary.extend({
-  components: { add: [AskForm, AskQuestion, AskOption], override: [Modal] },
+  components: {
+    add: [
+      AskForm,
+      AskQuestion,
+      AskOption,
+      Flowchart,
+      Node,
+      Edge,
+      Group,
+      SequenceDiagram,
+      Participant,
+      Message,
+      Note,
+      Fragment,
+      Section,
+      EntityDiagram,
+      Entity,
+      Field,
+      Relation,
+      MindMap,
+      Topic,
+    ],
+    override: [Modal],
+  },
 });
 
 let parser: ReturnType<typeof createParser> | undefined;

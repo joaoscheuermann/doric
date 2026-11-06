@@ -12,6 +12,10 @@ import type {
   ChatFenceView,
 } from '../../../src/client/chat-contract.js';
 import { ConversationFence } from '../../../src/client/chunks/renderer.js';
+import type {
+  LayoutGraph,
+  LayoutResult,
+} from '../../../src/client/diagram/layout-types.js';
 import type { ProgramRevision } from '../../../src/contracts/index.js';
 
 export const projectId = 'project-1';
@@ -136,6 +140,8 @@ export interface FenceProps {
   readonly superseded?: boolean;
   readonly services: Services;
   readonly watchAnswers?: (target: unknown, listener: () => void) => () => void;
+  /** Passed to `ConversationFence` as is; absent uses the module's real loader. */
+  readonly layout?: (graph: LayoutGraph) => Promise<LayoutResult>;
 }
 
 const element = (props: FenceProps) =>
@@ -146,6 +152,7 @@ const element = (props: FenceProps) =>
     superseded: props.superseded ?? false,
     services: props.services,
     watchAnswers: props.watchAnswers ?? (() => () => undefined),
+    layout: props.layout,
   });
 
 /** Mounts `ConversationFence` with `props` in a new container of the document. */

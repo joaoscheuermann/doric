@@ -77,6 +77,12 @@
       "import": "./dist/svg-mask.js",
       "default": "./dist/svg-mask.js"
     },
+    "./ui/viewport": {
+      "@org/source": "./src/viewport.ts",
+      "types": "./dist/viewport.d.ts",
+      "import": "./dist/viewport.js",
+      "default": "./dist/viewport.js"
+    },
     "./ui/utils": {
       "@org/source": "./src/lib/utils.ts",
       "types": "./dist/lib/utils.d.ts",

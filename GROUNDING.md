@@ -880,7 +880,8 @@ payload)` to the same bundle in every other live generation. The kernel names
 
 Client reads and UI that name a bundle's concept belong to that bundle.
 `packages/desktop/reads` and `packages/desktop/ui` hold only generic primitives
-(refresh queues, path utilities, tree and panel components, tokens).
+(refresh queues, path utilities, tree and panel components, tokens, and the
+pan, zoom and wheel-gesture helpers of `desktop/ui/viewport`).
 
 ### Current Runtime
 
@@ -995,7 +996,7 @@ draws nothing for them; the agent asks the user with the `openui` question
 form described below. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
 describes below. Migration stages 5 to 7 are described below.
 
-`/bundles/features/openui` (2.0.0) draws UI the agent writes in its answer as
+`/bundles/features/openui` (2.2.0) draws UI the agent writes in its answer as
 OpenUI Lang programs (`@openuidev/lang-core` and `@openuidev/react-lang` 1.0.2,
 `@openuidev/react-ui` 0.18.1). Its client registers `<openui-fence>` as chat's
 renderer of `openui-lang` fences (`chat.views/v1.registerFenceRenderer`) at
@@ -1019,7 +1020,12 @@ prompt while it runs or as a queued new prompt once it has finished, at most 3
 immediate sends per prompt not started by validation; an unterminated fence's
 errors wait for the next prompt start (`runtime.hooks/v1`
 `onPromptStartedHook`). The host registers the `openui` skill (order 3400,
-loaded on demand) at activation. See `bundles/features/openui/README.md`.
+loaded on demand) at activation. Its library adds the diagram components
+`Flowchart`, `SequenceDiagram`, `EntityDiagram` and `MindMap` with their parts:
+an outline while streaming, then one layout per closed revision, by ELK in the
+client chunk `client/chunks/layout.js` (`elkjs` 0.11.1, pinned, EPL-2.0) except
+for sequences, which Doric lays out itself without loading the chunk; diagram findings join `programCheck`. See
+`bundles/features/openui/README.md`.
 
 The `artifacts` bundle was removed with OpenUI's stage 4: `artifacts/v1`,
 `artifact.kind/v1`, `artifacts.cache/v1` and the setting

@@ -172,6 +172,22 @@ MetricIndicatorWithStrikethrough(value: string, subtext?: string, previousValue?
 AskOption(label: string, description?: string, recommended?: boolean) — One option of an AskQuestion.
 AskQuestion(id: string, question: string, options: AskOption[], multiSelect?: boolean, allowOther?: boolean) — One multiple-choice question of an AskForm.
 AskForm(questions: AskQuestion[], context?: string) — Questions the reader must answer before you continue. Must be the root of its own fence.
+Flowchart(nodes: Node[], edges?: Edge[], groups?: Group[], direction?: "down" | "right", height?: number) — Boxes and arrows laid out automatically: flowcharts, pipelines, architecture with grouped regions.
+Node(id: string, label: string, shape?: "box" | "round" | "diamond" | "circle" | "cylinder", group?: string) — One box of a Flowchart; group names the Group that holds it.
+Edge(from: string, to: string, label?: string, line?: "solid" | "dashed", arrow?: "end" | "none") — A connection between two Node ids.
+Group(id: string, label: string, parent?: string) — A region of a Flowchart; parent names the Group it sits in.
+SequenceDiagram(participants: Participant[], steps?: (Message | Note | Fragment)[], height?: number) — Messages between participants over time, in steps order.
+Participant(id: string, label: string) — One lifeline of a SequenceDiagram.
+Message(from: string, to: string, text: string, kind?: "call" | "reply" | "async") — One message between two Participant ids; from equal to to is a self-message.
+Note(text: string, over: string[]) — A note over one or more Participant ids.
+Fragment(kind: "loop" | "opt" | "alt" | "par", sections: Section[]) — A loop, option, alternative or parallel block of steps.
+Section(label: string, steps: (Message | Note | Fragment)[]) — One labelled run of steps of a Fragment.
+EntityDiagram(entities: Entity[], relations?: Relation[], notation?: "er" | "class", direction?: "down" | "right", height?: number) — ER or class diagram laid out automatically.
+Entity(id: string, name: string, fields?: Field[], methods?: string[]) — One table or class; methods for classes only.
+Field(name: string, type?: string, key?: "pk" | "fk" | "pk-fk" | "unique") — One column or attribute of an Entity.
+Relation(from: string, to: string, kind?: "association" | "inherits" | "implements" | "composition" | "aggregation" | "dependency", label?: string, fromCount?: "1" | "0..1" | "*" | "1..*", toCount?: "1" | "0..1" | "*" | "1..*") — A relation between two Entity ids; kind applies to class diagrams.
+MindMap(root: Topic, layout?: "right" | "down", height?: number) — A mind map (right) or a tree (down) from one root Topic.
+Topic(label: string, children?: Topic[]) — One topic of a MindMap and its subtopics.
 
 ## Action — Button Behavior
 
@@ -398,3 +414,8 @@ title = TextContent("Trip plan, revised", "large-heavy")
 - No tools are connected to these programs: do not write Query, Mutation or @Run, and write all data as literal values.
 - Do not use remote image URLs; the app does not load them. Never put a line made only of backticks inside a string, because it ends the fence.
 - Repository components and Export exist only in papercraft fences, which the papercraft skill describes. Never use them in an openui-lang fence.
+- Draw structure with a diagram and numbers with a chart: a Flowchart for a process, a pipeline or an architecture with regions (groups); a SequenceDiagram for messages over time; an EntityDiagram for tables ("er") or classes ("class"); a MindMap for a mind map ("right") or a tree ("down"). Put a diagram at the root or in a Stack.
+- Write a diagram right after root, then its lists in this order, each on one line: `chart = Flowchart(nodes, edges, groups, "down")`, `nodes`, `groups` (`[]` when none), `edges`; `seq = SequenceDiagram(participants, steps)`, `participants`, `steps`; `model = EntityDiagram(entities, relations, "er")`, `entities`, `relations`; `map = MindMap(top, "right")`, then `top = Topic("…", [b1, b2])` and one statement per branch, `b1 = Topic("…", [Topic(…), …])`. To change a diagram, patch only the statements that change, each written whole.
+- Ids have 1 to 64 characters and are unique among a diagram's parts of one type. Edges, messages, notes and relations name ids of their own diagram; a Node's group and a Group's parent name Groups of the same Flowchart. Never give positions, sizes or colors: the app lays diagrams out.
+- Limits per diagram: Flowchart 100 nodes, 200 edges, 25 groups nested 4 deep; SequenceDiagram 20 participants, 200 steps; EntityDiagram 60 entities, 120 relations; MindMap 300 topics, 8 levels. Labels are cut at 120 characters. Split anything larger.
+- In a class diagram, methods are plain strings such as "save(): void"; inherits and implements point from the child to the parent, composition and aggregation from the whole to the part.

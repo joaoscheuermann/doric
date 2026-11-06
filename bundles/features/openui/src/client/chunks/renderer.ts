@@ -25,6 +25,8 @@ import {
 import { actionText } from '../actions.js';
 import { type ChatFenceView, ChatSendV1 } from '../chat-contract.js';
 import { check, map, programCheck } from '../check.js';
+import { createLayoutLoader } from '../diagram/layout-loader.js';
+import type { LayoutGraph, LayoutResult } from '../diagram/layout-types.js';
 import { library } from '../library.js';
 import { FenceContext } from '../question/fence-context.js';
 import { ErrorsCard } from './errors-card.js';
@@ -54,7 +56,22 @@ export interface ConversationFenceProps {
   readonly services: Services;
   /** The entry's `watchAnswers` (`answer-changes.ts`). */
   readonly watchAnswers: WatchAnswers;
+  /** The layout the fence's diagrams use; the window's layout loader (F6) when absent. */
+  readonly layout?: (graph: LayoutGraph) => Promise<LayoutResult>;
 }
+
+type LayoutChunk = typeof import('./layout.js');
+
+/**
+ * The window's layout loader (openui-diagrams.md F6): the layout chunk is
+ * built beside this one, so its URL is resolved from this module's.
+ */
+const layoutLoader = createLayoutLoader(
+  () =>
+    import(
+      new URL('./layout.js', import.meta.url).href
+    ) as Promise<LayoutChunk>,
+);
 
 /**
  * One fence drawn by `Renderer` with D5's text and `isStreaming`, inside an
@@ -65,6 +82,8 @@ export interface ConversationFenceProps {
  */
 export function ConversationFence(props: ConversationFenceProps): ReactNode {
   const { view, revision, latest, superseded, services, watchAnswers } = props;
+  const layout = props.layout ?? layoutLoader;
+  const interactive = blockedReason(view, latest) === undefined;
   const { fence } = view;
   const streaming = fence.state === 'streaming';
   // D5: the raw body while revision 1 streams, else the revision's program.
@@ -148,8 +167,16 @@ export function ConversationFence(props: ConversationFenceProps): ReactNode {
   );
 
   const context = useMemo(
-    () => ({ view, revision, superseded, services, watchAnswers }),
-    [view, revision, superseded, services, watchAnswers],
+    () => ({
+      view,
+      revision,
+      superseded,
+      services,
+      watchAnswers,
+      interactive,
+      layout,
+    }),
+    [view, revision, superseded, services, watchAnswers, interactive, layout],
   );
 
   return createElement(
