@@ -24,9 +24,6 @@
     },
     {
       "path": "../../desktop/chat"
-    },
-    {
-      "path": "../threads"
     }
   ],
   "exclude": ["src/client/**"]

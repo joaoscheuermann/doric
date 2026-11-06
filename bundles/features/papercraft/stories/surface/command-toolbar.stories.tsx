@@ -18,8 +18,7 @@ const toolbar = (
   hasSelection: false,
   hasHidden: false,
   zoom: '100%',
-  revisions: { current: 1, total: 1, list: [1], approved: false },
-  approvalNeeded: false,
+  revisions: { current: 1, total: 1, list: [1] },
   ...overrides,
 });
 
@@ -66,29 +65,7 @@ export const Revisions = {
   render: () => (
     <CommandToolbar
       {...toolbar({
-        revisions: { current: 2, total: 3, list: [1, 2, 3], approved: false },
-      })}
-    />
-  ),
-};
-
-/** Under `request`, the revision on screen still to approve. */
-export const ApprovalNeeded = {
-  render: () => (
-    <CommandToolbar
-      {...toolbar({
-        revisions: { current: 3, total: 3, list: [1, 2, 3], approved: false },
-        approvalNeeded: true,
-      })}
-    />
-  ),
-};
-
-export const Approved = {
-  render: () => (
-    <CommandToolbar
-      {...toolbar({
-        revisions: { current: 3, total: 3, list: [1, 2, 3], approved: true },
+        revisions: { current: 2, total: 3, list: [1, 2, 3] },
       })}
     />
   ),

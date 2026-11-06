@@ -16,9 +16,8 @@
 // selection does, the viewport, and the proposal. Every control dispatches by
 // `commands/v1.execute` — the path the `git` Changes panel uses — and reads a
 // field of the frame's state, never a new one of its own. What is unavailable
-// is disabled, not hidden: the two exceptions are the readings — the revision
-// exists only with more than one, and `Autorizar` becomes the reading
-// `Autorizado` once the revision on screen is approved.
+// is disabled, not hidden: the exception is the revision reading, which
+// exists only with more than one.
 
 import type { Commands } from 'bundle/contracts';
 import { Badge } from 'desktop/ui/badge';
@@ -47,7 +46,6 @@ import {
 import { memo, type ReactElement, type ReactNode } from 'react';
 
 import {
-  APPROVE_COMMAND,
   COMMENT_COMMAND,
   ISOLATE_COMMAND,
   PAN_COMMAND,
@@ -153,8 +151,6 @@ export interface CommandToolbarProps {
   readonly zoom: string;
   /** The proposal: which revisions exist and which is on screen. */
   readonly revisions: RevisionReading;
-  /** Under the `request` policy only, and only while not yet approved. */
-  readonly approvalNeeded: boolean;
 }
 
 /**
@@ -171,7 +167,6 @@ export const CommandToolbar = memo(function CommandToolbar({
   hasHidden,
   zoom,
   revisions,
-  approvalNeeded,
 }: CommandToolbarProps) {
   return (
     <div
@@ -305,7 +300,7 @@ export const CommandToolbar = memo(function CommandToolbar({
 
       <ToolbarDivider />
 
-      {/* Proposta: the revision reading, and `Autorizar` under `request`. */}
+      {/* Proposta: the revision reading. */}
       {revisions.total > 1 ? (
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -344,25 +339,6 @@ export const CommandToolbar = memo(function CommandToolbar({
           rev {String(revisions.current)}/{String(revisions.total)}
         </span>
       )}
-
-      {approvalNeeded ? (
-        <Button
-          size="sm"
-          variant="default"
-          aria-label="Autorizar"
-          onClick={() => execute(APPROVE_COMMAND, { artifactId })}
-        >
-          <CheckIcon aria-hidden="true" />
-          Autorizar
-        </Button>
-      ) : revisions.approved ? (
-        <span
-          className="px-2 text-xs text-muted-foreground"
-          data-approved="true"
-        >
-          Autorizado
-        </span>
-      ) : null}
     </div>
   );
 });

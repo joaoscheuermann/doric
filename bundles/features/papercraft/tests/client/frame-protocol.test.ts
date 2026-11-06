@@ -1,9 +1,7 @@
 // PC2 (papercraft-openui.md D6, "Protocol 2"): the app validates each frame
-// message with its frame's protocol. Protocol 1, the artifact previews' frame,
-// is unchanged; protocol 2, the papercraft program frame, has a repeatable
+// message with protocol 2, the papercraft program frame's: a repeatable
 // `program`, scene nodes named by statement instead of a stamp, a bounded
-// `errors` message and no `action`. Each end drops the other protocol's
-// handshake.
+// `errors` message and no `action`. A handshake of another number is dropped.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -90,28 +88,28 @@ test('PC2: protocol 2 has no `action` message, and a `ready` of protocol 1 is dr
   assert.equal(frameMessage({ kind: 'ready', protocol: 1 }, 2), undefined);
 });
 
-test("PC2: protocol 1 still takes today's messages, a node with `stamp` included, and drops a `ready` of 2", () => {
-  const stamped = scene([node({ stamp: 'src/checkout.html:12' })]);
-
-  assert.deepEqual(frameMessage(stamped, 1), stamped);
-  assert.deepEqual(frameMessage({ kind: 'ready', protocol: 1 }, 1), {
-    kind: 'ready',
-    protocol: 1,
-  });
-  assert.equal(frameMessage({ kind: 'ready', protocol: 2 }, 1), undefined);
-  // Protocol 2's own fields are not protocol 1's.
-  assert.equal(
-    frameMessage(scene([node({ statement: 'save' })]), 1),
-    undefined,
-  );
-  assert.equal(frameMessage(errors(1), 1), undefined);
-});
-
 test("PC2: a `hello` of the other protocol's number is not one, and connectMessage(2) carries 2", () => {
   assert.equal(isHello({ papercraft: 2, kind: 'hello' }, 2), true);
   assert.equal(isHello({ papercraft: 1, kind: 'hello' }, 2), false);
-  assert.equal(isHello({ papercraft: 2, kind: 'hello' }, 1), false);
-  assert.equal(isHello({ papercraft: 1, kind: 'hello' }), true);
   assert.deepEqual(connectMessage(2), { papercraft: 2, kind: 'connect' });
-  assert.deepEqual(connectMessage(1), { papercraft: 1, kind: 'connect' });
+});
+
+// PC2 (D25, stage 4): protocol 1 is gone, so protocol 2 is the default of
+// every reader that is not told a protocol.
+test('PC2: with no protocol given, a hello, a ready and a scene are read as protocol 2', () => {
+  assert.equal(isHello({ papercraft: 2, kind: 'hello' }), true);
+  assert.equal(isHello({ papercraft: 1, kind: 'hello' }), false);
+  assert.deepEqual(frameMessage({ kind: 'ready', protocol: 2 }), {
+    kind: 'ready',
+    protocol: 2,
+  });
+  assert.equal(frameMessage({ kind: 'ready', protocol: 1 }), undefined);
+
+  const named = scene([node({ statement: 'save', component: 'Button' })]);
+  assert.deepEqual(frameMessage(named), named);
+  assert.equal(
+    frameMessage(scene([node({ stamp: 'src/checkout.html:12' })])),
+    undefined,
+  );
+  assert.notEqual(frameMessage(errors(1)), undefined);
 });

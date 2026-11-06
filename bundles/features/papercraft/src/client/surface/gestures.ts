@@ -31,7 +31,7 @@ import {
 
 import type { CommentAnchor, PreviewTool } from '../../contracts/index.js';
 import { anchorOf, pointAnchorOf, programAnchorOf } from '../anchor.js';
-import type { FrameMessage } from '../frame-protocol.js';
+import type { ProgramFrameMessage } from '../frame-protocol.js';
 import { anchorIndexOf, type ContentPoint, offsetIn } from './pin-geometry.js';
 import { OVERLAY_ATTRIBUTE } from './pins-layer.js';
 import type { Scene } from './scene.js';
@@ -77,8 +77,8 @@ export interface GestureInput {
   readonly program?: boolean;
 }
 
-type FramePointer = Extract<FrameMessage, { kind: 'pointer' }>;
-type FrameWheel = Extract<FrameMessage, { kind: 'wheel' }>;
+type FramePointer = Extract<ProgramFrameMessage, { kind: 'pointer' }>;
+type FrameWheel = Extract<ProgramFrameMessage, { kind: 'wheel' }>;
 
 /** One pointer event of the canvas, from the app's DOM or from the frame. */
 interface CanvasPointer {

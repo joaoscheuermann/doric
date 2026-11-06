@@ -26,10 +26,8 @@ export interface PreviewController {
   zoomFit(): void;
   /** Switches the revision on screen. */
   selectRevision(revision: number): void;
-  /** Which revision is on screen, as `Autorizar` needs it. */
+  /** Which revision is on screen. */
   currentRevision(): number | undefined;
-  /** Rereads the record after its approval changed it. */
-  reload(): void;
   /** Confirms the open note and sends the Thread's stack. */
   sendNow(): Promise<void>;
 }

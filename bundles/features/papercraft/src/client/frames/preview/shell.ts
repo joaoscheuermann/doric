@@ -1,24 +1,22 @@
-// The frame shell (D6): what both frame entries do apart from drawing — the
-// handshake (`hello`, `connect`, `ready` with the entry's protocol), `send`,
-// error reporting, the theme, the cursor lock, the hidden set, size, measure
-// and scene posting, and the shared app messages `theme`, `capture`, `hidden`,
-// `cursor`, `measure` and `dispose`. `frames/openui/runtime.ts` runs it with
-// protocol 2; `frames/preview/runtime.ts` keeps its own copy of these steps
-// under protocol 1.
+// The frame shell (D6), the only shell: what the program frame does apart
+// from drawing — the handshake (`hello`, `connect`, `ready` with the entry's
+// protocol), `send`, error reporting, the theme, the cursor lock, the hidden
+// set, size, measure and scene posting, and the app messages `theme`,
+// `capture`, `hidden`, `cursor`, `measure` and `dispose`.
+// `frames/openui/runtime.ts` runs it with protocol 2.
 
 import type {
-  FrameMessage,
   FrameProtocol,
   InputCapture,
   PreviewTheme,
   ProgramFrameMessage,
 } from '../../frame-protocol.js';
 import { type FrameInput, watchInput } from './input.js';
-import type { FrameWindow } from './runtime.js';
 import { deriveScene, type FrameScene } from './scene.js';
 import { installMemoryStorage } from './storage.js';
 
-export type { FrameWindow };
+/** The frame's own window, with its realm's globals. */
+export type FrameWindow = Window & typeof globalThis;
 
 export interface FrameShellOptions {
   /** The entry's protocol: its `hello`, `ready` and accepted `connect` carry it. */
@@ -33,7 +31,7 @@ export interface FrameShellOptions {
 
 export interface FrameShell {
   /** Posts one message to the app on the connected port; before `connect`, nothing. */
-  send(message: FrameMessage | ProgramFrameMessage): void;
+  send(message: ProgramFrameMessage): void;
   /** Posts an `error` message for `error`, its text prefixed when `prefix` is given; never throws. */
   reportError(error: unknown, prefix?: string): void;
   /** Measures again and posts `scene` and `size` when either changed; `force` posts both anyway. */
@@ -68,7 +66,10 @@ const errorText = (error: unknown): string => {
 const stackOf = (error: unknown): string | undefined =>
   isRecord(error) && typeof error.stack === 'string' ? error.stack : undefined;
 
-const errorMessage = (message: string, stack?: string): FrameMessage => ({
+const errorMessage = (
+  message: string,
+  stack?: string,
+): ProgramFrameMessage => ({
   kind: 'error',
   message: message.slice(0, ERROR_MESSAGE_LIMIT),
   ...(stack === undefined || stack === ''
@@ -107,7 +108,7 @@ export const startFrameShell = (
   let cursorSheet: HTMLStyleElement | undefined;
   const cleanups: (() => void)[] = [];
 
-  const send = (message: FrameMessage | ProgramFrameMessage): void => {
+  const send = (message: ProgramFrameMessage): void => {
     if (disposed) return;
 
     try {
@@ -222,7 +223,7 @@ export const startFrameShell = (
 
     if (disposed || root === undefined) return;
 
-    scene = deriveScene(topsOf(root), options.protocol);
+    scene = deriveScene(topsOf(root));
     applyHidden();
 
     const nodes = scene.nodes.map((node) => node.data);
@@ -230,7 +231,7 @@ export const startFrameShell = (
 
     if (force || serialized !== sentScene) {
       sentScene = serialized;
-      send({ kind: 'scene', nodes } as FrameMessage);
+      send({ kind: 'scene', nodes });
     }
 
     const height = html.getBoundingClientRect().height;
@@ -374,10 +375,10 @@ export const startFrameShell = (
     channel.onmessage = (incoming: MessageEvent) => onAppMessage(incoming.data);
     input = watchInput({
       win,
-      report: send as (message: FrameMessage) => void,
+      report: send,
       scene: () => scene,
     });
-    send({ kind: 'ready', protocol: options.protocol } as FrameMessage);
+    send({ kind: 'ready', protocol: options.protocol });
   };
 
   win.addEventListener('message', onConnect);

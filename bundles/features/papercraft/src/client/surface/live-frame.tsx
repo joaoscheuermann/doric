@@ -1,5 +1,5 @@
 // `live-frame.tsx` — the live boundary of a preview: one sandboxed iframe
-// running the bundle's preview runtime, and the one `MessageChannel` the app
+// running the bundle's program runtime, and the one `MessageChannel` the app
 // speaks to it through (`frame-protocol.ts`,
 // docs/architecture/bundles/papercraft/isolamento.md).
 //
@@ -13,8 +13,8 @@
 // port is parsed with `frameMessage` — the frame runs the Project's code —
 // and what does not parse is dropped, as is anything before `ready`.
 //
-// After `ready`, the frame is initialised with the content once the surface
-// knows it (`init`), and from then on follows the props: the theme, the
+// After `ready`, the frame is initialised with the program once the surface
+// knows it (`init`, then `program`), and from then on follows the props: the theme, the
 // input capture, the hidden layers, the cursor lock and each measure
 // request are posted when they change. When the component goes the revision
 // is disposed (`dispose`) and the port closed, and the iframe leaves with it.
@@ -27,16 +27,11 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef } from 'react';
 
 import {
-  type AppMessage,
   connectMessage,
-  type FrameContent,
-  type FrameMessage,
-  type FrameProtocol,
   frameMessage,
   type InputCapture,
   isHello,
   PROGRAM_PROTOCOL,
-  PROTOCOL,
   type PreviewTheme,
   type ProgramAppMessage,
   type ProgramFrameMessage,
@@ -65,8 +60,6 @@ export interface ProgramContent {
 export interface LiveFrameProps {
   /** The frame document (`frameDocumentUrl`). */
   readonly src: string;
-  /** What to render; the frame is initialised once it is known. */
-  readonly content: FrameContent | undefined;
   readonly theme: PreviewTheme;
   readonly capture: InputCapture;
   /** The ids of the last scene's nodes to hide. */
@@ -77,16 +70,14 @@ export interface LiveFrameProps {
   /** The iframe's box, in content pixels. */
   readonly style?: CSSProperties;
   /** Every validated message of the frame after `ready`. */
-  readonly onMessage: (message: FrameMessage | ProgramFrameMessage) => void;
+  readonly onMessage: (message: ProgramFrameMessage) => void;
   readonly title?: string;
-  /** The frame's protocol: 1 (the default) for `previewFrameSrc`, 2 for `programFrameSrc`. */
-  readonly protocol?: FrameProtocol;
   /**
-   * Protocol 2: what `init` and `program` carry; the frame is initialised
-   * once it is known, and `program` is posted again on each change.
+   * What `init` and `program` carry; the frame is initialised once it is
+   * known, and `program` is posted again on each change.
    */
   readonly program?: ProgramContent;
-  /** Protocol 2: take the window's warm frame, when it has one (D6). */
+  /** Take the window's warm frame, when it has one (D6). */
   readonly adopt?: boolean;
 }
 
@@ -102,7 +93,7 @@ interface Sent {
   hidden: string;
   cursor: string;
   measure: number;
-  /** Protocol 2: the last `program` posted, as JSON. */
+  /** The last `program` posted, as JSON. */
   program?: string;
 }
 
@@ -119,7 +110,6 @@ const cursorKeyOf = (cursor: FrameCursor): string =>
 
 export function LiveFrame({
   src,
-  content,
   theme,
   capture,
   hidden,
@@ -128,23 +118,20 @@ export function LiveFrame({
   style,
   onMessage,
   title = 'preview',
-  protocol = PROTOCOL,
   program,
   adopt = false,
 }: LiveFrameProps) {
-  const iframe = useRef<HTMLIFrameElement>(null);
   const holder = useRef<HTMLSpanElement>(null);
-  /** Protocol 2's iframe, made (or adopted) outside React's tree. */
+  /** The iframe, made (or adopted) outside React's tree. */
   const own = useRef<HTMLIFrameElement | undefined>(undefined);
   const port = useRef<MessagePort | undefined>(undefined);
   const sent = useRef<Sent>(freshSent());
-  /** What the frame mounts with: a new protocol, entry or warm frame is a new frame (its `key`). */
-  const mount = useRef({ protocol, adopt, src, title, style });
+  /** What the frame mounts with: a new entry or warm frame is a new frame (its `key`). */
+  const mount = useRef({ adopt, src, title, style });
 
   // The props are read when the frame is ready and on every render, so a
   // prop change never reconnects the frame.
   const latest = useRef({
-    content,
     theme,
     capture,
     hidden,
@@ -154,7 +141,6 @@ export function LiveFrame({
     program,
   });
   latest.current = {
-    content,
     theme,
     capture,
     hidden,
@@ -172,37 +158,14 @@ export function LiveFrame({
 
     if (channel === undefined || !state.ready) return;
 
-    const post = (message: AppMessage | ProgramAppMessage) =>
-      channel.postMessage(message);
+    const post = (message: ProgramAppMessage) => channel.postMessage(message);
 
-    if (protocol === PROGRAM_PROTOCOL) {
-      if (props.program === undefined) return;
+    if (props.program === undefined) return;
 
-      if (!state.initialised) {
-        post({
-          kind: 'init',
-          ...props.program.init,
-          theme: props.theme,
-          capture: props.capture,
-        });
-        state.initialised = true;
-        state.theme = props.theme;
-        state.capture = props.capture;
-        state.measure = props.measureRequest;
-      }
-
-      const next = JSON.stringify(props.program.message);
-
-      if (state.program !== next) {
-        state.program = next;
-        post({ kind: 'program', ...props.program.message });
-      }
-    } else if (!state.initialised) {
-      if (props.content === undefined) return;
-
+    if (!state.initialised) {
       post({
         kind: 'init',
-        content: props.content,
+        ...props.program.init,
         theme: props.theme,
         capture: props.capture,
       });
@@ -211,6 +174,13 @@ export function LiveFrame({
       state.capture = props.capture;
       // The first scene follows the mount: no measure is owed.
       state.measure = props.measureRequest;
+    }
+
+    const next = JSON.stringify(props.program.message);
+
+    if (state.program !== next) {
+      state.program = next;
+      post({ kind: 'program', ...props.program.message });
     }
 
     if (state.theme !== props.theme) {
@@ -252,30 +222,23 @@ export function LiveFrame({
   // Bound before the frame can speak: a layout effect runs right after the
   // element is inserted, before its document can run a script.
   useLayoutEffect(() => {
-    const { protocol, adopt, src, title, style } = mount.current;
-    let element: HTMLIFrameElement | null = iframe.current;
-    let adopted: ReturnType<typeof takeWarmFrame>;
-
-    if (protocol === PROGRAM_PROTOCOL) {
-      // Protocol 2's iframe lives outside React's tree, so the window's warm
-      // frame, already handshaken, can become this one (D6).
-      adopted = adopt ? takeWarmFrame(src) : undefined;
-      element =
-        adopted?.iframe ??
-        (holder.current?.ownerDocument ?? document).createElement('iframe');
-      element.removeAttribute('style');
-      element.removeAttribute('aria-hidden');
-      element.removeAttribute('tabindex');
-      if (element.getAttribute('src') !== src) element.setAttribute('src', src);
-      element.setAttribute('sandbox', FRAME_SANDBOX);
-      element.setAttribute('title', title);
-      element.className = 'papercraft-frame block border-0 bg-transparent';
-      Object.assign(element.style, style ?? {});
-      own.current = element;
-      holder.current?.append(element);
-    }
-
-    if (element === null) return;
+    const { adopt, src, title, style } = mount.current;
+    // The iframe lives outside React's tree, so the window's warm frame,
+    // already handshaken, can become this one (D6).
+    const adopted = adopt ? takeWarmFrame(src) : undefined;
+    const element =
+      adopted?.iframe ??
+      (holder.current?.ownerDocument ?? document).createElement('iframe');
+    element.removeAttribute('style');
+    element.removeAttribute('aria-hidden');
+    element.removeAttribute('tabindex');
+    if (element.getAttribute('src') !== src) element.setAttribute('src', src);
+    element.setAttribute('sandbox', FRAME_SANDBOX);
+    element.setAttribute('title', title);
+    element.className = 'papercraft-frame block border-0 bg-transparent';
+    Object.assign(element.style, style ?? {});
+    own.current = element;
+    holder.current?.append(element);
 
     const frame = element;
 
@@ -286,7 +249,7 @@ export function LiveFrame({
       if (channel === undefined) return;
 
       if (sent.current.initialised) {
-        channel.postMessage({ kind: 'dispose' } satisfies AppMessage);
+        channel.postMessage({ kind: 'dispose' } satisfies ProgramAppMessage);
       }
 
       channel.close();
@@ -298,10 +261,7 @@ export function LiveFrame({
       channel.addEventListener('message', (event: MessageEvent) => {
         if (port.current !== channel) return;
 
-        const message =
-          protocol === PROGRAM_PROTOCOL
-            ? frameMessage(event.data, PROGRAM_PROTOCOL)
-            : frameMessage(event.data);
+        const message = frameMessage(event.data, PROGRAM_PROTOCOL);
 
         if (message === undefined) return;
 
@@ -329,7 +289,7 @@ export function LiveFrame({
       // runtime says it once it listens, which the document's `load` event
       // does not tell (its boot script imports the runtime after).
       if (target === null || event.source !== target) return;
-      if (!isHello(event.data, protocol)) return;
+      if (!isHello(event.data, PROGRAM_PROTOCOL)) return;
 
       // Each `hello` is a document that started: a new channel, a new
       // handshake, a new `init`.
@@ -342,7 +302,9 @@ export function LiveFrame({
 
       // The frame's origin is opaque, so no origin can be named: the port is
       // fresh, and the frame document only ever navigates to the frame URL.
-      target.postMessage(connectMessage(protocol), '*', [channel.port2]);
+      target.postMessage(connectMessage(PROGRAM_PROTOCOL), '*', [
+        channel.port2,
+      ]);
     };
 
     // An adopted warm frame is handshaken already, or about to be.
@@ -371,21 +333,14 @@ export function LiveFrame({
   }, []);
 
   useEffect(() => {
-    if (own.current !== undefined)
+    // The style is the props' alone: a key a render drops (the `hidden`
+    // visibility until the frame mounted) leaves the iframe with it.
+    if (own.current !== undefined) {
+      own.current.removeAttribute('style');
       Object.assign(own.current.style, style ?? {});
+    }
     sync.current();
   });
 
-  return protocol === PROGRAM_PROTOCOL ? (
-    <span ref={holder} className="contents" />
-  ) : (
-    <iframe
-      ref={iframe}
-      src={src}
-      title={title}
-      sandbox={FRAME_SANDBOX}
-      className="papercraft-frame block border-0 bg-transparent"
-      style={style}
-    />
-  );
+  return <span ref={holder} className="contents" />;
 }

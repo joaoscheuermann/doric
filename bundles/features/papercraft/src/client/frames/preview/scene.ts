@@ -5,8 +5,7 @@
 // The derivation is the one the surface made inside its shadow root:
 // element children in document order, `style`/`link`/`script`/`meta`/`title`
 // skipped, at most SCENE_NODE_LIMIT nodes, ids `n0`, `n1`, … in that order.
-// A node carries its own origin stamp only; the app walks stamps down to the
-// unstamped descendants.
+// A node carries the names of its nearest statement wrapper (D6, D19).
 //
 // Bounds are an element's border box cut to what its clipping ancestors
 // leave visible, in document coordinates (the frame's top-left corner, its
@@ -17,14 +16,11 @@
 import { NODE_TEXT_LIMIT, SCENE_NODE_LIMIT } from '../../frame-constants.js';
 import type { PseudoKind, Rect, SceneNodeData } from '../../frame-protocol.js';
 
-/** The attribute a stamped element carries its `path:line` origin in. */
-export const STAMP_ATTRIBUTE = 'data-papercraft-source';
-
 const SKIP_TAGS = new Set(['STYLE', 'LINK', 'SCRIPT', 'META', 'TITLE']);
 
 const PSEUDO_KINDS: readonly PseudoKind[] = ['::before', '::after'];
 
-/** The statement wrapper a protocol-2 frame renders around a named statement (D6, D19). */
+/** The statement wrapper the program frame renders around a named statement (D6, D19). */
 export const STATEMENT_ATTRIBUTE = 'data-papercraft-statement';
 export const COMPONENT_ATTRIBUTE = 'data-papercraft-component';
 
@@ -33,7 +29,7 @@ const NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
 
 /** One derived element, with the element itself, kept inside the frame. */
 export interface FrameNode {
-  /** Protocol 1 carries `stamp`; protocol 2 `statement` and `component` instead. */
+  /** With the nearest statement wrapper's `statement` and `component`. */
   readonly data: SceneNodeData & {
     readonly statement?: string;
     readonly component?: string;
@@ -302,15 +298,11 @@ const namesOf = (
 
 /**
  * Derives and measures the scene of the elements in `tops` (each a node at
- * depth 0) and their descendants, in document order. Under protocol 1 a node
- * carries its own origin stamp; under protocol 2 (D6) it carries the names of
- * its nearest statement wrapper (its own, for a wrapper) and no stamp, and a
+ * depth 0) and their descendants, in document order. A node carries the
+ * names of its nearest statement wrapper (its own, for a wrapper; D6), and a
  * wrapper's bounds are the union of its children's boxes.
  */
-export const deriveScene = (
-  tops: Iterable<Element>,
-  protocol: 1 | 2 = 1,
-): FrameScene => {
+export const deriveScene = (tops: Iterable<Element>): FrameScene => {
   const nodes: FrameNode[] = [];
   const byElement = new Map<Element, FrameNode>();
   const byId = new Map<string, FrameNode>();
@@ -372,8 +364,7 @@ export const deriveScene = (
     }
 
     const elementId = attributeWithin(element, 'id', 256);
-    const stamp = attributeWithin(element, STAMP_ATTRIBUTE, 1024);
-    const wrapper = protocol === 2 && element.hasAttribute(STATEMENT_ATTRIBUTE);
+    const wrapper = element.hasAttribute(STATEMENT_ATTRIBUTE);
     const data: FrameNode['data'] = {
       id: `n${String(nodes.length)}`,
       ...(parent === undefined ? {} : { parentId: parent.data.id }),
@@ -381,11 +372,7 @@ export const deriveScene = (
       tag: element.tagName.toLowerCase().slice(0, 64),
       classes: classesOf(element),
       ...(elementId === undefined ? {} : { elementId }),
-      ...(protocol === 2
-        ? namesOf(element.closest(`[${STATEMENT_ATTRIBUTE}]`))
-        : stamp === undefined
-          ? {}
-          : { stamp }),
+      ...namesOf(element.closest(`[${STATEMENT_ATTRIBUTE}]`)),
       text: textOf(element),
       bounds: wrapper
         ? unionOf(childBoxesOf(element).map((box) => toDocument(box, element)))

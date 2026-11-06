@@ -17,7 +17,7 @@ import {
   useState,
 } from 'react';
 
-import type { FrameMessage, InputCapture } from '../frame-protocol.js';
+import type { InputCapture, ProgramFrameMessage } from '../frame-protocol.js';
 
 export interface FrameFocusInput {
   readonly container: RefObject<HTMLDivElement | null>;
@@ -36,7 +36,7 @@ const FIRST_PRESS_GRACE_MS = 1000;
 const now = (): number =>
   typeof performance === 'undefined' ? Date.now() : performance.now();
 
-type FramePointer = Extract<FrameMessage, { kind: 'pointer' }>;
+type FramePointer = Extract<ProgramFrameMessage, { kind: 'pointer' }>;
 
 export const useFrameFocus = ({
   container,

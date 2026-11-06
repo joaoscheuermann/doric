@@ -1,33 +1,30 @@
-// A fake preview frame: a test double of the preview runtime
-// (`src/client/frames/preview.ts`) at its only boundary with the app, the
-// frame protocol (`src/client/frame-protocol.ts`).
+// A fake program frame: a test double of the program runtime
+// (`src/client/frames/openui.ts`) at its only boundary with the app, the
+// frame protocol 2 (`src/client/frame-protocol.ts`).
 //
 // happy-dom loads no frame document, so the fake attaches itself to every
 // preview iframe the app inserts: it stands in for the iframe's
 // `contentWindow` (receiving the `connect` window message and its port, as a
 // real frame does), dispatches the iframe's `load`, and from then on speaks
 // the protocol over the real `MessageChannel` the app opened. By default it
-// behaves as the runtime does — `ready` on connect; on `init`, the content
-// rendered (a markup, or a module the test describes) and `mounted`, `size`
-// and `scene` sent; a fresh `scene` on `measure` — and every test can also
-// post anything, valid or not, on the channel or elsewhere.
+// behaves as the runtime does — `ready` on connect; on each `program`, the
+// markup the test describes rendered and `mounted`, `size` and `scene` sent;
+// a fresh `scene` on `measure` — and every test can also post anything,
+// valid or not, on the channel or elsewhere.
 //
 // The scene is derived from the markup the fake renders, parsed by
-// happy-dom: nodes in document order, each with its tag, `id`, classes, own
-// stamp and text; happy-dom lays nothing out, so every box is empty unless
-// the test lays an element out by selector.
+// happy-dom: nodes in document order, each with its tag, `id`, classes, the
+// names of its nearest statement wrapper and its text; happy-dom lays nothing
+// out, so every box is empty unless the test lays an element out by selector.
 
 import type {
-  AppMessage,
-  FrameContent,
   FrameProtocol,
-  PreviewLayout,
   ProgramAppMessage,
   ProgramSceneNodeData,
   SceneNodeData,
 } from '../../../src/client/frame-protocol.js';
 
-/** The statement wrapper of a protocol-2 frame (D6). */
+/** The statement wrapper of a program frame (D6). */
 const STATEMENT_ATTRIBUTE = 'data-papercraft-statement';
 const COMPONENT_ATTRIBUTE = 'data-papercraft-component';
 
@@ -45,36 +42,28 @@ export interface Placed {
   readonly after?: Box;
 }
 
-/** What a module does when the fake frame loads it. */
-export type ModuleBehaviour =
-  | { readonly mounts: string; readonly layout?: PreviewLayout }
-  | { readonly fails: true };
-
 export interface FakeOptions {
   /** Answers the handshake and `init` as the runtime does (default true). */
   readonly auto?: boolean;
-  /** The module behind a module URL; a module fails to load by default. */
-  readonly module?: (url: string) => ModuleBehaviour;
   /** The layout of the rendered elements, by selector. */
   readonly layout?: Readonly<Record<string, Placed>>;
   /** The content size the frame reports. */
   readonly size?: { readonly width: number; readonly height: number };
   /**
-   * The protocol the fake speaks (by default the one of the entry its
-   * iframe loads: 2 for `frames/openui.js`, else 1): it takes only the `connect`
-   * of that number, and its `hello` and `ready` carry it. Under 2 it renders
-   * nothing on `init`, and on each `program` the markup `program` returns
-   * (nothing when absent), its scene nodes carrying `statement` and
-   * `component` from their nearest statement wrapper, never `stamp`.
+   * The protocol the fake speaks (2): it takes only the `connect` of that
+   * number, and its `hello` and `ready` carry it. It renders nothing on
+   * `init`, and on each `program` the markup `program` returns (nothing when
+   * absent), its scene nodes carrying `statement` and `component` from their
+   * nearest statement wrapper.
    */
   readonly protocol?: FrameProtocol;
-  /** What a protocol-2 fake renders for one `program` message. */
+  /** What the fake renders for one `program` message. */
   readonly program?: (
     message: Extract<ProgramAppMessage, { kind: 'program' }>,
   ) => string | undefined;
 }
 
-type InitMessage = Extract<AppMessage, { kind: 'init' }>;
+type InitMessage = Extract<ProgramAppMessage, { kind: 'init' }>;
 
 interface Modifiers {
   readonly altKey?: boolean;
@@ -87,9 +76,9 @@ export interface FakeFrame {
   readonly iframe: HTMLIFrameElement;
   /** The protocol the fake speaks. */
   readonly protocol: FrameProtocol;
-  /** Every message the app posted on the channel, in order (protocol 1). */
-  readonly received: readonly AppMessage[];
-  /** The same messages, as protocol 2 types them. */
+  /** Every message the app posted on the channel, in order. */
+  readonly received: readonly ProgramAppMessage[];
+  /** The same messages (the name the program tests read them by). */
   readonly programReceived: readonly ProgramAppMessage[];
   /** The app's `init`, once it came. */
   readonly init: InitMessage | undefined;
@@ -126,7 +115,7 @@ export interface FakeFrame {
   ): void;
   key(type: 'keydown' | 'keyup', key: string, modifiers?: Modifiers): void;
   focus(focused: boolean): void;
-  /** Posts a protocol-2 `errors` message. */
+  /** Posts an `errors` message. */
   errors(
     errors: readonly {
       readonly code: string;
@@ -178,12 +167,9 @@ export const sceneNodesOf = (
   options: {
     readonly includeRoot?: boolean;
     readonly layout?: Readonly<Record<string, Placed>>;
-    /** 2: no `stamp`; `statement`/`component` from the nearest wrapper. */
-    readonly protocol?: FrameProtocol;
   } = {},
 ): { readonly nodes: SceneNodeData[]; readonly elements: Element[] } => {
-  const protocol = options.protocol ?? 1;
-  const nodes: (SceneNodeData | ProgramSceneNodeData)[] = [];
+  const nodes: ProgramSceneNodeData[] = [];
   const elements: Element[] = [];
   const layout = options.layout ?? {};
 
@@ -200,7 +186,7 @@ export const sceneNodesOf = (
   const visit = (element: Element, depth: number, parentId?: string) => {
     if (SKIPPED.has(element.tagName)) return;
     // A statement wrapper has no box of its own: its children are the nodes.
-    if (protocol === 2 && element.hasAttribute(STATEMENT_ATTRIBUTE)) {
+    if (element.hasAttribute(STATEMENT_ATTRIBUTE)) {
       for (const child of element.children) visit(child, depth, parentId);
 
       return;
@@ -209,7 +195,6 @@ export const sceneNodesOf = (
     const id = `n${String(nodes.length)}`;
     const placed = boxesOf(element);
     const elementId = element.getAttribute('id');
-    const stamp = element.getAttribute('data-papercraft-source');
     const pseudo = {
       ...(placed.before === undefined ? {} : { '::before': placed.before }),
       ...(placed.after === undefined ? {} : { '::after': placed.after }),
@@ -225,11 +210,7 @@ export const sceneNodesOf = (
         .split(/\s+/)
         .filter((name) => name !== ''),
       ...(elementId === null || elementId === '' ? {} : { elementId }),
-      ...(protocol === 2
-        ? wrapperOf(element)
-        : stamp === null || stamp === ''
-          ? {}
-          : { stamp }),
+      ...wrapperOf(element),
       text: (element.textContent ?? '')
         .replace(/\s+/g, ' ')
         .trim()
@@ -244,7 +225,7 @@ export const sceneNodesOf = (
   if (options.includeRoot === true) visit(root, 0);
   else for (const child of root.children) visit(child, 0);
 
-  return { nodes: nodes as SceneNodeData[], elements };
+  return { nodes, elements };
 };
 
 /** The names of the nearest statement wrapper around `element`, if any. */
@@ -275,7 +256,7 @@ const attach = (
   iframe: HTMLIFrameElement,
   options: FakeOptions,
 ): FakeFrame => {
-  const received: AppMessage[] = [];
+  const received: ProgramAppMessage[] = [];
   const state: {
     port: MessagePort | undefined;
     init: InitMessage | undefined;
@@ -296,16 +277,7 @@ const attach = (
     bodyNode: true,
   };
   const auto = options.auto ?? true;
-  // Without a stated protocol, the entry the iframe loads says it:
-  // `frames/openui.js` speaks 2, `frames/preview.js` 1.
-  const protocolOf = (): FrameProtocol =>
-    options.protocol ??
-    (decodeURIComponent(iframe.getAttribute('src') ?? '').includes(
-      '/frames/openui.js',
-    )
-      ? 2
-      : 1);
-  let moduleLayout: PreviewLayout | undefined;
+  const protocolOf = (): FrameProtocol => options.protocol ?? 2;
 
   const post = (data: unknown): void => state.port?.postMessage(data);
 
@@ -318,7 +290,6 @@ const attach = (
     const derived = sceneNodesOf(document.body, {
       includeRoot: state.bodyNode,
       layout: state.layout,
-      protocol: protocolOf(),
     });
 
     state.elements = derived.elements;
@@ -332,7 +303,7 @@ const attach = (
       return protocolOf();
     },
     received,
-    programReceived: received as unknown as readonly ProgramAppMessage[],
+    programReceived: received,
     get init() {
       return state.init;
     },
@@ -357,8 +328,8 @@ const attach = (
       post({
         kind: 'mounted',
         mode,
-        // As the runtime: a module states its layout, a page fills.
-        layout: mode === 'module' ? (moduleLayout ?? 'centered') : 'fullscreen',
+        // A rendered program hugs its content, a page fills.
+        layout: mode === 'module' ? 'centered' : 'fullscreen',
       });
       post({ kind: 'size', ...(options.size ?? { width: 0, height: 0 }) });
       frame.sendScene();
@@ -421,51 +392,17 @@ const attach = (
     },
   };
 
-  const onInit = (content: FrameContent): void => {
-    if (content.kind === 'markup') {
-      frame.render(content.markup, 'markup');
-
-      return;
-    }
-
-    const behaviour = options.module?.(content.module) ?? { fails: true };
-
-    if ('mounts' in behaviour) {
-      moduleLayout = behaviour.layout;
-      frame.render(behaviour.mounts, 'module');
-
-      return;
-    }
-
-    if (content.fallback === undefined) {
-      post({ kind: 'error', message: 'the module did not load' });
-
-      return;
-    }
-
-    frame.render(content.fallback, 'fallback');
-  };
-
-  const onMessage = (data: AppMessage): void => {
-    received.push(data);
+  const onMessage = (message: ProgramAppMessage): void => {
+    received.push(message);
 
     if (!auto) return;
 
-    if (protocolOf() === 2) {
-      const message = data as unknown as ProgramAppMessage;
+    if (message.kind === 'program') {
+      const markup = options.program?.(message);
 
-      if (message.kind === 'program') {
-        const markup = options.program?.(message);
-
-        if (markup !== undefined) frame.render(markup, 'module');
-      }
-      if (message.kind === 'measure' && state.rendered) frame.sendScene();
-
-      return;
+      if (markup !== undefined) frame.render(markup, 'module');
     }
-
-    if (data.kind === 'init') onInit(data.content);
-    if (data.kind === 'measure' && state.rendered) frame.sendScene();
+    if (message.kind === 'measure' && state.rendered) frame.sendScene();
   };
 
   /** Whether the runtime listens yet: it starts after the document loads. */
@@ -491,7 +428,7 @@ const attach = (
 
         state.port = port;
         port.addEventListener('message', (event: MessageEvent) => {
-          const app = event.data as AppMessage;
+          const app = event.data as ProgramAppMessage;
 
           if (app.kind === 'init') state.init = app;
           onMessage(app);
@@ -523,7 +460,7 @@ const attach = (
   return frame;
 };
 
-/** Attaches a fake frame to every preview iframe the app inserts. */
+/** Attaches a fake frame to every program iframe the app inserts. */
 export const fakeFrames = (
   window: HappyWindow,
   options: FakeOptions = {},

@@ -38,8 +38,8 @@ import {
   windowServes,
 } from './compile.js';
 import { compileStyles, type StyleAsset } from './css.js';
+import { probeBytes, probeRepositoryRoot, probeSource } from './files.js';
 import { projectPath } from './paths.js';
-import { probeBytes, probeRepositoryRoot, probeSource } from './previews.js';
 import { type SandboxBundler, sandboxBundleOf } from './sandbox.js';
 
 /** One file of a module, as the memo holds it. */

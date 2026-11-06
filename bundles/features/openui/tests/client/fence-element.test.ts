@@ -387,14 +387,10 @@ test("an unknown-component error's message ends with D7's hint", async () => {
   await mounted.unmount();
 });
 
-test('answersProjector gives no block for an openui.answered/v1 row, also while the setting is off', async () => {
+test('answersProjector gives no block for an openui.answered/v1 row', async () => {
   const world = await activateClient();
   await settle();
 
-  assert.deepEqual(
-    world.fenceRenderers.filter(({ disposed }) => !disposed),
-    [],
-  );
   const projector = world.projectors.find(({ spec }) =>
     spec.eventTypes.includes('openui.answered/v1'),
   );

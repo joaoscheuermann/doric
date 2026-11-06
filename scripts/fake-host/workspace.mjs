@@ -12,7 +12,7 @@ const EPOCH = '2024-01-01T00:00:00.000Z';
 /**
  * The Project and Thread the feature surfaces work in: the desktop's first
  * project tab and its Thread, seeded with the scripted conversation. Every
- * artifact, comment and prompt event belongs to them, since the bridge carries
+ * comment and prompt event belongs to them, since the bridge carries
  * no call scope to read a different one from.
  */
 export const MAIN_PROJECT_ID = '11111111-1111-4111-8111-111111111111';

@@ -1,11 +1,11 @@
 // C9 (conversation-openui.md D21): `openui`'s copy of `AskQuestions` renders
-// the markup `threads`' copy renders. `tests/fixtures/ask-markup.json` is
+// the markup `threads`' copy rendered. `tests/fixtures/ask-markup.json` is
 // `{ states: [{ label, props, html }] }`: the props (without `onSend`) of the
-// 12 states `threads`' `src/client/stories/ask.stories.tsx` exports as
-// `states`, with `renderToStaticMarkup(AskQuestions)` of `threads`' copy for
-// each; `threads`' own `tests/client/ask-markup.test.ts` writes it with
-// ASK_MARKUP_UPDATE=1. With `settledHeading`, `disabled` and `note` at their
-// defaults, `openui`'s copy must render the same markup.
+// 12 states `threads`' ask stories exported as `states`, with
+// `renderToStaticMarkup(AskQuestions)` of `threads`' copy for each. `threads`
+// 2.0.0 removed `ask` (D30), so the fixture is frozen: nothing writes it any
+// more. With `settledHeading`, `disabled` and `note` at their defaults,
+// `openui`'s copy must render the same markup.
 
 import './support/dom.js';
 

@@ -3,11 +3,10 @@
 // (a log with the runtime's rewind rule: the rows go and a
 // `history.truncated` marker is appended), `runtime.hooks/v1` through a
 // recording `hooks/v1`, `events/v1` (an append becomes a row of the log, and
-// is refused without a prompt scope), `settings/v1` (one value per space,
-// with live subscribers), `skills/v1` and `tools/v1` (recording registries;
-// with `otherTools`, `skills/v1.register` applies the core's rule and raises
-// `unavailable_tool` for an `allowedTools` entry no live tool has),
-// `artifact.kind/v1`, `runtime.lease/v1` (no lease, or a given sandbox) and
+// is refused without a prompt scope), `skills/v1` and `tools/v1` (recording
+// registries; with `otherTools`, `skills/v1.register` applies the core's rule
+// and raises `unavailable_tool` for an `allowedTools` entry no live tool has),
+// `runtime.lease/v1` (no lease, or a given sandbox) and
 // `files/v1` (a map of files, or none).
 //
 // A test uses the services directly (`createLibraryHooks`, `createPrograms`)
@@ -29,12 +28,8 @@ import {
   HooksV1,
   hooksMethods,
   type RegisteredSkill,
-  type SettingsDefinition,
-  type SettingsEntry,
-  SettingsV1,
   type SkillSchemaInput,
   SkillsV1,
-  settingsMethods,
   skillsMethods,
   toolsMethods,
 } from 'bundle/contracts';
@@ -50,9 +45,6 @@ import type { RunnerSandbox } from '../../src/host/sandbox.js';
 
 /** The host entry, imported by URL: `src/host/index.ts` is the module under test. */
 const HOST_ENTRY = new URL('../../src/host/index.js', import.meta.url).href;
-
-/** The setting space papercraft follows (`openui.generative-ui/v1`). */
-export const SETTING_ID = 'openui.generative-ui/v1';
 
 export const projectId = 'project-1';
 
@@ -123,8 +115,6 @@ export interface InstructInput {
 }
 
 export interface WorldOptions {
-  /** `openui.generative-ui/v1`'s `enabled` (default true). */
-  readonly enabled?: boolean;
   /** The sandbox `runtime.lease/v1.withLease` hands its task; no lease when absent. */
   readonly sandbox?: RunnerSandbox;
   /** `files/v1` content by Project path; no `files/v1` read answers when absent. */
@@ -182,7 +172,6 @@ export interface World {
   }) => void;
   /** `runtime.threads/v1.instruct` runs this first; a throw rejects it. */
   instructCheck: (input: InstructInput) => void;
-  writeSetting(enabled: boolean): void;
   /** Appends a row to the log, as a prompt's own events would. */
   row(
     threadId: string,
@@ -264,9 +253,6 @@ export const world = (options: WorldOptions = {}): World => {
       .map(({ name }) => name),
   ];
   const hookHandlers: { hook: string; handler: Handler }[] = [];
-  const subscribers = new Set<(entry: SettingsEntry) => void>();
-  let enabled = options.enabled ?? true;
-  let revision = 0;
   let sequence = 0;
 
   const row = (
@@ -293,19 +279,6 @@ export const world = (options: WorldOptions = {}): World => {
   const record = (method: string, input: unknown, call: Call): void => {
     calls.push({ method, input, call });
   };
-
-  const settingEntry = (definition?: SettingsDefinition): SettingsEntry => ({
-    value:
-      definition === undefined
-        ? { enabled }
-        : definition.schema.parse(
-            definition.id === SETTING_ID ? { enabled } : {},
-          ),
-    revision,
-    version: '1.0.0',
-    updatedAt: new Date(0).toISOString(),
-    generation: revision,
-  });
 
   const eventsAfter = (id: string, afterSequence: number) =>
     log.filter(
@@ -391,26 +364,6 @@ export const world = (options: WorldOptions = {}): World => {
     },
   });
 
-  const settings = fake(SettingsV1.id, settingsMethods, {
-    register: () => once(() => undefined),
-    get: (definition: SettingsDefinition) => settingEntry(definition).value,
-    entry: (definition: SettingsDefinition) => settingEntry(definition),
-    set: ([definition, value]: [SettingsDefinition, { enabled?: boolean }]) => {
-      enabled = value.enabled === true;
-      revision += 1;
-      return settingEntry(definition);
-    },
-    subscribe: ([, listener]: [
-      SettingsDefinition,
-      (entry: SettingsEntry) => void,
-    ]) => {
-      subscribers.add(listener);
-      return once(() => {
-        subscribers.delete(listener);
-      });
-    },
-  });
-
   const skillRegistry = fake(SkillsV1.id, skillsMethods, {
     register: ([skill, registration]: [
       SkillSchemaInput,
@@ -467,12 +420,6 @@ export const world = (options: WorldOptions = {}): World => {
     catalog: () => [],
   });
 
-  const kinds = fake('artifact.kind/v1', loose('register', 'list', 'get'), {
-    register: () => once(() => undefined),
-    list: () => [],
-    get: () => undefined,
-  });
-
   const lease = fake('runtime.lease/v1', loose('withLease'), {
     withLease: async (task: (sandbox: RunnerSandbox) => Promise<unknown>) =>
       options.sandbox === undefined
@@ -514,10 +461,8 @@ export const world = (options: WorldOptions = {}): World => {
       runtime,
       hooks,
       events,
-      settings,
       skillRegistry,
       toolRegistry,
-      kinds,
       lease,
       files,
     ],
@@ -557,11 +502,6 @@ export const world = (options: WorldOptions = {}): World => {
     },
     set instructCheck(check) {
       state.instructCheck = check;
-    },
-    writeSetting: (value) => {
-      enabled = value;
-      revision += 1;
-      for (const listener of [...subscribers]) listener(settingEntry());
     },
     row,
     loadSkill: (threadId, promptId, name = 'papercraft') => {

@@ -1,12 +1,13 @@
-// The `papercraft` desktopMain part: registers `papercraft.open-canvas/v1`,
+// The `papercraft` desktopMain part: registers `papercraft.open-canvas/v2`,
 // provides `papercraft.snapshot/v1` (a window's capture of its own pixels) and
-// registers the flush of the `papercraft-preview` comment kind.
+// `papercraft.cache/v1`, and registers the flush of the `papercraft-program`
+// comment kind.
 //
 // The flush is registered here because `chat.composer/v1.registerFlush` carries
 // a function and only serves the main process: when the send of a prompt drains
 // the stack, the composer service calls this flush, and it answers the durable
 // `comments/v1.add` writes the sender window then performs — chat never learns
-// what a preview comment is. The composer is chat's and optional: the flush is
+// what a program comment is. The composer is chat's and optional: the flush is
 // registered whenever it is active, and a composition without chat still opens
 // the canvas.
 
@@ -29,13 +30,10 @@ import {
   papercraftCacheMethods,
 } from '../contracts/cache.js';
 import { ChatComposerV1 } from '../contracts/chat.js';
-import {
-  PAPERCRAFT_COMMENT_KIND,
-  PROGRAM_COMMENT_KIND,
-} from '../contracts/index.js';
+import { PROGRAM_COMMENT_KIND } from '../contracts/index.js';
 import { ModulesCache } from './cache.js';
 import { openCanvas } from './commands.js';
-import { papercraftFlush, programFlush } from './comment-flush.js';
+import { programFlush } from './comment-flush.js';
 import { snapshotService } from './snapshot.js';
 
 export const activate = ({ services }: DesktopContext): Cleanup => {
@@ -68,20 +66,12 @@ export const activate = ({ services }: DesktopContext): Cleanup => {
   );
 
   const flush = services.whenAvailable(ChatComposerV1, (composer) => {
-    const registrations = [
-      composer.registerFlush({
-        kind: PAPERCRAFT_COMMENT_KIND,
-        flush: papercraftFlush,
-      }),
-      composer.registerFlush({
-        kind: PROGRAM_COMMENT_KIND,
-        flush: programFlush,
-      }),
-    ];
+    const registration = composer.registerFlush({
+      kind: PROGRAM_COMMENT_KIND,
+      flush: programFlush,
+    });
 
-    return () => {
-      for (const registration of registrations) registration.dispose();
-    };
+    return () => registration.dispose();
   });
 
   return () => {
@@ -93,7 +83,7 @@ export const activate = ({ services }: DesktopContext): Cleanup => {
 };
 
 export { openCanvas, openCanvasInput } from './commands.js';
-export { papercraftFlush, programFlush } from './comment-flush.js';
+export { programFlush } from './comment-flush.js';
 export {
   platformCapture,
   snapshotService,

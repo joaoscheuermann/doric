@@ -1,12 +1,12 @@
 // The `doric://app` protocol handler (doric-protocol.md): technical assets
-// under `/platform/`, `/bundles/`, `/schemas/` and `/artifacts/`, the preview
-// frame document under `/frame/`, a 404 for any missing file under them, and
-// the shell for every other path.
+// under `/platform/`, `/bundles/`, `/schemas/` and `/papercraft-modules/`,
+// the preview frame document under `/frame/`, a 404 for any missing file
+// under them, and the shell for every other path.
 //
 // A preview frame has an opaque origin, so every module, font and sheet it
 // loads is a cross-origin CORS request: only what a frame needs answers
 // `Access-Control-Allow-Origin: *` — `/frame/*`, `/platform/*`,
-// `/artifacts/*` and `/bundles/<id>@<version>/client/frames/*`
+// `/papercraft-modules/*` and `/bundles/<id>@<version>/client/frames/*`
 // (docs/architecture/bundles/papercraft/isolamento.md). The rest of
 // `/bundles/`, `/schemas/` and the shell stay same-origin only.
 
@@ -35,13 +35,6 @@ export type RouteDecision =
       readonly type: 'bundle';
       readonly id: string;
       readonly version: string;
-      readonly segments: readonly string[];
-    }
-  /** `/artifacts/<artifactId>@<revision>/<path>`: a verified revision entry. */
-  | {
-      readonly type: 'artifact';
-      readonly id: string;
-      readonly revision: number;
       readonly segments: readonly string[];
     }
   /** `/papercraft-modules/<dir>/<file>`: a verified papercraft module file. */
@@ -128,12 +121,7 @@ export const route = (
     return { type: 'module', dir, segments: rest };
   }
 
-  for (const prefix of [
-    '/platform/',
-    '/bundles/',
-    '/schemas/',
-    '/artifacts/',
-  ] as const) {
+  for (const prefix of ['/platform/', '/bundles/', '/schemas/'] as const) {
     if (!pathname.startsWith(prefix)) {
       continue;
     }
@@ -146,28 +134,6 @@ export const route = (
 
     if (prefix === '/schemas/') {
       return { type: 'schema', segments };
-    }
-
-    if (prefix === '/artifacts/') {
-      const [folder, ...rest] = segments as [string, ...string[]];
-      const at = folder.lastIndexOf('@');
-
-      if (at <= 0 || at === folder.length - 1 || rest.length === 0) {
-        return notFound;
-      }
-
-      const revision = folder.slice(at + 1);
-
-      if (!/^[1-9][0-9]*$/u.test(revision)) {
-        return notFound;
-      }
-
-      return {
-        type: 'artifact',
-        id: folder.slice(0, at),
-        revision: Number(revision),
-        segments: rest,
-      };
     }
 
     if (prefix === '/bundles/') {
@@ -229,17 +195,6 @@ export interface ServedBundles {
 }
 
 /**
- * The verified artifact revisions the protocol may serve under `/artifacts/`:
- * `userData/artifacts/<artifactId>@<revision>/<path>`, written by the
- * `artifacts` bundle's desktopMain part only after each file's SHA-256 is
- * confirmed. Any path that resolves outside this root is a 404.
- */
-export interface ServedArtifacts {
-  /** The cache root, `userData/artifacts/`. */
-  readonly root: string;
-}
-
-/**
  * The verified papercraft modules the protocol may serve under
  * `/papercraft-modules/`: `userData/papercraft/<dir>/<file>`, written by the
  * `papercraft` bundle's desktopMain part (`papercraft.cache/v1`) only after
@@ -257,8 +212,6 @@ export interface ProtocolDeps {
   /** The preview frame document (`/frame/index.html`). */
   readonly frame: FrameDocument;
   readonly bundles: ServedBundles;
-  /** Verified artifact revisions (`/artifacts/<artifactId>@<revision>/…`). */
-  readonly artifacts: ServedArtifacts;
   /** Verified papercraft modules (`/papercraft-modules/<dir>/<file>`); without it, a 404. */
   readonly modules?: ServedModules;
   /** Unpackaged only. */
@@ -272,7 +225,6 @@ const framesMayLoad = (decision: RouteDecision): boolean => {
     case 'frame-document':
     case 'frame-boot':
     case 'platform':
-    case 'artifact':
     case 'module':
       return true;
     case 'bundle':
@@ -424,13 +376,6 @@ export const respond = async (
           decision.id,
           decision.version,
           decision.segments.join('/'),
-        ),
-      );
-    case 'artifact':
-      return await serve(
-        insideRoot(
-          join(deps.artifacts.root, `${decision.id}@${decision.revision}`),
-          decision.segments,
         ),
       );
     case 'module':

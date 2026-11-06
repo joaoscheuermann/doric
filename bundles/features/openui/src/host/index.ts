@@ -1,27 +1,21 @@
 // The `openui` bundle's host part (openui.md D17, D18, D24; conversation-openui.md
-// D22): the Generative UI setting and `openui.setting/v1`, the `openui` skill
-// while the setting is on, the error sink `openui.programs/v1` with its
-// instruct at each prompt start, and the question service.
+// D22): the `openui` skill, registered at activation, the error sink
+// `openui.programs/v1` with its instruct at each prompt start, and the
+// question service.
 
 import { readFileSync } from 'node:fs';
 
 import {
-  AppHooksV1,
   type Cleanup,
-  ContractError,
-  type Disposable,
   EventsV1,
   HooksV1,
   type HostContext,
-  SettingsV1,
   SkillsV1,
 } from 'bundle/contracts';
 import { RuntimeHooksV1 } from 'runtime/contracts';
-import { AskV1 } from 'threads/contracts';
 
-import { answeredEvent, generativeUiSetting } from '../contracts/index.js';
+import { answeredEvent } from '../contracts/index.js';
 import { questionsService } from './questions.js';
-import { settingService } from './setting.js';
 import { createValidation } from './validation.js';
 
 /** D17's `openui` skill; its body is the committed, generated text. */
@@ -40,11 +34,7 @@ const skill = {
 const skillOptions = { order: 3400, alwaysAvailable: false } as const;
 
 export const activate = ({ services }: HostContext): Cleanup => {
-  const settings = services.use(SettingsV1);
-  settings.register(generativeUiSetting);
-
   const validation = createValidation();
-  services.provide(settingService());
   services.provide(validation.service());
   services.provide(questionsService());
   services.use(EventsV1).register(answeredEvent);
@@ -61,72 +51,11 @@ export const activate = ({ services }: HostContext): Cleanup => {
       };
     });
 
-  // The skill exists only while the setting is on (D24).
-  let registered: Disposable | undefined;
-  let stopped = false;
-  const follow = (enabled: boolean): void => {
-    if (stopped) return;
-    if (enabled && registered === undefined) {
-      registered = services.use(SkillsV1).register(skill, skillOptions);
-    } else if (!enabled && registered !== undefined) {
-      registered.dispose();
-      registered = undefined;
-    }
-  };
-
-  // While the setting is on, `threads`' `ask` is withheld (D24, C10); with
-  // no active provider of `threads.ask/v1` nothing is held, and the next
-  // value that is on tries again.
-  let withheld: Disposable | undefined;
-  const withhold = (enabled: boolean): void => {
-    if (stopped) return;
-    if (enabled && withheld === undefined) {
-      try {
-        withheld = services.use(AskV1).withholdTool();
-      } catch (error) {
-        if (!(error instanceof ContractError && error.code === 'unavailable')) {
-          throw error;
-        }
-      }
-    } else if (!enabled && withheld !== undefined) {
-      withheld.dispose();
-      withheld = undefined;
-    }
-  };
-
-  let written = false;
-  const subscription = settings.subscribe(generativeUiSetting, (entry) => {
-    written = true;
-    follow(entry.value.enabled);
-    withhold(entry.value.enabled);
-  });
-
-  // Storage connects at host start, so the value is read again there.
-  const hostStart = services
-    .use(HooksV1)
-    .use(AppHooksV1)
-    .onHostStartHook(async () => {
-      const { enabled } = await settings.get(generativeUiSetting);
-      follow(enabled);
-      withhold(enabled);
-    });
-  void Promise.resolve()
-    .then(() => settings.get(generativeUiSetting))
-    .then(
-      (value) => {
-        if (!written) follow(value.enabled);
-      },
-      () => undefined,
-    );
+  // No setting governs the skill any more (D24, stage 4).
+  const registered = services.use(SkillsV1).register(skill, skillOptions);
 
   return () => {
-    stopped = true;
-    subscription.dispose();
-    hostStart.dispose();
-    registered?.dispose();
-    registered = undefined;
-    withheld?.dispose();
-    withheld = undefined;
+    registered.dispose();
     hooks.dispose();
   };
 };

@@ -1,7 +1,6 @@
 // PC11: the `papercraft` bundle's desktopMain part as `papercraft.cache/v1`
 // (D14): the built part activated over a fake broker whose `doric.cache/v1`
-// answers one cache root, as `artifacts-cache.test.ts` runs the artifacts
-// part. `ensure` writes `<dir>/<file>` only once its SHA-256 is confirmed;
+// answers one cache root. `ensure` writes `<dir>/<file>` only once its SHA-256 is confirmed;
 // the first `ensure` of an app session cuts a root above 256 MiB back to at
 // most 128 MiB, oldest `<dir>/` first, before it writes; later ones cut
 // nothing; a directory `ensure` keeps gets a fresh modification time.

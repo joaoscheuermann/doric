@@ -2,8 +2,7 @@
 // `papercraft.cache/v1`): every entry a window hands over from the host's
 // `papercraft.programs/v1.read` lands in `<root>/<dir>/<file>` only once its
 // SHA-256 equals the entry's. Writes are staged on the same volume and
-// renamed into place, so no partial file is ever served — the machine of the
-// artifacts bundle's cache (`bundles/features/artifacts/src/desktop/cache.ts`).
+// renamed into place, so no partial file is ever served.
 //
 // Once per desktop app session (one cache object) the first `ensure` cuts the
 // root back — above 256 MiB, whole `<dir>/` directories oldest first, down to

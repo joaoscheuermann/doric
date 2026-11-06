@@ -1,16 +1,8 @@
-// The threads client's view of chat's `chat.views/v1` (R-9.7) and
-// `chat.hooks/v1`. Threads reads them through `whenAvailable` only, so it
-// keeps a structural copy of what it uses instead of importing the chat
-// package; the IDs and shapes are chat's.
+// The threads client's view of chat's `chat.views/v1` (R-9.7). Threads reads
+// it through `whenAvailable` only, so it keeps a structural copy of what it
+// uses instead of importing the chat package; the IDs and shapes are chat's.
 
-import {
-  type CallArg,
-  type Disposable,
-  defineHook,
-  defineHooks,
-  ref,
-} from 'bundle/contracts';
-import { z } from 'zod';
+import { type CallArg, type Disposable, ref } from 'bundle/contracts';
 
 import type { DelegatedInput } from './domain/delegated.js';
 
@@ -65,40 +57,6 @@ export interface ChatViews {
 }
 
 export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');
-
-/**
- * A structural copy of the one `chat.hooks/v1` hook threads registers
- * (`onThreadUpdateHook`, 1.1.0). Hooks are matched by contract ID only, so
- * threads does not import `chat/contracts`; it reaches the hook with
- * `HooksV1.whenAvailable`, which works without chat in a composition.
- * Chat calls it with every live event of a held Thread as it arrives (never
- * history or a snapshot) and with every `updated` record, and never awaits it.
- */
-export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
-  onThreadUpdateHook: defineHook({
-    kind: 'observe',
-    input: z.object({
-      projectId: z.string(),
-      threadId: z.string(),
-      threadName: z.string(),
-      update: z.custom<
-        | { readonly kind: 'event'; readonly event: ChatThreadEvent }
-        | { readonly kind: 'updated'; readonly thread: unknown }
-      >(
-        (value) =>
-          typeof value === 'object' &&
-          value !== null &&
-          'kind' in value &&
-          (value.kind === 'event' || value.kind === 'updated'),
-      ),
-    }),
-  }),
-});
-
-/** What `onThreadUpdateHook` hands its handler. */
-export type ThreadUpdateInput = z.output<
-  (typeof ChatHooksV1)['hooks']['onThreadUpdateHook']['input']
->;
 
 /** The block type of another Thread's input in this one. */
 export const DELEGATED_INPUT_BLOCK = 'chat.delegated-input/v1';

@@ -160,6 +160,16 @@ afterEach(async () => {
   document.documentElement.classList.remove('dark');
 });
 
+/** The program a surface hands its frame; the fake frame renders `MARKUP` for it. */
+const PROGRAM = {
+  init: {},
+  message: {
+    text: 'root = TextContent("Checkout")',
+    streaming: false,
+    exports: {},
+  },
+};
+
 /** Mounts a surface; `artifactId` mounts the same revision as another. */
 const mount = (
   options: FakeOptions = {},
@@ -167,6 +177,7 @@ const mount = (
 ) => {
   const frames = fakeFrames(window as never, {
     size: { width: 640, height: 300 },
+    program: () => MARKUP,
     ...options,
   });
   const host = document.createElement('div');
@@ -180,7 +191,7 @@ const mount = (
         createElement(surface.PreviewSurface, {
           artifactId,
           revision: 1,
-          markup: MARKUP,
+          program: PROGRAM,
           area: { width: 640, height: 480 },
           title: 'Checkout',
           onMode: (mode: string) => modes.push(mode),
@@ -426,7 +437,7 @@ test('a frame that never says it mounted shows its stand-in and the fallback, un
     await delivered();
   });
   await react.act(async () => {
-    frame.render(MARKUP, 'markup');
+    frame.render(MARKUP, 'module');
     await delivered();
   });
   await settle(
@@ -434,7 +445,7 @@ test('a frame that never says it mounted shows its stand-in and the fallback, un
     (shown) => shown === null,
     'the stand-in stayed over the mounted frame',
   );
-  assert.equal(m.modes.at(-1), 'markup');
+  assert.equal(m.modes.at(-1), 'module');
 
   await m.unmount();
 });

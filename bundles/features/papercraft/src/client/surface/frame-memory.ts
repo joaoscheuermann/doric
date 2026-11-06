@@ -12,16 +12,16 @@
 // first.
 
 import type {
-  FrameMessage,
   PreviewLayout,
   PreviewTheme,
+  ProgramFrameMessage,
   SceneNodeData,
 } from '../frame-protocol.js';
 import type { SurfaceMode } from './preview-surface.js';
 
 /** The content size a frame reported. */
 export type FrameSize = Pick<
-  Extract<FrameMessage, { kind: 'size' }>,
+  Extract<ProgramFrameMessage, { kind: 'size' }>,
   'width' | 'height'
 >;
 

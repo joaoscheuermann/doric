@@ -7,7 +7,7 @@ export interface DesktopPaths {
   readonly bundles: string;
   /** Download staging on the same volume (atomic rename). */
   readonly staging: string;
-  /** Verified artifact revisions: `artifacts/<artifactId>@<revision>/<path>`, served under `/artifacts/`. */
+  /** The old artifacts cache, deleted at each start (D25). */
   readonly artifacts: string;
   /** Verified papercraft modules: `papercraft/<dir>/<file>`, served under `/papercraft-modules/` (papercraft.cache/v1). */
   readonly papercraftModules: string;

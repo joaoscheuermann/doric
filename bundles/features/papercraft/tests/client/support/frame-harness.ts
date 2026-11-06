@@ -1,4 +1,4 @@
-// Drives the preview frame's runtime as the app does: a fresh happy-dom
+// Drives the program frame's runtime as the app does: a fresh happy-dom
 // window plays the frame, the runtime starts in it, and the app's end of a
 // real `MessageChannel` is handed over with the `connect` window message.
 // Every message the frame sends must parse with the app's own
@@ -7,22 +7,19 @@
 import { Window } from 'happy-dom';
 
 import {
-  type AppMessage,
-  type FrameMessage,
   type FrameProtocol,
   frameMessage,
-  PROTOCOL,
+  PROGRAM_PROTOCOL,
   type ProgramAppMessage,
   type ProgramFrameMessage,
 } from '../../../src/client/frame-protocol.js';
 import { startProgramFrame } from '../../../src/client/frames/openui/runtime.js';
-import {
-  type FrameWindow,
-  startPreviewFrame,
-} from '../../../src/client/frames/preview/runtime.js';
+import type { FrameWindow } from '../../../src/client/frames/preview/shell.js';
 
-/** A frame of protocol 1 (`M` = `FrameMessage`) or 2 (`ProgramFrameMessage`). */
-export interface Frame<M extends { readonly kind: string } = FrameMessage> {
+/** A program frame (`M` = `ProgramFrameMessage`). */
+export interface Frame<
+  M extends { readonly kind: string } = ProgramFrameMessage,
+> {
   readonly win: FrameWindow;
   readonly document: Document;
   /** The protocol the frame's entry speaks. */
@@ -31,9 +28,7 @@ export interface Frame<M extends { readonly kind: string } = FrameMessage> {
   readonly messages: M[];
   /** Frame messages the app's schema refused. */
   readonly invalid: unknown[];
-  readonly send: (
-    message: AppMessage | ProgramAppMessage | Record<string, unknown>,
-  ) => void;
+  readonly send: (message: ProgramAppMessage | Record<string, unknown>) => void;
   /**
    * The first message from index `from` on that `accept`s, waiting for it
    * when it has not arrived.
@@ -47,12 +42,7 @@ export interface Frame<M extends { readonly kind: string } = FrameMessage> {
   readonly close: () => Promise<void>;
 }
 
-export const kind =
-  <K extends FrameMessage['kind']>(wanted: K) =>
-  (message: FrameMessage): message is Extract<FrameMessage, { kind: K }> =>
-    message.kind === wanted;
-
-/** `kind` for the messages of a protocol-2 frame. */
+/** `kind` for the messages of a program frame. */
 export const programKind =
   <K extends ProgramFrameMessage['kind']>(wanted: K) =>
   (
@@ -69,36 +59,25 @@ export interface OpenOptions {
   readonly connect?: boolean;
 }
 
-/**
- * A protocol-2 frame: `startProgramFrame` starts with `sheets` instead of
- * `startPreviewFrame`, and its messages parse with protocol 2.
- */
+/** A program frame: `startProgramFrame` starts with `sheets`. */
 export interface ProgramOpenOptions extends OpenOptions {
-  readonly protocol: 2;
+  readonly protocol?: FrameProtocol;
   /** The CSS texts the frame is started with (`[]` by default). */
   readonly sheets?: readonly string[];
 }
 
 /** A frame, connected (`ready` received) unless `connect` is false. */
-export function openFrame(options?: OpenOptions): Promise<Frame>;
-export function openFrame(
-  options: ProgramOpenOptions,
-): Promise<Frame<ProgramFrameMessage>>;
 export async function openFrame(
-  options: OpenOptions & {
-    readonly protocol?: FrameProtocol;
-    readonly sheets?: readonly string[];
-  } = {},
-): Promise<Frame<FrameMessage> | Frame<ProgramFrameMessage>> {
-  const protocol: FrameProtocol = options.protocol ?? PROTOCOL;
+  options: ProgramOpenOptions = {},
+): Promise<Frame> {
+  const protocol: FrameProtocol = options.protocol ?? PROGRAM_PROTOCOL;
   const win = new Window({
     url: 'https://frame.test/',
     settings: { disableCSSFileLoading: true },
   }) as unknown as FrameWindow;
 
   options.before?.(win);
-  if (protocol === PROTOCOL) startPreviewFrame(win);
-  else startProgramFrame(win, options.sheets ?? []);
+  startProgramFrame(win, options.sheets ?? []);
 
   type Message = { readonly kind: string };
   const channel = new MessageChannel();
@@ -171,7 +150,7 @@ export async function openFrame(
     await waitFor((message): message is Message => message.kind === 'ready');
   }
 
-  return frame as Frame<FrameMessage> | Frame<ProgramFrameMessage>;
+  return frame as Frame;
 }
 
 /** Posts the `connect` window message, with `port` when given. */
@@ -192,20 +171,6 @@ export const connect = (
     }),
   );
 };
-
-/** A revision fixture's URL, `variant` picking what it renders. */
-export const revisionUrl = (variant = 'card'): string =>
-  new URL(`./frame-revision.js?variant=${variant}`, import.meta.url).href;
-
-/** What the fixture recorded on the frame's window. */
-export const fixtureLog = (
-  frame: Pick<Frame<{ readonly kind: string }>, 'win'>,
-): { readonly mounts: readonly string[]; readonly unmounts: number } =>
-  (
-    frame.win as unknown as {
-      papercraftFixture?: { mounts: string[]; unmounts: number };
-    }
-  ).papercraftFixture ?? { mounts: [], unmounts: 0 };
 
 /** Gives an element a fixed layout box, as a browser would measure it. */
 export const placeAt = (

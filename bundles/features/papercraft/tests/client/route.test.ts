@@ -2,13 +2,11 @@
 // never mounts around the canvas and never rewrites the window's path to the
 // Thread its restored selection names.
 //
-// PC16, PC29 (papercraft-openui.md D26): one route for both kinds of canvas,
-// `/papercraft/:projectId/:threadId/:identity`. A segment that is a UUID
-// naming an artifact of the Thread opens that artifact's canvas, as every
-// path saved before stage 2 does; any other segment is a papercraft identity
-// whose revisions the window reads through `chat.views/v1.watchFences`. The
-// window key is the canvas id, so one identity in two Threads is two windows,
-// and `papercraft.open-canvas/v1` 1.1.0 still takes a 1.0.0 input.
+// PC16 (papercraft-openui.md D26, D25): one route,
+// `/papercraft/:projectId/:threadId/:identity`. Its segment is a papercraft
+// identity whose revisions the window reads through
+// `chat.views/v1.watchFences`. The window key is the canvas id, so one
+// identity in two Threads is two windows.
 
 import './support/dom.js';
 
@@ -23,7 +21,6 @@ import { CANVAS_ROUTE, canvasPathOf } from '../../src/contracts/index.js';
 import { openCanvas, openCanvasInput } from '../../src/desktop/commands.js';
 import { closeWindow } from './support/dom.js';
 import {
-  flush,
   type Host,
   type HostOptions,
   PROJECT,
@@ -48,7 +45,7 @@ const start = async (options: HostOptions = {}): Promise<Host> => {
   return host;
 };
 
-/** `canvasPathOf` as D26 states it: the last segment is an artifact id or an identity. */
+/** `canvasPathOf` as D26 states it: the last segment is an identity. */
 const pathOf = canvasPathOf as unknown as (input: {
   readonly projectId: string;
   readonly threadId: string;
@@ -56,8 +53,6 @@ const pathOf = canvasPathOf as unknown as (input: {
 }) => string;
 
 const ARTIFACT_ID = '0f8b4c3e-5d6a-4b7c-9e8f-1a2b3c4d5e6f';
-const MARKUP =
-  '<!DOCTYPE html><html><body><button id="pay">Pagar agora</button></body></html>';
 
 test('the canvas route is its own root and hands the canvas its path params', () => {
   const made: Readonly<Record<string, string>>[] = [];
@@ -79,7 +74,7 @@ test('the canvas route is its own root and hands the canvas its path params', ()
   assert.deepEqual(made, [params]);
 });
 
-test('PC16: the route is /papercraft/:projectId/:threadId/:identity, and its path takes an artifact id or an identity', () => {
+test('PC16: the route is /papercraft/:projectId/:threadId/:identity, and its path takes any identity', () => {
   assert.equal(CANVAS_ROUTE, '/papercraft/:projectId/:threadId/:identity');
   assert.equal(
     pathOf({ projectId: 'p1', threadId: 't1', segment: 'settings' }),
@@ -91,11 +86,7 @@ test('PC16: the route is /papercraft/:projectId/:threadId/:identity, and its pat
   );
 });
 
-test('PC16: the canvas id is the artifact id, or program:<threadId>/<identity>', () => {
-  assert.equal(
-    canvasIdOf({ kind: 'artifact', artifactId: ARTIFACT_ID }),
-    ARTIFACT_ID,
-  );
+test('PC16: the canvas id is program:<threadId>/<identity>', () => {
   assert.equal(
     canvasIdOf({ kind: 'program', threadId: 't1', identity: 'settings' }),
     'program:t1/settings',
@@ -106,7 +97,7 @@ test('PC16: the canvas id is the artifact id, or program:<threadId>/<identity>',
   );
 });
 
-/** Runs `papercraft.open-canvas/v1` and answers the `windows/v1.open` inputs. */
+/** Runs `papercraft.open-canvas/v2` and answers the `windows/v1.open` inputs. */
 const openWindows = async (
   inputs: readonly unknown[],
 ): Promise<readonly { key: string; path: string }[]> => {
@@ -145,30 +136,6 @@ test('PC16: open-canvas for the same identity in two Threads opens two windows',
     { key: 'program:t1/settings', path: '/papercraft/p1/t1/settings' },
     { key: 'program:t2/settings', path: '/papercraft/p1/t2/settings' },
   ]);
-});
-
-test('PC16, PC29: open-canvas 1.1.0 still takes a 1.0.0 input, keyed and routed by the artifact id', async () => {
-  const opened = await openWindows([
-    { projectId: 'p1', threadId: 't1', artifactId: ARTIFACT_ID },
-  ]);
-
-  assert.deepEqual(opened, [
-    { key: ARTIFACT_ID, path: `/papercraft/p1/t1/${ARTIFACT_ID}` },
-  ]);
-  // Exactly one of the two.
-  assert.equal(
-    openCanvasInput.safeParse({
-      projectId: 'p1',
-      threadId: 't1',
-      artifactId: ARTIFACT_ID,
-      identity: 'settings',
-    }).success,
-    false,
-  );
-  assert.equal(
-    openCanvasInput.safeParse({ projectId: 'p1', threadId: 't1' }).success,
-    false,
-  );
 });
 
 const routeParams = (segment: string) => ({
@@ -244,30 +211,64 @@ test('PC16: a segment that names no fence shows the line, then the latest revisi
   assert.equal(canvas.text().includes('No UI named later'), false);
 });
 
-for (const setting of [false, true]) {
-  test(`PC16, PC29: a UUID segment naming an artifact of the Thread opens its canvas on protocol 1, setting ${setting ? 'on' : 'off'}`, async () => {
-    const host = await start({
-      setting,
-      artifacts: [
-        { artifactId: ARTIFACT_ID, title: 'Checkout', markup: MARKUP },
-      ],
-    });
+// PC16 (D25): stage 4 leaves one kind of canvas. The command is
+// `papercraft.open-canvas/v2` 2.0.0, its input is {projectId, threadId,
+// identity} only, and a UUID segment is an identity like any other.
 
-    const canvas = await host.mountRoute(routeParams(ARTIFACT_ID));
-    const frame = await until(
-      canvas.frame,
-      (found) => found?.rendered === true,
-      "the artifact's canvas never rendered",
-    );
-    await flush();
+test('PC16: open-canvas/v2 takes {projectId, threadId, identity} and opens the program window', async () => {
+  assert.equal(openCanvas.id, 'papercraft.open-canvas/v2');
 
-    assert.equal(frame?.protocol, 1);
-    assert.equal(frame?.init?.content.kind, 'markup');
-    const read = new Set(
-      host.calls.previewReads.map(
-        (call) => (call.input as { artifactId: string }).artifactId,
-      ),
+  const opened = await openWindows([
+    { projectId: 'p1', threadId: 't1', identity: 'checkout' },
+  ]);
+
+  assert.deepEqual(opened, [
+    { key: 'program:t1/checkout', path: '/papercraft/p1/t1/checkout' },
+  ]);
+});
+
+test('PC16: open-canvas/v2 rejects an input that names an artifactId as invalid input', () => {
+  for (const input of [
+    { projectId: 'p1', threadId: 't1', artifactId: ARTIFACT_ID },
+    {
+      projectId: 'p1',
+      threadId: 't1',
+      identity: 'settings',
+      artifactId: ARTIFACT_ID,
+    },
+  ]) {
+    assert.equal(
+      openCanvasInput.safeParse(input).success,
+      false,
+      JSON.stringify(input),
     );
-    assert.deepEqual([...read], [ARTIFACT_ID]);
-  });
-}
+  }
+});
+
+test('PC16: a UUID segment is an identity: even one an old artifact of the Thread had, with no fence of that name it shows the line and no frame', async () => {
+  // The old artifact rides in an untyped option, so this test still compiles
+  // once the host fake drops it, and proves it is never read.
+  const withOldArtifact = {
+    artifacts: [
+      {
+        artifactId: ARTIFACT_ID,
+        title: 'Checkout',
+        markup: '<!DOCTYPE html><html><body>Old</body></html>',
+      },
+    ],
+  } as Record<string, unknown>;
+  const host = await start(withOldArtifact as HostOptions);
+  await host.setFences([]);
+
+  const canvas = await host.mountRoute(routeParams(ARTIFACT_ID));
+  await until(
+    canvas.text,
+    (text) => text.includes(`No UI named ${ARTIFACT_ID} in this thread.`),
+    'the canvas never said it has no UI of that name',
+  );
+  assert.equal(
+    canvas.element.querySelector('iframe'),
+    null,
+    'a frame was drawn',
+  );
+});

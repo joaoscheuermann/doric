@@ -28,11 +28,9 @@ import {
   hitTest,
   isolateHiddenIds,
   nearestNode,
-  nodeLabel,
   type PseudoBoundsOf,
   type SceneGraph,
   sceneGraphOf,
-  stampLabel,
   targetBounds,
   targetById,
   targetIdOf,
@@ -100,23 +98,6 @@ test('the tree trusts only what it can check of the frame nodes', () => {
     graph.childrenOf.get(undefined)?.map((each) => each.id),
     ['n0', 'n2'],
   );
-});
-
-test('the origin stamp walks down from the stamped ancestor', () => {
-  const graph = mount(
-    '<main data-papercraft-source="src/Checkout.tsx:42"><section><button id="pay">Pagar</button></section></main>',
-  );
-
-  const main = graph.nodes[0];
-  const button = graph.nodes[2];
-
-  assert.deepEqual(main?.stamp, { path: 'src/Checkout.tsx', line: 42 });
-  assert.deepEqual(button?.stamp, { path: 'src/Checkout.tsx', line: 42 });
-  assert.equal(stampLabel(button as never), 'src/Checkout.tsx:42');
-  assert.equal(nodeLabel(button as never), 'button#pay');
-  // Only the stamped element carries the stamp as its own.
-  assert.equal(main?.source, 'src/Checkout.tsx:42');
-  assert.equal(button?.source, undefined);
 });
 
 const boundsOf = (boxes: Record<string, Bounds>) => {
@@ -208,10 +189,8 @@ test('a pseudo target is framed by its own box, else by its host', () => {
   );
 });
 
-test('the hover label names the pseudo-element after its host, then the source line', () => {
-  const graph = mount(
-    '<div class="font-conversation" data-papercraft-source="src/editor.tsx:400"></div>',
-  );
+test('the hover label names the pseudo-element after its host', () => {
+  const graph = mount('<div class="font-conversation"></div>');
   const div = graph.byId.get('n0');
   assert.ok(div);
 
@@ -222,12 +201,9 @@ test('the hover label names the pseudo-element after its host, then the source l
   assert.equal(targetLabel({ node: div }), 'div.font-conversation');
   assert.equal(
     hoverLabelOf({ node: div, pseudo: '::before' }),
-    'div.font-conversation::before · editor.tsx:400',
+    'div.font-conversation::before',
   );
-  assert.equal(
-    hoverLabelOf({ node: div }),
-    'div.font-conversation · editor.tsx:400',
-  );
+  assert.equal(hoverLabelOf({ node: div }), 'div.font-conversation');
 });
 
 test('a click on empty space resolves to the nearest node', () => {

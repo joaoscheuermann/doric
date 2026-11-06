@@ -12,9 +12,9 @@
 // service.
 
 import {
-  ARTIFACT_TARGET_KIND,
   type CommentAnchor,
   type CommentTarget,
+  PROGRAM_TARGET_KIND,
 } from '../../contracts/index.js';
 import type { PreviewDraft } from '../comment.js';
 import type { PreviewThread } from '../domain/preview-state.js';
@@ -178,7 +178,7 @@ export const threadViewOf = (
       rootId,
       pin: sent.pin,
       target: {
-        kind: target.kind ?? ARTIFACT_TARGET_KIND,
+        kind: target.kind ?? PROGRAM_TARGET_KIND,
         id: target.artifactId,
         ...(revision === undefined ? {} : { revision }),
         anchor,

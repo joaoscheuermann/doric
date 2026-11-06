@@ -18,8 +18,7 @@
 //   its instruct; a prompt start without the load, and a move, start none;
 // - the texts: ready (one line per component), `none` once after a root,
 //   `ignoredBy`'s line, 16,000 characters with the `Also:` line, a failed
-//   build, a failure without a root;
-// - with the setting off, neither hook reads, appends, instructs or starts a job.
+//   build, a failure without a root.
 // PC14:
 // - `library({ turnSequence })` uses the last cwd event below the sequence;
 // - fences before and after a move get different roots; a rewind that removes
@@ -382,22 +381,6 @@ describe('PC13: the library instruct', () => {
         `The repository library could not be checked: The working directory ${WEB} no longer exists`,
       ],
     );
-  });
-
-  test('with the setting off, neither hook reads, appends, instructs or starts a job', async () => {
-    const s = setup({ enabled: false });
-    s.outputs.set(APP, built(APP, [component('AppButton')]));
-    s.world.row(threadId, 'p0', 'text.delta', { text: 'before' });
-    s.world.loadSkill(threadId, 'p0');
-
-    await started(s, 'p1', APP);
-    await moved(s, WEB, APP, 'p1');
-    await settle();
-
-    assert.equal(s.world.reads(), 0);
-    assert.deepEqual(s.world.cwdRows(threadId), []);
-    assert.deepEqual(s.world.instructs, []);
-    assert.deepEqual(s.jobs, []);
   });
 });
 

@@ -31,7 +31,9 @@ import {
 
 const ENTRY = 'doric://app/bundles/frameprobe@1.0.0/client/frames/probe.js';
 const FRAME_URL = `doric://app/frame/index.html?entry=${encodeURIComponent(ENTRY)}`;
-const ARTIFACT = 'doric://app/artifacts/probe-art@1/index.js';
+/** A papercraft module directory: its file list's SHA-256 (D14). */
+const MODULE_DIR = 'b'.repeat(64);
+const MODULE = `doric://app/papercraft-modules/${MODULE_DIR}/index.js`;
 
 /** The fixture frame entry; `client` is a client part it must not reach. */
 const probe = (client: string) => `
@@ -62,12 +64,12 @@ flushSync(() =>
   createRoot(root).render(createElement('p', { id: 'probe' }, 'rendered by React')),
 );
 report.rendered = document.getElementById('probe')?.textContent ?? null;
-report.artifact = await attempt(async () => (await import('${ARTIFACT}')).value);
+report.module = await attempt(async () => (await import('${MODULE}')).value);
 report.client = await attempt(async () => {
   await import('${client}');
   return 'imported';
 });
-report.fetch = await attempt(async () => (await fetch('${ARTIFACT}')).status);
+report.fetch = await attempt(async () => (await fetch('${MODULE}')).status);
 
 window.addEventListener('message', (event) => {
   if (typeof event.data?.navigate === 'string') {
@@ -116,12 +118,12 @@ describe('the preview frame in an app window', () => {
   before(async () => {
     userData = await mkdtemp(join(tmpdir(), 'doric-electron-frame-'));
 
-    const revision = join(desktopPaths(userData).artifacts, 'probe-art@1');
+    const revision = join(desktopPaths(userData).papercraftModules, MODULE_DIR);
 
     await mkdir(revision, { recursive: true });
     await writeFile(
       join(revision, 'index.js'),
-      `export const value = 'artifact';`,
+      `export const value = 'module';`,
     );
 
     const core = await coreDistribution();
@@ -186,11 +188,11 @@ describe('the preview frame in an app window', () => {
     assert.equal(await page(contents, 'typeof window.doric'), 'object');
   });
 
-  test("imports an artifact revision, but not a bundle's client part, and fetches nothing", async () => {
+  test("imports a papercraft module, but not a bundle's client part, and fetches nothing", async () => {
     const probed = await report();
     const part = await net.fetch(clientPart);
 
-    assert.equal(probed.artifact, 'artifact');
+    assert.equal(probed.module, 'module');
     // The part exists and the shell may load it: only CORS keeps the frame out.
     assert.equal(part.status, 200);
     assert.equal(part.headers.get('access-control-allow-origin'), null);

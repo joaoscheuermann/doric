@@ -32,6 +32,7 @@ import {
   fakeFrames,
 } from './support/fake-frame.js';
 import { fakeIntersection } from './support/fake-intersection.js';
+import { moduleRef, programFence, readyLibrary } from './support/fence-host.js';
 
 const window = new Window({ settings: { disableIframePageLoading: true } });
 
@@ -98,7 +99,9 @@ const frameOptions: {
   auto?: boolean;
   layout?: FakeOptions['layout'];
   size?: FakeOptions['size'];
+  program?: FakeOptions['program'];
 } = {
+  program: () => MARKUP,
   layout: { '#pay': { box: { x: 40, y: 60, width: 120, height: 32 } } },
   size: { width: 640, height: 300 },
 };
@@ -113,8 +116,8 @@ after(async () => {
 
 const MARKUP = [
   '<!DOCTYPE html><html><head></head><body>',
-  '<h1 id="title" data-papercraft-source="src/checkout.html:12">Checkout</h1>',
-  '<button id="pay" data-papercraft-source="src/checkout.html:42">Pagar</button>',
+  '<h1 id="title">Checkout</h1>',
+  '<button id="pay">Pagar</button>',
   '</body></html>',
 ].join('');
 
@@ -152,9 +155,9 @@ afterEach(async () => {
 });
 
 /**
- * A window's services for one test: its previews (`html` revisions of the
- * same markup), one durable comment pinned on the pay button of each, and
- * the window's capture.
+ * A window's services for one test: its previews (papercraft programs the
+ * fake frames render as the same markup), one durable comment pinned on the
+ * pay button of each, and the window's capture.
  */
 const windowOf = () => {
   runs += 1;
@@ -167,32 +170,30 @@ const windowOf = () => {
     whenAvailable: () => ({ dispose: () => undefined }),
     use: (contract: { id?: string }) => {
       switch (contract.id) {
-        case 'artifacts/v1':
+        case 'papercraft.programs/v1':
           return {
-            read: async (input: { artifactId: string }) => ({
-              artifactId: input.artifactId,
-              kind: 'preview',
-              title: `Checkout ${input.artifactId}`,
-              revision: 1,
-              revisions: 1,
-              targets: [{ path: 'src/checkout.html' }],
-              source: 'html',
-              path: `${input.artifactId}.html`,
-              state: 'open',
-              createdAt: '2024-01-01T00:00:00Z',
-            }),
-            policy: async () => ({ policy: 'proceed' }),
-          };
-        case 'papercraft.previews/v1':
-          return {
-            read: async (input: { artifactId: string; revision: number }) => ({
-              artifactId: input.artifactId,
-              revision: input.revision,
-              kind: 'preview',
-              files: [{ path: 'index.html', sha256: 'abc' }],
-              markup: MARKUP,
+            library: async () => readyLibrary(),
+            export: async () => ({ status: 'none' }),
+            read: async (input: { dir: string }) => ({
+              entries: moduleRef(input.dir).files.map((file) => ({
+                path: `${input.dir}/${file.path}`,
+                sha256: file.sha256,
+                base64: '',
+              })),
             }),
           };
+        case 'papercraft.cache/v1':
+          return {
+            ensure: async (input: {
+              entries: readonly { readonly path: string }[];
+            }) => ({
+              written: input.entries.map((entry) => entry.path),
+              kept: [],
+              failed: [],
+            }),
+          };
+        case 'openui.programs/v1':
+          return { reportErrors: async () => undefined };
         case 'comments/v1':
           return {
             list: async (input: { target?: { id?: string } }) =>
@@ -201,14 +202,10 @@ const windowOf = () => {
                 .map((id) => ({
                   commentId: `c-${id}`,
                   target: {
-                    kind: 'artifact',
+                    kind: 'papercraft-program',
                     id,
                     revision: 1,
-                    anchor: {
-                      form: 'source',
-                      path: 'src/checkout.html',
-                      line: 42,
-                    },
+                    anchor: { form: 'selector', selector: 'button#pay' },
                   },
                   text: 'mais respiro',
                   resolved: false,
@@ -245,16 +242,23 @@ const windowOf = () => {
     const host = document.createElement('div');
     document.body.append(host);
     const root = reactDomClient.createRoot(host);
-    const artifactId = `${prefix}-${name}`;
+    const identity = `${prefix}-${name}`;
+    // Each window's previews are of a Thread of their own.
+    const threadId = `t-${prefix}`;
+    const fence = programFence('root = TextContent("Checkout")', {
+      identity,
+      threadId,
+    });
 
     await react.act(async () => {
       root.render(
         createElement(PreviewContainer, {
           services,
           chrome,
-          scope: { projectId: 'p1', threadId: 't1' },
-          artifactId,
-          ...(chrome === 'node' ? { blockRevision: 1 } : {}),
+          scope: { projectId: 'p1', threadId },
+          source: { kind: 'program', threadId, identity },
+          fences: [fence],
+          fenceKey: fence.key,
         }),
       );
       await delivered();
@@ -416,7 +420,7 @@ test('a fourth preview takes the live frame of the least recently used one', asy
     'the three most recent previews are live',
   );
   // Never captured, it draws its placeholder, named after the preview.
-  assert.match(a.placeholder()?.textContent ?? '', /run\d+-a\.html/);
+  assert.match(a.placeholder()?.textContent ?? '', /run\d+-a/);
 
   await w.close();
 });
@@ -599,8 +603,7 @@ test("the canvas window's revision is live outside the count", async () => {
 // frame, a protocol-2 frame booted with no program, so a fence's first
 // program draws at once. It counts as one of the three live frames, and the
 // next papercraft fence takes it as its own live frame. The client part
-// activates with the Generative UI setting on (`support/fence-host.ts`),
-// over this file's fake frames.
+// activates over this file's fake frames (`support/fence-host.ts`).
 
 /** The protocol-2 frames in the document that hold their channel. */
 const programFrames = () =>
@@ -653,8 +656,11 @@ test("PC30: the warm frame becomes the next fence's live frame", async () => {
   );
   const drawn = await settle(
     () =>
-      frames.all.find((frame) =>
-        frame.programReceived.some((message) => message.kind === 'program'),
+      // The frames of the earlier tests are gone from the document.
+      frames.all.find(
+        (frame) =>
+          frame.iframe.isConnected &&
+          frame.programReceived.some((message) => message.kind === 'program'),
       ),
     (found) => found !== undefined,
     'the fence never drew its program',

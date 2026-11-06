@@ -1,4 +1,4 @@
-// C5, C6 and C9's schema case (conversation-openui.md D21, D22): the question
+// C5 and C6 (conversation-openui.md D21, D22): the question
 // service `openui.questions/v1` over a fake `runtime.threads/v1` whose log
 // applies the runtime's rewind rule. A question is its prompt and the digest
 // of its parsed questions; the answer is sent by D20's route and recorded as
@@ -9,16 +9,10 @@ import { createHash } from 'node:crypto';
 import { afterEach, test } from 'node:test';
 
 import type { Call, CallScope } from 'bundle/contracts';
-import {
-  askAnswerSchema as threadsAskAnswerSchema,
-  askInputSchema as threadsAskInputSchema,
-} from 'threads/contracts';
-import { z } from 'zod';
 
 import {
   type AskAnswer,
   type AskInput,
-  askAnswerSchema,
   askInputSchema,
   OpenuiQuestionsV1,
 } from '../src/contracts/index.js';
@@ -521,15 +515,4 @@ test('C6: a row that fails the event schema is skipped', async () => {
   assert.deepEqual(await service(world).status({ promptId: 'q1', questions }), {
     state: 'pending',
   });
-});
-
-test("C9: openui's askInputSchema and askAnswerSchema give the JSON Schema of threads'", () => {
-  assert.deepEqual(
-    z.toJSONSchema(askInputSchema),
-    z.toJSONSchema(threadsAskInputSchema),
-  );
-  assert.deepEqual(
-    z.toJSONSchema(askAnswerSchema),
-    z.toJSONSchema(threadsAskAnswerSchema),
-  );
 });

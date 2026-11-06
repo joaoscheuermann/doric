@@ -3,16 +3,15 @@
 // selection and layers (spec: "A UI no node e na janela").
 //
 // One surface, two moldings (`Uma superfície, duas molduras`). In the
-// conversation (`chrome: 'node'`) the surface is the body of the `artifacts`
-// registry's frame, and it draws its own header (the kind declares
-// `header: 'body'`): the frame keeps only `Autorizar` below it. The node is
-// a square — as tall as it is wide. The window (`chrome: 'canvas'`) draws
+// conversation (`chrome: 'node'`) the surface is a papercraft fence's node,
+// and it draws its own header. The node is a square — as tall as it is wide.
+// The window (`chrome: 'canvas'`) draws
 // the same surface full-screen, with the tree on the left and the command
 // bar centred on the bottom edge.
 //
 // What is view state here — the armed tool, pan/zoom, selection, isolation,
 // hidden layers, the open input — is local to the frame; what is durable stays
-// in the events and is read back through `preview-data.ts`, in the preview's
+// in the events and is read back through `program-data.ts`, in the program's
 // scope. The pins are both: the sent threads of the preview and its drafts,
 // on every revision — a thread carries over to the next revision, keeps its
 // number and re-places its pin through its anchor; a new comment is written
@@ -35,7 +34,7 @@
 // The frame composes its parts: the scene (`scene.ts`), the fit (`fit.ts`),
 // the focus (`frame-focus.ts`), the gestures and keys (`gestures.ts`), the
 // comment flow (`comment-flow.ts`) and what it draws (`comment-overlay.tsx`),
-// the conversation's requests (`thread-open.ts`) and the controller the
+// and the controller the
 // commands act on (`controller.ts`). The children that do not move with the
 // viewport — the header, the footer, the tree and the bar — are memoised on
 // stable actions, so a pan or a zoom re-renders the canvas and its overlay,
@@ -48,7 +47,6 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import type { ChatFence } from '../../contracts/chat.js';
 import {
-  PAPERCRAFT_COMMENT_KIND,
   PapercraftSnapshotV1,
   PROGRAM_COMMENT_KIND,
   type PreviewScope,
@@ -58,7 +56,7 @@ import { touchController } from '../canvas-registry.js';
 import { programFrameSrc } from '../frame-url.js';
 import { type CanvasSource, canvasIdOf, targetKeyOf } from './canvas-source.js';
 import { CommandToolbar } from './command-toolbar.js';
-import { useCommentFlow, useCommentRequest } from './comment-flow.js';
+import { useCommentFlow } from './comment-flow.js';
 import { CommentOverlay } from './comment-overlay.js';
 import {
   type FrameReading,
@@ -74,7 +72,6 @@ import { NodeFooter } from './node-footer.js';
 import { HoverOutline, SelectionOutline } from './overlays.js';
 import { anchorResolver } from './pin-geometry.js';
 import type { CommentPin } from './pins-layer.js';
-import { ensureRevisionCached, usePreviewData } from './preview-data.js';
 import { PreviewHeader } from './preview-header.js';
 import {
   type FrameInput,
@@ -85,7 +82,6 @@ import { type OpenUIErrorOf, useProgramData } from './program-data.js';
 import { useScene } from './scene.js';
 import { targetBounds, targetById } from './scene-graph.js';
 import type { SurfaceSnapshots } from './snapshots.js';
-import { useThreadOpenRequests } from './thread-open.js';
 import { DETACHED_STEP, openCountOf, pinsOf } from './threads-view.js';
 import { TreePanel } from './tree-panel.js';
 import {
@@ -104,19 +100,8 @@ export interface PreviewContainerProps {
   readonly chrome: PreviewChrome;
   /** The Project and Thread of the preview: every host call's scope. */
   readonly scope: PreviewScope | undefined;
-  readonly artifactId: string;
-  /** The node shows the revision its block was created with; the window opens at the newest. */
-  readonly blockRevision?: number;
-  /**
-   * Bumped by each comment gesture of the registry's frame (the node is the
-   * body inside it): every change toggles the comment tool.
-   */
-  readonly commentRequest?: number;
-  /**
-   * What the canvas shows (D26): a papercraft program's identity in one
-   * Thread; `artifactId`'s artifact when absent.
-   */
-  readonly source?: CanvasSource;
+  /** What the canvas shows (D26): a papercraft program's identity in one Thread. */
+  readonly source: CanvasSource;
   /** A program's node: the fences chat handed it, and its own fence's key. */
   readonly fences?: readonly ChatFence[];
   readonly fenceKey?: string;
@@ -135,98 +120,20 @@ interface CanvasData {
     readonly total: number;
     readonly list: readonly number[];
   };
-  /** How many revisions the record read knows of (the old path). */
-  readonly knownRevisions: number | undefined;
-  readonly policy: 'proceed' | 'request';
   readonly selectedRevision: number | undefined;
   readonly selectRevision: (revision: number) => void;
-  readonly reload: () => void;
-  readonly threads: ReturnType<typeof usePreviewData>['threads'];
-  readonly drafts: ReturnType<typeof usePreviewData>['drafts'];
+  readonly threads: ReturnType<typeof useProgramData>['threads'];
+  readonly drafts: ReturnType<typeof useProgramData>['drafts'];
   readonly reloadComments: () => void;
   readonly canComment: boolean;
-  readonly approved: boolean;
-  readonly surface:
-    | {
-        readonly kind: 'artifact';
-        readonly markup: string | undefined;
-        readonly entries: readonly string[] | undefined;
-        readonly read: boolean;
-      }
-    | {
-        readonly kind: 'program';
-        readonly content: ProgramContent | undefined;
-        readonly onErrors?: (errors: readonly OpenUIErrorOf[]) => void;
-      };
+  readonly surface: {
+    readonly content: ProgramContent | undefined;
+    readonly onErrors?: (errors: readonly OpenUIErrorOf[]) => void;
+  };
 }
 
-/** One frame of a preview: an artifact's revisions, or a papercraft program's (D26). */
+/** One frame of a papercraft program's canvas, read by `useProgramData` (D6, D26). */
 export function PreviewContainer(props: PreviewContainerProps) {
-  return props.source?.kind === 'program' ? (
-    <ProgramContainer {...props} source={props.source} />
-  ) : (
-    <ArtifactContainer {...props} />
-  );
-}
-
-/** The old path's canvas: an artifact's revisions, read by `usePreviewData`. */
-function ArtifactContainer(props: PreviewContainerProps) {
-  const { services, chrome, scope, artifactId, blockRevision } = props;
-  const data = usePreviewData({
-    services,
-    chrome,
-    scope,
-    artifactId,
-    ...(blockRevision === undefined ? {} : { blockRevision }),
-  });
-  const { record, preview, selectedRevision } = data;
-  const recordTitle = record?.title;
-  const recordPath = record?.path;
-  const refs = useMemo(
-    () => ({
-      ...(recordTitle === undefined ? {} : { title: recordTitle }),
-      ...(recordPath === undefined ? {} : { source: recordPath }),
-    }),
-    [recordTitle, recordPath],
-  );
-  const total = record?.revisions ?? 1;
-  const source = useMemo<CanvasSource>(
-    () => ({ kind: 'artifact', artifactId }),
-    [artifactId],
-  );
-
-  return (
-    <CanvasFrame
-      {...props}
-      data={{
-        ...data,
-        source,
-        title: record?.path ?? record?.title ?? artifactId,
-        sourcePath: record?.path,
-        refs,
-        revisions: {
-          current: selectedRevision ?? record?.revision ?? 1,
-          total,
-          list: Array.from({ length: total }, (_, index) => index + 1),
-        },
-        knownRevisions: record?.revisions,
-        surface: {
-          kind: 'artifact',
-          markup: preview?.markup,
-          entries: preview?.files.map((file) => file.path),
-          read: preview !== undefined,
-        },
-      }}
-    />
-  );
-}
-
-/** A papercraft program's canvas, read by `useProgramData` (D6, D26). */
-function ProgramContainer(
-  props: PreviewContainerProps & {
-    readonly source: Extract<CanvasSource, { kind: 'program' }>;
-  },
-) {
   const { services, chrome, scope, source, fences, fenceKey } = props;
   const data = useProgramData({
     services,
@@ -243,7 +150,6 @@ function ProgramContainer(
     [data.revisions],
   );
   const selectedRevision = data.selected?.revision.revision;
-  const noop = useCallback(() => undefined, []);
 
   // The window names an identity no fence of the Thread has (yet).
   if (
@@ -275,18 +181,13 @@ function ProgramContainer(
             total: list.length,
             list,
           },
-          knownRevisions: list.length,
-          policy: 'proceed',
           selectedRevision,
           selectRevision: data.selectRevision,
-          reload: noop,
           threads: data.threads,
           drafts: data.drafts,
           reloadComments: data.reloadComments,
           canComment: data.canComment,
-          approved: false,
           surface: {
-            kind: 'program',
             content: data.content,
             ...(data.onErrors === undefined ? {} : { onErrors: data.onErrors }),
           },
@@ -305,8 +206,6 @@ function ProgramContainer(
   );
 }
 
-const FALLBACK_NOTICE = 'o preview não carregou · mostrando o markup';
-
 /** The comment balloon the pointer becomes in comment mode; its tip is the hotspot. */
 const COMMENT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M2 22V12a10 10 0 1 1 10 10z" fill="#2563eb" stroke="white" stroke-width="1.5"/></svg>',
@@ -323,34 +222,25 @@ function CanvasFrame({
   services,
   chrome,
   scope,
-  blockRevision,
-  commentRequest,
   data,
 }: PreviewContainerProps & { readonly data: CanvasData }) {
   const {
     source,
-    policy,
     selectedRevision,
     selectRevision,
-    reload,
     threads,
     drafts,
     reloadComments,
     canComment,
-    approved,
     refs,
     surface,
   } = data;
   /** The canvas's key for every per-canvas store (D26). */
   const artifactId = canvasIdOf(source);
-  const program = source.kind === 'program';
   const target = useMemo(() => targetKeyOf(source), [source]);
   const segment = useMemo(
-    () =>
-      source.kind === 'artifact'
-        ? { artifactId: source.artifactId }
-        : { identity: source.identity },
-    [source],
+    () => ({ identity: source.identity }),
+    [source.identity],
   );
 
   const [tool, setTool] = useState<PreviewTool>('select');
@@ -358,7 +248,7 @@ function CanvasFrame({
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [hoverId, setHoverId] = useState<string | undefined>(undefined);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>('markup');
+  const [, setSurfaceMode] = useState<SurfaceMode>('markup');
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [showResolved, setShowResolved] = useState(true);
 
@@ -414,7 +304,7 @@ function CanvasFrame({
     services,
     scope,
     target,
-    itemKind: program ? PROGRAM_COMMENT_KIND : PAPERCRAFT_COMMENT_KIND,
+    itemKind: PROGRAM_COMMENT_KIND,
     revision: selectedRevision,
     threads,
     drafts,
@@ -425,17 +315,7 @@ function CanvasFrame({
   });
   const inputOpen = flow.open !== undefined;
 
-  useThreadOpenRequests({
-    chrome,
-    artifactId,
-    ownRevision: blockRevision ?? selectedRevision,
-    knownRevisions: data.knownRevisions,
-    services,
-    scope,
-    showThread: flow.showThread,
-  });
-
-  const contentKey = `${artifactId}@${String(selectedRevision ?? blockRevision ?? 1)}`;
+  const contentKey = `${artifactId}@${String(selectedRevision ?? 1)}`;
 
   // The node holds a live frame only among the window's most recently used;
   // the canvas window's revision stays live outside that count.
@@ -469,7 +349,6 @@ function CanvasFrame({
     areaSize,
     fitContent,
     selectRevision,
-    reload,
     sendNow: flow.sendNow,
   });
   const { execute, openCanvas } = useCommandDispatch(
@@ -528,7 +407,7 @@ function CanvasFrame({
     focusCanvas,
     resolveInput: flow.resolveInput,
     onComment: flow.beginNew,
-    program,
+    program: true,
   });
 
   /** The node lets go of the focus: the canvas's, or the preview's frame's. */
@@ -611,15 +490,6 @@ function CanvasFrame({
     [services, chrome],
   );
 
-  useCommentRequest(commentRequest, {
-    canComment,
-    armed: () => latest.current.tool === 'comment',
-    toggle: () =>
-      setTool((current) => (current === 'comment' ? 'select' : 'comment')),
-    focusCanvas: () => wrapper.current?.focus?.({ preventScroll: true }),
-    closeInput: flow.closeInput,
-  });
-
   /* The pins: the preview's threads, on whatever revision, then its drafts --- */
 
   // Each anchor is placed once per scene; a pin whose anchor no longer
@@ -654,8 +524,8 @@ function CanvasFrame({
   const { current, total, list } = data.revisions;
 
   const revisions = useMemo(
-    () => ({ current, total, list, approved }),
-    [current, total, list, approved],
+    () => ({ current, total, list }),
+    [current, total, list],
   );
 
   const resolvedToggle = useMemo(
@@ -763,29 +633,15 @@ function CanvasFrame({
           >
             <PreviewSurface
               artifactId={artifactId}
-              revision={selectedRevision ?? blockRevision ?? 1}
-              markup={surface.kind === 'artifact' ? surface.markup : undefined}
-              {...(surface.kind === 'artifact' && surface.entries !== undefined
-                ? { entries: surface.entries }
-                : {})}
-              {...(surface.kind === 'program'
-                ? {
-                    protocol: 2 as const,
-                    frameSrc: programFrameSrc(),
-                    adopt: chrome === 'node',
-                    ...(surface.content === undefined
-                      ? {}
-                      : { program: surface.content }),
-                    ...(surface.onErrors === undefined
-                      ? {}
-                      : { onErrors: surface.onErrors }),
-                  }
-                : {})}
-              // Path B: the revision's entries reach the desktop's verified
-              // cache before the surface imports its module.
-              ensure={(id, revision) =>
-                ensureRevisionCached(services, scope, id, revision)
-              }
+              revision={selectedRevision ?? 1}
+              frameSrc={programFrameSrc()}
+              adopt={chrome === 'node'}
+              {...(surface.content === undefined
+                ? {}
+                : { program: surface.content })}
+              {...(surface.onErrors === undefined
+                ? {}
+                : { onErrors: surface.onErrors })}
               area={area}
               capture={capture}
               hidden={hidden}
@@ -836,18 +692,6 @@ function CanvasFrame({
           />
         </div>
 
-        {/* The one-line notice of a module that did not load (decision 10). */}
-        {surfaceMode === 'fallback' &&
-        surface.kind === 'artifact' &&
-        surface.read ? (
-          <div
-            data-testid="papercraft-notice"
-            className="absolute inset-x-0 bottom-9 z-10 mx-auto w-fit rounded bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
-          >
-            {FALLBACK_NOTICE}
-          </div>
-        ) : null}
-
         {chrome === 'node' && active ? (
           <NodeFooter
             zoom={zoomPercent(viewport)}
@@ -876,11 +720,6 @@ function CanvasFrame({
               hasHidden={hidden.size > 0}
               zoom={zoomPercent(viewport)}
               revisions={revisions}
-              approvalNeeded={
-                policy === 'request' &&
-                selectedRevision !== undefined &&
-                !approved
-              }
             />
           </>
         ) : null}

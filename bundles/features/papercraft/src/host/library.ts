@@ -5,13 +5,7 @@
 
 import { createHash } from 'node:crypto';
 
-import {
-  ContractError,
-  EventsV1,
-  type Services,
-  SettingsV1,
-} from 'bundle/contracts';
-import { generativeUiSetting } from 'openui/contracts';
+import { ContractError, EventsV1, type Services } from 'bundle/contracts';
 import {
   type CwdChanged,
   type PromptStarted,
@@ -34,7 +28,7 @@ export interface LibraryHooks {
    * `onPromptStartedHook` (D10, D28): reads the Thread's new events, appends
    * `papercraft.cwd/v1` when `cwd` differs from the last bound one, and, once
    * the Thread has loaded the papercraft skill, runs one library job and gives
-   * the retained instruct. Does nothing while the setting is off. Never
+   * the retained instruct. Never
    * rejects: a failed step ends or skips as D10 says.
    */
   promptStarted(input: PromptStarted): Promise<void>;
@@ -162,14 +156,6 @@ export const createLibraryHooks = (
     return next;
   };
 
-  const enabled = (): Promise<boolean> =>
-    Promise.resolve()
-      .then(() => services.use(SettingsV1).get(generativeUiSetting))
-      .then(
-        (value) => value.enabled,
-        () => false,
-      );
-
   const bindingAt = (
     threadId: string,
     turnSequence: number,
@@ -189,8 +175,6 @@ export const createLibraryHooks = (
     },
     job: boolean,
   ): Promise<void> => {
-    if (!(await enabled())) return;
-
     const { projectId, threadId, promptId, cwd } = input;
     const entry = entryOf(threadId);
 

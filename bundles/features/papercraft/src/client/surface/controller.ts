@@ -40,7 +40,6 @@ export interface ControllerInput {
   readonly areaSize: () => { readonly width: number; readonly height: number };
   readonly fitContent: () => boolean;
   readonly selectRevision: (revision: number) => void;
-  readonly reload: () => void;
   readonly sendNow: () => Promise<void>;
 }
 
@@ -57,7 +56,6 @@ export const usePreviewController = ({
   areaSize,
   fitContent,
   selectRevision,
-  reload,
   sendNow,
 }: ControllerInput): PreviewController => {
   const controller = useMemo<PreviewController>(() => {
@@ -112,7 +110,6 @@ export const usePreviewController = ({
         selectRevision(revision);
       },
       currentRevision: () => latest.current.revision ?? undefined,
-      reload,
       sendNow,
     };
   }, [
@@ -127,7 +124,6 @@ export const usePreviewController = ({
     areaSize,
     fitContent,
     selectRevision,
-    reload,
     sendNow,
   ]);
 
@@ -143,8 +139,8 @@ export const usePreviewController = ({
 /** How the frame dispatches a command, and the node's `abrir`: the canvas window. */
 export const useCommandDispatch = (
   services: Services,
-  /** What `papercraft.open-canvas/v1` names the canvas by (D26). */
-  segment: { readonly artifactId: string } | { readonly identity: string },
+  /** What `papercraft.open-canvas/v2` names the canvas by (D26). */
+  segment: { readonly identity: string },
   scopeProject: string | undefined,
   scopeThread: string | undefined,
 ): {

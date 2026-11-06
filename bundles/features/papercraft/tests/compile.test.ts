@@ -1,7 +1,7 @@
-// Path B at the builder's boundary: a `component` source snapshots into the
-// revision's three files — the fallback markup, the live module and its
-// sheet — read from the Project through `files/v1` and compiled with the
-// real esbuild and Tailwind compilers.
+// Path B at the compiler's boundary: a `component` source compiles into the
+// live module and its sheet — read from the Project through `files/v1`
+// (`src/host/files.ts`) and compiled with the real esbuild and Tailwind
+// compilers.
 //
 // Contract matrix:
 // - a preview wrapper under `.doric/artifacts/drafts/` that imports the
@@ -9,7 +9,7 @@
 //   `index.js` that exports `mount`, keeps `react` external and bundles the
 //   imported file; `index.css` carries the utilities the sources use, mapped
 //   to the generic theme's variables; each entry's hash is the hash of the bytes
-//   handed over, and `index.html` stays the fallback markup;
+//   handed over;
 // - a Project `tsconfig.json` `paths` alias resolves through the sandbox;
 // - `lucide-react`, outside the window's import map, is bundled, not left
 //   external;
@@ -27,8 +27,7 @@
 // - `entry` names the export to mount; a missing one, or a source with no
 //   default and several components, fails naming the exports;
 // - a source that does not compile, or an import nowhere to be found, fails
-//   with `invalid_input` naming the file and the import;
-// - an `html` source still builds its markup only.
+//   with `invalid_input` naming the file and the import.
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -37,10 +36,9 @@ import { describe, test } from 'node:test';
 import { ContractError } from 'bundle/contracts';
 
 import {
-  buildPreview,
-  type PreviewSnapshot,
-  snapshotPreview,
-} from '../src/host/previews.js';
+  type ComponentSnapshot,
+  snapshotComponent,
+} from './support/component.js';
 import { servicesFor, testCall } from './support/services.js';
 
 const CARD = [
@@ -97,9 +95,9 @@ const filesService = (files: Record<string, string>) => ({
 
 const snapshot = (
   files: Record<string, string>,
-  input: { source: 'html' | 'component'; path: string; entry?: string },
-): Promise<PreviewSnapshot> =>
-  snapshotPreview(
+  input: { source: 'component'; path: string; entry?: string },
+): Promise<ComponentSnapshot> =>
+  snapshotComponent(
     servicesFor((id) => {
       if (id === 'files/v1') return filesService(files);
       throw new Error(`unexpected contract ${id}`);
@@ -108,7 +106,7 @@ const snapshot = (
     input,
   );
 
-const textOf = (built: PreviewSnapshot, path: string): string => {
+const textOf = (built: ComponentSnapshot, path: string): string => {
   const file = built.files.find((candidate) => candidate.path === path);
   assert.ok(file !== undefined, `no ${path} in the snapshot`);
 
@@ -135,7 +133,7 @@ const rejectsWith = async (
 };
 
 describe('component previews (path B)', () => {
-  test('a draft wrapper compiles into a module, a sheet and the fallback markup', async () => {
+  test('a draft wrapper compiles into a module and a sheet', async () => {
     const built = await snapshot(PROJECT, {
       source: 'component',
       path: WRAPPER_PATH,
@@ -143,7 +141,7 @@ describe('component previews (path B)', () => {
 
     assert.deepEqual(
       built.entries.map((entry) => entry.path),
-      ['index.html', 'index.js', 'index.css'],
+      ['index.js', 'index.css'],
     );
 
     // Each entry names the hash of exactly the bytes handed to the registry.
@@ -171,28 +169,6 @@ describe('component previews (path B)', () => {
     // No theme token is defined as itself: that cycle would void the token
     // wherever it won the cascade.
     assert.doesNotMatch(css, /(--[\w-]+):\s*var\(\1\)/);
-
-    // The fallback is still the source text, stamped with its origin.
-    assert.match(
-      built.markup,
-      /data-papercraft-source="\.doric\/artifacts\/drafts\/card-preview\.tsx:1"/,
-    );
-  });
-
-  test('the builder service answers the same three entries', async () => {
-    const services = servicesFor((id) => {
-      if (id === 'files/v1') return filesService(PROJECT);
-      throw new Error(`unexpected contract ${id}`);
-    });
-    const built = await buildPreview(services, testCall, {
-      source: 'component',
-      path: WRAPPER_PATH,
-    });
-
-    assert.deepEqual(
-      built.files.map((file) => file.path),
-      ['index.html', 'index.js', 'index.css'],
-    );
   });
 
   test("a tsconfig paths alias resolves through the Project's files", async () => {
@@ -543,18 +519,6 @@ describe('component previews (path B)', () => {
         { source: 'component', path: 'src/rel.tsx' },
       ),
       /\.\/missing\.js/,
-    );
-  });
-
-  test('an html source builds its markup only', async () => {
-    const built = await snapshot(
-      { 'src/page.html': '<p class="p-4">oi</p>' },
-      { source: 'html', path: 'src/page.html' },
-    );
-
-    assert.deepEqual(
-      built.entries.map((entry) => entry.path),
-      ['index.html'],
     );
   });
 });

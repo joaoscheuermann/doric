@@ -4,8 +4,7 @@
 
 // PC15 (papercraft-openui.md D19) adds a program's comments: their target,
 // their selector or point anchor from the protocol-2 scene, their pins per
-// identity and revision, their stack kind and its flush — next to the
-// artifact's, which keep their kind. Those cases mount a papercraft fence
+// identity and revision, their stack kind and its flush. Those cases mount a papercraft fence
 // (`support/fence-host.ts`) whose fake frame renders statement wrappers.
 
 import './support/dom.js';
@@ -17,15 +16,10 @@ import type { PreviewDraft } from '../../src/client/comment.js';
 import { setComposerAvailable } from '../../src/client/comment.js';
 import { targetKeyOf } from '../../src/client/surface/canvas-source.js';
 import {
-  ARTIFACT_TARGET_KIND,
-  PAPERCRAFT_COMMENT_KIND,
   PROGRAM_COMMENT_KIND,
   PROGRAM_TARGET_KIND,
 } from '../../src/contracts/index.js';
-import {
-  papercraftFlush,
-  programFlush,
-} from '../../src/desktop/comment-flush.js';
+import { programFlush } from '../../src/desktop/comment-flush.js';
 import { closeWindow } from './support/dom.js';
 import {
   commentOn,
@@ -191,17 +185,12 @@ test('a pin whose anchor no longer resolves is detached by the edge, never dropp
 // ---------------------------------------------------------------------------
 // PC15: a program's comments.
 
-test('PC15: a program canvas lists the papercraft-program target of its identity; an artifact keeps artifact', () => {
+test('PC15: a program canvas lists the papercraft-program target of its identity', () => {
   assert.equal(PROGRAM_TARGET_KIND, 'papercraft-program');
-  assert.notEqual(PROGRAM_TARGET_KIND, ARTIFACT_TARGET_KIND);
   assert.deepEqual(
     targetKeyOf({ kind: 'program', threadId: 't1', identity: 'settings' }),
     { kind: 'papercraft-program', id: 'settings' },
   );
-  assert.deepEqual(targetKeyOf({ kind: 'artifact', artifactId: 'a-1' }), {
-    kind: 'artifact',
-    id: 'a-1',
-  });
 });
 
 const flushContext = { threadId: 't1', promptId: 'p-1' };
@@ -213,18 +202,12 @@ const stackItem = (id: string, kind: string, data: unknown, note: string) => ({
   note,
 });
 
-test('PC15: programFlush writes the program target; papercraftFlush still writes artifact targets', async () => {
+test('PC15: programFlush writes the program target', async () => {
   const program = {
     kind: 'papercraft-program',
     id: 'settings',
     revision: 2,
     anchor: { form: 'selector', selector: 'save', label: 'Button' },
-  };
-  const artifact = {
-    kind: 'artifact',
-    id: 'checkout-7f3a',
-    revision: 1,
-    anchor: { form: 'selector', selector: 'button#pay' },
   };
 
   assert.deepEqual(
@@ -265,14 +248,6 @@ test('PC15: programFlush writes the program target; papercraftFlush still writes
       flushContext,
     ),
     [],
-  );
-
-  assert.deepEqual(
-    await papercraftFlush(
-      stackItem('c-5', PAPERCRAFT_COMMENT_KIND, { target: artifact }, 'pay'),
-      flushContext,
-    ),
-    [{ target: artifact, text: 'pay', commentId: 'c-5' }],
   );
 });
 

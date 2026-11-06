@@ -173,18 +173,6 @@ const withStartedHost = async (
   }
 };
 
-/** Writes the Generative UI setting as a window writes it. */
-const setGenerativeUi = async (host: Host, enabled: boolean) => {
-  const { ref } = await import('bundle/contracts');
-  await host.platform.services
-    .use(
-      ref<{ set(value: { enabled: boolean }): Promise<unknown> }>(
-        'openui.setting/v1',
-      ),
-    )
-    .set({ enabled });
-};
-
 /** The tool and skill names the registries list now. */
 const listed = async (host: Host) => ({
   tools: host.platform.services
@@ -195,18 +183,6 @@ const listed = async (host: Host) => ({
     ({ skill }) => skill.name,
   ),
 });
-
-/** Polls until `check` holds; a setting reaches the bundles through a subscription. */
-const eventually = async (
-  check: () => Promise<boolean>,
-  message: () => Promise<string>,
-): Promise<void> => {
-  for (const end = Date.now() + 10_000; Date.now() < end; ) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  assert.fail(await message());
-};
 
 void test('the default composition registers the GIT and MCP_TOKEN kinds when the git and mcp bundles activate', async () => {
   await withHost(async (host) => {
@@ -364,13 +340,13 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // in-app Claude sign-in), and since the desktop switch (WP-10N) the
     // `notifications` bundle, which has no host part, and the `web` bundle. The
     // `screen-relay` bundle is one too: it is the resident half of the screen,
-    // which serves the relay on the host's own listener, and the `artifacts`,
-    // `comments` and `papercraft` features are the review registry, its
-    // anchored comments and the live preview over them. The `mcp` feature is
+    // which serves the relay on the host's own listener, and the `comments`
+    // and `papercraft` features are anchored comments and the live preview
+    // they pin to. The `mcp` feature is
     // the Project's MCP servers and the tools they bring. The `openui`
     // feature draws UI in the conversation (OpenUI slice 1). No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 31);
+    assert.equal(host.bundleCount, 30);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -409,7 +385,6 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         history: ['active', 'others'],
         'host-config': ['active', 'others'],
         transport: ['active', 'others'],
-        artifacts: ['active', 'others'],
         comments: ['active', 'others'],
         openui: ['active', 'others'],
         papercraft: ['active', 'others'],
@@ -436,7 +411,6 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['runtime', 'screen'],
       ['screen-relay', 'screen'],
       ['claude-login', 'settings'],
-      ['artifacts', 'papercraft'],
       ['comments', 'papercraft'],
       ['runtime', 'mcp'],
       // openui requires chat.views/v1 and chat.send/v1 (chat), the runtime's
@@ -792,7 +766,7 @@ void test("the structural requirement is the composition's: a contract it names 
 });
 
 // PC23 (papercraft-openui.md D28, R36): with the real `default` and
-// `papercraft` bundles and the setting on, papercraft finds the skill load in
+// `papercraft` bundles, papercraft finds the skill load in
 // the Thread log by `default`'s tool name and input. Prompt 1 loads the skill;
 // prompt 2's start finds the load and starts a library job; prompt 3's first
 // model request carries the instruct of that job's failure, which has no root,
@@ -815,7 +789,6 @@ void test('PC23: a papercraft skill load read from the log brings the library in
     './helpers/integration-provider.js'
   );
   const { defaultConfig } = await import('host-config/testing');
-  const { ref } = await import('bundle/contracts');
   const database = await freshDatabase(connectionString);
   const model = await scriptedEndpoint();
   const saved = {
@@ -882,15 +855,6 @@ void test('PC23: a papercraft skill load read from the log brings the library in
         ],
         models: { execution: { providerId: 'scripted', model: scriptedModel } },
       });
-      // The Generative UI setting, written as a window writes it.
-      await host.platform.services
-        .use(
-          ref<{ set(value: { enabled: boolean }): Promise<unknown> }>(
-            'openui.setting/v1',
-          ),
-        )
-        .set({ enabled: true });
-
       const project = await request<{ id: string }>('/projects', 'POST', {
         name: 'PC23',
       });
@@ -974,226 +938,70 @@ void test(
   },
 );
 
-// PC20 and B16's lists (stage 3): with the setting off, `ask`,
-// `papercraft_preview` and `papercraft-preview` are listed and neither
-// `openui` nor `papercraft`; on again, none of the three.
+/** The ContractError code a call raised, or 'none' when it answered. */
+const codeOf = async (run: () => unknown): Promise<string> => {
+  try {
+    await run();
+    return 'none';
+  } catch (error) {
+    return (error as { code?: string }).code ?? String(error);
+  }
+};
+
+// B14 (openui.md stage 4, D24; conversation-openui.md D30; papercraft-openui.md
+// D25): after the host's start steps of the default composition, `ask` and
+// `papercraft_preview` are no tools, `papercraft-preview` is no skill, and
+// `openui` and `papercraft` are skills with no setting to turn on.
+// `threads.ask/v1` and `openui.setting/v1` have no provider, and no bundle
+// registers the `openui.generative-ui/v1` settings space.
 void test(
-  'PC20, B16: turning the setting off lists ask, papercraft_preview and papercraft-preview and neither openui nor papercraft; on again lists none of the three',
+  'B14: the default host has no ask, papercraft_preview or papercraft-preview, has openui and papercraft, and serves neither threads.ask/v1, openui.setting/v1 nor the openui.generative-ui/v1 space',
   needsDatabase,
   async () => {
     await withStartedHost(async (host) => {
-      const off = async () => {
-        const { tools, skills } = await listed(host);
-        return (
-          tools.includes('ask') &&
-          tools.includes('papercraft_preview') &&
-          skills.includes('papercraft-preview') &&
-          !skills.includes('openui') &&
-          !skills.includes('papercraft')
-        );
-      };
-      const on = async () => {
-        const { tools, skills } = await listed(host);
-        return (
-          !tools.includes('ask') &&
-          !tools.includes('papercraft_preview') &&
-          !skills.includes('papercraft-preview') &&
-          skills.includes('openui') &&
-          skills.includes('papercraft')
-        );
-      };
-      const describe = async () => JSON.stringify(await listed(host));
+      const { defineSettings, ref, SettingsV1 } = await import(
+        'bundle/contracts'
+      );
+      const services = host.platform.services;
+      const { tools, skills } = await listed(host);
 
-      await setGenerativeUi(host, false);
-      await eventually(off, describe);
+      assert.ok(!tools.includes('ask'), tools.join(', '));
+      assert.ok(!tools.includes('papercraft_preview'), tools.join(', '));
+      assert.ok(skills.includes('openui'), skills.join(', '));
+      assert.ok(skills.includes('papercraft'), skills.join(', '));
+      assert.ok(!skills.includes('papercraft-preview'), skills.join(', '));
 
-      await setGenerativeUi(host, true);
-      await eventually(on, describe);
+      assert.equal(
+        await codeOf(() =>
+          services
+            .use(ref<{ withholdTool(): Promise<unknown> }>('threads.ask/v1'))
+            .withholdTool(),
+        ),
+        'unavailable',
+        'threads.ask/v1',
+      );
+      assert.equal(
+        await codeOf(() =>
+          services
+            .use(ref<{ get(): Promise<unknown> }>('openui.setting/v1'))
+            .get(),
+        ),
+        'unavailable',
+        'openui.setting/v1',
+      );
+      assert.equal(
+        await codeOf(() =>
+          services.use(SettingsV1).get(
+            defineSettings({
+              id: 'openui.generative-ui/v1',
+              // The space is looked up by id; its value is never parsed.
+              schema: {} as never,
+            }),
+          ),
+        ),
+        'unknown_settings',
+        'openui.generative-ui/v1',
+      );
     });
-  },
-);
-
-// B16 (openui.md stage 3): a prompt started after the setting turned off
-// offers `ask` and `papercraft_preview` and lists `papercraft-preview`, and
-// neither `openui` nor `papercraft`; a prompt that started before the change
-// keeps the tools and skills it started with. A prompt runs only on a Project
-// that holds a sandbox lease, so `docker` is swapped for the
-// `nodeless-sandbox` fixture, as PC23 does.
-void test(
-  'B16: with the setting set to false, a prompt started after the change offers the old tools and skills; a prompt started before keeps its own',
-  needsDatabase,
-  async () => {
-    const { scriptedEndpoint, scriptedModel, settingPrompts } = await import(
-      './helpers/integration-provider.js'
-    );
-    const { defaultConfig } = await import('host-config/testing');
-    const model = await scriptedEndpoint();
-    const root = await stagedCopy();
-
-    try {
-      await cp(
-        join(generationFixtures, 'nodeless-sandbox'),
-        join(root, 'nodeless-sandbox'),
-        { recursive: true },
-      );
-      await cp(
-        join(root, 'docker', 'schemas'),
-        join(root, 'nodeless-sandbox', 'schemas'),
-        { recursive: true },
-      );
-
-      await withStartedHost(
-        async (host) => {
-          const request = async <T>(
-            path: string,
-            method = 'GET',
-            body?: unknown,
-          ): Promise<T> => {
-            const response = await fetch(`${host.url}${path}`, {
-              method,
-              headers: { 'content-type': 'application/json' },
-              ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-            });
-            assert.ok(
-              response.ok,
-              `${method} ${path}: ${await response.clone().text()}`,
-            );
-            return (
-              response.status === 204 ? undefined : await response.json()
-            ) as T;
-          };
-          const credential = await request<{ id: string }>(
-            '/credentials',
-            'POST',
-            { kind: 'API_TOKEN', name: 'scripted', secret: 'sk-scripted' },
-          );
-          await request('/config', 'PUT', {
-            ...defaultConfig,
-            providers: [
-              {
-                id: 'scripted',
-                kind: 'openrouter',
-                configuration: {
-                  endpoint: model.endpoint,
-                  token: credential.id,
-                },
-                models: [{ name: scriptedModel, reasonings: [] }],
-              },
-            ],
-            models: {
-              execution: { providerId: 'scripted', model: scriptedModel },
-            },
-          });
-          const project = await request<{ id: string }>('/projects', 'POST', {
-            name: 'B16',
-          });
-          const thread = await request<{ id: string }>(
-            `/projects/${project.id}/threads`,
-            'POST',
-            { name: 'B16 thread' },
-          );
-          const finished = async (promptId: string) => {
-            for (const end = Date.now() + 120_000; Date.now() < end; ) {
-              const { events } = await request<{
-                events: { type: string; promptId: string }[];
-              }>(`/threads/${thread.id}/events`);
-              if (
-                events.some(
-                  (event) =>
-                    event.type === 'prompt.finished' &&
-                    event.promptId === promptId,
-                )
-              ) {
-                return;
-              }
-              await new Promise((resolve) => setTimeout(resolve, 250));
-            }
-            assert.fail(`prompt ${promptId} did not finish`);
-          };
-
-          // Prompt A starts with the default setting; its first request waits.
-          const before = await request<{ promptId: string }>(
-            `/threads/${thread.id}/prompt`,
-            'POST',
-            { prompt: settingPrompts.before },
-          );
-          await model.beforeHeld;
-
-          await setGenerativeUi(host, false);
-          await eventually(
-            async () => {
-              const { tools, skills } = await listed(host);
-              return (
-                tools.includes('ask') &&
-                tools.includes('papercraft_preview') &&
-                skills.includes('papercraft-preview')
-              );
-            },
-            async () => JSON.stringify(await listed(host)),
-          );
-          model.releaseBefore();
-          await finished(before.promptId);
-
-          const after = await request<{ promptId: string }>(
-            `/threads/${thread.id}/prompt`,
-            'POST',
-            { prompt: settingPrompts.after },
-          );
-          await finished(after.promptId);
-
-          assert.deepEqual(model.failures, []);
-          const system = (
-            messages: readonly { role: string; content?: unknown }[],
-          ) =>
-            JSON.stringify(
-              messages.find(({ role }) => role === 'system')?.content ?? '',
-            );
-          const row = (name: string) => `| ${name} |`;
-
-          // A's request after the change, the one that follows its tool result.
-          const late = model.requests.find(
-            ({ messages, tools }) =>
-              tools.length > 0 &&
-              JSON.stringify(messages).includes(settingPrompts.before) &&
-              messages.at(-1)?.role === 'tool',
-          );
-          assert.ok(late, 'prompt A made a request after the change');
-          assert.ok(!late.tools.includes('ask'), late.tools.join(', '));
-          assert.ok(
-            !late.tools.includes('papercraft_preview'),
-            late.tools.join(', '),
-          );
-          assert.ok(system(late.messages).includes(row('openui')));
-          assert.ok(system(late.messages).includes(row('papercraft')));
-          assert.ok(!system(late.messages).includes(row('papercraft-preview')));
-
-          const fresh = model.requests.find(
-            ({ messages, tools }) =>
-              tools.length > 0 &&
-              JSON.stringify(messages).includes(settingPrompts.after),
-          );
-          assert.ok(fresh, 'prompt B reached the model');
-          assert.ok(fresh.tools.includes('ask'), fresh.tools.join(', '));
-          assert.ok(
-            fresh.tools.includes('papercraft_preview'),
-            fresh.tools.join(', '),
-          );
-          assert.ok(system(fresh.messages).includes(row('papercraft-preview')));
-          assert.ok(!system(fresh.messages).includes(row('openui')));
-          assert.ok(!system(fresh.messages).includes(row('papercraft')));
-        },
-        () =>
-          startWith(root, (composition) => ({
-            ...composition,
-            enabled: composition.enabled.map((id) =>
-              id === 'docker' ? 'nodeless-sandbox' : id,
-            ),
-          })),
-      );
-    } finally {
-      model.releaseBefore();
-      await rm(root, { recursive: true, force: true });
-      await model.close();
-    }
   },
 );

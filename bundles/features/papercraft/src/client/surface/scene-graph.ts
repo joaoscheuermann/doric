@@ -89,11 +89,9 @@ export const sceneGraphOf = (
 
     const parent =
       each.parentId === undefined ? undefined : byId.get(each.parentId);
-    const source =
-      each.stamp === undefined || each.stamp === '' ? undefined : each.stamp;
     // The stamp walks down from the stamped ancestor, so a comment on a child
     // still names the source file it came from.
-    const stamp = source === undefined ? parent?.stamp : stampOf(source);
+    const stamp = parent?.stamp;
     const elementId =
       each.elementId === undefined || each.elementId === ''
         ? undefined
@@ -104,7 +102,6 @@ export const sceneGraphOf = (
       tag: each.tag.toLowerCase(),
       classes: each.classes.filter((name) => name !== ''),
       ...(elementId === undefined ? {} : { elementId }),
-      ...(source === undefined ? {} : { source }),
       ...(stamp === undefined ? {} : { stamp }),
       text: each.text,
       depth: parent === undefined ? 0 : parent.depth + 1,

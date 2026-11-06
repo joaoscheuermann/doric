@@ -1,19 +1,16 @@
 // One activation of the `openui` host over fakes of the services it requires:
 // `runtime.threads/v1` (a Thread table, a log with the runtime's rewind rule,
 // and the route's methods), `runtime.hooks/v1` through a recording `hooks/v1`,
-// `events/v1` (appends become rows of the fake log), `settings/v1` (one value
-// per space, with live subscribers), `skills/v1` (a recording registry) and,
-// when a test asks for it, `threads.ask/v1` (only `withholdTool`, recorded).
+// `events/v1` (appends become rows of the fake log) and `skills/v1` (a
+// recording registry).
 // The bundle's own contracts are reached through its services, with the scope
 // a window's call carries.
 
 import {
   type Activate,
   type AnyServiceDefinition,
-  AppHooksV1,
   type Call,
   type CallScope,
-  ContractError,
   type Disposable,
   defineMethod,
   defineService,
@@ -23,12 +20,8 @@ import {
   HooksV1,
   hooksMethods,
   type RegisteredSkill,
-  type SettingsDefinition,
-  type SettingsEntry,
-  SettingsV1,
   type SkillSchemaInput,
   SkillsV1,
-  settingsMethods,
   skillsMethods,
 } from 'bundle/contracts';
 import { createTestServices, type TestServices } from 'bundle/testing';
@@ -39,7 +32,6 @@ import {
   type ThreadEvent,
   type ThreadQueue,
 } from 'runtime/contracts';
-import { AskV1, askMethods } from 'threads/contracts';
 
 /** The host entry, imported by URL: `src/host/index.ts` is the module under test. */
 const HOST_ENTRY = new URL('../../src/host/index.js', import.meta.url).href;
@@ -208,22 +200,6 @@ export interface HostWorld {
     };
     disposed: boolean;
   }[];
-  /** The settings spaces `settings/v1.register` received. */
-  readonly registeredSpaces: string[];
-  /**
-   * Every `threads.ask/v1.withholdTool` call, in order: `held` when it
-   * answered a Disposable (then `disposed` tells whether it was disposed
-   * since), not `held` when it raised `unavailable`.
-   */
-  readonly withholds: { readonly held: boolean; disposed: boolean }[];
-  /** Whether `ask` is listed: no withhold is live (meaningful with `ask`). */
-  askListed(): boolean;
-  /** Whether `threads.ask/v1.withholdTool` answers or raises `unavailable`. */
-  setAskAvailable(available: boolean): void;
-  /** Fires `doric.app.hooks/v1.onHostStartHook`, as the host does once every bundle has loaded. */
-  hostStart(): Promise<void>;
-  /** Writes a space through `settings/v1`, as another bundle would, and tells its subscribers. */
-  writeSetting(id: string, value: unknown): void;
   /** Fires `runtime.hooks/v1.onPromptStartedHook` for a prompt of a Thread and awaits its handlers. */
   promptStarted(threadId: string, promptId: string): Promise<void>;
   /** Removes every row from the first row of `promptId` on, as the runtime's rewind does. */
@@ -236,17 +212,12 @@ export interface HostWorld {
   deactivate(): Promise<void>;
 }
 
-/** Activates the `openui` host over the fakes. */
+/**
+ * Activates the `openui` host over the fakes. The world takes no option; one
+ * an older test passes is ignored, as no fake would read it.
+ */
 export const activateHost = async (
-  options: {
-    readonly settings?: Readonly<Record<string, unknown>>;
-    /**
-     * Provide a fake `threads.ask/v1`: `available` answers `withholdTool`,
-     * `unavailable` raises `unavailable` until `setAskAvailable(true)`.
-     * Absent: no bundle provides it.
-     */
-    readonly ask?: 'available' | 'unavailable';
-  } = {},
+  _options: Readonly<Record<string, unknown>> = {},
 ): Promise<HostWorld> => {
   const threads = new Map<string, Thread>();
   const queues = new Map<string, ThreadQueue>();
@@ -256,15 +227,7 @@ export const activateHost = async (
   const instructs: HostWorld['instructs'] = [];
   const registeredEvents: string[] = [];
   const skills: HostWorld['skills'] = [];
-  const registeredSpaces: string[] = [];
-  const values = new Map<string, unknown>(
-    Object.entries(options.settings ?? {}),
-  );
-  const revisions = new Map<string, number>();
-  const subscribers = new Map<string, Set<(entry: SettingsEntry) => void>>();
   const hookHandlers: { hook: string; handler: Handler }[] = [];
-  const withholds: HostWorld['withholds'] = [];
-  let askAvailable = options.ask === 'available';
   let inHook = 0;
   let sequence = 0;
 
@@ -289,38 +252,6 @@ export const activateHost = async (
 
   const record = (method: string, input: unknown, call: Call): void => {
     calls.push({ method, input, call });
-  };
-
-  const entryOf = (definition: SettingsDefinition): SettingsEntry => ({
-    value: definition.schema.parse(
-      values.has(definition.id) ? values.get(definition.id) : {},
-    ),
-    revision: revisions.get(definition.id) ?? 0,
-    version: '1.0.0',
-    updatedAt: new Date(0).toISOString(),
-    generation: revisions.get(definition.id) ?? 0,
-  });
-
-  const definitions = new Map<string, SettingsDefinition>();
-
-  const writeSetting = (id: string, value: unknown): void => {
-    values.set(id, value);
-    revisions.set(id, (revisions.get(id) ?? 0) + 1);
-    const definition = definitions.get(id);
-
-    for (const listener of [...(subscribers.get(id) ?? [])]) {
-      listener(
-        definition === undefined
-          ? {
-              value,
-              revision: revisions.get(id) ?? 1,
-              version: '1.0.0',
-              updatedAt: new Date(0).toISOString(),
-              generation: revisions.get(id) ?? 1,
-            }
-          : entryOf(definition),
-      );
-    }
   };
 
   const runtime = fake(RuntimeThreadsV1.id, runtimeThreadsMethods, {
@@ -424,33 +355,6 @@ export const activateHost = async (
     },
   });
 
-  const settings = fake(SettingsV1.id, settingsMethods, {
-    register: (definition: SettingsDefinition) => {
-      registeredSpaces.push(definition.id);
-      definitions.set(definition.id, definition);
-      return once(() => undefined);
-    },
-    get: (definition: SettingsDefinition) => entryOf(definition).value,
-    entry: (definition: SettingsDefinition) => entryOf(definition),
-    set: ([definition, value]: [SettingsDefinition, unknown]) => {
-      definitions.set(definition.id, definition);
-      writeSetting(definition.id, definition.schema.parse(value));
-      return entryOf(definition);
-    },
-    subscribe: ([definition, listener]: [
-      SettingsDefinition,
-      (entry: SettingsEntry) => void,
-    ]) => {
-      definitions.set(definition.id, definition);
-      const set = subscribers.get(definition.id) ?? new Set();
-      subscribers.set(definition.id, set);
-      set.add(listener);
-      return once(() => {
-        set.delete(listener);
-      });
-    },
-  });
-
   const skillRegistry = fake(SkillsV1.id, skillsMethods, {
     register: ([skill, options]: [
       SkillSchemaInput,
@@ -469,30 +373,9 @@ export const activateHost = async (
     list: (): RegisteredSkill[] => [],
   });
 
-  const ask = fake(AskV1.id, askMethods, {
-    withholdTool: () => {
-      if (!askAvailable) {
-        withholds.push({ held: false, disposed: false });
-        throw new ContractError('unavailable', 'threads.ask/v1 is not active.');
-      }
-      const entry = { held: true, disposed: false };
-      withholds.push(entry);
-      return once(() => {
-        entry.disposed = true;
-      });
-    },
-  });
-
   const test = createTestServices({
     bundle: { id: 'openui' },
-    provide: [
-      runtime,
-      hooks,
-      events,
-      settings,
-      skillRegistry,
-      ...(options.ask === undefined ? [] : [ask]),
-    ],
+    provide: [runtime, hooks, events, skillRegistry],
   });
 
   const { activate } = (await import(HOST_ENTRY)) as {
@@ -511,21 +394,6 @@ export const activateHost = async (
     instructs,
     registeredEvents,
     skills,
-    registeredSpaces,
-    withholds,
-    askListed: () => !withholds.some(({ held, disposed }) => held && !disposed),
-    setAskAvailable: (available) => {
-      askAvailable = available;
-    },
-    hostStart: async () => {
-      const call = test.call();
-      for (const entry of hookHandlers.filter(
-        ({ hook }) => hook === `${AppHooksV1.id}#onHostStartHook`,
-      )) {
-        await entry.handler({} as never, call);
-      }
-    },
-    writeSetting,
     promptStarted: async (threadId, promptId) => {
       const thread = threads.get(threadId);
       const input = {

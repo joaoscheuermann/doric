@@ -87,7 +87,6 @@ function Fence({
       services={services}
       chrome="node"
       scope={scope}
-      artifactId={identity ?? ''}
       source={source}
       fences={fences}
       fenceKey={fence.key}

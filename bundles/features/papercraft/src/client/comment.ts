@@ -7,7 +7,7 @@
 // the stack alike. A reply written in a pin's thread is an item too, naming
 // the root it answers (`inReplyTo`). Nothing enters
 // the durable log while it is a draft: the stack is host state, and it is the
-// **send** that calls the flush registered for the `papercraft-preview` kind,
+// **send** that calls the flush registered for the `papercraft-program` kind,
 // which answers the `comments/v1.add` writes the sender then performs. The
 // comment is a composer of prompt with spatial context: it leaves with the
 // prompt — and a comment that is never sent never becomes an event, so there
@@ -37,14 +37,14 @@ import {
   type ComposerItem,
 } from '../contracts/chat.js';
 import {
-  ARTIFACT_TARGET_KIND,
+  type CommentAnchor,
   CommentsV1,
   type CommentTarget,
   callScopeOf,
-  PAPERCRAFT_COMMENT_KIND,
+  PROGRAM_COMMENT_KIND,
+  PROGRAM_TARGET_KIND,
   type PreviewItemData,
   type PreviewScope,
-  previewItemTargetOf,
 } from '../contracts/index.js';
 
 /* Whether chat's composer is active, as a subscribable reading -------------- */
@@ -148,24 +148,51 @@ const pointOf = (
     : undefined;
 };
 
+const recordOf = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+/** The target a stack item's `data` names, when it names one. */
+const itemTargetOf = (data: unknown): CommentTarget | undefined => {
+  const target = recordOf(recordOf(data)?.target);
+
+  if (
+    typeof target?.kind !== 'string' ||
+    typeof target.id !== 'string' ||
+    target.id === '' ||
+    recordOf(target.anchor) === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    kind: target.kind,
+    id: target.id,
+    ...(typeof target.revision === 'number'
+      ? { revision: target.revision }
+      : {}),
+    anchor: target.anchor as CommentAnchor,
+  };
+};
+
 /**
- * The draft a stack item is on one preview, or `undefined` when the item is
- * another kind's or names another artifact. A draft shows on every revision of
- * its preview, as a sent comment does; its target keeps the revision it was
- * written on. A draft written before items carried their `target` still reads
- * from the fields it recorded.
+ * The draft a stack item is on one program, or `undefined` when the item is
+ * another kind's or names another program. A draft shows on every revision of
+ * its program, as a sent comment does; its target keeps the revision it was
+ * written on.
  */
 export const draftOfItem = (
   item: ComposerItem,
   artifactId: string,
   kinds: { readonly item: string; readonly target: string } = {
-    item: PAPERCRAFT_COMMENT_KIND,
-    target: ARTIFACT_TARGET_KIND,
+    item: PROGRAM_COMMENT_KIND,
+    target: PROGRAM_TARGET_KIND,
   },
 ): PreviewDraft | undefined => {
   if (item.kind !== kinds.item) return undefined;
 
-  const target = previewItemTargetOf(item.data);
+  const target = itemTargetOf(item.data);
 
   if (target?.id !== artifactId || target.kind !== kinds.target)
     return undefined;
@@ -205,7 +232,7 @@ export const beginComment = async (
   services: Services,
   scope: PreviewScope | undefined,
   pending: PendingComment,
-  kind: string = PAPERCRAFT_COMMENT_KIND,
+  kind: string = PROGRAM_COMMENT_KIND,
 ): Promise<CommentOutcome> => {
   const composer = composerFor(services, scope);
 

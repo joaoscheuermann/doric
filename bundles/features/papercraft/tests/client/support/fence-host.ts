@@ -11,7 +11,6 @@ import assert from 'node:assert/strict';
 
 import {
   type ClientContext,
-  ContractError,
   type Services,
   type StreamListener,
   toStreamObserver,
@@ -106,14 +105,6 @@ export interface Recorded {
   readonly scope: unknown;
 }
 
-/** An artifact of the old path, as `artifacts/v1` and `papercraft.previews/v1` serve it. */
-export interface ArtifactFixture {
-  readonly artifactId: string;
-  readonly title: string;
-  readonly markup: string;
-  readonly revisions?: number;
-}
-
 export interface HostCalls {
   readonly library: Recorded[];
   readonly exports: Recorded[];
@@ -123,13 +114,9 @@ export interface HostCalls {
   readonly windows: Recorded[];
   /** `chat.composer/v1.addItem` inputs. */
   readonly drafts: Recorded[];
-  /** `papercraft.previews/v1.read` inputs (the old path). */
-  readonly previewReads: Recorded[];
 }
 
 export interface HostOptions {
-  /** The Generative UI setting when the client activates (on by default). */
-  readonly setting?: boolean;
   /** `papercraft.programs/v1.library`; `ready` with `lib0` by default. */
   readonly library?: (input: unknown) => Promise<LibraryAnswer>;
   /** `papercraft.programs/v1.export`; `ready` by default, one dir per key. */
@@ -147,8 +134,6 @@ export interface HostOptions {
   readonly composer?: boolean;
   /** `comments/v1.list`'s answer. */
   readonly comments?: readonly unknown[];
-  /** The Thread's artifacts of the old path; `artifacts/v1.read` refuses others. */
-  readonly artifacts?: readonly ArtifactFixture[];
 }
 
 export interface Host {
@@ -159,8 +144,6 @@ export interface Host {
   readonly fenceRenderers: () => readonly FenceRendererSpec[];
   /** Every projector registered so far. */
   readonly projectors: () => readonly ProjectorSpec[];
-  /** Turns the Generative UI setting on or off, as `openui.setting/v1.watch` says. */
-  readonly setSetting: (enabled: boolean) => Promise<void>;
   /** Lists the Thread's papercraft fences, as `chat.views/v1.watchFences` streams them. */
   readonly setFences: (fences: readonly ChatFence[]) => Promise<void>;
   /** Mounts the element chat mounts for a `papercraft` fence, with `view`. */
@@ -244,25 +227,10 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
     reports: [],
     windows: [],
     drafts: [],
-    previewReads: [],
   };
   const window = dom();
   const frames =
     options.frames ?? fakeFrames(window as never, options.frame ?? {});
-  const artifactOf = (artifactId: string): ArtifactFixture => {
-    const found = options.artifacts?.find(
-      (artifact) => artifact.artifactId === artifactId,
-    );
-
-    if (found === undefined)
-      throw new ContractError('not_found', `no artifact ${artifactId}`);
-
-    return found;
-  };
-  const setting = {
-    enabled: options.setting ?? true,
-    listeners: [] as StreamListener<{ readonly enabled: boolean }>[],
-  };
   const renderers = new Set<FenceRendererSpec>();
   const projectors: ProjectorSpec[] = [];
   const routes: ReturnType<Host['routes']>[number][] = [];
@@ -402,16 +370,6 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
         };
       case 'menus/v1':
         return { addKeybinding: async () => ({ dispose: () => undefined }) };
-      case 'openui.setting/v1':
-        return {
-          get: async () => ({ enabled: setting.enabled }),
-          watch: (listener: StreamListener<{ readonly enabled: boolean }>) => {
-            setting.listeners.push(listener);
-            toStreamObserver(listener).next({ enabled: setting.enabled });
-
-            return { dispose: () => undefined };
-          },
-        };
       case 'chat.views/v1':
         return chatViews;
       case 'chat.composer/v1':
@@ -496,43 +454,6 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
         };
       case 'runtime.threads/v1':
         return { watchThread: () => ({ dispose: () => undefined }) };
-      case 'artifacts/v1':
-        return {
-          read: async (input: { artifactId: string }) => {
-            const artifact = artifactOf(input.artifactId);
-            const revisions = artifact.revisions ?? 1;
-
-            return {
-              artifactId: artifact.artifactId,
-              kind: 'preview',
-              title: artifact.title,
-              revision: revisions,
-              revisions,
-              targets: [{ path: 'src/checkout.html' }],
-              source: 'html',
-              path: 'src/checkout.html',
-              state: 'open',
-              createdAt: '2026-11-06T12:00:00Z',
-            };
-          },
-          policy: async () => ({ policy: 'proceed' }),
-          approve: async () => undefined,
-        };
-      case 'papercraft.previews/v1':
-        return {
-          read: async (input: { artifactId: string; revision: number }) => {
-            record(calls.previewReads, input);
-            const artifact = artifactOf(input.artifactId);
-
-            return {
-              artifactId: artifact.artifactId,
-              revision: input.revision,
-              kind: 'preview',
-              files: [{ path: 'index.html', sha256: 'abc' }],
-              markup: artifact.markup,
-            };
-          },
-        };
       default:
         return anyApi();
     }
@@ -599,14 +520,6 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
     fenceRenderers: () => [...renderers],
     projectors: () => [...projectors],
     routes: () => [...routes],
-    setSetting: async (enabled) => {
-      setting.enabled = enabled;
-      await act(async () => {
-        for (const listener of setting.listeners)
-          toStreamObserver(listener).next({ enabled });
-        await delivered();
-      });
-    },
     setFences: async (fences) => {
       fenceWatch.fences = fences;
       await act(async () => {
@@ -744,34 +657,5 @@ export const commentOn = async (
   return host.calls.drafts.at(-1)?.input as {
     readonly data: unknown;
     readonly kind: string;
-  };
-};
-
-/** Mounts the old path's `<papercraft-preview>` for one artifact revision, as the registry's frame does. */
-export const mountPreview = async (
-  host: Host,
-  block: Readonly<Record<string, unknown>>,
-): Promise<MountedElement> => {
-  const ui = host.services.use({ id: 'ui/v1' } as never) as {
-    create(tag: string, props?: Readonly<Record<string, unknown>>): object;
-  };
-  const element = ui.create('papercraft-preview', { block }) as HTMLElement;
-  await act(async () => {
-    dom().document.body.append(element as never);
-    await delivered();
-  });
-  await flush();
-
-  return {
-    element: element as MountedElement['element'],
-    update: async () => undefined,
-    frame: () => host.frames.latest(element),
-    text: () => element.textContent ?? '',
-    remove: async () => {
-      await act(async () => {
-        element.remove();
-        await delivered();
-      });
-    },
   };
 };

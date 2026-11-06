@@ -9,7 +9,7 @@
 //   exists; with no `.doric/artifacts/` nothing is written there;
 // - any other content is left;
 // - the migration runs once per Project per host session;
-// - an old-path job (`bundleInSandbox`, no setting involved) runs both steps
+// - a component bundle job (`bundleInSandbox`) runs both steps
 //   before the runner copy;
 // - a rejected `putFile` leaves the job running, and the next job tries again.
 
@@ -197,7 +197,7 @@ describe('ensureIgnoreFiles', () => {
   });
 });
 
-describe('an old-path job (papercraft_preview, any setting)', () => {
+describe('a component bundle job (bundleInSandbox)', () => {
   const runner = async (): Promise<RunnerScript> => ({
     bytes: await readFile(RUNNER_URL),
     hash: `pc4-${randomUUID().slice(0, 8)}`,

@@ -3,8 +3,7 @@
 // Only the members the desktop actually calls for a workspace to come up are
 // implemented (`runtime/v1`, `runtime.threads/v1`, the catalog and its
 // diagnostics report), plus the feature surfaces the dev host is here to show:
-// `artifacts/v1`, `comments/v1`, `papercraft.previews/v1` and the durable
-// event log `runtime.threads/v1.watchThread` streams. Everything else is
+// `comments/v1` and the durable event log `runtime.threads/v1.watchThread` streams. Everything else is
 // refused with a clear `unavailable` error and logged, so a boot that asks for
 // something new says so instead of hanging.
 //
@@ -52,15 +51,14 @@ export const unavailable = (contract, method) =>
  * answers the output; a stream handler takes the wire input and a sink
  * (`push`/`end`).
  *
- * `threads`, `artifacts` and `comments` are the in-memory feature state the
- * fake host seeds at boot (see `thread-log.mjs`, `artifacts.mjs`, `seed.mjs`).
+ * `threads` and `comments` are the in-memory feature state the fake host
+ * seeds at boot (see `thread-log.mjs`, `seed.mjs`).
  */
 export const createContracts = ({
   workspace,
   catalog,
   log,
   threads,
-  artifacts,
   comments,
 }) => {
   const calls = new Map();
@@ -175,59 +173,10 @@ export const createContracts = ({
     return { status: 'accepted', promptId };
   });
 
-  // artifacts/v1 -------------------------------------------------------------
   // Every Project-bound surface takes the call's scope, and refuses a call
   // without a Project the way the real host's lease does.
   const scoped = (handler) => (input, call) =>
     handler(first(input) ?? {}, projectScopeOf(call));
-
-  calls.set(
-    'artifacts/v1 create',
-    scoped((input, scope) => artifacts.create(input, scope)),
-  );
-  calls.set(
-    'artifacts/v1 revise',
-    scoped((input, scope) => artifacts.revise(input, scope)),
-  );
-  calls.set(
-    'artifacts/v1 read',
-    scoped((input) => artifacts.read(input)),
-  );
-  calls.set(
-    'artifacts/v1 list',
-    scoped((input, scope) => artifacts.list(input, scope)),
-  );
-  calls.set(
-    'artifacts/v1 revisions',
-    scoped((input) => artifacts.revisions(input)),
-  );
-
-  // artifact.kind/v1 ---------------------------------------------------------
-  // The kinds the host registered, as the window's frame reads them to mount
-  // a kind's body. The fake host runs no host parts, so it answers the one
-  // kind it seeds: papercraft's `preview`, whose body is `<papercraft-preview>`
-  // (`bundles/features/papercraft/src/host/kind.ts`).
-  calls.set('artifact.kind/v1 list', () => [
-    {
-      id: 'preview',
-      title: 'Preview',
-      blockType: 'papercraft.preview/v1',
-      bodyTag: 'papercraft-preview',
-      header: 'body',
-    },
-  ]);
-  calls.set(
-    'artifacts/v1 approve',
-    scoped((input, scope) => artifacts.approve(input, scope)),
-  );
-  calls.set(
-    'artifacts/v1 apply',
-    scoped((input, scope) => artifacts.apply(input, scope)),
-  );
-  calls.set(
-    'artifacts/v1 policy',
-    scoped(() => artifacts.policy()),
-  );
 
   // comments/v1 --------------------------------------------------------------
   calls.set(
@@ -241,16 +190,6 @@ export const createContracts = ({
   calls.set(
     'comments/v1 resolve',
     scoped((input, scope) => comments.resolve(input, scope)),
-  );
-
-  // papercraft.previews/v1 ---------------------------------------------------
-  calls.set(
-    'papercraft.previews/v1 build',
-    scoped((input, scope) => artifacts.build(input, scope)),
-  );
-  calls.set(
-    'papercraft.previews/v1 read',
-    scoped((input) => artifacts.readPreview(input)),
   );
 
   // Streams ----------------------------------------------------------------

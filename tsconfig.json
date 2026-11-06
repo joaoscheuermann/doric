@@ -160,9 +160,6 @@
       "path": "./bundles/features/papercraft"
     },
     {
-      "path": "./bundles/features/artifacts"
-    },
-    {
       "path": "./bundles/features/comments"
     },
     {

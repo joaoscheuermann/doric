@@ -1,8 +1,7 @@
 // The Project preview harness, CSF stories and the Project's CSS, at the
-// builder's boundary: a `component` source snapshots into `index.js` and
+// compiler's boundary: a `component` source compiles into `index.js` and
 // `index.css`, read from a fake `files/v1` and compiled with the real esbuild
-// and Tailwind compilers. (What the module renders when mounted is covered
-// by `client/module-mount.test.ts`.)
+// and Tailwind compilers.
 //
 // Contract matrix:
 // - a harness that imports the Project's Tailwind v4 entry replaces Doric's
@@ -33,7 +32,10 @@ import { describe, test } from 'node:test';
 import { ContractError } from 'bundle/contracts';
 
 import { compileComponent } from '../src/host/compile.js';
-import { type PreviewSnapshot, snapshotPreview } from '../src/host/previews.js';
+import {
+  type ComponentSnapshot,
+  snapshotComponent,
+} from './support/component.js';
 import { servicesFor, testCall } from './support/services.js';
 
 /** `files/v1` over text files and, read as base64 only, binary ones. */
@@ -79,21 +81,20 @@ const snapshot = (
   path: string,
   entry?: string,
   binaries?: Record<string, Uint8Array>,
-): Promise<PreviewSnapshot> =>
-  snapshotPreview(
+): Promise<ComponentSnapshot> =>
+  snapshotComponent(
     servicesFor((id) => {
       if (id === 'files/v1') return filesService(files, binaries);
       throw new Error(`unexpected contract ${id}`);
     }),
     testCall,
     {
-      source: 'component',
       path,
       ...(entry === undefined ? {} : { entry }),
     },
   );
 
-const textOf = (built: PreviewSnapshot, path: string): string => {
+const textOf = (built: ComponentSnapshot, path: string): string => {
   const file = built.files.find((candidate) => candidate.path === path);
   assert.ok(file !== undefined, `no ${path} in the snapshot`);
 

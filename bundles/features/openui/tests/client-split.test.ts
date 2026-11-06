@@ -121,7 +121,7 @@ test('the entry and the renderer chunk share only chat-contract.ts', () => {
   );
 });
 
-test('the entry reaches the element, the folds, the answer changes, the projector and the settings section', () => {
+test('the entry reaches the element, the folds, the answer changes, and the projector', () => {
   const entry = [...reachable(join(CLIENT, 'index.ts'))].map((file) =>
     relative(CLIENT, file),
   );
@@ -131,7 +131,6 @@ test('the entry reaches the element, the folds, the answer changes, the projecto
     'folds.ts',
     'answer-changes.ts',
     'answers-projector.ts',
-    'settings.ts',
   ]) {
     assert.ok(entry.includes(module), module);
   }

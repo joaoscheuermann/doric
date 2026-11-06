@@ -1,8 +1,8 @@
 // PC18, PC33 (D28): the `papercraft` skill. Its committed text is at most
 // 8,000 characters and its first rule names `openui`; the host registers it
-// with order 3410 and `allowedTools: ['comment_reply']` only while the
-// Generative UI setting is on; a registration that fails (`unavailable_tool`)
-// is caught, no skill is listed, and fences still draw.
+// at activation with order 3410 and `allowedTools: ['comment_reply']`; a
+// registration that fails (`unavailable_tool`) is caught, no skill is listed,
+// and fences still draw.
 //
 // Over the real host entry (`src/host/index.ts`) activated on the fakes of
 // `tests/support/host.ts`.
@@ -64,46 +64,48 @@ describe('PC18: the skill text', () => {
   });
 });
 
-describe('PC18: the registration follows the setting', () => {
-  test('with the setting off no papercraft skill is registered', async () => {
-    const host = await start({ enabled: false });
+// PC18 (D25, stage 4): no setting governs the skill any more. Activation
+// registers it, before any host start, and cleanup disposes it. The world is
+// given a stored `false` for the old setting through an untyped option, so
+// the test still compiles once the world drops that option, and proves the
+// old value is never read.
+describe('PC18: the registration at activation', () => {
+  const withOldSettingOff = { enabled: false } as Record<string, unknown>;
 
-    assert.deepEqual(live(host), []);
-  });
-
-  test('with the setting on it is registered with order 3410 and comment_reply; off disposes it', async () => {
-    const host = await start({ enabled: false });
+  test('activation registers it with order 3410 and comment_reply, whatever the old setting holds', async () => {
+    const host = await start(withOldSettingOff as WorldOptions);
     const text = await readFile(SKILL_FILE, 'utf8');
-
-    host.writeSetting(true);
-    await settle();
 
     const [registered, ...rest] = live(host);
     assert.equal(rest.length, 0);
-    assert.ok(registered, 'the papercraft skill is registered');
+    assert.ok(registered, 'the papercraft skill is registered at activation');
     assert.deepEqual(registered.options, {
       order: 3410,
       alwaysAvailable: false,
     });
     assert.deepEqual(registered.skill.allowedTools, ['comment_reply']);
     assert.equal(registered.skill.body, text.trim());
-
-    host.writeSetting(false);
-    await settle();
-    assert.deepEqual(live(host), []);
   });
 
-  test('a stored true registers it at activation', async () => {
-    const host = await start({ enabled: true });
+  test('cleanup disposes it', async () => {
+    const entry: { world: World; host?: ActiveHost } = {
+      world: world(withOldSettingOff as WorldOptions),
+    };
+    running.push(entry);
+    const active = await entry.world.activate();
+    await settle();
+    assert.equal(live(entry.world).length, 1, 'registered at activation');
 
-    assert.equal(live(host).length, 1);
+    await active.deactivate();
+    await settle();
+
+    assert.deepEqual(live(entry.world), []);
   });
 });
 
 describe('PC33: without comment_reply', () => {
   test('the unavailable_tool failure is caught, no skill is listed, and fences still draw', async () => {
     const host = await start({
-      enabled: true,
       skillError: new ContractError(
         'unavailable_tool',
         'comment_reply is not a registered tool',
@@ -117,11 +119,6 @@ describe('PC33: without comment_reply', () => {
         .use(PapercraftProgramsV1, { projectId, threadId: 'thread-1' })
         .library({ turnSequence: 1 }),
       { status: 'none' },
-    );
-    // Stage 3: with the setting on, the old preview tool is withheld.
-    assert.ok(
-      !host.tools.includes('papercraft_preview'),
-      host.tools.join(', '),
     );
   });
 });

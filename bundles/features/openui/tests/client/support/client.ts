@@ -1,7 +1,6 @@
 // The `openui` client part activated over a services stub that answers by
-// contract id: `ui/v1`, `regions/v1`, `navigation/v1`, `hooks/v1`,
-// `chat.views/v1` and `openui.setting/v1` record what the client asks of
-// them. Import `./dom.js` first: the client reads `window` when it loads.
+// contract id: `ui/v1`, `regions/v1`, `navigation/v1`, `hooks/v1` and
+// `chat.views/v1` record what the client asks of them. Import `./dom.js` first: the client reads `window` when it loads.
 
 import type { Activate, ClientContext, Services } from 'bundle/contracts';
 
@@ -48,12 +47,6 @@ export interface ClientWorld {
     readonly contract: string;
     readonly registered: Record<string, unknown>;
   }[];
-  /** `openui.setting/v1.watch` listeners. */
-  readonly settingListeners: ((value: { readonly enabled: boolean }) => void)[];
-  /** `openui.setting/v1.set` inputs. */
-  readonly settingWrites: { readonly enabled: boolean }[];
-  /** Reports a value to every `watch` listener, as the host does after a write. */
-  report(value: { readonly enabled: boolean }): void;
   /** Runs the client's cleanup. */
   deactivate(): Promise<void>;
 }
@@ -72,9 +65,6 @@ export const activateClient = async (): Promise<ClientWorld> => {
   const fenceRenderers: ClientWorld['fenceRenderers'] = [];
   const projectors: ClientWorld['projectors'] = [];
   const hooks: ClientWorld['hooks'] = [];
-  const settingListeners: ClientWorld['settingListeners'] = [];
-  const settingWrites: ClientWorld['settingWrites'] = [];
-  let current = { enabled: false };
 
   const push = <T>(list: Registration<T>[], spec: T) => {
     const registration = { spec, disposed: false };
@@ -130,24 +120,6 @@ export const activateClient = async (): Promise<ClientWorld> => {
         push(projectors, spec),
       watchFences: () => ({ dispose: () => undefined }),
     },
-    'openui.setting/v1': {
-      get: async () => current,
-      set: async (value: { enabled: boolean }) => {
-        settingWrites.push(value);
-        current = value;
-        for (const listener of [...settingListeners]) listener(value);
-        return value;
-      },
-      watch: (listener: (value: { enabled: boolean }) => void) => {
-        settingListeners.push(listener);
-        queueMicrotask(() => listener(current));
-        return {
-          dispose: () => {
-            settingListeners.splice(settingListeners.indexOf(listener), 1);
-          },
-        };
-      },
-    },
   };
 
   const services = {
@@ -183,12 +155,6 @@ export const activateClient = async (): Promise<ClientWorld> => {
     fenceRenderers,
     projectors,
     hooks,
-    settingListeners,
-    settingWrites,
-    report: (value) => {
-      current = value;
-      for (const listener of [...settingListeners]) listener(value);
-    },
     deactivate: async () => {
       if (typeof cleanup === 'function') await cleanup();
     },

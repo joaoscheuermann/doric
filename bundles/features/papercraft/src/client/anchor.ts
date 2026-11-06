@@ -7,9 +7,9 @@
 // revision re-resolves it by.
 
 import {
-  ARTIFACT_TARGET_KIND,
   type CommentAnchor,
   type CommentTarget,
+  PROGRAM_TARGET_KIND,
 } from '../contracts/index.js';
 import {
   nodeLabel,
@@ -136,7 +136,7 @@ export const targetOf = (
   artifactId: string,
   revision: number,
   anchor: CommentAnchor,
-  kind: string = ARTIFACT_TARGET_KIND,
+  kind: string = PROGRAM_TARGET_KIND,
 ): CommentTarget => ({
   kind,
   id: artifactId,

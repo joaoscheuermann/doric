@@ -110,7 +110,6 @@ const withModules = (): Partial<ProtocolDeps> =>
 const deps = (overrides: Partial<ProtocolDeps> = {}): ProtocolDeps => ({
   resources,
   bundles,
-  artifacts: { root: join(root, 'artifacts') },
   shell: createShellRenderer({
     mode: 'packaged',
     template: async () => TEMPLATE,
@@ -152,20 +151,11 @@ before(async () => {
   await writeFile(join(root, 'schemas', 'contracts', 'a.json'), '{}');
   await writeFile(join(root, 'renderer', 'main.js'), 'void 0;');
   await writeFile(join(root, 'secret.txt'), 'outside');
-  await mkdir(join(root, 'artifacts', 'checkout-7f3a@1', 'assets'), {
-    recursive: true,
-  });
+  // The old artifacts cache (D25): still on disk, never served.
+  await mkdir(join(root, 'artifacts', 'checkout-7f3a@1'), { recursive: true });
   await writeFile(
     join(root, 'artifacts', 'checkout-7f3a@1', 'index.js'),
-    'export {};',
-  );
-  await writeFile(
-    join(root, 'artifacts', 'checkout-7f3a@1', 'assets', 'theme.css'),
-    'body {}',
-  );
-  await writeFile(
-    join(root, 'artifacts', 'checkout-7f3a@1', 'notes.md'),
-    '# notes',
+    'outside',
   );
   await writeFile(
     join(root, 'cache', 'probe@1.0.0', 'client', 'index.js'),
@@ -220,12 +210,6 @@ describe('doric://app routing', () => {
       ['doric://app/schemas/contracts/a.json', 'application/json'],
       ['doric://app/platform/shell@1.0.0/main.js', 'text/javascript'],
       ['doric://app/bundles/probe@1.0.0/client/index.js', 'text/javascript'],
-      ['doric://app/artifacts/checkout-7f3a@1/index.js', 'text/javascript'],
-      ['doric://app/artifacts/checkout-7f3a@1/assets/theme.css', 'text/css'],
-      [
-        'doric://app/artifacts/checkout-7f3a@1/notes.md',
-        'application/octet-stream',
-      ],
     ] as const) {
       const response = await get(url);
 
@@ -243,17 +227,6 @@ describe('doric://app routing', () => {
       'doric://app/bundles/unknown@9.9.9/client/index.js',
       'doric://app/bundles/probe@1.0.0/client/unlisted.js',
       'doric://app/bundles/probe/client/index.js',
-      'doric://app/artifacts/checkout-7f3a@1/missing.js',
-      'doric://app/artifacts/checkout-7f3a@2/index.js',
-      'doric://app/artifacts/checkout-7f3a@1',
-      'doric://app/artifacts/checkout-7f3a@1/',
-      'doric://app/artifacts/checkout@1/index.js',
-      'doric://app/artifacts/checkout@x/index.js',
-      'doric://app/artifacts/@1/index.js',
-      'doric://app/artifacts/.tmp/staged.js',
-      'doric://app/artifacts/checkout-7f3a@0/index.js',
-      'doric://app/artifacts/checkout-7f3a@01/index.js',
-      'doric://app/artifacts/',
       'doric://app/platform/react@19.2.8/%2e%2e%2f..%2fsecret.txt',
       'doric://app/platform/react@19.2.8/..%5c..%5csecret.txt',
       'doric://app/platform/react@19.2.8//index.js',
@@ -274,9 +247,6 @@ describe('doric://app routing', () => {
       'doric://app/platform/%2e%2e/secret.txt',
       'doric://app/schemas/../../secret.txt',
       'doric://app/bundles/probe@1.0.0/../../secret.txt',
-      'doric://app/artifacts/checkout-7f3a@1/../../secret.txt',
-      'doric://app/artifacts/checkout-7f3a@1/%2e%2e/%2e%2e/secret.txt',
-      'doric://app/artifacts/checkout-7f3a@1/..%5c..%5csecret.txt',
     ]) {
       const response = await get(url);
 
@@ -729,31 +699,25 @@ describe('/papercraft-modules/ (PC31)', () => {
     }
   });
 
-  test('leaves /artifacts/* as it is, and neither root is reachable through the other', async () => {
+  test('PC22: /artifacts/* is no asset prefix any more: the old cache is never served', async () => {
     for (const url of [
       'doric://app/artifacts/checkout-7f3a@1/index.js',
-      'doric://app/artifacts/checkout-7f3a@1/assets/theme.css',
+      'doric://app/artifacts/checkout-7f3a@1/',
     ]) {
       const response = await getModule(url, 'null');
 
-      assert.equal(response.status, 200, url);
+      assert.ok(!(await response.text()).includes('outside'), url);
       assert.equal(
         response.headers.get('access-control-allow-origin'),
-        '*',
+        null,
         url,
       );
     }
 
-    for (const url of [
-      'doric://app/artifacts/checkout-7f3a@0/index.js',
-      'doric://app/artifacts/.tmp/staged.js',
-      `doric://app/artifacts/${MODULE_DIR}/index.js`,
+    const response = await getModule(
       'doric://app/papercraft-modules/checkout-7f3a@1/index.js',
-    ]) {
-      const response = await getModule(url);
-
-      assert.equal(response.status, 404, url);
-    }
+    );
+    assert.equal(response.status, 404);
   });
 });
 
@@ -761,13 +725,11 @@ describe('CORS for preview frames', () => {
   const nullOrigin = (url: string) =>
     respond(new Request(url, { headers: { origin: 'null' } }), deps());
 
-  test('frame, platform, artifact and bundle frame files allow any origin', async () => {
+  test('frame, platform and bundle frame files allow any origin', async () => {
     for (const url of [
       'doric://app/frame/index.html?entry=x',
       'doric://app/frame/boot.js',
       'doric://app/platform/react@19.2.8/index.js',
-      'doric://app/artifacts/checkout-7f3a@1/index.js',
-      'doric://app/artifacts/checkout-7f3a@1/assets/theme.css',
       'doric://app/bundles/probe@1.0.0/client/frames/preview.js',
     ]) {
       for (const response of [await get(url), await nullOrigin(url)]) {
