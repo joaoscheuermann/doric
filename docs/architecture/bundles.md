@@ -192,9 +192,10 @@ Cada conceito tem um documento próprio em `docs/architecture/bundles/`. Os grup
 
 ### Artefatos e revisão
 
-- [Artefatos](./bundles/artifacts.md): o entregável durável que o agente produz para mostrar uma mudança — identidade, revisões, âncoras, o contrato `artifacts/v1`, os tipos de `artifact.kind/v1`, o node, o armazenamento em `/workspace/.doric/`, a política de revisão com `proceed` como padrão e a comparação com o Antigravity.
+- [Artefatos](./bundles/artifacts.md): **removido** em 2026-11-06 com o estágio 4 do OpenUI; fica como registro histórico do entregável durável com identidade, revisões, `artifacts/v1` e a política de revisão.
 - [Comentários](./bundles/comments.md): o spec do conceito — o alvo, a âncora, os dois registros (o evento durável e o prompt em envelope XML), o rascunho no host, as threads com resposta do agente (`comment_reply`) e a regra de que um comentário orienta e nunca autoriza.
-- [Papercraft](./bundles/papercraft/README.md): o tipo `preview`, o canvas no node e na janela, os pinos e threads de comentário, os caminhos A, B e C, a barra de comandos e a skill `papercraft-preview`.
+- [Papercraft](../features/papercraft.md): o feature doc atual — programas OpenUI Lang em fences `papercraft` da resposta, desenhados com os componentes do repositório num frame isolado, com canvas no node e na janela, pinos e threads de comentário. O desenho anterior, com o tipo `preview` e a tool `papercraft_preview`, fica em [papercraft/README.md](./bundles/papercraft/README.md) como registro histórico, e o [isolamento](./bundles/papercraft/isolamento.md) do frame continua valendo.
+- [OpenUI](../designs/openui.md): a UI gerada na conversa — fences `openui-lang`, o formulário de perguntas que substituiu a tool `ask`, ações de volta ao agente e o retorno de validação; o bundle está em [`bundles/features/openui`](../../bundles/features/openui/README.md).
 
 ### Plano e referências
 

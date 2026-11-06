@@ -43,10 +43,12 @@
 import type { Services } from 'bundle/contracts';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import { cn } from 'desktop/ui/utils';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ChatFence } from '../../contracts/chat.js';
 import {
+  COMMENT_THREAD_OPEN_EVENT,
+  type CommentThreadOpenDetail,
   PapercraftSnapshotV1,
   PROGRAM_COMMENT_KIND,
   type PreviewScope,
@@ -314,6 +316,60 @@ function CanvasFrame({
     container,
   });
   const inputOpen = flow.open !== undefined;
+
+  /* The conversation asking to see a thread (`doric:comment-thread-open`) --- */
+
+  // When the target is this canvas's (its kind and id, D19), the frame opens
+  // the root's thread. Every revision shows every thread, so the window keeps
+  // the revision on screen. Of the conversation's nodes only one answers: the
+  // node of the revision the target names, or — a target without a revision
+  // means the latest — the node of the newest revision.
+  const threadOpen = useRef({
+    target,
+    ownRevision: selectedRevision,
+    newestRevision: data.revisions.list.at(-1),
+    showThread: flow.showThread,
+  });
+  threadOpen.current = {
+    target,
+    ownRevision: selectedRevision,
+    newestRevision: data.revisions.list.at(-1),
+    showThread: flow.showThread,
+  };
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const onOpen = (event: Event): void => {
+      const detail = (event as CustomEvent<CommentThreadOpenDetail>).detail;
+      const {
+        target: own,
+        ownRevision,
+        newestRevision,
+        showThread,
+      } = threadOpen.current;
+
+      if (
+        typeof detail?.commentId !== 'string' ||
+        detail.target?.kind !== own.kind ||
+        detail.target.id !== own.id
+      )
+        return;
+
+      if (chrome === 'node') {
+        const asked = detail.target.revision ?? newestRevision;
+
+        if (asked === undefined || asked !== ownRevision) return;
+      }
+
+      showThread(detail.commentId);
+    };
+
+    document.addEventListener(COMMENT_THREAD_OPEN_EVENT, onOpen);
+
+    return () =>
+      document.removeEventListener(COMMENT_THREAD_OPEN_EVENT, onOpen);
+  }, [chrome]);
 
   const contentKey = `${artifactId}@${String(selectedRevision ?? 1)}`;
 

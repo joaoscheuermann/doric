@@ -1,7 +1,7 @@
 # Spec: OpenUI in the conversation — answers with UI, the question form and actions
 
 - Ticket: none. The work comes from the accepted concept [docs/features/papercraft.md](../features/papercraft.md); no Linear issue exists for it.
-- Status: approved by the user, version 9 (2026-11-05), which records U48: the spike and its measurements are dropped, and each stage ships when the user accepts it; see [Revisions](#revisions).
+- Status: implemented (stages 2–4 shipped on 2026-11-06; see [docs/features/papercraft.md](../features/papercraft.md#evolution)). Approved by the user, version 9 (2026-11-05), which records U48: the spike and its measurements are dropped, and each stage ships when the user accepts it; see [Revisions](#revisions).
 - Companions: [openui.md](openui.md) (the shared base: packages, fences, fold, render hosts and routing, library and tokens, instructions, validation, setting, the `openui` bundle and phases) and [papercraft-openui.md](papercraft-openui.md) (papercraft's use of OpenUI). A decision lives in one document; the [decision map](openui.md#decision-map) lists all of them.
 - Bundles touched by this document: `openui` (new; its conversation parts), `chat` (`chat.send/v1` 1.0.0 → 1.1.0 `sendAction` and the `<ui-action>` envelope, D20; the fence contract is [D1](openui.md#d1-the-fence-in-the-chat-a-new-chat-contract)), `threads` (`ask` withheld in stage 3 and removed in stage 4), `default` (one line of its system prompt, D20), `packages/bundle` (client chunks, D29).
 - Feature docs: [docs/features/papercraft.md](../features/papercraft.md) (the concept, status `accepted`).

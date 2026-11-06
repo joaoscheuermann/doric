@@ -92,11 +92,14 @@ const commentOf = (event: PreviewLogEvent): PreviewComment | undefined => {
  * revision it was written on — with the prompt it was written under, and the
  * attended state the later `comments.resolved/v1` events left it in. The
  * comment is the other registry's event; this reducer only interprets what
- * targets the preview.
+ * targets the preview. Given a `kind`, a comment targets the preview only when
+ * its target's kind matches too, so another kind's target with the same id
+ * never enters.
  */
 export const commentsOfEvents = (
   events: readonly PreviewLogEvent[],
   artifactId: string,
+  kind?: string,
 ): readonly PreviewComment[] => {
   const comments: PreviewComment[] = [];
   const resolved = new Map<string, boolean>();
@@ -120,6 +123,7 @@ export const commentsOfEvents = (
     if (
       comment === undefined ||
       stringOrUndefined(target?.id) !== artifactId ||
+      (kind !== undefined && stringOrUndefined(target?.kind) !== kind) ||
       // A retried write with the same id is the same comment.
       comments.some((known) => known.commentId === comment.commentId)
     ) {

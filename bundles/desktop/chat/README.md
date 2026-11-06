@@ -54,7 +54,15 @@ for how bundles work.
   it, `Escape` with words aborts the current step and steers, and `Escape`
   without words, or `Ctrl+C` with nothing selected, stops it.
 - **A queue you can edit.** Queued prompts sit above the input; you can edit
-  or remove one before it runs, and resume a paused queue from the footer.
+  or remove one before it runs, and resume a paused queue from the footer. A
+  queue receipt ends no turn: an answer still streaming continues in the same
+  turn, with the receipt after the part written before it.
+- **UI the agent draws.** A fenced block whose opener's first info word is a
+  registered tag (`openui-lang` from [`openui`](../../features/openui/README.md),
+  `papercraft` from [`papercraft`](../../features/papercraft/README.md)) is
+  drawn by that bundle's element instead of a code block. Each fence has the key
+  `<promptId>/<turnSequence>/<index>` and a state: `streaming`, `closed`, or
+  `unterminated` when its answer ended before the closer.
 - **Comments before the prompt.** Select text in an agent message and start
   typing: the comment opens right after the paragraph or list item your
   selection ends in, its words stay highlighted, and one paragraph can hold
@@ -74,14 +82,29 @@ batch.
 
 ## Extension points
 
-| Contract           | Where       | What another bundle can do                                                                                                         | Used by                              |
-| ------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `chat.views/v1`    | client      | `registerProjector` for event types the built-in projection does not claim, and `registerRenderer` for the element of a block type | `artifacts`, `papercraft`, `threads` |
-| `chat.hooks/v1`    | client      | observe `onMountHook`, `onUnmountHook`, `onSandboxActivityHook` and `onThreadUpdateHook`; transform `onBeforeRenderBlockHook`      | `files`, `notifications`             |
-| `chat.composer/v1` | desktopMain | read and watch a Thread's draft, add or remove stack items, and `registerFlush` for the comment kind it owns                       | `papercraft`                         |
-| `chat.send/v1`     | client      | send a Thread's held draft now, exactly as the composer does                                                                       | `papercraft`                         |
-| `chat.lexical/v1`  | client      | add Lexical nodes and extensions to the conversation editor                                                                        | none outside chat today              |
+| Contract           | Where       | What another bundle can do                                                                                                         | Used by                           |
+| ------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `chat.views/v1`    | client      | `registerProjector` for event types the built-in projection does not claim, and `registerRenderer` for the element of a block type | `openui`, `papercraft`, `threads` |
+| `chat.hooks/v1`    | client      | observe `onMountHook`, `onUnmountHook`, `onSandboxActivityHook` and `onThreadUpdateHook`; transform `onBeforeRenderBlockHook`      | `files`, `notifications`          |
+| `chat.composer/v1` | desktopMain | read and watch a Thread's draft, add or remove stack items, and `registerFlush` for the comment kind it owns                       | `papercraft`                      |
+| `chat.send/v1`     | client      | send a Thread's held draft now, exactly as the composer does; `sendAction` sends a control's text                                  | `openui`, `papercraft`            |
+| `chat.lexical/v1`  | client      | add Lexical nodes and extensions to the conversation editor                                                                        | none outside chat today           |
 
+- `chat.views/v1` 1.1.0 adds `registerFenceRenderer({ tag, elementTag })`: while
+  it lives, every fence of `tag` in an agent turn becomes one `elementTag`
+  element per fence key, created through `ui/v1` with its `view`
+  (`ChatFenceView`: the fence, the Thread's `origin` and every fence of the tag
+  in the Thread). A second renderer for a tag fails with
+  `registration_conflict`. `watchFences({ projectId, threadId, tag }, listener)`
+  streams the Thread's fences of a tag, by the same projection, to a surface
+  outside the conversation (the papercraft canvas); it gives `[]` while no
+  renderer of the tag is registered.
+- `chat.send/v1` 1.1.0 adds `sendAction({ projectId, threadId, program, text })`:
+  the text (at most 16,000 UTF-16 code units) goes in a
+  `<ui-action program="…">` envelope by the composer's route for a typed
+  message (a steer, else a new prompt). It answers `refused`, with nothing sent,
+  for an agent's Thread or an unknown one, and never touches the draft or the
+  stack.
 - A projector is pure: replay and rewind run it again over the same events. A
   second claim on an event type fails with `registration_conflict`.
 - `chat.lexical/v1` freezes when the window's first conversation editor is

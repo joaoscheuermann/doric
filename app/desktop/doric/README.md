@@ -135,8 +135,9 @@ exiting.
 ### The `doric://app` origin
 
 Every app window loads only `doric://app/<path>`, a privileged standard scheme
-whose handler serves the shell, the platform files under `/platform/`, and the
-verified bundle artifacts from the local cache with their schemas. A missing
+whose handler serves the shell, the platform files under `/platform/`, the
+verified bundle artifacts from the local cache with their schemas, and the
+verified papercraft modules under `/papercraft-modules/<dir>/<file>`. A missing
 file is a 404, never the shell. In development the windows still open through
 `doric://app`, and the handler forwards the shell and its assets to the
 renderer dev server. A view window loads a page from the host's own origin
@@ -179,11 +180,15 @@ Electron:
 
 Under Electron's `userData` directory:
 
-| Path                          | Contents                                                 |
-| ----------------------------- | -------------------------------------------------------- |
-| `bundles/`                    | Verified bundle artifacts (`<id>@<version>/…`).          |
-| `artifacts/`                  | Verified artifact revisions, served under `/artifacts/`. |
-| `bundle-cache/<bundleId>/`    | Each bundle's `doric.cache/v1` directory.                |
-| `doric/state.json`            | Migrations and the last core that worked.                |
-| `doric/windows.json`          | The last path per window key (no bounds).                |
-| `doric/catalog-snapshot.json` | The last distribution that activated.                    |
+| Path                          | Contents                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `bundles/`                    | Verified bundle artifacts (`<id>@<version>/…`).                                           |
+| `papercraft/`                 | Verified papercraft modules, served under `/papercraft-modules/` (`papercraft.cache/v1`). |
+| `bundle-cache/<bundleId>/`    | Each bundle's `doric.cache/v1` directory.                                                 |
+| `doric/state.json`            | Migrations and the last core that worked.                                                 |
+| `doric/windows.json`          | The last path per window key (no bounds).                                                 |
+| `doric/catalog-snapshot.json` | The last distribution that activated.                                                     |
+
+The old `artifacts/` cache, which the removed `artifacts` bundle wrote, is
+deleted at every start before any window opens; a symlink there is removed,
+never followed.

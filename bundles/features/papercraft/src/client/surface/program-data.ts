@@ -701,7 +701,7 @@ export function useProgramData(input: ProgramDataInput): ProgramData {
       threadsOf(
         logEvents === undefined
           ? comments
-          : commentsOfEvents(logEvents, identity),
+          : commentsOfEvents(logEvents, identity, PROGRAM_TARGET_KIND),
       ),
     [logEvents, comments, identity],
   );

@@ -221,3 +221,18 @@ test('a thread is open, awaits the reader once the agent spoke last, and is done
     'await',
   );
 });
+
+test('a comment on another kind of target with the same id lists nothing', () => {
+  const events: readonly PreviewLogEvent[] = [
+    event('comments.added/v1', {
+      commentId: 'old',
+      text: 'an old artifact comment',
+      target: { kind: 'artifact', id: 'checkout', revision: 1, anchor: {} },
+    }),
+  ];
+
+  assert.deepEqual(
+    commentsOfEvents(events, 'checkout', 'papercraft-program'),
+    [],
+  );
+});

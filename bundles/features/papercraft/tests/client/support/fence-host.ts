@@ -114,6 +114,27 @@ export interface HostCalls {
   readonly windows: Recorded[];
   /** `chat.composer/v1.addItem` inputs. */
   readonly drafts: Recorded[];
+  /** `chat.composer/v1.updateNote` inputs. */
+  readonly notes: Recorded[];
+  /** `chat.composer/v1.removeItem` inputs. */
+  readonly removed: Recorded[];
+  /** `chat.send/v1.send` inputs. */
+  readonly sends: Recorded[];
+  /** `comments/v1.list` inputs. */
+  readonly lists: Recorded[];
+  /** `comments/v1.resolve` inputs. */
+  readonly resolves: Recorded[];
+  /** `commands/v1.execute` calls, as `{ id, input }`. */
+  readonly executes: Recorded[];
+}
+
+/** One item of chat's composer stack, as `chat.composer/v1` holds it. */
+export interface StackItem {
+  readonly id: string;
+  readonly kind: string;
+  readonly elementTag: string;
+  readonly data: unknown;
+  readonly note: string;
 }
 
 export interface HostOptions {
@@ -134,6 +155,13 @@ export interface HostOptions {
   readonly composer?: boolean;
   /** `comments/v1.list`'s answer. */
   readonly comments?: readonly unknown[];
+  /** The items chat's composer stack holds before the test starts. */
+  readonly items?: readonly StackItem[];
+  /**
+   * The Thread's log `runtime.threads/v1.watchThread` replays; without it the
+   * watch never answers.
+   */
+  readonly log?: readonly unknown[];
 }
 
 export interface Host {
@@ -227,6 +255,12 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
     reports: [],
     windows: [],
     drafts: [],
+    notes: [],
+    removed: [],
+    sends: [],
+    lists: [],
+    resolves: [],
+    executes: [],
   };
   const window = dom();
   const frames =
@@ -287,14 +321,21 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
     },
   };
 
-  const composerItems: {
-    id: string;
-    kind: string;
-    elementTag: string;
-    data: unknown;
-    note: string;
-  }[] = [];
+  const composerItems: StackItem[] = [...(options.items ?? [])];
   const composerListeners: ((watch: unknown) => void)[] = [];
+  const emit = (watch: unknown) => {
+    for (const listener of [...composerListeners]) listener(watch);
+  };
+  const commandRegistry = new Map<
+    string,
+    {
+      readonly execute: (
+        input: unknown,
+        call: unknown,
+        services: Services,
+      ) => unknown;
+    }
+  >();
   const composer = {
     addItem: async (input: {
       threadId: string;
@@ -303,7 +344,7 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
       data?: unknown;
       note?: string;
     }) => {
-      const item = {
+      const item: StackItem = {
         id: `i${String(composerItems.length + 1)}`,
         kind: input.kind,
         elementTag: input.elementTag,
@@ -311,13 +352,32 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
         note: input.note ?? '',
       };
       composerItems.push(item);
-      for (const listener of [...composerListeners])
-        listener({ kind: 'added', threadId: input.threadId, item });
+      emit({ kind: 'added', threadId: input.threadId, item });
 
       return item;
     },
-    updateNote: async () => undefined,
-    removeItem: async () => undefined,
+    updateNote: async (input: {
+      threadId: string;
+      id: string;
+      note: string;
+    }) => {
+      const index = composerItems.findIndex((item) => item.id === input.id);
+      const item = composerItems[index];
+
+      if (item === undefined) return;
+      composerItems[index] = { ...item, note: input.note };
+      emit({
+        kind: 'updated',
+        threadId: input.threadId,
+        item: composerItems[index],
+      });
+    },
+    removeItem: async (input: { threadId: string; id: string }) => {
+      const index = composerItems.findIndex((item) => item.id === input.id);
+
+      if (index >= 0) composerItems.splice(index, 1);
+      emit({ kind: 'removed', threadId: input.threadId, id: input.id });
+    },
     watch: (threadId: string, listener: (watch: unknown) => void) => {
       composerListeners.push(listener);
       listener({
@@ -365,8 +425,22 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
         };
       case 'commands/v1':
         return {
-          register: () => ({ dispose: () => undefined }),
-          execute: async () => undefined,
+          register: (command: {
+            readonly id: string;
+            readonly execute: (
+              input: unknown,
+              call: unknown,
+              services: Services,
+            ) => unknown;
+          }) => {
+            commandRegistry.set(command.id, command);
+
+            return { dispose: () => commandRegistry.delete(command.id) };
+          },
+          execute: async (id: string, input: unknown) => {
+            record(calls.executes, { id, input });
+            await commandRegistry.get(id)?.execute(input ?? {}, {}, services);
+          },
         };
       case 'menus/v1':
         return { addKeybinding: async () => ({ dispose: () => undefined }) };
@@ -379,6 +453,28 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
             record(calls.drafts, input);
 
             return composer.addItem(input);
+          },
+          updateNote: async (
+            input: Parameters<typeof composer.updateNote>[0],
+          ) => {
+            record(calls.notes, input);
+
+            return composer.updateNote(input);
+          },
+          removeItem: async (
+            input: Parameters<typeof composer.removeItem>[0],
+          ) => {
+            record(calls.removed, input);
+
+            return composer.removeItem(input);
+          },
+        };
+      case 'chat.send/v1':
+        return {
+          send: async (input: unknown) => {
+            record(calls.sends, input);
+
+            return { status: 'accepted' };
           },
         };
       case 'papercraft.programs/v1':
@@ -448,12 +544,28 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
         };
       case 'comments/v1':
         return {
-          list: async () => options.comments ?? [],
+          list: async (input: unknown) => {
+            record(calls.lists, input);
+
+            return options.comments ?? [];
+          },
           add: async (input: unknown) => input,
-          resolve: async () => undefined,
+          resolve: async (input: unknown) => {
+            record(calls.resolves, input);
+          },
         };
       case 'runtime.threads/v1':
-        return { watchThread: () => ({ dispose: () => undefined }) };
+        return {
+          watchThread: (_input: unknown, listener: StreamListener<unknown>) => {
+            if (options.log !== undefined)
+              toStreamObserver(listener).next({
+                kind: 'snapshot',
+                events: [...options.log],
+              });
+
+            return { dispose: () => undefined };
+          },
+        };
       default:
         return anyApi();
     }

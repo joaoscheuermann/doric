@@ -229,7 +229,8 @@ reason="agents-changed">` message (`agents-changed.md`), before any "Skills
   and `<`; a closing tag of those five names inside the body becomes `<\/…`. Older
   history keeps its `# User request` text. The system prompt describes the
   envelope, the chat's `<comments>`, `<target>`, `<comment>` and `<message>`
-  parts, and the `comment_reply` tool.
+  parts, the `<ui-action>` part a click on a control of an agent-drawn UI
+  sends, and the `comment_reply` tool.
 - **Tools:** every tool `tools/v1` lists, bound to the prompt's call, then
   the run's `load_skill` from the first request at which the run lists a skill
   to load, and from then on. The `execution.maxToolResultChars` cap, or

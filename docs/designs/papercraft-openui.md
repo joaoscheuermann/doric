@@ -1,7 +1,7 @@
 # Spec: OpenUI in papercraft — the papercraft fence, repository libraries and the canvas
 
 - Ticket: none. The work comes from the accepted concept [docs/features/papercraft.md](../features/papercraft.md); no Linear issue exists for it.
-- Status: approved by the user, version 13 (2026-11-05), which records U48: the spike and its measurements are dropped, and each stage ships when the user accepts it; see [Revisions](#revisions).
+- Status: implemented (stages 2–4 shipped on 2026-11-06; see [docs/features/papercraft.md](../features/papercraft.md#evolution)). Approved by the user, version 13 (2026-11-05), which records U48: the spike and its measurements are dropped, and each stage ships when the user accepts it; see [Revisions](#revisions).
 - Companions: [openui.md](openui.md) (the shared base: packages, fences, the fold, render hosts and routing, the built-in library and tokens, the skills, validation, the setting, the `openui` bundle and the phases) and [conversation-openui.md](conversation-openui.md) (generative UI in the conversation and the question form). A decision lives in one document; the [decision map](openui.md#decision-map) lists all of them.
 - Bundles touched by this document: `papercraft` (new contracts, events, frame, runner job and skill; old ones removed in stage 4), `artifacts` (its ignore file moves in stage 2; removed in stage 4), `comments` (no contract change), the desktop app `app/desktop/doric` (protocol route).
 - Feature docs: [docs/features/papercraft.md](../features/papercraft.md) (the concept, status `accepted`; it becomes the living feature doc in stage 4, [Docs to update](openui.md#docs-to-update)).

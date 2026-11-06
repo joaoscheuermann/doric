@@ -4,7 +4,7 @@
 
 ## Resumo
 
-Um comentário é uma **anotação ancorada** num **alvo**: qualquer coisa endereçável do app — uma revisão de [artefato](./artifacts.md), uma mensagem da conversa, um arquivo e uma linha, a saída de um terminal, um elemento de um preview. O usuário aponta o ponto, escreve o que quer diferente, e o agente lê isso como instrução.
+Um comentário é uma **anotação ancorada** num **alvo**: qualquer coisa endereçável do app — uma revisão de um programa do [papercraft](../../features/papercraft.md), uma mensagem da conversa, um arquivo e uma linha, a saída de um terminal, um elemento de um preview. O usuário aponta o ponto, escreve o que quer diferente, e o agente lê isso como instrução.
 
 Este documento é o **spec do conceito**, e não de quem o usa: o [papercraft](./papercraft/README.md) é o primeiro consumidor (comentário num elemento do preview), a conversa é o segundo (comentário numa mensagem do agente), e qualquer funcionalidade futura que precise de comentários em qualquer coisa implementa por aqui. O que o dono do alvo fornece é o **significado da âncora** e o desenho do pino; o que o registro fornece é a identidade, o evento durável, a leitura e o rascunho.
 
@@ -13,7 +13,7 @@ Quatro regras dão forma ao resto do documento:
 - **Um comentário sempre tem âncora.** Sem âncora não é comentário — é mensagem, e a mensagem já existe: é o prompt.
 - **O comentário é durável e reconstruível.** Ele vira um evento do log, e o replay o reconstrói como reconstrói qualquer node.
 - **O comentário abre uma thread.** O agente responde ao comentário — dizendo o que mudou ou perguntando o que não entendeu — e a thread termina resolvida; a resposta é outro comentário, ligado ao primeiro, e não uma mensagem solta.
-- **Um comentário nunca autoriza.** Ele orienta; a decisão de agir é do agente, e o Doric é [YOLO por padrão](./artifacts.md#a-política-de-revisão): o agente segue direto e o comentário corrige o rumo.
+- **Um comentário nunca autoriza.** Ele orienta; a decisão de agir é do agente, e o Doric é YOLO por padrão: o agente segue direto e o comentário corrige o rumo.
 
 ## O alvo
 
@@ -21,9 +21,9 @@ O comentário não sabe o que comenta. Ele carrega uma **referência de alvo**, 
 
 | Campo       | O que é                                                                                     |
 | ----------- | ------------------------------------------------------------------------------------------- |
-| `kind`      | O tipo do alvo, declarado pelo bundle dono: `artifact`, `message`, `file`, `terminal`, …    |
+| `kind`      | O tipo do alvo, declarado pelo bundle dono: `papercraft-program`, `message`, `file`, …      |
 | `id`        | A identidade do alvo dentro do tipo                                                         |
-| `revision?` | A revisão do alvo, quando ele tem revisões (uma revisão de artefato, uma versão de arquivo) |
+| `revision?` | A revisão do alvo, quando ele tem revisões (uma revisão de programa, uma versão de arquivo) |
 | `anchor`    | Onde no alvo o comentário se ancora (abaixo)                                                |
 
 O registro **não interpreta** o alvo: ele guarda, valida o schema e transmite. Quem sabe que `revision` significa algo e que a âncora aponta para um elemento é o bundle dono do `kind` — o mesmo desenho que faz o `chat` hospedar um bloco sem conhecer o tipo dele.
@@ -127,7 +127,7 @@ O texto que o agente lê é montado pelo `chat` em **todo** envio (o do editor e
 
 ```xml
 <comments>
-<target kind="artifact" id="art_123" revision="2" title="Checkout" source="src/Checkout.tsx">
+<target kind="papercraft-program" id="checkout" revision="2" title="Checkout" source="src/Checkout.tsx">
 <comment id="comment-…" pin="1" anchor="src/Checkout.tsx:14" element="h2">aumenta o respiro</comment>
 <comment id="comment-…" in-reply-to="comment-…" pin="1" anchor="src/Checkout.tsx:14">e o botão também</comment>
 </target>
@@ -146,15 +146,15 @@ Cada parte vazia é omitida (só comentários, ou só palavras, já é um prompt
 Um comentário **orienta**, e nada mais:
 
 - Comentar pede uma mudança e alimenta a próxima revisão do alvo. O agente responde publicando uma revisão nova — o que é a conversa funcionando — e **responde ao comentário** com `comment_reply`, resolvendo-o quando atendeu.
-- O agente **não espera** um comentário para agir: no Doric ele segue direto, e o comentário corrige o rumo ([a política de revisão](./artifacts.md#a-política-de-revisão)). Um comentário chegado depois da implementação vale como pedido de ajuste, não como veto.
-- Não existe "aprovar comentário": o modelo não tem estado de aprovação. Quando um Project opta por revisar antes ([política `request`](./artifacts.md#a-política-de-revisão)), a aprovação é do artefato, e continua sendo outro gesto e outro evento.
+- O agente **não espera** um comentário para agir: no Doric ele segue direto, e o comentário corrige o rumo. Um comentário chegado depois da implementação vale como pedido de ajuste, não como veto.
+- Não existe "aprovar comentário": o modelo não tem estado de aprovação, e desde a remoção dos artefatos (2026-11-06) o Doric não tem aprovação de revisão.
 
 ## Quem usa hoje
 
-| Consumidor                           | Alvo                               | Âncora                                                |
-| ------------------------------------ | ---------------------------------- | ----------------------------------------------------- |
-| [Papercraft](./papercraft/README.md) | A revisão de um artefato `preview` | O elemento carimbado, um seletor ou uma posição livre |
-| A conversa                           | Uma mensagem do agente             | Um intervalo no texto da mensagem                     |
+| Consumidor                                 | Alvo                                          | Âncora                                                |
+| ------------------------------------------ | --------------------------------------------- | ----------------------------------------------------- |
+| [Papercraft](../../features/papercraft.md) | A revisão de um programa `papercraft-program` | O elemento carimbado, um seletor ou uma posição livre |
+| A conversa                                 | Uma mensagem do agente                        | Um intervalo no texto da mensagem                     |
 
 O papercraft é o consumidor com desenho completo (a âncora carimbada, o pino, o botão com a contagem, a pilha). O segundo uso — comentar a resposta do agente — é outro `kind` na mesma pilha, com o mesmo elemento e o mesmo `flush`, e existe para provar que o conceito não é do papercraft.
 
