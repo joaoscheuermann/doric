@@ -65,13 +65,11 @@
 // the components' are appended to it; `css.ts` compiles both into
 // `index.css` with the utilities of the classes in the bundled sources.
 //
-// JSX is compiled in development form so each element the Project's code
-// writes knows its `fileName:lineNumber`; a small runtime shim turns that into
-// the `data-papercraft-source="path:line"` stamp the comment anchors read, and
-// otherwise defers to `react/jsx-runtime` from the import map.
+// JSX compiles to the automatic runtime, `react/jsx-runtime` from the import
+// map.
 //
 // The caller hands esbuild's `build` in: the host's own copy, or the one the
-// sandbox image installs, so an `html` preview never loads it.
+// sandbox image installs.
 
 import { isBuiltin } from 'node:module';
 import { posix } from 'node:path';
@@ -175,7 +173,6 @@ const WINDOW_SHARES = `${previewExternals.join(', ')} and the ${WINDOW_PACKAGES.
 
 const SOURCE_NS = 'papercraft-source';
 const ENTRY_NS = 'papercraft-entry';
-const JSX_NS = 'papercraft-jsx';
 const REQUIRE_NS = 'papercraft-external-require';
 const SHIM_NS = 'papercraft-shim';
 const LIBRARY_SHIM_NS = 'papercraft-library-shim';
@@ -189,7 +186,6 @@ export const ZOD_ENTRY_ERROR =
 export const EVALUATE_GLOBAL = 'doric.papercraft.evaluate';
 
 const ENTRY_ID = 'papercraft:entry';
-const JSX_SOURCE = 'papercraft-jsx';
 
 const SCRIPT_EXTENSIONS = ['.tsx', '.ts', '.jsx', '.js'];
 
@@ -323,28 +319,6 @@ export const compileFailure = (path: string, error: unknown): ContractError =>
         `The component preview "${path}" did not compile:\n${failureOf(error)}`,
         { path },
       );
-
-/** The JSX runtime shim: stamps host elements with their source line. */
-const JSX_RUNTIME = `import { Fragment, jsx, jsxs } from 'react/jsx-runtime';
-export { Fragment };
-const PREFIX = ${JSON.stringify(`${SOURCE_NS}:`)};
-export function jsxDEV(type, props, key, isStatic, source) {
-  let next = props;
-  if (
-    typeof type === 'string' &&
-    source != null &&
-    typeof source.fileName === 'string' &&
-    props != null &&
-    props['data-papercraft-source'] === undefined
-  ) {
-    const file = source.fileName.startsWith(PREFIX)
-      ? source.fileName.slice(PREFIX.length)
-      : source.fileName;
-    next = { ...props, 'data-papercraft-source': file + ':' + source.lineNumber };
-  }
-  return isStatic ? jsxs(type, next, key) : jsx(type, next, key);
-}
-`;
 
 /** The export a preview mounts: `entry`, else `default`, else one PascalCase export. */
 export const pickExport = (
@@ -609,10 +583,6 @@ const sandboxPlugin = (input: {
         return { path: input.harnessPath, namespace: SOURCE_NS };
       }
 
-      if (args.path === `${JSX_SOURCE}/jsx-dev-runtime`) {
-        return { path: args.path, namespace: JSX_NS };
-      }
-
       // The React `mount` renders with, and Base UI, are the window's.
       if (
         previewExternals.includes(args.path) ||
@@ -721,7 +691,6 @@ const sandboxPlugin = (input: {
       if (outside === undefined || args.kind === 'entry-point') return resolved;
 
       const own =
-        resolved?.namespace === JSX_NS ||
         resolved?.namespace === ENTRY_NS ||
         (resolved?.namespace === SOURCE_NS &&
           resolved.path?.startsWith(`${outside}/`) === true);
@@ -794,11 +763,6 @@ const sandboxPlugin = (input: {
 
     context.onLoad({ filter: /.*/, namespace: SHIM_NS }, (args) => ({
       contents: STORYBOOK_SHIMS[args.path] ?? '',
-      loader: 'js',
-    }));
-
-    context.onLoad({ filter: /.*/, namespace: JSX_NS }, () => ({
-      contents: JSX_RUNTIME,
       loader: 'js',
     }));
 
@@ -1035,8 +999,6 @@ export const bundleComponent = async (
     metafile: true,
     outfile: 'index.js',
     jsx: 'automatic',
-    jsxDev: true,
-    jsxImportSource: JSX_SOURCE,
     define: { 'process.env.NODE_ENV': '"production"' },
     legalComments: 'none',
     charset: 'utf8',
@@ -1212,8 +1174,6 @@ export const bundleModule = async (
       metafile: true,
       outfile: 'index.js',
       jsx: 'automatic',
-      jsxDev: true,
-      jsxImportSource: JSX_SOURCE,
       define: { 'process.env.NODE_ENV': '"production"' },
       legalComments: 'none',
       charset: 'utf8',

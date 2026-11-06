@@ -17,8 +17,6 @@ export const TITLE = 'Checkout';
 export const minutesAgo = (minutes: number): string =>
   new Date(Date.now() - minutes * 60_000).toISOString();
 
-const stamp = (line: number) => `data-papercraft-source="${SOURCE}:${line}"`;
-
 /** The built markup of one revision: a checkout card over the theme tokens. */
 export const checkoutMarkup = (revision: number): string => `<!DOCTYPE html>
 <html>
@@ -35,17 +33,17 @@ export const checkoutMarkup = (revision: number): string => `<!DOCTYPE html>
       button { font: inherit; border: 0; border-radius: 8px; padding: 10px 14px; background: var(--primary); color: var(--primary-foreground); cursor: pointer; }
     </style>
   </head>
-  <body ${stamp(1)}>
-    <main ${stamp(8)}>
-      <section class="card" ${stamp(10)}>
-        <h1 ${stamp(12)}>Checkout</h1>
-        <p class="lead" ${stamp(13)}>Review your order before paying.</p>
-        <ul ${stamp(15)}>
-          <li ${stamp(16)}><span>Doric Pro · annual</span><span>$96.00</span></li>
-          <li ${stamp(17)}><span>Extra seat × 2</span><span>$48.00</span></li>
-          <li class="total" ${stamp(18)}><span>Total</span><span>$144.00</span></li>
+  <body>
+    <main>
+      <section class="card">
+        <h1>Checkout</h1>
+        <p class="lead">Review your order before paying.</p>
+        <ul>
+          <li><span>Doric Pro · annual</span><span>$96.00</span></li>
+          <li><span>Extra seat × 2</span><span>$48.00</span></li>
+          <li class="total"><span>Total</span><span>$144.00</span></li>
         </ul>
-        <button id="pay" ${stamp(21)}>${revision > 1 ? 'Pay $144.00' : 'Pay now'}</button>
+        <button id="pay">${revision > 1 ? 'Pay $144.00' : 'Pay now'}</button>
       </section>
     </main>
   </body>

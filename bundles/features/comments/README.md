@@ -61,14 +61,14 @@ A comment's target names what it is about; the bundle that owns the target's
 
 | Anchor form | Required fields | Typical use                                     |
 | ----------- | --------------- | ----------------------------------------------- |
-| `source`    | `path`          | A stamped element of a built preview (`line`)   |
+| `source`    | `path`          | A file, optionally with a `line`                |
 | `selector`  | `selector`      | An element of the target's derived structure    |
 | `point`     | `x`, `y`        | A free position, with the nearest element named |
 | `range`     | `text`          | A selection of the target's text                |
 
 Each form may also carry the other optional fields (`line`, `label`, …). Today
 the targets are a `papercraft` program revision (kind `papercraft-program`, id
-the program's identity) and a chat message (kind `message`, anchor `range`).
+the program's identity, anchor `selector` naming a statement, or `point`) and a chat message (kind `message`, anchor `range`).
 
 ## How it works
 

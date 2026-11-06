@@ -40,7 +40,9 @@ for the concept and its decisions.
 - **Your source tree stays clean.** No Project file is written for a preview.
   The only writes are under `.doric/papercraft/`: its `.gitignore`, the
   runner copy and temporary job folders, all ignored by Git except
-  `schemas/`.
+  `schemas/`. One migration runs once per workspace: when `.doric/.gitignore`
+  holds exactly `*`, papercraft writes `.doric/artifacts/.gitignore` (if that
+  folder exists) and deletes the old file.
 
 ## How it works
 
@@ -58,6 +60,13 @@ for the concept and its decisions.
 4. **The agent revises.** It answers each comment with `comment_reply` and
    writes a patch under the same identity; the app merges it into the program
    by statement name.
+
+When the conversation asks to show a comment thread
+(`doric:comment-thread-open`), only canvases whose target kind and id match
+answer. In the conversation, a fence node opens the thread only when the
+revision asked for is its own, or, when none is asked, when it draws the
+newest revision. The canvas window opens the thread on the revision on screen,
+since every revision shows every thread.
 
 A papercraft fence has no actions: `Query` and `Mutation` do not exist in it,
 and nothing in it sends anything to the conversation. Errors of a drawn fence
@@ -139,6 +148,15 @@ implemented.
 npx nx build bundle-papercraft
 npx nx typecheck bundle-papercraft
 npx nx test bundle-papercraft
+```
+
+After an upgrade of `@openuidev/react-lang`, `@openuidev/lang-core`,
+`@openuidev/react-ui` or `zod`, regenerate `src/sandbox/shim-names.ts` (the
+shims' export names and `SHIM_ABI`); test PC28 fails until the committed file
+matches:
+
+```console
+node bundles/features/papercraft/scripts/shim-names.mjs
 ```
 
 To rebuild and stage every bundle used by the Doric host:

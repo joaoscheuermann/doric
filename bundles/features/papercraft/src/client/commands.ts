@@ -27,14 +27,14 @@ import { controllerFor } from './canvas-registry.js';
 /** Which canvas a command acts on: optional, else the last one touched. */
 export const canvasCommandInput = z
   .object({
-    artifactId: z.string().min(1).optional(),
+    canvasId: z.string().min(1).optional(),
     revision: z.number().int().positive().optional(),
   })
   .strict();
 
 export type CanvasCommandInput = z.output<typeof canvasCommandInput>;
 
-const of = (input: CanvasCommandInput) => controllerFor(input.artifactId);
+const of = (input: CanvasCommandInput) => controllerFor(input.canvasId);
 
 /** The tool commands: the radio group of the bar. */
 export const selectToolCommand = defineCommand({

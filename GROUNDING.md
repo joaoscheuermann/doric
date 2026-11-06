@@ -1143,9 +1143,12 @@ thread's state — which opens a popover with the thread and, in its header, the
 button that takes the reader to the comment on the canvas. That button, and a
 card's "go to" that opens the thread, dispatch the bubbling, composed DOM event
 `doric:comment-thread-open` with `detail: { commentId, target }` (the root's
-id, the target without `revision`, which means the artifact's latest revision)
-and reveal the latest block of that target; external blocks carry
-`data-chat-block-id`.
+id and its target) and reveal the latest block of that target; external blocks carry
+`data-chat-block-id`. A papercraft canvas answers only when the target's kind
+and id are its own: a fence node opens the thread only when the target's
+`revision` is the node's revision, or, when the target names none, when the
+node draws the program's newest revision; the canvas window opens it on the
+revision on screen, since every revision shows every thread.
 
 The chat owns the `message` comment kind. Selecting words of an agent's answer
 draws nothing new; typing over a selection whose two ends lie in the same
@@ -1259,19 +1262,19 @@ pin re-places itself through its anchor, else at the point the anchor
 recorded (element anchors also record the clicked content point as `x`/`y`),
 else it is drawn detached by the content's left edge, still counted and
 openable. Element anchors also record a whitespace-collapsed `text` excerpt
-and `index`, the element's ordinal among the elements of its selector (stamped
-from the same file when stamped). Because an edited file moves its lines, an
-anchor re-resolves only to an element of its own selector: the exact
-`path:line` when it is the only match there; otherwise, among that selector's
-elements stamped from the file (or all elements with that selector), the one
-whose text matches, then the recorded `index`, then the only candidate, then
-the one under or nearest the recorded `x`/`y`, then the nearest stamped line.
-It never resolves to an element with a different selector. A new comment targets the revision on screen; a reply targets its
+and `index`, the element's ordinal among the elements of its selector. A
+program anchor's selector is the name of the statement whose wrapper is
+nearest the clicked node, and its label is that node's component (a click on
+no statement, such as a portal, records a point). An anchor re-resolves first
+to the first node of its statement; otherwise, among the elements of its
+selector, to the one whose text matches, then the recorded `index`, then the
+only candidate, then the one under or nearest the recorded `x`/`y`. It never
+resolves to an element with a different selector. A new comment targets the revision on screen; a reply targets its
 root's target. Pins show the thread state by colour alone — a draft is dashed,
 an open comment primary, an awaiting one orange, a done one green (no badge) —
 and come in three sizes, of which the conversation's reply row takes the small
 one; a control shows or hides the resolved ones. A dashed hover outline with
-the label `element · file:line` follows the pointer in any mode, focused or
+the target's label (the element, with its pseudo-element when there is one) follows the pointer in any mode, focused or
 not: to the element a comment would land on while the comment tool is armed
 (`Alt` forces a free point), else to the element under the pointer; nothing is
 outlined while the canvas pans, and the outline goes when the pointer leaves
@@ -1280,7 +1283,7 @@ closing the open thread (`Esc` or its close button), hand focus to the canvas
 before the field unmounts; after a blur to outside, the next press on the node
 only focuses it. Opening a pin that
 already holds its first comment shows a thread popover (header
-`N Component:line`, a menu, resolve or reopen on sent roots, close; messages
+`N` and the anchor's label, or the label and the point for a free point; a menu, resolve or reopen on sent roots, close; messages
 with avatar, name and time; a reply field): replies go to the stack with
 `inReplyTo`, drafts stay editable and removable, and resolving calls
 `comments/v1.resolve` on the root under the root's own `promptId`. Comments

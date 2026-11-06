@@ -1666,9 +1666,9 @@ test('the toolbar tools dispatch their commands on the canvas id, and the armed 
       .filter((call) => /^papercraft\.(select|comment|pan)\/v1$/.test(call.id))
       .map((call) => [call.id, call.input]),
     [
-      ['papercraft.comment/v1', { artifactId: CANVAS_ID }],
-      ['papercraft.pan/v1', { artifactId: CANVAS_ID }],
-      ['papercraft.select/v1', { artifactId: CANVAS_ID }],
+      ['papercraft.comment/v1', { canvasId: CANVAS_ID }],
+      ['papercraft.pan/v1', { canvasId: CANVAS_ID }],
+      ['papercraft.select/v1', { canvasId: CANVAS_ID }],
     ],
   );
 });
@@ -1685,7 +1685,7 @@ test('the zoom controls dispatch commands and the reading follows', async () => 
   const zoomIn = host.calls.executes
     .map((call) => call.input as { id: string; input: unknown })
     .find((call) => call.id === 'papercraft.zoom-in/v1');
-  assert.deepEqual(zoomIn?.input, { artifactId: CANVAS_ID });
+  assert.deepEqual(zoomIn?.input, { canvasId: CANVAS_ID });
   assert.match(reading(), /120%/);
 
   await click(commandIn(node, 'papercraft.zoom-reset/v1'));
@@ -1707,7 +1707,7 @@ test('the revision reading switches the revision on screen', async () => {
     await host.services
       .use(CommandsV1)
       .execute('papercraft.select-revision/v1', {
-        artifactId: CANVAS_ID,
+        canvasId: CANVAS_ID,
         revision: 1,
       });
   });

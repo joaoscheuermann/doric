@@ -128,7 +128,7 @@ function CommandButton({
         data-command={command}
         aria-label={label}
         disabled={disabled === true}
-        onClick={() => execute(command, { artifactId: canvasId })}
+        onClick={() => execute(command, { canvasId })}
       >
         {children}
       </Button>
@@ -188,7 +188,7 @@ export const CommandToolbar = memo(function CommandToolbar({
               : next === 'comment'
                 ? COMMENT_COMMAND
                 : PAN_COMMAND,
-            { artifactId: canvasId },
+            { canvasId },
           );
         }}
       >
@@ -274,7 +274,7 @@ export const CommandToolbar = memo(function CommandToolbar({
           data-command={ZOOM_RESET_COMMAND}
           aria-label="Zoom 100%"
           className={cn('min-w-12 px-1.5 font-mono text-xs tabular-nums')}
-          onClick={() => execute(ZOOM_RESET_COMMAND, { artifactId: canvasId })}
+          onClick={() => execute(ZOOM_RESET_COMMAND, { canvasId })}
         >
           {zoom}
         </Button>
@@ -321,7 +321,7 @@ export const CommandToolbar = memo(function CommandToolbar({
                 key={revision}
                 onClick={() =>
                   execute(SELECT_REVISION_COMMAND, {
-                    artifactId: canvasId,
+                    canvasId,
                     revision,
                   })
                 }

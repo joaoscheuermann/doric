@@ -6,7 +6,7 @@
 
 Um comentário é uma **anotação ancorada** num **alvo**: qualquer coisa endereçável do app — uma revisão de um programa do [papercraft](../../features/papercraft.md), uma mensagem da conversa, um arquivo e uma linha, a saída de um terminal, um elemento de um preview. O usuário aponta o ponto, escreve o que quer diferente, e o agente lê isso como instrução.
 
-Este documento é o **spec do conceito**, e não de quem o usa: o [papercraft](./papercraft/README.md) é o primeiro consumidor (comentário num elemento do preview), a conversa é o segundo (comentário numa mensagem do agente), e qualquer funcionalidade futura que precise de comentários em qualquer coisa implementa por aqui. O que o dono do alvo fornece é o **significado da âncora** e o desenho do pino; o que o registro fornece é a identidade, o evento durável, a leitura e o rascunho.
+Este documento é o **spec do conceito**, e não de quem o usa: o [papercraft](../../features/papercraft.md) é o primeiro consumidor (comentário num elemento de um programa desenhado no canvas), a conversa é o segundo (comentário numa mensagem do agente), e qualquer funcionalidade futura que precise de comentários em qualquer coisa implementa por aqui. O que o dono do alvo fornece é o **significado da âncora** e o desenho do pino; o que o registro fornece é a identidade, o evento durável, a leitura e o rascunho.
 
 Quatro regras dão forma ao resto do documento:
 
@@ -41,7 +41,7 @@ Um comentário solto ("esse botão está errado") obriga o agente a adivinhar a 
 | `point`    | Uma posição no alvo, com o elemento mais próximo             | Um clique em espaço vazio                           |
 | `range`    | Um intervalo no texto do alvo                                | Uma seleção de texto numa mensagem ou num documento |
 
-O carimbo de origem é a forma mais forte, e o [papercraft](./papercraft/README.md#âncoras-que-o-agente-entende) é o exemplo completo: quando o preview vem de um componente do Project, o carimbo aponta para o **código real** — e é isso que faz o comentário valer como instrução de edição, e não como descrição.
+O carimbo de origem é a forma mais forte quando um alvo o aplica; hoje nenhum alvo o aplica. O papercraft usa `selector`: a âncora de um elemento de programa é o nome do statement que o desenha, e é isso que faz o comentário valer como instrução de mudança do programa, e não como descrição.
 
 A âncora é resolvida contra a **estrutura derivada** do alvo, não contra uma posição de pixel: um clique em espaço vazio ainda encontra o elemento mais próximo, e o hit-test continua correto sob pan e zoom. Quem resolve é o dono do alvo; o registro nunca olha para dentro da âncora.
 
@@ -119,7 +119,7 @@ O `chat` projeta `comments.added/v1` e `comments.resolved/v1` (as duas reivindic
 
 As respostas do agente aparecem no ponto do turno do agente em que aconteceram, como linhas recolhíveis no estilo das tools (`Replied to [n]` com o trecho do comentário e, no fim, o **pino do comentário** — a gota do canvas (`desktop/ui/comment-pin`, em três tamanhos; a linha usa o pequeno), numerada, na cor do estado: aberta, aguardando ou resolvida). A linha vem fechada quando a thread está resolvida e aberta nos outros estados, e a escolha do leitor prevalece. A linha de uma `comment_reply` bem-sucedida na lista de tools fica escondida, porque a linha de resposta já a mostra. Clicar no pino **não** salta para o canvas: abre um popover com a thread (as mensagens, com avatar e autor) e, no cabeçalho dele, o botão que leva ao comentário no canvas. No turno do usuário, a linha do comentário não desenha o estado (ele só é lido para leitores de tela); clicar na linha leva ao preview mais recente do alvo, com a thread aberta.
 
-As linhas de comentário do turno do usuário e o botão do cabeçalho do popover do pino — o que leva ao comentário no canvas — disparam o evento DOM `doric:comment-thread-open` (borbulha, `composed`, `detail: { commentId, target }`, com o id da **raiz** e o alvo sem `revision`, que quer dizer a revisão mais recente), que o dono do alvo escuta para abrir a thread no próprio alvo: só o node do papercraft da revisão mais recente abre o popover do pino. Os blocos externos da conversa levam `data-chat-block-id`. A janela do canvas é outro documento e não recebe o evento DOM do `chat`: abrir o pino a partir da conversa é uma limitação conhecida dela.
+As linhas de comentário do turno do usuário e o botão do cabeçalho do popover do pino — o que leva ao comentário no canvas — disparam o evento DOM `doric:comment-thread-open` (borbulha, `composed`, `detail: { commentId, target }`, com o id da **raiz** e o alvo dela), que o dono do alvo escuta para abrir a thread no próprio alvo. No papercraft só respondem os canvases cujo `kind` e `id` são os do alvo: um node da conversa abre o popover do pino só quando a `revision` pedida é a sua, ou, sem `revision`, quando ele desenha a revisão mais recente; a janela do canvas abre a thread na revisão que está na tela, porque toda revisão mostra todas as threads. Os blocos externos da conversa levam `data-chat-block-id`. A janela do canvas é outro documento e não recebe o evento DOM do `chat`: abrir o pino a partir da conversa é uma limitação conhecida dela.
 
 ### O prompt: o envelope XML
 
@@ -127,9 +127,9 @@ O texto que o agente lê é montado pelo `chat` em **todo** envio (o do editor e
 
 ```xml
 <comments>
-<target kind="papercraft-program" id="checkout" revision="2" title="Checkout" source="src/Checkout.tsx">
-<comment id="comment-…" pin="1" anchor="src/Checkout.tsx:14" element="h2">aumenta o respiro</comment>
-<comment id="comment-…" in-reply-to="comment-…" pin="1" anchor="src/Checkout.tsx:14">e o botão também</comment>
+<target kind="papercraft-program" id="checkout" revision="2" title="checkout">
+<comment id="comment-…" pin="1" anchor="header" element="CardHeader">aumenta o respiro</comment>
+<comment id="comment-…" in-reply-to="comment-…" pin="1" anchor="header" element="CardHeader">e o botão também</comment>
 </target>
 </comments>
 <message>
@@ -137,7 +137,7 @@ palavras do usuário
 </message>
 ```
 
-Cada parte vazia é omitida (só comentários, ou só palavras, já é um prompt inteiro; um prompt só de palavras continua sendo texto simples). Um comentário leva `id`, `in-reply-to` (nas respostas), `pin` e a âncora em atributos — `anchor` com `arquivo:linha`, seletor ou posição, mais `element`, `near` (o elemento mais próximo de um ponto) ou `quote` (o trecho de um intervalo) —, e a nota como corpo. Os valores de atributo são escapados e, nos corpos, as tags de fechamento dos elementos do envelope são neutralizadas (`<\/message>`), para que o texto do usuário não encerre a estrutura. O `runtime` (`bundles/runtime/default`) embrulha o prompt inteiro em `<user-request>`, então o `chat` nunca escreve esse elemento; o prompt de sistema explica o envelope e manda o agente responder cada comentário com `comment_reply`.
+Os rascunhos do papercraft levam `refs: { title: <identidade> }`, sem `source`, e a âncora de um elemento de programa é o nome do seu statement, com o componente em `element`. Cada parte vazia é omitida (só comentários, ou só palavras, já é um prompt inteiro; um prompt só de palavras continua sendo texto simples). Um comentário leva `id`, `in-reply-to` (nas respostas), `pin` e a âncora em atributos — `anchor` com `arquivo:linha`, seletor ou posição, mais `element`, `near` (o elemento mais próximo de um ponto) ou `quote` (o trecho de um intervalo) —, e a nota como corpo. Os valores de atributo são escapados e, nos corpos, as tags de fechamento dos elementos do envelope são neutralizadas (`<\/message>`), para que o texto do usuário não encerre a estrutura. O `runtime` (`bundles/runtime/default`) embrulha o prompt inteiro em `<user-request>`, então o `chat` nunca escreve esse elemento; o prompt de sistema explica o envelope e manda o agente responder cada comentário com `comment_reply`.
 
 **A leitura de volta é uma regra só.** O log guarda esse texto, então todo lugar do `chat` que mostra um prompt guardado como "as palavras do usuário" lê o corpo de `<message>`: o turno do usuário, as linhas e a edição da fila, o turno pendente e os marcadores do trilho. Editar um prompt da fila preserva o bloco de comentários (`withPromptMessage` troca só o corpo de `<message>`), e um prompt em texto simples, como o das conversas antigas, é lido como está.
 
@@ -151,12 +151,12 @@ Um comentário **orienta**, e nada mais:
 
 ## Quem usa hoje
 
-| Consumidor                                 | Alvo                                          | Âncora                                                |
-| ------------------------------------------ | --------------------------------------------- | ----------------------------------------------------- |
-| [Papercraft](../../features/papercraft.md) | A revisão de um programa `papercraft-program` | O elemento carimbado, um seletor ou uma posição livre |
-| A conversa                                 | Uma mensagem do agente                        | Um intervalo no texto da mensagem                     |
+| Consumidor                                 | Alvo                                          | Âncora                                          |
+| ------------------------------------------ | --------------------------------------------- | ----------------------------------------------- |
+| [Papercraft](../../features/papercraft.md) | A revisão de um programa `papercraft-program` | O statement de um elemento ou uma posição livre |
+| A conversa                                 | Uma mensagem do agente                        | Um intervalo no texto da mensagem               |
 
-O papercraft é o consumidor com desenho completo (a âncora carimbada, o pino, o botão com a contagem, a pilha). O segundo uso — comentar a resposta do agente — é outro `kind` na mesma pilha, com o mesmo elemento e o mesmo `flush`, e existe para provar que o conceito não é do papercraft.
+O papercraft é o consumidor com desenho completo (a âncora por statement, o pino, o botão com a contagem, a pilha). O segundo uso — comentar a resposta do agente — é outro `kind` na mesma pilha, com o mesmo elemento e o mesmo `flush`, e existe para provar que o conceito não é do papercraft.
 
 ## Antigravity como referência
 
@@ -188,7 +188,7 @@ O que **não** se copia: o comentário preso a uma superfície só. Aqui o comen
 - [Implementation plan](https://antigravity.google/docs/implementation-plan) (Antigravity): comentar o plano para redirecionar o agente antes de ele editar.
 - [Artifacts](https://antigravity.google/docs/artifacts) (Antigravity): a colaboração assíncrona e a revisão em marcos.
 - [Artefatos](./artifacts.md): o alvo com revisões, a política de revisão e a decisão de seguir direto.
-- [Papercraft](./papercraft/README.md): o primeiro consumidor — a âncora carimbada, o pino e a pilha.
+- [Papercraft](../../features/papercraft.md): o primeiro consumidor — a âncora por statement, o pino e a pilha.
 - [Eventos e nodes](./events-and-nodes.md): o log durável, os projetores e os nodes de conversa.
 - [O bundle chat](./chat.md): `chat.views/v1`, os renderizadores e o serviço de compositor.
 - [Default](../../../bundles/runtime/default/README.md): o envelope de entrada (`<user-request>` e os demais) em que o prompt chega ao modelo.

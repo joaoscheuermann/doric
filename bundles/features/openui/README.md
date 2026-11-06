@@ -114,7 +114,9 @@ off, an older revision). While a click is sent the fence stays busy at least
 
 The specs are [`docs/designs/openui.md`](../../../docs/designs/openui.md) and
 [`docs/designs/conversation-openui.md`](../../../docs/designs/conversation-openui.md);
-the feature doc is [`docs/features/papercraft.md`](../../../docs/features/papercraft.md).
+the feature docs are
+[`docs/features/generative-ui.md`](../../../docs/features/generative-ui.md) and
+[`docs/features/papercraft.md`](../../../docs/features/papercraft.md).
 The code is the reference where they differ.
 
 ## Development
@@ -123,4 +125,14 @@ The code is the reference where they differ.
 npx nx build bundle-openui
 npx nx typecheck bundle-openui
 npx nx test bundle-openui
+```
+
+The skill-text test (`tests/client/skill-text.test.ts`) generates the `openui`
+skill from OpenUI's prompt builder and compares it with
+`src/host/skills/openui.md`. After an upgrade of `@openuidev/react-ui` or
+`@openuidev/react-lang` that changes the prompt, it fails; regenerate the file
+by running the tests with `OPENUI_SKILL_UPDATE=1`:
+
+```console
+OPENUI_SKILL_UPDATE=1 npx nx test bundle-openui
 ```
