@@ -109,7 +109,7 @@ function CommandButton({
   shortcut,
   disabled,
   execute,
-  artifactId,
+  canvasId,
   children,
 }: {
   readonly label: string;
@@ -117,7 +117,7 @@ function CommandButton({
   readonly shortcut?: string;
   readonly disabled?: boolean;
   readonly execute: Execute;
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly children: ReactNode;
 }) {
   return (
@@ -128,7 +128,7 @@ function CommandButton({
         data-command={command}
         aria-label={label}
         disabled={disabled === true}
-        onClick={() => execute(command, { artifactId })}
+        onClick={() => execute(command, { artifactId: canvasId })}
       >
         {children}
       </Button>
@@ -137,7 +137,7 @@ function CommandButton({
 }
 
 export interface CommandToolbarProps {
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly execute: Execute;
   /** The armed tool: a radio group, only one at a time. */
   readonly tool: PreviewTool;
@@ -159,7 +159,7 @@ export interface CommandToolbarProps {
  * tooltips, toggle group and menu are not drawn again for one.
  */
 export const CommandToolbar = memo(function CommandToolbar({
-  artifactId,
+  canvasId,
   execute,
   tool,
   pinCount,
@@ -188,7 +188,7 @@ export const CommandToolbar = memo(function CommandToolbar({
               : next === 'comment'
                 ? COMMENT_COMMAND
                 : PAN_COMMAND,
-            { artifactId },
+            { artifactId: canvasId },
           );
         }}
       >
@@ -240,7 +240,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         shortcut="I"
         disabled={!hasSelection}
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <FocusIcon aria-hidden="true" />
       </CommandButton>
@@ -250,7 +250,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         shortcut="Shift+I"
         disabled={!hasHidden}
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <EyeIcon aria-hidden="true" />
       </CommandButton>
@@ -263,7 +263,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         command={ZOOM_OUT_COMMAND}
         shortcut="CmdOrCtrl+-"
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <ZoomOutIcon aria-hidden="true" />
       </CommandButton>
@@ -274,7 +274,7 @@ export const CommandToolbar = memo(function CommandToolbar({
           data-command={ZOOM_RESET_COMMAND}
           aria-label="Zoom 100%"
           className={cn('min-w-12 px-1.5 font-mono text-xs tabular-nums')}
-          onClick={() => execute(ZOOM_RESET_COMMAND, { artifactId })}
+          onClick={() => execute(ZOOM_RESET_COMMAND, { artifactId: canvasId })}
         >
           {zoom}
         </Button>
@@ -284,7 +284,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         command={ZOOM_IN_COMMAND}
         shortcut="CmdOrCtrl+="
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <ZoomInIcon aria-hidden="true" />
       </CommandButton>
@@ -293,7 +293,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         command={ZOOM_FIT_COMMAND}
         shortcut="Shift+1"
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <MaximizeIcon aria-hidden="true" />
       </CommandButton>
@@ -321,7 +321,7 @@ export const CommandToolbar = memo(function CommandToolbar({
                 key={revision}
                 onClick={() =>
                   execute(SELECT_REVISION_COMMAND, {
-                    artifactId,
+                    artifactId: canvasId,
                     revision,
                   })
                 }

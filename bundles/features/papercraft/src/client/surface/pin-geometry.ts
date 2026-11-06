@@ -6,13 +6,11 @@
 // coordinates. The anchor's forms and meaning are unchanged — the offset is an
 // extra key the agent may ignore.
 //
-// A later revision re-renders the file the agent edited, so a stamped
-// element's `line` may now name another element: the anchor's selector is
-// the identity, the stamp only a hint. An anchor re-resolves to an element of
-// its own selector — the exact `path:line` first, then the one with the
-// recorded text excerpt, the recorded ordinal (`index`, an extra key), the
-// only one, the one under the recorded point, the nearest line — and never to
-// an element of another selector.
+// A later revision re-renders the file the agent edited: the anchor's
+// selector is the identity. An anchor re-resolves to an element of its own
+// selector — the one with the recorded text excerpt, the recorded ordinal
+// (`index`, an extra key), the only one, the one under the recorded point,
+// else the first — and never to an element of another selector.
 
 import type { CommentAnchor } from '../../contracts/index.js';
 import {
@@ -26,7 +24,6 @@ import {
   type Bounds,
   type BoundsOf,
   nodeLabel,
-  ownStampOf,
   type PseudoBoundsOf,
   type SceneGraph,
   type SceneNode,
@@ -39,37 +36,19 @@ export interface ContentPoint {
   readonly y: number;
 }
 
-/**
- * The elements an anchor can still mean: those of its selector stamped from
- * its file, else every element of its selector, in document order. An
- * element's ordinal among these is the anchor's `index`.
- */
-const peersOf = (
-  graph: SceneGraph,
-  selector: string,
-  path: string | undefined,
-): readonly SceneNode[] => {
-  const matching = graph.nodes.filter((node) => nodeLabel(node) === selector);
-
-  if (path === undefined) return matching;
-
-  const stamped = matching.filter((node) => ownStampOf(node)?.path === path);
-
-  return stamped.length > 0 ? stamped : matching;
-};
+/** The elements of a selector, in document order: an anchor's `index` counts among these. */
+const peersOf = (graph: SceneGraph, selector: string): readonly SceneNode[] =>
+  graph.nodes.filter((node) => nodeLabel(node) === selector);
 
 /**
  * The ordinal a comment records for the element it is written on: its place
- * among the elements of its selector (stamped from its file, when stamped),
- * in document order.
+ * among the elements of its selector, in document order.
  */
 export const anchorIndexOf = (
   graph: SceneGraph,
   node: SceneNode,
 ): number | undefined => {
-  const index = peersOf(graph, nodeLabel(node), ownStampOf(node)?.path).indexOf(
-    node,
-  );
+  const index = peersOf(graph, nodeLabel(node)).indexOf(node);
 
   return index < 0 ? undefined : index;
 };
@@ -109,28 +88,6 @@ const nearestTo = (
   return best;
 };
 
-/** The candidate whose own stamp is the nearest line to `line`. */
-const nearestLine = (
-  candidates: readonly SceneNode[],
-  line: number,
-): SceneNode | undefined => {
-  let best: SceneNode | undefined;
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (const node of candidates) {
-    const at = ownStampOf(node)?.line;
-    const distance =
-      at === undefined ? Number.POSITIVE_INFINITY : Math.abs(at - line);
-
-    if (best === undefined || distance < bestDistance) {
-      best = node;
-      bestDistance = distance;
-    }
-  }
-
-  return best;
-};
-
 /** Which of the peers of its selector the anchor means. */
 const pickPeer = (
   peers: readonly SceneNode[],
@@ -162,7 +119,7 @@ const pickPeer = (
   )
     return nearestTo(pool, { x: anchor.x, y: anchor.y }, bounds);
 
-  return anchor.line === undefined ? pool[0] : nearestLine(pool, anchor.line);
+  return pool[0];
 };
 
 /**
@@ -175,20 +132,7 @@ export const nodeOfAnchor = (
   anchor: CommentAnchor,
   bounds?: BoundsOf,
 ): SceneNode | undefined => {
-  const path =
-    anchor.form === 'source' && anchor.path !== undefined
-      ? anchor.path
-      : undefined;
-
-  if (anchor.selector === undefined) {
-    // An anchor without a selector has only its stamp to go by.
-    if (path === undefined) return undefined;
-
-    const stamp =
-      anchor.line === undefined ? path : `${path}:${String(anchor.line)}`;
-
-    return graph.nodes.find((node) => node.source === stamp);
-  }
+  if (anchor.selector === undefined) return undefined;
 
   // A program's selector anchor names a statement (D19): the first node of
   // that statement's wrapper.
@@ -198,19 +142,7 @@ export const nodeOfAnchor = (
 
   if (statement !== undefined) return statement;
 
-  const peers = peersOf(graph, anchor.selector, path);
-
-  if (path !== undefined && anchor.line !== undefined) {
-    const exact = peers.filter((node) => {
-      const stamp = ownStampOf(node);
-
-      return stamp?.path === path && stamp.line === anchor.line;
-    });
-
-    if (exact.length === 1) return exact[0];
-  }
-
-  return pickPeer(peers, anchor, bounds);
+  return pickPeer(peersOf(graph, anchor.selector), anchor, bounds);
 };
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));

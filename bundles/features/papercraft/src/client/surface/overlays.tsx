@@ -1,6 +1,6 @@
 // `overlays.tsx` — what the canvas draws over the content, in surface pixels:
 // the target the armed comment tool would land on (a dashed outline and a
-// label naming the element, or its pseudo-element, and its source line), and
+// label naming the element, or its pseudo-element), and
 // the selection (a solid outline). Both draw a box in content coordinates
 // through the viewport.
 
@@ -8,19 +8,9 @@ import type { Bounds, SceneTarget } from './scene-graph.js';
 import { targetLabel } from './scene-graph.js';
 import type { Viewport } from './viewport.js';
 
-/** The label the armed comment tool shows over a target: `button#pay · Checkout.tsx:42`, `span.badge::after · Checkout.tsx:42`. It is `targetLabel(target)`, followed by ` · ` and the host stamp's file name (and `:line`) when the host is stamped. A pseudo-element shares its host's stamp. Pure. */
-export const hoverLabelOf = (target: SceneTarget): string => {
-  const element = targetLabel(target);
-  const { stamp } = target.node;
-
-  if (stamp === undefined) return element;
-
-  const file = stamp.path.split('/').pop() ?? stamp.path;
-
-  return stamp.line === undefined
-    ? `${element} · ${file}`
-    : `${element} · ${file}:${String(stamp.line)}`;
-};
+/** The label the armed comment tool shows over a target: `button#pay`, `span.badge::after`. Pure. */
+export const hoverLabelOf = (target: SceneTarget): string =>
+  targetLabel(target);
 
 const outlineOf = (box: Bounds, viewport: Viewport) => ({
   left: `${String(box.x * viewport.scale + viewport.tx)}px`,

@@ -644,9 +644,14 @@ test("PC30: the warm frame becomes the next fence's live frame", async () => {
     './support/fence-host.js'
   );
   const host = await startHost({ frames });
+  // Wait until the earlier tests' frames have left: the warm frame is then the
+  // only program frame, connected and with no program.
   const [warm] = await settle(
     programFrames,
-    (found) => found.some((frame) => frame.connected),
+    (found) =>
+      found.length === 1 &&
+      found[0]?.connected === true &&
+      !found[0].programReceived.some((message) => message.kind === 'program'),
     'the window booted no warm program frame',
   );
   assert.ok(warm !== undefined);

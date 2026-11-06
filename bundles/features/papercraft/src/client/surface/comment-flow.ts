@@ -129,7 +129,7 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
       ? undefined
       : threadViewOf(openRootId, input.threads, input.drafts, {
           kind: input.target.kind,
-          artifactId: input.target.id,
+          canvasId: input.target.id,
           ...(input.revision === undefined ? {} : { revision: input.revision }),
         });
 
@@ -339,43 +339,4 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
   }, [actions]);
 
   return { open, text, editing, thread, ...actions };
-};
-
-/**
- * The frame's comment gesture (the registry's `comment(detail)`, bumping
- * `request`): each change toggles the comment tool and closes what was open.
- * Arming the tool from outside chooses the canvas too — its tools only show
- * on the focused node — and a request the composer cannot serve is spent
- * without arming anything.
- */
-export const useCommentRequest = (
-  request: number | undefined,
-  input: {
-    readonly canComment: boolean;
-    /** Whether the comment tool is armed now. */
-    readonly armed: () => boolean;
-    /** Arms the tool, or disarms it. */
-    readonly toggle: () => void;
-    readonly focusCanvas: () => void;
-    readonly closeInput: () => void;
-  },
-): void => {
-  const handled = useRef(request);
-  const latest = useRef(input);
-  latest.current = input;
-
-  useEffect(() => {
-    if (request === handled.current) return;
-
-    handled.current = request;
-
-    const { canComment, armed, toggle, focusCanvas, closeInput } =
-      latest.current;
-
-    if (!canComment) return;
-
-    if (!armed()) focusCanvas();
-    toggle();
-    closeInput();
-  }, [request]);
 };

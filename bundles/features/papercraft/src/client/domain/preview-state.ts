@@ -98,7 +98,7 @@ const commentOf = (event: PreviewLogEvent): PreviewComment | undefined => {
  */
 export const commentsOfEvents = (
   events: readonly PreviewLogEvent[],
-  artifactId: string,
+  canvasId: string,
   kind?: string,
 ): readonly PreviewComment[] => {
   const comments: PreviewComment[] = [];
@@ -122,7 +122,7 @@ export const commentsOfEvents = (
 
     if (
       comment === undefined ||
-      stringOrUndefined(target?.id) !== artifactId ||
+      stringOrUndefined(target?.id) !== canvasId ||
       (kind !== undefined && stringOrUndefined(target?.kind) !== kind) ||
       // A retried write with the same id is the same comment.
       comments.some((known) => known.commentId === comment.commentId)

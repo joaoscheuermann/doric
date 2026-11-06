@@ -10,12 +10,7 @@ import { cn } from 'desktop/ui/utils';
 import { EyeIcon, EyeOffIcon } from 'lucide-react';
 import { memo } from 'react';
 
-import {
-  nodeLabel,
-  type SceneGraph,
-  type SceneNode,
-  stampLabel,
-} from './scene-graph.js';
+import { nodeLabel, type SceneGraph, type SceneNode } from './scene-graph.js';
 
 // Memoised: the tree draws up to the derivation's limit of rows, and only a
 // new derivation, the selection or the layers change it — never a pan or a
@@ -60,7 +55,7 @@ export const TreePanel = memo(function TreePanel({
           <button
             type="button"
             className="min-w-0 flex-1 truncate text-left"
-            title={stampLabel(node) ?? nodeLabel(node)}
+            title={nodeLabel(node)}
             onClick={() => onSelect(node.id)}
           >
             {nodeLabel(node)}

@@ -189,7 +189,7 @@ const mount = (
     await react.act(async () => {
       root.render(
         createElement(surface.PreviewSurface, {
-          artifactId,
+          canvasId: artifactId,
           revision: 1,
           program: PROGRAM,
           area: { width: 640, height: 480 },
@@ -454,7 +454,7 @@ test('the snapshot cache forgets the least recently drawn picture past its limit
   timeout: TEST_TIMEOUT,
 }, () => {
   const key = (index: number) => ({
-    artifactId: 'cache',
+    canvasId: 'cache',
     revision: index,
     theme: 'light' as const,
     width: 100,

@@ -75,11 +75,7 @@ import { HoverOutline, SelectionOutline } from './overlays.js';
 import { anchorResolver } from './pin-geometry.js';
 import type { CommentPin } from './pins-layer.js';
 import { PreviewHeader } from './preview-header.js';
-import {
-  type FrameInput,
-  PreviewSurface,
-  type SurfaceMode,
-} from './preview-surface.js';
+import { type FrameInput, PreviewSurface } from './preview-surface.js';
 import { type OpenUIErrorOf, useProgramData } from './program-data.js';
 import { useScene } from './scene.js';
 import { targetBounds, targetById } from './scene-graph.js';
@@ -238,7 +234,7 @@ function CanvasFrame({
     surface,
   } = data;
   /** The canvas's key for every per-canvas store (D26). */
-  const artifactId = canvasIdOf(source);
+  const canvasId = canvasIdOf(source);
   const target = useMemo(() => targetKeyOf(source), [source]);
   const segment = useMemo(
     () => ({ identity: source.identity }),
@@ -250,7 +246,6 @@ function CanvasFrame({
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [hoverId, setHoverId] = useState<string | undefined>(undefined);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [, setSurfaceMode] = useState<SurfaceMode>('markup');
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [showResolved, setShowResolved] = useState(true);
 
@@ -287,8 +282,8 @@ function CanvasFrame({
 
   const focusCanvas = useCallback(() => {
     wrapper.current?.focus?.({ preventScroll: true });
-    touchController(artifactId);
-  }, [artifactId]);
+    touchController(canvasId);
+  }, [canvasId]);
 
   const { focused, capture, focusedRef, consumeFramePointer, onFrameFocus } =
     useFrameFocus({
@@ -371,7 +366,7 @@ function CanvasFrame({
       document.removeEventListener(COMMENT_THREAD_OPEN_EVENT, onOpen);
   }, [chrome]);
 
-  const contentKey = `${artifactId}@${String(selectedRevision ?? 1)}`;
+  const contentKey = `${canvasId}@${String(selectedRevision ?? 1)}`;
 
   // The node holds a live frame only among the window's most recently used;
   // the canvas window's revision stays live outside that count.
@@ -394,7 +389,7 @@ function CanvasFrame({
 
   const controller = usePreviewController({
     chrome,
-    artifactId,
+    canvasId,
     scopeProject,
     scopeThread,
     latest,
@@ -688,7 +683,7 @@ function CanvasFrame({
             }}
           >
             <PreviewSurface
-              artifactId={artifactId}
+              canvasId={canvasId}
               revision={selectedRevision ?? 1}
               frameSrc={programFrameSrc()}
               adopt={chrome === 'node'}
@@ -703,7 +698,6 @@ function CanvasFrame({
               hidden={hidden}
               measureRequest={measureRequest}
               onScene={onScene}
-              onMode={setSurfaceMode}
               onInput={onFrameInput}
               // The comment cursor (and the pan hand) stays over the
               // artifact's own elements, whatever cursor they declare.
@@ -768,7 +762,7 @@ function CanvasFrame({
               onToggleHidden={toggleHidden}
             />
             <CommandToolbar
-              artifactId={artifactId}
+              canvasId={canvasId}
               execute={execute}
               tool={tool}
               pinCount={commentCount}

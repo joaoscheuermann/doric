@@ -1,5 +1,5 @@
 // `<papercraft-fence>` (D6, D14, D16, D19): the element chat creates for each
-// `papercraft` fence while the Generative UI setting is on. It finds the
+// `papercraft` fence. It finds the
 // fence's revision in the window's fold of the Thread's papercraft fences and
 // draws it as a canvas node (`PreviewContainer`, `chrome: 'node'`) over the
 // program's identity: the library bound at the fence's turn, its `Export`s,

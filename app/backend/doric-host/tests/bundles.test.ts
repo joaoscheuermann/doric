@@ -418,9 +418,8 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['chat', 'openui'],
       ['runtime', 'openui'],
       ['core', 'openui'],
-      // papercraft 1.3.0 requires openui's generative-ui, setting and
-      // programs contracts, chat.views/v1, the runtime's threads and hooks,
-      // and the core's skills, settings and events.
+      // papercraft 2.0.0 requires openui.programs/v1, chat.views/v1, the
+      // runtime's threads and hooks, and the core's skills and events.
       ['openui', 'papercraft'],
       ['chat', 'papercraft'],
       ['runtime', 'papercraft'],
@@ -917,26 +916,6 @@ void test('PC23: a papercraft skill load read from the log brings the library in
     await database.close();
   }
 });
-
-// B13 and PC20 (openui.md, papercraft-openui.md stage 3): with the default
-// setting, after the host's start steps, neither `ask` nor `papercraft_preview`
-// is a tool and the skills are `openui` and `papercraft`, not
-// `papercraft-preview`.
-void test(
-  'B13, PC20: with the default setting the tools have no ask and no papercraft_preview, and the skills have openui and papercraft and no papercraft-preview',
-  needsDatabase,
-  async () => {
-    await withStartedHost(async (host) => {
-      const { tools, skills } = await listed(host);
-
-      assert.ok(!tools.includes('ask'), tools.join(', '));
-      assert.ok(!tools.includes('papercraft_preview'), tools.join(', '));
-      assert.ok(skills.includes('openui'), skills.join(', '));
-      assert.ok(skills.includes('papercraft'), skills.join(', '));
-      assert.ok(!skills.includes('papercraft-preview'), skills.join(', '));
-    });
-  },
-);
 
 /** The ContractError code a call raised, or 'none' when it answered. */
 const codeOf = async (run: () => unknown): Promise<string> => {

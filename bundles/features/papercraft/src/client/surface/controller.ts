@@ -29,7 +29,7 @@ export interface FrameReading {
 
 export interface ControllerInput {
   readonly chrome: 'node' | 'canvas';
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly scopeProject: string | undefined;
   readonly scopeThread: string | undefined;
   readonly latest: RefObject<FrameReading>;
@@ -45,7 +45,7 @@ export interface ControllerInput {
 
 export const usePreviewController = ({
   chrome,
-  artifactId,
+  canvasId,
   scopeProject,
   scopeThread,
   latest,
@@ -75,7 +75,7 @@ export const usePreviewController = ({
     };
 
     return {
-      artifactId,
+      canvasId,
       scope:
         scopeProject === undefined
           ? undefined
@@ -113,7 +113,7 @@ export const usePreviewController = ({
       sendNow,
     };
   }, [
-    artifactId,
+    canvasId,
     scopeProject,
     scopeThread,
     latest,

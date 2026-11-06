@@ -142,7 +142,7 @@ export function activate({ services }: ClientContext): Cleanup {
 }
 
 export { ChatComposerV1 } from '../contracts/chat.js';
-export { anchorOf, STAMP_ATTRIBUTE, selectorOf, targetOf } from './anchor.js';
+export { anchorOf, selectorOf, targetOf } from './anchor.js';
 export {
   activeCanvasId,
   controllerFor,

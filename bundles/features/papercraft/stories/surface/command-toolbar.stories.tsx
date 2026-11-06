@@ -11,7 +11,7 @@ import { ARTIFACT_ID } from '../support/preview.js';
 const toolbar = (
   overrides: Partial<CommandToolbarProps> = {},
 ): CommandToolbarProps => ({
-  artifactId: ARTIFACT_ID,
+  canvasId: ARTIFACT_ID,
   execute: () => undefined,
   tool: 'select',
   pinCount: 0,

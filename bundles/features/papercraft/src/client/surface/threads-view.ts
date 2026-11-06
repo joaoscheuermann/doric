@@ -158,7 +158,7 @@ export const threadViewOf = (
   drafts: readonly PreviewDraft[],
   target: {
     readonly kind?: string;
-    readonly artifactId: string;
+    readonly canvasId: string;
     readonly revision?: number;
   },
 ): ThreadView | undefined => {
@@ -179,7 +179,7 @@ export const threadViewOf = (
       pin: sent.pin,
       target: {
         kind: target.kind ?? PROGRAM_TARGET_KIND,
-        id: target.artifactId,
+        id: target.canvasId,
         ...(revision === undefined ? {} : { revision }),
         anchor,
       },

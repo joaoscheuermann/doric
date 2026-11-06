@@ -42,26 +42,10 @@ export const papercraftPrompts = {
   third: 'PC23 prompt 3: the library instruct arrives.',
 } as const;
 
-/**
- * B16's prompts (openui.md, stage 3): the first calls `thread-list` and then
- * answers, so it makes a second request after the setting changed; the
- * second answers at once.
- */
-export const settingPrompts = {
-  before: 'B16 prompt A: started before the setting changed.',
-  after: 'B16 prompt B: started after the setting changed.',
-} as const;
-
 export const scriptedTurn = (messages: readonly ChatMessage[]): Turn => {
   const input = messages.filter(({ role }) => role === 'user').at(-1)?.content;
   if (typeof input !== 'string') throw new Error('Expected a text prompt');
   if (input.includes(heldPrompt)) return { text: heldAnswer };
-  if (input.includes(settingPrompts.before)) {
-    return messages.at(-1)?.role === 'tool'
-      ? { text: 'Listed.' }
-      : { call: 'thread-list', args: {} };
-  }
-  if (input.includes(settingPrompts.after)) return { text: 'Noted.' };
   // The PC23 prompt this turn answers: the last user message naming one (an
   // instruct the host gave may follow it as a message of its own).
   const pc23 = messages
@@ -152,16 +136,6 @@ export const scriptedEndpoint = async () => {
     /** The names of the tools the request offers, in order. */
     readonly tools: readonly string[];
   }[] = [];
-  /** The first request of `settingPrompts.before` waits until `releaseBefore`. */
-  let gated = false;
-  let releaseBefore: () => void = () => undefined;
-  const beforeReleased = new Promise<void>((resolve) => {
-    releaseBefore = resolve;
-  });
-  let onBeforeHeld: () => void = () => undefined;
-  const beforeHeld = new Promise<void>((resolve) => {
-    onBeforeHeld = resolve;
-  });
   const failures: string[] = [];
   /** The first request for `heldPrompt` is never answered. */
   let held = false;
@@ -200,15 +174,6 @@ export const scriptedEndpoint = async () => {
         messages: parsed.messages,
         tools: (parsed.tools ?? []).map((tool) => tool.function?.name ?? ''),
       });
-      if (
-        !gated &&
-        (parsed.tools ?? []).length > 0 &&
-        JSON.stringify(parsed.messages).includes(settingPrompts.before)
-      ) {
-        gated = true;
-        onBeforeHeld();
-        await beforeReleased;
-      }
       if (!held && JSON.stringify(parsed.messages).includes(heldPrompt)) {
         held = true;
         response.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -281,12 +246,6 @@ export const scriptedEndpoint = async () => {
     failures,
     /** Resolves once the first request for `heldPrompt` arrived and is held. */
     held: firstHeld,
-    /** Resolves once the first request of `settingPrompts.before` waits. */
-    beforeHeld,
-    /** Lets that request be answered. */
-    releaseBefore: () => {
-      releaseBefore();
-    },
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();

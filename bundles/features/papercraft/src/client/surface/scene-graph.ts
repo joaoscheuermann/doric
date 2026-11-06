@@ -16,12 +16,6 @@
 
 import type { SceneNodeData } from '../frame-protocol.js';
 
-/** The origin stamp a stamped element carries, as `path:line`. */
-export interface SourceStamp {
-  readonly path: string;
-  readonly line?: number;
-}
-
 /** One derived node of the mounted preview, as the frame serialized it. */
 export interface SceneNode {
   /** A stable id within one derivation: `n0`, `n1`, … in document order. */
@@ -30,10 +24,6 @@ export interface SceneNode {
   readonly classes: readonly string[];
   /** The element's `id` attribute, when it has one. */
   readonly elementId?: string;
-  /** Its own `data-papercraft-source` value, exactly as the element carries it. */
-  readonly source?: string;
-  /** The stamp that names it: its own, else the nearest stamped ancestor's. */
-  readonly stamp?: SourceStamp;
   /** Its text, whitespace collapsed and cut short, as the frame read it. */
   readonly text: string;
   readonly depth: number;
@@ -51,28 +41,12 @@ export interface SceneGraph {
   readonly childrenOf: ReadonlyMap<string | undefined, readonly SceneNode[]>;
 }
 
-/** A stamp value (`path:line`, else a bare path) read as its parts. */
-export const stampOf = (value: string): SourceStamp => {
-  const match = /^(.*?):(\d+)$/.exec(value);
-  if (match === null) return { path: value };
-
-  const line = Number(match[2]);
-
-  return Number.isInteger(line) && line > 0
-    ? { path: match[1] ?? value, line }
-    : { path: value };
-};
-
-/** A node's own stamp, when the element itself carries one. */
-export const ownStampOf = (node: SceneNode): SourceStamp | undefined =>
-  node.source === undefined ? undefined : stampOf(node.source);
-
 /**
  * The tree of the nodes a frame serialized, in document order. The frame is
  * the Project's code's word, so the tree trusts only what it can check: a
  * repeated id is dropped, a parent must come before its child (else the node
- * hangs from the root), and each depth and inherited stamp is derived here
- * from the parent chain, not read from the message.
+ * hangs from the root), and each depth is derived here from the
+ * parent chain, not read from the message.
  */
 export const sceneGraphOf = (
   data: readonly (SceneNodeData & {
@@ -89,9 +63,6 @@ export const sceneGraphOf = (
 
     const parent =
       each.parentId === undefined ? undefined : byId.get(each.parentId);
-    // The stamp walks down from the stamped ancestor, so a comment on a child
-    // still names the source file it came from.
-    const stamp = parent?.stamp;
     const elementId =
       each.elementId === undefined || each.elementId === ''
         ? undefined
@@ -102,7 +73,6 @@ export const sceneGraphOf = (
       tag: each.tag.toLowerCase(),
       classes: each.classes.filter((name) => name !== ''),
       ...(elementId === undefined ? {} : { elementId }),
-      ...(stamp === undefined ? {} : { stamp }),
       text: each.text,
       depth: parent === undefined ? 0 : parent.depth + 1,
       ...(parent === undefined ? {} : { parentId: parent.id }),
@@ -129,14 +99,6 @@ export const nodeLabel = (node: SceneNode): string => {
     ? node.tag
     : `${node.tag}.${node.classes.slice(0, 2).join('.')}`;
 };
-
-/** The anchor stamp of a node, in the form `Checkout.tsx:42` a comment reads. */
-export const stampLabel = (node: SceneNode): string | undefined =>
-  node.stamp === undefined
-    ? undefined
-    : node.stamp.line === undefined
-      ? node.stamp.path
-      : `${node.stamp.path}:${String(node.stamp.line)}`;
 
 /* Targets: a node, or one of its pseudo-elements ---------------------------- */
 

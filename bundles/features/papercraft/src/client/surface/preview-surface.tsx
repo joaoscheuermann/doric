@@ -118,7 +118,7 @@ export type FrameInput = Extract<
 >;
 
 export interface PreviewSurfaceProps {
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly revision: number;
   /** A fixed height for the iframe; the content's height otherwise. */
   readonly height?: number;
@@ -164,7 +164,7 @@ interface Content {
   /** One per mount of the revision: the frame's key; 0 before the first. */
   readonly generation: number;
   /** The revision the content is of. */
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly revision: number;
 }
 
@@ -173,7 +173,7 @@ const UNLOCKED: FrameCursor = { locked: false };
 
 /** The program host: the live frame, sized by the layout it reports. */
 export function PreviewSurface({
-  artifactId,
+  canvasId,
   revision,
   height,
   area,
@@ -198,7 +198,7 @@ export function PreviewSurface({
   const [size, setSize] = useState<FrameSize | undefined>(undefined);
   const [content, setContent] = useState<Content>({
     generation: 0,
-    artifactId,
+    canvasId,
     revision,
   });
   const theme = useAppTheme();
@@ -244,12 +244,12 @@ export function PreviewSurface({
     reported.current = undefined;
     setSize(undefined);
     setLayout('fullscreen');
-    setContent({ generation: generations.current, artifactId, revision });
+    setContent({ generation: generations.current, canvasId, revision });
 
     return () => {
       reporters.current.onScene?.(undefined);
     };
-  }, [artifactId, revision]);
+  }, [canvasId, revision]);
 
   const areaWidth =
     area !== undefined && area.width > 0 ? area.width : undefined;
@@ -286,11 +286,11 @@ export function PreviewSurface({
   useEffect(() => {
     if (live || content.generation === 0) return;
 
-    const record = lastFrameOf(artifactId, revision);
+    const record = lastFrameOf(canvasId, revision);
 
     if (record?.scene !== undefined) reporters.current.onScene?.(record.scene);
     if (record?.mode !== undefined) report(record.mode);
-  }, [live, content.generation, artifactId, revision, report]);
+  }, [live, content.generation, canvasId, revision, report]);
 
   const { sceneChanged } = useSnapshotCapture({
     host,
@@ -303,7 +303,7 @@ export function PreviewSurface({
       frameHeight !== undefined &&
       frameHeight > 0
         ? {
-            artifactId,
+            canvasId,
             revision,
             theme,
             width: frameWidth,
@@ -316,12 +316,12 @@ export function PreviewSurface({
   /* The stand-in: what the frame last showed, at the size it had ----------- */
 
   const memory =
-    content.generation === 0 ? undefined : lastFrameOf(artifactId, revision);
+    content.generation === 0 ? undefined : lastFrameOf(canvasId, revision);
   const standInWidth = memory?.width ?? frameWidth;
   const snapshot =
     standInWidth === undefined
       ? undefined
-      : snapshotOf({ artifactId, revision, theme, width: standInWidth });
+      : snapshotOf({ canvasId, revision, theme, width: standInWidth });
   const standIn: 'none' | 'alone' | 'over' =
     content.generation === 0
       ? 'none'
@@ -348,7 +348,7 @@ export function PreviewSurface({
         setMountedKey(frameKey);
         report(next);
         setLayout(shown);
-        rememberFrame(content.artifactId, content.revision, {
+        rememberFrame(content.canvasId, content.revision, {
           mode: next,
           layout: shown,
           theme,
@@ -367,7 +367,7 @@ export function PreviewSurface({
         return;
       case 'size':
         setSize({ width: message.width, height: message.height });
-        rememberFrame(content.artifactId, content.revision, {
+        rememberFrame(content.canvasId, content.revision, {
           size: { width: message.width, height: message.height },
         });
 
@@ -375,7 +375,7 @@ export function PreviewSurface({
       case 'scene':
         reporters.current.onScene?.(message.nodes);
         sceneChanged();
-        rememberFrame(content.artifactId, content.revision, {
+        rememberFrame(content.canvasId, content.revision, {
           scene: message.nodes,
           theme,
           ...(frameWidth === undefined ? {} : { width: frameWidth }),

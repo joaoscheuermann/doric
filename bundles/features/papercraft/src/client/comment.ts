@@ -184,7 +184,7 @@ const itemTargetOf = (data: unknown): CommentTarget | undefined => {
  */
 export const draftOfItem = (
   item: ComposerItem,
-  artifactId: string,
+  canvasId: string,
   kinds: { readonly item: string; readonly target: string } = {
     item: PROGRAM_COMMENT_KIND,
     target: PROGRAM_TARGET_KIND,
@@ -194,8 +194,7 @@ export const draftOfItem = (
 
   const target = itemTargetOf(item.data);
 
-  if (target?.id !== artifactId || target.kind !== kinds.target)
-    return undefined;
+  if (target?.id !== canvasId || target.kind !== kinds.target) return undefined;
 
   const data = item.data as {
     readonly pin?: unknown;

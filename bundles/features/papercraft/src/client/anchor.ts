@@ -1,10 +1,8 @@
 // Anchors for preview comments: how a clicked element of the preview becomes
 // a `CommentAnchor`. The preview renders in its own frame, so the element
 // reaches the app as a serialized scene node (`scene-graph.ts`): its tag, `id`
-// and classes give the CSS `selector`, its own origin stamp
-// (`data-papercraft-source`, which the builder writes) the `source` form —
-// the file the element came from — and its text excerpt the identity a later
-// revision re-resolves it by.
+// and classes give the CSS `selector` and its text excerpt the identity a
+// later revision re-resolves it by.
 
 import {
   type CommentAnchor,
@@ -15,11 +13,7 @@ import {
   nodeLabel,
   type PseudoKind,
   type SceneNode,
-  stampOf,
 } from './surface/scene-graph.js';
-
-/** The origin stamp the builder writes on the rendered markup. */
-export const STAMP_ATTRIBUTE = 'data-papercraft-source';
 
 /** A simple, stable-enough selector: `tag#id`, `tag.a.b`, else `tag`. */
 export const selectorOf = (node: SceneNode): string => nodeLabel(node);
@@ -43,8 +37,7 @@ export const excerptOf = (text: string): string =>
   text.replace(/\s+/g, ' ').trim().slice(0, EXCERPT_LIMIT);
 
 /**
- * The anchor a clicked element carries: its own origin stamp, else its
- * selector.
+ * The anchor a clicked element carries: its selector.
  * `point`, the content point that was clicked, is recorded as the anchor's `x`
  * and `y` (keys every form may carry): where the pin goes on a later revision
  * that no longer has the element. The element's identity beyond its selector
@@ -55,7 +48,7 @@ export const excerptOf = (text: string): string =>
  * `pseudo` names the element's `::before` / `::after` as the thing commented
  * on. The anchor then also carries `pseudo`, and its `label` is the tag plus
  * the pseudo kind (`div::before`). `offset` must then be measured inside the
- * pseudo box, not the host box. The form, `path`/`line`, `selector`, `text`
+ * pseudo box, not the host box. The form, `selector`, `text`
  * and `index` stay the host element's, so the anchor resolves to the host
  * first. Without `pseudo` the anchor is exactly what it is today, with no
  * `pseudo` key. Never throws.
@@ -67,7 +60,6 @@ export const anchorOf = (
   index?: number,
   pseudo?: PseudoKind,
 ): CommentAnchor => {
-  const stamp = node.source;
   const text = excerptOf(node.text);
   const label = `${node.tag}${pseudo ?? ''}`;
   const at = {
@@ -77,19 +69,6 @@ export const anchorOf = (
     ...(offset === undefined ? {} : { offset }),
     ...(point === undefined ? {} : { x: point.x, y: point.y }),
   };
-
-  if (stamp !== undefined && stamp !== '') {
-    const { path, line } = stampOf(stamp);
-
-    return {
-      form: 'source',
-      path,
-      ...(line === undefined ? {} : { line }),
-      selector: selectorOf(node),
-      label,
-      ...at,
-    };
-  }
 
   return {
     form: 'selector',
@@ -133,13 +112,13 @@ export const pseudoOf = (anchor: CommentAnchor): PseudoKind | undefined => {
 
 /** The anchored target of the preview revision a comment is written against. */
 export const targetOf = (
-  artifactId: string,
+  canvasId: string,
   revision: number,
   anchor: CommentAnchor,
   kind: string = PROGRAM_TARGET_KIND,
 ): CommentTarget => ({
   kind,
-  id: artifactId,
+  id: canvasId,
   revision,
   anchor,
 });

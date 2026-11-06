@@ -112,7 +112,7 @@ const mount = (options: FakeOptions = {}) => {
     await react.act(async () => {
       root.render(
         createElement(surface.PreviewSurface, {
-          artifactId: 'checkout-7f3a',
+          canvasId: 'checkout-7f3a',
           revision: 1,
           program: PROGRAM,
           area: AREA,
