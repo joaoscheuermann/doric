@@ -14,6 +14,7 @@ import {
   discoverBundles,
   distributionFiles,
   distributionFor,
+  distributionParts,
   statesOf,
 } from '../src/index.js';
 import {
@@ -153,6 +154,39 @@ void test('the host also lists the modules its distributed contracts import', as
         'host/util.js',
         'manifest.json',
       ],
+    );
+  });
+});
+
+void test('C16: the distribution lists client chunks and their CSS, and its parts name no chunk', async () => {
+  await withRoot(async (root) => {
+    const epsilon = manifest('epsilon');
+    const client = {
+      'client/index.js': 'export const activate = () => undefined;\n',
+      'client/styles.css': '.e{color:red}\n',
+    };
+    const withChunk = await writeBundle(join(root, 'with'), 'epsilon', {
+      manifest: epsilon,
+      descriptor: descriptorFor(epsilon),
+      files: {
+        ...client,
+        'client/chunks/a.js': 'export const a = 1;\n',
+        'client/chunks/a.css': '.a{color:blue}\n',
+      },
+    });
+    const without = await writeBundle(join(root, 'without'), 'epsilon', {
+      manifest: epsilon,
+      descriptor: descriptorFor(epsilon),
+      files: client,
+    });
+    const files = await distributionFiles(withChunk);
+    const paths = files.map((file) => file.path);
+
+    assert.ok(paths.includes('client/chunks/a.js'), paths.join(', '));
+    assert.ok(paths.includes('client/chunks/a.css'), paths.join(', '));
+    assert.deepEqual(
+      distributionParts(files),
+      distributionParts(await distributionFiles(without)),
     );
   });
 });

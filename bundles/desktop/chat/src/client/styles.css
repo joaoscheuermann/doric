@@ -235,6 +235,15 @@
   color: var(--foreground);
 }
 
+/* A prompt a control of the agent's UI sent names its program above the words
+   (conversation-openui.md D20); the caption is not text of the editor. */
+.conversation-scroll [data-lexical-editor] > [data-ui-action]::before {
+  content: 'Sent from the UI · ' attr(data-ui-action);
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 /* The agent wears the icon of the model that answered its turn, with no face
    or rim: a mask, not a picture, so the icon paints the text colour in light
    and dark alike and never brings a palette of its own. */

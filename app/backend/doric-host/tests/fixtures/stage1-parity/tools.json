@@ -1462,6 +1462,13 @@
                         "text": {
                           "type": "string"
                         },
+                        "pseudo": {
+                          "type": "string",
+                          "enum": [
+                            "::before",
+                            "::after"
+                          ]
+                        },
                         "form": {
                           "type": "string",
                           "const": "source"
@@ -1500,6 +1507,13 @@
                         "text": {
                           "type": "string"
                         },
+                        "pseudo": {
+                          "type": "string",
+                          "enum": [
+                            "::before",
+                            "::after"
+                          ]
+                        },
                         "form": {
                           "type": "string",
                           "const": "selector"
@@ -1536,6 +1550,13 @@
                         },
                         "text": {
                           "type": "string"
+                        },
+                        "pseudo": {
+                          "type": "string",
+                          "enum": [
+                            "::before",
+                            "::after"
+                          ]
                         },
                         "form": {
                           "type": "string",
@@ -1575,6 +1596,13 @@
                         "text": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "pseudo": {
+                          "type": "string",
+                          "enum": [
+                            "::before",
+                            "::after"
+                          ]
                         },
                         "form": {
                           "type": "string",

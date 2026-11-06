@@ -272,9 +272,10 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // which serves the relay on the host's own listener, and the `artifacts`,
     // `comments` and `papercraft` features are the review registry, its
     // anchored comments and the live preview over them. The `mcp` feature is
-    // the Project's MCP servers and the tools they bring. No bundle is
+    // the Project's MCP servers and the tools they bring. The `openui`
+    // feature draws UI in the conversation (OpenUI slice 1). No bundle is
     // quarantined.
-    assert.equal(host.bundleCount, 30);
+    assert.equal(host.bundleCount, 31);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -315,6 +316,7 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         transport: ['active', 'others'],
         artifacts: ['active', 'others'],
         comments: ['active', 'others'],
+        openui: ['active', 'others'],
         papercraft: ['active', 'others'],
         mcp: ['active', 'others'],
       },
@@ -342,6 +344,11 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['artifacts', 'papercraft'],
       ['comments', 'papercraft'],
       ['runtime', 'mcp'],
+      // openui requires chat.views/v1 and chat.send/v1 (chat), the runtime's
+      // threads and hooks, and the core's hooks, events, skills and settings.
+      ['chat', 'openui'],
+      ['runtime', 'openui'],
+      ['core', 'openui'],
     ] as const)
       assert.ok(
         order.indexOf(provider) < order.indexOf(consumer),

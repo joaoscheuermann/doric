@@ -1225,3 +1225,88 @@ test('while a prompt runs, Escape without words and Ctrl+C with nothing selected
   );
   assert.equal(window.received('runtime.threads/v1.steer').length, 0);
 });
+
+// The composer's route when no prompt runs (conversation-openui.md D20, C3):
+// the same route `chat.send/v1.sendAction` takes, kept as it is when it moves
+// out of the hook.
+
+const pausedQueue = (held: Record<string, unknown> = {}) => ({
+  ...emptyQueue,
+  paused: true,
+  ...held,
+});
+
+const queuedItem = {
+  promptId: '66666666-6666-4666-8666-666666666666',
+  source: { kind: 'user' },
+  label: 'jao.scheuermann',
+  preview: 'Later',
+  acceptedAt: '2026-01-01T00:00:00.000Z',
+};
+
+/** Where in the bridge calls each of `methods` was first asked, or -1. */
+const firstCall = (window: ChatWindow, method: string): number =>
+  window
+    .calls()
+    .findIndex(
+      (call) =>
+        `${call.contract}.${call.method}` === `runtime.threads/v1.${method}`,
+    );
+
+test('a send while the queue is paused and holds nothing resumes the queue, then prompts', async () => {
+  const { window } = await boot({
+    'runtime.threads/v1.queue': () => pausedQueue(),
+    'runtime.threads/v1.resumeQueue': () => ({
+      status: 'resumed',
+      thread: thread(),
+    }),
+  });
+  const root = shownEditor().getRootElement();
+  assert.ok(root);
+
+  await type('Go on with the parser');
+  await press(root, 'Enter', sendChord);
+  await settle(150);
+
+  const resumed = firstCall(window, 'resumeQueue');
+  const prompted = firstCall(window, 'prompt');
+  assert.notEqual(resumed, -1, 'the queue was resumed');
+  assert.notEqual(prompted, -1, 'the words were prompted');
+  assert.ok(resumed < prompted, 'the resume came first');
+});
+
+test('a send while the paused queue holds a resumable prompt prompts without resuming it', async () => {
+  const { window } = await boot({
+    'runtime.threads/v1.queue': () => pausedQueue({ resumable: queuedItem }),
+    'runtime.threads/v1.resumeQueue': () => ({
+      status: 'resumed',
+      thread: thread(),
+    }),
+  });
+  const root = shownEditor().getRootElement();
+  assert.ok(root);
+
+  await type('Something else first');
+  await press(root, 'Enter', sendChord);
+  await settle(150);
+
+  assert.equal(window.received('runtime.threads/v1.resumeQueue').length, 0);
+  assert.equal(window.received('runtime.threads/v1.prompt').length, 1);
+});
+
+test('a resume the queue refuses as busy prompts nothing and keeps the words', async () => {
+  const { window } = await boot({
+    'runtime.threads/v1.queue': () => pausedQueue(),
+    'runtime.threads/v1.resumeQueue': () => ({ status: 'busy' }),
+  });
+  const root = shownEditor().getRootElement();
+  assert.ok(root);
+
+  await type('Go on with the parser');
+  await press(root, 'Enter', sendChord);
+  await settle(150);
+
+  assert.equal(window.received('runtime.threads/v1.resumeQueue').length, 1);
+  assert.equal(window.received('runtime.threads/v1.prompt').length, 0);
+  assert.equal(promptWords(), 'Go on with the parser');
+});

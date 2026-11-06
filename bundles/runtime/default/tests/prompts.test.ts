@@ -63,7 +63,7 @@ void test('moves each git skill into the working directory with the cwd tool', a
 
 /** The bullet that sends the model to the cwd tool and its skills before code work. */
 const checkWorkingDirectoryBullet =
-  '- Before you work on code, check your working directory with the cwd tool. When its result reports a repository root, load the skills that match your work before you start it.';
+  '- When cwd reports a repository root, load the skills that match your work before starting it.';
 
 void test('tells the model to check its working directory and load the matching skills before code work', () => {
   const prompt = systemPromptWith(harnessVariables, '');
@@ -71,7 +71,7 @@ void test('tells the model to check its working directory and load the matching 
   assert.ok(prompt.includes(checkWorkingDirectoryBullet));
   assert.ok(
     prompt.includes(
-      "Do not reach into a repository from another directory with working_directory or absolute paths: the repository's own skills and agents are listed from your working directory.",
+      "- Do not reach into a repository from elsewhere with working_directory or absolute paths. The repository's skills and agents are listed only from your working directory.",
     ),
   );
   assert.ok(

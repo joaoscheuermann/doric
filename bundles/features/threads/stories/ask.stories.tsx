@@ -141,7 +141,7 @@ const scope = {
 const wait = { picked: [OTHER], other: 'Para, mas me avisa por notificação' };
 
 /** Every state of the block, in the order the reader meets them. */
-const states: readonly (readonly [string, StoryProps])[] = [
+export const states: readonly (readonly [string, StoryProps])[] = [
   ['1. Uma pergunta, nada escolhido — Send pula a pergunta', checkpoint],
   [
     '2. Uma opção escolhida — Send ativo',

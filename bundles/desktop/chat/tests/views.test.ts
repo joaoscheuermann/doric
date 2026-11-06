@@ -269,3 +269,66 @@ describe('chat.views/v1', () => {
     assert.equal(builtInClaims('git.commit/v1', builtInAliases), false);
   });
 });
+
+describe('chat.views/v1 fence renderers (openui.md D1, B3)', () => {
+  const invalid = (error: unknown) =>
+    isContractError(error) && error.code === 'invalid_input';
+
+  test('a second fence renderer of one tag is registration_conflict, until the first is disposed', async () => {
+    const { api, dispose } = setup(['x-fence', 'y-fence']);
+    const first = api.registerFenceRenderer({
+      tag: 'openui-lang',
+      elementTag: 'x-fence',
+    });
+    assert.throws(
+      () =>
+        api.registerFenceRenderer({
+          tag: 'openui-lang',
+          elementTag: 'y-fence',
+        }),
+      conflict,
+    );
+    // Another tag is free.
+    api.registerFenceRenderer({ tag: 'papercraft', elementTag: 'y-fence' });
+
+    first.dispose();
+    api.registerFenceRenderer({ tag: 'openui-lang', elementTag: 'y-fence' });
+    await dispose();
+  });
+
+  test('an element ui/v1 has not defined, and a tag holding a space, are invalid_input', async () => {
+    const { api, dispose } = setup(['x-fence']);
+    assert.throws(
+      () =>
+        api.registerFenceRenderer({
+          tag: 'openui-lang',
+          elementTag: 'x-missing',
+        }),
+      invalid,
+    );
+    assert.throws(
+      () =>
+        api.registerFenceRenderer({
+          tag: 'openui lang',
+          elementTag: 'x-fence',
+        }),
+      invalid,
+    );
+    // Neither left a registration behind.
+    api.registerFenceRenderer({ tag: 'openui-lang', elementTag: 'x-fence' });
+    await dispose();
+  });
+
+  test('a watchFences input with an empty threadId is invalid_input', async () => {
+    const { api, dispose } = setup();
+    assert.throws(
+      () =>
+        api.watchFences(
+          { projectId: 'p', threadId: '', tag: 'openui-lang' },
+          () => undefined,
+        ),
+      invalid,
+    );
+    await dispose();
+  });
+});

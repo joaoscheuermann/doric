@@ -1,0 +1,31 @@
+{
+  "manifestVersion": 1,
+  "id": "openui",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Answers with UI in the conversation: OpenUI Lang fences drawn while the agent writes, the question form, actions back to the agent, validation feedback and the Generative UI setting.",
+  "provides": [
+    "openui.programs/v1@1.0.0",
+    "openui.setting/v1@1.0.0",
+    "openui.generative-ui/v1@1.0.0",
+    "openui.questions/v1@1.0.0",
+    "openui.answered/v1@1.0.0"
+  ],
+  "requires": [
+    "chat.views/v1@^1.1.0",
+    "chat.send/v1@^1.1.0",
+    "runtime.threads/v1@^1.5.0",
+    "runtime.hooks/v1@^1.2.0",
+    "hooks/v1@^1.0.0",
+    "events/v1@^1.0.0",
+    "skills/v1@^1.1.0",
+    "settings/v1@^1.0.0",
+    "ui/v1@^1.0.0",
+    "regions/v1@^1.0.0",
+    "navigation/v1@^1.0.0"
+  ],
+  "desktopScope": {
+    "openui.programs/v1": ["projectId", "threadId"],
+    "openui.questions/v1": ["projectId", "threadId"]
+  }
+}

@@ -44,6 +44,9 @@
       "watch"
     ],
     "models/v1": ["catalog", "icons", "kind", "kinds"],
+    "openui.programs/v1": ["reportErrors"],
+    "openui.questions/v1": ["answer", "status"],
+    "openui.setting/v1": ["get", "set", "watch"],
     "papercraft.previews/v1": ["build", "read"],
     "resources/v1": ["host", "project"],
     "runtime.attachments/v1": ["attach", "read"],
@@ -115,5 +118,11 @@
     "tools/v1": ["catalog"],
     "usage/v1": ["compact", "compactionTarget", "setCompactionTarget", "thread"]
   },
-  "scopeKeys": ["projectId", "threadId", "promptId"]
+  "scopeKeys": ["projectId", "threadId", "promptId"],
+  "$scopeKeysByContractComment": "Exposed bundle contracts whose provider declares other window scope keys than scopeKeys; an empty list means no desktopScope entry (a global space).",
+  "scopeKeysByContract": {
+    "openui.programs/v1": ["projectId", "threadId"],
+    "openui.questions/v1": ["projectId", "threadId"],
+    "openui.setting/v1": []
+  }
 }

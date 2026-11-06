@@ -5,6 +5,7 @@ import type { CommentThreads } from '../domain/comment-threads.js';
 import type { PendingSend, SentComment } from '../domain/pending-turns.js';
 import { emptyProjection, type Turn } from '../domain/projector.js';
 import { queueItems } from '../domain/queue.js';
+import { routeSend, type SendRoutePorts } from '../domain/send-route.js';
 import type { Thread, ThreadEvent } from '../domain/workspace.js';
 import { threadChatsStore } from '../stores/thread-chats.js';
 import { useThreadQueue } from './use-thread-queue.js';
@@ -90,29 +91,35 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
 
   const projection = chat?.projection ?? emptyProjection;
 
-  const prompt = useCallback(
-    async (text: string) => {
-      if (queue.data?.paused && queueItems(queue.data).length === 0) {
-        try {
-          await queue.resumeAsync();
-        } catch {
-          return false;
-        }
-      }
-      return threadChatsStore.getState().prompt(thread.id, text);
-    },
+  // The composer's ports of `routeSend` (D20), for one message.
+  const ports = useCallback(
+    (text: string, interrupt: boolean): SendRoutePorts => ({
+      steer: (promptId) =>
+        threadChatsStore
+          .getState()
+          .steer(thread.id, text, { promptId, interrupt }),
+      queue: () =>
+        Promise.resolve({
+          paused: queue.data?.paused === true,
+          empty: queueItems(queue.data).length === 0,
+        }),
+      resumeQueue: async () => {
+        await queue.resumeAsync();
+        return true;
+      },
+      prompt: () => threadChatsStore.getState().prompt(thread.id, text),
+    }),
     [thread.id, queue.data, queue.resumeAsync],
+  );
+  const prompt = useCallback(
+    (text: string) => routeSend(undefined, ports(text, false)),
+    [ports],
   );
   const activePromptId = (chat?.thread ?? thread).activePromptId;
   const steer = useCallback(
     (text: string, interrupt: boolean) =>
-      activePromptId === undefined
-        ? prompt(text)
-        : threadChatsStore.getState().steer(thread.id, text, {
-            promptId: activePromptId,
-            interrupt,
-          }),
-    [thread.id, activePromptId, prompt],
+      routeSend(activePromptId, ports(text, interrupt)),
+    [activePromptId, ports],
   );
   const rewind = useCallback(
     (promptId: string, text: string) =>

@@ -54,7 +54,7 @@ export const subscribeThreadQueue = (
  * once, so a turn the reader is waiting for is not the one that waits. The wait
  * is held per Thread, because each keeps its own stream.
  */
-const STREAM_FLUSH_MS = 100;
+export const STREAM_FLUSH_MS = 100;
 
 /**
  * The surface's copy of every opened Thread's chat. It lives here, not in a

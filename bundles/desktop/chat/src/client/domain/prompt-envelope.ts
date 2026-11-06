@@ -25,7 +25,7 @@ const QUOTE_LIMIT = 200;
 
 /** Elements of the envelopes the model reads; a body never closes one. */
 const ENVELOPE_ELEMENTS =
-  'comments|comment|target|message|user-request|parent-instruction|child-result|terminal-output';
+  'comments|comment|target|message|ui-action|user-request|parent-instruction|child-result|terminal-output';
 
 const closing = new RegExp(`</(?=(?:${ENVELOPE_ELEMENTS})\\b)`, 'gi');
 const neutralized = new RegExp(`<\\\\/(?=(?:${ENVELOPE_ELEMENTS})\\b)`, 'gi');
@@ -206,6 +206,13 @@ export const promptEnvelope = (
   items: readonly ComposerItem[],
 ): string => joined(commentsPart(items), messagePart(words.trim()));
 
+/**
+ * The prompt a click on a control of a UI the agent drew sends (D20): the
+ * action's text, unchanged, in one `<ui-action>` element named for its program.
+ */
+export const uiActionEnvelope = (text: string, program: string): string =>
+  `<ui-action program="${attributeText(program)}">\n${bodyText(text)}\n</ui-action>`;
+
 /* Reading a prompt back ----------------------------------------------------- */
 
 /** The target a parsed comment was grouped under. */
@@ -237,6 +244,8 @@ export interface ParsedPromptEnvelope {
   /** The `<message>` body; empty for a prompt of comments alone. */
   readonly message: string;
   readonly comments: readonly ParsedComment[];
+  /** Set for a prompt a control of the agent's UI sent: the program it came from (D20). */
+  readonly action?: { readonly program: string };
 }
 
 const ATTRIBUTES = String.raw`((?:\s[a-z][a-z-]*="[^"]*")*)`;
@@ -321,6 +330,22 @@ const readEnvelope = (stored: string): ReadEnvelope | undefined => {
   const wrapped = /^<user-request>\n([\s\S]*)\n<\/user-request>$/.exec(text);
   if (wrapped !== null) text = wrapped[1] as string;
 
+  // A prompt a control of the agent's UI sent: exactly one `<ui-action>`.
+  const action = /^<ui-action program="([^"]*)">\n/.exec(text);
+  if (action !== null) {
+    const close = '\n</ui-action>';
+    if (!text.endsWith(close)) return undefined;
+    const body = text.slice(action[0].length, text.length - close.length);
+    // A body defuses its closing tags, so the only one is the last.
+    if (body.includes(close)) return undefined;
+    return {
+      message: bodyFrom(body),
+      comments: [],
+      commentsPart: '',
+      action: { program: attributeFrom(action[1] as string) },
+    };
+  }
+
   let at = 0;
   const comments: ParsedComment[] = [];
   let commentsPart = '';
@@ -395,9 +420,12 @@ export const parsePromptEnvelope = (
   text: string,
 ): ParsedPromptEnvelope | undefined => {
   const read = readEnvelope(text);
-  return read === undefined
-    ? undefined
-    : { message: read.message, comments: read.comments };
+  if (read === undefined) return undefined;
+  return {
+    message: read.message,
+    comments: read.comments,
+    ...(read.action === undefined ? {} : { action: read.action }),
+  };
 };
 
 /** The reader's words of a stored prompt: the `<message>` body, else the text. */
@@ -454,8 +482,12 @@ export const promptSummary = (text: string): string => {
  */
 export const previewSummary = (preview: string): string => {
   const text = preview.trim();
-  if (!/^<(?:comments|message|user-request)>/.test(text)) return preview;
-  const message = /<message>\s?([\s\S]*?)(?:\s?<\/message>|$)/.exec(text);
+  if (!/^<(?:comments|message|user-request)>|^<ui-action\b/.test(text))
+    return preview;
+  const message =
+    /<(?:message|ui-action\b[^>]*)>\s?([\s\S]*?)(?:\s?<\/(?:message|ui-action)>|$)/.exec(
+      text,
+    );
   const words = message?.[1]?.trim() ?? '';
   if (words.length > 0) return bodyFrom(words);
   const notes = [

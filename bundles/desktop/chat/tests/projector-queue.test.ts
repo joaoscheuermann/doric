@@ -62,7 +62,7 @@ void test('editing changes the dispatched input while preserving queued receipts
   assert.deepEqual(rewound.turns, waiting.turns);
 });
 
-void test('keeps the Queued receipt at submission and appends the full prompt only after the prior answer', () => {
+void test('keeps the Queued receipt at submission, where the answer goes on behind it, and appends the full prompt only after the prior answer', () => {
   const events = [
     accepted(1, 'first', false),
     event(2, 'first', 'prompt.started'),
@@ -100,7 +100,6 @@ void test('keeps the Queued receipt at submission and appends the full prompt on
       ['user', 'first'],
       ['agent', 'first'],
       ['queued', 'second'],
-      ['agent', 'first'],
       ['user', 'second'],
     ],
   );
@@ -109,7 +108,7 @@ void test('keeps the Queued receipt at submission and appends the full prompt on
     incremental.turns
       .filter((turn) => turn.type === 'agent')
       .map((turn) => turn.text),
-    ['working', ' done'],
+    ['working done'],
   );
   assert.equal(incremental.turns.at(-1)?.events[0]?.sequence, 9);
   assert.deepEqual(projectEvents(incremental, complete), incremental);
@@ -433,5 +432,124 @@ void test('a child result steered into the running prompt reads as that input wh
       ['user', 'result'],
       ['agent', 'work'],
     ],
+  );
+});
+
+// A queue receipt ends no turn (openui.md D2, B2): "the last turn" is the last
+// turn that is not `queued`, so the running prompt's answer, its reasoning and
+// its resume go on behind a receipt that arrived while they were written.
+// (A fence spanning a receipt is in `tests/fences.test.ts`.)
+
+/** The running prompt `first` has started; a receipt for `second` follows. */
+const receiptBetween = (
+  before: Readonly<Record<string, unknown> & { readonly type: string }>,
+  after: Readonly<Record<string, unknown> & { readonly type: string }>,
+) => {
+  const { type: firstType, ...firstValue } = before;
+  const { type: secondType, ...secondValue } = after;
+  return [
+    accepted(1, 'first', false),
+    event(2, 'first', 'prompt.started'),
+    event(3, 'first', 'agent.started'),
+    event(4, 'first', firstType, firstValue),
+    accepted(5, 'second', true),
+    event(6, 'second', 'prompt.queued'),
+    event(7, 'first', secondType, secondValue),
+  ];
+};
+
+void test('a queue receipt between two text deltas leaves one agent turn holding both, followed by the receipt', () => {
+  const projection = projectEvents(
+    emptyProjection,
+    receiptBetween(
+      { type: 'text.delta', delta: 'Reading the parser' },
+      { type: 'text.delta', delta: ' and its tests.' },
+    ),
+  );
+
+  assert.deepEqual(
+    projection.turns.map((turn) => [turn.type, turn.promptId]),
+    [
+      ['user', 'first'],
+      ['agent', 'first'],
+      ['queued', 'second'],
+    ],
+  );
+  const agent = projection.turns[1];
+  assert.ok(agent?.type === 'agent');
+  assert.equal(agent.text, 'Reading the parser and its tests.');
+});
+
+void test('a queue receipt between two reasoning deltas leaves one reasoning turn, still streaming', () => {
+  const projection = projectEvents(
+    emptyProjection,
+    receiptBetween(
+      { type: 'reasoning.delta', delta: 'The parser first,' },
+      { type: 'reasoning.delta', delta: ' then the tests.' },
+    ),
+  );
+
+  assert.deepEqual(
+    projection.turns.map((turn) => [turn.type, turn.promptId]),
+    [
+      ['user', 'first'],
+      ['thinking', 'first'],
+      ['queued', 'second'],
+    ],
+  );
+  const thinking = projection.turns[1];
+  assert.ok(thinking?.type === 'thinking');
+  assert.equal(thinking.text, 'The parser first, then the tests.');
+  assert.equal(thinking.streaming, true);
+});
+
+void test('a resume after a pause and a queue receipt rewrites the pause', () => {
+  const projection = projectEvents(emptyProjection, [
+    accepted(1, 'old', false),
+    event(2, 'old', 'prompt.started'),
+    event(3, 'old', 'agent.started'),
+    event(4, 'old', 'prompt.paused', { reason: 'reader_stopped' }),
+    accepted(5, 'new', true),
+    event(6, 'new', 'prompt.queued'),
+    event(7, 'old', 'prompt.resumed', { attempt: 1 }),
+    event(8, 'old', 'prompt.started'),
+    event(9, 'old', 'agent.started'),
+  ]);
+
+  const lifecycles = projection.turns.filter(
+    (turn) => turn.type === 'lifecycle',
+  );
+  assert.equal(lifecycles.length, 1);
+  const [resumed] = lifecycles;
+  assert.ok(resumed?.type === 'lifecycle');
+  assert.equal(resumed.lifecycle.kind, 'resume');
+  assert.ok(
+    resumed.lifecycle.kind === 'resume' &&
+      resumed.lifecycle.pause !== undefined,
+    'the resume keeps the pause it rewrote',
+  );
+  assert.deepEqual(
+    projection.turns.map((turn) => turn.type),
+    ['user', 'lifecycle', 'queued'],
+  );
+});
+
+void test("prompt.finished sets the answer's text to the finished text, also behind a receipt", () => {
+  const projection = projectEvents(emptyProjection, [
+    ...receiptBetween(
+      { type: 'text.delta', delta: 'Draft of' },
+      { type: 'text.delta', delta: ' the answer' },
+    ),
+    event(8, 'first', 'prompt.finished', {
+      text: 'The parser lives in src/parser.ts.',
+      status: 'completed',
+    }),
+  ]);
+
+  assert.deepEqual(
+    projection.turns
+      .filter((turn) => turn.type === 'agent')
+      .map((turn) => turn.text),
+    ['The parser lives in src/parser.ts.'],
   );
 });
