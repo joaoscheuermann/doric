@@ -10,8 +10,11 @@
 
 import {
   type CallArg,
+  type Disposable,
   defineEvent,
+  disposableSchema,
   type MethodSpecs,
+  noInput,
   ref,
 } from 'bundle/contracts';
 import { z } from 'zod';
@@ -146,10 +149,11 @@ export const askAnswerInputSchema: z.ZodType<AskAnswerInput, AskAnswerInput> = z
   .strict();
 
 /**
- * `threads.ask/v1` (host), cardinality `one`, both methods exposed to the
- * desktop. The call's Thread is the scope: an ask is only read or answered in
- * the Thread whose log holds its `threads.asked/v1` row, so an askId of
- * another Thread or Project is `not_found`.
+ * `threads.ask/v1` (host), cardinality `one`; `status` and `answer` are
+ * exposed to the desktop, `withholdTool` (1.2.0) is host only. The call's
+ * Thread is the scope of `status` and `answer`: an ask is only read or
+ * answered in the Thread whose log holds its `threads.asked/v1` row, so an
+ * askId of another Thread or Project is `not_found`.
  *
  * Errors (`ContractError` codes): `invalid_scope` when the call scope lacks a
  * key the method needs; `not_found` for an askId the Thread's log does not
@@ -191,11 +195,28 @@ export interface Ask {
    * is written and the call returns `{ state: 'answered', answers }`.
    */
   answer(input: AskAnswerInput, call?: CallArg): Promise<AskState>;
+  /**
+   * 1.2.0, host only (not exposed to the desktop). Takes no input and no
+   * scope; the withhold is global, not per Thread.
+   *
+   * While any returned Disposable is live, the `ask` tool is not registered
+   * in `tools/v1`, so a prompt that starts then does not list it; disposing
+   * the last live one registers it again with `{ alwaysAvailable: true,
+   * order: 1660 }`. Withholds count: two live withholds need two disposals.
+   * Disposing the same Disposable again does nothing. A prompt already
+   * running keeps the tools it started with.
+   *
+   * Does not throw once `threads` is active. `status`, `answer`, the events
+   * and earlier asks are unaffected: a question asked before the withhold
+   * can still be read and answered.
+   */
+  withholdTool(call?: CallArg): Disposable;
 }
 
 export const askMethods = {
   status: { input: askRefSchema, output: askStateSchema },
   answer: { input: askAnswerInputSchema, output: askStateSchema },
+  withholdTool: { input: noInput, output: disposableSchema },
 } as const satisfies MethodSpecs;
 
 export const AskV1 = ref<Ask>('threads.ask/v1');

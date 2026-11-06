@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "papercraft",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "engines": { "doric": "^1.0.0" },
   "description": "Live previews of a Project's code as conversation nodes: the `preview` artifact kind, its builder and its canvas window.",
   "provides": [

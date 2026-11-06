@@ -1,7 +1,7 @@
 import { EventsV1, type HostContext, ToolsV1 } from 'bundle/contracts';
 
 import { answeredEvent, askedEvent } from '../contracts/index.js';
-import { askService } from './ask.js';
+import { askService, askToolRegistration } from './ask.js';
 import { tool as ask } from './tools/ask.js';
 import { tool as events } from './tools/thread-events.js';
 import { tool as get } from './tools/thread-get.js';
@@ -22,16 +22,16 @@ const threadTools = [
   [interrupt, 1500],
   [terminate, 1600],
   [restart, 1650],
-  [ask, 1660],
 ] as const;
+
+/** The `ask` tool's model-visible position (D10-5). */
+const ASK_ORDER = 1660;
 
 /**
  * Provides `threads.ask/v1`, registers its two durable events and the
  * delegation tools in their established model-visible order.
  */
 export const activate = ({ services }: HostContext): void => {
-  services.provide(askService());
-
   const events = services.use(EventsV1);
 
   events.register(askedEvent);
@@ -41,4 +41,10 @@ export const activate = ({ services }: HostContext): void => {
   for (const [tool, order] of threadTools) {
     tools.register(tool, { alwaysAvailable: true, order });
   }
+
+  const askTool = askToolRegistration(() =>
+    tools.register(ask, { alwaysAvailable: true, order: ASK_ORDER }),
+  );
+
+  services.provide(askService(askTool.withhold));
 };

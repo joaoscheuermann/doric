@@ -118,6 +118,10 @@ describe('PC33: without comment_reply', () => {
         .library({ turnSequence: 1 }),
       { status: 'none' },
     );
-    assert.ok(host.tools.includes('papercraft_preview'), host.tools.join(', '));
+    // Stage 3: with the setting on, the old preview tool is withheld.
+    assert.ok(
+      !host.tools.includes('papercraft_preview'),
+      host.tools.join(', '),
+    );
   });
 });

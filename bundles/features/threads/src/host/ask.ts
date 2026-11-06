@@ -6,6 +6,7 @@
 import {
   type Call,
   ContractError,
+  type Disposable,
   defineMethod,
   defineService,
   EventsV1,
@@ -273,8 +274,41 @@ const send = async (
   }
 };
 
-/** Provides `threads.ask/v1`; both methods are exposed to the desktop. */
-export const askService = () => {
+/**
+ * The `ask` tool's registration under withholds: `register` adds the tool to
+ * `tools/v1` and answers its Disposable. The tool is registered while no
+ * withhold is live; `withhold` answers a Disposable whose first dispose
+ * releases one withhold, registering the tool again after the last.
+ */
+export const askToolRegistration = (register: () => Disposable) => {
+  let registration: Disposable | undefined = register();
+  let live = 0;
+
+  return {
+    withhold: (): Disposable => {
+      live += 1;
+      registration?.dispose();
+      registration = undefined;
+
+      let released = false;
+
+      return {
+        dispose: () => {
+          if (released) return;
+          released = true;
+          live -= 1;
+          if (live === 0) registration = register();
+        },
+      };
+    },
+  };
+};
+
+/**
+ * Provides `threads.ask/v1`; `status` and `answer` are exposed to the
+ * desktop, `withholdTool` withholds the `ask` tool through `withholdTool`.
+ */
+export const askService = (withholdTool: () => Disposable) => {
   // The answer calls in flight, one chain per askId, so they run one at a time.
   const chains = new Map<string, Promise<void>>();
 
@@ -330,6 +364,11 @@ export const askService = () => {
 
           return { state: 'answered', answers: input.answers };
         }),
+    }),
+    // 1.2.0, host only: no `expose`.
+    withholdTool: defineMethod({
+      ...askMethods.withholdTool,
+      execute: (): Disposable => withholdTool(),
     }),
   });
 };

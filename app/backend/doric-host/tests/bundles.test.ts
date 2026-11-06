@@ -24,7 +24,10 @@ import {
 // dist/bundles with the composition it ships, through the real loader, and
 // with the kernel's embedded `host-config` and `transport`, as the host does.
 // The installed bundles run in a forked generation process. Activation opens
-// no database, so none of these cases needs one.
+// no database, so most of these cases need none. The default tool and skill
+// lists do (openui.md stage 3, D24): they follow the Generative UI setting,
+// read through `settings/v1`, and `ask` is withheld from the host's start
+// steps (`platform.start()`), which connect the storage backend.
 
 /** The built bundles the host stages, and the composition it ships. */
 const bundlesPath = 'app/backend/doric-host/dist/bundles';
@@ -123,6 +126,88 @@ const withHost = async (run: (host: Host) => Promise<void>): Promise<void> => {
   }
 };
 
+/** The options of a case that boots over a database. */
+const needsDatabase = {
+  skip:
+    process.env.DORIC_TEST_DATABASE_URL === undefined
+      ? 'Requires DORIC_TEST_DATABASE_URL'
+      : false,
+  timeout: 180_000,
+} as const;
+
+/**
+ * Boots over a fresh database and runs the host's start steps, as `main` does
+ * after the boot (`src/index.ts`); `start` boots another layout.
+ */
+const withStartedHost = async (
+  run: (host: Host) => Promise<void>,
+  start: () => Promise<Host> = () => boot(),
+): Promise<void> => {
+  const connectionString = process.env.DORIC_TEST_DATABASE_URL;
+  assert.ok(connectionString);
+  const { freshDatabase } = await import('./helpers/host.js');
+  const { credentialKey } = await import('./helpers/platform.js');
+  const database = await freshDatabase(connectionString);
+  const saved = {
+    url: process.env.DORIC_DATABASE_URL,
+    key: process.env.DORIC_CREDENTIAL_KEY,
+  };
+  process.env.DORIC_DATABASE_URL = database.url;
+  process.env.DORIC_CREDENTIAL_KEY = credentialKey;
+
+  try {
+    const host = await start();
+
+    try {
+      await host.platform.start();
+      await run(host);
+    } finally {
+      await host.platform.stop();
+    }
+  } finally {
+    process.env.DORIC_DATABASE_URL = saved.url;
+    process.env.DORIC_CREDENTIAL_KEY = saved.key;
+    if (saved.url === undefined) delete process.env.DORIC_DATABASE_URL;
+    if (saved.key === undefined) delete process.env.DORIC_CREDENTIAL_KEY;
+    await database.close();
+  }
+};
+
+/** Writes the Generative UI setting as a window writes it. */
+const setGenerativeUi = async (host: Host, enabled: boolean) => {
+  const { ref } = await import('bundle/contracts');
+  await host.platform.services
+    .use(
+      ref<{ set(value: { enabled: boolean }): Promise<unknown> }>(
+        'openui.setting/v1',
+      ),
+    )
+    .set({ enabled });
+};
+
+/** The tool and skill names the registries list now. */
+const listed = async (host: Host) => ({
+  tools: host.platform.services
+    .use(ToolsV1)
+    .list()
+    .map(({ tool }) => tool.name),
+  skills: (await host.platform.services.use(SkillsV1).list()).map(
+    ({ skill }) => skill.name,
+  ),
+});
+
+/** Polls until `check` holds; a setting reaches the bundles through a subscription. */
+const eventually = async (
+  check: () => Promise<boolean>,
+  message: () => Promise<string>,
+): Promise<void> => {
+  for (const end = Date.now() + 10_000; Date.now() < end; ) {
+    if (await check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.fail(await message());
+};
+
 void test('the default composition registers the GIT and MCP_TOKEN kinds when the git and mcp bundles activate', async () => {
   await withHost(async (host) => {
     const kinds = await host.platform.services.use(SecretsV1).kinds();
@@ -152,77 +237,87 @@ void test('the default composition registers the GIT and MCP_TOKEN kinds when th
   });
 });
 
-void test('the default composition exposes the pre-migration tools, in order, byte for byte', async () => {
-  await withHost(async (host) => {
-    const expected = JSON.parse(await readFixture('tools.json')) as unknown;
-    const tools = host.platform.services.use(ToolsV1).list();
+// B13 (openui.md stage 3): with the default setting the list has neither
+// `ask` nor `papercraft_preview`.
+void test(
+  'the default composition exposes the pre-migration tools, in order, byte for byte',
+  needsDatabase,
+  async () => {
+    await withStartedHost(async (host) => {
+      const expected = JSON.parse(await readFixture('tools.json')) as unknown;
+      const tools = host.platform.services.use(ToolsV1).list();
 
-    assert.deepEqual(
-      tools.map(({ tool }) => {
-        const { definition, settings } = tool as unknown as {
-          definition: unknown;
-          settings: unknown;
-        };
-        return { definition, settings };
-      }),
-      expected,
-    );
-    assert.deepEqual(
-      tools.map(({ tool }) => tool.name),
-      [
-        'cwd',
-        'edit',
-        'find',
-        'grep',
-        'terminal',
-        'tree',
-        'web',
-        'write',
-        'view-image',
-        'git',
-        'thread-spawn',
-        'thread-list',
-        'thread-get',
-        'thread-events',
-        'thread-send',
-        'thread-interrupt',
-        'thread-terminate',
-        'thread-restart',
-        'ask',
-        'papercraft_preview',
-        'comment_reply',
-      ],
-    );
-  });
-});
+      assert.deepEqual(
+        tools.map(({ tool }) => {
+          const { definition, settings } = tool as unknown as {
+            definition: unknown;
+            settings: unknown;
+          };
+          return { definition, settings };
+        }),
+        expected,
+      );
+      assert.deepEqual(
+        tools.map(({ tool }) => tool.name),
+        [
+          'cwd',
+          'edit',
+          'find',
+          'grep',
+          'terminal',
+          'tree',
+          'web',
+          'write',
+          'view-image',
+          'git',
+          'thread-spawn',
+          'thread-list',
+          'thread-get',
+          'thread-events',
+          'thread-send',
+          'thread-interrupt',
+          'thread-terminate',
+          'thread-restart',
+          'comment_reply',
+        ],
+      );
+    });
+  },
+);
 
-void test('skills and tools keep their canonical records and availability flags', async () => {
-  await withHost(async (host) => {
-    const expected = JSON.parse(
-      await readFixture('skills.json'),
-    ) as readonly SkillFixture[];
-    const skills = await host.platform.services.use(SkillsV1).list();
-    const tools = host.platform.services.use(ToolsV1).list();
+// B13 (openui.md stage 3): with the default setting the skills are `openui`
+// and `papercraft`, not `papercraft-preview`.
+void test(
+  'skills and tools keep their canonical records and availability flags',
+  needsDatabase,
+  async () => {
+    await withStartedHost(async (host) => {
+      const expected = JSON.parse(
+        await readFixture('skills.json'),
+      ) as readonly SkillFixture[];
+      const skills = await host.platform.services.use(SkillsV1).list();
+      const tools = host.platform.services.use(ToolsV1).list();
 
-    assert.deepEqual(
-      skills.map(({ alwaysAvailable, skill }) => ({
-        name: skill.name,
-        alwaysAvailable,
-        allowedTools: skill.allowedTools,
-        description: skill.description,
-        indexText: skill.indexText,
-      })),
-      expected.flatMap(({ skills: entries }) => entries),
-    );
-    assert.deepEqual(
-      tools.map(({ alwaysAvailable, tool }) => ({
-        name: tool.name,
-        alwaysAvailable,
-      })),
-      expected.flatMap(({ tools: entries }) => entries),
-    );
-  });
-});
+      assert.deepEqual(
+        skills.map(({ alwaysAvailable, skill }) => ({
+          name: skill.name,
+          alwaysAvailable,
+          allowedTools: skill.allowedTools,
+          description: skill.description,
+          indexText: skill.indexText,
+        })),
+        expected.flatMap(({ skills: entries }) => entries),
+      );
+      assert.deepEqual(
+        tools.map(({ alwaysAvailable, tool }) => ({
+          name: tool.name,
+          alwaysAvailable,
+        })),
+        expected.flatMap(({ tools: entries }) => entries),
+      );
+    });
+  },
+);
 
 void test('every first-party tool and skill carries an ascending global order key', async () => {
   // D10-5: the model-visible order no longer depends on which bundle owns a
@@ -408,25 +503,29 @@ void test('DORIC_SANDBOX_PROVIDER=firecracker boots the shipped composition with
   }
 });
 
-void test('GET /tools answers the pre-migration catalog through the installed transport', async () => {
-  await withHost(async (host) => {
-    const response = await fetch(`${host.url}/tools`);
-    const expected = (
-      JSON.parse(await readFixture('tools.json')) as {
-        definition: { name: string; description?: string };
-        settings: unknown[];
-      }[]
-    ).map(({ definition, settings }) => ({
-      name: definition.name,
-      description: definition.description,
-      settings,
-    }));
+void test(
+  'GET /tools answers the pre-migration catalog through the installed transport',
+  needsDatabase,
+  async () => {
+    await withStartedHost(async (host) => {
+      const response = await fetch(`${host.url}/tools`);
+      const expected = (
+        JSON.parse(await readFixture('tools.json')) as {
+          definition: { name: string; description?: string };
+          settings: unknown[];
+        }[]
+      ).map(({ definition, settings }) => ({
+        name: definition.name,
+        description: definition.description,
+        settings,
+      }));
 
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.deepEqual(await response.json(), { tools: expected });
-  });
-});
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+      assert.deepEqual(await response.json(), { tools: expected });
+    });
+  },
+);
 
 /**
  * A bundles root holding copies of the staged bundles, for altered layouts. It
@@ -854,3 +953,247 @@ void test('PC23: a papercraft skill load read from the log brings the library in
     await database.close();
   }
 });
+
+// B13 and PC20 (openui.md, papercraft-openui.md stage 3): with the default
+// setting, after the host's start steps, neither `ask` nor `papercraft_preview`
+// is a tool and the skills are `openui` and `papercraft`, not
+// `papercraft-preview`.
+void test(
+  'B13, PC20: with the default setting the tools have no ask and no papercraft_preview, and the skills have openui and papercraft and no papercraft-preview',
+  needsDatabase,
+  async () => {
+    await withStartedHost(async (host) => {
+      const { tools, skills } = await listed(host);
+
+      assert.ok(!tools.includes('ask'), tools.join(', '));
+      assert.ok(!tools.includes('papercraft_preview'), tools.join(', '));
+      assert.ok(skills.includes('openui'), skills.join(', '));
+      assert.ok(skills.includes('papercraft'), skills.join(', '));
+      assert.ok(!skills.includes('papercraft-preview'), skills.join(', '));
+    });
+  },
+);
+
+// PC20 and B16's lists (stage 3): with the setting off, `ask`,
+// `papercraft_preview` and `papercraft-preview` are listed and neither
+// `openui` nor `papercraft`; on again, none of the three.
+void test(
+  'PC20, B16: turning the setting off lists ask, papercraft_preview and papercraft-preview and neither openui nor papercraft; on again lists none of the three',
+  needsDatabase,
+  async () => {
+    await withStartedHost(async (host) => {
+      const off = async () => {
+        const { tools, skills } = await listed(host);
+        return (
+          tools.includes('ask') &&
+          tools.includes('papercraft_preview') &&
+          skills.includes('papercraft-preview') &&
+          !skills.includes('openui') &&
+          !skills.includes('papercraft')
+        );
+      };
+      const on = async () => {
+        const { tools, skills } = await listed(host);
+        return (
+          !tools.includes('ask') &&
+          !tools.includes('papercraft_preview') &&
+          !skills.includes('papercraft-preview') &&
+          skills.includes('openui') &&
+          skills.includes('papercraft')
+        );
+      };
+      const describe = async () => JSON.stringify(await listed(host));
+
+      await setGenerativeUi(host, false);
+      await eventually(off, describe);
+
+      await setGenerativeUi(host, true);
+      await eventually(on, describe);
+    });
+  },
+);
+
+// B16 (openui.md stage 3): a prompt started after the setting turned off
+// offers `ask` and `papercraft_preview` and lists `papercraft-preview`, and
+// neither `openui` nor `papercraft`; a prompt that started before the change
+// keeps the tools and skills it started with. A prompt runs only on a Project
+// that holds a sandbox lease, so `docker` is swapped for the
+// `nodeless-sandbox` fixture, as PC23 does.
+void test(
+  'B16: with the setting set to false, a prompt started after the change offers the old tools and skills; a prompt started before keeps its own',
+  needsDatabase,
+  async () => {
+    const { scriptedEndpoint, scriptedModel, settingPrompts } = await import(
+      './helpers/integration-provider.js'
+    );
+    const { defaultConfig } = await import('host-config/testing');
+    const model = await scriptedEndpoint();
+    const root = await stagedCopy();
+
+    try {
+      await cp(
+        join(generationFixtures, 'nodeless-sandbox'),
+        join(root, 'nodeless-sandbox'),
+        { recursive: true },
+      );
+      await cp(
+        join(root, 'docker', 'schemas'),
+        join(root, 'nodeless-sandbox', 'schemas'),
+        { recursive: true },
+      );
+
+      await withStartedHost(
+        async (host) => {
+          const request = async <T>(
+            path: string,
+            method = 'GET',
+            body?: unknown,
+          ): Promise<T> => {
+            const response = await fetch(`${host.url}${path}`, {
+              method,
+              headers: { 'content-type': 'application/json' },
+              ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+            });
+            assert.ok(
+              response.ok,
+              `${method} ${path}: ${await response.clone().text()}`,
+            );
+            return (
+              response.status === 204 ? undefined : await response.json()
+            ) as T;
+          };
+          const credential = await request<{ id: string }>(
+            '/credentials',
+            'POST',
+            { kind: 'API_TOKEN', name: 'scripted', secret: 'sk-scripted' },
+          );
+          await request('/config', 'PUT', {
+            ...defaultConfig,
+            providers: [
+              {
+                id: 'scripted',
+                kind: 'openrouter',
+                configuration: {
+                  endpoint: model.endpoint,
+                  token: credential.id,
+                },
+                models: [{ name: scriptedModel, reasonings: [] }],
+              },
+            ],
+            models: {
+              execution: { providerId: 'scripted', model: scriptedModel },
+            },
+          });
+          const project = await request<{ id: string }>('/projects', 'POST', {
+            name: 'B16',
+          });
+          const thread = await request<{ id: string }>(
+            `/projects/${project.id}/threads`,
+            'POST',
+            { name: 'B16 thread' },
+          );
+          const finished = async (promptId: string) => {
+            for (const end = Date.now() + 120_000; Date.now() < end; ) {
+              const { events } = await request<{
+                events: { type: string; promptId: string }[];
+              }>(`/threads/${thread.id}/events`);
+              if (
+                events.some(
+                  (event) =>
+                    event.type === 'prompt.finished' &&
+                    event.promptId === promptId,
+                )
+              ) {
+                return;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 250));
+            }
+            assert.fail(`prompt ${promptId} did not finish`);
+          };
+
+          // Prompt A starts with the default setting; its first request waits.
+          const before = await request<{ promptId: string }>(
+            `/threads/${thread.id}/prompt`,
+            'POST',
+            { prompt: settingPrompts.before },
+          );
+          await model.beforeHeld;
+
+          await setGenerativeUi(host, false);
+          await eventually(
+            async () => {
+              const { tools, skills } = await listed(host);
+              return (
+                tools.includes('ask') &&
+                tools.includes('papercraft_preview') &&
+                skills.includes('papercraft-preview')
+              );
+            },
+            async () => JSON.stringify(await listed(host)),
+          );
+          model.releaseBefore();
+          await finished(before.promptId);
+
+          const after = await request<{ promptId: string }>(
+            `/threads/${thread.id}/prompt`,
+            'POST',
+            { prompt: settingPrompts.after },
+          );
+          await finished(after.promptId);
+
+          assert.deepEqual(model.failures, []);
+          const system = (
+            messages: readonly { role: string; content?: unknown }[],
+          ) =>
+            JSON.stringify(
+              messages.find(({ role }) => role === 'system')?.content ?? '',
+            );
+          const row = (name: string) => `| ${name} |`;
+
+          // A's request after the change, the one that follows its tool result.
+          const late = model.requests.find(
+            ({ messages, tools }) =>
+              tools.length > 0 &&
+              JSON.stringify(messages).includes(settingPrompts.before) &&
+              messages.at(-1)?.role === 'tool',
+          );
+          assert.ok(late, 'prompt A made a request after the change');
+          assert.ok(!late.tools.includes('ask'), late.tools.join(', '));
+          assert.ok(
+            !late.tools.includes('papercraft_preview'),
+            late.tools.join(', '),
+          );
+          assert.ok(system(late.messages).includes(row('openui')));
+          assert.ok(system(late.messages).includes(row('papercraft')));
+          assert.ok(!system(late.messages).includes(row('papercraft-preview')));
+
+          const fresh = model.requests.find(
+            ({ messages, tools }) =>
+              tools.length > 0 &&
+              JSON.stringify(messages).includes(settingPrompts.after),
+          );
+          assert.ok(fresh, 'prompt B reached the model');
+          assert.ok(fresh.tools.includes('ask'), fresh.tools.join(', '));
+          assert.ok(
+            fresh.tools.includes('papercraft_preview'),
+            fresh.tools.join(', '),
+          );
+          assert.ok(system(fresh.messages).includes(row('papercraft-preview')));
+          assert.ok(!system(fresh.messages).includes(row('openui')));
+          assert.ok(!system(fresh.messages).includes(row('papercraft')));
+        },
+        () =>
+          startWith(root, (composition) => ({
+            ...composition,
+            enabled: composition.enabled.map((id) =>
+              id === 'docker' ? 'nodeless-sandbox' : id,
+            ),
+          })),
+      );
+    } finally {
+      model.releaseBefore();
+      await rm(root, { recursive: true, force: true });
+      await model.close();
+    }
+  },
+);

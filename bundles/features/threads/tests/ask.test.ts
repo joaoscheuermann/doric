@@ -138,6 +138,66 @@ describe('ask tool registration', () => {
   });
 });
 
+describe('threads.ask/v1.withholdTool', () => {
+  const listedNames = (harness: AskHarness): string[] =>
+    harness.listed().map(({ tool }) => tool.name);
+
+  // B11
+  test('while a withhold is live, tools/v1 lists no ask; disposing the last of two registers it again at order 1660, always available', async () => {
+    await withHarness(async (harness) => {
+      assert.ok(listedNames(harness).includes('ask'));
+
+      const first = harness.ask.withholdTool();
+      const second = harness.ask.withholdTool();
+
+      assert.ok(
+        !listedNames(harness).includes('ask'),
+        listedNames(harness).join(', '),
+      );
+      assert.ok(listedNames(harness).includes('thread-spawn'));
+
+      first.dispose();
+      assert.ok(
+        !listedNames(harness).includes('ask'),
+        'one withhold is still live',
+      );
+
+      // A second dispose of the same withhold is a no-op: it does not release the other.
+      first.dispose();
+      assert.ok(!listedNames(harness).includes('ask'));
+
+      second.dispose();
+      const asks = harness.listed().filter(({ tool }) => tool.name === 'ask');
+      assert.equal(asks.length, 1);
+      assert.equal(asks[0]?.options.order, 1660);
+      assert.equal(asks[0]?.options.alwaysAvailable, true);
+
+      second.dispose();
+      assert.equal(
+        harness.listed().filter(({ tool }) => tool.name === 'ask').length,
+        1,
+      );
+    });
+  });
+
+  // B11 (contract): status and answer keep working while ask is withheld.
+  test('status and answer of an earlier ask still answer while the tool is withheld', async () => {
+    await withHarness(async (harness) => {
+      const askId = await askFor(harness, { questions: [approval] });
+      const withheld = harness.ask.withholdTool();
+
+      assert.equal((await status(harness, askId)).state, 'pending');
+      assert.equal(
+        (await answer(harness, askId, [{ id: 'approve', options: ['Yes'] }]))
+          .state,
+        'answered',
+      );
+
+      withheld.dispose();
+    });
+  });
+});
+
 describe('ask tool payload', () => {
   const option = (label: string) => ({ label });
   const question = (overrides: Record<string, unknown> = {}) => ({

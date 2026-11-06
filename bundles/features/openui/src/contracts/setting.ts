@@ -1,5 +1,6 @@
 // The Generative UI setting (openui.md D24): the `openui.generative-ui/v1`
-// space, global, off by default in 1.0.0, and `openui.setting/v1`, through
+// space, global, off by default in 1.0.0 and on by default from 1.1.0
+// (stage 3), and `openui.setting/v1`, through
 // which windows read and write it (`settings/v1` does not cross the bridge).
 
 import {
@@ -15,10 +16,14 @@ import {
 } from 'bundle/contracts';
 import { z } from 'zod';
 
-/** The `openui.generative-ui/v1` space; a space never written reads `{ enabled: false }`. */
+/**
+ * The `openui.generative-ui/v1` space (1.1.0). A space never written reads
+ * `{ enabled: true }`; a stored value, including a `false` written under
+ * 1.0.0, is read as stored and never replaced by the default.
+ */
 export const generativeUiSetting = defineSettings({
   id: 'openui.generative-ui/v1',
-  schema: z.object({ enabled: z.boolean().default(false) }).strict(),
+  schema: z.object({ enabled: z.boolean().default(true) }).strict(),
 });
 
 export interface GenerativeUiSetting {
@@ -35,7 +40,7 @@ export const generativeUiSettingSchema = z
  * fails `generativeUiSettingSchema`; the errors of `settings/v1` otherwise.
  */
 export interface OpenuiSetting {
-  /** The stored value, or the default `{ enabled: false }`. */
+  /** The stored value, or the default `{ enabled: true }`. */
   get(call?: CallArg): Promise<GenerativeUiSetting>;
   /** Writes the space with `settings/v1.set` and answers the stored value. */
   set(input: GenerativeUiSetting, call?: CallArg): Promise<GenerativeUiSetting>;

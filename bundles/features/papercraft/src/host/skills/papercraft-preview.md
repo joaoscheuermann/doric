@@ -1,14 +1,3 @@
----
-name: papercraft-preview
-description: 'Publishes a visual change as a live preview node of the conversation, built from real code, instead of describing it. Use when the change is easier to judge by looking than by reading a diff, and the user should see it, comment on it and steer it.'
-allowed-tools:
-  - papercraft_preview
-  - comment_reply
-  - write
-  - edit
-order: 3400
----
-
 # Papercraft Preview
 
 ## Purpose

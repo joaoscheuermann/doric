@@ -195,15 +195,23 @@ export interface Registration {
 }
 
 /** A recording `tools/v1`, standing for the core's registry. */
-const fakeTools = (registered: Registration[]): AnyServiceDefinition =>
+const fakeTools = (
+  registered: Registration[],
+  disposed: Set<Registration>,
+): AnyServiceDefinition =>
   defineService(ToolsV1, {
     register: defineMethod({
       input: toolsMethods.register.input,
       output: toolsMethods.register.output,
       execute: ([tool, options]) => {
-        registered.push({ tool, options });
+        const entry = { tool, options };
+        registered.push(entry);
 
-        return inert;
+        return {
+          dispose: () => {
+            disposed.add(entry);
+          },
+        };
       },
     }),
     list: defineMethod({
@@ -239,8 +247,10 @@ export interface AskHarness {
   readonly call: (scope?: CallScope) => Call;
   /** `threads.ask/v1`, as the desktop reaches it. */
   readonly ask: Ask;
-  /** What the bundle registered in `tools/v1`. */
+  /** What the bundle registered in `tools/v1`, disposed or not, in order. */
   readonly registered: readonly Registration[];
+  /** The registrations not disposed since, in registration order: what `tools/v1` lists. */
+  readonly listed: () => readonly Registration[];
   /** Every registered tool, as the agent loop sees them for one prompt call. */
   readonly tools: (scope?: CallScope) => readonly Tool[];
   close(): Promise<void>;
@@ -254,12 +264,13 @@ export const askHarness = async (
   const steers: SteerInput[] = [];
   const steer = { outcome: options.steer };
   const registered: Registration[] = [];
+  const disposed = new Set<Registration>();
   const harness = createTestServices({
     bundle: { id: 'threads' },
     provide: [
       fakeEvents(log),
       fakeThreads(log, thread, steers, steer),
-      fakeTools(registered),
+      fakeTools(registered, disposed),
     ],
   });
 
@@ -275,6 +286,7 @@ export const askHarness = async (
     call: (scope: CallScope = promptScope) => harness.call(scope),
     ask: harness.services.use(AskV1),
     registered,
+    listed: () => registered.filter((entry) => !disposed.has(entry)),
     tools: (scope: CallScope = promptScope) =>
       registered.map(({ tool }) => {
         if (!isBoundTool(tool)) {

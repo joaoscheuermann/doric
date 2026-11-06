@@ -1,6 +1,7 @@
 // The `papercraft` bundle's host part: provides `papercraft.previews/v1`,
-// registers the `preview` kind in the artifacts registry and registers the
-// `papercraft_preview` tool at its global model-visible position.
+// registers the `preview` kind in the artifacts registry and, while the
+// Generative UI setting is off, the `papercraft_preview` tool at its global
+// model-visible position and the `papercraft-preview` skill.
 //
 // It also serves papercraft fences (papercraft-openui.md D10, D14, D28):
 // `papercraft.programs/v1` over the host memo and the Project's sandbox, the
@@ -16,6 +17,7 @@
 import { readFileSync } from 'node:fs';
 
 import {
+  AppHooksV1,
   type Cleanup,
   type Disposable,
   EventsV1,
@@ -51,6 +53,21 @@ const skill = {
 /** D28's options: after `openui`'s 3400, listed and loaded on demand. */
 const skillOptions = { order: 3410, alwaysAvailable: false } as const;
 
+/** The old preview path's `papercraft-preview` skill (D24, stage 3). */
+const previewSkill = {
+  name: 'papercraft-preview',
+  description:
+    'Publishes a visual change as a live preview node of the conversation, built from real code, instead of describing it. Use when the change is easier to judge by looking than by reading a diff, and the user should see it, comment on it and steer it.',
+  allowedTools: ['papercraft_preview', 'comment_reply', 'write', 'edit'],
+  body: readFileSync(
+    new URL('./skills/papercraft-preview.md', import.meta.url),
+    'utf8',
+  ).trim(),
+};
+
+/** Listed in the index and loaded on demand. */
+const previewSkillOptions = { order: 3400, alwaysAvailable: false } as const;
+
 export const activate = async ({ services }: HostContext): Promise<Cleanup> => {
   services.provide(papercraftPreviewsService);
 
@@ -61,12 +78,6 @@ export const activate = async ({ services }: HostContext): Promise<Cleanup> => {
   const kind = await services
     .use(ArtifactKindV1)
     .register(previewKind(services));
-
-  // The global model-visible position, the next free band after `threads`
-  // (1000–1600).
-  services
-    .use(ToolsV1)
-    .register(tool, { alwaysAvailable: true, order: PAPERCRAFT_PREVIEW_ORDER });
 
   // Papercraft fences (D10, D14): the programs service over the sandbox, its
   // binding read from the Thread's `papercraft.cwd/v1` events.
@@ -112,11 +123,47 @@ export const activate = async ({ services }: HostContext): Promise<Cleanup> => {
     }
   };
 
+  // The old preview path exists only while the setting is off (D24): the
+  // `papercraft_preview` tool, at the next free band after `threads`
+  // (1000–1600), then the `papercraft-preview` skill that allows it; turning
+  // the setting on disposes the skill first.
+  let previewTool: Disposable | undefined;
+  let previewSkillRegistered: Disposable | undefined;
+  const followPreview = (enabled: boolean): void => {
+    if (stopped) return;
+    if (!enabled && previewTool === undefined) {
+      previewTool = services.use(ToolsV1).register(tool, {
+        alwaysAvailable: true,
+        order: PAPERCRAFT_PREVIEW_ORDER,
+      });
+      previewSkillRegistered = services
+        .use(SkillsV1)
+        .register(previewSkill, previewSkillOptions);
+    } else if (enabled && previewTool !== undefined) {
+      previewSkillRegistered?.dispose();
+      previewSkillRegistered = undefined;
+      previewTool.dispose();
+      previewTool = undefined;
+    }
+  };
+
   let written = false;
   const subscription = settings.subscribe(generativeUiSetting, (entry) => {
     written = true;
     follow(entry.value.enabled);
+    followPreview(entry.value.enabled);
   });
+
+  // Storage connects at host start, and the tools the preview skill allows
+  // are live once every bundle has loaded, so the value is read again there.
+  const hostStart = services
+    .use(HooksV1)
+    .use(AppHooksV1)
+    .onHostStartHook(async () => {
+      const { enabled } = await settings.get(generativeUiSetting);
+      follow(enabled);
+      followPreview(enabled);
+    });
   void Promise.resolve()
     .then(() => settings.get(generativeUiSetting))
     .then(
@@ -129,8 +176,13 @@ export const activate = async ({ services }: HostContext): Promise<Cleanup> => {
   return () => {
     stopped = true;
     subscription.dispose();
+    hostStart.dispose();
     registered?.dispose();
     registered = undefined;
+    previewSkillRegistered?.dispose();
+    previewSkillRegistered = undefined;
+    previewTool?.dispose();
+    previewTool = undefined;
     hooks.dispose();
     kind.dispose();
   };

@@ -6,7 +6,9 @@
 import { readFileSync } from 'node:fs';
 
 import {
+  AppHooksV1,
   type Cleanup,
+  ContractError,
   type Disposable,
   EventsV1,
   HooksV1,
@@ -15,6 +17,7 @@ import {
   SkillsV1,
 } from 'bundle/contracts';
 import { RuntimeHooksV1 } from 'runtime/contracts';
+import { AskV1 } from 'threads/contracts';
 
 import { answeredEvent, generativeUiSetting } from '../contracts/index.js';
 import { questionsService } from './questions.js';
@@ -71,11 +74,42 @@ export const activate = ({ services }: HostContext): Cleanup => {
     }
   };
 
+  // While the setting is on, `threads`' `ask` is withheld (D24, C10); with
+  // no active provider of `threads.ask/v1` nothing is held, and the next
+  // value that is on tries again.
+  let withheld: Disposable | undefined;
+  const withhold = (enabled: boolean): void => {
+    if (stopped) return;
+    if (enabled && withheld === undefined) {
+      try {
+        withheld = services.use(AskV1).withholdTool();
+      } catch (error) {
+        if (!(error instanceof ContractError && error.code === 'unavailable')) {
+          throw error;
+        }
+      }
+    } else if (!enabled && withheld !== undefined) {
+      withheld.dispose();
+      withheld = undefined;
+    }
+  };
+
   let written = false;
   const subscription = settings.subscribe(generativeUiSetting, (entry) => {
     written = true;
     follow(entry.value.enabled);
+    withhold(entry.value.enabled);
   });
+
+  // Storage connects at host start, so the value is read again there.
+  const hostStart = services
+    .use(HooksV1)
+    .use(AppHooksV1)
+    .onHostStartHook(async () => {
+      const { enabled } = await settings.get(generativeUiSetting);
+      follow(enabled);
+      withhold(enabled);
+    });
   void Promise.resolve()
     .then(() => settings.get(generativeUiSetting))
     .then(
@@ -88,8 +122,11 @@ export const activate = ({ services }: HostContext): Cleanup => {
   return () => {
     stopped = true;
     subscription.dispose();
+    hostStart.dispose();
     registered?.dispose();
     registered = undefined;
+    withheld?.dispose();
+    withheld = undefined;
     hooks.dispose();
   };
 };

@@ -4,7 +4,9 @@
 // `history.truncated` marker is appended), `runtime.hooks/v1` through a
 // recording `hooks/v1`, `events/v1` (an append becomes a row of the log, and
 // is refused without a prompt scope), `settings/v1` (one value per space,
-// with live subscribers), `skills/v1` and `tools/v1` (recording registries),
+// with live subscribers), `skills/v1` and `tools/v1` (recording registries;
+// with `otherTools`, `skills/v1.register` applies the core's rule and raises
+// `unavailable_tool` for an `allowedTools` entry no live tool has),
 // `artifact.kind/v1`, `runtime.lease/v1` (no lease, or a given sandbox) and
 // `files/v1` (a map of files, or none).
 //
@@ -14,8 +16,10 @@
 import {
   type Activate,
   type AnyServiceDefinition,
+  AppHooksV1,
   type Call,
   type CallScope,
+  ContractError,
   type Disposable,
   defineMethod,
   defineService,
@@ -129,6 +133,19 @@ export interface WorldOptions {
   readonly directories?: readonly string[];
   /** `skills/v1.register` throws this error when given. */
   readonly skillError?: Error;
+  /**
+   * Tools other bundles register, live once every bundle has loaded (at
+   * `hostStart`). When given, `skills/v1.register` checks every
+   * `allowedTools` entry against the live tools, as the core's registry does.
+   */
+  readonly otherTools?: readonly string[];
+}
+
+/** One registration or disposal `tools/v1` or `skills/v1` saw, in order. */
+export interface RegistryStep {
+  readonly action: 'register' | 'dispose';
+  readonly kind: 'tool' | 'skill';
+  readonly name: string;
 }
 
 export interface World {
@@ -146,6 +163,18 @@ export interface World {
     disposed: boolean;
   }[];
   readonly tools: string[];
+  /** Every `tools/v1.register` call, with its options and whether it was disposed since. */
+  readonly toolRegistrations: {
+    readonly name: string;
+    readonly options: unknown;
+    disposed: boolean;
+  }[];
+  /** Every registration and disposal of `tools/v1` and `skills/v1`, in order. */
+  readonly registry: RegistryStep[];
+  /** The errors `skills/v1.register` raised. */
+  readonly skillErrors: Error[];
+  /** The tool names live now: `otherTools` once loaded, then this bundle's not disposed. */
+  liveTools(): string[];
   /** `events/v1.append` runs this first; a throw rejects the append. */
   appendCheck: (input: {
     readonly type: string;
@@ -179,6 +208,8 @@ export interface World {
 }
 
 export interface ActiveHost {
+  /** Fires `doric.app.hooks/v1.onHostStartHook` once every bundle has loaded; `otherTools` go live first. */
+  hostStart(): Promise<void>;
   promptStarted(input: {
     readonly threadId: string;
     readonly promptId: string;
@@ -222,6 +253,16 @@ export const world = (options: WorldOptions = {}): World => {
   const registeredEvents: string[] = [];
   const skills: World['skills'] = [];
   const tools: string[] = [];
+  const toolRegistrations: World['toolRegistrations'] = [];
+  const registry: RegistryStep[] = [];
+  const skillErrors: Error[] = [];
+  let othersLoaded = false;
+  const liveTools = (): string[] => [
+    ...(othersLoaded ? (options.otherTools ?? []) : []),
+    ...toolRegistrations
+      .filter(({ disposed }) => !disposed)
+      .map(({ name }) => name),
+  ];
   const hookHandlers: { hook: string; handler: Handler }[] = [];
   const subscribers = new Set<(entry: SettingsEntry) => void>();
   let enabled = options.enabled ?? true;
@@ -376,14 +417,28 @@ export const world = (options: WorldOptions = {}): World => {
       { alwaysAvailable?: boolean; order?: number } | undefined,
     ]) => {
       if (options.skillError !== undefined) throw options.skillError;
+      if (options.otherTools !== undefined) {
+        const live = new Set(liveTools());
+        const missing = skill.allowedTools?.find((name) => !live.has(name));
+        if (missing !== undefined) {
+          const error = new ContractError(
+            'unavailable_tool',
+            `Skill "${skill.name}" references unavailable tool "${missing}".`,
+          );
+          skillErrors.push(error);
+          throw error;
+        }
+      }
       const entry: World['skills'][number] = {
         skill,
         ...(registration === undefined ? {} : { options: registration }),
         disposed: false,
       };
       skills.push(entry);
+      registry.push({ action: 'register', kind: 'skill', name: skill.name });
       return once(() => {
         entry.disposed = true;
+        registry.push({ action: 'dispose', kind: 'skill', name: skill.name });
       });
     },
     list: (): RegisteredSkill[] =>
@@ -394,11 +449,19 @@ export const world = (options: WorldOptions = {}): World => {
 
   const toolRegistry = fake('tools/v1', toolsMethods, {
     register: (input: unknown) => {
-      const [tool] = (Array.isArray(input) ? input : [input]) as [
+      const [tool, registration] = (Array.isArray(input) ? input : [input]) as [
         { readonly name?: string; readonly definition?: { name?: string } },
+        unknown,
       ];
-      tools.push(tool.name ?? tool.definition?.name ?? '');
-      return once(() => undefined);
+      const name = tool.name ?? tool.definition?.name ?? '';
+      tools.push(name);
+      const entry = { name, options: registration, disposed: false };
+      toolRegistrations.push(entry);
+      registry.push({ action: 'register', kind: 'tool', name });
+      return once(() => {
+        entry.disposed = true;
+        registry.push({ action: 'dispose', kind: 'tool', name });
+      });
     },
     list: () => [],
     catalog: () => [],
@@ -479,6 +542,10 @@ export const world = (options: WorldOptions = {}): World => {
     registeredEvents,
     skills,
     tools,
+    toolRegistrations,
+    registry,
+    skillErrors,
+    liveTools,
     get appendCheck() {
       return state.appendCheck;
     },
@@ -540,6 +607,15 @@ export const world = (options: WorldOptions = {}): World => {
       const cleanup = await activate({ services: test.services });
 
       return {
+        hostStart: async () => {
+          othersLoaded = true;
+          const call = test.call();
+          for (const entry of hookHandlers.filter(
+            ({ hook }) => hook === `${AppHooksV1.id}#onHostStartHook`,
+          )) {
+            await entry.handler({} as never, call);
+          }
+        },
         promptStarted: async ({ threadId, promptId, cwd }) => {
           await fire(
             'onPromptStartedHook',

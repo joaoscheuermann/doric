@@ -2,15 +2,18 @@
 // `runtime.threads/v1` (a Thread table, a log with the runtime's rewind rule,
 // and the route's methods), `runtime.hooks/v1` through a recording `hooks/v1`,
 // `events/v1` (appends become rows of the fake log), `settings/v1` (one value
-// per space, with live subscribers) and `skills/v1` (a recording registry).
+// per space, with live subscribers), `skills/v1` (a recording registry) and,
+// when a test asks for it, `threads.ask/v1` (only `withholdTool`, recorded).
 // The bundle's own contracts are reached through its services, with the scope
 // a window's call carries.
 
 import {
   type Activate,
   type AnyServiceDefinition,
+  AppHooksV1,
   type Call,
   type CallScope,
+  ContractError,
   type Disposable,
   defineMethod,
   defineService,
@@ -36,6 +39,7 @@ import {
   type ThreadEvent,
   type ThreadQueue,
 } from 'runtime/contracts';
+import { AskV1, askMethods } from 'threads/contracts';
 
 /** The host entry, imported by URL: `src/host/index.ts` is the module under test. */
 const HOST_ENTRY = new URL('../../src/host/index.js', import.meta.url).href;
@@ -206,6 +210,18 @@ export interface HostWorld {
   }[];
   /** The settings spaces `settings/v1.register` received. */
   readonly registeredSpaces: string[];
+  /**
+   * Every `threads.ask/v1.withholdTool` call, in order: `held` when it
+   * answered a Disposable (then `disposed` tells whether it was disposed
+   * since), not `held` when it raised `unavailable`.
+   */
+  readonly withholds: { readonly held: boolean; disposed: boolean }[];
+  /** Whether `ask` is listed: no withhold is live (meaningful with `ask`). */
+  askListed(): boolean;
+  /** Whether `threads.ask/v1.withholdTool` answers or raises `unavailable`. */
+  setAskAvailable(available: boolean): void;
+  /** Fires `doric.app.hooks/v1.onHostStartHook`, as the host does once every bundle has loaded. */
+  hostStart(): Promise<void>;
   /** Writes a space through `settings/v1`, as another bundle would, and tells its subscribers. */
   writeSetting(id: string, value: unknown): void;
   /** Fires `runtime.hooks/v1.onPromptStartedHook` for a prompt of a Thread and awaits its handlers. */
@@ -222,7 +238,15 @@ export interface HostWorld {
 
 /** Activates the `openui` host over the fakes. */
 export const activateHost = async (
-  options: { readonly settings?: Readonly<Record<string, unknown>> } = {},
+  options: {
+    readonly settings?: Readonly<Record<string, unknown>>;
+    /**
+     * Provide a fake `threads.ask/v1`: `available` answers `withholdTool`,
+     * `unavailable` raises `unavailable` until `setAskAvailable(true)`.
+     * Absent: no bundle provides it.
+     */
+    readonly ask?: 'available' | 'unavailable';
+  } = {},
 ): Promise<HostWorld> => {
   const threads = new Map<string, Thread>();
   const queues = new Map<string, ThreadQueue>();
@@ -239,6 +263,8 @@ export const activateHost = async (
   const revisions = new Map<string, number>();
   const subscribers = new Map<string, Set<(entry: SettingsEntry) => void>>();
   const hookHandlers: { hook: string; handler: Handler }[] = [];
+  const withholds: HostWorld['withholds'] = [];
+  let askAvailable = options.ask === 'available';
   let inHook = 0;
   let sequence = 0;
 
@@ -443,9 +469,30 @@ export const activateHost = async (
     list: (): RegisteredSkill[] => [],
   });
 
+  const ask = fake(AskV1.id, askMethods, {
+    withholdTool: () => {
+      if (!askAvailable) {
+        withholds.push({ held: false, disposed: false });
+        throw new ContractError('unavailable', 'threads.ask/v1 is not active.');
+      }
+      const entry = { held: true, disposed: false };
+      withholds.push(entry);
+      return once(() => {
+        entry.disposed = true;
+      });
+    },
+  });
+
   const test = createTestServices({
     bundle: { id: 'openui' },
-    provide: [runtime, hooks, events, settings, skillRegistry],
+    provide: [
+      runtime,
+      hooks,
+      events,
+      settings,
+      skillRegistry,
+      ...(options.ask === undefined ? [] : [ask]),
+    ],
   });
 
   const { activate } = (await import(HOST_ENTRY)) as {
@@ -465,6 +512,19 @@ export const activateHost = async (
     registeredEvents,
     skills,
     registeredSpaces,
+    withholds,
+    askListed: () => !withholds.some(({ held, disposed }) => held && !disposed),
+    setAskAvailable: (available) => {
+      askAvailable = available;
+    },
+    hostStart: async () => {
+      const call = test.call();
+      for (const entry of hookHandlers.filter(
+        ({ hook }) => hook === `${AppHooksV1.id}#onHostStartHook`,
+      )) {
+        await entry.handler({} as never, call);
+      }
+    },
     writeSetting,
     promptStarted: async (threadId, promptId) => {
       const thread = threads.get(threadId);
