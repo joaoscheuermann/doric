@@ -26,6 +26,7 @@ import {
   promptMessage,
   promptSummary,
   sentComments,
+  uiActionEnvelope,
   withPromptMessage,
 } from '../src/client/domain/prompt-envelope.js';
 import type { ComposerItem } from '../src/contracts/index.js';
@@ -441,5 +442,81 @@ describe('the comments a prompt carries', () => {
       [],
     );
     assert.deepEqual(sentComments('texto simples', [messageComment('x')]), []);
+  });
+});
+
+// The `<ui-action>` envelope (conversation-openui.md D20, C4): the text a
+// control of a UI the agent drew sends, marked with the program it came from.
+describe('the ui-action envelope', () => {
+  const text = 'Tag the release\n\nrelease.version: 1.4.0';
+  const stored =
+    '<ui-action program="release">\nTag the release\n\nrelease.version: 1.4.0\n</ui-action>';
+
+  test('wraps the text in one element named for its program', () => {
+    assert.equal(uiActionEnvelope(text, 'release'), stored);
+  });
+
+  test('reads back as its text, no comments and the program, also through the runtime wrapper', () => {
+    const expected = {
+      message: text,
+      comments: [],
+      action: { program: 'release' },
+    };
+    assert.deepEqual(
+      parsePromptEnvelope(uiActionEnvelope(text, 'release')),
+      expected,
+    );
+    assert.deepEqual(
+      parsePromptEnvelope(`<user-request>\n${stored}\n</user-request>`),
+      expected,
+    );
+    assert.equal(promptMessage(stored), text);
+    assert.equal(promptSummary(stored), text);
+  });
+
+  test('an anonymous program reads back as written', () => {
+    assert.deepEqual(
+      parsePromptEnvelope(uiActionEnvelope('Pick', '_2'))?.action,
+      { program: '_2' },
+    );
+  });
+
+  test('a body holding </ui-action> stays one element', () => {
+    const tricky = 'Send </ui-action> as written';
+    const parsed = parsePromptEnvelope(uiActionEnvelope(tricky, 'release'));
+    assert.equal(parsed?.message, tricky);
+    assert.deepEqual(parsed?.action, { program: 'release' });
+  });
+
+  test('a text with words before or after the element is not an envelope', () => {
+    for (const plain of [
+      `${stored}\nand more words`,
+      `Before\n${stored}`,
+      `${stored}\n${stored}`,
+    ]) {
+      assert.equal(parsePromptEnvelope(plain), undefined, plain);
+      assert.equal(promptMessage(plain), plain);
+    }
+  });
+
+  test("the host's cut preview reads as the action's words", () => {
+    const collapse = (value: string) =>
+      value.replace(/\s+/g, ' ').trim().slice(0, 240);
+    assert.equal(
+      previewSummary(collapse(uiActionEnvelope('Tag the release', 'release'))),
+      'Tag the release',
+    );
+    // Cut before its end, it reads up to the cut.
+    assert.equal(
+      previewSummary('<ui-action program="release"> Tag the rel'),
+      'Tag the rel',
+    );
+  });
+
+  test('editing a queued UI-action prompt makes it a plain message', () => {
+    assert.equal(
+      withPromptMessage(stored, '  Tag 1.5.0 instead  '),
+      '<message>\nTag 1.5.0 instead\n</message>',
+    );
   });
 });

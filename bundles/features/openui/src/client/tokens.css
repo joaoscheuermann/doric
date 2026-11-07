@@ -1,0 +1,125 @@
+/*
+ * Doric's tokens for OpenUI's components (openui.md D31): every `--openui-*`
+ * variable whose value differs between react-ui 0.18.1's light and dark
+ * blocks, 42 of its 215, set from Doric's own tokens
+ * (packages/desktop/src/styles/tokens.css). In `openui-doric`, declared after
+ * `openui`, so react-ui's dark blocks change nothing and a fence follows
+ * Doric's theme. On `:root`, so popovers portaled to `document.body` take
+ * them too.
+ */
+@layer openui, openui-doric;
+
+@layer openui-doric {
+  :root {
+    --openui-background: var(--background);
+    --openui-foreground: var(--card);
+    --openui-popover-background: var(--popover);
+
+    --openui-sunk-light: color-mix(in oklch, var(--foreground) 2%, transparent);
+    --openui-sunk: color-mix(in oklch, var(--foreground) 4%, transparent);
+    --openui-sunk-deep: color-mix(in oklch, var(--foreground) 8%, transparent);
+
+    --openui-elevated-light: color-mix(
+      in oklch,
+      var(--foreground) 4%,
+      transparent
+    );
+    --openui-elevated: color-mix(in oklch, var(--foreground) 8%, transparent);
+    --openui-elevated-strong: color-mix(
+      in oklch,
+      var(--foreground) 16%,
+      transparent
+    );
+    --openui-elevated-intense: color-mix(
+      in oklch,
+      var(--foreground) 32%,
+      transparent
+    );
+
+    --openui-highlight-subtle: color-mix(
+      in oklch,
+      var(--foreground) 2%,
+      transparent
+    );
+    --openui-highlight: color-mix(in oklch, var(--foreground) 4%, transparent);
+    --openui-highlight-strong: color-mix(
+      in oklch,
+      var(--foreground) 8%,
+      transparent
+    );
+    --openui-highlight-intense: color-mix(
+      in oklch,
+      var(--foreground) 32%,
+      transparent
+    );
+
+    --openui-overlay: color-mix(in oklch, black 50%, transparent);
+    --openui-inverted-background: var(--foreground);
+
+    --openui-text-neutral-primary: var(--foreground);
+    --openui-text-neutral-secondary: var(--muted-foreground);
+    --openui-text-neutral-tertiary: color-mix(
+      in oklch,
+      var(--foreground) 20%,
+      transparent
+    );
+    --openui-text-neutral-link: var(--primary);
+
+    --openui-chat-user-response-bg: color-mix(
+      in oklch,
+      var(--foreground) 8%,
+      transparent
+    );
+    --openui-chat-user-response-text: var(--foreground);
+
+    --openui-text-success-primary: var(--paper-green);
+    --openui-text-alert-primary: var(--warning);
+    --openui-text-info-primary: var(--primary);
+
+    --openui-text-danger-primary: var(--destructive);
+    --openui-text-danger-secondary: color-mix(
+      in oklch,
+      var(--destructive) 70%,
+      var(--background)
+    );
+    --openui-text-danger-tertiary: color-mix(
+      in oklch,
+      var(--destructive) 45%,
+      var(--background)
+    );
+
+    --openui-text-pink-primary: color-mix(
+      in oklch,
+      var(--destructive) 70%,
+      var(--chart-1)
+    );
+    --openui-text-purple-primary: var(--chart-1);
+
+    --openui-border-default: var(--border);
+    --openui-border-interactive: var(--input);
+    --openui-border-interactive-emphasis: color-mix(
+      in oklch,
+      var(--foreground) 30%,
+      transparent
+    );
+    --openui-border-interactive-selected: var(--foreground);
+    --openui-border-accent: color-mix(
+      in oklch,
+      var(--primary) 15%,
+      transparent
+    );
+    --openui-border-accent-emphasis: color-mix(
+      in oklch,
+      var(--primary) 35%,
+      transparent
+    );
+
+    --openui-font-variation-regular: 'wght' var(--font-weight-normal);
+
+    --openui-shadow-s: var(--shadow-sm);
+    --openui-shadow-m: var(--shadow-md);
+    --openui-shadow-l: var(--shadow-lg);
+    --openui-shadow-xl: var(--shadow-xl);
+    --openui-shadow-2xl: var(--shadow-2xl);
+  }
+}

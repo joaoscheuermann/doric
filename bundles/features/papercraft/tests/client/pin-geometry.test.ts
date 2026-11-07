@@ -296,14 +296,12 @@ test('an anchor on a pseudo-element keeps its host and names the pseudo', () => 
   const host = anchorOf(element, offset, point, 2);
   const pseudo = anchorOf(element, offset, point, 2, '::after');
 
-  assert.equal(host.form, 'source');
+  assert.equal(host.form, 'selector');
   assert.equal(host.label, 'div');
   assert.equal('pseudo' in host, false);
 
-  // Form, stamp, selector, text, index and point stay the host's.
+  // Form, selector, text, index and point stay the host's.
   assert.deepEqual(pseudo, { ...host, label: 'div::after', pseudo: '::after' });
-  assert.equal(pseudo.path, FILE);
-  assert.equal(pseudo.line, 42);
   assert.equal(pseudo.selector, 'div#pay');
   assert.equal((pseudo as { readonly index?: unknown }).index, 2);
   assert.deepEqual((pseudo as { readonly offset?: unknown }).offset, offset);

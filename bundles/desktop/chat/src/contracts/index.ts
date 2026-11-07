@@ -65,9 +65,110 @@ export const rendererSpecSchema = z
   .object({ blockType: z.string().min(1), elementTag: z.string().min(1) })
   .strict();
 
+/**
+ * 1.1.0 (openui.md D1): which element draws the fences of one tag. A fence
+ * whose opener's first info word is `tag` becomes, in an agent turn, an element
+ * of `elementTag` instead of a code block, while the registration lives.
+ */
+export interface FenceRendererSpec {
+  /** The tag the opener line names, matched exactly against the info string's first word. */
+  readonly tag: string;
+  /** The custom element the chat creates through `ui/v1` for each fence of the tag. */
+  readonly elementTag: string;
+}
+
+/** A fence tag: 1 to 64 characters, no whitespace, backtick or tilde. */
+export const fenceTagSchema = z.string().regex(/^[^\s`~]{1,64}$/);
+
+/** `registerFenceRenderer`'s input; an input that fails it is `invalid_input`. */
+export const fenceRendererSpecSchema = z
+  .object({ tag: fenceTagSchema, elementTag: z.string().min(1) })
+  .strict() satisfies z.ZodType<FenceRendererSpec, FenceRendererSpec>;
+
+/**
+ * One fence of a registered tag in an agent turn (openui.md D1, D2), as the
+ * conversation's own projection computes it.
+ *
+ * What stays true: `key` does not change while the turn streams, and is unique
+ * among the Thread's fences of one tag; `state` moves only from `streaming` to
+ * `closed` or `unterminated`.
+ */
+export interface ChatFence {
+  /** `${promptId}/${turnSequence}/${index}` (D2); unique within its tag. */
+  readonly key: string;
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly promptId: string;
+  /** `sequence` of the first event of the turn that holds the fence. */
+  readonly turnSequence: number;
+  /** 0-based, among the fences of this tag in the turn. */
+  readonly index: number;
+  /** The opener line after its backticks or tildes, trimmed. */
+  readonly info: string;
+  /** The lines between the opener and the closer (or the end of the turn), joined by `\n`. */
+  readonly body: string;
+  /**
+   * `closed`: the closer line exists. `streaming`: no closer, the turn is the
+   * transcript's last turn that is not `queued`, and its prompt has no settled
+   * status. `unterminated`: no closer and not `streaming`.
+   */
+  readonly state: 'streaming' | 'closed' | 'unterminated';
+}
+
+/** The `view` property the chat sets on a fence element before it connects. */
+export interface ChatFenceView {
+  readonly fence: ChatFence;
+  /** The Thread's `origin`, `agent` for a subagent's Thread; `'user'` when the Thread has none. */
+  readonly origin: 'user' | 'agent';
+  /** Every fence of the same tag in the Thread, in transcript order, this one included. */
+  readonly fences: readonly ChatFence[];
+}
+
+/** `watchFences`' input; an input that fails it is `invalid_input`. */
+export const watchFencesInputSchema = z
+  .object({
+    projectId: z.string().min(1),
+    threadId: z.string().min(1),
+    tag: fenceTagSchema,
+  })
+  .strict();
+
 export interface ChatViews {
   registerProjector(spec: ProjectorSpec, call?: CallArg): Disposable;
   registerRenderer(spec: RendererSpec, call?: CallArg): Disposable;
+  /**
+   * 1.1.0. From now until the returned `Disposable` is disposed, the window's
+   * conversations draw every fence of `spec.tag` in an agent turn as one
+   * `spec.elementTag` element per fence key, created through `ui/v1` with its
+   * `view` (`ChatFenceView`) set, and kept across streaming flushes; shown
+   * turns are rebuilt at once, and the reverse happens on dispose.
+   *
+   * Fails with `registration_conflict` when the tag already has a fence
+   * renderer, and `invalid_input` when the spec fails `fenceRendererSpecSchema`
+   * or `ui/v1` has not defined `elementTag`; nothing is registered then.
+   */
+  registerFenceRenderer(spec: FenceRendererSpec, call?: CallArg): Disposable;
+  /**
+   * 1.1.0. The Thread's fences of `tag`, in transcript order, computed by the
+   * same projection the conversation uses: first the whole list, then the
+   * whole list again after each flush that changes it (by key, state or body).
+   * For a surface outside the conversation, such as the canvas window.
+   *
+   * The listener gets `[]` once for an unknown or deleted Thread or one of
+   * another Project, `[]` while no fence renderer of `tag` is registered in the
+   * window, and `[]` when the Thread is deleted. An input that fails
+   * `watchFencesInputSchema` is `invalid_input`. Disposing stops the listener;
+   * the conversation store's Threads and recency never change because of it.
+   */
+  watchFences(
+    input: {
+      readonly projectId: string;
+      readonly threadId: string;
+      readonly tag: string;
+    },
+    listener: StreamListener<readonly ChatFence[]>,
+    call?: CallArg,
+  ): Disposable;
 }
 
 export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');
@@ -603,6 +704,27 @@ export interface ChatSendResult {
 }
 
 /**
+ * 1.1.0 (conversation-openui.md D20): one click on a control of a UI the agent
+ * drew, sent as the reader's next message of the Thread.
+ */
+export interface ChatActionInput {
+  readonly projectId: string;
+  readonly threadId: string;
+  /** The program identity (openui.md D3): a written identity or an anonymous `_<n>`. */
+  readonly program: string;
+  /** The action's text: not blank, at most 16,000 UTF-16 code units; sent unchanged. */
+  readonly text: string;
+}
+
+/**
+ * `accepted`: the Thread took the message (steered into the running prompt,
+ * queued, or a new prompt). `refused`: it did not, and nothing was sent.
+ */
+export interface ChatActionResult {
+  readonly status: 'accepted' | 'refused';
+}
+
+/**
  * `chat.send/v1` (client, one per window): sends a Thread's held draft now —
  * the same send the composer's control makes, read from `chat.composer/v1`:
  * the stack's comments and the draft text become the prompt envelope
@@ -619,6 +741,18 @@ export interface ChatSendResult {
  */
 export interface ChatSend {
   send(input: ChatSendInput, call?: CallArg): Promise<ChatSendResult>;
+  /**
+   * 1.1.0. Sends `text`, wrapped in a `<ui-action program="…">` envelope, by
+   * the composer's route for a typed message: a steer of the Thread's running
+   * prompt, else a new prompt (resuming a paused, empty queue first).
+   *
+   * Answers `refused`, with nothing sent or resumed, for a Thread that is
+   * unknown, of another Project or an agent's (`origin: 'agent'`), and when
+   * the route was not taken. An input that fails `chatSendMethods.sendAction`'s
+   * schema rejects with `invalid_input`. It never touches the composer: the
+   * draft, the stack and the store's pending turn stay as they were.
+   */
+  sendAction(input: ChatActionInput, call?: CallArg): Promise<ChatActionResult>;
 }
 
 export const ChatSendV1 = ref<ChatSend>('chat.send/v1');
@@ -631,6 +765,26 @@ export const chatSendMethods = {
     output: z
       .object({ status: z.enum(['accepted', 'empty', 'refused']) })
       .strict() satisfies z.ZodType<ChatSendResult, ChatSendResult>,
+  },
+  sendAction: {
+    input: z
+      .object({
+        projectId: z.string().min(1),
+        threadId: z.string().min(1),
+        program: z
+          .string()
+          .regex(/^(?:[a-z][a-z0-9-]{0,63}|_[1-9][0-9]{0,8})$/),
+        text: z
+          .string()
+          .max(16_000)
+          .refine((text) => text.trim().length > 0, {
+            message: 'Must not be blank.',
+          }),
+      })
+      .strict() satisfies z.ZodType<ChatActionInput, ChatActionInput>,
+    output: z
+      .object({ status: z.enum(['accepted', 'refused']) })
+      .strict() satisfies z.ZodType<ChatActionResult, ChatActionResult>,
   },
 } as const satisfies MethodSpecs;
 

@@ -7,11 +7,11 @@
   },
   "description": "The conversation: chat-view, its store, projection, composer and trail.",
   "provides": [
-    "chat.views/v1@1.0.0",
+    "chat.views/v1@1.1.0",
     "chat.lexical/v1@1.0.0",
     "chat.hooks/v1@1.1.0",
     "chat.composer/v1@1.0.0",
-    "chat.send/v1@1.0.0",
+    "chat.send/v1@1.1.0",
     "chat.send-prompt/v1@1.0.0"
   ],
   "optional": [

@@ -44,6 +44,15 @@ export interface BuiltParts {
   readonly clientStyles?: string;
   /** The client's frames, `client/frames/<name>.js`. */
   readonly frames?: readonly string[];
+  /**
+   * The client's chunks, `client/chunks/<name>.js`, one per
+   * `src/client/chunks/<name>.ts`, in file-name order; present only when the
+   * bundle has a client entry and at least one chunk. Each chunk's CSS, when
+   * it has any, is `client/chunks/<name>.css` beside it, never part of
+   * `clientStyles`. The window's loader never loads a chunk itself: the
+   * client entry imports it.
+   */
+  readonly chunks?: readonly string[];
 }
 
 /** What the desktopMain runner resolves (plus Node built-ins). */
@@ -221,6 +230,12 @@ const buildScript = async (input: {
         ? {
             loader: { '.woff2': 'file', '.woff': 'file', '.ttf': 'file' },
             assetNames: 'assets/[name]-[hash]',
+            // D23: libraries' development branches (dev tools among them)
+            // neither run nor ship in a window, in either build mode: the
+            // define folds their guards to `false`, and syntax minification
+            // drops the dead branches (identifiers and whitespace stay).
+            define: { 'process.env.NODE_ENV': '"production"' },
+            minifySyntax: true,
           }
         : {}),
       sourcemap: input.mode === 'development' ? 'inline' : false,
@@ -309,6 +324,7 @@ export const buildParts = async (
     client?: string;
     clientStyles?: string;
     frames?: readonly string[];
+    chunks?: readonly string[];
   } = {};
 
   // Only a part with a source entry is (re)built; a dist part without one
@@ -385,6 +401,41 @@ export const buildParts = async (
         mode: options.mode,
         label: `client worker ${name}`,
       });
+    }
+  }
+
+  // Chunks are window modules the client imports on demand: the client's
+  // externals, and the CSS esbuild extracts kept beside each as
+  // `client/chunks/<name>.css`, not merged into `client/styles.css`. Without
+  // a client entry nothing imports them, so none is built.
+  await rm(join(dist, 'client', 'chunks'), { recursive: true, force: true });
+
+  if (hasClient) {
+    const chunksDir = join(root, 'src', 'client', 'chunks');
+    const chunks = await entriesOf(chunksDir);
+
+    for (const name of chunks) {
+      await buildScript({
+        entry: join(chunksDir, name),
+        outfile: join(dist, 'client', 'chunks', name.replace(/\.ts$/, '.js')),
+        platform: 'browser',
+        external: clientExternals,
+        plugin: partPlugin({
+          id: manifest.id,
+          contractsDir,
+          part: 'client',
+          forbidden: forbiddenInClient,
+          external: clientExternals,
+        }),
+        mode: options.mode,
+        label: `client chunk ${name}`,
+      });
+    }
+
+    if (chunks.length > 0) {
+      built.chunks = chunks.map(
+        (name) => `client/chunks/${name.replace(/\.ts$/, '.js')}`,
+      );
     }
   }
 

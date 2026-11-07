@@ -154,10 +154,10 @@
       "path": "./bundles/features/screen-relay"
     },
     {
-      "path": "./bundles/features/papercraft"
+      "path": "./bundles/features/openui"
     },
     {
-      "path": "./bundles/features/artifacts"
+      "path": "./bundles/features/papercraft"
     },
     {
       "path": "./bundles/features/comments"

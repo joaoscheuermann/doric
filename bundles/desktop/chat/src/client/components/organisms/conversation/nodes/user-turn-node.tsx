@@ -37,6 +37,7 @@ export type SerializedUserTurnNode = Spread<
     delegated?: DelegatedInput;
     avatar?: TurnAvatar;
     avatarMoved?: true;
+    action?: { program: string };
   },
   SerializedElementNode
 >;
@@ -72,6 +73,11 @@ export class UserTurnNode extends ElementNode {
    * the block's own words wear none.
    */
   __avatarMoved = false;
+  /**
+   * The program whose control sent this prompt (D20), drawn as the block's
+   * caption; fixed per block, like `accepted`.
+   */
+  __action?: { readonly program: string };
 
   constructor(
     turnKey: string,
@@ -81,6 +87,7 @@ export class UserTurnNode extends ElementNode {
     written: string,
     accepted: boolean,
     avatar: TurnAvatar = null,
+    action?: { readonly program: string },
     key?: NodeKey,
   ) {
     super(key);
@@ -91,6 +98,7 @@ export class UserTurnNode extends ElementNode {
     this.__synced = text.trim();
     this.__written = written;
     this.__avatar = avatar;
+    this.__action = action;
   }
 
   static override getType(): string {
@@ -106,6 +114,7 @@ export class UserTurnNode extends ElementNode {
       node.__written,
       node.__accepted,
       node.__avatar,
+      node.__action,
       node.__key,
     );
   }
@@ -123,6 +132,9 @@ export class UserTurnNode extends ElementNode {
       : `${CONVERSATION_FONT_CLASS} ${PENDING_CLASS}`;
     applyTurnAvatar(dom, this.__avatar);
     if (this.__avatarMoved) dom.setAttribute(AVATAR_MOVED_ATTRIBUTE, '');
+    // The caption "Sent from the UI · <program>" (`styles.css`).
+    if (this.__action !== undefined)
+      dom.dataset.uiAction = this.__action.program;
     return dom;
   }
 
@@ -191,6 +203,9 @@ export class UserTurnNode extends ElementNode {
         : { delegated: this.__delegated }),
       ...(this.__avatar === null ? {} : { avatar: this.__avatar }),
       ...(this.__avatarMoved ? { avatarMoved: true as const } : {}),
+      ...(this.__action === undefined
+        ? {}
+        : { action: { program: this.__action.program } }),
     };
   }
 
@@ -202,6 +217,7 @@ export class UserTurnNode extends ElementNode {
       '',
       serialized.accepted,
       serialized.avatar ?? null,
+      serialized.action,
     );
     node.__avatarMoved = serialized.avatarMoved === true;
     return node;
@@ -215,6 +231,7 @@ export function $createUserTurnNode(
   text: string,
   accepted: boolean,
   avatar: TurnAvatar = null,
+  action?: { readonly program: string },
 ): UserTurnNode {
   const value = text.trim();
   const node = new UserTurnNode(
@@ -225,6 +242,7 @@ export function $createUserTurnNode(
     '',
     accepted,
     avatar,
+    action,
   );
   if (value.length > 0) $appendMarkdown(node, value);
   node.__written = node.getTextContent();

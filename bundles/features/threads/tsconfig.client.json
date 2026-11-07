@@ -14,7 +14,6 @@
   "include": [
     "src/client/**/*.ts",
     "src/client/**/*.tsx",
-    "src/contracts/**/*.ts",
     "stories/**/*.ts",
     "stories/**/*.tsx",
     ".storybook/**/*.tsx"

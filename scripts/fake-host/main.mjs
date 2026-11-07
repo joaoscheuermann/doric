@@ -10,11 +10,9 @@
 //  - `runtime/v1` and `runtime.threads/v1` from a small fixed workspace, so the
 //    sidebar, the project tabs and the Screens group of the sidebar have data.
 //  - `runtime.threads/v1.watchThread` from a real in-memory event log, seeded
-//    with one scripted conversation, a `papercraft_preview` tool call and the
-//    `preview` artifact that call published. `artifacts/v1`, `comments/v1` and
-//    `papercraft.previews/v1` answer the desktop's calls and append their own
-//    events to that log, so a comment written in the app shows up in the
-//    conversation it belongs to.
+//    with one scripted conversation. `comments/v1` answers the desktop's calls
+//    and appends its own events to that log, so a comment written in the app
+//    shows up in the conversation it belongs to.
 //  - `GET /status`, `GET /projects`, `GET /threads` over HTTP.
 //  - `GET /reload` rebuilds the catalog from the staged files and tells every
 //    `doric.catalog/v1.watch` subscriber that a new generation exists.
@@ -26,12 +24,10 @@ import { join, resolve } from 'node:path';
 import { argv, env, exit } from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { createArtifacts } from './artifacts.mjs';
 import { createDevCatalog, resolveBundlesRoot } from './bundles.mjs';
 import { createComments } from './comments.mjs';
 import { createContracts } from './contracts.mjs';
 import { createLog } from './log.mjs';
-import { loadPapercraftBuild } from './papercraft.mjs';
 import { seedDevWorkspace } from './seed.mjs';
 import { startFakeHost } from './server.mjs';
 import { createThreadLog } from './thread-log.mjs';
@@ -62,22 +58,6 @@ const compositionPath = resolve(
     env.DORIC_FAKE_COMPOSITION ??
       join(root, 'app/backend/doric-host/composition.json'),
   ),
-);
-// The Project workspace of the seeded Threads: where `/workspace/.doric/artifacts/`
-// lives. The real host reaches it through the lease; the fake host writes it
-// directly, which is the one thing it does not share with the real host.
-const workspaceRoot = resolve(
-  flag('workspace', env.DORIC_FAKE_WORKSPACE ?? '/workspace'),
-);
-// The review policy `artifacts/v1.policy` answers: `proceed` is the Doric
-// default, and `request` is the opt-in the canvas bar reads `Autorizar` from.
-const reviewPolicy =
-  flag('review-policy', env.DORIC_FAKE_REVIEW_POLICY ?? 'proceed') === 'request'
-    ? 'request'
-    : 'proceed';
-const papercraftOverride = flag(
-  'papercraft',
-  env.DORIC_FAKE_PAPERCRAFT ?? undefined,
 );
 
 const log = createLog({ quiet });
@@ -134,45 +114,15 @@ await build(1);
 const workspace = createWorkspace();
 const defaults = { projectId: MAIN_PROJECT_ID, threadId: MAIN_THREAD_ID };
 const threads = createThreadLog({ workspace, log });
-const papercraft = await loadPapercraftBuild({
-  root,
-  override: papercraftOverride,
-  log,
-});
-const artifacts = createArtifacts({
-  workspaceRoot,
-  threads,
-  papercraft,
-  policy: reviewPolicy,
-  log,
-});
 const comments = createComments({ threads, log });
 
-const seeded = await seedDevWorkspace({
-  root,
-  workspaceRoot,
-  defaults,
-  threads,
-  artifacts,
-  log,
-});
-
-if (seeded.hasMarkup !== true) {
-  log.note(
-    'the seeded preview has no markup: build the bundles with `npx nx run doric-host:build-bundles`',
-  );
-}
-
-log.note(
-  `artifacts: ${workspaceRoot}/.doric/artifacts (review policy ${reviewPolicy})`,
-);
+seedDevWorkspace({ defaults, threads, log });
 
 const contracts = createContracts({
   workspace,
   catalog,
   log,
   threads,
-  artifacts,
   comments,
 });
 

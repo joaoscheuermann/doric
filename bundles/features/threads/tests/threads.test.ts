@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { ContractError, isContractError } from 'bundle/contracts';
@@ -12,6 +13,7 @@ import { createToolStorage, type ToolCall, ToolErrorObject } from 'tool';
 
 import {
   activatedTools,
+  activationRecord,
   defaultConfiguration,
   parentThreadId,
   type SpawnFakes,
@@ -44,11 +46,37 @@ void test('registers thread tools in the established model-visible order', async
     'thread-interrupt',
     'thread-terminate',
     'thread-restart',
-    'ask',
   ];
   assert.deepEqual(
     tools.map((tool) => tool.name),
     expected,
+  );
+});
+
+// C11 (D30): threads 2.0.0 keeps only delegation; the ask tool, its service
+// and its two events are gone.
+void test('activation provides no service and registers no event', async () => {
+  const record = await activationRecord();
+
+  assert.deepEqual(record.provided, []);
+  assert.deepEqual(record.events, []);
+});
+
+void test('the manifest is 2.0.0 and declares no provided contract', async () => {
+  const manifest = JSON.parse(
+    await readFile(new URL('../../manifest.json', import.meta.url), 'utf8'),
+  ) as {
+    readonly version: string;
+    readonly provides?: readonly string[];
+    readonly desktopScope?: Record<string, unknown>;
+  };
+
+  assert.equal(manifest.version, '2.0.0');
+  assert.deepEqual(manifest.provides ?? [], []);
+  assert.equal(
+    JSON.stringify(manifest).includes('threads.ask/v1'),
+    false,
+    'no manifest entry names threads.ask/v1',
   );
 });
 

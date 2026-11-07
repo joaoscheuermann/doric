@@ -96,10 +96,20 @@ const bundles: ServedBundles = {
   file: (id, version, path) => listed.get(`${id}@${version}/${path}`),
 };
 
+/** A module's cache directory: the SHA-256 of its file list (D14). */
+const MODULE_DIR = 'a'.repeat(64);
+
+/**
+ * The papercraft modules root the protocol serves under `/papercraft-modules/`
+ * (D14, `ServedModules`), passed as `ProtocolDeps.modules`. Spread through a
+ * cast: the field is the implementation step's to add to `ProtocolDeps`.
+ */
+const withModules = (): Partial<ProtocolDeps> =>
+  ({ modules: { root: join(root, 'papercraft') } }) as Partial<ProtocolDeps>;
+
 const deps = (overrides: Partial<ProtocolDeps> = {}): ProtocolDeps => ({
   resources,
   bundles,
-  artifacts: { root: join(root, 'artifacts') },
   shell: createShellRenderer({
     mode: 'packaged',
     template: async () => TEMPLATE,
@@ -141,20 +151,11 @@ before(async () => {
   await writeFile(join(root, 'schemas', 'contracts', 'a.json'), '{}');
   await writeFile(join(root, 'renderer', 'main.js'), 'void 0;');
   await writeFile(join(root, 'secret.txt'), 'outside');
-  await mkdir(join(root, 'artifacts', 'checkout-7f3a@1', 'assets'), {
-    recursive: true,
-  });
+  // The old artifacts cache (D25): still on disk, never served.
+  await mkdir(join(root, 'artifacts', 'checkout-7f3a@1'), { recursive: true });
   await writeFile(
     join(root, 'artifacts', 'checkout-7f3a@1', 'index.js'),
-    'export {};',
-  );
-  await writeFile(
-    join(root, 'artifacts', 'checkout-7f3a@1', 'assets', 'theme.css'),
-    'body {}',
-  );
-  await writeFile(
-    join(root, 'artifacts', 'checkout-7f3a@1', 'notes.md'),
-    '# notes',
+    'outside',
   );
   await writeFile(
     join(root, 'cache', 'probe@1.0.0', 'client', 'index.js'),
@@ -174,6 +175,19 @@ before(async () => {
   await mkdir(join(root, 'cache', 'probe@1.0.0', 'desktop'), {
     recursive: true,
   });
+
+  await mkdir(join(root, 'papercraft', MODULE_DIR, 'assets'), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, 'papercraft', MODULE_DIR, 'index.js'),
+    'export const Button = 1;',
+  );
+  await writeFile(join(root, 'papercraft', MODULE_DIR, 'index.css'), '.btn {}');
+  await writeFile(
+    join(root, 'papercraft', MODULE_DIR, 'assets', `${'b'.repeat(64)}.woff2`),
+    'font',
+  );
 
   for (const path of [
     'client/frames/preview.js',
@@ -196,12 +210,6 @@ describe('doric://app routing', () => {
       ['doric://app/schemas/contracts/a.json', 'application/json'],
       ['doric://app/platform/shell@1.0.0/main.js', 'text/javascript'],
       ['doric://app/bundles/probe@1.0.0/client/index.js', 'text/javascript'],
-      ['doric://app/artifacts/checkout-7f3a@1/index.js', 'text/javascript'],
-      ['doric://app/artifacts/checkout-7f3a@1/assets/theme.css', 'text/css'],
-      [
-        'doric://app/artifacts/checkout-7f3a@1/notes.md',
-        'application/octet-stream',
-      ],
     ] as const) {
       const response = await get(url);
 
@@ -219,17 +227,6 @@ describe('doric://app routing', () => {
       'doric://app/bundles/unknown@9.9.9/client/index.js',
       'doric://app/bundles/probe@1.0.0/client/unlisted.js',
       'doric://app/bundles/probe/client/index.js',
-      'doric://app/artifacts/checkout-7f3a@1/missing.js',
-      'doric://app/artifacts/checkout-7f3a@2/index.js',
-      'doric://app/artifacts/checkout-7f3a@1',
-      'doric://app/artifacts/checkout-7f3a@1/',
-      'doric://app/artifacts/checkout@1/index.js',
-      'doric://app/artifacts/checkout@x/index.js',
-      'doric://app/artifacts/@1/index.js',
-      'doric://app/artifacts/.tmp/staged.js',
-      'doric://app/artifacts/checkout-7f3a@0/index.js',
-      'doric://app/artifacts/checkout-7f3a@01/index.js',
-      'doric://app/artifacts/',
       'doric://app/platform/react@19.2.8/%2e%2e%2f..%2fsecret.txt',
       'doric://app/platform/react@19.2.8/..%5c..%5csecret.txt',
       'doric://app/platform/react@19.2.8//index.js',
@@ -250,9 +247,6 @@ describe('doric://app routing', () => {
       'doric://app/platform/%2e%2e/secret.txt',
       'doric://app/schemas/../../secret.txt',
       'doric://app/bundles/probe@1.0.0/../../secret.txt',
-      'doric://app/artifacts/checkout-7f3a@1/../../secret.txt',
-      'doric://app/artifacts/checkout-7f3a@1/%2e%2e/%2e%2e/secret.txt',
-      'doric://app/artifacts/checkout-7f3a@1/..%5c..%5csecret.txt',
     ]) {
       const response = await get(url);
 
@@ -636,17 +630,106 @@ describe('boot.js runs only a bundle frame entry', () => {
   });
 });
 
+describe('/papercraft-modules/ (PC31)', () => {
+  const getModule = (url: string, origin?: string) =>
+    respond(
+      new Request(url, origin === undefined ? {} : { headers: { origin } }),
+      deps(withModules()),
+    );
+
+  test('serves a file of the modules root with its content type, to any origin', async () => {
+    for (const [path, type, body] of [
+      ['index.js', 'text/javascript', 'export const Button = 1;'],
+      ['index.css', 'text/css', '.btn {}'],
+      [`assets/${'b'.repeat(64)}.woff2`, 'font/woff2', 'font'],
+    ] as const) {
+      const url = `doric://app/papercraft-modules/${MODULE_DIR}/${path}`;
+
+      for (const response of [
+        await getModule(url),
+        await getModule(url, 'null'),
+      ]) {
+        assert.equal(response.status, 200, url);
+        assert.equal(response.headers.get('content-type'), type, url);
+        assert.equal(
+          response.headers.get('access-control-allow-origin'),
+          '*',
+          url,
+        );
+        assert.equal(await response.text(), body, url);
+      }
+    }
+  });
+
+  test('answers 404 for a missing file or a path that is not <dir>/<file>', async () => {
+    for (const url of [
+      `doric://app/papercraft-modules/${MODULE_DIR}/missing.js`,
+      `doric://app/papercraft-modules/${'c'.repeat(64)}/index.js`,
+      `doric://app/papercraft-modules/${MODULE_DIR}`,
+      `doric://app/papercraft-modules/${MODULE_DIR}/`,
+      `doric://app/papercraft-modules/${MODULE_DIR}//index.js`,
+      'doric://app/papercraft-modules/',
+    ]) {
+      const response = await getModule(url);
+
+      assert.equal(response.status, 404, url);
+    }
+  });
+
+  test('refuses every path that would leave the modules root', async () => {
+    for (const url of [
+      `doric://app/papercraft-modules/${MODULE_DIR}/%2e%2e%2f..%2f..%2fsecret.txt`,
+      `doric://app/papercraft-modules/${MODULE_DIR}/..%5c..%5c..%5csecret.txt`,
+      'doric://app/papercraft-modules/%2e%2e/secret.txt',
+      'doric://app/papercraft-modules/..%2fsecret.txt',
+    ]) {
+      const response = await getModule(url);
+
+      assert.equal(response.status, 404, url);
+    }
+
+    for (const url of [
+      `doric://app/papercraft-modules/${MODULE_DIR}/../../secret.txt`,
+      `doric://app/papercraft-modules/${MODULE_DIR}/%2e%2e/%2e%2e/secret.txt`,
+      'doric://app/papercraft-modules/../secret.txt',
+    ]) {
+      const response = await getModule(url);
+
+      assert.ok(!(await response.text()).includes('outside'), url);
+    }
+  });
+
+  test('PC22: /artifacts/* is no asset prefix any more: the old cache is never served', async () => {
+    for (const url of [
+      'doric://app/artifacts/checkout-7f3a@1/index.js',
+      'doric://app/artifacts/checkout-7f3a@1/',
+    ]) {
+      const response = await getModule(url, 'null');
+
+      assert.ok(!(await response.text()).includes('outside'), url);
+      assert.equal(
+        response.headers.get('access-control-allow-origin'),
+        null,
+        url,
+      );
+    }
+
+    const response = await getModule(
+      'doric://app/papercraft-modules/checkout-7f3a@1/index.js',
+    );
+    assert.equal(response.status, 404);
+  });
+});
+
 describe('CORS for preview frames', () => {
   const nullOrigin = (url: string) =>
     respond(new Request(url, { headers: { origin: 'null' } }), deps());
 
-  test('frame, platform, artifact and bundle frame files allow any origin', async () => {
+  test('frame, platform and bundle frame files allow any origin', async () => {
     for (const url of [
       'doric://app/frame/index.html?entry=x',
       'doric://app/frame/boot.js',
       'doric://app/platform/react@19.2.8/index.js',
-      'doric://app/artifacts/checkout-7f3a@1/index.js',
-      'doric://app/artifacts/checkout-7f3a@1/assets/theme.css',
       'doric://app/bundles/probe@1.0.0/client/frames/preview.js',
     ]) {
       for (const response of [await get(url), await nullOrigin(url)]) {

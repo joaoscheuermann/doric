@@ -18,7 +18,8 @@ chat composer and conversation, and the
 - **Feedback with an address.** Every comment carries an anchor, so "make this
   bigger" arrives with the file and line, selector or text it is about.
 - **One registry for anything.** The registry never interprets a target, so an
-  artifact revision, a message or any future target uses the same service.
+  papercraft program revision, a message or any future target uses the same
+  service.
 - **A real conversation per comment.** Replies form flat threads, and the
   agent's answers land in them instead of in loose chat messages.
 - **Nothing to lose.** The Thread log is the only record; a restarted host, a
@@ -28,7 +29,7 @@ chat composer and conversation, and the
 
 - **Tool:** `comment_reply`, always available, at global model-visible
   position 1800. The bundle ships no skill; the tool's description says when
-  to use it, and `papercraft_preview` points the agent to it.
+  to use it, and the `papercraft` skill points the agent to it.
 - **Contract:** `comments/v1` (host) with `add`, `list` and `resolve`, exposed
   to the desktop with the `projectId`, `threadId` and `promptId` scope.
 - **Events:** `comments.added/v1` and `comments.resolved/v1`.
@@ -60,14 +61,14 @@ A comment's target names what it is about; the bundle that owns the target's
 
 | Anchor form | Required fields | Typical use                                     |
 | ----------- | --------------- | ----------------------------------------------- |
-| `source`    | `path`          | A stamped element of a built preview (`line`)   |
+| `source`    | `path`          | A file, optionally with a `line`                |
 | `selector`  | `selector`      | An element of the target's derived structure    |
 | `point`     | `x`, `y`        | A free position, with the nearest element named |
 | `range`     | `text`          | A selection of the target's text                |
 
 Each form may also carry the other optional fields (`line`, `label`, …). Today
-the targets are a `papercraft` preview revision (kind `artifact`) and a chat
-message (kind `message`, anchor `range`).
+the targets are a `papercraft` program revision (kind `papercraft-program`, id
+the program's identity, anchor `selector` naming a statement, or `point`) and a chat message (kind `message`, anchor `range`).
 
 ## How it works
 

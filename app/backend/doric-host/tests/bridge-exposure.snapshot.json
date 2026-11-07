@@ -1,18 +1,6 @@
 {
   "$comment": "Frozen parity with the desktop bridge allowlist before declarative exposure (BWP-10). Any change to desktop exposure or accepted scope keys must update this file in review.",
   "methods": {
-    "artifact.kind/v1": ["list"],
-    "artifacts/v1": [
-      "apply",
-      "approve",
-      "create",
-      "list",
-      "policy",
-      "read",
-      "revise",
-      "revisions",
-      "setPolicy"
-    ],
     "claude.login/v1": ["finish", "start"],
     "comments/v1": ["add", "list", "resolve"],
     "doric.catalog/v1": [
@@ -44,7 +32,9 @@
       "watch"
     ],
     "models/v1": ["catalog", "icons", "kind", "kinds"],
-    "papercraft.previews/v1": ["build", "read"],
+    "openui.programs/v1": ["reportErrors"],
+    "openui.questions/v1": ["answer", "status"],
+    "papercraft.programs/v1": ["export", "library", "read"],
     "resources/v1": ["host", "project"],
     "runtime.attachments/v1": ["attach", "read"],
     "runtime.lease/v1": [
@@ -111,9 +101,15 @@
       "stop",
       "watchProject"
     ],
-    "threads.ask/v1": ["answer", "status"],
     "tools/v1": ["catalog"],
     "usage/v1": ["compact", "compactionTarget", "setCompactionTarget", "thread"]
   },
-  "scopeKeys": ["projectId", "threadId", "promptId"]
+  "scopeKeys": ["projectId", "threadId", "promptId"],
+  "$scopeKeysByContractComment": "Exposed bundle contracts whose provider declares other window scope keys than scopeKeys; an empty list means no desktopScope entry (a global space).",
+  "scopeKeysByContract": {
+    "openui.programs/v1": ["projectId", "threadId"],
+    "openui.questions/v1": ["projectId", "threadId"],
+    "papercraft.cache/v1": ["projectId", "threadId"],
+    "papercraft.programs/v1": ["projectId", "threadId"]
+  }
 }

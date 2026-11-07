@@ -1,13 +1,13 @@
 // The `papercraft` client part (spec: "Composição e partes").
 //
-// It defines `<papercraft-preview>` (the `preview` kind's body, which the
-// `artifacts` registry's frame mounts — the `artifacts` bundle projects the
-// `artifacts.*` events into frames, so this part registers no projector),
-// and `<papercraft-canvas>` (a comment's stack line is chat's own); notes when
+// It defines `<papercraft-canvas>` and the papercraft fence element (a
+// comment's stack line is chat's own); registers, in chat's views, the
+// `papercraft.cwd/v1` and old `artifacts.*` projectors, the `papercraft` fence
+// renderer and the warm program frame (D6, D10, D25); notes when
 // `chat.composer/v1` is active (`whenAvailable`, as `threads` does), so
 // the comment gesture joins its stack (the flush that answers the
 // `comments/v1.add` writes is the desktop part's); registers the canvas route
-// (`/papercraft/:projectId/:threadId/:artifactId`); and registers the
+// (`/papercraft/:projectId/:threadId/:identity`); and registers the
 // commands of the command bar plus their `menus/v1` keybindings, each pointing
 // at the command id it dispatches, filtered to the canvas route.
 
@@ -21,20 +21,37 @@ import {
   UiV1,
 } from 'bundle/contracts';
 
-import { ChatComposerV1 } from '../contracts/chat.js';
+import { ChatComposerV1, ChatViewsV1 } from '../contracts/chat.js';
 import {
   CANVAS_ROUTE,
   PAPERCRAFT_CANVAS_TAG,
   PAPERCRAFT_KEYBINDINGS,
-  PAPERCRAFT_PREVIEW_TAG,
 } from '../contracts/index.js';
-import { approveCommand, canvasCommands } from './commands.js';
+import { canvasCommands } from './commands.js';
 import { setComposerAvailable } from './comment.js';
+import { cwdProjector } from './cwd-projector.js';
+import { defineCanvasElement, PAPERCRAFT_TAGS } from './elements.js';
+import { defineFenceElement, FENCE_TAG, PAPERCRAFT_FENCE } from './fence.js';
 import {
-  defineCanvasElement,
-  definePreviewElement,
-  PAPERCRAFT_TAGS,
-} from './elements.js';
+  connectMessage,
+  frameMessage,
+  isHello,
+  PROGRAM_PROTOCOL,
+} from './frame-protocol.js';
+import { programFrameSrc } from './frame-url.js';
+import { oldArtifactsProjector } from './old-artifacts.js';
+import { bootWarmFrame } from './surface/live-frames.js';
+
+/** Boots the window's warm program frame (D6), when the window has a document. */
+const bootWarm = (): (() => void) =>
+  typeof document === 'undefined'
+    ? () => undefined
+    : bootWarmFrame(document, programFrameSrc(), {
+        isHello: (data) => isHello(data, PROGRAM_PROTOCOL),
+        connect: connectMessage(PROGRAM_PROTOCOL),
+        isReady: (data) =>
+          frameMessage(data, PROGRAM_PROTOCOL)?.kind === 'ready',
+      });
 
 /**
  * The canvas window's route. It stands alone, as `/settings` does: under the
@@ -53,11 +70,34 @@ export const canvasRouteOf = (
 export function activate({ services }: ClientContext): Cleanup {
   const ui = services.use(UiV1);
 
-  const previewElement = ui.define(
-    PAPERCRAFT_PREVIEW_TAG,
-    definePreviewElement(),
-  );
   const canvasElement = ui.define(PAPERCRAFT_CANVAS_TAG, defineCanvasElement());
+  const fenceElement = ui.define(FENCE_TAG, defineFenceElement());
+
+  // Chat's views (D6, D10, D25): the `papercraft.cwd/v1` and the old
+  // `artifacts.*` projectors, the `papercraft` fence renderer and the warm
+  // frame.
+  const views = services.whenAvailable(ChatViewsV1, (chat) => {
+    const projectors: { dispose(): void }[] = [];
+    for (const spec of [cwdProjector, oldArtifactsProjector]) {
+      try {
+        projectors.push(chat.registerProjector(spec));
+      } catch {
+        // Another bundle claimed the events first; its projection stands.
+      }
+    }
+
+    const renderer = chat.registerFenceRenderer({
+      tag: PAPERCRAFT_FENCE,
+      elementTag: FENCE_TAG,
+    });
+    const dropWarm = bootWarm();
+
+    return () => {
+      renderer.dispose();
+      dropWarm();
+      for (const projector of projectors) projector.dispose();
+    };
+  });
 
   const route = services
     .use(NavigationV1)
@@ -66,10 +106,9 @@ export function activate({ services }: ClientContext): Cleanup {
     );
 
   const commands = services.use(CommandsV1);
-  const registered = [
-    ...canvasCommands.map((command) => commands.register(command)),
-    commands.register(approveCommand),
-  ];
+  const registered = canvasCommands.map((command) =>
+    commands.register(command),
+  );
 
   // The shortcuts of the bar: owner = this bundle, each pointing at its
   // command id, filtered to the canvas route (`menus/v1.addKeybinding`, as the
@@ -93,20 +132,17 @@ export function activate({ services }: ClientContext): Cleanup {
   });
 
   return () => {
+    views.dispose();
     composer.dispose();
     for (const command of registered.reverse()) command.dispose();
     route.dispose();
+    fenceElement.dispose();
     canvasElement.dispose();
-    previewElement.dispose();
   };
 }
 
 export { ChatComposerV1 } from '../contracts/chat.js';
-export { anchorOf, STAMP_ATTRIBUTE, selectorOf, targetOf } from './anchor.js';
-export {
-  type PreviewBlockData,
-  previewBlockDataOf,
-} from './block.js';
+export { anchorOf, selectorOf, targetOf } from './anchor.js';
 export {
   activeCanvasId,
   controllerFor,
@@ -114,10 +150,7 @@ export {
   registerController,
   touchController,
 } from './canvas-registry.js';
-export {
-  approveCommand,
-  canvasCommands,
-} from './commands.js';
+export { canvasCommands } from './commands.js';
 export {
   beginComment,
   composerAvailable,
@@ -130,16 +163,12 @@ export {
   setComposerAvailable,
 } from './comment.js';
 export {
-  applyPreviewEvent,
   commentsOfEvents,
-  initialPreviewStates,
   type PreviewComment,
-  type PreviewState as PreviewEventState,
   type PreviewThread,
-  previewStateOfRecord,
   type ThreadState,
   threadStateOf,
   threadsOf,
 } from './domain/preview-state.js';
-export { defineCanvasElement, definePreviewElement } from './elements.js';
+export { defineCanvasElement } from './elements.js';
 export { PAPERCRAFT_TAGS };

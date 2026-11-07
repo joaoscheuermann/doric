@@ -33,7 +33,9 @@ RUN npm install --global npm@11.13.0
 # devDependency, so `npm ci` installs it), dry-activates its parts to write the
 # contract descriptor and JSON Schemas, and `stage` copies each bundle's whole
 # `dist` (`desktop/`, `client/` and `contracts/` included, which the host
-# distributes to the desktop) into `app/backend/doric-host/dist/bundles/<id>`.
+# distributes to the desktop, the client's chunks `client/chunks/` among them)
+# into `app/backend/doric-host/dist/bundles/<id>`. `openui` is listed before
+# `papercraft` in both lists, as in the composition.
 # The papercraft bundle also gets its sandbox runner, `dist/sandbox/runner.mjs`,
 # the one script the host copies into a sandbox to bundle a preview there (as
 # its Nx `build` target writes it).
@@ -74,8 +76,8 @@ RUN npm ci --ignore-scripts \
       bundles/desktop/layout/tsconfig.json \
       bundles/desktop/chat/tsconfig.json \
       bundles/desktop/history/tsconfig.json \
-      bundles/features/artifacts/tsconfig.json \
       bundles/features/comments/tsconfig.json \
+      bundles/features/openui/tsconfig.json \
       bundles/features/papercraft/tsconfig.json \
       bundles/features/mcp/tsconfig.json \
       --force \
@@ -92,7 +94,7 @@ RUN npm ci --ignore-scripts \
       bundles/runtime/runtime bundles/runtime/default bundles/providers/openai bundles/providers/openrouter \
       bundles/providers/codex bundles/providers/claude bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web \
       bundles/features/terminal bundles/features/claude-login bundles/features/usage bundles/features/resources bundles/features/screen bundles/features/screen-relay bundles/desktop/notifications \
-      bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/artifacts bundles/features/comments bundles/features/papercraft bundles/features/mcp bundles/foundation/transport bundles/foundation/host-config \
+      bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/comments bundles/features/openui bundles/features/papercraft bundles/features/mcp bundles/foundation/transport bundles/foundation/host-config \
  && mkdir -p app/backend/doric-host/dist/src \
  && mv app/backend/doric-host/dist/index.* app/backend/doric-host/dist/src/ \
  && mv app/backend/doric-host/dist/lib app/backend/doric-host/dist/src/

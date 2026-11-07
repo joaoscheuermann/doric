@@ -29,7 +29,6 @@ const checkoutNodes = (): SceneNodeData[] => {
 
       const id = `n${String(nodes.length)}`;
       const elementId = child.getAttribute('id');
-      const stamp = child.getAttribute('data-papercraft-source');
 
       nodes.push({
         id,
@@ -40,7 +39,6 @@ const checkoutNodes = (): SceneNodeData[] => {
           .split(/\s+/)
           .filter((name) => name !== ''),
         ...(elementId === null ? {} : { elementId }),
-        ...(stamp === null ? {} : { stamp }),
         text: (child.textContent ?? '')
           .replace(/\s+/g, ' ')
           .trim()

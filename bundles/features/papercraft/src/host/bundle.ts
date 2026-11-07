@@ -65,13 +65,11 @@
 // the components' are appended to it; `css.ts` compiles both into
 // `index.css` with the utilities of the classes in the bundled sources.
 //
-// JSX is compiled in development form so each element the Project's code
-// writes knows its `fileName:lineNumber`; a small runtime shim turns that into
-// the `data-papercraft-source="path:line"` stamp the comment anchors read, and
-// otherwise defers to `react/jsx-runtime` from the import map.
+// JSX compiles to the automatic runtime, `react/jsx-runtime` from the import
+// map.
 //
 // The caller hands esbuild's `build` in: the host's own copy, or the one the
-// sandbox image installs, so an `html` preview never loads it.
+// sandbox image installs.
 
 import { isBuiltin } from 'node:module';
 import { posix } from 'node:path';
@@ -84,6 +82,8 @@ import type {
   Loader,
   Message,
   Metafile,
+  OnResolveArgs,
+  OnResolveResult,
   Plugin,
 } from 'esbuild';
 
@@ -173,12 +173,19 @@ const WINDOW_SHARES = `${previewExternals.join(', ')} and the ${WINDOW_PACKAGES.
 
 const SOURCE_NS = 'papercraft-source';
 const ENTRY_NS = 'papercraft-entry';
-const JSX_NS = 'papercraft-jsx';
 const REQUIRE_NS = 'papercraft-external-require';
 const SHIM_NS = 'papercraft-shim';
+const LIBRARY_SHIM_NS = 'papercraft-library-shim';
+const STUB_NS = 'papercraft-stub';
+
+/** D13: the error of an import of a zod entry the library shims do not serve. */
+export const ZOD_ENTRY_ERROR =
+  "This zod entry is not served in papercraft libraries; import from 'zod'.";
+
+/** The global the library job's evaluation modules read (D12). */
+export const EVALUATE_GLOBAL = 'doric.papercraft.evaluate';
 
 const ENTRY_ID = 'papercraft:entry';
-const JSX_SOURCE = 'papercraft-jsx';
 
 const SCRIPT_EXTENSIONS = ['.tsx', '.ts', '.jsx', '.js'];
 
@@ -312,28 +319,6 @@ export const compileFailure = (path: string, error: unknown): ContractError =>
         `The component preview "${path}" did not compile:\n${failureOf(error)}`,
         { path },
       );
-
-/** The JSX runtime shim: stamps host elements with their source line. */
-const JSX_RUNTIME = `import { Fragment, jsx, jsxs } from 'react/jsx-runtime';
-export { Fragment };
-const PREFIX = ${JSON.stringify(`${SOURCE_NS}:`)};
-export function jsxDEV(type, props, key, isStatic, source) {
-  let next = props;
-  if (
-    typeof type === 'string' &&
-    source != null &&
-    typeof source.fileName === 'string' &&
-    props != null &&
-    props['data-papercraft-source'] === undefined
-  ) {
-    const file = source.fileName.startsWith(PREFIX)
-      ? source.fileName.slice(PREFIX.length)
-      : source.fileName;
-    next = { ...props, 'data-papercraft-source': file + ':' + source.lineNumber };
-  }
-  return isStatic ? jsxs(type, next, key) : jsx(type, next, key);
-}
-`;
 
 /** The export a preview mounts: `entry`, else `default`, else one PascalCase export. */
 export const pickExport = (
@@ -473,6 +458,10 @@ const sandboxPlugin = (input: {
   readonly hostResolveDir?: string;
   readonly windowed: Set<string>;
   readonly hosted: Set<string>;
+  /** D13: specifiers served by generated modules; other `zod/*` fail. */
+  readonly shims?: Readonly<Record<string, string>>;
+  /** D12: every import resolving outside this directory becomes a stub. */
+  readonly stubOutside?: string;
 }): Plugin => ({
   name: 'papercraft-sandbox',
   setup(context) {
@@ -573,7 +562,9 @@ const sandboxPlugin = (input: {
       return undefined;
     };
 
-    context.onResolve({ filter: /.*/ }, async (args) => {
+    const resolveImport = async (
+      args: OnResolveArgs,
+    ): Promise<OnResolveResult | undefined> => {
       if (args.kind === 'entry-point') {
         return args.path === ENTRY_ID
           ? { path: ENTRY_ID, namespace: ENTRY_NS }
@@ -590,10 +581,6 @@ const sandboxPlugin = (input: {
         input.harnessPath !== undefined
       ) {
         return { path: input.harnessPath, namespace: SOURCE_NS };
-      }
-
-      if (args.path === `${JSX_SOURCE}/jsx-dev-runtime`) {
-        return { path: args.path, namespace: JSX_NS };
       }
 
       // The React `mount` renders with, and Base UI, are the window's.
@@ -685,7 +672,50 @@ const sandboxPlugin = (input: {
             ],
           }
         : { path: packaged, namespace: SOURCE_NS };
+    };
+
+    context.onResolve({ filter: /.*/ }, async (args) => {
+      if (input.shims !== undefined && args.kind !== 'entry-point') {
+        if (input.shims[args.path] !== undefined) {
+          return { path: args.path, namespace: LIBRARY_SHIM_NS };
+        }
+
+        if (packageOf(args.path) === 'zod') {
+          return { errors: [{ text: ZOD_ENTRY_ERROR }] };
+        }
+      }
+
+      const resolved = await resolveImport(args);
+      const outside = input.stubOutside;
+
+      if (outside === undefined || args.kind === 'entry-point') return resolved;
+
+      const own =
+        resolved?.namespace === ENTRY_NS ||
+        (resolved?.namespace === SOURCE_NS &&
+          resolved.path?.startsWith(`${outside}/`) === true);
+
+      return own
+        ? resolved
+        : {
+            path: JSON.stringify({
+              importer: args.importer,
+              specifier: args.path,
+            }),
+            namespace: STUB_NS,
+          };
     });
+
+    context.onLoad({ filter: /.*/, namespace: LIBRARY_SHIM_NS }, (args) => ({
+      contents: input.shims?.[args.path] ?? '',
+      loader: 'js',
+    }));
+
+    // A CommonJS module, so any name imported from it is read at run time.
+    context.onLoad({ filter: /.*/, namespace: STUB_NS }, (args) => ({
+      contents: `module.exports = globalThis[Symbol.for(${JSON.stringify(EVALUATE_GLOBAL)})].stub(${args.path});\n`,
+      loader: 'js',
+    }));
 
     context.onLoad({ filter: /.*/, namespace: SOURCE_NS }, async (args) => {
       const loader = loaderOf(args.path);
@@ -733,11 +763,6 @@ const sandboxPlugin = (input: {
 
     context.onLoad({ filter: /.*/, namespace: SHIM_NS }, (args) => ({
       contents: STORYBOOK_SHIMS[args.path] ?? '',
-      loader: 'js',
-    }));
-
-    context.onLoad({ filter: /.*/, namespace: JSX_NS }, () => ({
-      contents: JSX_RUNTIME,
       loader: 'js',
     }));
 
@@ -934,6 +959,11 @@ export interface BundleInput {
   readonly windowServes: (specifier: string) => Promise<boolean>;
   /** Where `HOST_PACKAGES` resolve on the host disk; absent, left external. */
   readonly hostResolveDir?: string;
+  /**
+   * Whether a Project directory is a repository root (it holds `.git`): the
+   * harness search stops after it (D15). Absent, it walks to the workspace root.
+   */
+  readonly isRepositoryRoot?: (dir: string) => Promise<boolean>;
 }
 
 /**
@@ -969,8 +999,6 @@ export const bundleComponent = async (
     metafile: true,
     outfile: 'index.js',
     jsx: 'automatic',
-    jsxDev: true,
-    jsxImportSource: JSX_SOURCE,
     define: { 'process.env.NODE_ENV': '"production"' },
     legalComments: 'none',
     charset: 'utf8',
@@ -1014,7 +1042,7 @@ export const bundleComponent = async (
 
   // Pass 2: the Project's harness alone. One that does not compile is left
   // out, so the preview still renders — without the Project's providers.
-  let harnessPath = await findHarness(read, input.path);
+  let harnessPath = await findHarness(read, input.path, input.isRepositoryRoot);
   const globalCss = new Set<string>();
 
   if (harnessPath !== undefined) {
@@ -1075,4 +1103,114 @@ export const bundleComponent = async (
     hostSpecifiers: [...hosted],
     warnings: [...warnings],
   };
+};
+
+/* The library module (D11–D13) --------------------------------------------- */
+
+/** One generated module: the entry `code`, built with the Project resolution. */
+export interface ModuleInput {
+  readonly read: SourceReader;
+  readonly build: Build;
+  /** The entry's source; it imports Project files by workspace-relative `./` paths. */
+  readonly code: string;
+  /** The Project path whose nearest tsconfig names the export conditions. */
+  readonly base: string;
+  /** Served as `papercraft:harness` to the entry. */
+  readonly harnessPath?: string;
+  /** Whether the window serves a `WINDOW_PACKAGES` specifier. */
+  readonly windowServes: (specifier: string) => Promise<boolean>;
+  /**
+   * Specifier → module source served in place of the package (D13's shims:
+   * `react`, `@openuidev/react-lang`, `@openuidev/lang-core`, `zod`); a zod
+   * entry not listed fails with `ZOD_ENTRY_ERROR`.
+   */
+  readonly shims?: Readonly<Record<string, string>>;
+  /**
+   * The module source every import resolving outside the Project's library
+   * root is replaced by, for the Node evaluation (D12's stubs); absent, none
+   * is stubbed.
+   */
+  readonly stubOutside?: string;
+  /** `browser` (default) for the frame's module, `node` for the evaluation bundle. */
+  readonly platform?: 'browser' | 'node';
+}
+
+/** What `bundleModule` built, and what the sheet and the host need of it. */
+export interface BundledModule {
+  readonly js: string;
+  /** Every Project file the build read, by path. */
+  readonly sources: ReadonlyMap<string, string>;
+  /** The Project stylesheets the module imported, in import order. */
+  readonly css: readonly string[];
+  readonly windowSpecifiers: readonly string[];
+  readonly hostSpecifiers: readonly string[];
+}
+
+/**
+ * Bundles one generated entry (the library module, or its evaluation bundle)
+ * with `bundleComponent`'s resolution, within its read limits. Rejects with
+ * `invalid_input`, naming esbuild's errors, when the entry does not compile or
+ * an import cannot be resolved.
+ */
+export const bundleModule = async (
+  input: ModuleInput,
+): Promise<BundledModule> => {
+  const loaded = new Map<string, string>();
+  const css = new Set<string>();
+  const windowed = new Set<string>();
+  const hosted = new Set<string>();
+  const conditions: ReadonlySet<string> = new Set([
+    ...(await readConditions(input.read, input.base)),
+    ...SCRIPT_CONDITIONS,
+  ]);
+
+  try {
+    const result = await input.build({
+      bundle: true,
+      format: 'esm',
+      platform: input.platform ?? 'browser',
+      target: input.platform === 'node' ? 'node22' : 'es2022',
+      write: false,
+      metafile: true,
+      outfile: 'index.js',
+      jsx: 'automatic',
+      define: { 'process.env.NODE_ENV': '"production"' },
+      legalComments: 'none',
+      charset: 'utf8',
+      logLevel: 'silent',
+      entryPoints: [ENTRY_ID],
+      plugins: [
+        sandboxPlugin({
+          read: input.read,
+          sourcePath: input.base,
+          entry: input.code,
+          ...(input.harnessPath === undefined
+            ? {}
+            : { harnessPath: input.harnessPath }),
+          aliases: await readAliases(input.read),
+          conditions,
+          loaded,
+          css,
+          windowServes: input.windowServes,
+          windowed,
+          hosted,
+          ...(input.shims === undefined ? {} : { shims: input.shims }),
+          ...(input.stubOutside === undefined
+            ? {}
+            : { stubOutside: input.stubOutside }),
+        }),
+      ],
+    });
+    const js = result.outputFiles.find((file) => file.path.endsWith('.js'));
+
+    return {
+      js: js?.text ?? '',
+      sources: loaded,
+      css: [...css],
+      windowSpecifiers: [...windowed],
+      hostSpecifiers: [...hosted],
+    };
+  } catch (error) {
+    throw new ContractError('invalid_input', failureOf(error));
+  }
 };

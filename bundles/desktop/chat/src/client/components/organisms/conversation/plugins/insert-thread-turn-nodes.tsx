@@ -196,6 +196,8 @@ const $createBlock = (
         turn.delegated,
         turn.text,
         turn.accepted,
+        null,
+        turn.action,
       );
     case 'agent':
       return $createAgentTurnNode(key, turn.promptId, turn.status, turn.text);

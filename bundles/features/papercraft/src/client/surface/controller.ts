@@ -29,7 +29,7 @@ export interface FrameReading {
 
 export interface ControllerInput {
   readonly chrome: 'node' | 'canvas';
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly scopeProject: string | undefined;
   readonly scopeThread: string | undefined;
   readonly latest: RefObject<FrameReading>;
@@ -40,13 +40,12 @@ export interface ControllerInput {
   readonly areaSize: () => { readonly width: number; readonly height: number };
   readonly fitContent: () => boolean;
   readonly selectRevision: (revision: number) => void;
-  readonly reload: () => void;
   readonly sendNow: () => Promise<void>;
 }
 
 export const usePreviewController = ({
   chrome,
-  artifactId,
+  canvasId,
   scopeProject,
   scopeThread,
   latest,
@@ -57,7 +56,6 @@ export const usePreviewController = ({
   areaSize,
   fitContent,
   selectRevision,
-  reload,
   sendNow,
 }: ControllerInput): PreviewController => {
   const controller = useMemo<PreviewController>(() => {
@@ -77,7 +75,7 @@ export const usePreviewController = ({
     };
 
     return {
-      artifactId,
+      canvasId,
       scope:
         scopeProject === undefined
           ? undefined
@@ -112,11 +110,10 @@ export const usePreviewController = ({
         selectRevision(revision);
       },
       currentRevision: () => latest.current.revision ?? undefined,
-      reload,
       sendNow,
     };
   }, [
-    artifactId,
+    canvasId,
     scopeProject,
     scopeThread,
     latest,
@@ -127,7 +124,6 @@ export const usePreviewController = ({
     areaSize,
     fitContent,
     selectRevision,
-    reload,
     sendNow,
   ]);
 
@@ -143,7 +139,8 @@ export const usePreviewController = ({
 /** How the frame dispatches a command, and the node's `abrir`: the canvas window. */
 export const useCommandDispatch = (
   services: Services,
-  artifactId: string,
+  /** What `papercraft.open-canvas/v2` names the canvas by (D26). */
+  segment: { readonly identity: string },
   scopeProject: string | undefined,
   scopeThread: string | undefined,
 ): {
@@ -167,11 +164,11 @@ export const useCommandDispatch = (
     if (scopeProject === undefined || scopeThread === undefined) return;
 
     execute(OPEN_CANVAS_COMMAND, {
-      artifactId,
+      ...segment,
       projectId: scopeProject,
       threadId: scopeThread,
     });
-  }, [execute, artifactId, scopeProject, scopeThread]);
+  }, [execute, segment, scopeProject, scopeThread]);
 
   return { execute, openCanvas };
 };

@@ -880,7 +880,8 @@ payload)` to the same bundle in every other live generation. The kernel names
 
 Client reads and UI that name a bundle's concept belong to that bundle.
 `packages/desktop/reads` and `packages/desktop/ui` hold only generic primitives
-(refresh queues, path utilities, tree and panel components, tokens).
+(refresh queues, path utilities, tree and panel components, tokens, and the
+pan, zoom and wheel-gesture helpers of `desktop/ui/viewport`).
 
 ### Current Runtime
 
@@ -949,7 +950,7 @@ append whose call scope lacks a key the sink names is refused with
 with the stream `runtime.thread.events/{threadId}`, registers only
 `runtime.prompt-finished/v1`, and writes the Thread events it owns to that
 stream directly, in the same commit as the Thread document; REST and Socket.IO
-serve the stream. Other bundles (`artifacts`, `comments`, `threads`) append their
+serve the stream. Other bundles (`comments`, `openui`, `papercraft`) append their
 registered events to the same stream through `events/v1`. After each append it
 commits, `events/v1` fires the core-owned host hook
 `core.event-hooks/v1.onEventAppendedHook({ stream, type })` without waiting;
@@ -987,67 +988,51 @@ input. `/bundles/features/threads` owns the delegation tools `thread-spawn`
 `thread-list`, `thread-get`, `thread-events`, `thread-send`, `thread-restart`
 (which reopens a direct child whose thread itself failed),
 `thread-interrupt`, and `thread-terminate` plus focused delegation,
-inspection, and steering skills. It also owns the always-available `ask` tool
-(order 1660), the events `threads.asked/v1` and `threads.answered/v1`, and the
-host service `threads.ask/v1`, which reach the host only through
-`runtime.threads/v1` and `events/v1`. `ask` lets the main Thread put one to five
-multiple-choice questions to the user (two to six options each, unique ids and
-labels, optional `multiSelect` (default false), `allowOther` (default true) and
-`recommended`, and an optional `context`): it records `threads.asked/v1` with a
-host-generated `askId`, which supersedes any unanswered ask of the Thread, and
-returns a text telling the model to end its turn. In an agent Thread
-(`origin` `agent`) it refuses and records nothing. `threads.ask/v1` exposes
-`status` and `answer` to the desktop (`desktopScope` `projectId`, `threadId`,
-`promptId`) and holds no state: every call folds the Thread log again, so the
-state survives a host restart (answered, the first answer winning, over
-superseded over pending). `answer` returns the state of an answered or
-superseded ask without sending; otherwise it checks the answers against the
-recorded questions (`invalid_input`), sends them to the Thread as one user
-input through `runtime.threads/v1.steer` — into the running prompt, else the
-ask's own prompt, which queues it and runs it at once on an idle Thread — and
-only then records `threads.answered/v1`. A refused or failed send is
-`unavailable` and records nothing; calls for one `askId` run one at a time; an
-unknown `askId` is `not_found` and a scope missing a needed key
-`invalid_scope`. When `chat.views/v1` is available, the threads client part
-projects each `threads.asked/v1` row (claiming `threads.answered/v1` too) as a
-`threads.question/v1` block drawn by `<threads-ask>`, which reads `status` in
-the asked row's scope on mount and again on each live row of its Thread that
-can change it (received through `chat.hooks/v1` `onThreadUpdateHook`), and
-sends `answer` from the window. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
+inspection, and steering skills, and reaches the host only through
+`runtime.threads/v1`. Since `threads` 2.0.0 it owns no `ask` tool, no
+`threads.ask/v1` and no events: its client registers a projector that claims
+the `threads.asked/v1` and `threads.answered/v1` rows of older Threads and
+draws nothing for them; the agent asks the user with the `openui` question
+form described below. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
 describes below. Migration stages 5 to 7 are described below.
 
-`/bundles/features/artifacts` owns `artifacts/v1`, the kind registry
-`artifact.kind/v1`, the desktop byte cache `artifacts.cache/v1`, the events
-`artifacts.created/v1`, `artifacts.revised/v1`, `artifacts.approved/v1` and
-`artifacts.applied/v1`, and the review-policy setting
-`artifacts.review-policy/v1`. An artifact's bytes live in the Project
-workspace under `.doric/artifacts/<artifactId>/<revision>/<path>` (reads fall
-back to the older `<artifactId>/<path>` layout and serve only bytes whose hash
-matches), written through `runtime.lease/v1.withLease`; without a lease reads
-answer empty and mutations refuse with `unavailable`. Artifact ids, entry paths
-and cache paths are validated against path traversal at the contract, the
-store and the desktop cache. Mutations need the full call scope
-(`projectId`, `threadId`, `promptId`), are serialised per Project and
-artifact, write bytes, then the manifest, then the event, and undo the
-transition when the append fails. Approval belongs to one revision; the
-policy (`proceed` or `request`) is kept per Project inside the one setting
-document, `approve` writes `artifacts.approved/v1` only under `request`, and
-`apply` refuses an unapproved revision under `request`; the host-only
-`awaitApproval` lets a caller wait. The kind registry has one provider whose
-`register` returns a Disposable tracked on the caller's generation; a kind
-declares a `blockType`, a `bodyTag` and who draws its header (`header`,
-`'frame'` by default or `'body'`). On the desktop the artifacts client
-projects the artifact events with one reducer and draws the frame (title,
-revision reading, "Autorizar" under `request`, the comment gesture), and the
-kind's `bodyTag` element draws the body inside it; for a `header: 'body'` kind
-the frame draws no bar and keeps only "Autorizar" below the body. The frame
-draws no revision list: the conversation, one frame per revision with the
-agent's replies, is the history. A revision lands in the log of the Thread that
-made it, which may hold no `created` (another Thread created the artifact) or
-skip revisions (another Thread revised it in between), so
-`artifacts.revised/v1` also carries the artifact's `kind` and `title`, and the
-reducers take any newer revision and start an unknown artifact from a revision
-that names its kind.
+`/bundles/features/openui` (2.2.0) draws UI the agent writes in its answer as
+OpenUI Lang programs (`@openuidev/lang-core` and `@openuidev/react-lang` 1.0.2,
+`@openuidev/react-ui` 0.18.1). Its client registers `<openui-fence>` as chat's
+renderer of `openui-lang` fences (`chat.views/v1.registerFenceRenderer`) at
+activation, with no setting; the element draws the fence's source until the
+renderer chunk `client/chunks/renderer.js` loads once per window, then the
+program. A later fence with the same identity is a patch merged by statement
+name. A control's click sends its text through `chat.send/v1.sendAction` in a
+`<ui-action program="…">` envelope, only from the latest closed revision of a
+program in a main Thread. A fence whose first line is `root = AskForm(…)` is a
+question form (one to five questions, two to six options each); its host
+service `openui.questions/v1` (`status`, `answer`, exposed to the desktop with
+`desktopScope` `projectId`, `threadId`) keys a question by its prompt and the
+SHA-256 digest of its parsed questions, folds the Thread log on every call,
+sends the formatted answers by the composer's route, then writes
+`openui.answered/v1`; the first answer is final, and an agent Thread is
+`unavailable` with nothing sent. `openui.programs/v1.reportErrors` (same scope)
+keeps the errors windows report for drawn fences of both tags (`openui-lang`
+and `papercraft`) per Thread and gives them to the agent as `validation` instructs: a closed fence's
+errors go out 200 ms after the report, as a steer of the Thread's latest
+prompt while it runs or as a queued new prompt once it has finished, at most 3
+immediate sends per prompt not started by validation; an unterminated fence's
+errors wait for the next prompt start (`runtime.hooks/v1`
+`onPromptStartedHook`). The host registers the `openui` skill (order 3400,
+loaded on demand) at activation. Its library adds the diagram components
+`Flowchart`, `SequenceDiagram`, `EntityDiagram` and `MindMap` with their parts:
+an outline while streaming, then one layout per closed revision, by ELK in the
+client chunk `client/chunks/layout.js` (`elkjs` 0.11.1, pinned, EPL-2.0) except
+for sequences, which Doric lays out itself without loading the chunk; diagram findings join `programCheck`. See
+`bundles/features/openui/README.md`.
+
+The `artifacts` bundle was removed with OpenUI's stage 4: `artifacts/v1`,
+`artifact.kind/v1`, `artifacts.cache/v1` and the setting
+`artifacts.review-policy/v1` no longer exist; a stored policy stays unread. Old
+`artifacts.*` rows replay as nothing (papercraft claims them). Each workspace's
+`.doric/artifacts/` is left in place, unread, and may be deleted by the user;
+the desktop deletes its old `userData/artifacts/` cache at every start.
 
 `/bundles/features/comments` owns `comments/v1` (`add`, `list`, `resolve`), the
 events `comments.added/v1` and `comments.resolved/v1`, and the always-available
@@ -1167,9 +1152,12 @@ thread's state — which opens a popover with the thread and, in its header, the
 button that takes the reader to the comment on the canvas. That button, and a
 card's "go to" that opens the thread, dispatch the bubbling, composed DOM event
 `doric:comment-thread-open` with `detail: { commentId, target }` (the root's
-id, the target without `revision`, which means the artifact's latest revision)
-and reveal the latest block of that target; external blocks carry
-`data-chat-block-id`.
+id and its target) and reveal the latest block of that target; external blocks carry
+`data-chat-block-id`. A papercraft canvas answers only when the target's kind
+and id are its own: a fence node opens the thread only when the target's
+`revision` is the node's revision, or, when the target names none, when the
+node draws the program's newest revision; the canvas window opens it on the
+revision on screen, since every revision shows every thread.
 
 The chat owns the `message` comment kind. Selecting words of an agent's answer
 draws nothing new; typing over a selection whose two ends lie in the same
@@ -1238,16 +1226,33 @@ comment's where passages overlap; a sent comment's passage answers neither
 the click nor the pointer. On `doric:prompt-send` a note whose item is
 still being added hands that add to `waitUntil`.
 
-`/bundles/features/papercraft` owns the `preview` artifact kind, the
-`papercraft.previews/v1` service, the `papercraft_preview` tool (order 1700)
-and the `papercraft-preview` skill (order 3400). The tool snapshots a
-Project source once, publishes it as an artifact (or, given `artifact_id`,
-revises it), and answers the preview state with the unresolved comments and
-the review state; under `request` it reports `review.pending` and never
-blocks. Its desktop part draws the `papercraft-preview` body inside the
-artifacts frame (the kind declares `header: 'body'`; the node is a square)
-and the canvas window at `/papercraft/:projectId/:threadId/:artifactId`, both
-under an overlaid header with icon controls. A comment is written in an inline
+`/bundles/features/papercraft` (2.0.0) draws `papercraft` fences: OpenUI Lang
+programs the agent writes in its answer (`papercraft <identity>`, a later fence
+with the same identity being a patch merged by statement name), drawn with the
+Project's own components in a sandboxed frame (`docs/features/papercraft.md`).
+It has no tool. Its host registers the `papercraft` skill at activation, owns
+`papercraft.programs/v1` (`library`, `export`, `read`, exposed to the desktop
+with `desktopScope` `projectId`, `threadId`) over a host memo keyed by Project,
+and appends the event `papercraft.cwd/v1` at each prompt start and move
+(`runtime.hooks/v1`); a fence binds to the `cwd` of the last such event before
+its turn. A repository library is the set of `defineComponent` entry files
+directly under `.doric/papercraft/schemas/` (at most 100, 16 KiB each, 1 MiB
+in all), built in the Project's sandbox; its signatures reach the agent as a
+library instruct at a prompt's start or a move, never after a compile.
+`Export(path, name?, props?)` draws one export or story of a workspace file,
+built as described below; `Query`, `Mutation` and actions do not exist in a
+papercraft fence. Before any runner job the host writes
+`.doric/papercraft/.gitignore` (ignoring everything there but itself and
+`schemas/`) when it is absent, and once per host session per Project deletes
+an old Doric-wide `.doric/.gitignore` whose content is exactly `*`, after
+writing `.doric/artifacts/.gitignore` when `.doric/artifacts/` exists. Errors
+of a drawn fence go to `openui.programs/v1` with the tag `papercraft`. Its
+client registers `<papercraft-fence>` as chat's renderer of `papercraft`
+fences, reads a Thread's fences in the canvas window through
+`chat.views/v1.watchFences`, and draws each revision as a canvas node, and the
+canvas window at `/papercraft/:projectId/:threadId/:identity`
+(`papercraft.open-canvas/v2`), both under an overlaid header with icon
+controls; it claims old `artifacts.*` rows and draws nothing for them. A comment is written in an inline
 input at its pin, in a popover with the thread popover's surface (the send
 button outside the field, inside the popover; the hover label hides while it
 or a thread is open), and joins
@@ -1256,30 +1261,29 @@ the composer stack only when confirmed; the stack item carries
 chat's `chat-comment-line`. It stays a draft until a prompt is sent. In the
 conversation `Cmd/Ctrl+Enter` is chat's send, before which the open note joins
 the stack (`doric:prompt-send`); neither the canvas nor its fields answer the
-chord. In the canvas window `Cmd/Ctrl+Enter` is `papercraft.send/v1` (the
-approval is `Cmd/Ctrl+Shift+Enter`), which, like the window's send button,
+chord. In the canvas window `Cmd/Ctrl+Enter` is `papercraft.send/v1`, which, like the window's send button,
 confirms the open note and sends the stack through `chat.send/v1`; the flush writes `commentId` and `inReplyTo` and still reads
 old-format drafts. Comments are grouped into threads from the Thread log (one
 shared `watchThread` per Thread per window, `comments/v1.list` as fallback).
 Threads and drafts carry over revisions: every revision on screen shows every
-thread of the artifact, numbered by the root's place among all its roots; a
+thread of the program, numbered by the root's place among all its roots; a
 pin re-places itself through its anchor, else at the point the anchor
 recorded (element anchors also record the clicked content point as `x`/`y`),
 else it is drawn detached by the content's left edge, still counted and
 openable. Element anchors also record a whitespace-collapsed `text` excerpt
-and `index`, the element's ordinal among the elements of its selector (stamped
-from the same file when stamped). Because an edited file moves its lines, an
-anchor re-resolves only to an element of its own selector: the exact
-`path:line` when it is the only match there; otherwise, among that selector's
-elements stamped from the file (or all elements with that selector), the one
-whose text matches, then the recorded `index`, then the only candidate, then
-the one under or nearest the recorded `x`/`y`, then the nearest stamped line.
-It never resolves to an element with a different selector. A new comment targets the revision on screen; a reply targets its
+and `index`, the element's ordinal among the elements of its selector. A
+program anchor's selector is the name of the statement whose wrapper is
+nearest the clicked node, and its label is that node's component (a click on
+no statement, such as a portal, records a point). An anchor re-resolves first
+to the first node of its statement; otherwise, among the elements of its
+selector, to the one whose text matches, then the recorded `index`, then the
+only candidate, then the one under or nearest the recorded `x`/`y`. It never
+resolves to an element with a different selector. A new comment targets the revision on screen; a reply targets its
 root's target. Pins show the thread state by colour alone — a draft is dashed,
 an open comment primary, an awaiting one orange, a done one green (no badge) —
 and come in three sizes, of which the conversation's reply row takes the small
 one; a control shows or hides the resolved ones. A dashed hover outline with
-the label `element · file:line` follows the pointer in any mode, focused or
+the target's label (the element, with its pseudo-element when there is one) follows the pointer in any mode, focused or
 not: to the element a comment would land on while the comment tool is armed
 (`Alt` forces a free point), else to the element under the pointer; nothing is
 outlined while the canvas pans, and the outline goes when the pointer leaves
@@ -1288,20 +1292,16 @@ closing the open thread (`Esc` or its close button), hand focus to the canvas
 before the field unmounts; after a blur to outside, the next press on the node
 only focuses it. Opening a pin that
 already holds its first comment shows a thread popover (header
-`N Component:line`, a menu, resolve or reopen on sent roots, close; messages
+`N` and the anchor's label, or the label and the point for a free point; a menu, resolve or reopen on sent roots, close; messages
 with avatar, name and time; a reply field): replies go to the stack with
 `inReplyTo`, drafts stay editable and removable, and resolving calls
-`comments/v1.resolve` on the root under the root's own `promptId`. The node
-listens for `doric:comment-thread-open`: a target with a `revision` opens on
-that revision's node, and a target without one means the latest, so only the
-node of the artifact's newest revision (asked of `artifacts/v1.read`) opens
-it; the separate canvas window does not receive the chat's DOM event, a known
-limitation. `papercraft_preview` returns
-the unresolved root comments with their `replies`, and the skill tells the
-agent to answer with `comment_reply` and resolve when done. Every window call carries the
+`comments/v1.resolve` on the root under the root's own `promptId`. Comments
+reach the agent in `<comments>` under a target of kind `papercraft-program`
+whose id is the program's identity, and the skill tells the agent to answer
+with `comment_reply` and resolve when done. Every window call carries the
 Project and Thread scope, and `chat.composer/v1`, `chat.send/v1` and
-`runtime.threads/v1` are optional. A `component` source is compiled in two
-places (path B). Where the sandbox image installs esbuild under
+`runtime.threads/v1` are optional. An `Export` is compiled in two
+places. Where the sandbox image installs esbuild under
 `/opt/doric/bundler` at the host's own version (the image
 `.sandbox.Dockerfile` builds does), the host copies its bundled runner
 script into `.doric/papercraft/` of the workspace through
@@ -1317,9 +1317,7 @@ React `mount` renders with (`react`, `react/jsx-runtime`,
 `@base-ui/react` specifier of the platform's map (the host checks once per specifier that its own
 copy bundles with React external, as the platform build does), wraps the chosen export (`entry`, else
 `default`, else the single PascalCase export) in `mount(root, { theme })`, and
-compiles its Tailwind sheet; the revision's entries are `index.html` (fallback
-markup), `index.js` and `index.css`, and a compile error fails the call before
-anything is published. The preview is agnostic to the Project: besides that
+compiles its Tailwind sheet; a source that does not build answers `failed`. The preview is agnostic to the Project: besides that
 React and Base UI, the host provisions only `lucide-react` (bundled from
 the host's own `node_modules`; the sandbox leaves it external and the host
 bundles it in one more pass) and, in the sheet, which always compiles on the
@@ -1354,7 +1352,7 @@ v4 through `files/v1` (`tailwindcss` itself from the host). A relative
 `url()` in a stylesheet (a font, an image) is written for its own file's
 place, which the compiled sheet does not keep: each is rebased as its sheet
 loads, read as bytes (`files/v1`'s base64 read, 1.1.0, for a Project file) and
-stored with the revision as `assets/<sha256>.<ext>`, the `url()` pointing at
+stored with the module as `assets/<sha256>.<ext>`, the `url()` pointing at
 that copy; one that cannot be read or is too large (4 MiB each, 16 MiB a
 sheet) stays as written, with a warning. The sheet is
 linked in the preview frame's own document, so either base applies as
@@ -1382,30 +1380,29 @@ zoom). It measures each element only by the part its clipping ancestors leave
 visible (those that hide their overflow on its containing-block chain), and an
 element with no area, such as the module's own `display: contents` wrappers,
 neither bounds the content nor answers a pointer; so the fit and
-`Centralizar` centre what is shown, and fitting again does not drift. An
-`html` source still builds `index.html` only. Before a module loads, the
-window reads the revision's bytes through `artifacts/v1.read` and writes them
-into the verified cache with `artifacts.cache/v1.ensure`; the frame then
-imports the module from
-`doric://app/artifacts/<artifactId>@<revision>/index.js`, and the markup stands
-in when either step fails.
+`Centralizar` centre what is shown, and fitting again does not drift. Before a
+library or an export loads, the window reads the module's bytes through
+`papercraft.programs/v1.read` and writes them into the verified cache under
+`userData/papercraft/` with the desktop's `papercraft.cache/v1.ensure` (which,
+once per app session, cuts the cache above 256 MiB back to 128 MiB, oldest
+first); the frame then imports it from
+`doric://app/papercraft-modules/<dir>/<file>`.
 
 Every Papercraft preview, in the conversation node and in the canvas window,
 renders in an `<iframe sandbox="allow-scripts">` without `allow-same-origin`
 (`docs/architecture/bundles/papercraft/isolamento.md`): an opaque origin, its
 own realm, no preload, no persistent storage and no access to the app's DOM.
 The iframe loads `doric://app/frame/index.html?entry=` naming papercraft's
-frame runtime (`client/frames/preview.js`); the app and the runtime speak only
+frame runtime (`client/frames/openui.js`), which draws the program with
+OpenUI's renderer; the app and the runtime speak only
 over one `MessageChannel` per frame (`src/client/frame-protocol.ts`), whose
 port the app hands over in a single window message, and the app parses every
 frame message as untrusted data. The runtime installs in-memory
 `localStorage` and `sessionStorage` (an opaque origin has none), links
 `index.css`, sets the theme on `<html>` and calls `mount(root, { theme })` on a
-`#root` in its `<body>`, or renders path A's markup; it reports the scene,
+`#root` in its `<body>`; it reports the scene,
 the content size, the layout and errors, and applies the hidden layers, the
-cursor lock and the input capture the app asks for. Revisions compiled before
-the frame keep their own `mount`, with its portal container and its `:root`
-rules also on `:host`, and mount in the frame unchanged. A chat window keeps
+cursor lock and the input capture the app asks for. A chat window keeps
 at most three live frames, the three used last (a revision's first
 appearance, a live frame staying visible, or a pointer or click on it; a dead
 preview scrolling into view is not promoted, and the canvas window's open
@@ -1413,7 +1410,7 @@ revision always stays live); the others show a snapshot of the same size,
 taken once a live frame has rendered and stays settled, wholly on screen, taken through papercraft's desktopMain `papercraft.snapshot/v1`
 (over `doric.windows/v1.capture` for the calling window's own key, so a
 window captures only itself) and keyed
-by artifact, revision, theme and width, with the last serialized scene so
+by program, revision, theme and width, with the last serialized scene so
 pins, outlines and comments still draw, or a placeholder of the preview's
 size and title before one exists; a pointer or click on one mounts a live
 frame again, under the snapshot until it reports `mounted`. A frame that does
@@ -1486,7 +1483,7 @@ names `core` and enables `transport`, `postgres`, `core`, `files`, `web`,
 `runtime`,
 `default`,
 `openai`, `openrouter`, `codex`, `claude`, `claude-login`, `docker`, `notifications`, `layout`,
-`settings`, `chat`, `history`, `artifacts`, `comments`, `papercraft` and `mcp`, and chooses
+`settings`, `chat`, `history`, `comments`, `openui`, `papercraft` and `mcp`, and chooses
 `postgres` for `storage.backend/v1` and `secrets.backend/v1`). Its `resident`
 list names the installed host parts that run in the native host process rather
 than in a generation process: `host-config`, which owns the configuration's
@@ -1679,14 +1676,16 @@ platform; decisions S8-1 to S8-23 are recorded in `implementation-decisions.md`.
 Every app window loads only `doric://app/<path>`, a privileged standard scheme whose
 handler serves the shell, the platform files under `/platform/`, verified bundle
 artifacts from the local cache and their schemas, the Papercraft preview frame
-document and its boot script under `/frame/`, and answers 404, never the
+document and its boot script under `/frame/`, the verified papercraft modules
+under `/papercraft-modules/<dir>/<file>` (`userData/papercraft/`, written by
+`papercraft.cache/v1`), and answers 404, never the
 shell, for missing files. The shell answers only a navigation: Electron hands a
 custom scheme's handler no `Sec-Fetch-Dest`, so a request at an app path that
 does not accept HTML (a font, an image, a fetch) is a 404 too, never the shell
 read as the font it asked for. Sender checks compare protocol `doric:` and host
 `app` (S8-1). Only what a preview frame loads answers
 `Access-Control-Allow-Origin: *`: `/frame/*`, `/platform/*` (not the shell's
-own assets), `/artifacts/*` and `/bundles/<id>@<version>/client/frames/*`; the
+own assets), `/papercraft-modules/*` and `/bundles/<id>@<version>/client/frames/*`; the
 rest of `/bundles/`, `/schemas/` and the shell stay same-origin. A view window loads the host's own origin instead and carries no
 preload, so no sender check applies to it. In development the windows still open through `doric://app` and the
 handler forwards the shell and its assets to the renderer dev server
@@ -1760,7 +1759,12 @@ terminals, usage, resources, working-directory and branch UI under
 `src/client/provisional/` until stage 10 moved them to their bundles; `chat` registers
 `/projects/:projectId/threads/:threadId` (child of `/`) with `<chat-view>`, its
 composer as a `layout.footer` item, and `chat.views/v1`, `chat.lexical/v1`, `chat.send/v1` and
-`chat.hooks/v1`; `settings` registers `/settings` with sections as child routes
+`chat.hooks/v1` (`chat.views/v1` 1.1.0 adds `registerFenceRenderer`, which
+draws every fence of a tag in an agent turn as one element per fence key
+`<promptId>/<turnSequence>/<index>` with its state `streaming`, `closed` or
+`unterminated`, and `watchFences`, which streams a Thread's fences of a tag to
+a surface outside the conversation; `chat.send/v1` 1.1.0 adds `sendAction`; a
+queue receipt ends no turn); `settings` registers `/settings` with sections as child routes
 and the execution picker as a `layout.footer` item; `history` (desktopMain)
 keeps the per-Thread snapshot cache over `doric.cache/v1`. The new platform
 contracts are `doric.elements/v1`, `doric.connection/v1`, the transitional

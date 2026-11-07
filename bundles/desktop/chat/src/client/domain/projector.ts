@@ -81,6 +81,8 @@ export type UserTurn = TurnBase & {
   readonly delegated?: DelegatedInput;
   /** Set when a bundle gave this instruction (`runtime.threads/v1.instruct`). */
   readonly instruction?: Instruction;
+  /** Set when a control of a UI the agent drew sent this prompt (D20): its program. */
+  readonly action?: { readonly program: string };
   /**
    * Set when a background terminal wrote this input: the settled command, read
    * from the prompt the host enqueued, which the transcript draws as its own
@@ -482,7 +484,10 @@ const grouped = (
   // A `comment_reply` call draws no row of its own: its reply block says what
   // it wrote, where it wrote it.
   const turns = drafts.filter((turn) => !isReplyCall(turn));
-  const last = turns.at(-1);
+  // A queue receipt ends no turn (D2): the live burst is the last turn's that
+  // is not `queued`, and stays whole behind a receipt.
+  const lastIndex = lastTurnIndex(turns);
+  const last = turns[lastIndex];
   const writing = last !== undefined && !status.has(last.promptId);
 
   const result: Turn[] = [];
@@ -525,13 +530,24 @@ const grouped = (
     const run = turns.slice(index, end + 1).filter(isBurstDraft);
     // A burst of one step has nothing to summarize: the step is the whole of it,
     // and a summary would only repeat it.
-    if (run.length === 1 || (writing && end === turns.length - 1))
-      result.push(...run);
+    if (run.length === 1 || (writing && end === lastIndex)) result.push(...run);
     else result.push(activity(run));
     index = end + 1;
   }
 
   return result;
+};
+
+/**
+ * The index of the transcript's last turn that is not a queue receipt, or -1:
+ * a receipt ends no turn (openui.md D2), so this is the turn the log is at.
+ */
+export const lastTurnIndex = (
+  turns: readonly { readonly type: string }[],
+): number => {
+  for (let index = turns.length - 1; index >= 0; index -= 1)
+    if (turns[index]?.type !== 'queued') return index;
+  return -1;
 };
 
 /**
@@ -587,22 +603,6 @@ const lastAgent = (
     if (turn?.type === 'agent' && turn.promptId === promptId) return turn;
   }
   return undefined;
-};
-
-/** A queue receipt splits a streamed answer without making its prefix new text. */
-const finishedTail = (
-  turns: readonly Draft[],
-  agent: Draft,
-  text: string,
-): string => {
-  let prefix = '';
-  for (let index = turns.indexOf(agent) - 1; index >= 0; index -= 1) {
-    const turn = turns[index];
-    if (turn?.type === 'queued') continue;
-    if (turn?.type !== 'agent' || turn.promptId !== agent.promptId) break;
-    prefix = turn.text + prefix;
-  }
-  return text.startsWith(prefix) ? text.slice(prefix.length) : text;
 };
 
 /** The failure block a job's `agent.failed` wrote, which states why it closed. */
@@ -673,7 +673,9 @@ const readEvent = (
   if (isTruncation(item)) return;
   const event = record(item.event);
   const promptId = item.promptId;
-  const last = turns.at(-1);
+  // A queue receipt ends no turn (D2): the last turn is the last one that is
+  // not `queued`.
+  const last = turns[lastTurnIndex(turns)];
   const open =
     last !== undefined && last.promptId === promptId ? last : undefined;
   const recovery = readExecution(executions, item, event);
@@ -825,7 +827,7 @@ const readEvent = (
     // unless it streamed nothing and the host still named a result.
     if (terminal === 'completed' || agent === undefined) {
       if (agent?.type === 'agent') {
-        agent.text = finishedTail(turns, agent, finished);
+        agent.text = finished;
         agent.events.push(item);
       } else if (
         finished.length > 0 &&
@@ -982,7 +984,7 @@ const settle = (
   // in a job that has not settled, is a prompt the agent has not answered yet;
   // reasoning has no lifecycle of its own to read the same fact from. That last
   // burst is also the one a surface keeps whole instead of grouping.
-  const last = turns.at(-1);
+  const last = turns[lastTurnIndex(turns)];
   const writing = last !== undefined && !status.has(last.promptId);
   for (const turn of turns) {
     const live = turn === last && writing;

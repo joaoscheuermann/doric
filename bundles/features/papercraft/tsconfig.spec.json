@@ -14,7 +14,6 @@
     "src/host/**/*.ts",
     "src/sandbox/**/*.ts",
     "src/contracts/**/*.ts",
-    "src/client/block.ts",
     "tests/*.ts",
     "tests/support/**/*.ts"
   ],

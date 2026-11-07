@@ -12,8 +12,8 @@
   },
   "include": [
     "src/host/**/*.ts",
-    "src/contracts/**/*.ts",
     "src/client/domain/**/*.ts",
+    "src/client/old-asks.ts",
     "tests/*.ts",
     "tests/support/**/*.ts"
   ],

@@ -40,12 +40,14 @@ import {
   $createLineBreakNode,
   $createParagraphNode,
   $createTextNode,
+  $isParagraphNode,
   type ElementFormatType,
   type ElementNode,
   type LexicalNode,
   type TextFormatType,
 } from 'lexical';
 
+import { fenceIndexes } from '../../../../domain/fences.js';
 import {
   commonBlocks,
   commonItems,
@@ -59,6 +61,41 @@ import {
   markdownBlocks,
 } from '../../../../domain/markdown.js';
 import { $createAttachmentImageNode } from './attachment-image-node.js';
+import {
+  $createFenceNode,
+  $isFenceNode,
+  type FenceNode,
+} from './fence-node.js';
+
+/**
+ * The registered fence tags and the turn's key prefix, `<promptId>/<turnSequence>`
+ * (openui.md D1): a `code` block of a tag in `tags` becomes a fence node keyed
+ * `<keyPrefix>/<index>`. Callers that pass none keep code blocks.
+ */
+export interface MarkdownFences {
+  readonly tags: ReadonlySet<string>;
+  readonly keyPrefix: string;
+}
+
+/** A fence block's tag and key (D2). */
+interface PlacedFence {
+  readonly tag: string;
+  readonly key: string;
+}
+
+/** Each block's tag and key, for the blocks that are fences of a registered tag. */
+const placedFences = (
+  blocks: readonly MarkdownBlock[],
+  fences: MarkdownFences | undefined,
+): ReadonlyMap<number, PlacedFence> =>
+  fences === undefined || fences.tags.size === 0
+    ? new Map()
+    : new Map(
+        [...fenceIndexes(blocks, fences.tags)].map(([at, { tag, index }]) => [
+          at,
+          { tag, key: `${fences.keyPrefix}/${index}` },
+        ]),
+      );
 
 /** The format a run wears; `text` wears none, which is what plain text is. */
 const runFormats: Readonly<
@@ -148,8 +185,22 @@ const $tableNode = (
   return table;
 };
 
-/** The node one block becomes, filled with the block's own source. */
-const $blockNode = (block: MarkdownBlock): LexicalNode => {
+/**
+ * The node one block becomes, filled with the block's own source; a fence of a
+ * registered tag (`fence` set) becomes a fence node in a paragraph.
+ */
+const $blockNode = (block: MarkdownBlock, fence?: PlacedFence): LexicalNode => {
+  if (fence !== undefined && block.kind === 'code') {
+    const paragraph = $createParagraphNode();
+    paragraph.append(
+      $createFenceNode(
+        fence.tag,
+        fence.key,
+        block.lines.map(lineSource).join('\n'),
+      ),
+    );
+    return paragraph;
+  }
   switch (block.kind) {
     case 'heading': {
       const heading = $createHeadingNode(`h${block.depth}` as HeadingTagType);
@@ -235,8 +286,16 @@ const $updateList = (
  * held. The source is read, never rewritten: what lands is the text the caller
  * passed, arranged as the markdown says it should be.
  */
-export const $appendMarkdown = (parent: ElementNode, source: string): void => {
-  for (const block of markdownBlocks(source)) parent.append($blockNode(block));
+export const $appendMarkdown = (
+  parent: ElementNode,
+  source: string,
+  fences?: MarkdownFences,
+): void => {
+  const blocks = markdownBlocks(source);
+  const placed = placedFences(blocks, fences);
+  blocks.forEach((block, at) => {
+    parent.append($blockNode(block, placed.get(at)));
+  });
 };
 
 /**
@@ -266,16 +325,20 @@ export const $setMarkdown = (
   parent: ElementNode,
   source: string,
   previous: string,
+  fences?: MarkdownFences,
 ): void => {
   const blocks = markdownBlocks(source);
   const held = previous.length > 0 ? markdownBlocks(previous) : [];
   const children = parent.getChildren();
+  const placed = placedFences(blocks, fences);
 
   // The children must be the ones the held source built, one per block, for a
   // kept prefix to be the right prefix. Anything else is a full rebuild.
   if (children.length !== held.length) {
     parent.clear();
-    for (const block of blocks) parent.append($blockNode(block));
+    blocks.forEach((block, at) => {
+      parent.append($blockNode(block, placed.get(at)));
+    });
     return;
   }
 
@@ -299,10 +362,35 @@ export const $setMarkdown = (
     $updateList(list, after.items, shared);
     keep += 1;
   }
-  for (let index = children.length - 1; index >= keep; index -= 1)
+  for (let index = children.length - 1; index >= blocks.length; index -= 1)
     children[index]?.remove();
   for (let index = keep; index < blocks.length; index += 1) {
     const block = blocks[index];
-    if (block !== undefined) parent.append($blockNode(block));
+    const child = children[index];
+    if (block === undefined) continue;
+    // A fence of the same tag and key takes its new source in place (D1): its
+    // node, DOM and element stay, so a streaming fence never remounts.
+    const fence = child === undefined ? undefined : $fenceOf(child);
+    const place = placed.get(index);
+    if (
+      fence !== undefined &&
+      place !== undefined &&
+      block.kind === 'code' &&
+      fence.getTag() === place.tag &&
+      fence.getFenceKey() === place.key
+    ) {
+      fence.setSource(block.lines.map(lineSource).join('\n'));
+      continue;
+    }
+    const node = $blockNode(block, place);
+    if (child === undefined) parent.append(node);
+    else child.replace(node);
   }
+};
+
+/** The fence node a fence block's paragraph holds, if `node` is one. */
+const $fenceOf = (node: LexicalNode): FenceNode | undefined => {
+  if (!$isParagraphNode(node) || node.getChildrenSize() !== 1) return undefined;
+  const only = node.getFirstChild();
+  return $isFenceNode(only) ? only : undefined;
 };

@@ -12,9 +12,9 @@
 // service.
 
 import {
-  ARTIFACT_TARGET_KIND,
   type CommentAnchor,
   type CommentTarget,
+  PROGRAM_TARGET_KIND,
 } from '../../contracts/index.js';
 import type { PreviewDraft } from '../comment.js';
 import type { PreviewThread } from '../domain/preview-state.js';
@@ -156,7 +156,11 @@ export const threadViewOf = (
   rootId: string,
   threads: readonly PreviewThread[],
   drafts: readonly PreviewDraft[],
-  target: { readonly artifactId: string; readonly revision?: number },
+  target: {
+    readonly kind?: string;
+    readonly canvasId: string;
+    readonly revision?: number;
+  },
 ): ThreadView | undefined => {
   const replies = drafts
     .filter((draft) => draft.inReplyTo === rootId)
@@ -174,8 +178,8 @@ export const threadViewOf = (
       rootId,
       pin: sent.pin,
       target: {
-        kind: ARTIFACT_TARGET_KIND,
-        id: target.artifactId,
+        kind: target.kind ?? PROGRAM_TARGET_KIND,
+        id: target.canvasId,
         ...(revision === undefined ? {} : { revision }),
         anchor,
       },
