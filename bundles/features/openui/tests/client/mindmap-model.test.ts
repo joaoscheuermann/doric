@@ -47,12 +47,10 @@ const LEVELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 test('a map of three levels reads every topic with its depth, right by default, without findings', () => {
   const model = read({
     root: Topic('Launch', [Topic('Marketing', [Topic('Ads')]), Topic('Sales')]),
-    height: 400,
   });
 
   assert.deepEqual(model.findings, []);
   assert.equal(model.layout, 'right');
-  assert.equal(model.height, 400);
   assert.equal(model.count, 4);
   assert.equal(model.cut.topics, undefined);
   assert.deepEqual(model.root, {
@@ -186,12 +184,11 @@ test('a child Topic whose label is not a string is skipped with its subtopics, w
   assert.equal(model.count, 2);
 });
 
-test('layout "down" reads down; "sideways" and a non-number height read as their defaults, without a finding', () => {
+test('layout "down" reads down; "sideways" reads right, without a finding', () => {
   assert.equal(read({ root: Topic('R'), layout: 'down' }).layout, 'down');
 
-  const model = read({ root: Topic('R'), layout: 'sideways', height: 'tall' });
+  const model = read({ root: Topic('R'), layout: 'sideways' });
   assert.equal(model.layout, 'right');
-  assert.equal(model.height, undefined);
   assert.deepEqual(model.findings, []);
 });
 

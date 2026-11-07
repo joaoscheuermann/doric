@@ -74,7 +74,6 @@ test('an ER diagram with defaults reads its entities, fields and relation, down,
   assert.deepEqual(model.findings, []);
   assert.equal(model.notation, 'er');
   assert.equal(model.direction, 'down');
-  assert.equal(model.height, undefined);
   assert.deepEqual(model.entities, [
     {
       id: 'users',
@@ -262,13 +261,11 @@ test('out-of-schema values read as their defaults or unset, without a finding', 
         label: 9,
       }),
     ],
-    height: '300',
   });
 
   assert.deepEqual(uml.findings, []);
   assert.equal(uml.notation, 'class');
   assert.equal(uml.direction, 'right');
-  assert.equal(uml.height, undefined);
   const field = uml.entities[0]?.fields[0];
   assert.equal(field?.name, 'id');
   assert.equal(field?.type, undefined);
@@ -283,12 +280,10 @@ test('out-of-schema values read as their defaults or unset, without a finding', 
     notation: 'uml',
     direction: 'up',
     entities: [Entity('a', 'A')],
-    height: 320,
   });
   assert.deepEqual(other.findings, []);
   assert.equal(other.notation, 'er');
   assert.equal(other.direction, 'down');
-  assert.equal(other.height, 320);
 });
 
 test('an empty relation label reads as absent', () => {

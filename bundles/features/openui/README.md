@@ -116,7 +116,9 @@ off, an older revision). While a click is sent the fence stays busy at least
   `down` layout transposed); `MindMap` uses ELK `mrtree`; `Flowchart` uses ELK
   layered. A failed
   layout shows a failed state and is not reported to the agent.
-- **Pan and zoom:** an interactive diagram pans and zooms with
+- **Pan and zoom:** a diagram is drawn in a square area as wide as its
+  container, its height capped so it fits in the window; an interactive diagram
+  pans and zooms with
   `desktop/ui/viewport`; it is static and fitted when
   `blockedReason(view, latest)` gives a reason. While a click is sending, the
   wrapper is `inert` but the diagram stays interactive and keeps its viewport.

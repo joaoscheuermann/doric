@@ -23,7 +23,6 @@ export interface FlowchartProps {
   readonly edges?: unknown;
   readonly groups?: unknown;
   readonly direction?: unknown;
-  readonly height?: unknown;
 }
 
 /** The layout's key: the drawn parts and the direction, as JSON. */

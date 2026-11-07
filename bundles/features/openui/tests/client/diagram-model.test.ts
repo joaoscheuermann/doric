@@ -47,7 +47,6 @@ const read = (props: {
   readonly edges?: unknown;
   readonly groups?: unknown;
   readonly direction?: unknown;
-  readonly height?: unknown;
 }): FlowchartModel => readFlowchart(props);
 
 const ids = (parts: readonly { readonly id: string }[]): string[] =>
@@ -65,7 +64,6 @@ test('a part with defaults draws as a box, solid, with an arrow, top-down, witho
 
   assert.deepEqual(model.findings, []);
   assert.equal(model.direction, 'down');
-  assert.equal(model.height, undefined);
   assert.deepEqual(model.nodes, [
     { id: 'a', label: 'A', shape: 'box' },
     { id: 'b', label: 'B', shape: 'box' },
@@ -77,15 +75,13 @@ test('a part with defaults draws as a box, solid, with an arrow, top-down, witho
   assert.deepEqual(model.cut, {});
 });
 
-test('direction and a finite height are read as written', () => {
+test('direction is read as written', () => {
   const model = read({
     nodes: [Node('a', 'A')],
     direction: 'right',
-    height: 300,
   });
 
   assert.equal(model.direction, 'right');
-  assert.equal(model.height, 300);
 });
 
 test('an id of 0 or of 65 characters is not drawn; 64 characters is', () => {
@@ -437,7 +433,6 @@ test('an optional value outside its schema reads as its default, without a findi
     nodes: [Node('a', 'A', 'hexagon'), Node('b', 'B', 'diamond')],
     edges: [Edge('a', 'b', 'x', 'wavy', 'both')],
     direction: 'sideways',
-    height: Number.NaN,
   });
 
   assert.deepEqual(
@@ -447,7 +442,6 @@ test('an optional value outside its schema reads as its default, without a findi
   assert.equal(model.edges[0]?.line, 'solid');
   assert.equal(model.edges[0]?.arrow, 'end');
   assert.equal(model.direction, 'down');
-  assert.equal(model.height, undefined);
   assert.deepEqual(model.findings, []);
 });
 

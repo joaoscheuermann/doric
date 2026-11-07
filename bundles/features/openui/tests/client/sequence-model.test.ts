@@ -58,7 +58,6 @@ test('a sequence with defaults reads its participants and steps without findings
       Message('b', 'a', 'token', 'reply'),
       Note('checks the password', ['b']),
     ],
-    height: 500,
   });
 
   assert.deepEqual(model.findings, []);
@@ -71,7 +70,6 @@ test('a sequence with defaults reads its participants and steps without findings
     message('b', 'a', 'token', 'reply'),
     { type: 'note', text: 'checks the password', over: ['b'] },
   ]);
-  assert.equal(model.height, 500);
 });
 
 test('21 participants: the first 20 are drawn, cut.participants is 21', () => {
@@ -302,7 +300,6 @@ test('kind "bogus" reads call for a message and loop for a fragment, without a f
       Message('a', 'b', 'hello', 'bogus'),
       Fragment('bogus', [Section('', [Message('b', 'a', 'hi')])]),
     ],
-    height: 'tall',
   });
 
   assert.deepEqual(model.findings, []);
@@ -311,7 +308,6 @@ test('kind "bogus" reads call for a message and loop for a fragment, without a f
     model.steps[1]?.type === 'fragment' && model.steps[1].kind,
     'loop',
   );
-  assert.equal(model.height, undefined);
 });
 
 test('a 121-character participant label, message text, note text and section label are cut, one finding each', () => {

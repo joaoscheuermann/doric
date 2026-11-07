@@ -59,6 +59,40 @@ window.document.write('<!DOCTYPE html><html><head></head><body></body></html>');
 export const settle = (milliseconds = 0): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+/**
+ * Runs `run` while every element's clientWidth and clientHeight read
+ * `size.width` and `size.height` on each call (mutate `size` to resize),
+ * then restores the original getters.
+ */
+export const withClientSize = async <T>(
+  size: { width: number; height: number },
+  run: () => Promise<T>,
+): Promise<T> => {
+  const proto = window.HTMLElement.prototype;
+  const keys = [
+    ['clientWidth', () => size.width],
+    ['clientHeight', () => size.height],
+  ] as const;
+  const originals = keys.map(([key]) =>
+    Object.getOwnPropertyDescriptor(proto, key),
+  );
+  for (const [key, get] of keys) {
+    Object.defineProperty(proto, key, { configurable: true, get });
+  }
+  try {
+    return await run();
+  } finally {
+    keys.forEach(([key], i) => {
+      const original = originals[i];
+      if (original === undefined) {
+        delete (proto as unknown as Record<string, unknown>)[key];
+      } else {
+        Object.defineProperty(proto, key, original);
+      }
+    });
+  }
+};
+
 /** Closes the window once the file's tests are done. */
 export const closeWindow = async (): Promise<void> => {
   await window.happyDOM.abort();

@@ -1,8 +1,9 @@
 // FT17 (openui-diagrams.md F5, F7): measuring, sizing and drawing a laid-out
 // model. Labels wrap on spaces and inside a word wider than a line; each
 // shape's box holds its padded label; edges end on a diamond's or a circle's
-// outline; the drawing marks dashed edges and arrowheads; and the area's
-// height follows F7. Drawn with a fixed `LayoutResult`, no ELK.
+// outline; the drawing marks dashed edges and arrowheads; and the area is
+// square up to the cap (openui-diagrams-square-area.md F25). Drawn with a
+// fixed `LayoutResult`, no ELK.
 
 import './support/dom.js';
 
@@ -380,79 +381,21 @@ test('a dashed edge is dashed, and an edge with arrow "none" has no arrowhead', 
   await dashed.unmount();
 });
 
-/** The area: the nearest element around the svg with a height in px. */
-const areaHeight = (svg: Element): number => {
-  for (
-    let at: HTMLElement | null = svg.parentElement;
-    at !== null;
-    at = at.parentElement
-  ) {
-    const height = /^(\d+(?:\.\d+)?)px$/.exec(at.style.height);
-    if (height !== null) return Number(height[1]);
-  }
-  assert.fail('no element around the svg has a height in px');
-};
-
-const withClientWidth = async <T>(
-  width: number,
-  run: () => Promise<T>,
-): Promise<T> => {
-  const proto = window.HTMLElement.prototype;
-  const original = Object.getOwnPropertyDescriptor(proto, 'clientWidth');
-  Object.defineProperty(proto, 'clientWidth', {
-    configurable: true,
-    get: () => width,
-  });
-  try {
-    return await run();
-  } finally {
-    if (original === undefined) {
-      delete (proto as { clientWidth?: number }).clientWidth;
-    } else {
-      Object.defineProperty(proto, 'clientWidth', original);
-    }
-  }
-};
-
 const node = element('Node', { id: 'a', label: 'A' });
 
-test('with a height, the area is that height clamped to 160–1200 px', async () => {
-  await withClientWidth(800, async () => {
-    for (const [height, expected] of [
-      [100, 160],
-      [500, 500],
-      [2000, 1200],
-    ] as const) {
-      const drawn = await draw({ nodes: [node], height });
-      assert.equal(areaHeight(drawn.svg), expected, `height ${height}`);
-      await drawn.unmount();
-    }
-  });
-});
-
-test('without a height, the area is the fitted drawing plus margin, clamped to 160–560 px', async () => {
-  await withClientWidth(800, async () => {
-    const short = await draw({ nodes: [node] }, { width: 300, height: 20 });
-    assert.equal(areaHeight(short.svg), 160);
-    await short.unmount();
-
-    const tall = await draw({ nodes: [node] }, { width: 300, height: 5000 });
-    assert.equal(areaHeight(tall.svg), 560);
-    await tall.unmount();
-
-    // At scale 1 (the drawing is narrower than the area): its height plus
-    // the fit margin, 24 px on one or both sides.
-    const middle = await draw({ nodes: [node] }, { width: 400, height: 300 });
-    const fitted = areaHeight(middle.svg);
-    assert.ok(fitted >= 324 && fitted <= 348, `${fitted}`);
-    await middle.unmount();
-
-    // Wider than the area: scaled down to fit its width first.
-    const wide = await draw({ nodes: [node] }, { width: 1600, height: 600 });
-    const scaled = areaHeight(wide.svg);
-    assert.ok(scaled >= 306 && scaled <= 348, `${scaled}`);
-    await wide.unmount();
-  });
+test('FT38: the area is square up to the cap: aspect-square, full width, max-height class, no inline height', async () => {
+  const drawn = await draw({ nodes: [node] });
+  const area = drawn.svg.parentElement?.parentElement;
+  assert.ok(area instanceof HTMLElement, 'the area around the svg');
+  for (const name of [
+    'aspect-square',
+    'w-full',
+    'max-h-[calc(100svh-40px-var(--doric-titlebar-height,40px)-32px)]',
+  ]) {
+    assert.ok(area.classList.contains(name), `the area has class ${name}`);
+  }
+  assert.equal(area.style.height, '', 'the area has no inline height');
+  await drawn.unmount();
 });
 
 // FT34 (openui-diagrams-phase2.md F21): sizing entities and topics.

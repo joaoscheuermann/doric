@@ -45,8 +45,6 @@ export interface FlowGroup {
 }
 export interface FlowchartModel {
   readonly direction: 'down' | 'right';
-  /** `height` as written, when it is a finite number. */
-  readonly height?: number;
   /** Drawn nodes, program order; ids unique. */
   readonly nodes: readonly FlowNode[];
   /** Drawn edges, program order; both ends are drawn nodes. Self-loops and repeats kept. */
@@ -282,12 +280,8 @@ export const readFlowchart = (props: unknown): FlowchartModel => {
   // 7. Empty diagram.
   if (flowNodes.length === 0) findings.push('The Flowchart has no nodes.');
 
-  const height = input.height;
   return {
     direction: input.direction === 'right' ? 'right' : 'down',
-    ...(typeof height === 'number' && Number.isFinite(height)
-      ? { height }
-      : {}),
     nodes: flowNodes,
     edges: flowEdges,
     groups: flowGroups,

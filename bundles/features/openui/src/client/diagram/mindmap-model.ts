@@ -24,8 +24,6 @@ export interface MindTopic {
 export interface MindMapModel {
   /** `right` when absent or not `right`/`down`. */
   readonly layout: 'right' | 'down';
-  /** As written when a number, else absent. */
-  readonly height?: number;
   /** Absent when `root` is not a Topic element with a string label. */
   readonly root?: MindTopic;
   /** The number of drawn topics. */
@@ -66,12 +64,8 @@ const rootOf = (input: Props): Props | undefined =>
  */
 export const readMindMap = (props: unknown): MindMapModel => {
   const input: Props = isRecord(props) ? props : {};
-  const height = input.height;
   const base = {
     layout: input.layout === 'down' ? 'down' : 'right',
-    ...(typeof height === 'number' && Number.isFinite(height)
-      ? { height }
-      : {}),
   } as const;
   const root = rootOf(input);
   if (root === undefined) {

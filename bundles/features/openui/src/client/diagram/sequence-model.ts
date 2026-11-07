@@ -46,7 +46,6 @@ export interface SeqSection {
   readonly steps: readonly SeqStep[];
 }
 export interface SequenceModel {
-  readonly height?: number;
   readonly participants: readonly SeqParticipant[];
   /** Drawn steps, program order; every id they name is a drawn participant. */
   readonly steps: readonly SeqStep[];
@@ -196,7 +195,6 @@ const drawnSteps = (
  */
 export const readSequence = (props: unknown): SequenceModel => {
   const input: Props = isRecord(props) ? props : {};
-  const height = input.height;
   const findings: string[] = [];
 
   // 1. Participants.
@@ -240,9 +238,6 @@ export const readSequence = (props: unknown): SequenceModel => {
   }
 
   return {
-    ...(typeof height === 'number' && Number.isFinite(height)
-      ? { height }
-      : {}),
     participants,
     steps,
     cut: {

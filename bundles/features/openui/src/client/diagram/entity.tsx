@@ -21,7 +21,6 @@ export interface EntityProps {
   readonly relations?: unknown;
   readonly notation?: unknown;
   readonly direction?: unknown;
-  readonly height?: unknown;
 }
 
 /** Every text the picture draws, for the faces measuring loads. */
@@ -81,7 +80,6 @@ export function EntityView(
     <div className="flex w-full flex-col">
       <DiagramFrame
         content={current.result}
-        writtenHeight={current.model.height}
         interactive={fence.interactive}
         areaLabel={
           current.model.notation === 'class'

@@ -19,7 +19,6 @@ import { NOTES, useDrawn } from './view.js';
 export interface SequenceProps {
   readonly participants?: unknown;
   readonly steps?: unknown;
-  readonly height?: unknown;
 }
 
 /** Every text the steps draw, for the faces measuring loads. */
@@ -77,7 +76,6 @@ export function SequenceView(
     <div className="flex w-full flex-col">
       <DiagramFrame
         content={current.layout}
-        writtenHeight={current.model.height}
         interactive={fence.interactive}
         areaLabel="Sequence diagram, pan and zoom"
       >

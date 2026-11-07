@@ -51,7 +51,6 @@ export interface EntityModel {
   readonly notation: 'er' | 'class';
   /** `down` when absent or not `down`/`right`. */
   readonly direction: 'down' | 'right';
-  readonly height?: number;
   readonly entities: readonly EntityBox[];
   /** Program order; self-relations and repeats kept. */
   readonly relations: readonly EntityRelation[];
@@ -99,7 +98,6 @@ const fieldOf = (props: Props): { field: EntityField; cut: boolean } => {
 export const readEntities = (props: unknown): EntityModel => {
   const input: Props = isRecord(props) ? props : {};
   const notation = input.notation === 'class' ? 'class' : 'er';
-  const height = input.height;
   const findings: string[] = [];
 
   // 1. Entities.
@@ -201,9 +199,6 @@ export const readEntities = (props: unknown): EntityModel => {
   return {
     notation,
     direction: input.direction === 'right' ? 'right' : 'down',
-    ...(typeof height === 'number' && Number.isFinite(height)
-      ? { height }
-      : {}),
     entities: boxes,
     relations,
     cut: {

@@ -4,14 +4,7 @@
 
 import { viewportTransform } from 'desktop/ui/viewport';
 import { Maximize, ZoomIn, ZoomOut } from 'lucide-react';
-import {
-  type CSSProperties,
-  type ReactNode,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import { type CSSProperties, type ReactNode, useId, useRef } from 'react';
 
 import { type ColorRole, cssColor, DIAGRAM_COLORS } from './colors.js';
 import { endOnShape } from './geometry.js';
@@ -25,33 +18,6 @@ import {
 } from './measure.js';
 import type { FlowchartModel, FlowEdge, FlowNode } from './model.js';
 import { outlineHeader } from './outline.js';
-
-/** The fit's margin around the drawing, as `fitViewport` keeps it. */
-const FIT_MARGIN = 24;
-
-/** The area's height bounds: with `height` written, and from the fitted drawing. */
-const WRITTEN_HEIGHT = { min: 160, max: 1200 } as const;
-const FITTED_HEIGHT = { min: 160, max: 560 } as const;
-
-const clamp = (value: number, bounds: { min: number; max: number }) =>
-  Math.min(bounds.max, Math.max(bounds.min, value));
-
-/**
- * The area's height: `height` clamped to 160–1200 px when written, else the
- * drawing at the scale that fits the area's width, plus the fit margin,
- * clamped to 160–560 px.
- */
-const areaHeight = (
-  written: number | undefined,
-  result: { readonly width: number; readonly height: number },
-  areaWidth: number,
-): number => {
-  if (written !== undefined) return clamp(written, WRITTEN_HEIGHT);
-  const room = areaWidth - 2 * FIT_MARGIN;
-  const scale =
-    room > 0 && result.width > 0 ? Math.min(1, room / result.width) : 1;
-  return clamp(result.height * scale + 2 * FIT_MARGIN, FITTED_HEIGHT);
-};
 
 /** `{ fill: <role's CSS color> }`. */
 export const fill = (role: ColorRole): CSSProperties => ({
@@ -350,39 +316,31 @@ const BUTTON =
   'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground';
 
 /**
- * The area, its height and the viewport, with the toolbar when `interactive`; `children` is
- * the SVG. Height: `writtenHeight` clamped to 160–1200 px, else the fitted content plus
- * margin clamped to 160–560 px (computed when mounted, not on resize). When `interactive`:
+ * The area, the viewport and, when `interactive`, the toolbar; `children` is the SVG.
+ * The area is as wide as its container and as tall as it is wide (`aspect-square`), at most
+ * the window's height less the workspace header, the footer and 32 px (`max-h-[…]`), so its
+ * height follows its width until the cap. The viewport fits `content` into it and refits whenever the area
+ * resizes, until the reader pans or zooms (`useDiagramViewport`). When `interactive`:
  * focusable, labelled `areaLabel`, with the toolbar ("Zoom out", percent, "Zoom in", "Fit to
  * view") and the gestures; otherwise none of these.
  */
 export function DiagramFrame(props: {
   readonly content: { readonly width: number; readonly height: number };
-  readonly writtenHeight?: number;
   readonly interactive: boolean;
   /** The area's label when interactive: `<Type>, pan and zoom`. */
   readonly areaLabel: string;
   readonly children: ReactNode;
 }): ReactNode {
-  const { content, writtenHeight, interactive, areaLabel, children } = props;
+  const { content, interactive, areaLabel, children } = props;
   const area = useRef<HTMLDivElement | null>(null);
-  const [height, setHeight] = useState(() =>
-    areaHeight(writtenHeight, content, 0),
-  );
-  useLayoutEffect(() => {
-    setHeight(
-      areaHeight(writtenHeight, content, area.current?.clientWidth ?? 0),
-    );
-  }, [writtenHeight, content]);
   const view = useDiagramViewport(area, content, interactive);
 
   return (
     <div className="openui-flowchart relative w-full">
       <div
         ref={area}
-        className="w-full overflow-hidden rounded-lg border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="aspect-square w-full max-h-[calc(100svh-40px-var(--doric-titlebar-height,40px)-32px)] overflow-hidden rounded-lg border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
         style={{
-          height: `${height}px`,
           position: 'relative',
           touchAction: interactive ? 'none' : undefined,
         }}
@@ -446,8 +404,8 @@ export function DiagramFrame(props: {
 
 /**
  * The drawn Flowchart: `DiagramFrame` labelled "Flowchart, pan and zoom" around
- * `FlowchartPicture`, its height from `model.height`. `model`, `sizes` and `result` must come
- * from one model (same indices and keys).
+ * `FlowchartPicture`. `model`, `sizes` and `result` must come from one model (same indices
+ * and keys).
  */
 export function DiagramCanvas(props: {
   readonly model: FlowchartModel;
@@ -461,7 +419,6 @@ export function DiagramCanvas(props: {
   return (
     <DiagramFrame
       content={result}
-      writtenHeight={model.height}
       interactive={interactive}
       areaLabel="Flowchart, pan and zoom"
     >

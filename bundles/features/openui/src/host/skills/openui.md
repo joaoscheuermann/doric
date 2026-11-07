@@ -172,21 +172,21 @@ MetricIndicatorWithStrikethrough(value: string, subtext?: string, previousValue?
 AskOption(label: string, description?: string, recommended?: boolean) — One option of an AskQuestion.
 AskQuestion(id: string, question: string, options: AskOption[], multiSelect?: boolean, allowOther?: boolean) — One multiple-choice question of an AskForm.
 AskForm(questions: AskQuestion[], context?: string) — Questions the reader must answer before you continue. Must be the root of its own fence.
-Flowchart(nodes: Node[], edges?: Edge[], groups?: Group[], direction?: "down" | "right", height?: number) — Boxes and arrows laid out automatically: flowcharts, pipelines, architecture with grouped regions.
+Flowchart(nodes: Node[], edges?: Edge[], groups?: Group[], direction?: "down" | "right") — Boxes and arrows laid out automatically: flowcharts, pipelines, architecture with grouped regions.
 Node(id: string, label: string, shape?: "box" | "round" | "diamond" | "circle" | "cylinder", group?: string) — One box of a Flowchart; group names the Group that holds it.
 Edge(from: string, to: string, label?: string, line?: "solid" | "dashed", arrow?: "end" | "none") — A connection between two Node ids.
 Group(id: string, label: string, parent?: string) — A region of a Flowchart; parent names the Group it sits in.
-SequenceDiagram(participants: Participant[], steps?: (Message | Note | Fragment)[], height?: number) — Messages between participants over time, in steps order.
+SequenceDiagram(participants: Participant[], steps?: (Message | Note | Fragment)[]) — Messages between participants over time, in steps order.
 Participant(id: string, label: string) — One lifeline of a SequenceDiagram.
 Message(from: string, to: string, text: string, kind?: "call" | "reply" | "async") — One message between two Participant ids; from equal to to is a self-message.
 Note(text: string, over: string[]) — A note over one or more Participant ids.
 Fragment(kind: "loop" | "opt" | "alt" | "par", sections: Section[]) — A loop, option, alternative or parallel block of steps.
 Section(label: string, steps: (Message | Note | Fragment)[]) — One labelled run of steps of a Fragment.
-EntityDiagram(entities: Entity[], relations?: Relation[], notation?: "er" | "class", direction?: "down" | "right", height?: number) — ER or class diagram laid out automatically.
+EntityDiagram(entities: Entity[], relations?: Relation[], notation?: "er" | "class", direction?: "down" | "right") — ER or class diagram laid out automatically.
 Entity(id: string, name: string, fields?: Field[], methods?: string[]) — One table or class; methods for classes only.
 Field(name: string, type?: string, key?: "pk" | "fk" | "pk-fk" | "unique") — One column or attribute of an Entity.
 Relation(from: string, to: string, kind?: "association" | "inherits" | "implements" | "composition" | "aggregation" | "dependency", label?: string, fromCount?: "1" | "0..1" | "*" | "1..*", toCount?: "1" | "0..1" | "*" | "1..*") — A relation between two Entity ids; kind applies to class diagrams.
-MindMap(root: Topic, layout?: "right" | "down", height?: number) — A mind map (right) or a tree (down) from one root Topic.
+MindMap(root: Topic, layout?: "right" | "down") — A mind map (right) or a tree (down) from one root Topic.
 Topic(label: string, children?: Topic[]) — One topic of a MindMap and its subtopics.
 
 ## Action — Button Behavior

@@ -63,8 +63,8 @@ export const flowGroupSchema = z.object({
  * Edge refs and `groups` of Group refs. Calls `define` exactly four times,
  * in that order, with the names `Node`, `Edge`, `Group`, `Flowchart`, the
  * matching renderer and F1's descriptions; Flowchart's prop keys are, in
- * order, `nodes`, `edges?`, `groups?`, `direction?` (`'down' | 'right'`),
- * `height?` (number). Returns `define`'s results in that order. Never
+ * order, `nodes`, `edges?`, `groups?`, `direction?` (`'down' | 'right'`).
+ * Returns `define`'s results in that order. Never
  * throws by itself.
  */
 export const defineDiagramBuiltins = <
@@ -104,7 +104,6 @@ export const defineDiagramBuiltins = <
       edges: z.array(edge.ref).optional(),
       groups: z.array(group.ref).optional(),
       direction: z.enum(['down', 'right']).optional(),
-      height: z.number().optional(),
     }),
     description:
       'Boxes and arrows laid out automatically: flowcharts, pipelines, architecture with grouped regions.',
@@ -180,7 +179,7 @@ export const DIAGRAM_PARTS: Readonly<Record<DiagramType, readonly string[]>> = {
  *   `(Message | Note | Fragment)[]`; never `z.lazy`, which prints `any`).
  * - `Fragment`: `kind` (`z.enum(FRAGMENT_KINDS)`), `sections` (`z.array(section.ref)`).
  * - `SequenceDiagram`: `participants` (`z.array(participant.ref)`), `steps?` (as
- *   `Section.steps`, optional), `height?` (number).
+ *   `Section.steps`, optional).
  * Never throws by itself.
  */
 export const defineSequenceBuiltins = <
@@ -249,7 +248,6 @@ export const defineSequenceBuiltins = <
     props: z.object({
       participants: z.array(participant.ref),
       steps: z.array(z.union([message.ref, note.ref, fragment.ref])).optional(),
-      height: z.number().optional(),
     }),
     description: 'Messages between participants over time, in steps order.',
     component: renderers.SequenceDiagram,
@@ -262,7 +260,7 @@ export const defineSequenceBuiltins = <
  *
  * Calls `define` exactly twice. Prop keys, in order:
  * - `Topic`: `label`, `children?` — a zod getter naming the Topic itself (prints `Topic[]`).
- * - `MindMap`: `root` (`topic.ref`, required), `layout?` (`'right' | 'down'`), `height?` (number).
+ * - `MindMap`: `root` (`topic.ref`, required), `layout?` (`'right' | 'down'`).
  * Never throws by itself.
  */
 export const defineMindMapBuiltins = <
@@ -288,7 +286,6 @@ export const defineMindMapBuiltins = <
     props: z.object({
       root: topic.ref,
       layout: z.enum(['right', 'down']).optional(),
-      height: z.number().optional(),
     }),
     description: 'A mind map (right) or a tree (down) from one root Topic.',
     component: renderers.MindMap,
@@ -305,7 +302,7 @@ export const defineMindMapBuiltins = <
  * - `Relation`: `from`, `to`, `kind?` (`z.enum(RELATION_KINDS)`), `label?`, `fromCount?`
  *   (`z.enum(COUNTS)`), `toCount?` (`z.enum(COUNTS)`).
  * - `EntityDiagram`: `entities` (`z.array(entity.ref)`), `relations?` (`z.array(relation.ref)`),
- *   `notation?` (`'er' | 'class'`), `direction?` (`'down' | 'right'`), `height?` (number).
+ *   `notation?` (`'er' | 'class'`), `direction?` (`'down' | 'right'`).
  * Never throws by itself.
  */
 export const defineEntityBuiltins = <
@@ -362,7 +359,6 @@ export const defineEntityBuiltins = <
       relations: z.array(relation.ref).optional(),
       notation: z.enum(['er', 'class']).optional(),
       direction: z.enum(['down', 'right']).optional(),
-      height: z.number().optional(),
     }),
     description: 'ER or class diagram laid out automatically.',
     component: renderers.EntityDiagram,

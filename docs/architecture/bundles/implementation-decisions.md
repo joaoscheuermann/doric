@@ -1352,3 +1352,9 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 - **ELK `mrtree` para mapas mentais; layered com rótulos de ponta para entidades.** As cardinalidades são rótulos de ponta do ELK, com espaçamento para os marcadores; o `right` de um diagrama `class` é o layout `down` transposto, porque o `RIGHT` do ELK sobrepõe os rótulos de ponta; `er` mantém o `RIGHT` do ELK.
 - **Versão.** `openui` continua 2.2.0: as duas fases saem num commit e numa versão; nenhuma dependência nova. Rollback parcial (F24): uma 2.2.1 tira os doze componentes da fase 2 de `add` e restaura as quatro regras da fase 1 na skill; os fluxogramas continuam.
 - **Aceite pendente.** O crescimento do `renderer.js` nas duas fases mediu 100.194 bytes (5.594.179 → 5.694.373), 194 acima da meta de 100.000 do G5; fica para o aceite do usuário (FR17).
+
+## OpenUI: área quadrada dos diagramas (2026-11-06)
+
+- **Área quadrada com teto (UD14, UD15).** A área dos quatro tipos de diagrama é `aspect-square w-full`, com altura limitada pela janela: `max-h-[calc(100svh-40px-var(--doric-titlebar-height,40px)-32px)]`. A altura segue a largura até o teto, sem altura medida nem estilo inline; o ajuste e o reajuste continuam os de `useDiagramViewport`. Spec: [openui-diagrams-square-area.md](../../designs/openui-diagrams-square-area.md); feature: [openui-diagrams.md](../../features/openui-diagrams.md).
+- **Sem prop `height` (UD16).** `height` sai de `Flowchart`, `SequenceDiagram`, `EntityDiagram` e `MindMap`: esquemas, modelos, views e assinaturas da skill. Um `height` que o modelo ainda escreva é descartado pelo lang-core e reportado como `excess-args`.
+- **Versão.** `openui` continua 2.2.0, ainda não lançada.

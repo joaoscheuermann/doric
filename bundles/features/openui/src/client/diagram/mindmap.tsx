@@ -19,7 +19,6 @@ import { NOTES, useDrawn } from './view.js';
 export interface MindMapProps {
   readonly root?: unknown;
   readonly layout?: unknown;
-  readonly height?: unknown;
 }
 
 /** Every label of a topic and its subtopics, for the faces measuring loads. */
@@ -34,7 +33,7 @@ const labelsOf = (topic: MindTopic): string[] => [
  * `NOTES.pending` / `NOTES.failed + message` while laying out or on failure; otherwise
  * `DiagramFrame` (`Mind map, pan and zoom` or `Tree, pan and zoom`) around `MindMapPicture`,
  * with an sr-only outline. `sizeMindMap` → `mindMapGraph` → the context's `layout`, once per
- * mount per key (the model's JSON without `height`, `findings`, `cut`). Never throws.
+ * mount per key (the model's JSON without `findings` and `cut`). Never throws.
  */
 export function MindMapView(
   props: ComponentRenderProps<MindMapProps>,
@@ -75,7 +74,6 @@ export function MindMapView(
     <div className="flex w-full flex-col">
       <DiagramFrame
         content={current.result}
-        writtenHeight={current.model.height}
         interactive={fence.interactive}
         areaLabel={
           current.model.layout === 'down'

@@ -24,7 +24,7 @@ import type {
   Point,
 } from '../../src/client/diagram/layout-types.js';
 import { library } from '../../src/client/library.js';
-import { closeWindow, settle, window } from './support/dom.js';
+import { closeWindow, settle, window, withClientSize } from './support/dom.js';
 import {
   chatFence,
   clickButton,
@@ -619,4 +619,100 @@ test('FT15: while a click of the same fence is sending, the wrapper is inert, th
   });
   assert.equal(transformOf(container).css, panned);
   await mounted.unmount();
+});
+
+// FT39 (openui-diagrams-square-area.md): a resize of the square area refits
+// the drawing until the reader pans or zooms. fakeLayout lays P out at
+// 880×300; fitted with a 24 px margin into 400×400 that is scale 0.4,
+// translate (24, 140).
+
+const RESIZED_FIT = { scale: 0.4, tx: 24, ty: 140 };
+
+const assertFit = (actual: Transform, expected: typeof RESIZED_FIT): void => {
+  for (const key of ['scale', 'tx', 'ty'] as const) {
+    assert.ok(
+      Math.abs(actual[key] - expected[key]) < 1e-6,
+      `${key}: ${actual[key]} ≠ ${expected[key]}`,
+    );
+  }
+};
+
+/**
+ * Mounts P in a 600×600 area whose ResizeObserver is a stub; `resize`
+ * makes the area 400×400 and calls the observers' callbacks.
+ */
+const withResizableP = async (
+  run: (container: HTMLElement, resize: () => Promise<void>) => Promise<void>,
+): Promise<void> => {
+  const size = { width: 600, height: 600 };
+  await withClientSize(size, async () => {
+    const original = globalThis.ResizeObserver;
+    const callbacks = new Set<ResizeObserverCallback>();
+    class StubResizeObserver {
+      readonly #callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.#callback = callback;
+        callbacks.add(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {
+        callbacks.delete(this.#callback);
+      }
+    }
+    globalThis.ResizeObserver =
+      StubResizeObserver as unknown as typeof ResizeObserver;
+    try {
+      const { mounted } = await mountP();
+      const resize = async (): Promise<void> => {
+        size.width = 400;
+        size.height = 400;
+        await act(async () => {
+          for (const callback of [...callbacks]) {
+            callback([], {} as ResizeObserver);
+          }
+        });
+      };
+      try {
+        await run(mounted.container, resize);
+      } finally {
+        await mounted.unmount();
+      }
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
+};
+
+const clickToolbar = async (container: Element, label: string) => {
+  const button = toolbarButton(container, label);
+  assert.ok(button !== undefined, label);
+  await act(async () => {
+    button.click();
+  });
+};
+
+test('FT39: a resize of the area refits the drawing', async () => {
+  await withResizableP(async (container, resize) => {
+    await resize();
+    assertFit(transformOf(container), RESIZED_FIT);
+  });
+});
+
+test("FT39: after a zoom, a resize keeps the reader's viewport", async () => {
+  await withResizableP(async (container, resize) => {
+    await clickToolbar(container, 'Zoom in');
+    const zoomed = transformOf(container).css;
+    await resize();
+    assert.equal(transformOf(container).css, zoomed);
+  });
+});
+
+test('FT39: Fit to view after a resize fits the new size', async () => {
+  await withResizableP(async (container, resize) => {
+    await clickToolbar(container, 'Zoom in');
+    await resize();
+    await clickToolbar(container, 'Fit to view');
+    assertFit(transformOf(container), RESIZED_FIT);
+  });
 });
