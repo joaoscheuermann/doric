@@ -21,6 +21,7 @@ import {
   CallToolRequestSchema,
   type CallToolResult,
   type ClientCapabilities,
+  type Implementation,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   type ReadResourceResult,
@@ -128,6 +129,8 @@ export interface ToolServer {
   readonly resourceReads: readonly string[];
   /** The capabilities the client of the last session declared. */
   clientCapabilities(): ClientCapabilities | undefined;
+  /** The `clientInfo` the client of the last session introduced itself with. */
+  clientInfo(): Implementation | undefined;
   /** Replaces the tools every session lists from now on. */
   setTools(tools: readonly FakeTool[]): void;
   /** Serves one more MCP session over the transport. */
@@ -173,6 +176,7 @@ export const toolServer = (
     skillCursors,
     resourceReads,
     clientCapabilities: () => last?.getClientCapabilities(),
+    clientInfo: () => last?.getClientVersion(),
     setTools: (next) => {
       tools = [...next];
     },
@@ -299,6 +303,8 @@ export interface HttpMcpOptions {
   readonly auth?: {
     readonly authorizationServer: () => string;
     readonly tokens: ReadonlySet<string>;
+    /** `scopes_supported` in the protected-resource metadata; absent, left out. */
+    readonly scopesSupported?: readonly string[];
   };
 }
 
@@ -344,6 +350,9 @@ export const httpMcpServer = async (
   const metadata = () => ({
     resource: `${base}/mcp`,
     authorization_servers: [options.auth?.authorizationServer() ?? ''],
+    ...(options.auth?.scopesSupported === undefined
+      ? {}
+      : { scopes_supported: options.auth.scopesSupported }),
   });
 
   const authorized = (req: IncomingMessage): boolean => {

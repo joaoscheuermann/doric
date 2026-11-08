@@ -702,3 +702,50 @@ void test('H22 a listed tool whose name tools/v1 refuses is left out, and the vi
 
   assert.equal(await outcomeOf(world, 'mcp__docs__alpha'), 'alpha: {}');
 });
+
+void test('H23 a server is told the default client info unless its transport names another, and an update reconnects with the new one', async (t) => {
+  const world = await opened(t);
+  const plain = await served(t, { tools: [textTool('alpha')] });
+  const named = await served(t, { tools: [textTool('alpha')] });
+  const created = await world.mcp(P1).create(httpServer('docs', plain.url));
+  const renamed = await world.mcp(P1).create({
+    name: 'design',
+    enabled: true,
+    transport: {
+      kind: 'http',
+      url: named.url,
+      headers: [],
+      clientInfo: { name: 'claude-code' },
+    },
+  });
+  await world.watchUntil(P1, inState(created.id, 'connected'), 'connected');
+  await world.watchUntil(P1, inState(renamed.id, 'connected'), 'connected');
+
+  assert.deepEqual(plain.tools.clientInfo(), {
+    name: 'doric',
+    version: '1.0.0',
+  });
+
+  assert.deepEqual(named.tools.clientInfo(), {
+    name: 'claude-code',
+    version: '1.0.0',
+  });
+
+  await world.mcp(P1).update({
+    id: renamed.id,
+    name: 'design',
+    enabled: true,
+    transport: {
+      kind: 'http',
+      url: named.url,
+      headers: [],
+      clientInfo: { name: 'claude-code', version: '2.1.0' },
+    },
+  });
+
+  await eventually(
+    () => named.tools.clientInfo()?.version === '2.1.0',
+    'reconnected with the new client version',
+    () => named.tools.clientInfo(),
+  );
+});

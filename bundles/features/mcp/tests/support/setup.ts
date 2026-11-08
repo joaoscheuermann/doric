@@ -52,9 +52,19 @@ export const authorizing = async (
 export const guarded = (
   t: TestContext,
   as: FakeAuthorizationServer,
-  options: Omit<HttpMcpOptions, 'auth'>,
+  {
+    scopesSupported,
+    ...options
+  }: Omit<HttpMcpOptions, 'auth'> & {
+    /** The scopes its protected-resource metadata names. */
+    readonly scopesSupported?: readonly string[];
+  },
 ): Promise<HttpMcpServer> =>
   served(t, {
     ...options,
-    auth: { authorizationServer: () => as.issuer, tokens: as.accessTokens },
+    auth: {
+      authorizationServer: () => as.issuer,
+      tokens: as.accessTokens,
+      ...(scopesSupported === undefined ? {} : { scopesSupported }),
+    },
   });

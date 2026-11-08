@@ -8,6 +8,7 @@ import { test } from 'node:test';
 
 import {
   checkDraft,
+  draftOf,
   emptyDraft,
   formatCommandLine,
   parseCommandLine,
@@ -114,5 +115,151 @@ test('checkDraft refuses a stdio command line with an open quote', () => {
   assert.equal(
     check.ok ? undefined : check.errors.command,
     commandQuoteMessage,
+  );
+});
+
+test('checkDraft leaves a blank client name out and trims a typed one', () => {
+  const http = {
+    ...emptyDraft,
+    name: 'Figma',
+    url: 'https://mcp.example.com/mcp',
+  };
+  const blank = checkDraft({ ...http, clientName: '   ' });
+  const typed = checkDraft({ ...http, clientName: '  Claude Code ' });
+
+  assert.deepEqual(blank.ok ? blank.input.transport : undefined, {
+    kind: 'http',
+    url: 'https://mcp.example.com/mcp',
+    headers: [],
+  });
+  assert.equal(
+    typed.ok && typed.input.transport.kind === 'http'
+      ? typed.input.transport.clientName
+      : undefined,
+    'Claude Code',
+  );
+});
+
+test('checkDraft refuses a client name over 128 characters', () => {
+  const check = checkDraft({
+    ...emptyDraft,
+    name: 'Figma',
+    url: 'https://mcp.example.com/mcp',
+    clientName: 'x'.repeat(129),
+  });
+
+  assert.equal(check.ok, false);
+  assert.equal(
+    check.ok ? undefined : check.errors.clientName,
+    'Enter a client name of up to 128 characters.',
+  );
+});
+
+test('a stored client name, scopes and client info open in the draft and save back unchanged', () => {
+  const input = {
+    name: 'Figma',
+    enabled: true,
+    transport: {
+      kind: 'http',
+      url: 'https://mcp.example.com/mcp',
+      headers: [],
+      clientName: 'Claude Code',
+      scopes: ['files:read', 'files:write'],
+      clientInfo: { name: 'claude-code', version: '2.1.0' },
+    },
+  } as const;
+  const check = checkDraft(draftOf(input));
+
+  assert.deepEqual(check.ok ? check.input : undefined, input);
+});
+
+test('checkDraft splits scopes at whitespace and leaves blank ones out', () => {
+  const http = {
+    ...emptyDraft,
+    name: 'Figma',
+    url: 'https://mcp.example.com/mcp',
+  };
+  const blank = checkDraft({ ...http, scopes: '  ' });
+  const typed = checkDraft({ ...http, scopes: ' files:read\n  files:write ' });
+
+  assert.equal(
+    blank.ok && blank.input.transport.kind === 'http'
+      ? 'scopes' in blank.input.transport
+      : undefined,
+    false,
+  );
+  assert.deepEqual(
+    typed.ok && typed.input.transport.kind === 'http'
+      ? typed.input.transport.scopes
+      : undefined,
+    ['files:read', 'files:write'],
+  );
+});
+
+test('checkDraft refuses a scope with a quote on the scopes field alone', () => {
+  const check = checkDraft({
+    ...emptyDraft,
+    name: 'Figma',
+    url: 'https://mcp.example.com/mcp',
+    headers: [{ key: 'h1', name: 'X-Team', value: 'design' }],
+    scopes: 'files:read "admin"',
+  });
+
+  assert.equal(check.ok, false);
+  assert.equal(
+    check.ok ? undefined : check.errors.scopes,
+    'Separate scopes with spaces; a scope is printable ASCII other than " and \\.',
+  );
+  assert.equal(check.ok ? undefined : check.errors.entries, undefined);
+});
+
+test('checkDraft keeps the client info fields typed, on either transport', () => {
+  const http = checkDraft({
+    ...emptyDraft,
+    name: 'Figma',
+    url: 'https://mcp.example.com/mcp',
+    clientInfoName: ' claude-code ',
+    clientInfoVersion: '  ',
+  });
+  const stdio = checkDraft({
+    ...emptyDraft,
+    name: 'files',
+    kind: 'stdio',
+    command: 'files-mcp',
+    clientInfoVersion: '2.1.0',
+  });
+  const blank = checkDraft({
+    ...emptyDraft,
+    name: 'files',
+    kind: 'stdio',
+    command: 'files-mcp',
+    clientInfoName: ' ',
+  });
+
+  assert.deepEqual(http.ok ? http.input.transport.clientInfo : undefined, {
+    name: 'claude-code',
+  });
+  assert.deepEqual(stdio.ok ? stdio.input.transport.clientInfo : undefined, {
+    version: '2.1.0',
+  });
+  assert.equal(
+    blank.ok ? 'clientInfo' in blank.input.transport : undefined,
+    false,
+  );
+});
+
+test('checkDraft refuses a client version over 64 characters', () => {
+  const check = checkDraft({
+    ...emptyDraft,
+    name: 'files',
+    kind: 'stdio',
+    command: 'files-mcp',
+    clientInfoVersion: '1'.repeat(65),
+  });
+
+  assert.equal(check.ok, false);
+  assert.equal(
+    check.ok ? undefined : check.errors.clientInfoVersion,
+    'Enter a client version of up to 64 characters.',
   );
 });

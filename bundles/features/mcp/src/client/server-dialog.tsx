@@ -72,7 +72,11 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
-import type { McpServerView } from '../contracts/index.js';
+import {
+  MCP_DEFAULT_CLIENT_INFO,
+  MCP_DEFAULT_CLIENT_NAME,
+  type McpServerView,
+} from '../contracts/index.js';
 import { failureMessage, type McpApi } from './api.js';
 import { CatalogTable, skillWords, toolWords } from './catalog-table.js';
 import {
@@ -409,6 +413,67 @@ function NewCredentialDialog({
   );
 }
 
+/** The MCP client info either transport introduces itself with. */
+function ClientInfoFields({
+  draft,
+  errors,
+  onChange,
+}: {
+  readonly draft: ServerDraft;
+  readonly errors: DraftErrors;
+  readonly onChange: (next: ServerDraft) => void;
+}) {
+  const id = useId();
+
+  return (
+    <>
+      <Field data-invalid={errors.clientInfoName !== undefined}>
+        <FieldLabel htmlFor={`${id}-name`}>MCP client name</FieldLabel>
+        <Input
+          id={`${id}-name`}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={MCP_DEFAULT_CLIENT_INFO.name}
+          aria-invalid={errors.clientInfoName !== undefined}
+          value={draft.clientInfoName}
+          onChange={(event) =>
+            onChange({ ...draft, clientInfoName: event.target.value })
+          }
+        />
+        <FieldDescription>
+          The name Doric gives the server when it connects. Leave it blank to
+          send {MCP_DEFAULT_CLIENT_INFO.name}. Change it only for a server that
+          serves just the clients it knows.
+        </FieldDescription>
+        {errors.clientInfoName !== undefined && (
+          <FieldError>{errors.clientInfoName}</FieldError>
+        )}
+      </Field>
+      <Field data-invalid={errors.clientInfoVersion !== undefined}>
+        <FieldLabel htmlFor={`${id}-version`}>MCP client version</FieldLabel>
+        <Input
+          id={`${id}-version`}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={MCP_DEFAULT_CLIENT_INFO.version}
+          aria-invalid={errors.clientInfoVersion !== undefined}
+          value={draft.clientInfoVersion}
+          onChange={(event) =>
+            onChange({ ...draft, clientInfoVersion: event.target.value })
+          }
+        />
+        <FieldDescription>
+          The version sent with that name. Leave it blank to send{' '}
+          {MCP_DEFAULT_CLIENT_INFO.version}.
+        </FieldDescription>
+        {errors.clientInfoVersion !== undefined && (
+          <FieldError>{errors.clientInfoVersion}</FieldError>
+        )}
+      </Field>
+    </>
+  );
+}
+
 function TransportFields({
   draft,
   errors,
@@ -455,6 +520,66 @@ function TransportFields({
           onNewCredential={onNewCredential}
         />
         {catalogs}
+        <Collapsible>
+          <CollapsibleTrigger className="group flex w-full items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
+            Advanced
+            <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 flex flex-col gap-4">
+            <Field data-invalid={errors.clientName !== undefined}>
+              <FieldLabel htmlFor={`${id}-client-name`}>
+                OAuth client name
+              </FieldLabel>
+              <Input
+                id={`${id}-client-name`}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={MCP_DEFAULT_CLIENT_NAME}
+                aria-invalid={errors.clientName !== undefined}
+                value={draft.clientName}
+                onChange={(event) =>
+                  onChange({ ...draft, clientName: event.target.value })
+                }
+              />
+              <FieldDescription>
+                The app name the sign-in registers at the server's authorization
+                server. Leave it blank to register as {MCP_DEFAULT_CLIENT_NAME}.
+                Change it only for a server that refuses the sign-in because it
+                accepts just the apps it knows.
+              </FieldDescription>
+              {errors.clientName !== undefined && (
+                <FieldError>{errors.clientName}</FieldError>
+              )}
+            </Field>
+            <Field data-invalid={errors.scopes !== undefined}>
+              <FieldLabel htmlFor={`${id}-scopes`}>OAuth scopes</FieldLabel>
+              <Input
+                id={`${id}-scopes`}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="read write"
+                aria-invalid={errors.scopes !== undefined}
+                value={draft.scopes}
+                onChange={(event) =>
+                  onChange({ ...draft, scopes: event.target.value })
+                }
+              />
+              <FieldDescription>
+                The permissions the sign-in asks for, separated by spaces. Leave
+                it blank to ask for the ones the server names. A change applies
+                at the next sign-in.
+              </FieldDescription>
+              {errors.scopes !== undefined && (
+                <FieldError>{errors.scopes}</FieldError>
+              )}
+            </Field>
+            <ClientInfoFields
+              draft={draft}
+              errors={errors}
+              onChange={onChange}
+            />
+          </CollapsibleContent>
+        </Collapsible>
       </>
     );
   }
@@ -508,7 +633,12 @@ function TransportFields({
                 onChange({ ...draft, cwd: event.target.value })
               }
             />
+            <FieldDescription>
+              The folder in the sandbox the command runs in. Leave it blank for
+              the sandbox's default.
+            </FieldDescription>
           </Field>
+          <ClientInfoFields draft={draft} errors={errors} onChange={onChange} />
         </CollapsibleContent>
       </Collapsible>
     </>

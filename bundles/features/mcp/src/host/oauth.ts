@@ -37,6 +37,10 @@ import {
 } from 'oauth';
 
 import {
+  MCP_DEFAULT_CLIENT_NAME,
+  type McpTransport,
+} from '../contracts/index.js';
+import {
   type OAuthScope,
   OAuthServerChanged,
   type OAuthVault,
@@ -80,6 +84,10 @@ interface McpOAuthProviderOptions {
   readonly redirectUrl?: string;
   /** The OAuth `state` the authorization URL carries. */
   readonly state?: string;
+  /** The `client_name` a registration sends; MCP_DEFAULT_CLIENT_NAME when absent. */
+  readonly clientName?: string;
+  /** The scopes a registration and an authorization ask for; the server's when absent. */
+  readonly scopes?: readonly string[];
   readonly load: () => Promise<OAuthState>;
   readonly save: (patch: OAuthState) => Promise<void>;
   /** `serverUrl` is the provider's: another URL's state is left alone. */
@@ -266,11 +274,14 @@ export const createOAuthProvider = (
   };
 
   const clientMetadata: OAuthClientMetadata = {
-    client_name: 'Doric',
+    client_name: options.clientName ?? MCP_DEFAULT_CLIENT_NAME,
     redirect_uris: [redirectUrl],
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
     token_endpoint_auth_method: 'none',
+    ...(options.scopes === undefined
+      ? {}
+      : { scope: options.scopes.join(' ') }),
   };
 
   return {
@@ -428,6 +439,9 @@ const aborted = (): ContractError =>
 const redirectUrisOf = (information: OAuthClientInformationMixed) =>
   'redirect_uris' in information ? information.redirect_uris : [];
 
+const clientNameOf = (information: OAuthClientInformationMixed) =>
+  'client_name' in information ? information.client_name : undefined;
+
 export const createSignIns = ({
   vault,
   log,
@@ -467,10 +481,12 @@ export const createSignIns = ({
   /** Binds the callback and lets the SDK prepare the authorization URL. */
   const prepare = async (
     serverId: string,
-    serverUrl: string,
+    transport: Extract<McpTransport, { readonly kind: 'http' }>,
     callback: LocalCallbackServer,
     state: string,
   ): Promise<{ readonly url: URL; readonly provider: McpOAuthProvider }> => {
+    const { url: serverUrl, scopes } = transport;
+    const clientName = transport.clientName ?? MCP_DEFAULT_CLIENT_NAME;
     const stored = await vault.load(serverId);
 
     if (stored.serverUrl !== serverUrl) {
@@ -479,10 +495,13 @@ export const createSignIns = ({
 
     const client = stored.clientInformation;
 
-    // A client registered for another loopback port cannot use this one.
+    // A client registered for another loopback port cannot use this one,
+    // and one registered under another name is not the one the server asks
+    // for now.
     if (
       client !== undefined &&
-      !redirectUrisOf(client).includes(callback.redirectUri)
+      (!redirectUrisOf(client).includes(callback.redirectUri) ||
+        clientNameOf(client) !== clientName)
     ) {
       await vault.invalidate(serverId, 'client', serverUrl);
     }
@@ -493,11 +512,18 @@ export const createSignIns = ({
       mode: 'interactive',
       redirectUrl: callback.redirectUri,
       state,
+      clientName,
+      ...(scopes === undefined ? {} : { scopes }),
       load: () => vault.load(serverId),
       save: (patch) => vault.save(serverId, patch),
       invalidate: (scope, url) => vault.invalidate(serverId, scope, url),
     });
-    const result = await auth(provider, { serverUrl });
+    // The SDK prefers the scopes the server names over the client
+    // metadata's: the ones the reader set win only when passed here.
+    const result = await auth(provider, {
+      serverUrl,
+      ...(scopes === undefined ? {} : { scope: scopes.join(' ') }),
+    });
     const url = provider.authorizationUrl();
 
     if (result !== 'REDIRECT' || url === undefined) {
@@ -542,7 +568,7 @@ export const createSignIns = ({
         let prepared: Awaited<ReturnType<typeof prepare>>;
 
         try {
-          prepared = await prepare(server.id, transport.url, callback, state);
+          prepared = await prepare(server.id, transport, callback, state);
         } catch (error) {
           await close(callback);
           throw error instanceof OAuthServerChanged

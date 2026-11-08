@@ -843,6 +843,14 @@ const tableRowsOf = (root: Element): string[][] =>
 const placeholderOf = (root: Element, label: string): string | null =>
   controlLabelled(root, label).getAttribute('placeholder');
 
+/** The description under the field of the control labelled `label`, if any. */
+const descriptionOf = (root: Element, label: string): string =>
+  normalized(
+    controlLabelled(root, label)
+      .closest('[data-slot="field"]')
+      ?.querySelector('[data-slot="field-description"]')?.textContent,
+  );
+
 const commandQuoteMessage =
   'Close the open quote, or end the line with a character after "\\".';
 
@@ -1368,6 +1376,84 @@ test('W4 the fields carry example placeholders', async () => {
       cwd: "The sandbox's default",
       variableKey: 'LOG_LEVEL',
     });
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W4 every Advanced field of an http server says what it does, and what is typed reaches create', async () => {
+  const { host, pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+    await type(controlLabelled(dialog, 'Name'), 'Figma');
+    await pickTransport(dialog, 'HTTP');
+    await type(controlLabelled(dialog, 'URL'), 'https://mcp.figma.com/mcp');
+    await click(buttonNamed(dialog, 'Advanced'));
+    const advanced = [
+      'OAuth client name',
+      'OAuth scopes',
+      'MCP client name',
+      'MCP client version',
+    ];
+
+    assert.deepEqual(
+      advanced.filter((label) => descriptionOf(dialog, label) === ''),
+      [],
+      'These Advanced fields have no description.',
+    );
+    assert.deepEqual(
+      advanced.map((label) => placeholderOf(dialog, label)),
+      ['Doric', 'read write', 'doric', '1.0.0'],
+    );
+
+    await type(controlLabelled(dialog, 'OAuth client name'), 'Claude Code');
+    await type(
+      controlLabelled(dialog, 'OAuth scopes'),
+      'files:read files:write',
+    );
+    await type(controlLabelled(dialog, 'MCP client name'), 'claude-code');
+    await type(controlLabelled(dialog, 'MCP client version'), '2.1.0');
+    await click(buttonNamed(dialog, 'Save'));
+    await waitFor(
+      () => callsOf(host, 'create').length > 0,
+      'Save never called create.',
+    );
+
+    assert.deepEqual(callsOf(host, 'create')[0]?.input, {
+      name: 'Figma',
+      enabled: true,
+      transport: {
+        kind: 'http',
+        url: 'https://mcp.figma.com/mcp',
+        headers: [],
+        clientName: 'Claude Code',
+        scopes: ['files:read', 'files:write'],
+        clientInfo: { name: 'claude-code', version: '2.1.0' },
+      },
+    } satisfies McpServerInput);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('W4 every Advanced field of a stdio server says what it does', async () => {
+  const { pane } = await paneWith([]);
+
+  try {
+    await click(buttonNamed(pane.header, 'Add MCP server'));
+    const dialog = await dialogNamed('Add MCP server');
+    await pickTransport(dialog, 'stdio');
+    await click(buttonNamed(dialog, 'Advanced'));
+
+    assert.deepEqual(
+      ['Working directory', 'MCP client name', 'MCP client version'].filter(
+        (label) => descriptionOf(dialog, label) === '',
+      ),
+      [],
+      'These Advanced fields have no description.',
+    );
   } finally {
     await pane.close();
   }
