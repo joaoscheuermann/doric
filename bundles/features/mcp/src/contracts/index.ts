@@ -60,6 +60,18 @@ export const mcpScopeMessage = 'mcp/v1 needs a Project scope.';
 /** The longest server name, in characters, once trimmed. */
 export const MCP_NAME_MAX = 64;
 
+/** The `client_name` an OAuth sign-in registers when the server sets none. */
+export const MCP_DEFAULT_CLIENT_NAME = 'Doric';
+
+/** The longest OAuth client name, in characters, once trimmed. */
+export const MCP_CLIENT_NAME_MAX = 128;
+
+/** The `clientInfo` an MCP `initialize` sends for what a server sets none of. */
+export const MCP_DEFAULT_CLIENT_INFO = { name: 'doric', version: '1.0.0' };
+
+/** The longest MCP client version, in characters, once trimmed. */
+export const MCP_CLIENT_VERSION_MAX = 64;
+
 const SLUG_MAX = 20;
 
 /**
@@ -89,16 +101,41 @@ export type McpEntry =
   | { readonly name: string; readonly credentialId: string };
 
 /**
+ * 1.2.0: who Doric says it is in the MCP `initialize` request (its
+ * `clientInfo`); MCP_DEFAULT_CLIENT_INFO fills an absent field. Some servers
+ * serve only the clients they know.
+ */
+export interface McpClientInfo {
+  readonly name?: string;
+  readonly version?: string;
+}
+
+/**
  * How Doric reaches the server: `http` is the Streamable HTTP transport at
- * `url` with extra request `headers`; `stdio` runs `command args` in the
- * Project's sandbox, in `cwd` (the sandbox's default when absent), with `env`
- * added to its environment.
+ * `url` with extra request `headers`, whose OAuth sign-in registers its
+ * client as `clientName` (MCP_DEFAULT_CLIENT_NAME when absent) and asks for
+ * `scopes` (the server's own choice when absent); `stdio` runs `command
+ * args` in the Project's sandbox, in `cwd` (the sandbox's default when
+ * absent), with `env` added to its environment. Both introduce themselves as
+ * `clientInfo`.
  */
 export type McpTransport =
   | {
       readonly kind: 'http';
       readonly url: string;
       readonly headers: readonly McpEntry[];
+      /**
+       * 1.2.0: the `client_name` the sign-in's dynamic client registration
+       * sends. Some authorization servers register only the client names
+       * they allow.
+       */
+      readonly clientName?: string;
+      /**
+       * 1.2.0: the OAuth scopes a sign-in asks for, in place of the ones the
+       * server's 401 or protected-resource metadata names.
+       */
+      readonly scopes?: readonly string[];
+      readonly clientInfo?: McpClientInfo;
     }
   | {
       readonly kind: 'stdio';
@@ -106,7 +143,16 @@ export type McpTransport =
       readonly args: readonly string[];
       readonly cwd?: string;
       readonly env: readonly McpEntry[];
+      readonly clientInfo?: McpClientInfo;
     };
+
+/** The `clientInfo` a connection to a server with this transport sends. */
+export const mcpClientInfoOf = (
+  transport: McpTransport,
+): Required<McpClientInfo> => ({
+  name: transport.clientInfo?.name ?? MCP_DEFAULT_CLIENT_INFO.name,
+  version: transport.clientInfo?.version ?? MCP_DEFAULT_CLIENT_INFO.version,
+});
 
 /** What the reader edits: the server's name, whether it runs, and how to reach it. */
 export interface McpServerInput {
@@ -209,6 +255,9 @@ export interface Mcp {
    * stops it when disabled), answering the stored view. An update that
    * changes the transport kind or the http URL drops the stored OAuth state
    * and deletes its MCP_TOKEN credentials, and cancels its waiting sign-in.
+   * One that changes only the client name or the scopes keeps the tokens:
+   * the next sign-in registers a client under the new name and asks for the
+   * new scopes. One that changes the client info reconnects the server.
    * `mcp_server_missing`, `mcp_server_name_taken`, `invalid_input` (as
    * `create`).
    */
@@ -239,7 +288,10 @@ export interface Mcp {
    * `mcp_server_missing`, `mcp_signin_unsupported` (a `stdio` server),
    * `mcp_signin_aborted` (the caller cancelled, or the server changed or
    * went away meanwhile), `mcp_signin_failed` (discovery or client
-   * registration failed).
+   * registration failed). A client registers under the transport's
+   * `clientName`; one stored under another name or redirect is replaced.
+   * The registration and the authorization URL ask for the transport's
+   * `scopes` when it sets them.
    */
   signIn(
     input: { readonly id: string },
@@ -273,6 +325,16 @@ const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 /** An HTTP header field name: an RFC 7230 token. */
 const headerName = z.string().regex(/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/);
 
+/** An OAuth scope token (RFC 6749 §3.3): printable ASCII but space, `"` and `\`. */
+const scopeToken = z.string().regex(/^[\x21\x23-\x5B\x5D-\x7E]+$/);
+
+const clientInfoSchema: z.ZodType<McpClientInfo, McpClientInfo> = z
+  .object({
+    name: z.string().trim().min(1).max(MCP_CLIENT_NAME_MAX).optional(),
+    version: z.string().trim().min(1).max(MCP_CLIENT_VERSION_MAX).optional(),
+  })
+  .strict();
+
 const entrySchema = (name: z.ZodString): z.ZodType<McpEntry, McpEntry> =>
   z.union([
     z.object({ name, value: z.string() }).strict(),
@@ -286,6 +348,14 @@ export const mcpTransportSchema: z.ZodType<McpTransport, McpTransport> =
         kind: z.literal('http'),
         url: z.url({ protocol: /^https?$/ }),
         headers: z.array(entrySchema(headerName)),
+        clientName: z
+          .string()
+          .trim()
+          .min(1)
+          .max(MCP_CLIENT_NAME_MAX)
+          .optional(),
+        scopes: z.array(scopeToken).min(1).optional(),
+        clientInfo: clientInfoSchema.optional(),
       })
       .strict(),
     z
@@ -295,6 +365,7 @@ export const mcpTransportSchema: z.ZodType<McpTransport, McpTransport> =
         args: z.array(z.string()),
         cwd: z.string().min(1).optional(),
         env: z.array(entrySchema(envName)),
+        clientInfo: clientInfoSchema.optional(),
       })
       .strict(),
   ]);

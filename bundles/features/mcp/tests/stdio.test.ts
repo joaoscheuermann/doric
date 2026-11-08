@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { textTool, toolServer } from './support/mcp-server.js';
 import { opened } from './support/setup.js';
 import { codeOf, eventually } from './support/wait.js';
 import {
@@ -306,4 +307,26 @@ void test('S7 signIn on a stdio server is refused as unsupported', async (t) => 
   );
 
   assert.equal(created.signedIn, false);
+});
+
+void test('S9 a stdio server is told the client info its transport names', async (t) => {
+  const tools = toolServer([textTool('echo')]);
+  const world = await opened(
+    t,
+    createEnvironment({ sandbox: { serverFor: () => tools } }),
+  );
+  const input = stdioServer('files', 'files-mcp');
+  const created = await world.mcp(P1).create({
+    ...input,
+    transport: {
+      ...input.transport,
+      clientInfo: { name: 'claude-code', version: '2.1.0' },
+    },
+  });
+  await world.watchUntil(P1, inState(created.id, 'connected'), 'connected');
+
+  assert.deepEqual(tools.clientInfo(), {
+    name: 'claude-code',
+    version: '2.1.0',
+  });
 });

@@ -16,13 +16,11 @@ import {
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { RuntimeLease } from 'runtime/contracts';
 
-import type { McpTransport } from '../contracts/index.js';
+import { type McpTransport, mcpClientInfoOf } from '../contracts/index.js';
 import type { ResolvedEntries } from './credentials.js';
 import { SignInRequired } from './oauth.js';
 import { SKILLS_EXTENSION } from './skills.js';
 import { createSandboxStdioTransport } from './stdio.js';
-
-const CLIENT_INFO = { name: 'doric', version: '1.0.0' };
 
 /** A client connected to its server, or a sandbox that is not up yet. */
 export type Opened =
@@ -40,15 +38,17 @@ export const isAuthFailure = (error: unknown): boolean =>
     (error.code === 401 || error.code === 403));
 
 /**
- * A new client connected over `transport`. A failed connection is closed: a
- * transport whose `start` failed (an SSE stream that keeps reconnecting) is
- * not closed by the SDK.
+ * A new client connected over `transport`, introducing itself as the
+ * server's `clientInfo`. A failed connection is closed: a transport whose
+ * `start` failed (an SSE stream that keeps reconnecting) is not closed by the
+ * SDK.
  */
 const connect = async (
+  server: McpTransport,
   transport: Transport,
   signal: AbortSignal,
 ): Promise<Client> => {
-  const client = new Client(CLIENT_INFO, {
+  const client = new Client(mcpClientInfoOf(server), {
     capabilities: { extensions: { [SKILLS_EXTENSION]: {} } },
   });
 
@@ -66,11 +66,12 @@ const connect = async (
 
 /** Connects to an `http` server with its headers and its background OAuth provider. */
 export const openHttp = async (
-  url: URL,
+  transport: Extract<McpTransport, { readonly kind: 'http' }>,
   entries: ResolvedEntries,
   authProvider: OAuthClientProvider,
   signal: AbortSignal,
 ): Promise<Opened> => {
+  const url = new URL(transport.url);
   const options = { requestInit: { headers: entries.values }, authProvider };
 
   let streamable: unknown;
@@ -79,6 +80,7 @@ export const openHttp = async (
     return {
       kind: 'open',
       client: await connect(
+        transport,
         new StreamableHTTPClientTransport(url, options),
         signal,
       ),
@@ -92,7 +94,11 @@ export const openHttp = async (
   try {
     return {
       kind: 'open',
-      client: await connect(new SSEClientTransport(url, options), signal),
+      client: await connect(
+        transport,
+        new SSEClientTransport(url, options),
+        signal,
+      ),
     };
   } catch (error) {
     if (signal.aborted || isAuthFailure(error)) throw error;
@@ -135,6 +141,7 @@ export const openStdio = async (
     }
 
     task.client = await connect(
+      transport,
       createSandboxStdioTransport({
         start: (onOutput) =>
           start({

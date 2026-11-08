@@ -518,7 +518,7 @@ export const createManager = ({
       invalidate: (scope, url) => vault.invalidate(server.id, scope, url),
     });
 
-    return openHttp(new URL(transport.url), entries, authProvider, signal);
+    return openHttp(transport, entries, authProvider, signal);
   };
 
   const attempt = async (

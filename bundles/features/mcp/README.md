@@ -13,14 +13,14 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
 
 ## What it provides
 
-- **Contract:** `mcp/v1` 1.1.0 (host): `list`, `create`, `update`, `remove`,
+- **Contract:** `mcp/v1` 1.2.0 (host): `list`, `create`, `update`, `remove`,
   `watch`, `signIn` and `finishSignIn`, each reachable from a desktop window,
   and the host-only `readSkill`, over the servers of the Project of
   `call.scope.projectId`. A call without a Project scope is refused
   (`invalid_input`). The shapes and error codes live
   in [`src/contracts/index.ts`](src/contracts/index.ts) (`mcp/contracts`).
-- **Storage type:** `mcp.server/v1`, one document per server, listed per
-  Project in creation order.
+- **Storage type:** `mcp.server/v1` 1.1.0, one document per server, listed
+  per Project in creation order.
 - **Credential kind:** `MCP_TOKEN`, one secret an OAuth sign-in stored.
 - **Tools:** each tool of a connected server, registered with `tools/v1`
   under the server's Project as `mcp__<server slug>__<tool>` (names that
@@ -46,7 +46,10 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   sign in to them; the edit dialog lists the server's tools and skills after
   its headers or its environment. A header or variable is a typed value or a
   credential picked with the key button, from `secrets/v1` or stored there as
-  a new `API_TOKEN`.
+  a new `API_TOKEN`. Its Advanced section holds what most servers need left
+  alone: the MCP client name and version of either transport, the OAuth
+  client name and scopes of an `http` server, and a `stdio` server's working
+  directory.
 
 ## Servers
 
@@ -71,6 +74,10 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   resolved: an entry naming an `MCP_TOKEN` credential (another server's
   sign-in) is refused (`invalid_input`) on `create`, `update` and connect.
   Every message about a server masks its secrets.
+- **Client info.** The `initialize` request introduces Doric as the
+  transport's `clientInfo` (1.2.0), each field absent read as `doric` and
+  `1.0.0`: some servers serve only the clients they know. Changing it
+  reconnects the server and keeps its tokens.
 - **Life.** `watch` connects every enabled server of its Project that is not
   connected; a starting prompt waits up to ten seconds for its Project's
   servers; a closing Project stops them (they read as `idle` again); a
@@ -95,9 +102,17 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
 `http` servers that answer 401 with protected-resource metadata use the
 SDK's OAuth flow. A background connection never registers a client nor opens
 anything: it uses and refreshes stored tokens, and otherwise reports
-`needs-sign-in`. `signIn` binds a loopback callback on `127.0.0.1` (a fresh
-port), registers a client (`token_endpoint_auth_method: none`) when the
-stored one does not name that redirect, and answers an authorization URL
+`needs-sign-in`. The registration's `client_name` is the transport's
+`clientName` (1.2.0; the dialog's Advanced section), else `Doric`: some
+authorization servers register only the client names they allow, and refuse
+others (Figma's answers 403). The registration and the authorization URL
+ask for the transport's `scopes` (1.2.0) when it sets them, in place of the
+ones the server's 401 or protected-resource metadata names; otherwise for
+those. Changing only the client name or the scopes keeps the tokens; the
+next sign-in registers under the new name and asks for the new scopes.
+`signIn` binds a loopback callback on `127.0.0.1` (a fresh port), registers
+a client (`token_endpoint_auth_method: none`) when the stored one does not
+name that redirect or that client name, and answers an authorization URL
 with PKCE `S256` and the server as the `resource`; an authorization server
 without metadata or without `S256` fails the sign-in. `finishSignIn` waits
 for the redirect (the callback checks `state`), refuses an `iss` other than
@@ -117,6 +132,11 @@ sending the latest stored refresh token.
 
 - The OAuth callback is a loopback on the host, as for the Claude login: it
   reaches the host only where the browser's `127.0.0.1` is the host's.
+- A sign-in needs dynamic client registration: an authorization server
+  without it, or one that accepts only clients created in its own console
+  (with a fixed redirect URI and often a client secret), cannot be signed in
+  to. The proposed pre-registered client is in
+  [docs/designs/mcp-preregistered-oauth-clients.md](../../../docs/designs/mcp-preregistered-oauth-clients.md).
 - A `stdio` process gets the sandbox image's environment plus its own
   entries, nothing else from the host. It runs as the sandbox's user, so the
   sandbox's existing exposures apply to it: the runtime's git token file,

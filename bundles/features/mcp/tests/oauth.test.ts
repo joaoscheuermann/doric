@@ -253,6 +253,122 @@ void test('A7 a newer signIn aborts the older pending finishSignIn', {
   assert.ok(url.startsWith(`${as.issuer}/authorize`));
 });
 
+void test('A8 a sign-in registers its client as Doric unless the server names another client', async (t) => {
+  const world = await opened(t);
+  const as = await authorizing(t);
+  const server = await guarded(t, as, { tools: [textTool('alpha')] });
+  const plain = await world.mcp(P1).create(httpServer('docs', server.url));
+  const named = await world.mcp(P1).create({
+    name: 'design',
+    enabled: true,
+    transport: {
+      kind: 'http',
+      url: server.url,
+      headers: [],
+      clientName: '  Claude Code ',
+    },
+  });
+
+  await world.mcp(P1).signIn({ id: plain.id });
+  await world.mcp(P1).signIn({ id: named.id });
+
+  assert.deepEqual(
+    as.registrations.map((registration) => registration.client_name),
+    ['Doric', 'Claude Code'],
+  );
+});
+
+void test('A8 changing only the client name keeps the tokens, and the next sign-in registers under the new name', async (t) => {
+  const world = await opened(t);
+  const as = await authorizing(t);
+  const server = await guarded(t, as, { tools: [textTool('alpha')] });
+  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  await signInThrough(world, P1, created.id, as);
+
+  const updated = await world.mcp(P1).update({
+    id: created.id,
+    name: 'docs',
+    enabled: true,
+    transport: {
+      kind: 'http',
+      url: server.url,
+      headers: [],
+      clientName: 'Claude Code',
+    },
+  });
+
+  assert.equal(updated.signedIn, true);
+
+  assert.equal(tokenCredentials(world, created.id).length, 2);
+
+  await world.mcp(P1).signIn({ id: created.id });
+
+  assert.equal(as.registrations.at(-1)?.client_name, 'Claude Code');
+});
+
+void test('A9 a sign-in asks for the scopes the server names unless the transport names its own', async (t) => {
+  const world = await opened(t);
+  const as = await authorizing(t);
+  const server = await guarded(t, as, {
+    tools: [textTool('alpha')],
+    scopesSupported: ['files:read'],
+  });
+  const plain = await world.mcp(P1).create(httpServer('docs', server.url));
+  const scoped = await world.mcp(P1).create({
+    name: 'design',
+    enabled: true,
+    transport: {
+      kind: 'http',
+      url: server.url,
+      headers: [],
+      scopes: ['files:read', 'files:write'],
+    },
+  });
+
+  const plainUrl = new URL((await world.mcp(P1).signIn({ id: plain.id })).url);
+  const scopedUrl = new URL(
+    (await world.mcp(P1).signIn({ id: scoped.id })).url,
+  );
+
+  assert.equal(plainUrl.searchParams.get('scope'), 'files:read');
+
+  assert.equal(scopedUrl.searchParams.get('scope'), 'files:read files:write');
+
+  assert.deepEqual(
+    as.registrations.map((registration) => registration.scope),
+    ['files:read', 'files:read files:write'],
+  );
+});
+
+void test('A9 changing only the scopes and the client info keeps the tokens, and the next sign-in asks for the new scopes', async (t) => {
+  const world = await opened(t);
+  const as = await authorizing(t);
+  const server = await guarded(t, as, { tools: [textTool('alpha')] });
+  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  await signInThrough(world, P1, created.id, as);
+
+  const updated = await world.mcp(P1).update({
+    id: created.id,
+    name: 'docs',
+    enabled: true,
+    transport: {
+      kind: 'http',
+      url: server.url,
+      headers: [],
+      scopes: ['files:write'],
+      clientInfo: { name: 'claude-code' },
+    },
+  });
+
+  assert.equal(updated.signedIn, true);
+
+  assert.equal(tokenCredentials(world, created.id).length, 2);
+
+  const { url } = await world.mcp(P1).signIn({ id: created.id });
+
+  assert.equal(new URL(url).searchParams.get('scope'), 'files:write');
+});
+
 void test('M4b changing the URL of a signed-in server drops its tokens and its signed-in state', async (t) => {
   const world = await opened(t);
   const as = await authorizing(t);

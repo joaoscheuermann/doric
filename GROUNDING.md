@@ -1928,13 +1928,19 @@ or the id of a stored credential whose secret is read when that server
 connects; the host refuses an entry naming an `MCP_TOKEN` credential, which
 holds one server's sign-in. An `http` server that asks for OAuth signs in
 through the browser with a loopback callback on the host's `127.0.0.1`, as
-the Claude login does, so it works only where the browser's loopback is the
-host's; its access, refresh and client secrets are `MCP_TOKEN` credentials,
-a kind the bundle registers, deleted with the server or when its transport
-kind or URL changes, and never stored for a URL other than the one they
-were earned for. A connected server's tools are registered with `tools/v1`
-under its Project as `mcp__<server slug>__<tool>`, with the server's input
-schema verbatim. The default agent lists the skills a connected server lists
+the Claude login does, registering its client under the server's optional
+`clientName` (`Doric` by default) and asking for its optional `scopes` (the
+server's own otherwise), so it works only where the browser's loopback is the
+host's; it needs dynamic client registration, since pre-registered OAuth
+clients are only proposed (`docs/designs/mcp-preregistered-oauth-clients.md`);
+its access, refresh and client secrets are `MCP_TOKEN` credentials, a kind
+the bundle registers, deleted with the server or when its transport kind or
+URL changes, and never stored for a URL other than the one they were earned
+for. Either transport introduces itself in `initialize` as the server's
+optional `clientInfo` (`doric` `1.0.0` by default). A connected server's
+tools are registered with `tools/v1` under its Project as
+`mcp__<server slug>__<tool>`, with the server's input schema verbatim. The
+default agent lists the skills a connected server lists
 through the MCP Skills extension and loads one only on demand, through the
 host-only `mcp/v1.readSkill`: a `resources/read` of a URI the connected server
 lists now, when asked and never before. Doric does not apply SEP-2640's

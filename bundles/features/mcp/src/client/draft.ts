@@ -3,7 +3,11 @@
 // the `mcp/v1` input — checked by the contract's own schema, so the dialog and
 // the host cannot disagree about what a server may be.
 
-import type { McpEntry, McpServerInput } from '../contracts/index.js';
+import type {
+  McpClientInfo,
+  McpEntry,
+  McpServerInput,
+} from '../contracts/index.js';
 import { mcpServerInputSchema } from '../contracts/index.js';
 
 /**
@@ -27,16 +31,27 @@ export interface ServerDraft {
   readonly kind: TransportKind;
   readonly url: string;
   readonly headers: readonly EntryDraft[];
+  /** The OAuth client name; blank for MCP_DEFAULT_CLIENT_NAME. */
+  readonly clientName: string;
+  /** The OAuth scopes, separated by whitespace; blank for the server's. */
+  readonly scopes: string;
   /** The whole command line, as parseCommandLine reads it. */
   readonly command: string;
   readonly cwd: string;
   readonly env: readonly EntryDraft[];
+  /** The MCP client info, either transport's; blank for MCP_DEFAULT_CLIENT_INFO's. */
+  readonly clientInfoName: string;
+  readonly clientInfoVersion: string;
 }
 
 /** The fields a refusal points at; an entry's is its name, by row key. */
 export interface DraftErrors {
   readonly name?: string;
   readonly url?: string;
+  readonly clientName?: string;
+  readonly scopes?: string;
+  readonly clientInfoName?: string;
+  readonly clientInfoVersion?: string;
   readonly command?: string;
   readonly entries?: Readonly<Record<string, string>>;
 }
@@ -48,6 +63,11 @@ type DraftCheck =
 const draftMessages = {
   name: 'Enter a name of up to 64 characters with a letter, a digit or "-".',
   url: 'Enter an http:// or https:// URL.',
+  clientName: 'Enter a client name of up to 128 characters.',
+  scopes:
+    'Separate scopes with spaces; a scope is printable ASCII other than " and \\.',
+  clientInfoName: 'Enter a client name of up to 128 characters.',
+  clientInfoVersion: 'Enter a client version of up to 64 characters.',
   command: 'Enter the command to run.',
   commandQuote:
     'Close the open quote, or end the line with a character after "\\".',
@@ -126,9 +146,13 @@ export const emptyDraft: ServerDraft = {
   kind: 'http',
   url: '',
   headers: [],
+  clientName: '',
+  scopes: '',
   command: '',
   cwd: '',
   env: [],
+  clientInfoName: '',
+  clientInfoVersion: '',
 };
 
 /** The draft a stored server's dialog opens on. */
@@ -136,32 +160,58 @@ export const draftOf = ({
   name,
   enabled,
   transport,
-}: McpServerInput): ServerDraft =>
-  transport.kind === 'http'
+}: McpServerInput): ServerDraft => {
+  const common = {
+    ...emptyDraft,
+    name,
+    enabled,
+    clientInfoName: transport.clientInfo?.name ?? '',
+    clientInfoVersion: transport.clientInfo?.version ?? '',
+  };
+
+  return transport.kind === 'http'
     ? {
-        ...emptyDraft,
-        name,
-        enabled,
+        ...common,
         kind: 'http',
         url: transport.url,
         headers: transport.headers.map(entryDraftOf),
+        clientName: transport.clientName ?? '',
+        scopes: transport.scopes?.join(' ') ?? '',
       }
     : {
-        ...emptyDraft,
-        name,
-        enabled,
+        ...common,
         kind: 'stdio',
         command: formatCommandLine([transport.command, ...transport.args]),
         cwd: transport.cwd ?? '',
         env: transport.env.map(entryDraftOf),
       };
+};
 
 const entryOf = ({ name, value, credentialId }: EntryDraft): McpEntry =>
   credentialId === undefined ? { name, value } : { name, credentialId };
 
+/** The draft's client info, without its blank fields; absent when both are. */
+const clientInfoOf = (
+  draft: ServerDraft,
+): { readonly clientInfo?: McpClientInfo } => {
+  const name = draft.clientInfoName.trim();
+  const version = draft.clientInfoVersion.trim();
+
+  return name === '' && version === ''
+    ? {}
+    : {
+        clientInfo: {
+          ...(name === '' ? {} : { name }),
+          ...(version === '' ? {} : { version }),
+        },
+      };
+};
+
 /** The input a draft stands for, before the schema checks it. */
 const inputOf = (draft: ServerDraft): McpServerInput => {
   const cwd = draft.cwd.trim();
+  const clientName = draft.clientName.trim();
+  const scopes = draft.scopes.split(/\s+/).filter((scope) => scope !== '');
   const words = parseCommandLine(draft.command);
 
   return {
@@ -173,6 +223,9 @@ const inputOf = (draft: ServerDraft): McpServerInput => {
             kind: 'http',
             url: draft.url.trim(),
             headers: draft.headers.map(entryOf),
+            ...(clientName === '' ? {} : { clientName }),
+            ...(scopes.length === 0 ? {} : { scopes }),
+            ...clientInfoOf(draft),
           }
         : {
             kind: 'stdio',
@@ -180,6 +233,7 @@ const inputOf = (draft: ServerDraft): McpServerInput => {
             args: words?.slice(1) ?? [],
             ...(cwd === '' ? {} : { cwd }),
             env: draft.env.map(entryOf),
+            ...clientInfoOf(draft),
           },
   };
 };
@@ -193,10 +247,15 @@ const errorsOf = (
   const entryMessage =
     draft.kind === 'http' ? draftMessages.header : draftMessages.variable;
 
-  const invalidEntries = paths.flatMap(([, , index]): [string, string][] => {
-    const entry = typeof index === 'number' ? entries[index] : undefined;
-    return entry === undefined ? [] : [[entry.key, entryMessage]];
-  });
+  const invalidEntries = paths.flatMap(
+    ([, list, index]): [string, string][] => {
+      const entry =
+        (list === 'headers' || list === 'env') && typeof index === 'number'
+          ? entries[index]
+          : undefined;
+      return entry === undefined ? [] : [[entry.key, entryMessage]];
+    },
+  );
 
   return {
     ...(paths.some(([first]) => first === 'name')
@@ -204,6 +263,22 @@ const errorsOf = (
       : {}),
     ...(paths.some(([, second]) => second === 'url')
       ? { url: draftMessages.url }
+      : {}),
+    ...(paths.some(([, second]) => second === 'clientName')
+      ? { clientName: draftMessages.clientName }
+      : {}),
+    ...(paths.some(([, second]) => second === 'scopes')
+      ? { scopes: draftMessages.scopes }
+      : {}),
+    ...(paths.some(
+      ([, second, third]) => second === 'clientInfo' && third === 'name',
+    )
+      ? { clientInfoName: draftMessages.clientInfoName }
+      : {}),
+    ...(paths.some(
+      ([, second, third]) => second === 'clientInfo' && third === 'version',
+    )
+      ? { clientInfoVersion: draftMessages.clientInfoVersion }
       : {}),
     ...(paths.some(([, second]) => second === 'command')
       ? {
