@@ -125,7 +125,6 @@ describe('doric:// privileges', () => {
               ? part
               : undefined,
         },
-        artifacts: { root: join(root, 'artifacts') },
         frame: renderFrameDocument(frameImportMap(importMap)),
         shell: {
           render: () =>

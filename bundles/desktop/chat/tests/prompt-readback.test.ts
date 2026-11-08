@@ -173,3 +173,59 @@ describe('reading a stored prompt back', () => {
     assert.equal(store.getState().chats.chats.get('t1')?.pending?.text, 'Oi');
   });
 });
+
+// A prompt a control of the agent's UI sent (conversation-openui.md D20, C4):
+// its words read as the prompt's words, and its user turn carries the program.
+describe('reading a UI-action prompt back', () => {
+  const stored =
+    '<ui-action program="release">\nTag the release\n\nrelease.version: 1.4.0\n</ui-action>';
+
+  test('the user turn shows the action text and carries its program', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: stored,
+        source: { kind: 'user' },
+      }),
+    ]);
+    const turn = projection.turns.find((each) => each.type === 'user');
+
+    assert.ok(turn?.type === 'user');
+    assert.equal(turn.text, 'Tag the release\n\nrelease.version: 1.4.0');
+    assert.deepEqual(turn.action, { program: 'release' });
+  });
+
+  test('a typed prompt carries no program', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'prompt.accepted',
+        text: promptEnvelope('Tag it', []),
+        source: { kind: 'user' },
+      }),
+    ]);
+    const turn = projection.turns.find((each) => each.type === 'user');
+
+    assert.ok(turn?.type === 'user');
+    assert.equal(turn.action, undefined);
+  });
+
+  test("a queue row reads the action's words", () => {
+    const item: QueueItem = {
+      promptId: 'one',
+      source: { kind: 'user' },
+      label: 'jao',
+      preview: '<ui-action program="release"> Tag the release release.version:',
+      acceptedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    assert.equal(
+      queueRowText(item, stored),
+      'Tag the release release.version: 1.4.0',
+    );
+    // Without the stored text, the cut preview's words.
+    assert.equal(
+      queueRowText(item, undefined),
+      'Tag the release release.version:',
+    );
+  });
+});

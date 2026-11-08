@@ -24,6 +24,9 @@
     },
     {
       "path": "../../../packages/desktop"
+    },
+    {
+      "path": "../openui"
     }
   ],
   "exclude": ["src/client/**", "src/desktop/**"]

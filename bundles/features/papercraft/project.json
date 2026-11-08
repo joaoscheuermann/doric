@@ -33,12 +33,13 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["build", "^build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "rm -rf bundles/features/papercraft/dist-tests",
           "tsc -p bundles/features/papercraft/tsconfig.spec.json",
+          "node packages/bundle/dist/build/cli.js copy-md bundles/features/papercraft/src/host bundles/features/papercraft/dist-tests/src/host",
           "tsc -p bundles/features/papercraft/tsconfig.client-spec.json",
           "node --test bundles/features/papercraft/dist-tests/tests/*.test.js bundles/features/papercraft/dist-tests/tests/client/*.test.js"
         ],

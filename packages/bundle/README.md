@@ -100,6 +100,17 @@ export const activate = ({ services }: HostContext) => {
   the build. Frames
   ship with the client's files and are served with
   `Access-Control-Allow-Origin: *`.
+- A client may also have chunks: each `src/client/chunks/<name>.ts` builds to
+  `client/chunks/<name>.js`, a window module the client entry imports on
+  demand, with the client's externals. The CSS esbuild extracts from a chunk
+  stays beside it as `client/chunks/<name>.css`, never merged into
+  `client/styles.css`. `BuiltParts.chunks` lists them in file-name order. The
+  window's loader never loads a chunk itself, and a bundle without a client
+  entry builds none.
+- Every browser build (client, frames, chunks) defines `process.env.NODE_ENV`
+  as `"production"` and minifies syntax, in either build mode, so libraries'
+  development branches (OpenUI's dev tools among them) neither run nor ship in
+  a window; identifiers and whitespace stay.
 - Skills live at `skills/*/SKILL.md`, discovered in lexical directory order,
   with an optional `alwaysAvailable` frontmatter flag.
 - A manifest without `manifestVersion` is read as v0 and converted in memory:

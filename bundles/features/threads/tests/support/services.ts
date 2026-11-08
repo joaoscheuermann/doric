@@ -203,6 +203,7 @@ const providers = (
   control: ThreadControl,
   registered: ContractTool[],
   fakes: SpawnFakes,
+  events: string[] = [],
 ) => [
   // Stage-1 controls only: the user-facing methods have no fake here.
   defineService(RuntimeThreadsV1.id, {
@@ -260,7 +261,10 @@ const providers = (
   defineService(EventsV1.id, {
     register: defineMethod({
       ...eventsMethods.register,
-      execute: () => ({ dispose: () => undefined }),
+      execute: (definition) => {
+        events.push(definition.type);
+        return { dispose: () => undefined };
+      },
     }),
     sink: defineMethod({
       ...eventsMethods.sink,
@@ -294,6 +298,43 @@ const providers = (
   }),
   ...spawnProviders(fakes),
 ];
+
+/** What one activation did beyond registering tools. */
+export interface ActivationRecord {
+  /** Ids of the services the bundle provided, in order. */
+  readonly provided: readonly string[];
+  /** Types of the events it registered with `events/v1`, in order. */
+  readonly events: readonly string[];
+}
+
+/**
+ * Activates the bundle over the same fakes and records the services it
+ * provides and the events it registers.
+ */
+export const activationRecord = async (): Promise<ActivationRecord> => {
+  const provided: string[] = [];
+  const events: string[] = [];
+  const harness = createTestServices({
+    bundle: { id: 'threads' },
+    provide: providers({} as ThreadControl, [], {}, events),
+  });
+  const services = harness.services;
+
+  await activate({
+    services: {
+      provide: (definition) => {
+        provided.push(definition.id);
+        return services.provide(definition);
+      },
+      use: (contract, scope) => services.use(contract, scope),
+      whenAvailable: (contract, callback) =>
+        services.whenAvailable(contract, callback),
+    },
+  });
+  await harness.dispose();
+
+  return { provided, events };
+};
 
 /**
  * Activates the bundle over the fakes and returns its registered tools as

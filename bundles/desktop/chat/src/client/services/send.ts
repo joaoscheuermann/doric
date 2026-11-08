@@ -9,10 +9,17 @@
 // shows the conversation. Once the host accepted, the draft text is cleared,
 // and every window's editor empties with it; a refused send leaves the text
 // and the stack where they were.
+//
+// From 1.1.0, `sendAction` (conversation-openui.md D20) sends one click on a
+// UI the agent drew, in a `<ui-action>` envelope, by the composer's route
+// (`routeSend`), straight to the host's Thread API: it never touches the
+// composer, the store's pending turn or its `sending` flag.
 
 import { defineMethod, defineService } from 'bundle/contracts';
 
 import {
+  type ChatActionInput,
+  type ChatActionResult,
   type ChatSendInput,
   type ChatSendResult,
   ChatSendV1,
@@ -20,7 +27,10 @@ import {
   chatSendMethods,
 } from '../../contracts/index.js';
 import { composerFeed } from '../api/composer.js';
-import { promptEnvelope } from '../domain/prompt-envelope.js';
+import { type ChatThreadsApi, threadsApi } from '../api/threads-api.js';
+import { promptEnvelope, uiActionEnvelope } from '../domain/prompt-envelope.js';
+import { queueItems } from '../domain/queue.js';
+import { routeSend } from '../domain/send-route.js';
 import { composerStackStore } from '../stores/composer-stack.js';
 import { threadChatsStore } from '../stores/thread-chats.js';
 
@@ -37,6 +47,11 @@ export interface ChatSendDependencies {
   ) => Promise<boolean>;
   /** Writes the Thread's draft text; every window's editor follows it. */
   readonly setText: (thread: DraftThread, text: string) => void;
+  /** The host's Thread API, which `sendAction` sends through (D20); the window's by default. */
+  readonly threads?: Pick<
+    ChatThreadsApi,
+    'get' | 'steer' | 'queue' | 'resumeQueue' | 'prompt'
+  >;
 }
 
 const windowDependencies: ChatSendDependencies = {
@@ -73,6 +88,47 @@ export const sendStack = async (
   return { status: 'accepted' };
 };
 
+/**
+ * Sends one action of a UI the agent drew as the reader's next message: a
+ * Thread that is missing, of another Project or an agent's is refused before
+ * any other call; otherwise the composer's route takes the envelope.
+ */
+export const sendUiAction = async (
+  input: ChatActionInput,
+  dependencies: Pick<ChatSendDependencies, 'threads'> = windowDependencies,
+): Promise<ChatActionResult> => {
+  const threads = dependencies.threads ?? threadsApi;
+  const { threadId } = input;
+  const thread = await threads.get(threadId).catch(() => undefined);
+  if (
+    thread === undefined ||
+    thread.projectId !== input.projectId ||
+    thread.origin === 'agent'
+  )
+    return { status: 'refused' };
+
+  const envelope = uiActionEnvelope(input.text, input.program);
+  const taken = await routeSend(thread.activePromptId, {
+    steer: async (promptId) => {
+      await threads.steer(threadId, envelope, { promptId });
+      return true;
+    },
+    queue: async () => {
+      const queue = await threads.queue(threadId);
+      return { paused: queue.paused, empty: queueItems(queue).length === 0 };
+    },
+    resumeQueue: async () => {
+      await threads.resumeQueue(threadId);
+      return true;
+    },
+    prompt: async () => {
+      await threads.prompt(threadId, envelope);
+      return true;
+    },
+  });
+  return { status: taken ? 'accepted' : 'refused' };
+};
+
 /** `chat.send/v1` over the window's own send path. */
 export const createChatSend = (
   dependencies: ChatSendDependencies = windowDependencies,
@@ -81,5 +137,9 @@ export const createChatSend = (
     send: defineMethod({
       ...chatSendMethods.send,
       execute: (input: ChatSendInput) => sendStack(input, dependencies),
+    }),
+    sendAction: defineMethod({
+      ...chatSendMethods.sendAction,
+      execute: (input: ChatActionInput) => sendUiAction(input, dependencies),
     }),
   });

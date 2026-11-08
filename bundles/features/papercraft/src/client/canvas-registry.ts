@@ -10,7 +10,7 @@ import type { PreviewScope, PreviewTool } from '../contracts/index.js';
 
 /** What one mounted canvas frame lets a command do to it. */
 export interface PreviewController {
-  readonly artifactId: string;
+  readonly canvasId: string;
   /** The Project and Thread the canvas belongs to: every host call's scope. */
   readonly scope: PreviewScope | undefined;
   /** The armed tool: `select` is the entry default. */
@@ -26,10 +26,8 @@ export interface PreviewController {
   zoomFit(): void;
   /** Switches the revision on screen. */
   selectRevision(revision: number): void;
-  /** Which revision is on screen, as `Autorizar` needs it. */
+  /** Which revision is on screen. */
   currentRevision(): number | undefined;
-  /** Rereads the record after its approval changed it. */
-  reload(): void;
   /** Confirms the open note and sends the Thread's stack. */
   sendNow(): Promise<void>;
 }
@@ -41,33 +39,33 @@ let lastActive: string | undefined;
 export const registerController = (
   controller: PreviewController,
 ): (() => void) => {
-  canvases.set(controller.artifactId, controller);
-  lastActive = controller.artifactId;
+  canvases.set(controller.canvasId, controller);
+  lastActive = controller.canvasId;
 
   return () => {
-    if (canvases.get(controller.artifactId) === controller)
-      canvases.delete(controller.artifactId);
+    if (canvases.get(controller.canvasId) === controller)
+      canvases.delete(controller.canvasId);
 
-    if (lastActive === controller.artifactId) {
+    if (lastActive === controller.canvasId) {
       lastActive = [...canvases.keys()].at(-1);
     }
   };
 };
 
 /** Marks one registered canvas as the one the reader touched last. */
-export const touchController = (artifactId: string): void => {
-  if (canvases.has(artifactId)) lastActive = artifactId;
+export const touchController = (canvasId: string): void => {
+  if (canvases.has(canvasId)) lastActive = canvasId;
 };
 
 /** The canvas a command acts on: the one named, else the last one touched. */
 export const controllerFor = (
-  artifactId?: string,
+  canvasId?: string,
 ): PreviewController | undefined =>
-  artifactId === undefined
+  canvasId === undefined
     ? lastActive === undefined
       ? undefined
       : canvases.get(lastActive)
-    : canvases.get(artifactId);
+    : canvases.get(canvasId);
 
 /** Which canvas the reader last touched. */
 export const activeCanvasId = (): string | undefined => lastActive;

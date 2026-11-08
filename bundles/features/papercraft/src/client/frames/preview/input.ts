@@ -19,13 +19,13 @@
 // The frame's focus is reported as it comes and goes.
 
 import type {
-  FrameMessage,
   InputCapture,
+  ProgramFrameMessage,
   PseudoKind,
 } from '../../frame-protocol.js';
 import { type FrameScene, nodeOfPath, pseudoAtPoint } from './scene.js';
 
-type Report = (message: FrameMessage) => void;
+type Report = (message: ProgramFrameMessage) => void;
 
 /** Everything a swallowing frame keeps from the preview. */
 const SWALLOWED = [

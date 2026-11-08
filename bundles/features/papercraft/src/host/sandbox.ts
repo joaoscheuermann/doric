@@ -18,13 +18,20 @@ import { readFile } from 'node:fs/promises';
 
 import { type Call, ContractError, type Services } from 'bundle/contracts';
 import { type LeaseTask, RuntimeLeaseV1 } from 'runtime/contracts';
+import type { z } from 'zod';
 
 import {
+  type LibraryOutput,
+  type LibraryRunnerInput,
+  libraryOutputSchema,
   type RunnerInput,
+  type RunnerJob,
+  type RunnerOutput,
   runnerOutputSchema,
   SANDBOX_ESBUILD,
 } from '../sandbox/protocol.js';
 import type { BundledComponent } from './bundle.js';
+import { ensureIgnoreFiles } from './ignore.js';
 
 /** The part of a leased sandbox a bundle uses. */
 export type RunnerSandbox = Pick<
@@ -61,7 +68,7 @@ export type SandboxBundler = (
 /** Where the runner and its jobs live, under the workspace root. */
 const WORK_DIR = '.doric/papercraft';
 
-/** The longest one bundle may run in the sandbox. */
+/** The longest one bundle or library job may run in the sandbox (D14). */
 export const RUNNER_TIMEOUT_MS = 120_000;
 
 /** The largest output the host reads back from one bundle. */
@@ -79,19 +86,30 @@ const tail = (text: string): string =>
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** Bundles `request.path` in `sandbox` with `runner`. */
-export const bundleInSandbox = async (
+/** What one runner job answered: its output JSON, or why there is none. */
+type JobOutcome =
+  | { readonly status: 'output'; readonly json: unknown }
+  | { readonly status: 'unavailable'; readonly reason: string };
+
+/**
+ * Runs one job of `runner` in `sandbox`: the ignore files first (D8), then
+ * the input written into a job folder, one `node runner.mjs` within the
+ * 120 s timeout, the output read back, the folder removed.
+ */
+const runJob = async (
   sandbox: RunnerSandbox,
-  request: SandboxBundleRequest,
+  input: RunnerJob,
   runner: RunnerScript,
-): Promise<SandboxBundle> => {
+  projectId: string,
+): Promise<JobOutcome> => {
   const known = unable.get(sandbox.id);
   if (known !== undefined) return { status: 'unavailable', reason: known };
 
   const root = sandbox.root.replace(/\/+$/u, '');
   const runnerPath = `${root}/${WORK_DIR}/runner-${runner.hash}.mjs`;
   const job = `${root}/${WORK_DIR}/jobs/${randomUUID()}`;
-  const input: RunnerInput = { ...request, esbuild: SANDBOX_ESBUILD };
+
+  await ensureIgnoreFiles(sandbox, root, projectId);
 
   try {
     const present = await sandbox.exec({ cmd: ['test', '-f', runnerPath] });
@@ -131,46 +149,9 @@ export const bundleInSandbox = async (
       };
     }
 
-    const parsed = runnerOutputSchema.safeParse(
-      JSON.parse(Buffer.from(bytes).toString('utf8')),
-    );
-
-    if (!parsed.success) {
-      return {
-        status: 'unavailable',
-        reason: "the runner's output is not a bundle answer",
-      };
-    }
-
-    const output = parsed.data;
-
-    if (output.status === 'unavailable') {
-      unable.set(sandbox.id, output.reason);
-
-      return output;
-    }
-
-    if (output.status === 'failed') {
-      return {
-        status: 'failed',
-        error: new ContractError(output.code, output.message, output.details),
-      };
-    }
-
     return {
-      status: 'built',
-      bundled: {
-        js: output.js,
-        exportName: output.exportName,
-        ...(output.harness === undefined ? {} : { harness: output.harness }),
-        sources: new Map(Object.entries(output.sources)),
-        globalCss: output.globalCss,
-        componentCss: output.componentCss,
-        windowSpecifiers: output.windowSpecifiers,
-        hostSpecifiers: output.hostSpecifiers,
-        warnings: output.warnings,
-      },
-      styles: new Map(Object.entries(output.styles)),
+      status: 'output',
+      json: JSON.parse(Buffer.from(bytes).toString('utf8')),
     };
   } catch (error) {
     return {
@@ -182,6 +163,112 @@ export const bundleInSandbox = async (
       .exec({ cmd: ['rm', '-rf', '--', job] })
       .catch(() => undefined);
   }
+};
+
+/**
+ * The runner's output of one job, checked by `schema`; why not, when it is
+ * not. A runner that answers `unavailable` (no esbuild, another version) marks
+ * the sandbox unable: an image does not change.
+ */
+const outputOf = <T extends { readonly status: string }>(
+  sandbox: RunnerSandbox,
+  outcome: JobOutcome,
+  schema: z.ZodType<T>,
+  what: string,
+): T | { readonly status: 'unavailable'; readonly reason: string } => {
+  if (outcome.status === 'unavailable') return outcome;
+
+  const parsed = schema.safeParse(outcome.json);
+
+  if (!parsed.success) {
+    return {
+      status: 'unavailable',
+      reason: `the runner's output is not ${what}`,
+    };
+  }
+
+  const output = parsed.data;
+
+  if (
+    output.status === 'unavailable' &&
+    'reason' in output &&
+    typeof output.reason === 'string'
+  ) {
+    unable.set(sandbox.id, output.reason);
+  }
+
+  return output;
+};
+
+/** Runs one bundle job (`kind` absent) in `sandbox` and answers its output. */
+export const bundleOutputInSandbox = async (
+  sandbox: RunnerSandbox,
+  input: RunnerInput,
+  runner: RunnerScript,
+  projectId: string,
+): Promise<RunnerOutput> =>
+  outputOf(
+    sandbox,
+    await runJob(sandbox, input, runner, projectId),
+    runnerOutputSchema,
+    'a bundle answer',
+  );
+
+/** Runs one library job (D14) in `sandbox` and answers its output. */
+export const libraryInSandbox = async (
+  sandbox: RunnerSandbox,
+  input: LibraryRunnerInput,
+  runner: RunnerScript,
+  projectId: string,
+): Promise<LibraryOutput> =>
+  outputOf(
+    sandbox,
+    await runJob(sandbox, input, runner, projectId),
+    libraryOutputSchema,
+    'a library answer',
+  );
+
+/** Bundles `request.path` in `sandbox` with `runner`. */
+export const bundleInSandbox = async (
+  sandbox: RunnerSandbox,
+  request: SandboxBundleRequest,
+  runner: RunnerScript,
+): Promise<SandboxBundle> =>
+  sandboxBundleOf(
+    await bundleOutputInSandbox(
+      sandbox,
+      { ...request, esbuild: SANDBOX_ESBUILD },
+      runner,
+      sandbox.id,
+    ),
+  );
+
+/** What a bundle job's output means to the preview pipeline. */
+export const sandboxBundleOf = (output: RunnerOutput): SandboxBundle => {
+  if (output.status === 'unavailable') return output;
+
+  if (output.status === 'failed') {
+    return {
+      status: 'failed',
+      error: new ContractError(output.code, output.message, output.details),
+    };
+  }
+
+  return {
+    status: 'built',
+    bundled: {
+      js: output.js,
+      exportName: output.exportName,
+      ...(output.harness === undefined ? {} : { harness: output.harness }),
+      sources: new Map(Object.entries(output.sources)),
+      globalCss: output.globalCss,
+      componentCss: output.componentCss,
+      windowSpecifiers: output.windowSpecifiers,
+      hostSpecifiers: output.hostSpecifiers,
+      warnings: output.warnings,
+    },
+    styles: new Map(Object.entries(output.styles)),
+  };
 };
 
 let defaultRunner: Promise<RunnerScript | undefined> | undefined;
@@ -221,6 +308,62 @@ export const sandboxBundler =
     const outcome = await services
       .use(RuntimeLeaseV1, call.scope)
       .withLease((sandbox) => bundleInSandbox(sandbox, request, script), call);
+
+    return outcome.status === 'ready'
+      ? outcome.value
+      : {
+          status: 'unavailable',
+          reason: `the Project has no sandbox lease (${outcome.status})`,
+        };
+  };
+
+/** One job as `papercraft.programs/v1` asks it: the runner's input without its esbuild fields. */
+export type SandboxJob =
+  | Omit<LibraryRunnerInput, 'esbuild' | 'version'>
+  | Omit<RunnerInput, 'esbuild' | 'version'>;
+
+/**
+ * Runs jobs in the sandbox of a Project, over its current lease
+ * (`runtime.lease/v1.withLease`, which never acquires one): `ProgramsDeps.runJob`.
+ * No lease answers `unavailable` with "the Project has no sandbox lease".
+ */
+export const sandboxJobRunner =
+  (
+    services: Services,
+    runner: () => Promise<RunnerScript | undefined> = loadRunner,
+  ) =>
+  async (
+    projectId: string,
+    job: SandboxJob,
+  ): Promise<LibraryOutput | RunnerOutput> => {
+    const script = await runner();
+
+    if (script === undefined) {
+      return {
+        status: 'unavailable',
+        reason: 'this host was built without the sandbox runner',
+      };
+    }
+
+    const { version } = await import('esbuild');
+    const outcome = await services
+      .use(RuntimeLeaseV1, { projectId })
+      .withLease(
+        (sandbox): Promise<LibraryOutput | RunnerOutput> =>
+          job.kind === 'library'
+            ? libraryInSandbox(
+                sandbox,
+                { ...job, esbuild: SANDBOX_ESBUILD, version },
+                script,
+                projectId,
+              )
+            : bundleOutputInSandbox(
+                sandbox,
+                { ...job, esbuild: SANDBOX_ESBUILD, version },
+                script,
+                projectId,
+              ),
+      );
 
     return outcome.status === 'ready'
       ? outcome.value

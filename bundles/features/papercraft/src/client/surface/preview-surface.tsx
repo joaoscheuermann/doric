@@ -1,32 +1,23 @@
-// `preview-surface.tsx` — the component that hosts the artifact (spec: "Uma
-// superfície, duas molduras"; docs/architecture/bundles/papercraft/
+// `preview-surface.tsx` — the component that hosts a papercraft program
+// (spec: "Uma superfície, duas molduras"; docs/architecture/bundles/papercraft/
 // isolamento.md).
 //
-// Every preview renders in its own sandboxed, opaque-origin iframe
-// (`live-frame.tsx`), which runs the bundle's preview runtime and speaks to
-// the app only through the frame protocol. The surface:
+// Every program renders in its own sandboxed, opaque-origin iframe
+// (`live-frame.tsx`), which runs the bundle's program runtime and speaks to
+// the app only through the frame protocol (2, D6). The surface:
 //
-//   - provisions nothing of the app's theme: the module's sheet carries its
-//     own (the Project's, or the generic one), and only the reader's light or
-//     dark mode reaches it — at `init`, and again whenever the app's mode
-//     changes;
-//   - when the revision's entries name a compiled module (`index.js`, path B),
-//     first has the revision's entries written into the desktop's verified
-//     cache (`ensure`, which reaches `artifacts.cache/v1`), and only then
-//     initialises the frame with the module's URL —
-//     `doric://app/artifacts/<artifactId>@<revision>/index.js` — its sheet's
-//     (when named) and path A's markup as the fallback the frame renders when
-//     the module does not load or mount; a revision that cannot be cached
-//     renders that markup straight away. Either way the one-line notice of
-//     decision 10 shows, because the canvas is never empty;
-//   - when the entries name no module — path A's `index.html` only — renders
-//     that markup in the frame, with no module to load and no notice;
-//   - sizes the iframe by Storybook's layout, as the frame reports it: a
-//     component hugs what it renders (`centered`: the reported width, up to
-//     the canvas's), `padded` and `fullscreen` (and an html page) take the
-//     canvas's width; the height is always the content's;
-//   - hands on what the frame derives and reports (the scene, its input) and
-//     keeps the last scene, size and mode of each revision (`frame-memory.ts`);
+//   - provisions nothing of the app's theme: the program's sheets carry their
+//     own, and only the reader's light or dark mode reaches it — at `init`,
+//     and again whenever the app's mode changes;
+//   - tells the frame its program (`program`), and draws no frame before it
+//     has one;
+//   - sizes the iframe by the layout the frame reports: `centered` hugs what
+//     it renders (the reported width, up to the canvas's), `padded` and
+//     `fullscreen` take the canvas's width; the height is always the
+//     content's;
+//   - hands on what the frame derives and reports (the scene, its input, its
+//     errors) and keeps the last scene, size and mode of each revision
+//     (`frame-memory.ts`);
 //   - keeps a live frame only while the preview holds one of the window's
 //     live frames (`live`, `live-frames.ts`). A dead preview draws its
 //     stand-in (`stand-in.tsx`): its snapshot, else a placeholder with its
@@ -35,9 +26,8 @@
 //     its stand-in over the new frame until the frame says it mounted;
 //   - captures a live frame once it is stable on screen (`snapshots.ts`);
 //   - gives a frame `readyTimeout` to say it mounted: past it, the stand-in
-//     shows and the surface reports `fallback`, so the canvas is never empty
-//     and the failure notice of decision 10 shows; a later `mounted` clears
-//     both.
+//     shows and the surface reports `fallback`, so the canvas is never empty;
+//     a later `mounted` clears both.
 //
 // The frame is keyed by revision: a revision change, or the surface going,
 // disposes the old frame (its unmount runs once, in the frame) and a stale
@@ -46,42 +36,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
-  FrameContent,
-  FrameMessage,
+  FrameErrorsMessage,
   InputCapture,
   PreviewLayout,
   PreviewTheme,
+  ProgramFrameMessage,
   SceneNodeData,
 } from '../frame-protocol.js';
-import { previewFrameSrc } from '../frame-url.js';
+import { programFrameSrc } from '../frame-url.js';
 import { type FrameSize, lastFrameOf, rememberFrame } from './frame-memory.js';
-import { type FrameCursor, LiveFrame } from './live-frame.js';
+import {
+  type FrameCursor,
+  LiveFrame,
+  type ProgramContent,
+} from './live-frame.js';
 import {
   type SurfaceSnapshots,
   snapshotOf,
   useSnapshotCapture,
 } from './snapshots.js';
 import { StandIn } from './stand-in.js';
-
-/** The contract a compiled artifact module exports ("O que o build entrega"). */
-export interface PapercraftModule {
-  mount(
-    root: HTMLElement,
-    context: { readonly theme: 'light' | 'dark' },
-  ): undefined | (() => void);
-}
-
-/** The URL of one revision's module, as the desktop serves it. */
-export const artifactModuleUrl = (
-  artifactId: string,
-  revision: number,
-): string => `doric://app/artifacts/${artifactId}@${revision}/index.js`;
-
-/** The URL of one revision's compiled Tailwind sheet. */
-export const artifactStylesUrl = (
-  artifactId: string,
-  revision: number,
-): string => `doric://app/artifacts/${artifactId}@${revision}/index.css`;
 
 /** The theme the app is in now. */
 export const appTheme = (): PreviewTheme =>
@@ -126,26 +100,6 @@ export const useAppTheme = (): PreviewTheme => {
 export const READY_TIMEOUT_MS = 10_000;
 
 /**
- * Says on the window's console why a revision fell back to its markup: the
- * notice on the canvas names no cause, and each one has its own remedy.
- */
-const warnFallback = (
-  artifactId: string,
-  revision: number,
-  reason: string,
-): void => {
-  console.warn(
-    `papercraft: ${artifactId}@${String(revision)} shows its markup: ${reason}`,
-  );
-};
-
-/** The entry a revision names when it carries path B's compiled module. */
-export const MODULE_ENTRY = 'index.js';
-
-/** The entry of path B's compiled Tailwind sheet. */
-export const STYLES_ENTRY = 'index.css';
-
-/**
  * What the surface mounted: the live module, the markup of a revision that
  * has no module, or the markup standing in for a module that did not load.
  */
@@ -159,24 +113,13 @@ export type SurfaceLayout = PreviewLayout;
 
 /** The frame's messages the canvas acts on: its input and its focus. */
 export type FrameInput = Extract<
-  FrameMessage,
+  ProgramFrameMessage,
   { kind: 'pointer' | 'wheel' | 'key' | 'focus' }
 >;
 
 export interface PreviewSurfaceProps {
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly revision: number;
-  /** The path-A built markup of the revision, as `papercraft.previews/v1` read it. */
-  readonly markup: string | undefined;
-  /** The paths of the revision's entries; a module is loaded only when named. */
-  readonly entries?: readonly string[];
-  /**
-   * Makes the revision's entries servable at the app origin before the frame
-   * loads its module (the desktop's verified cache); a rejection falls back
-   * to the markup. Called only when the entries name a module; read when the
-   * revision mounts, so a new identity never remounts the artifact.
-   */
-  readonly ensure?: (artifactId: string, revision: number) => Promise<void>;
   /** A fixed height for the iframe; the content's height otherwise. */
   readonly height?: number;
   /** The canvas's size, in surface pixels: the width a page lays out at. */
@@ -195,7 +138,7 @@ export interface PreviewSurfaceProps {
   readonly onMode?: (mode: SurfaceMode) => void;
   /** Reports the frame's pointer, wheel, keys and focus. */
   readonly onInput?: (message: FrameInput) => void;
-  /** The frame document; the bundle's preview runtime by default. */
+  /** The frame document; the bundle's program runtime by default. */
   readonly frameSrc?: string;
   /**
    * Whether the preview holds one of the window's live frames
@@ -208,6 +151,12 @@ export interface PreviewSurfaceProps {
   readonly snapshots?: SurfaceSnapshots;
   /** How long a frame may take to say it mounted (`READY_TIMEOUT_MS`). */
   readonly readyTimeout?: number;
+  /** The frame's `init` and current `program`; no frame is drawn before it. */
+  readonly program?: ProgramContent;
+  /** Each `errors` message of the frame. */
+  readonly onErrors?: (errors: FrameErrorsMessage['errors']) => void;
+  /** The frame may be the window's warm frame (a fence's node). */
+  readonly adopt?: boolean;
 }
 
 /** What the surface knows of the revision's content, per mount. */
@@ -215,23 +164,17 @@ interface Content {
   /** One per mount of the revision: the frame's key; 0 before the first. */
   readonly generation: number;
   /** The revision the content is of. */
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly revision: number;
-  readonly content: FrameContent | undefined;
-  /** The cache refused the revision: its markup stands in. */
-  readonly uncached: boolean;
 }
 
 const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
 const UNLOCKED: FrameCursor = { locked: false };
 
-/** The artifact host: the live frame, sized by the layout it reports. */
+/** The program host: the live frame, sized by the layout it reports. */
 export function PreviewSurface({
-  artifactId,
+  canvasId,
   revision,
-  markup,
-  entries,
-  ensure,
   height,
   area,
   capture = 'all',
@@ -246,24 +189,20 @@ export function PreviewSurface({
   title,
   snapshots,
   readyTimeout = READY_TIMEOUT_MS,
+  program,
+  onErrors,
+  adopt = false,
 }: PreviewSurfaceProps) {
-  const hasModule = entries?.includes(MODULE_ENTRY) === true;
-  const hasStyles = entries?.includes(STYLES_ENTRY) === true;
-
   const [mode, setMode] = useState<SurfaceMode>('markup');
-  const [layout, setLayout] = useState<SurfaceLayout>(
-    hasModule ? 'centered' : 'fullscreen',
-  );
+  const [layout, setLayout] = useState<SurfaceLayout>('fullscreen');
   const [size, setSize] = useState<FrameSize | undefined>(undefined);
   const [content, setContent] = useState<Content>({
     generation: 0,
-    artifactId,
+    canvasId,
     revision,
-    content: undefined,
-    uncached: false,
   });
   const theme = useAppTheme();
-  const src = useRef(frameSrc ?? previewFrameSrc()).current;
+  const src = useRef(frameSrc ?? programFrameSrc()).current;
   const host = useRef<HTMLDivElement>(null);
 
   // Each time the preview turns live again its frame is a new one: the
@@ -283,8 +222,8 @@ export function PreviewSurface({
 
   // The reporters are read when a message arrives, so a new callback
   // identity never remounts the artifact.
-  const reporters = useRef({ onScene, onMode, onInput, ensure });
-  reporters.current = { onScene, onMode, onInput, ensure };
+  const reporters = useRef({ onScene, onMode, onInput, onErrors });
+  reporters.current = { onScene, onMode, onInput, onErrors };
 
   /** The frame (its key) that last said what it mounted, or failed to. */
   const settled = useRef<string | undefined>(undefined);
@@ -300,77 +239,17 @@ export function PreviewSurface({
   }, []);
 
   useEffect(() => {
-    let disposed = false;
     generations.current += 1;
-    const generation = generations.current;
 
     reported.current = undefined;
     setSize(undefined);
-    setLayout(hasModule ? 'centered' : 'fullscreen');
-    setContent({
-      generation,
-      artifactId,
-      revision,
-      content: undefined,
-      uncached: false,
-    });
-
-    const settle = (next: SurfaceMode): void => {
-      setMode(next);
-      reported.current = next;
-      reporters.current.onMode?.(next);
-    };
-
-    const show = (next: FrameContent | undefined, uncached = false): void => {
-      if (disposed) return;
-      setContent({ generation, artifactId, revision, content: next, uncached });
-    };
-
-    const markupContent: FrameContent | undefined =
-      markup === undefined ? undefined : { kind: 'markup', markup };
-
-    if (!hasModule) {
-      // A revision without a module: path A's markup is the revision.
-      settle('markup');
-      show(markupContent);
-    } else {
-      void (async () => {
-        try {
-          // The route serves only what the cache verified: the revision's
-          // entries reach it before the frame is told the module's URL.
-          await reporters.current.ensure?.(artifactId, revision);
-
-          show({
-            kind: 'module',
-            module: artifactModuleUrl(artifactId, revision),
-            ...(hasStyles
-              ? { styles: artifactStylesUrl(artifactId, revision) }
-              : {}),
-            ...(markup === undefined ? {} : { fallback: markup }),
-          });
-        } catch (error) {
-          if (disposed) return;
-          // The revision could not be cached — the canvas is never empty:
-          // the built markup of path A stands in (decision 10).
-          warnFallback(
-            artifactId,
-            revision,
-            `the revision could not be cached (${error instanceof Error ? error.message : String(error)})`,
-          );
-          settle('fallback');
-          setLayout('centered');
-          show(markupContent, true);
-        }
-      })();
-    }
+    setLayout('fullscreen');
+    setContent({ generation: generations.current, canvasId, revision });
 
     return () => {
-      disposed = true;
       reporters.current.onScene?.(undefined);
     };
-  }, [artifactId, revision, markup, hasModule, hasStyles]);
-
-  const uncached = content.uncached;
+  }, [canvasId, revision]);
 
   const areaWidth =
     area !== undefined && area.width > 0 ? area.width : undefined;
@@ -395,37 +274,23 @@ export function PreviewSurface({
     if (!live || content.generation === 0 || mounted) return;
 
     const timer = setTimeout(() => {
-      warnFallback(
-        artifactId,
-        revision,
-        `its frame did not say it mounted within ${String(readyTimeout)} ms`,
-      );
       setStalledKey(frameKey);
       report('fallback');
     }, readyTimeout);
 
     return () => clearTimeout(timer);
-  }, [
-    live,
-    content.generation,
-    mounted,
-    frameKey,
-    readyTimeout,
-    report,
-    artifactId,
-    revision,
-  ]);
+  }, [live, content.generation, mounted, frameKey, readyTimeout, report]);
 
   // A dead preview hands the canvas the last scene its frame reported, so
   // the pins, outlines and comments keep drawing over its stand-in.
   useEffect(() => {
     if (live || content.generation === 0) return;
 
-    const record = lastFrameOf(artifactId, revision);
+    const record = lastFrameOf(canvasId, revision);
 
     if (record?.scene !== undefined) reporters.current.onScene?.(record.scene);
     if (record?.mode !== undefined) report(record.mode);
-  }, [live, content.generation, artifactId, revision, report]);
+  }, [live, content.generation, canvasId, revision, report]);
 
   const { sceneChanged } = useSnapshotCapture({
     host,
@@ -438,7 +303,7 @@ export function PreviewSurface({
       frameHeight !== undefined &&
       frameHeight > 0
         ? {
-            artifactId,
+            canvasId,
             revision,
             theme,
             width: frameWidth,
@@ -451,12 +316,12 @@ export function PreviewSurface({
   /* The stand-in: what the frame last showed, at the size it had ----------- */
 
   const memory =
-    content.generation === 0 ? undefined : lastFrameOf(artifactId, revision);
+    content.generation === 0 ? undefined : lastFrameOf(canvasId, revision);
   const standInWidth = memory?.width ?? frameWidth;
   const snapshot =
     standInWidth === undefined
       ? undefined
-      : snapshotOf({ artifactId, revision, theme, width: standInWidth });
+      : snapshotOf({ canvasId, revision, theme, width: standInWidth });
   const standIn: 'none' | 'alone' | 'over' =
     content.generation === 0
       ? 'none'
@@ -466,20 +331,16 @@ export function PreviewSurface({
           ? 'over'
           : 'none';
 
-  const onMessage = (message: FrameMessage): void => {
+  const onMessage = (message: ProgramFrameMessage): void => {
     switch (message.kind) {
-      case 'mounted': {
-        // A module that did not load, by the frame's word or the cache's,
-        // is the fallback; it hugs its markup as a component does.
-        const next: SurfaceMode = uncached ? 'fallback' : message.mode;
+      case 'errors':
+        reporters.current.onErrors?.(message.errors);
 
-        if (message.mode === 'fallback') {
-          warnFallback(
-            content.artifactId,
-            content.revision,
-            'its frame could not load or mount the module (see the frame console)',
-          );
-        }
+        return;
+      case 'mounted': {
+        // A program that did not mount, by the frame's word, is the
+        // fallback; it hugs what it shows as a component does.
+        const next: SurfaceMode = message.mode;
         const shown: SurfaceLayout =
           next === 'fallback' ? 'centered' : message.layout;
 
@@ -487,7 +348,7 @@ export function PreviewSurface({
         setMountedKey(frameKey);
         report(next);
         setLayout(shown);
-        rememberFrame(content.artifactId, content.revision, {
+        rememberFrame(content.canvasId, content.revision, {
           mode: next,
           layout: shown,
           theme,
@@ -499,11 +360,6 @@ export function PreviewSurface({
         // A revision that fails before it mounted is the fallback's case;
         // an error after it rendered is the preview's own, contained.
         if (settled.current !== frameKey) {
-          warnFallback(
-            content.artifactId,
-            content.revision,
-            `its frame failed before it mounted (${message.message})`,
-          );
           settled.current = frameKey;
           report('fallback');
         }
@@ -511,7 +367,7 @@ export function PreviewSurface({
         return;
       case 'size':
         setSize({ width: message.width, height: message.height });
-        rememberFrame(content.artifactId, content.revision, {
+        rememberFrame(content.canvasId, content.revision, {
           size: { width: message.width, height: message.height },
         });
 
@@ -519,7 +375,7 @@ export function PreviewSurface({
       case 'scene':
         reporters.current.onScene?.(message.nodes);
         sceneChanged();
-        rememberFrame(content.artifactId, content.revision, {
+        rememberFrame(content.canvasId, content.revision, {
           scene: message.nodes,
           theme,
           ...(frameWidth === undefined ? {} : { width: frameWidth }),
@@ -553,11 +409,12 @@ export function PreviewSurface({
       )}
       {/* The live boundary: one frame per mount of a revision, while the
           preview holds one of the window's live frames. */}
-      {content.generation === 0 || !live ? null : (
+      {content.generation === 0 || !live || program === undefined ? null : (
         <LiveFrame
           key={frameKey}
           src={src}
-          content={content.content}
+          program={program}
+          adopt={adopt}
           theme={theme}
           capture={capture}
           hidden={[...hidden]}

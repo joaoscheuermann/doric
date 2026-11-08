@@ -1,7 +1,11 @@
 import type { TurnComment } from '../../contracts/index.js';
 import { delegatedInput } from './delegated.js';
 import type { Draft } from './projector.js';
-import { promptMessage, promptSummary } from './prompt-envelope.js';
+import {
+  parsePromptEnvelope,
+  promptMessage,
+  promptSummary,
+} from './prompt-envelope.js';
 import type { QueueItem } from './queue.js';
 import { terminalResultInput } from './terminal-result.js';
 import type { ThreadEvent } from './workspace.js';
@@ -113,6 +117,10 @@ export const readInput = (
           reason: input.source.reason ?? 'instruction',
         }
       : undefined;
+  const action =
+    input.source.kind === 'user'
+      ? parsePromptEnvelope(input.text)?.action
+      : undefined;
   return {
     type: 'user',
     promptId: item.promptId,
@@ -128,6 +136,7 @@ export const readInput = (
     ...(delegated === undefined ? {} : { delegated }),
     ...(terminal === undefined ? {} : { terminal }),
     ...(instruction === undefined ? {} : { instruction }),
+    ...(action === undefined ? {} : { action }),
   };
 };
 

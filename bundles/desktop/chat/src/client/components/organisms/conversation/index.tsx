@@ -10,6 +10,7 @@ import {
 } from '@lexical/html';
 import { LinkNode } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionComposer';
 import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
@@ -33,16 +34,21 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useSyncExternalStore,
 } from 'react';
 
+import type { ChatFenceView } from '../../../../contracts/index.js';
 import {
   isReadOnlyBlock,
   isUndeletableBlock,
 } from '../../../domain/conversation-nodes.js';
+import { turnKey } from '../../../domain/conversation-sync.js';
+import { threadFences } from '../../../domain/fences.js';
 import {
   withPendingTurns,
   withSentThreads,
 } from '../../../domain/pending-turns.js';
+import type { AgentTurn, Turn } from '../../../domain/projector.js';
 import { composerAction } from '../../../domain/queue.js';
 import type { Thread } from '../../../domain/workspace.js';
 import { useAgentIcons } from '../../../hooks/use-agent-icons.js';
@@ -56,11 +62,12 @@ import {
   type ChatLexicalRegistry,
   chatLexicalRegistry,
 } from '../../../services/lexical.js';
+import { chatViewsRegistry } from '../../../services/views.js';
 import { retainProjectTerminals } from '../../../stores/live-terminals.js';
 import type { PromptSignal } from '../../../utility/prompt-signal.js';
 import { ThreadNavRail } from '../../molecules/thread-nav-rail.js';
 import { ActivityTurnNode } from './nodes/activity-turn-node.js';
-import { AgentTurnNode } from './nodes/agent-turn-node.js';
+import { $agentTurns, AgentTurnNode } from './nodes/agent-turn-node.js';
 import { AttachmentImageNode } from './nodes/attachment-image-node.js';
 import {
   CHAT_BLOCK_NODE,
@@ -73,6 +80,12 @@ import { CompactionTurnNode } from './nodes/compaction-turn-node.js';
 import { ComposerStackNode } from './nodes/composer-stack-node.js';
 import { DelegatedTurnNode } from './nodes/delegated-turn-node.js';
 import { FailureTurnNode } from './nodes/failure-turn-node.js';
+import {
+  ChatFencesContext,
+  FenceElements,
+  FenceNode,
+  fenceElementKey,
+} from './nodes/fence-node.js';
 import { LifecycleTurnNode } from './nodes/lifecycle-turn-node.js';
 import { PromptEditNode } from './nodes/prompt-edit-node.js';
 import { QueueNode } from './nodes/queue-node.js';
@@ -273,6 +286,8 @@ const defineConversationExtension = (
       TableCellNode,
       // A block another bundle's projector made, drawn by its element.
       ChatBlockNode,
+      // A fence of a tag another bundle draws (openui.md D1).
+      FenceNode,
       // Nodes other bundles add through `chat.lexical/v1`.
       ...added.nodes,
     ],
@@ -305,6 +320,51 @@ const conversationExtension = () => {
   }
   return built.extension;
 };
+
+const noTags: ReadonlySet<string> = new Set();
+const noRegistry = () => () => {};
+
+/** The window's fence tags, read again on every registration or its end (D1). */
+const useFenceTags = (): ReadonlySet<string> => {
+  const registry = chatViewsRegistry();
+  return useSyncExternalStore(
+    registry?.subscribe ?? noRegistry,
+    () => registry?.fenceTags() ?? noTags,
+  );
+};
+
+/**
+ * Builds every agent turn the conversation shows again when the fence tags
+ * change, so a registration that starts or ends turns code blocks into
+ * fences or back (D1).
+ */
+function FenceSync({
+  tags,
+  turns,
+}: {
+  readonly tags: ReadonlySet<string>;
+  readonly turns: readonly Turn[];
+}) {
+  const [editor] = useLexicalComposerContext();
+  const seen = useRef(tags);
+  const latest = useRef(turns);
+  latest.current = turns;
+
+  useEffect(() => {
+    if (seen.current === tags) return;
+    seen.current = tags;
+    const agents = new Map<string, AgentTurn>();
+    for (const turn of latest.current)
+      if (turn.type === 'agent') agents.set(turnKey(turn), turn);
+    editor.update(() => {
+      for (const node of $agentTurns()) {
+        const turn = agents.get(node.__turnKey);
+        if (turn !== undefined) node.setTurn(turn, { rebuild: true });
+      }
+    });
+  }, [editor, tags]);
+  return null;
+}
 
 /** External blocks are kept like every turn: a deletion never removes one. */
 const isUndeletableNode = (nodeType: string): boolean =>
@@ -410,6 +470,46 @@ export const Conversation = memo(function Conversation({
     [thread.id, thread.projectId],
   );
   useEffect(() => retainProjectTerminals(thread.projectId), [thread.projectId]);
+  // The Thread's fences of every registered tag (D1, D2), and the view each
+  // fence element receives.
+  const tags = useFenceTags();
+  const fences = useMemo(
+    () =>
+      threadFences(turns, tags, {
+        projectId: thread.projectId,
+        threadId: thread.id,
+      }),
+    [turns, tags, thread.projectId, thread.id],
+  );
+  const origin = chat.thread.origin ?? 'user';
+  const fenceViews = useMemo(() => {
+    const tagOf = (fence: ChatFenceView['fence']) =>
+      fence.info.split(/\s+/)[0] ?? '';
+    const byTag = new Map<string, ChatFenceView['fence'][]>();
+    for (const fence of fences) {
+      const tag = tagOf(fence);
+      byTag.set(tag, [...(byTag.get(tag) ?? []), fence]);
+    }
+    return new Map<string, ChatFenceView>(
+      fences.map((fence) => [
+        fenceElementKey(tagOf(fence), fence.key),
+        { fence, origin, fences: byTag.get(tagOf(fence)) ?? [] },
+      ]),
+    );
+  }, [fences, origin]);
+  const fenceElements = useMemo(
+    () =>
+      ui === null
+        ? null
+        : // A new Thread is a new set of elements; the old one is disposed below.
+          new FenceElements(ui, thread.id, (tag) =>
+            chatViewsRegistry()?.fenceRendererFor(tag),
+          ),
+    [ui, thread.id],
+  );
+  // Set before the decorators of this render take their elements.
+  fenceElements?.update(fenceViews);
+  useEffect(() => () => fenceElements?.dispose(), [fenceElements]);
 
   return (
     <div className="flex min-h-0 min-w-0 w-full flex-1">
@@ -423,54 +523,57 @@ export const Conversation = memo(function Conversation({
           <ConversationThreadContext.Provider value={threadInfo}>
             <CommentThreadsContext.Provider value={threads}>
               <ChatBlocksContext.Provider value={blocksSource}>
-                <LexicalExtensionComposer
-                  extension={extension}
-                  contentEditable={contentEditable}
-                >
-                  <UndeletableBlocksPlugin
-                    isReadOnly={isReadOnlyBlock}
-                    isUndeletable={isUndeletableNode}
-                  />
-                  <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
-                  <CaretNavigation />
-                  <TableBlocksPlugin />
-                  <MarkdownPromptPlugin />
-                  <PromptLineBreaks />
-                  <AttachImages threadId={thread.id} />
-                  <PasteIntoPrompt />
-                  <InsertThreadTurnNodes
-                    autoFocus={autoFocus}
-                    thread={threadScope}
-                    turns={turns}
-                    agentIcons={agentIcons}
-                    blocks={external.placed}
-                    onResume={chat.resume}
-                    navigating={navigating}
-                    following={following}
-                  />
-                  <ComposerDraft thread={thread} />
-                  <SendPrompt
-                    canStop={running}
-                    promptSignal={promptSignal}
-                    send={chat.prompt}
-                    steer={chat.steer}
-                    sendRequest={sendRequest}
-                    threadId={thread.id}
-                    onStop={stop}
-                    onResumeQueue={
-                      !queue.resuming &&
-                      !queue.isError &&
-                      composerAction(running, queue.data) === 'resume'
-                        ? queue.resume
-                        : undefined
-                    }
-                  />
-                  <EditQueuePrompt threadId={thread.id} />
-                  <CommentSelection />
-                  <CommentSeats />
-                  <CommentHighlights />
-                  <StackCaret />
-                </LexicalExtensionComposer>
+                <ChatFencesContext.Provider value={fenceElements}>
+                  <LexicalExtensionComposer
+                    extension={extension}
+                    contentEditable={contentEditable}
+                  >
+                    <FenceSync tags={tags} turns={turns} />
+                    <UndeletableBlocksPlugin
+                      isReadOnly={isReadOnlyBlock}
+                      isUndeletable={isUndeletableNode}
+                    />
+                    <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+                    <CaretNavigation />
+                    <TableBlocksPlugin />
+                    <MarkdownPromptPlugin />
+                    <PromptLineBreaks />
+                    <AttachImages threadId={thread.id} />
+                    <PasteIntoPrompt />
+                    <InsertThreadTurnNodes
+                      autoFocus={autoFocus}
+                      thread={threadScope}
+                      turns={turns}
+                      agentIcons={agentIcons}
+                      blocks={external.placed}
+                      onResume={chat.resume}
+                      navigating={navigating}
+                      following={following}
+                    />
+                    <ComposerDraft thread={thread} />
+                    <SendPrompt
+                      canStop={running}
+                      promptSignal={promptSignal}
+                      send={chat.prompt}
+                      steer={chat.steer}
+                      sendRequest={sendRequest}
+                      threadId={thread.id}
+                      onStop={stop}
+                      onResumeQueue={
+                        !queue.resuming &&
+                        !queue.isError &&
+                        composerAction(running, queue.data) === 'resume'
+                          ? queue.resume
+                          : undefined
+                      }
+                    />
+                    <EditQueuePrompt threadId={thread.id} />
+                    <CommentSelection />
+                    <CommentSeats />
+                    <CommentHighlights />
+                    <StackCaret />
+                  </LexicalExtensionComposer>
+                </ChatFencesContext.Provider>
               </ChatBlocksContext.Provider>
             </CommentThreadsContext.Provider>
           </ConversationThreadContext.Provider>

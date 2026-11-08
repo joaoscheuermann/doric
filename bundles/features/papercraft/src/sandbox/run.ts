@@ -3,7 +3,7 @@
 // trip per file and carries no read budget; what only the host has is left
 // to it (`bundle.ts`).
 
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { ContractError } from 'bundle/contracts';
@@ -73,6 +73,11 @@ export const runBundle = async (
       path: input.path,
       ...(input.entry === undefined ? {} : { entry: input.entry }),
       windowServes: (specifier) => Promise.resolve(!unserved.has(specifier)),
+      isRepositoryRoot: (dir) =>
+        stat(join(options.root, dir, '.git')).then(
+          () => true,
+          () => false,
+        ),
     });
     const styles: Record<string, string> = {};
 

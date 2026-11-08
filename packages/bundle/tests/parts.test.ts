@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { buildParts, PartBuildError } from '../src/build/parts.js';
 import { buildBundle, distributionFiles } from '../src/index.js';
@@ -479,6 +479,169 @@ void test('CSS the client imports is appended after the Tailwind output, and fon
       assert.ok(font !== null, css);
       assert.equal(await read(dir, `client/${font[1]}`), 'wOF2');
       await assert.rejects(read(dir, 'client/index.css'));
+    },
+  );
+});
+
+// OpenUI D23 / D29 (docs/designs/openui.md, docs/designs/conversation-openui.md).
+
+/** A fixture package only a development build would reach. */
+const devToolsFixture = {
+  'node_modules/dev-tools-fixture/package.json': JSON.stringify({
+    name: 'dev-tools-fixture',
+    type: 'module',
+    main: 'index.js',
+  }),
+  'node_modules/dev-tools-fixture/index.js': `export const marker = 'dev-tools-fixture-code';\n`,
+};
+
+/** A module that reads NODE_ENV and loads dev tools only in development. */
+const readsNodeEnv = [
+  `export const mode = process.env.NODE_ENV;`,
+  `export const devTools = () => process.env.NODE_ENV === 'development' ? import('dev-tools-fixture') : undefined;`,
+  '',
+].join('\n');
+
+const modeOf = async (dir: string, path: string): Promise<unknown> =>
+  (
+    (await import(
+      pathToFileURL(join(dir, 'dist', ...path.split('/'))).href
+    )) as { mode: unknown }
+  ).mode;
+
+void test('B21: every browser part reads NODE_ENV as "production" in both modes and bundles no dev tools; a desktop part keeps it as written', async () => {
+  for (const mode of ['production', 'development'] as const) {
+    await withBundle(
+      {
+        ...devToolsFixture,
+        'src/client/index.ts': readsNodeEnv,
+        'src/client/workers/worker.ts': readsNodeEnv,
+        'src/client/frames/frame.ts': readsNodeEnv,
+        'src/client/chunks/chunk.ts': readsNodeEnv,
+        'src/desktop/index.ts': `export const mode = () => process.env.NODE_ENV;\n`,
+      },
+      async (dir) => {
+        await buildParts({ bundleDir: dir, mode });
+
+        for (const part of [
+          'client/index.js',
+          'client/workers/worker.js',
+          'client/frames/frame.js',
+          'client/chunks/chunk.js',
+        ]) {
+          assert.equal(
+            await modeOf(dir, part),
+            'production',
+            `${mode} ${part}`,
+          );
+          assert.doesNotMatch(
+            await read(dir, part),
+            /dev-tools-fixture-code/,
+            `${mode} ${part}`,
+          );
+        }
+
+        assert.match(
+          await read(dir, 'desktop/index.js'),
+          /process\.env\.NODE_ENV/,
+          mode,
+        );
+      },
+    );
+  }
+});
+
+void test('C16: client chunks are modules of their own beside the client, with their CSS beside them and the window specifiers external', async () => {
+  await withBundle(
+    {
+      'src/contracts/index.ts': `export const DemoV1 = 'demo/v1';\n`,
+      'src/client/index.ts': `import './main.css';\nexport const activate = () => 'main';\n`,
+      'src/client/main.css': `.main-rule { color: blue; }\n`,
+      'src/client/chunks/a.ts': [
+        `import './a.css';`,
+        `import { createElement } from 'react';`,
+        `import { DemoV1 } from '../../contracts/index.js';`,
+        `export const render = () => createElement('div', null, DemoV1);`,
+        '',
+      ].join('\n'),
+      'src/client/chunks/a.css': `.chunk-a-rule { color: red; }\n`,
+      'src/client/chunks/b.ts': `export const b = 'chunk-b';\n`,
+    },
+    async (dir) => {
+      const built = await buildParts({ bundleDir: dir, mode: 'production' });
+
+      assert.deepEqual(built.chunks, [
+        'client/chunks/a.js',
+        'client/chunks/b.js',
+      ]);
+      assert.deepEqual(
+        new Set(importsOf(await read(dir, 'client/chunks/a.js'))),
+        new Set(['react', 'demo/contracts']),
+      );
+      assert.match(await read(dir, 'client/chunks/a.css'), /\.chunk-a-rule/);
+      await assert.rejects(read(dir, 'client/chunks/b.css'));
+      assert.equal(built.clientStyles, 'client/styles.css');
+
+      const styles = await read(dir, 'client/styles.css');
+
+      assert.match(styles, /\.main-rule/);
+      assert.doesNotMatch(styles, /\.chunk-a-rule/);
+    },
+  );
+});
+
+void test('C16: a chunk with an import a client part must not contain fails the build', async () => {
+  await withBundle(
+    {
+      'src/client/index.ts': `export const activate = () => undefined;\n`,
+      'src/client/chunks/a.ts': `import * as forbidden from 'desktop/client';\nexport const parts = [forbidden];\n`,
+    },
+    async (dir) => {
+      await assert.rejects(
+        buildParts({ bundleDir: dir, mode: 'production' }),
+        (error: unknown) =>
+          error instanceof PartBuildError &&
+          error.message.includes('"desktop/client"'),
+      );
+    },
+  );
+});
+
+void test('C16: a chunk an earlier build left in dist/client/chunks is gone after the next build', async () => {
+  await withBundle(
+    {
+      'src/client/index.ts': `export const activate = () => undefined;\n`,
+      'src/client/chunks/old.ts': `export const old = 'old-chunk';\n`,
+    },
+    async (dir) => {
+      await buildParts({ bundleDir: dir, mode: 'production' });
+      await rm(join(dir, 'src', 'client', 'chunks', 'old.ts'));
+      await writeFile(
+        join(dir, 'src', 'client', 'chunks', 'new.ts'),
+        `export const fresh = 'new-chunk';\n`,
+      );
+
+      const built = await buildParts({ bundleDir: dir, mode: 'production' });
+
+      assert.deepEqual(built.chunks, ['client/chunks/new.js']);
+      assert.match(await read(dir, 'client/chunks/new.js'), /new-chunk/);
+      await assert.rejects(read(dir, 'client/chunks/old.js'));
+    },
+  );
+});
+
+void test('C16: a chunk without a client entry is not built, and an earlier chunk output is removed', async () => {
+  await withBundle(
+    {
+      'src/client/chunks/a.ts': `export const a = 'orphan-chunk';\n`,
+      // Left by an earlier build that had a client entry.
+      'dist/client/chunks/a.js': `export const a = 'stale-chunk';\n`,
+    },
+    async (dir) => {
+      const built = await buildParts({ bundleDir: dir, mode: 'production' });
+
+      assert.equal(built.chunks, undefined);
+      await assert.rejects(read(dir, 'client/chunks/a.js'));
     },
   );
 });

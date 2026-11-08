@@ -4,9 +4,9 @@
 // frame talk only over one `MessageChannel` per frame.
 //
 // The handshake: once the frame's runtime listens, it posts one window
-// message `{ papercraft: PROTOCOL, kind: 'hello' }` to its parent; the app,
+// message `{ papercraft: PROGRAM_PROTOCOL, kind: 'hello' }` to its parent; the app,
 // taking it only from that iframe's `contentWindow`, answers with one window
-// message `{ papercraft: PROTOCOL, kind: 'connect' }` carrying the channel's
+// message `{ papercraft: PROGRAM_PROTOCOL, kind: 'connect' }` carrying the channel's
 // second port. The runtime takes that port and from then on speaks only
 // through it, first with `ready`. The app accepts the frame's messages only
 // from that port. The frame speaks first because the document's `load` event
@@ -25,30 +25,48 @@ import { z } from 'zod';
 
 import {
   NODE_TEXT_LIMIT,
-  PROTOCOL,
+  PROGRAM_PROTOCOL,
   SCENE_NODE_LIMIT,
 } from './frame-constants.js';
 
-export { NODE_TEXT_LIMIT, PROTOCOL, SCENE_NODE_LIMIT };
+export { NODE_TEXT_LIMIT, PROGRAM_PROTOCOL, SCENE_NODE_LIMIT };
+
+/**
+ * The frame protocol: 2, papercraft programs' (`frames/openui.ts`, D6). Each
+ * end drops a message that carries another number.
+ */
+export type FrameProtocol = typeof PROGRAM_PROTOCOL;
 
 /** The window message a frame's runtime says it listens with. */
 export interface HelloMessage {
-  readonly papercraft: typeof PROTOCOL;
+  readonly papercraft: FrameProtocol;
   readonly kind: 'hello';
 }
 
-/** Whether a window message is a frame's `hello`. */
-export const isHello = (data: unknown): data is HelloMessage =>
+/**
+ * Whether a window message is a frame's `hello` of `protocol` (2 when
+ * absent). A `hello` of another number is not one.
+ */
+export const isHello = (
+  data: unknown,
+  protocol: FrameProtocol = PROGRAM_PROTOCOL,
+): data is HelloMessage =>
   typeof data === 'object' &&
   data !== null &&
-  (data as { papercraft?: unknown }).papercraft === PROTOCOL &&
+  (data as { papercraft?: unknown }).papercraft === protocol &&
   (data as { kind?: unknown }).kind === 'hello';
 
 /** The window message that hands the frame its port. */
 export interface ConnectMessage {
-  readonly papercraft: typeof PROTOCOL;
+  readonly papercraft: FrameProtocol;
   readonly kind: 'connect';
 }
+
+/** The `connect` message of `protocol`: `{ papercraft: protocol, kind: 'connect' }`. */
+export const connectMessage = (protocol: FrameProtocol): ConnectMessage => ({
+  papercraft: protocol,
+  kind: 'connect',
+});
 
 export type PreviewTheme = 'light' | 'dark';
 
@@ -83,25 +101,37 @@ export type PseudoKind = '::before' | '::after';
 // ---------------------------------------------------------------------------
 // App → frame
 
-/** What to render: a revision's module, else its markup (path A). */
-export type FrameContent =
-  | {
-      readonly kind: 'module';
-      /** `doric://app/artifacts/<id>@<rev>/index.js`. */
-      readonly module: string;
-      /** The revision's compiled sheet, when it has one. */
-      readonly styles?: string;
-      /** Path A's markup, rendered when the module fails to load or mount. */
-      readonly fallback?: string;
-    }
-  | { readonly kind: 'markup'; readonly markup: string };
+/** A compiled module the program frame imports: D14's URLs. */
+export interface ProgramModule {
+  /** `doric://app/papercraft-modules/<dir>/index.js`. */
+  readonly module: string;
+  /** `doric://app/papercraft-modules/<dir>/index.css`, when the module has a sheet. */
+  readonly styles?: string;
+}
 
-export type AppMessage =
+/** App → frame, protocol 2 (D6). */
+export type ProgramAppMessage =
   | {
       readonly kind: 'init';
-      readonly content: FrameContent;
       readonly theme: PreviewTheme;
       readonly capture: InputCapture;
+      /** The bound repository library; absent when the answer is `none` or `failed`. */
+      readonly library?: ProgramModule;
+    }
+  | {
+      /**
+       * Repeatable on a mounted frame: sent when `text`, `streaming` or
+       * `exports` changes. A new message never resets the program's local
+       * state.
+       */
+      readonly kind: 'program';
+      readonly text: string;
+      readonly streaming: boolean;
+      /**
+       * `Export` builds by `<path>#<name>` (`<path>#` without a name); a key
+       * absent here draws a placeholder.
+       */
+      readonly exports: Readonly<Record<string, ProgramModule>>;
     }
   | { readonly kind: 'theme'; readonly theme: PreviewTheme }
   | { readonly kind: 'capture'; readonly capture: InputCapture }
@@ -120,7 +150,7 @@ export type AppMessage =
     }
   /** Asks for a fresh `scene` (the canvas resized, a font loaded…). */
   | { readonly kind: 'measure' }
-  /** Unmounts the revision; the app removes the iframe next. */
+  /** Unmounts the program; the app removes the iframe next. */
   | { readonly kind: 'dispose' };
 
 // ---------------------------------------------------------------------------
@@ -151,8 +181,6 @@ const sceneNode = z
     classes: z.array(z.string().max(256)).max(64),
     /** The element's `id` attribute. */
     elementId: z.string().max(256).optional(),
-    /** Its own `data-papercraft-source` (`path:line`), when it carries one. */
-    stamp: z.string().max(1024).optional(),
     /** Its text, whitespace collapsed, at most NODE_TEXT_LIMIT characters. */
     text: z.string().max(NODE_TEXT_LIMIT),
     /** Its border box cut to what its clipping ancestors leave visible. */
@@ -179,10 +207,8 @@ const modifiers = {
   shiftKey: z.boolean(),
 };
 
-const frameMessageSchema = z.discriminatedUnion('kind', [
-  z
-    .object({ kind: z.literal('ready'), protocol: z.literal(PROTOCOL) })
-    .strict(),
+/** The messages the frame sends besides `ready`, `scene` and `errors`. */
+const sharedMessages = [
   /** The revision rendered: its module, its markup, or the fallback markup. */
   z
     .object({
@@ -197,12 +223,6 @@ const frameMessageSchema = z.discriminatedUnion('kind', [
       kind: z.literal('size'),
       width: finite.nonnegative(),
       height: finite.nonnegative(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('scene'),
-      nodes: z.array(sceneNode).max(SCENE_NODE_LIMIT),
     })
     .strict(),
   z
@@ -246,13 +266,104 @@ const frameMessageSchema = z.discriminatedUnion('kind', [
       stack: z.string().max(16_384).optional(),
     })
     .strict(),
+] as const;
+
+/**
+ * Protocol 2's scene node (D6): the shared node fields plus the nearest
+ * statement wrapper's names, each matching `^[A-Za-z_$][A-Za-z0-9_$]{0,63}$`.
+ * A statement's box is the union of its children's boxes.
+ */
+export type ProgramSceneNodeData = SceneNodeData & {
+  readonly statement?: string;
+  readonly component?: string;
+};
+
+/**
+ * The renderer's errors (protocol 2): at most 50, each `message` at most
+ * 1,024 characters; sent again with `[]` once all are resolved.
+ */
+export interface FrameErrorsMessage {
+  readonly kind: 'errors';
+  readonly errors: readonly {
+    readonly code: string;
+    readonly statementId?: string;
+    readonly message: string;
+  }[];
+}
+
+const statementName = z.string().regex(/^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/);
+
+/** Protocol 2's scene node: the nearest statement wrapper's names. */
+const programSceneNode = sceneNode
+  .extend({
+    statement: statementName.optional(),
+    component: statementName.optional(),
+  })
+  .strict();
+
+const protocolTwoSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('ready'),
+      protocol: z.literal(PROGRAM_PROTOCOL),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('scene'),
+      nodes: z.array(programSceneNode).max(SCENE_NODE_LIMIT),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('errors'),
+      errors: z
+        .array(
+          z
+            .object({
+              code: z.string().min(1).max(64),
+              statementId: statementName.optional(),
+              message: z.string().max(1024),
+            })
+            .strict(),
+        )
+        .max(50),
+    })
+    .strict(),
+  ...sharedMessages,
 ]);
 
-export type FrameMessage = z.output<typeof frameMessageSchema>;
+/**
+ * Frame → app, protocol 2 (D6): `mounted`, `size`, `pointer`, `wheel`, `key`,
+ * `focus` and `error`; `ready` carrying 2; `scene` with
+ * `ProgramSceneNodeData`; `errors`. No `action` message.
+ */
+export type ProgramFrameMessage =
+  | z.output<(typeof sharedMessages)[number]>
+  | { readonly kind: 'ready'; readonly protocol: typeof PROGRAM_PROTOCOL }
+  | {
+      readonly kind: 'scene';
+      readonly nodes: readonly ProgramSceneNodeData[];
+    }
+  | FrameErrorsMessage;
 
-/** A message from a frame, or undefined when it is not one. */
-export const frameMessage = (data: unknown): FrameMessage | undefined => {
-  const parsed = frameMessageSchema.safeParse(data);
+/**
+ * The schema the app validates a frame's messages with (protocol 2 when
+ * absent). Strict: an unknown field or kind fails.
+ */
+export const frameMessageSchema = (
+  _protocol: FrameProtocol = PROGRAM_PROTOCOL,
+): z.ZodType<ProgramFrameMessage> => protocolTwoSchema;
+
+/**
+ * A message from a frame of `protocol` (2 when absent), or undefined when it
+ * does not parse under the protocol's schema. Never throws for bad data.
+ */
+export const frameMessage = (
+  data: unknown,
+  protocol: FrameProtocol = PROGRAM_PROTOCOL,
+): ProgramFrameMessage | undefined => {
+  const parsed = frameMessageSchema(protocol).safeParse(data);
   return parsed.success ? parsed.data : undefined;
 };
 

@@ -41,6 +41,7 @@ import {
 } from 'electron';
 
 import { ConnectionRelay } from '../connection/relay';
+import { removeArtifactsCache } from './artifacts-cleanup';
 import {
   cacheSchemaReader,
   type GenerationView,
@@ -309,11 +310,12 @@ export class DesktopPlatform {
       menus: this.menus,
       cacheDirectory: (bundleId) =>
         cacheDirectory(
-          // The artifacts bundle's `doric.cache/v1` directory is the tree the
-          // protocol serves to windows under `/artifacts/<artifactId>@<revision>/`
-          // (`artifacts.md`, stage 2), so the kernel places it directly under
-          // `userData` (`userData/artifacts/`), not under `bundle-cache/`.
-          bundleId === 'artifacts'
+          // The papercraft bundle's `doric.cache/v1` directory is the tree
+          // the protocol serves to windows under
+          // `/papercraft-modules/<dir>/<file>` (D14), so the kernel places it
+          // directly under `userData` (`userData/papercraft/`), not under
+          // `bundle-cache/`.
+          bundleId === 'papercraft'
             ? this.#paths.userData
             : this.#paths.bundleCache,
           bundleId,
@@ -469,6 +471,7 @@ export class DesktopPlatform {
 
   /** Opens state, registers the protocol and the dispatcher. */
   async prepare(): Promise<void> {
+    await removeArtifactsCache(this.#paths);
     this.#state = await DesktopState.open(this.#paths.state);
     this.#windowPaths = await WindowPaths.open(this.#paths.windows);
 
@@ -519,7 +522,7 @@ export class DesktopPlatform {
       shell: shellRenderer,
       frame: renderFrameDocument(frameImportMap(this.#platformMap)),
       bundles: this.cache,
-      artifacts: { root: this.#paths.artifacts },
+      modules: { root: this.#paths.papercraftModules },
       ...(devProxy === undefined ? {} : { devProxy }),
     });
     ipcMain.handle('doric:desktop', (event, request: unknown) =>

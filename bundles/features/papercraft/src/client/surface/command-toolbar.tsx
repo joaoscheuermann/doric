@@ -16,9 +16,8 @@
 // selection does, the viewport, and the proposal. Every control dispatches by
 // `commands/v1.execute` — the path the `git` Changes panel uses — and reads a
 // field of the frame's state, never a new one of its own. What is unavailable
-// is disabled, not hidden: the two exceptions are the readings — the revision
-// exists only with more than one, and `Autorizar` becomes the reading
-// `Autorizado` once the revision on screen is approved.
+// is disabled, not hidden: the exception is the revision reading, which
+// exists only with more than one.
 
 import type { Commands } from 'bundle/contracts';
 import { Badge } from 'desktop/ui/badge';
@@ -47,7 +46,6 @@ import {
 import { memo, type ReactElement, type ReactNode } from 'react';
 
 import {
-  APPROVE_COMMAND,
   COMMENT_COMMAND,
   ISOLATE_COMMAND,
   PAN_COMMAND,
@@ -111,7 +109,7 @@ function CommandButton({
   shortcut,
   disabled,
   execute,
-  artifactId,
+  canvasId,
   children,
 }: {
   readonly label: string;
@@ -119,7 +117,7 @@ function CommandButton({
   readonly shortcut?: string;
   readonly disabled?: boolean;
   readonly execute: Execute;
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly children: ReactNode;
 }) {
   return (
@@ -130,7 +128,7 @@ function CommandButton({
         data-command={command}
         aria-label={label}
         disabled={disabled === true}
-        onClick={() => execute(command, { artifactId })}
+        onClick={() => execute(command, { canvasId })}
       >
         {children}
       </Button>
@@ -139,7 +137,7 @@ function CommandButton({
 }
 
 export interface CommandToolbarProps {
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly execute: Execute;
   /** The armed tool: a radio group, only one at a time. */
   readonly tool: PreviewTool;
@@ -153,8 +151,6 @@ export interface CommandToolbarProps {
   readonly zoom: string;
   /** The proposal: which revisions exist and which is on screen. */
   readonly revisions: RevisionReading;
-  /** Under the `request` policy only, and only while not yet approved. */
-  readonly approvalNeeded: boolean;
 }
 
 /**
@@ -163,7 +159,7 @@ export interface CommandToolbarProps {
  * tooltips, toggle group and menu are not drawn again for one.
  */
 export const CommandToolbar = memo(function CommandToolbar({
-  artifactId,
+  canvasId,
   execute,
   tool,
   pinCount,
@@ -171,7 +167,6 @@ export const CommandToolbar = memo(function CommandToolbar({
   hasHidden,
   zoom,
   revisions,
-  approvalNeeded,
 }: CommandToolbarProps) {
   return (
     <div
@@ -193,7 +188,7 @@ export const CommandToolbar = memo(function CommandToolbar({
               : next === 'comment'
                 ? COMMENT_COMMAND
                 : PAN_COMMAND,
-            { artifactId },
+            { canvasId },
           );
         }}
       >
@@ -245,7 +240,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         shortcut="I"
         disabled={!hasSelection}
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <FocusIcon aria-hidden="true" />
       </CommandButton>
@@ -255,7 +250,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         shortcut="Shift+I"
         disabled={!hasHidden}
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <EyeIcon aria-hidden="true" />
       </CommandButton>
@@ -268,7 +263,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         command={ZOOM_OUT_COMMAND}
         shortcut="CmdOrCtrl+-"
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <ZoomOutIcon aria-hidden="true" />
       </CommandButton>
@@ -279,7 +274,7 @@ export const CommandToolbar = memo(function CommandToolbar({
           data-command={ZOOM_RESET_COMMAND}
           aria-label="Zoom 100%"
           className={cn('min-w-12 px-1.5 font-mono text-xs tabular-nums')}
-          onClick={() => execute(ZOOM_RESET_COMMAND, { artifactId })}
+          onClick={() => execute(ZOOM_RESET_COMMAND, { canvasId })}
         >
           {zoom}
         </Button>
@@ -289,7 +284,7 @@ export const CommandToolbar = memo(function CommandToolbar({
         command={ZOOM_IN_COMMAND}
         shortcut="CmdOrCtrl+="
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <ZoomInIcon aria-hidden="true" />
       </CommandButton>
@@ -298,14 +293,14 @@ export const CommandToolbar = memo(function CommandToolbar({
         command={ZOOM_FIT_COMMAND}
         shortcut="Shift+1"
         execute={execute}
-        artifactId={artifactId}
+        canvasId={canvasId}
       >
         <MaximizeIcon aria-hidden="true" />
       </CommandButton>
 
       <ToolbarDivider />
 
-      {/* Proposta: the revision reading, and `Autorizar` under `request`. */}
+      {/* Proposta: the revision reading. */}
       {revisions.total > 1 ? (
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -326,7 +321,7 @@ export const CommandToolbar = memo(function CommandToolbar({
                 key={revision}
                 onClick={() =>
                   execute(SELECT_REVISION_COMMAND, {
-                    artifactId,
+                    canvasId,
                     revision,
                   })
                 }
@@ -344,25 +339,6 @@ export const CommandToolbar = memo(function CommandToolbar({
           rev {String(revisions.current)}/{String(revisions.total)}
         </span>
       )}
-
-      {approvalNeeded ? (
-        <Button
-          size="sm"
-          variant="default"
-          aria-label="Autorizar"
-          onClick={() => execute(APPROVE_COMMAND, { artifactId })}
-        >
-          <CheckIcon aria-hidden="true" />
-          Autorizar
-        </Button>
-      ) : revisions.approved ? (
-        <span
-          className="px-2 text-xs text-muted-foreground"
-          data-approved="true"
-        >
-          Autorizado
-        </span>
-      ) : null}
     </div>
   );
 });

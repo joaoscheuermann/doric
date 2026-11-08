@@ -24,6 +24,7 @@ import {
   type ServiceRuntime,
   traceIdOf,
 } from '../src/runtime/index.js';
+import { alive } from './support/alive.js';
 import { flush, processes } from './support/envelope.js';
 
 const codeOf = (expected: string) => (error: unknown) =>
@@ -271,7 +272,7 @@ void test('the provider signal aborts with TimeoutError at the deadline; 0 means
   const stub = world.generation.principal('files').services.use(ProbeV1);
   const deadline = Date.now() + 30;
 
-  assert.equal(await stub.wait({ deadline }), 'late');
+  assert.equal(await alive(stub.wait({ deadline })), 'late');
   assert.equal(
     ((seen.call as Call).signal.reason as Error).name,
     'TimeoutError',

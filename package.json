@@ -61,6 +61,14 @@
     "wait-on": "9.1.0",
     "webpack-cli": "^5.1.4"
   },
+  "overrides": {
+    "@openuidev/react-headless": {
+      "zustand": "^5.0.15"
+    },
+    "@openuidev/react-ui": {
+      "zustand": "^5.0.15"
+    }
+  },
   "workspaces": [
     "bundles/*/*",
     "packages/*",

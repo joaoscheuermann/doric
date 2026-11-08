@@ -48,9 +48,55 @@ export interface RendererSpec {
   readonly elementTag: string;
 }
 
+/** Which element draws the fences of one info-string tag (chat.views/v1 1.1.0). */
+export interface FenceRendererSpec {
+  readonly tag: string;
+  readonly elementTag: string;
+}
+
+/** One fence of an agent turn (chat's `ChatFence`). */
+export interface ChatFence {
+  /** `${promptId}/${turnSequence}/${index}`. */
+  readonly key: string;
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly promptId: string;
+  readonly turnSequence: number;
+  readonly index: number;
+  readonly info: string;
+  readonly body: string;
+  readonly state: 'streaming' | 'closed' | 'unterminated';
+}
+
+/** The `view` property the chat sets on a fence element (chat's `ChatFenceView`). */
+export interface ChatFenceView {
+  readonly fence: ChatFence;
+  readonly origin: 'user' | 'agent';
+  /** Every fence of the same tag in the Thread, in transcript order. */
+  readonly fences: readonly ChatFence[];
+}
+
 export interface ChatViews {
   registerProjector(spec: ProjectorSpec, call?: CallArg): Disposable;
   registerRenderer(spec: RendererSpec, call?: CallArg): Disposable;
+  /**
+   * 1.1.0. `registration_conflict` for a tag already registered;
+   * `invalid_input` for an element that is not defined.
+   */
+  registerFenceRenderer(spec: FenceRendererSpec, call?: CallArg): Disposable;
+  /**
+   * 1.1.0. Streams every fence of `tag` in the Thread, in transcript order,
+   * first with the current list and again at each change (a rewind included).
+   */
+  watchFences(
+    input: {
+      readonly projectId: string;
+      readonly threadId: string;
+      readonly tag: string;
+    },
+    listener: StreamListener<readonly ChatFence[]>,
+    call?: CallArg,
+  ): Disposable;
 }
 
 export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');

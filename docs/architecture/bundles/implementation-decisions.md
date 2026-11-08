@@ -1309,3 +1309,52 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 - **Versões.** `files` 1.3.0 → 1.4.0 e `runtime.workspace/v1` 1.1.0 → 1.2.0; `runtime` continua 2.6.0 e `default` 2.3.0 (não lançados).
 - **Substitui.** A entrega do `repository.md` dos registros anteriores (o push e seus gatilhos: linhas 1193-1195 em "Prompts em Markdown com mustache", 1234 em "Execução com o agente, o modelo e o esforço da thread" e 1280 em "Workflow de código com rotas, agentes definidos e docs vivas"), o comentário de atribuição EGM no topo do `repository.md` (linha 1286; agora no topo do `SKILL.md`) e o teste `repositoryPrompt` (linha 1290).
 - **Testes e docs.** `repository.test.ts` sai; testes cobrem `location()`, a sonda, o resultado do `cwd`, o filtro e o pin. Spec: [coding-workflow-skill.md](../../designs/coding-workflow-skill.md); features: [coding-workflow.md](../../features/coding-workflow.md), [cwd-tool.md](../../features/cwd-tool.md).
+
+## OpenUI: UI gerada na conversa e fences do papercraft (estágios 2 e 3, 2026-11-06)
+
+- **Contrato de fence.** `chat.views/v1` 1.1.0 ganha `registerFenceRenderer({ tag, elementTag })` e `watchFences`: o chat calcula, só para tags registradas, a chave `<promptId>/<turnSequence>/<index>` e o estado (`streaming`, `closed`, `unterminated`) de cada fence de um turno do agente e cria um elemento por chave; nenhum host lê fences. Um segundo registro da mesma tag é `registration_conflict`.
+- **Recibo de fila.** Um recibo de fila não encerra mais o turno: "o último turno" é o último que não é `queued`. A mudança vale para todo leitor, com ou sem a configuração, como correção do chat.
+- **Ações.** `chat.send/v1` 1.1.0 ganha `sendAction`, que envia o texto de um controle num envelope `<ui-action program="…">` pela rota do compositor, só a partir da última revisão fechada de um programa numa Thread principal.
+- **Bundle `openui`.** Novo (`bundles/features/openui`): a fence `openui-lang`, o chunk do renderer (`client/chunks/renderer.js`, carregado uma vez por janela), o formulário de perguntas (`AskForm`, com `openui.questions/v1` e o evento `openui.answered/v1`), o coletor de erros `openui.programs/v1` para as duas tags e a skill `openui`. Dependências: `@openuidev/lang-core` e `@openuidev/react-lang` 1.0.2 e `@openuidev/react-ui` 0.18.1, fixadas.
+- **Build de browser.** Todo build de browser do `bundle` define `process.env.NODE_ENV` como `"production"` e usa `minifySyntax`, nos dois modos, para que as ferramentas de desenvolvimento do OpenUI não montem nem sejam empacotadas; chunks de client (`src/client/chunks/*.ts`) ganham CSS próprio ao lado e nunca são carregados pelo loader.
+- **Dependências do OpenUI.** O `package.json` da raiz ganhou `overrides` que resolvem o peer `zustand` de `@openuidev/react-ui` e de `@openuidev/react-headless` para o zustand 5 do repositório (`^5.0.15`); `@openuidev/react-headless` fica instalado como peer, sem que nenhum módulo do Doric o importe (U42).
+- **Papercraft em fences.** A fence `papercraft <identidade>` desenha um programa com os componentes do repositório num frame isolado; bibliotecas do repositório em `.doric/papercraft/schemas/` (versionadas), o resto de `.doric/papercraft/` ignorado pelo `.gitignore` que o host escreve, e a migração única do `.doric/.gitignore` antigo; o evento `papercraft.cwd/v1` liga cada fence à biblioteca do diretório da Thread; os módulos verificados ficam em `userData/papercraft/` e são servidos em `doric://app/papercraft-modules/*`.
+- **Estágio 3.** A configuração `openui.generative-ui/v1` passou a valer `true` por padrão; com ela ligada, `ask`, `papercraft_preview` e a skill `papercraft-preview` saíam da lista do modelo (`threads.ask/v1` 1.2.0 `withholdTool`). O estágio 4 removeu tudo isso.
+- **Testes e docs.** Specs: [openui.md](../../designs/openui.md), [conversation-openui.md](../../designs/conversation-openui.md) e [papercraft-openui.md](../../designs/papercraft-openui.md); feature: [papercraft.md](../../features/papercraft.md).
+
+## OpenUI: remoção do caminho antigo, do ask e dos artefatos (estágio 4, 2026-11-06)
+
+- **Removidos.** O bundle `artifacts` (`artifacts/v1`, `artifact.kind/v1`, `artifacts.cache/v1`, seus eventos e a configuração `artifacts.review-policy/v1`); no `papercraft`, `papercraft.previews/v1`, a tool `papercraft_preview`, a skill `papercraft-preview`, o tipo `preview` e o comando de aprovação; no `threads`, a tool `ask`, `threads.ask/v1`, os eventos `threads.asked/v1` e `threads.answered/v1` e o `<threads-ask>`; no `openui`, a configuração `openui.generative-ui/v1`, `openui.setting/v1` e a seção Generative UI. Fences e skills não dependem mais de configuração.
+- **Linhas antigas.** Projetores que reivindicam `artifacts.*` (no `papercraft`) e `threads.asked/v1`/`threads.answered/v1` (no `threads`) e não desenham nada; comentários em revisões de artefato não são listados. O Postgres não muda.
+- **Dados persistidos.** O desktop apaga `userData/artifacts/` a cada início, antes de abrir janelas (`fs.rm` recursivo e forçado; um symlink é removido, não seguido). O `.doric/artifacts/` de cada workspace fica, sem leitura: o Doric não apaga arquivos do workspace do usuário, e o usuário pode apagá-lo. O repositório não tem notas de versão; o aviso está no `GROUNDING.md` e no [feature doc](../../features/papercraft.md). A rota `doric://app/artifacts/*` sai.
+- **Comentários.** O alvo de um comentário do papercraft é `{ kind: 'papercraft-program', id: <identidade>, revision, anchor }`; o canvas abre por identidade (`papercraft.open-canvas/v2`, rota `/papercraft/:projectId/:threadId/:identity`).
+- **Versões.** `openui` 2.0.0, `papercraft` 1.2.0 → 2.0.0, `threads` 1.1.0 → 2.0.0, `chat` 1.5.1 → 1.6.0.
+- **Substitui.** Os registros "Tool ask: perguntas ao usuário" e "Ask: apagar a resposta livre e pular perguntas" (2026-10-28) descrevem uma tool que não existe mais; ficam como histórico.
+- **Rollback.** Só por revert do merge do estágio 4.
+
+## OpenUI: cartão de erros, erros no mesmo turno e regras das skills (estágio 5, 2026-11-06)
+
+- **Entrega dos erros (U50).** `openui.programs/v1` envia os erros de uma fence fechada 200 ms depois do relatório, como instruct `validation` que mira o último prompt da Thread: steer enquanto ele roda, novo prompt na fila depois que terminou. Cada prompt que a validação não iniciou permite no máximo 3 envios imediatos; o hook de início de prompt zera essa conta e entrega o que esperava. Os erros de uma fence `unterminated` esperam o próximo início de prompt. Ver D18 em [openui.md](../../designs/openui.md#d18-validation-feedback-u19).
+- **Cartão (U49) e skills (U51).** O leitor vê os erros num cartão sob a fence, nos dois hosts; as skills `openui` e `papercraft` ganham a regra de patch e, na `openui`, os limites do formulário de perguntas.
+
+## OpenUI: diagramas, fase 1 (`Flowchart`, 2026-11-06)
+
+- **Componentes.** `Flowchart`, `Node`, `Edge` e `Group` na biblioteca da conversa; contorno durante o streaming e um layout ELK por revisão fechada, no chunk `client/chunks/layout.js`. Achados dos diagramas entram em `programCheck`. Spec: [openui-diagrams.md](../../designs/openui-diagrams.md); feature: [openui-diagrams.md](../../features/openui-diagrams.md).
+- **Sem Mermaid por enquanto (UD6); ELK aceito (UD7).** `elkjs` 0.11.1 fixado, EPL-2.0; o chunk mantém os avisos do ELK e uma declaração de fonte. Os textos de licença virão de uma mudança separada em `packages/bundle`; a fase 1 pode ser lançada antes dela ([FR12](../../designs/openui-diagrams.md#risks), risco aceito).
+- **Viewport compartilhado.** Os helpers de pan e zoom saíram do `papercraft` para `desktop/ui/viewport`, com `wheelGesture`; o `papercraft` os reexporta.
+- **Versões.** `openui` 2.1.0 → 2.2.0; `papercraft` e `packages/desktop` sem mudança de versão. A fase 2 está na seção seguinte.
+
+## OpenUI: diagramas, fase 2 (`SequenceDiagram`, `EntityDiagram`, `MindMap`, 2026-11-06)
+
+- **Componentes.** `SequenceDiagram` com `Participant`, `Message`, `Note`, `Fragment` e `Section`; `EntityDiagram` com `Entity`, `Field` e `Relation` (notações `er` e `class`, métodos como strings); `MindMap` com `Topic` recursivo. Leitura (`read.ts`), `useDrawn` (`view.ts`), contorno genérico e `DiagramFrame` compartilhados; checagem guiada por tabela (`DIAGRAM_PARTS`), com achados para partes fora do lugar e diagrama dentro de diagrama. Spec: [openui-diagrams-phase2.md](../../designs/openui-diagrams-phase2.md); feature: [openui-diagrams.md](../../features/openui-diagrams.md).
+- **Ainda sem Mermaid (UD6).** Os três tipos são nativos, como o `Flowchart`.
+- **Sequência sem ELK.** `sequence-layout.ts` do Doric posiciona participantes, mensagens, notas e fragmentos; um `SequenceDiagram` nunca carrega o chunk de layout.
+- **ELK `mrtree` para mapas mentais; layered com rótulos de ponta para entidades.** As cardinalidades são rótulos de ponta do ELK, com espaçamento para os marcadores; o `right` de um diagrama `class` é o layout `down` transposto, porque o `RIGHT` do ELK sobrepõe os rótulos de ponta; `er` mantém o `RIGHT` do ELK.
+- **Versão.** `openui` continua 2.2.0: as duas fases saem num commit e numa versão; nenhuma dependência nova. Rollback parcial (F24): uma 2.2.1 tira os doze componentes da fase 2 de `add` e restaura as quatro regras da fase 1 na skill; os fluxogramas continuam.
+- **Aceite pendente.** O crescimento do `renderer.js` nas duas fases mediu 100.194 bytes (5.594.179 → 5.694.373), 194 acima da meta de 100.000 do G5; fica para o aceite do usuário (FR17).
+
+## OpenUI: área quadrada dos diagramas (2026-11-06)
+
+- **Área quadrada com teto (UD14, UD15).** A área dos quatro tipos de diagrama é `aspect-square w-full`, com altura limitada pela janela: `max-h-[calc(100svh-40px-var(--doric-titlebar-height,40px)-32px)]`. A altura segue a largura até o teto, sem altura medida nem estilo inline; o ajuste e o reajuste continuam os de `useDiagramViewport`. Spec: [openui-diagrams-square-area.md](../../designs/openui-diagrams-square-area.md); feature: [openui-diagrams.md](../../features/openui-diagrams.md).
+- **Sem prop `height` (UD16).** `height` sai de `Flowchart`, `SequenceDiagram`, `EntityDiagram` e `MindMap`: esquemas, modelos, views e assinaturas da skill. Um `height` que o modelo ainda escreva é descartado pelo lang-core e reportado como `excess-args`.
+- **Versão.** `openui` continua 2.2.0, ainda não lançada.

@@ -29,7 +29,7 @@ import type { PreviewTheme } from '../frame-protocol.js';
 
 /** What a picture is good for: one revision, in one theme, at one width. */
 export interface SnapshotKey {
-  readonly artifactId: string;
+  readonly canvasId: string;
   readonly revision: number;
   readonly theme: PreviewTheme;
   /** The iframe's width, in content pixels. */
@@ -53,7 +53,7 @@ export const SNAPSHOT_SETTLE_MS = 300;
 const cache = new Map<string, StoredSnapshot>();
 
 const cacheKeyOf = (key: SnapshotKey): string =>
-  `${key.artifactId}@${String(key.revision)}:${key.theme}:${String(Math.round(key.width))}`;
+  `${key.canvasId}@${String(key.revision)}:${key.theme}:${String(Math.round(key.width))}`;
 
 /** The picture of a revision in a theme and at a width, if one was taken. */
 export const snapshotOf = (key: SnapshotKey): StoredSnapshot | undefined => {

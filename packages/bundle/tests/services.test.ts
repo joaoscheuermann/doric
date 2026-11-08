@@ -33,6 +33,7 @@ import {
   ServiceDirectory,
   type ServiceRuntime,
 } from '../src/runtime/index.js';
+import { alive } from './support/alive.js';
 import { createMinimalHooks } from './support/minimal-core.js';
 
 const setup = (catalog: Partial<ContractCatalogView> = {}) => {
@@ -446,7 +447,7 @@ void test('call options carry a deadline that aborts call.signal', async () => {
   const plain = stub.inspect();
 
   assert.equal(timed.scope, undefined);
-  await once(timed.signal, 'abort');
+  await alive(once(timed.signal, 'abort'));
   assert.equal(timed.signal.aborted, true);
   assert.equal(plain.signal.aborted, false);
 

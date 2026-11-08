@@ -1,12 +1,7 @@
-// Public contracts of the `papercraft` bundle (stage: previews).
+// Public contracts of the `papercraft` bundle (D25: papercraft fences only).
 //
-// - `papercraft.previews/v1` (host): the preview builder and reader. `build`
-//   derives the self-contained markup of a Project source file (path A); `read`
-//   resolves a stored revision back to `{ files, markup }` for the node and the
-//   canvas. A window reaches both over the bridge (`expose: 'desktop'`).
-//
-// The bundle consumes the contracts of other bundles — `artifacts/v1`,
-// `artifact.kind/v1` and `comments/v1` — and keeps structural copies of the
+// The bundle consumes the contracts of other bundles — `files/v1`,
+// `comments/v1` and `runtime.threads/v1` — and keeps structural copies of the
 // shapes it uses, as the `threads` client does for `chat.views/v1`: those
 // bundles are built separately and this one must not import them at compile
 // time. The IDs and shapes are theirs.
@@ -21,114 +16,10 @@ import {
 } from 'bundle/contracts';
 import { z } from 'zod';
 
+export * from './cache.js';
 export * from './chat.js';
-
-/* papercraft.previews/v1 ---------------------------------------------------- */
-
-/** Where a preview's markup comes from; path A supports `html` and `component`. */
-export const previewSourceSchema = z.enum(['html', 'component']);
-
-export type PreviewSource = z.output<typeof previewSourceSchema>;
-
-/** One built file of a revision: its artifact-relative path and content hash. */
-export const previewFileSchema = z
-  .object({
-    path: z.string().min(1),
-    sha256: z.string().min(1),
-  })
-  .strict();
-
-export type PreviewFile = z.output<typeof previewFileSchema>;
-
-export const previewBuildInputSchema = z
-  .object({
-    /** The Project-relative source path the preview is built from. */
-    path: z.string().min(1),
-    /** The component entry, when `source` is `component`. */
-    entry: z.string().min(1).optional(),
-    source: previewSourceSchema,
-    /**
-     * The artifact the built payload belongs to. Extra fields are allowed; the
-     * builder uses the pair to key the stored revision when it is given.
-     */
-    artifactId: z.string().min(1).optional(),
-    revision: z.number().int().positive().optional(),
-  })
-  .strict();
-
-export type PreviewBuildInput = z.input<typeof previewBuildInputSchema>;
-
-export const previewBuildSchema = z
-  .object({ files: z.array(previewFileSchema) })
-  .strict();
-
-export type PreviewBuild = z.output<typeof previewBuildSchema>;
-
-export const previewReadInputSchema = z
-  .object({
-    artifactId: z.string().min(1),
-    revision: z.number().int().positive(),
-  })
-  .strict();
-
-export type PreviewReadInput = z.input<typeof previewReadInputSchema>;
-
-/** The resolved preview state the node and the canvas render. */
-export const previewStateSchema = z
-  .object({
-    artifactId: z.string().min(1),
-    revision: z.number().int().positive(),
-    kind: z.literal('preview'),
-    files: z.array(previewFileSchema),
-    markup: z.string(),
-    /**
-     * Set when the markup was re-derived from the current source because the
-     * revision has no built files stored to serve — the reading the revision
-     * froze is absent, and this is the live derivation of it.
-     */
-    derived: z.boolean().optional(),
-  })
-  .strict();
-
-export type PreviewState = z.output<typeof previewStateSchema>;
-
-export const previewStateOrUndefinedSchema = z.union([
-  previewStateSchema,
-  z.undefined(),
-]);
-
-export interface PapercraftPreviews {
-  /** Derives the built files of a Project source, writing nothing. */
-  build(input: PreviewBuildInput, call?: CallArg): Promise<PreviewBuild>;
-  /** The built markup of a revision, or undefined when it does not exist. */
-  read(
-    input: PreviewReadInput,
-    call?: CallArg,
-  ): Promise<PreviewState | undefined>;
-}
-
-export const papercraftPreviewsMethods = {
-  build: {
-    input: previewBuildInputSchema,
-    output: previewBuildSchema,
-    expose: 'desktop',
-  },
-  read: {
-    input: previewReadInputSchema,
-    output: previewStateOrUndefinedSchema,
-    expose: 'desktop',
-  },
-} as const satisfies MethodSpecs;
-
-/** `papercraft.previews/v1`, as the `papercraft` bundle provides it. */
-export const PapercraftPreviewsV1 = ref<PapercraftPreviews>(
-  'papercraft.previews/v1',
-);
-
-/* The artifact kind -------------------------------------------------------- */
-
-/** The one kind this bundle owns. */
-export const PREVIEW_KIND = 'preview';
+export * from './cwd.js';
+export * from './programs.js';
 
 /* Files (structural copy of `files/v1`) ----------------------------------- */
 
@@ -163,199 +54,6 @@ export interface Files {
 }
 
 export const FilesV1 = ref<Files>('files/v1');
-
-/* Artifacts (structural copy of `artifacts/v1`) ---------------------------- */
-
-/** An anchor into the Project's code, as the artifacts registry carries it. */
-export const artifactTargetSchema = z
-  .object({
-    path: z.string().min(1),
-    line: z.number().int().positive().optional(),
-    /** The first and last line the anchor covers. */
-    lines: z
-      .tuple([z.number().int().positive(), z.number().int().positive()])
-      .optional(),
-    snippet: z.string().optional(),
-  })
-  .loose();
-
-export type ArtifactTarget = z.output<typeof artifactTargetSchema>;
-
-export const artifactRecordSchema = z
-  .object({
-    artifactId: z.string().min(1),
-    kind: z.string().min(1),
-    title: z.string(),
-    revision: z.number().int().positive(),
-    revisions: z.number().int().positive(),
-    targets: z.array(artifactTargetSchema),
-    source: previewSourceSchema.optional(),
-    path: z.string().optional(),
-    entry: z.string().optional(),
-    /** The review state of this revision (per revision, not per artifact). */
-    state: z.enum(['open', 'approved']),
-    createdAt: z.string(),
-    createdBy: z.string().optional(),
-  })
-  .loose();
-
-export type ArtifactRecord = z.output<typeof artifactRecordSchema>;
-
-/**
- * One entry of a revision the registry read back: the identity it recorded and
- * the bytes it serves while the work copy still holds them, as the `artifacts`
- * bundle's own `ArtifactRevisionRead` carries them.
- */
-export const artifactReadEntrySchema = z
-  .object({
-    path: z.string().min(1),
-    sha256: z.string().min(1),
-    base64: z.string().optional(),
-  })
-  .strict();
-
-export type ArtifactReadEntry = z.output<typeof artifactReadEntrySchema>;
-
-/** The record of one revision plus the entries it named. */
-export interface ArtifactRevisionRead extends ArtifactRecord {
-  readonly entries: readonly ArtifactReadEntry[];
-}
-
-/** The bytes of one entry, base64, as `create`/`revise` hand them once. */
-export interface ArtifactFile {
-  readonly path: string;
-  readonly base64: string;
-}
-
-/**
- * The revision a caller built itself: its entries (identity) and their bytes,
- * which the registry verifies against the entries before writing them into the
- * work copy. A caller that passes these needs no kind materialization.
- */
-export interface ArtifactBuiltRevision {
-  readonly entries?: readonly PreviewFile[];
-  readonly files?: readonly ArtifactFile[];
-  /** The kind's payload, for the registry to materialize instead. */
-  readonly payload?: unknown;
-}
-
-export interface Artifacts {
-  create(
-    input: {
-      readonly artifactId?: string;
-      readonly kind: string;
-      readonly title: string;
-      readonly targets?: readonly ArtifactTarget[];
-      readonly source?: PreviewSource;
-      readonly path?: string;
-      readonly entry?: string;
-      readonly notes?: string;
-    } & ArtifactBuiltRevision,
-    call?: CallArg,
-  ): Promise<ArtifactRecord>;
-  /** Adds the next revision; absent fields carry over from the previous one. */
-  revise(
-    input: {
-      readonly artifactId: string;
-      readonly changeNote?: string;
-      readonly targets?: readonly ArtifactTarget[];
-      readonly source?: PreviewSource;
-      readonly path?: string;
-      readonly entry?: string;
-    } & ArtifactBuiltRevision,
-    call?: CallArg,
-  ): Promise<ArtifactRecord>;
-  read(
-    input: { readonly artifactId: string; readonly revision?: number },
-    call?: CallArg,
-  ): Promise<ArtifactRevisionRead | undefined>;
-  /** Every revision's record, oldest first, without bytes. */
-  revisions(
-    input: { readonly artifactId: string },
-    call?: CallArg,
-  ): Promise<readonly ArtifactRecord[]>;
-  /**
-   * Under `request`, records the approval of one revision and makes that
-   * revision `approved`; under `proceed` it writes nothing.
-   */
-  approve(
-    input: { readonly artifactId: string; readonly revision: number },
-    call?: CallArg,
-  ): Promise<ArtifactRecord | undefined>;
-  policy(call?: CallArg): Promise<{ readonly policy: 'proceed' | 'request' }>;
-}
-
-export const ArtifactsV1 = ref<Artifacts>('artifacts/v1');
-
-/* Artifacts cache (structural copy of `artifacts.cache/v1`) --------------- */
-
-/** One entry `artifacts.cache/v1.ensure` takes: `artifacts/v1.read`'s shape. */
-export interface ArtifactCacheEntry {
-  readonly path: string;
-  readonly sha256: string;
-  readonly base64: string;
-}
-
-/** What one `ensure` left in the cache, and the entries it refused. */
-export interface ArtifactCacheEnsureResult {
-  readonly kept: number;
-  readonly written: number;
-  readonly failed: readonly {
-    readonly path: string;
-    readonly reason: 'invalid_path' | 'hash_mismatch' | 'write_failed';
-    readonly message: string;
-  }[];
-}
-
-/**
- * `artifacts.cache/v1` (desktopMain): writes a revision's entries under
- * `userData/artifacts/<artifactId>@<revision>/` once each SHA-256 is
- * confirmed, which is what `doric://app/artifacts/…` serves. The window
- * fetches the bytes from `artifacts/v1.read` and hands them over.
- */
-export interface ArtifactsCache {
-  ensure(
-    input: {
-      readonly artifactId: string;
-      readonly revision: number;
-      readonly entries: readonly ArtifactCacheEntry[];
-    },
-    call?: CallArg,
-  ): Promise<ArtifactCacheEnsureResult>;
-}
-
-export const ArtifactsCacheV1 = ref<ArtifactsCache>('artifacts.cache/v1');
-
-export interface ArtifactKinds {
-  /**
-   * Registers a kind; the release unregisters it. A duplicate id fails with
-   * `registration_conflict`. A kind that declares `bodyTag` renders its body
-   * inside the registry's frame: the frame creates `bodyTag` with its block
-   * (`type` = `blockType`, `data` = the frame's data).
-   */
-  register(
-    input: {
-      readonly id: string;
-      readonly title?: string;
-      readonly blockType?: string;
-      readonly bodyTag?: string;
-      /** Who draws the header: the registry's frame (default) or the body. */
-      readonly header?: 'frame' | 'body';
-    },
-    call?: CallArg,
-  ): Promise<Disposable> | Disposable;
-  list(call?: CallArg): Promise<
-    readonly {
-      readonly id: string;
-      readonly title?: string;
-      readonly blockType?: string;
-      readonly bodyTag?: string;
-      readonly header?: 'frame' | 'body';
-    }[]
-  >;
-}
-
-export const ArtifactKindV1 = ref<ArtifactKinds>('artifact.kind/v1');
 
 /* Comments (structural copy of `comments/v1`) ----------------------------- */
 
@@ -453,8 +151,11 @@ export interface CommentAddInput {
   readonly inReplyTo?: string;
 }
 
-/** The target kind a preview comment carries; read by whoever owns the target. */
-export const ARTIFACT_TARGET_KIND = 'artifact';
+/**
+ * The comment target kind of a papercraft program (D19): a comment's target is
+ * `{ kind: PROGRAM_TARGET_KIND, id: <identity>, revision, anchor }`.
+ */
+export const PROGRAM_TARGET_KIND = 'papercraft-program';
 
 /** The identity of a target, as `comments/v1.list` filters by it. */
 export interface CommentTargetKey {
@@ -518,12 +219,6 @@ export const RuntimeThreadsV1 = ref<ThreadsWatch>('runtime.threads/v1');
 
 /* Names the client and desktop parts share --------------------------------- */
 
-/** The chat block type of one preview revision. */
-export const PREVIEW_BLOCK_TYPE = 'papercraft.preview/v1';
-
-/** The node element tag; the `papercraft` owner prefixes every tag. */
-export const PAPERCRAFT_PREVIEW_TAG = 'papercraft-preview';
-
 /** The canvas element tag of the canvas route. */
 export const PAPERCRAFT_CANVAS_TAG = 'papercraft-canvas';
 
@@ -544,27 +239,26 @@ export const callScopeOf = (scope: PreviewScope): CallScope => ({
 });
 
 /** The window command that opens or focuses the canvas at a preview. */
-export const OPEN_CANVAS_COMMAND = 'papercraft.open-canvas/v1';
+export const OPEN_CANVAS_COMMAND = 'papercraft.open-canvas/v2';
 
 /**
  * The path window the canvas opens as. The window is opened from a
  * conversation, and it carries that conversation in its path: the Project
  * scopes every host call, and the Thread is the composer stack its comments
- * join and the log it watches.
+ * join and the log it watches. The last segment (D26) is a papercraft
+ * program's identity.
  */
-export const CANVAS_ROUTE = '/papercraft/:projectId/:threadId/:artifactId';
+export const CANVAS_ROUTE = '/papercraft/:projectId/:threadId/:identity';
 
+/** The canvas window's path; `segment` is a program's identity. */
 export const canvasPathOf = (input: {
   readonly projectId: string;
   readonly threadId: string;
-  readonly artifactId: string;
+  readonly segment: string;
 }): string =>
   `/papercraft/${encodeURIComponent(input.projectId)}/${encodeURIComponent(
     input.threadId,
-  )}/${encodeURIComponent(input.artifactId)}`;
-
-/** The command that approves a revision under the `request` policy. */
-export const APPROVE_COMMAND = 'papercraft.approve/v1';
+  )}/${encodeURIComponent(input.segment)}`;
 
 /**
  * The canvas window's send: confirms the open note and sends the Thread's
@@ -601,15 +295,15 @@ export const PAPERCRAFT_KEYBINDINGS = [
   { command: ZOOM_IN_COMMAND, key: 'CmdOrCtrl+=', label: 'Mais zoom' },
   { command: ZOOM_FIT_COMMAND, key: 'Shift+1', label: 'Ajustar' },
   { command: SEND_COMMAND, key: 'CmdOrCtrl+Enter', label: 'Enviar' },
-  {
-    command: APPROVE_COMMAND,
-    key: 'CmdOrCtrl+Shift+Enter',
-    label: 'Autorizar',
-  },
 ] as const;
 
-/** The composer stack item kind of a papercraft comment draft. */
-export const PAPERCRAFT_COMMENT_KIND = 'papercraft-preview';
+/**
+ * The composer stack item kind of a comment draft on a papercraft program
+ * (D19), flushed by `programFlush`. Its `data` is a `PreviewItemData` whose
+ * `target` has the kind `PROGRAM_TARGET_KIND` and whose `refs` is
+ * `{ title: <identity> }`.
+ */
+export const PROGRAM_COMMENT_KIND = 'papercraft-program';
 
 /**
  * What one composer stack item of the papercraft kind carries (`data`): the
@@ -629,56 +323,6 @@ export interface PreviewItemData {
   readonly point?: { readonly x: number; readonly y: number };
 }
 
-const recordOf = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : undefined;
-
-/**
- * The target a papercraft stack item's `data` names: its `target`, else the
- * fields a draft written before the target was carried recorded
- * (`artifactId`, `revision`, `anchor`). `undefined` when neither names one.
- */
-export const previewItemTargetOf = (
-  data: unknown,
-): CommentTarget | undefined => {
-  const fields = recordOf(data);
-  const target = recordOf(fields?.target);
-
-  if (
-    target !== undefined &&
-    typeof target.id === 'string' &&
-    target.id !== '' &&
-    recordOf(target.anchor) !== undefined
-  ) {
-    return {
-      kind:
-        typeof target.kind === 'string' ? target.kind : ARTIFACT_TARGET_KIND,
-      id: target.id,
-      ...(typeof target.revision === 'number'
-        ? { revision: target.revision }
-        : {}),
-      anchor: target.anchor as CommentAnchor,
-    };
-  }
-
-  if (
-    typeof fields?.artifactId !== 'string' ||
-    fields.artifactId === '' ||
-    typeof fields.revision !== 'number' ||
-    recordOf(fields.anchor) === undefined
-  ) {
-    return undefined;
-  }
-
-  return {
-    kind: ARTIFACT_TARGET_KIND,
-    id: fields.artifactId,
-    revision: fields.revision,
-    anchor: fields.anchor as CommentAnchor,
-  };
-};
-
 /** What the toolbar's revision reading shows: which revisions exist. */
 export interface RevisionReading {
   /** Which revision is on screen. */
@@ -687,8 +331,6 @@ export interface RevisionReading {
   readonly total: number;
   /** Every revision, ascending; the dropdown's items. */
   readonly list: readonly number[];
-  /** Whether the revision on screen is already approved. */
-  readonly approved: boolean;
 }
 
 /* papercraft.snapshot/v1 ---------------------------------------------------- */
@@ -730,7 +372,7 @@ export type SnapshotCaptureInput = z.input<typeof snapshotCaptureInputSchema>;
 
 /**
  * One captured rectangle: the PNG bytes as base64 (what the bridge carries as
- * a string, as `artifacts/v1` carries its bytes), its size in device pixels,
+ * a string), its size in device pixels,
  * and the device pixels per CSS px it was taken at.
  */
 export const snapshotSchema = z

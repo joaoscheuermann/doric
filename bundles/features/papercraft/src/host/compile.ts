@@ -69,7 +69,7 @@ const windowServed = new Map<string, Promise<boolean>>();
  * serves left out, as the platform's build bundles it from its install (the
  * map lists no `package.json`). Asked once per specifier for the host's life.
  */
-const windowServes = (
+export const windowServes = (
   build: HostBuild,
   specifier: string,
 ): Promise<boolean> => {
@@ -101,7 +101,7 @@ const windowServes = (
  * Bundles the `HOST_PACKAGES` a module left external into it, from the host's
  * own `node_modules`; everything else the module imports stays external.
  */
-const bundleHostPackages = async (
+export const bundleHostPackages = async (
   build: typeof import('esbuild').build,
   js: string,
 ): Promise<string> => {
@@ -181,7 +181,9 @@ const sandboxBundle = async (
 
 /**
  * Compiles one component source into the preview module and its sheet: in
- * the sandbox through `bundler` when it can, else on the host through `read`.
+ * the sandbox through `bundler` when it can, else on the host through `read`,
+ * whose harness search stops after a directory `isRepositoryRoot` answers
+ * `true` for (D15).
  * Fails with `invalid_input`, naming esbuild's errors, when the source does
  * not compile, an import cannot be resolved, or the export to mount is
  * missing. A Project harness that does not compile is left out with a warning.
@@ -191,6 +193,7 @@ export const compileComponent = async (
   input: { readonly path: string; readonly entry?: string },
   bundler?: SandboxBundler,
   readBytes?: ProjectBytesReader,
+  isRepositoryRoot?: (dir: string) => Promise<boolean>,
 ): Promise<CompiledComponent> => {
   const { build, version } = await import('esbuild');
   const cached = sourceCache(read);
@@ -206,6 +209,7 @@ export const compileComponent = async (
       ...input,
       windowServes: (specifier) => windowServes(build, specifier),
       hostResolveDir: hostResolveDir(),
+      ...(isRepositoryRoot === undefined ? {} : { isRepositoryRoot }),
     }));
   const styles = sandboxed?.styles;
   const js =

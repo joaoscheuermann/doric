@@ -32,7 +32,7 @@ import type { Turn } from './projector.js';
  * already in the editor. The kind is part of it because one block stands in for
  * a burst of steps the reader watched as thinking and tool turns.
  */
-const turnKey = (turn: Turn): string =>
+export const turnKey = (turn: Turn): string =>
   `${turn.type}:${turn.promptId}:${turn.events[0]?.sequence ?? 0}`;
 
 /**

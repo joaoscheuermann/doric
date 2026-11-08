@@ -1,5 +1,7 @@
 // `chat.views/v1` (§7.7): projectors of other bundles' event types and the
-// elements that draw their block types. The built-in projection owns every
+// elements that draw their block types; from 1.1.0 (openui.md D1), the
+// elements that draw the fences of a tag, and each Thread's fences of a tag
+// for a surface outside the conversation. The built-in projection owns every
 // type `builtInClaims` names, so a projector claiming one of them conflicts
 // with it. The surface reads the registry through `projectors()`,
 // `rendererFor()` and `subscribe()`.
@@ -10,17 +12,24 @@ import {
   type Disposable,
   defineMethod,
   defineService,
+  streamListener,
 } from 'bundle/contracts';
 import { legacyEventTypes } from 'runtime/contracts';
 import { z } from 'zod';
 
 import {
+  type ChatFence,
   ChatViewsV1,
+  type FenceRendererSpec,
+  fenceRendererSpecSchema,
   type ProjectorSpec,
   type RendererSpec,
   rendererSpecSchema,
+  watchFencesInputSchema,
 } from '../../contracts/index.js';
 import { builtInClaims } from '../domain/external-blocks.js';
+import { createFenceRegistry } from './fence-registry.js';
+import { createFenceWatches, type FenceWatches } from './fence-watches.js';
 
 /** The qualified aliases of the durable runtime event types. */
 export const builtInAliases: readonly string[] = Object.freeze(
@@ -79,6 +88,10 @@ export interface ChatViewsRegistry {
   projectors(): readonly ProjectorSpec[];
   /** The tag that draws a block type: its renderer's, else `chat-block`. */
   rendererFor(blockType: string): string;
+  /** The fence tags with a fence renderer (1.1.0), as one set per change. */
+  fenceTags(): ReadonlySet<string>;
+  /** The element that draws the fences of `tag`, else `undefined`. */
+  fenceRendererFor(tag: string): string | undefined;
   /** Called after every registration or its removal. */
   subscribe(listener: () => void): () => void;
 }
@@ -86,6 +99,8 @@ export interface ChatViewsRegistry {
 export interface ChatViewsOptions {
   /** Whether a custom element tag is defined (in the window: `customElements`). */
   readonly isDefined?: (tag: string) => boolean;
+  /** `watchFences`' Thread watches; the window's own by default. */
+  readonly fenceWatches?: FenceWatches;
 }
 
 const definedInWindow = (tag: string): boolean =>
@@ -100,6 +115,8 @@ export const createChatViews = (options: ChatViewsOptions = {}) => {
   const renderers = new Map<string, Registered<RendererSpec>>();
   const listeners = new Set<() => void>();
   let snapshot: readonly ProjectorSpec[] = Object.freeze([]);
+  const fences = createFenceRegistry();
+  const fenceWatches = options.fenceWatches ?? createFenceWatches(fences);
 
   const changed = (): void => {
     snapshot = Object.freeze(projectors.map(({ spec }) => spec));
@@ -116,10 +133,14 @@ export const createChatViews = (options: ChatViewsOptions = {}) => {
     projectors: () => snapshot,
     rendererFor: (blockType) =>
       renderers.get(blockType)?.spec.elementTag ?? GENERIC_BLOCK_TAG,
+    fenceTags: () => fences.tags(),
+    fenceRendererFor: (tag) => fences.rendererFor(tag)?.elementTag,
     subscribe: (listener) => {
       listeners.add(listener);
+      const stopFences = fences.subscribe(listener);
       return () => {
         listeners.delete(listener);
+        stopFences();
       };
     },
   };
@@ -191,6 +212,42 @@ export const createChatViews = (options: ChatViewsOptions = {}) => {
           changed();
         });
       },
+    }),
+    registerFenceRenderer: defineMethod({
+      input: fenceRendererSpecSchema,
+      output: disposable,
+      execute: (spec: FenceRendererSpec, call: Call) => {
+        const holder = fences.rendererFor(spec.tag);
+        if (holder !== undefined) {
+          throw new ContractError(
+            'registration_conflict',
+            `The fence tag "${spec.tag}" is already drawn by "${holder.owner}".`,
+            { tag: spec.tag, owner: holder.owner },
+          );
+        }
+        if (!isDefined(spec.elementTag)) {
+          throw new ContractError(
+            'invalid_input',
+            `The element <${spec.elementTag}> is not defined.`,
+            { elementTag: spec.elementTag },
+          );
+        }
+        return once(
+          fences.add(spec.tag, {
+            elementTag: spec.elementTag,
+            owner: call.caller.bundleId,
+          }),
+        );
+      },
+    }),
+    watchFences: defineMethod({
+      input: z.tuple([
+        watchFencesInputSchema,
+        streamListener(z.custom<readonly ChatFence[]>(Array.isArray)),
+      ]),
+      output: disposable,
+      execute: ([input, listener]): Disposable =>
+        fenceWatches.watch(input, listener),
     }),
   });
 

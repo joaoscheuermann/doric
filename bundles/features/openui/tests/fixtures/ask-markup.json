@@ -1,0 +1,714 @@
+{
+  "states": [
+    {
+      "label": "1. Uma pergunta, nada escolhido — Send pula a pergunta",
+      "props": {
+        "context": "Comprehension e Critique: 1 Blocker, 3 Major, 2 Nit. O Blocker: a spec não diz o que acontece se a thread fechar com uma pergunta pendente.",
+        "questions": [
+          {
+            "id": "next",
+            "question": "Como seguimos com os achados deste estágio?",
+            "options": [
+              {
+                "label": "Resolver com o agente",
+                "description": "O Spec responde cada achado com CONTEST ou FIX.",
+                "recommended": true
+              },
+              {
+                "label": "Prosseguir para o próximo estágio",
+                "description": "Os achados ficam abertos até o resumo final."
+              },
+              {
+                "label": "Vou editar a spec manualmente"
+              },
+              {
+                "label": "Pausar a revisão"
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">Como seguimos com os achados deste estágio?</span></h2><p class=\"pl-6 text-muted-foreground\">Comprehension e Critique: 1 Blocker, 3 Major, 2 Nit. O Blocker: a spec não diz o que acontece se a thread fechar com uma pergunta pendente.</p><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Resolver com o agente</span><span class=\"text-muted-foreground\"> · recommended</span><span class=\"block text-xs text-muted-foreground\">O Spec responde cada achado com CONTEST ou FIX.</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Prosseguir para o próximo estágio</span><span class=\"block text-xs text-muted-foreground\">Os achados ficam abertos até o resumo final.</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">3</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Vou editar a spec manualmente</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">4</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Pausar a revisão</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">5</span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\"></textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Send\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-up\" aria-hidden=\"true\"><path d=\"m5 12 7-7 7 7\"></path><path d=\"M12 19V5\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "2. Uma opção escolhida — Send ativo",
+      "props": {
+        "context": "Comprehension e Critique: 1 Blocker, 3 Major, 2 Nit. O Blocker: a spec não diz o que acontece se a thread fechar com uma pergunta pendente.",
+        "questions": [
+          {
+            "id": "next",
+            "question": "Como seguimos com os achados deste estágio?",
+            "options": [
+              {
+                "label": "Resolver com o agente",
+                "description": "O Spec responde cada achado com CONTEST ou FIX.",
+                "recommended": true
+              },
+              {
+                "label": "Prosseguir para o próximo estágio",
+                "description": "Os achados ficam abertos até o resumo final."
+              },
+              {
+                "label": "Vou editar a spec manualmente"
+              },
+              {
+                "label": "Pausar a revisão"
+              }
+            ]
+          }
+        ],
+        "picked": {
+          "next": {
+            "picked": [
+              "Resolver com o agente"
+            ]
+          }
+        }
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">Como seguimos com os achados deste estágio?</span></h2><p class=\"pl-6 text-muted-foreground\">Comprehension e Critique: 1 Blocker, 3 Major, 2 Nit. O Blocker: a spec não diz o que acontece se a thread fechar com uma pergunta pendente.</p><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"true\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal bg-muted text-foreground\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><span class=\"min-w-0\"><span class=\"\">Resolver com o agente</span><span class=\"text-muted-foreground\"> · recommended</span><span class=\"block text-xs text-muted-foreground\">O Spec responde cada achado com CONTEST ou FIX.</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Prosseguir para o próximo estágio</span><span class=\"block text-xs text-muted-foreground\">Os achados ficam abertos até o resumo final.</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">3</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Vou editar a spec manualmente</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">4</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Pausar a revisão</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">5</span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\"></textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Send\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-up\" aria-hidden=\"true\"><path d=\"m5 12 7-7 7 7\"></path><path d=\"M12 19V5\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "3. Resposta livre digitada no lugar das opções",
+      "props": {
+        "context": "docs/designs/ask.md passou pelos 4 estágios. Resta 1 questão aberta.",
+        "questions": [
+          {
+            "id": "approve",
+            "question": "Aprova a spec para começar a implementação?",
+            "options": [
+              {
+                "label": "Aprovar"
+              },
+              {
+                "label": "Pedir mudanças",
+                "description": "Escreva o que mudar na última linha; volta para o Spec."
+              }
+            ]
+          }
+        ],
+        "picked": {
+          "approve": {
+            "picked": [
+              "__other__"
+            ],
+            "other": "Aprovo, mas troque o nome do evento para threads.answered/v1"
+          }
+        }
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">Aprova a spec para começar a implementação?</span></h2><p class=\"pl-6 text-muted-foreground\">docs/designs/ask.md passou pelos 4 estágios. Resta 1 questão aberta.</p><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Aprovar</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Pedir mudanças</span><span class=\"block text-xs text-muted-foreground\">Escreva o que mudar na última linha; volta para o Spec.</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\">Aprovo, mas troque o nome do evento para threads.answered/v1</textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Send\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-up\" aria-hidden=\"true\"><path d=\"m5 12 7-7 7 7\"></path><path d=\"M12 19V5\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "4. Sem resposta livre, opção escolhida",
+      "props": {
+        "context": "A mudança toca só bundles/desktop/chat, mas altera o tipo exportado ComposerItem, usado por 2 bundles.",
+        "questions": [
+          {
+            "id": "route",
+            "question": "Qual rota seguimos?",
+            "allowOther": false,
+            "options": [
+              {
+                "label": "Grande — spec revisada antes do código",
+                "recommended": true
+              },
+              {
+                "label": "Pequena — direto ao Plan"
+              }
+            ]
+          }
+        ],
+        "picked": {
+          "route": {
+            "picked": [
+              "Pequena — direto ao Plan"
+            ]
+          }
+        }
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">Qual rota seguimos?</span></h2><p class=\"pl-6 text-muted-foreground\">A mudança toca só bundles/desktop/chat, mas altera o tipo exportado ComposerItem, usado por 2 bundles.</p><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Grande — spec revisada antes do código</span><span class=\"text-muted-foreground\"> · recommended</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"true\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal bg-muted text-foreground\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><span class=\"min-w-0\"><span class=\"\">Pequena — direto ao Plan</span></span></button></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Send\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-up\" aria-hidden=\"true\"><path d=\"m5 12 7-7 7 7\"></path><path d=\"M12 19V5\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "5. Várias perguntas, 1/3, nada escolhido — Next pula",
+      "props": {
+        "context": "Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.",
+        "questions": [
+          {
+            "id": "who",
+            "question": "Quem pode chamar a ferramenta de perguntas?",
+            "options": [
+              {
+                "label": "Só a thread principal",
+                "description": "Subagentes devolvem a dúvida ao coordenador.",
+                "recommended": true
+              },
+              {
+                "label": "Qualquer thread"
+              }
+            ]
+          },
+          {
+            "id": "scope",
+            "question": "O que entra na primeira versão?",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Escolha única",
+                "recommended": true
+              },
+              {
+                "label": "Múltipla escolha",
+                "recommended": true
+              },
+              {
+                "label": "Resposta livre",
+                "recommended": true
+              },
+              {
+                "label": "Várias perguntas por vez"
+              },
+              {
+                "label": "Prazo para responder"
+              }
+            ]
+          },
+          {
+            "id": "wait",
+            "question": "O que o agente faz até a resposta chegar?",
+            "options": [
+              {
+                "label": "Para e espera",
+                "description": "A resposta acorda a thread.",
+                "recommended": true
+              },
+              {
+                "label": "Continua o que não depende da resposta"
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">Quem pode chamar a ferramenta de perguntas?</span><span class=\"shrink-0 text-xs text-muted-foreground tabular-nums\">1/3</span></h2><p class=\"pl-6 text-muted-foreground\">Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.</p><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Só a thread principal</span><span class=\"text-muted-foreground\"> · recommended</span><span class=\"block text-xs text-muted-foreground\">Subagentes devolvem a dúvida ao coordenador.</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Qualquer thread</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">3</span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\"></textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Next\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-right\" aria-hidden=\"true\"><path d=\"M5 12h14\"></path><path d=\"m12 5 7 7-7 7\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "6. 1/3 escolhida — Next ativo",
+      "props": {
+        "context": "Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.",
+        "questions": [
+          {
+            "id": "who",
+            "question": "Quem pode chamar a ferramenta de perguntas?",
+            "options": [
+              {
+                "label": "Só a thread principal",
+                "description": "Subagentes devolvem a dúvida ao coordenador.",
+                "recommended": true
+              },
+              {
+                "label": "Qualquer thread"
+              }
+            ]
+          },
+          {
+            "id": "scope",
+            "question": "O que entra na primeira versão?",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Escolha única",
+                "recommended": true
+              },
+              {
+                "label": "Múltipla escolha",
+                "recommended": true
+              },
+              {
+                "label": "Resposta livre",
+                "recommended": true
+              },
+              {
+                "label": "Várias perguntas por vez"
+              },
+              {
+                "label": "Prazo para responder"
+              }
+            ]
+          },
+          {
+            "id": "wait",
+            "question": "O que o agente faz até a resposta chegar?",
+            "options": [
+              {
+                "label": "Para e espera",
+                "description": "A resposta acorda a thread.",
+                "recommended": true
+              },
+              {
+                "label": "Continua o que não depende da resposta"
+              }
+            ]
+          }
+        ],
+        "picked": {
+          "who": {
+            "picked": [
+              "Só a thread principal"
+            ]
+          }
+        }
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">Quem pode chamar a ferramenta de perguntas?</span><span class=\"shrink-0 text-xs text-muted-foreground tabular-nums\">1/3</span></h2><p class=\"pl-6 text-muted-foreground\">Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.</p><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"true\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal bg-muted text-foreground\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><span class=\"min-w-0\"><span class=\"\">Só a thread principal</span><span class=\"text-muted-foreground\"> · recommended</span><span class=\"block text-xs text-muted-foreground\">Subagentes devolvem a dúvida ao coordenador.</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Qualquer thread</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">3</span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\"></textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Next\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-right\" aria-hidden=\"true\"><path d=\"M5 12h14\"></path><path d=\"m12 5 7 7-7 7\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "7. 2/3, múltipla escolha, nada marcado — Back aparece",
+      "props": {
+        "context": "Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.",
+        "questions": [
+          {
+            "id": "who",
+            "question": "Quem pode chamar a ferramenta de perguntas?",
+            "options": [
+              {
+                "label": "Só a thread principal",
+                "description": "Subagentes devolvem a dúvida ao coordenador.",
+                "recommended": true
+              },
+              {
+                "label": "Qualquer thread"
+              }
+            ]
+          },
+          {
+            "id": "scope",
+            "question": "O que entra na primeira versão?",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Escolha única",
+                "recommended": true
+              },
+              {
+                "label": "Múltipla escolha",
+                "recommended": true
+              },
+              {
+                "label": "Resposta livre",
+                "recommended": true
+              },
+              {
+                "label": "Várias perguntas por vez"
+              },
+              {
+                "label": "Prazo para responder"
+              }
+            ]
+          },
+          {
+            "id": "wait",
+            "question": "O que o agente faz até a resposta chegar?",
+            "options": [
+              {
+                "label": "Para e espera",
+                "description": "A resposta acorda a thread.",
+                "recommended": true
+              },
+              {
+                "label": "Continua o que não depende da resposta"
+              }
+            ]
+          }
+        ],
+        "step": 1,
+        "picked": {
+          "who": {
+            "picked": [
+              "Só a thread principal"
+            ]
+          }
+        }
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">O que entra na primeira versão?<span class=\"text-muted-foreground\"> (one or more)</span></span><span class=\"shrink-0 text-xs text-muted-foreground tabular-nums\">2/3</span></h2><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Escolha única</span><span class=\"text-muted-foreground\"> · recommended</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Múltipla escolha</span><span class=\"text-muted-foreground\"> · recommended</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">3</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Resposta livre</span><span class=\"text-muted-foreground\"> · recommended</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">4</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Várias perguntas por vez</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">5</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Prazo para responder</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">6</span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\"></textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Back\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-left\" aria-hidden=\"true\"><path d=\"m12 19-7-7 7-7\"></path><path d=\"M19 12H5\"></path></svg></button><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Next\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-right\" aria-hidden=\"true\"><path d=\"M5 12h14\"></path><path d=\"m12 5 7 7-7 7\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "8. 2/3, três opções marcadas",
+      "props": {
+        "context": "Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.",
+        "questions": [
+          {
+            "id": "who",
+            "question": "Quem pode chamar a ferramenta de perguntas?",
+            "options": [
+              {
+                "label": "Só a thread principal",
+                "description": "Subagentes devolvem a dúvida ao coordenador.",
+                "recommended": true
+              },
+              {
+                "label": "Qualquer thread"
+              }
+            ]
+          },
+          {
+            "id": "scope",
+            "question": "O que entra na primeira versão?",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Escolha única",
+                "recommended": true
+              },
+              {
+                "label": "Múltipla escolha",
+                "recommended": true
+              },
+              {
+                "label": "Resposta livre",
+                "recommended": true
+              },
+              {
+                "label": "Várias perguntas por vez"
+              },
+              {
+                "label": "Prazo para responder"
+              }
+            ]
+          },
+          {
+            "id": "wait",
+            "question": "O que o agente faz até a resposta chegar?",
+            "options": [
+              {
+                "label": "Para e espera",
+                "description": "A resposta acorda a thread.",
+                "recommended": true
+              },
+              {
+                "label": "Continua o que não depende da resposta"
+              }
+            ]
+          }
+        ],
+        "step": 1,
+        "picked": {
+          "who": {
+            "picked": [
+              "Só a thread principal"
+            ]
+          },
+          "scope": {
+            "picked": [
+              "Escolha única",
+              "Múltipla escolha",
+              "Resposta livre"
+            ]
+          }
+        }
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">O que entra na primeira versão?<span class=\"text-muted-foreground\"> (one or more)</span></span><span class=\"shrink-0 text-xs text-muted-foreground tabular-nums\">2/3</span></h2><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"true\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal bg-muted text-foreground\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><span class=\"min-w-0\"><span class=\"\">Escolha única</span><span class=\"text-muted-foreground\"> · recommended</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"true\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal bg-muted text-foreground\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><span class=\"min-w-0\"><span class=\"\">Múltipla escolha</span><span class=\"text-muted-foreground\"> · recommended</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"true\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal bg-muted text-foreground\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><span class=\"min-w-0\"><span class=\"\">Resposta livre</span><span class=\"text-muted-foreground\"> · recommended</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">4</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Várias perguntas por vez</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"checkbox\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">5</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Prazo para responder</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">6</span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\"></textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Back\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-left\" aria-hidden=\"true\"><path d=\"m12 19-7-7 7-7\"></path><path d=\"M19 12H5\"></path></svg></button><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Next\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-right\" aria-hidden=\"true\"><path d=\"M5 12h14\"></path><path d=\"m12 5 7 7-7 7\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "9. 3/3, resposta livre — Send ativo",
+      "props": {
+        "context": "Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.",
+        "questions": [
+          {
+            "id": "who",
+            "question": "Quem pode chamar a ferramenta de perguntas?",
+            "options": [
+              {
+                "label": "Só a thread principal",
+                "description": "Subagentes devolvem a dúvida ao coordenador.",
+                "recommended": true
+              },
+              {
+                "label": "Qualquer thread"
+              }
+            ]
+          },
+          {
+            "id": "scope",
+            "question": "O que entra na primeira versão?",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Escolha única",
+                "recommended": true
+              },
+              {
+                "label": "Múltipla escolha",
+                "recommended": true
+              },
+              {
+                "label": "Resposta livre",
+                "recommended": true
+              },
+              {
+                "label": "Várias perguntas por vez"
+              },
+              {
+                "label": "Prazo para responder"
+              }
+            ]
+          },
+          {
+            "id": "wait",
+            "question": "O que o agente faz até a resposta chegar?",
+            "options": [
+              {
+                "label": "Para e espera",
+                "description": "A resposta acorda a thread.",
+                "recommended": true
+              },
+              {
+                "label": "Continua o que não depende da resposta"
+              }
+            ]
+          }
+        ],
+        "step": 2,
+        "picked": {
+          "who": {
+            "picked": [
+              "Só a thread principal"
+            ]
+          },
+          "scope": {
+            "picked": [
+              "Escolha única",
+              "Múltipla escolha",
+              "Resposta livre"
+            ]
+          },
+          "wait": {
+            "picked": [
+              "__other__"
+            ],
+            "other": "Para, mas me avisa por notificação"
+          }
+        }
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">O que o agente faz até a resposta chegar?</span><span class=\"shrink-0 text-xs text-muted-foreground tabular-nums\">3/3</span></h2><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Para e espera</span><span class=\"text-muted-foreground\"> · recommended</span><span class=\"block text-xs text-muted-foreground\">A resposta acorda a thread.</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Continua o que não depende da resposta</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\">Para, mas me avisa por notificação</textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Back\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-left\" aria-hidden=\"true\"><path d=\"m12 19-7-7 7-7\"></path><path d=\"M19 12H5\"></path></svg></button><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Send\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-up\" aria-hidden=\"true\"><path d=\"m5 12 7-7 7 7\"></path><path d=\"M12 19V5\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "10. Envio falhou — escolhas mantidas, Send para tentar de novo",
+      "props": {
+        "context": "Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.",
+        "questions": [
+          {
+            "id": "who",
+            "question": "Quem pode chamar a ferramenta de perguntas?",
+            "options": [
+              {
+                "label": "Só a thread principal",
+                "description": "Subagentes devolvem a dúvida ao coordenador.",
+                "recommended": true
+              },
+              {
+                "label": "Qualquer thread"
+              }
+            ]
+          },
+          {
+            "id": "scope",
+            "question": "O que entra na primeira versão?",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Escolha única",
+                "recommended": true
+              },
+              {
+                "label": "Múltipla escolha",
+                "recommended": true
+              },
+              {
+                "label": "Resposta livre",
+                "recommended": true
+              },
+              {
+                "label": "Várias perguntas por vez"
+              },
+              {
+                "label": "Prazo para responder"
+              }
+            ]
+          },
+          {
+            "id": "wait",
+            "question": "O que o agente faz até a resposta chegar?",
+            "options": [
+              {
+                "label": "Para e espera",
+                "description": "A resposta acorda a thread.",
+                "recommended": true
+              },
+              {
+                "label": "Continua o que não depende da resposta"
+              }
+            ]
+          }
+        ],
+        "step": 2,
+        "picked": {
+          "who": {
+            "picked": [
+              "Só a thread principal"
+            ]
+          },
+          "scope": {
+            "picked": [
+              "Escolha única",
+              "Múltipla escolha",
+              "Resposta livre"
+            ]
+          },
+          "wait": {
+            "picked": [
+              "__other__"
+            ],
+            "other": "Para, mas me avisa por notificação"
+          }
+        },
+        "failed": true
+      },
+      "html": "<section aria-label=\"Question from the agent\" class=\"flex flex-col gap-2 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-start gap-2 text-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark mt-0.5 size-4 shrink-0 text-muted-foreground\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg><span class=\"min-w-0 flex-1\">O que o agente faz até a resposta chegar?</span><span class=\"shrink-0 text-xs text-muted-foreground tabular-nums\">3/3</span></h2><ol class=\"-mx-2.5 flex flex-col gap-0.5\"><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Para e espera</span><span class=\"text-muted-foreground\"> · recommended</span><span class=\"block text-xs text-muted-foreground\">A resposta acorda a thread.</span></span></button></li><li class=\"min-w-0\"><button type=\"button\" tabindex=\"0\" data-slot=\"button\" role=\"radio\" aria-checked=\"false\" class=\"group/button inline-flex shrink-0 border border-transparent bg-clip-padding transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 px-2.5 in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-3.5 h-auto w-full items-start justify-start gap-2 rounded-md py-1.5 text-left text-sm leading-5 font-light whitespace-normal\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><span class=\"min-w-0\"><span class=\"text-foreground/90\">Continua o que não depende da resposta</span></span></button></li><li class=\"min-w-0\"><label class=\"flex w-full cursor-text items-start gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted bg-muted\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-check size-3.5 text-foreground\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"></path></svg></span><textarea rows=\"1\" aria-label=\"Your answer\" placeholder=\"Type your answer...\" class=\"min-w-0 flex-1 resize-none bg-transparent p-0 leading-5 field-sizing-content text-foreground outline-none placeholder:text-muted-foreground/60\">Para, mas me avisa por notificação</textarea></label></li></ol><div class=\"flex items-center justify-end gap-1\"><p role=\"status\" class=\"mr-auto text-xs text-muted-foreground\">Could not send. Try again.</p><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Back\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-left\" aria-hidden=\"true\"><path d=\"m12 19-7-7 7-7\"></path><path d=\"M19 12H5\"></path></svg></button><button type=\"button\" tabindex=\"0\" data-slot=\"button\" aria-label=\"Send\" class=\"group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-normal whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4 bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)] size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-arrow-up\" aria-hidden=\"true\"><path d=\"m5 12 7-7 7 7\"></path><path d=\"M12 19V5\"></path></svg></button></div></section>"
+    },
+    {
+      "label": "11. Respondida — resumo, a 2ª pergunta pulada (\"Skipped\")",
+      "props": {
+        "context": "Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.",
+        "questions": [
+          {
+            "id": "who",
+            "question": "Quem pode chamar a ferramenta de perguntas?",
+            "options": [
+              {
+                "label": "Só a thread principal",
+                "description": "Subagentes devolvem a dúvida ao coordenador.",
+                "recommended": true
+              },
+              {
+                "label": "Qualquer thread"
+              }
+            ]
+          },
+          {
+            "id": "scope",
+            "question": "O que entra na primeira versão?",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Escolha única",
+                "recommended": true
+              },
+              {
+                "label": "Múltipla escolha",
+                "recommended": true
+              },
+              {
+                "label": "Resposta livre",
+                "recommended": true
+              },
+              {
+                "label": "Várias perguntas por vez"
+              },
+              {
+                "label": "Prazo para responder"
+              }
+            ]
+          },
+          {
+            "id": "wait",
+            "question": "O que o agente faz até a resposta chegar?",
+            "options": [
+              {
+                "label": "Para e espera",
+                "description": "A resposta acorda a thread.",
+                "recommended": true
+              },
+              {
+                "label": "Continua o que não depende da resposta"
+              }
+            ]
+          }
+        ],
+        "answered": {
+          "who": {
+            "picked": [
+              "Só a thread principal"
+            ]
+          },
+          "wait": {
+            "picked": [
+              "__other__"
+            ],
+            "other": "Para, mas me avisa por notificação"
+          }
+        }
+      },
+      "html": "<section class=\"flex flex-col gap-1.5 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-center gap-2 text-muted-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-check size-4 shrink-0\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"m16 9-5.5 5.5L8 12\"></path></svg>Answered</h2><ol class=\"flex flex-col gap-2\"><li class=\"flex items-start gap-2\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><div class=\"min-w-0 leading-5\"><p class=\"text-muted-foreground\">Quem pode chamar a ferramenta de perguntas?</p><p class=\"text-foreground\">Só a thread principal</p></div></li><li class=\"flex items-start gap-2\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><div class=\"min-w-0 leading-5\"><p class=\"text-muted-foreground\">O que entra na primeira versão?</p><p class=\"text-foreground\">Skipped</p></div></li><li class=\"flex items-start gap-2\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">3</span><div class=\"min-w-0 leading-5\"><p class=\"text-muted-foreground\">O que o agente faz até a resposta chegar?</p><p class=\"text-foreground\">Para, mas me avisa por notificação</p></div></li></ol></section>"
+    },
+    {
+      "label": "12. Substituída por outra pergunta",
+      "props": {
+        "context": "Antes de escrever a spec, preciso fechar três pontos que mudam o desenho.",
+        "questions": [
+          {
+            "id": "who",
+            "question": "Quem pode chamar a ferramenta de perguntas?",
+            "options": [
+              {
+                "label": "Só a thread principal",
+                "description": "Subagentes devolvem a dúvida ao coordenador.",
+                "recommended": true
+              },
+              {
+                "label": "Qualquer thread"
+              }
+            ]
+          },
+          {
+            "id": "scope",
+            "question": "O que entra na primeira versão?",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "Escolha única",
+                "recommended": true
+              },
+              {
+                "label": "Múltipla escolha",
+                "recommended": true
+              },
+              {
+                "label": "Resposta livre",
+                "recommended": true
+              },
+              {
+                "label": "Várias perguntas por vez"
+              },
+              {
+                "label": "Prazo para responder"
+              }
+            ]
+          },
+          {
+            "id": "wait",
+            "question": "O que o agente faz até a resposta chegar?",
+            "options": [
+              {
+                "label": "Para e espera",
+                "description": "A resposta acorda a thread.",
+                "recommended": true
+              },
+              {
+                "label": "Continua o que não depende da resposta"
+              }
+            ]
+          }
+        ],
+        "superseded": true
+      },
+      "html": "<section class=\"flex flex-col gap-1.5 -mx-4 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 font-conversation text-sm font-light\"><h2 class=\"flex items-center gap-2 text-muted-foreground\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-message-circle-question-mark size-4 shrink-0\" aria-hidden=\"true\"><path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\"></path><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"></path><path d=\"M12 17h.01\"></path></svg>Superseded</h2><ol class=\"flex flex-col gap-2\"><li class=\"flex items-start gap-2\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">1</span><div class=\"min-w-0 leading-5\"><p class=\"text-muted-foreground\">Quem pode chamar a ferramenta de perguntas?</p></div></li><li class=\"flex items-start gap-2\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">2</span><div class=\"min-w-0 leading-5\"><p class=\"text-muted-foreground\">O que entra na primeira versão?</p></div></li><li class=\"flex items-start gap-2\"><span class=\"flex h-5 w-4 shrink-0 items-center justify-center text-xs leading-none text-muted-foreground tabular-nums\">3</span><div class=\"min-w-0 leading-5\"><p class=\"text-muted-foreground\">O que o agente faz até a resposta chegar?</p></div></li></ol></section>"
+    }
+  ]
+}

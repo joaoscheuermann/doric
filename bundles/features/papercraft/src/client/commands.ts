@@ -4,19 +4,13 @@
 // `commands/v1.execute`, and so does every `menus/v1` keybinding the client
 // registers for the canvas route: the bar and the keyboard are one path, and
 // the state they act on is view state of the canvas — the frame's, never a
-// new one of the command's. The one durable action here is `Autorizar`, which
-// writes `artifacts.approved/v1` under the `request` policy and then asks the
-// canvas to read the record again, so its reading turns `Autorizado`.
+// new one of the command's.
 
-import type { Call, Services } from 'bundle/contracts';
 import { defineCommand } from 'bundle/contracts';
 import { z } from 'zod';
 
 import {
-  APPROVE_COMMAND,
-  ArtifactsV1,
   COMMENT_COMMAND,
-  callScopeOf,
   ISOLATE_COMMAND,
   PAN_COMMAND,
   SELECT_COMMAND,
@@ -33,14 +27,14 @@ import { controllerFor } from './canvas-registry.js';
 /** Which canvas a command acts on: optional, else the last one touched. */
 export const canvasCommandInput = z
   .object({
-    artifactId: z.string().min(1).optional(),
+    canvasId: z.string().min(1).optional(),
     revision: z.number().int().positive().optional(),
   })
   .strict();
 
 export type CanvasCommandInput = z.output<typeof canvasCommandInput>;
 
-const of = (input: CanvasCommandInput) => controllerFor(input.artifactId);
+const of = (input: CanvasCommandInput) => controllerFor(input.canvasId);
 
 /** The tool commands: the radio group of the bar. */
 export const selectToolCommand = defineCommand({
@@ -99,7 +93,7 @@ export const zoomFitCommand = defineCommand({
   execute: async (input) => of(input)?.zoomFit(),
 });
 
-/** The proposal commands: which revision is on screen, and the approval. */
+/** The proposal command: which revision is on screen. */
 export const selectRevisionCommand = defineCommand({
   id: SELECT_REVISION_COMMAND,
   input: canvasCommandInput,
@@ -117,38 +111,6 @@ export const sendCommand = defineCommand({
   id: SEND_COMMAND,
   input: canvasCommandInput,
   execute: async (input) => of(input)?.sendNow(),
-});
-
-/**
- * `papercraft.approve/v1`: under the `request` policy, writes the approval of
- * the revision the canvas shows and refreshes it, so `Autorizar` becomes the
- * reading `Autorizado`. The window's bar owns the button; the node shows the
- * waiting as a reading only. The `CmdOrCtrl+Shift+Enter` keybinding dispatches it
- * with no input, so the canvas is the one named, else the one the reader last
- * touched — and the call carries that canvas's Project and Thread as its scope.
- */
-export const approveCommand = defineCommand({
-  id: APPROVE_COMMAND,
-  input: canvasCommandInput,
-  execute: async (
-    input: CanvasCommandInput,
-    call: Call,
-    services: Services,
-  ) => {
-    const canvas = of(input);
-    const artifactId = input.artifactId ?? canvas?.artifactId;
-    const revision = input.revision ?? canvas?.currentRevision();
-    const scope = canvas?.scope;
-
-    if (artifactId === undefined || revision === undefined) return;
-    if (scope === undefined) return;
-
-    await services
-      .use(ArtifactsV1, callScopeOf(scope))
-      .approve({ artifactId, revision }, call);
-
-    canvas?.reload();
-  },
 });
 
 /** Every client command of the canvas, as the activation registers them. */

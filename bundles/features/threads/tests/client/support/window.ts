@@ -181,23 +181,6 @@ const threadsRemote: RemoteContract = {
   },
 };
 
-/**
- * `threads.ask/v1` as main routes it: this bundle's host part provides it, and
- * its question block reads and answers an ask through it.
- */
-const askRemote = (version: string): RemoteContract => ({
-  id: 'threads.ask/v1',
-  environment: 'host',
-  bundleId: 'threads',
-  version,
-  contractVersion: '1.0.0',
-  cardinality: 'one',
-  methods: {
-    status: { tuple: null, local: false, stream: false },
-    answer: { tuple: null, local: false, stream: false },
-  },
-});
-
 /** The probe bundle: a client part defined by the test. */
 export interface Probe {
   readonly provides?: readonly string[];
@@ -402,13 +385,7 @@ export const openThreadsWindow = async (input: {
         ? {}
         : { probe: { entry: partUrl('probe', '1.0.0') } }),
     },
-    remote: [
-      threadsRemote,
-      askRemote(threadsManifest.version),
-      commentsRemote,
-      composerRemote,
-      menusRemote,
-    ],
+    remote: [threadsRemote, commentsRemote, composerRemote, menusRemote],
     hostId: 'host-1',
     storageGeneration: 1,
   };

@@ -326,8 +326,7 @@ export const resolveComment = async (
   if (current === undefined) return undefined;
 
   // Idempotent: the durable event records the transition, and a call
-  // that asks for the state the comment already has writes nothing —
-  // as `artifacts/v1.approve` does.
+  // that asks for the state the comment already has writes nothing.
   if (current.resolved === input.resolved) return current;
 
   await services

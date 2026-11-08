@@ -1,6 +1,6 @@
 # Papercraft: o preview num iframe isolado
 
-**Estado:** aprovado pelo usuário em 2026-10-27 e implementado: o documento do frame, o runtime, a superfície sobre o protocolo, o build sem container de portal, o teto de 3 frames vivos por janela com snapshots, `doric.windows/v1.capture` e `papercraft.snapshot/v1`. Substitui a decisão "Nada de iframe" da primeira versão do [desenho do papercraft](README.md#resumo) e os trechos do `GROUNDING.md` que diziam que o módulo do preview roda no realm do app; os dois já foram reescritos.
+**Estado:** aprovado pelo usuário em 2026-10-27 e implementado; as decisões do frame (origem opaca, CSP, CORS por prefixo de caminho, teto de 3 frames vivos por janela, storage em memória) continuam valendo depois da troca para o OpenUI ([docs/features/papercraft.md](../../../features/papercraft.md)). Desde 2026-11-06 o frame carrega `client/frames/openui.js`, que desenha um programa OpenUI Lang, e importa os módulos verificados de `doric://app/papercraft-modules/<dir>/<file>` em vez de `/artifacts/*`. Substitui a decisão "Nada de iframe" da primeira versão do [desenho do papercraft](README.md#resumo).
 
 ## Por quê
 

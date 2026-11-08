@@ -8,9 +8,13 @@
 // stand. This lives beside `tests/conversation-nodes.test.ts` rather than in it
 // because the blocks are client code: the DOM-free project compiles no `.tsx`
 // with JSX.
+//
+// The fence node (openui.md D1: B4, B19, B1's `origin`; conversation-openui.md
+// C15) and the UI-action caption (C4) are drawn in a real window, by a probe
+// that registers a fence renderer (`support/fences.ts`).
 
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { afterEach, describe, test } from 'node:test';
 
 import { $isListNode, ListItemNode, ListNode } from '@lexical/list';
 import {
@@ -41,6 +45,28 @@ import {
   UserTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/user-turn-node.js';
 import type { AgentTurn } from '../../src/client/domain/projector.js';
+import type { ChatFenceView } from '../../src/contracts/index.js';
+import {
+  answering,
+  assertReady,
+  conversationText,
+  type FenceElement,
+  fenceProbe,
+  otherThreadId,
+  push,
+  snapshot,
+  threadEvent,
+  threadId,
+  threadPath,
+  threadRecord,
+  threadUrl,
+} from './support/fences.js';
+import {
+  type ChatWindow,
+  openChatWindow,
+  type Probe,
+  settle,
+} from './support/window.js';
 
 const promptId = '33333333-3333-4333-8333-333333333333';
 const at = '2026-03-12T14:55:00.000Z';
@@ -371,5 +397,302 @@ describe('the comments an agent turn holds when it is rebuilt', () => {
 
     assert.deepEqual(rebuilt.seats, [rebuilt.seat]);
     assert.equal(rebuilt.holder.at(-1), 'chat-comment-seat-node');
+  });
+});
+
+describe('a UI-action prompt keeps its program through its serialized form (C4)', () => {
+  test('exportJSON and importJSON keep the user turn’s action', () => {
+    const kept = inEditor(() => {
+      const turn = $createUserTurnNode(
+        'turn-ui',
+        promptId,
+        undefined,
+        'Tag the release',
+        true,
+        null,
+        { program: 'release' },
+      );
+      const serialized = turn.exportJSON();
+      return {
+        written: serialized.action,
+        restored: UserTurnNode.importJSON(reread(serialized)).exportJSON()
+          .action,
+      };
+    });
+
+    assert.deepEqual(kept.written, { program: 'release' });
+    assert.deepEqual(kept.restored, { program: 'release' });
+  });
+});
+
+// The fence in the conversation (openui.md D1, D2), drawn in a real window by
+// a probe that registers a fence renderer through `chat.views/v1`.
+
+let opened: ChatWindow | undefined;
+
+afterEach(async () => {
+  await opened?.close();
+  opened = undefined;
+});
+
+const fenceHost = {
+  'runtime.threads/v1.thread': (input: unknown) =>
+    threadRecord(typeof input === 'string' ? input : threadId),
+  'runtime.threads/v1.queue': () => ({
+    revision: 1,
+    paused: false,
+    stopping: false,
+    items: [],
+  }),
+};
+
+/** Opens the Thread with the probe, answering its watch with `events`. */
+const openWith = async (
+  probe: Probe,
+  events: readonly unknown[],
+): Promise<ChatWindow> => {
+  opened = await openChatWindow({
+    url: threadUrl(threadId),
+    host: fenceHost,
+    probe,
+  });
+  await settle(50);
+  snapshot(opened, events);
+  await settle(150);
+  return opened;
+};
+
+const closedFence = '```probe-ui\nroot = Form()\n```';
+const fenceAnswer = (fence = closedFence) =>
+  answering(`Here is the form:\n\n${fence}\n\nFill it in.`);
+
+const fences = (window: ChatWindow, tag = 'probe-fence') => [
+  ...window.document.querySelectorAll(tag),
+];
+
+/** Keys typed where `target` is, as the reader would. */
+const keydown = (target: Element, key: string, modifiers = {}) => {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...modifiers,
+  });
+  target.dispatchEvent(event);
+  return event;
+};
+
+describe('a fence in the conversation (B4, B1)', () => {
+  test('a streamed fence keeps one element across ten flushes, its view set before it connects', async () => {
+    const { probe, state } = fenceProbe([['probe-ui', 'probe-fence']]);
+    const window = await openWith(
+      probe,
+      answering('Here is the form:\n\n```probe-ui\nline 0'),
+    );
+    assertReady(state);
+
+    const [first] = fences(window);
+    assert.ok(first, 'the fence is drawn by the registered element');
+    for (let flush = 1; flush < 10; flush += 1) {
+      push(
+        window,
+        threadEvent(4 + flush, {
+          type: 'text.delta',
+          delta: `\nline ${flush}`,
+        }),
+      );
+      await settle(100);
+      assert.deepEqual(fences(window), [first], `flush ${flush}`);
+    }
+    assert.equal(state.created.length, 1);
+    assert.equal(state.disposed.length, 0);
+
+    const view = state.connected[0]?.view as ChatFenceView | undefined;
+    assert.equal(view?.fence.key, `${promptId}/4/0`);
+    assert.equal(view?.fence.state, 'streaming');
+    // The Thread's record has no `origin`: it is the reader's.
+    assert.equal(view?.origin, 'user');
+    assert.deepEqual(
+      view?.fences.map((fence) => fence.key),
+      [`${promptId}/4/0`],
+    );
+    assert.ok(
+      conversationText(state).includes(
+        `\`\`\`probe-ui\n${Array.from({ length: 10 }, (_, line) => `line ${line}`).join('\n')}`,
+      ),
+      'the node reads as the fence source',
+    );
+  });
+
+  test('Backspace and Ctrl+A on the selected fence reach neither the editor nor the turn', async () => {
+    const { probe, state } = fenceProbe([['probe-ui', 'probe-fence']]);
+    const window = await openWith(probe, fenceAnswer());
+    assertReady(state);
+    const [element] = fences(window);
+    assert.ok(element);
+    const root = state.editor?.getRootElement();
+    assert.ok(root);
+    const reached: string[] = [];
+    root.addEventListener('keydown', (event) => reached.push(event.key));
+    const before = conversationText(state);
+
+    (element as HTMLElement).click();
+    await settle();
+    keydown(element, 'Backspace');
+    keydown(element, 'a', { ctrlKey: true });
+    await settle();
+
+    assert.deepEqual(reached, []);
+    assert.equal(element.isConnected, true);
+    assert.equal(conversationText(state), before);
+  });
+});
+
+describe('the keys typed in a control a fence draws (C15)', () => {
+  test('Backspace, Delete, the arrows and Enter reach the input, and the turn is unchanged', async () => {
+    const { probe, state } = fenceProbe([['probe-ui', 'probe-fence']]);
+    const window = await openWith(probe, fenceAnswer());
+    assertReady(state);
+    const input = fences(window)[0]?.querySelector('input');
+    assert.ok(input, 'the element draws its control');
+    const root = state.editor?.getRootElement();
+    assert.ok(root);
+    const atInput: string[] = [];
+    const atEditor: string[] = [];
+    input.addEventListener('keydown', (event) => atInput.push(event.key));
+    root.addEventListener('keydown', (event) => atEditor.push(event.key));
+    const before = conversationText(state);
+    const keys = [
+      'Backspace',
+      'Delete',
+      'ArrowLeft',
+      'ArrowRight',
+      'ArrowUp',
+      'ArrowDown',
+      'Enter',
+    ];
+
+    input.focus();
+    const prevented = keys.filter(
+      (key) => keydown(input, key).defaultPrevented,
+    );
+    await settle();
+
+    assert.deepEqual(atInput, keys);
+    assert.deepEqual(prevented, []);
+    assert.deepEqual(atEditor, []);
+    assert.equal(conversationText(state), before);
+  });
+});
+
+describe('when a fence element is disposed (B19)', () => {
+  test('a rewind that removes the fence disposes its element through ui/v1', async () => {
+    const { probe, state } = fenceProbe([['probe-ui', 'probe-fence']]);
+    const window = await openWith(probe, fenceAnswer());
+    assertReady(state);
+    const [element] = fences(window);
+    assert.ok(element);
+
+    push(
+      window,
+      threadEvent(5, { type: 'history.truncated', afterSequence: 0 }),
+    );
+    await settle(150);
+
+    assert.deepEqual(fences(window), []);
+    assert.deepEqual(state.disposed, [element]);
+  });
+
+  test('showing another Thread disposes every element of the first', async () => {
+    const { probe, state } = fenceProbe([['probe-ui', 'probe-fence']]);
+    const window = await openWith(
+      probe,
+      answering(`${closedFence}\n\n${closedFence}`),
+    );
+    assertReady(state);
+    const shown = fences(window);
+    assert.equal(shown.length, 2);
+
+    window.window.history.pushState(null, '', threadPath(otherThreadId));
+    window.window.dispatchEvent(new window.window.PopStateEvent('popstate'));
+    await settle(150);
+
+    assert.deepEqual(new Set(state.disposed), new Set(shown));
+  });
+
+  test('disposing the registration turns the fences into code blocks and disposes their elements', async () => {
+    const { probe, state } = fenceProbe([['probe-ui', 'probe-fence']]);
+    const window = await openWith(probe, fenceAnswer());
+    assertReady(state);
+    const [element] = fences(window);
+    assert.ok(element);
+
+    state.registrations.get('probe-ui')?.dispose();
+    await settle(150);
+
+    assert.deepEqual(fences(window), []);
+    assert.deepEqual(state.disposed, [element]);
+    assert.ok(
+      [...window.document.querySelectorAll('code')].some((code) =>
+        code.textContent?.includes('root = Form()'),
+      ),
+      'the fence is a code block again',
+    );
+  });
+
+  test('registering a tag turns its code blocks into fences', async () => {
+    const { probe, state } = fenceProbe([], ['probe-fence']);
+    const window = await openWith(probe, fenceAnswer());
+    assert.deepEqual(fences(window), []);
+
+    state.register('probe-ui', 'probe-fence');
+    await settle(150);
+
+    assertReady(state);
+    const [element] = fences(window) as FenceElement[];
+    assert.ok(element, 'the code block became a fence');
+    assert.equal(element.view?.fence.body, 'root = Form()');
+    assert.equal(element.view?.fence.state, 'closed');
+  });
+
+  test('registering a second tag keeps the elements of the first, the same objects', async () => {
+    const { probe, state } = fenceProbe(
+      [['probe-ui', 'probe-fence']],
+      ['probe-fence', 'probe-other-fence'],
+    );
+    const window = await openWith(
+      probe,
+      answering(`${closedFence}\n\n\`\`\`other-ui\nx = 1\n\`\`\``),
+    );
+    assertReady(state);
+    const before = fences(window);
+    assert.equal(before.length, 1);
+
+    state.register('other-ui', 'probe-other-fence');
+    await settle(150);
+
+    assertReady(state);
+    assert.equal(fences(window, 'probe-other-fence').length, 1);
+    assert.deepEqual(fences(window), before);
+    assert.deepEqual(state.disposed, []);
+  });
+});
+
+describe('the caption of a UI-action prompt (C4)', () => {
+  test('the user turn of a UI-action prompt carries its program on its block', async () => {
+    const { probe } = fenceProbe([]);
+    const window = await openWith(probe, [
+      threadEvent(1, {
+        type: 'prompt.accepted',
+        text: '<ui-action program="release">\nTag the release\n</ui-action>',
+        source: { kind: 'user' },
+      }),
+      threadEvent(2, { type: 'prompt.started' }),
+    ]);
+
+    const block = window.document.querySelector('[data-ui-action]');
+    assert.equal(block?.getAttribute('data-ui-action'), 'release');
+    assert.equal(block?.getAttribute('data-prompt-id'), promptId);
+    assert.equal(block?.textContent?.trim(), 'Tag the release');
   });
 });

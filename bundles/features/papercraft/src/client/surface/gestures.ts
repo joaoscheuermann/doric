@@ -21,6 +21,7 @@
 // own handlers on the canvas, which owns the space bar and its keys once the
 // reader clicked it, and the keys the frame reports while it has the focus.
 
+import { wheelGesture } from 'desktop/ui/viewport';
 import {
   type Dispatch,
   type RefObject,
@@ -30,8 +31,8 @@ import {
 } from 'react';
 
 import type { CommentAnchor, PreviewTool } from '../../contracts/index.js';
-import { anchorOf, pointAnchorOf } from '../anchor.js';
-import type { FrameMessage } from '../frame-protocol.js';
+import { anchorOf, pointAnchorOf, programAnchorOf } from '../anchor.js';
+import type { ProgramFrameMessage } from '../frame-protocol.js';
 import { anchorIndexOf, type ContentPoint, offsetIn } from './pin-geometry.js';
 import { OVERLAY_ATTRIBUTE } from './pins-layer.js';
 import type { Scene } from './scene.js';
@@ -73,10 +74,12 @@ export interface GestureInput {
   readonly resolveInput: () => void;
   /** A click in comment mode: the anchor it resolved to, and the point. */
   readonly onComment: (anchor: CommentAnchor, point: ContentPoint) => void;
+  /** A papercraft program's canvas: a comment anchors to its statement, else its point (D19). */
+  readonly program?: boolean;
 }
 
-type FramePointer = Extract<FrameMessage, { kind: 'pointer' }>;
-type FrameWheel = Extract<FrameMessage, { kind: 'wheel' }>;
+type FramePointer = Extract<ProgramFrameMessage, { kind: 'pointer' }>;
+type FrameWheel = Extract<ProgramFrameMessage, { kind: 'wheel' }>;
 
 /** One pointer event of the canvas, from the app's DOM or from the frame. */
 interface CanvasPointer {
@@ -294,22 +297,24 @@ const click = (
   const point = pointer.content;
   const scene = input.scene;
   const anchor =
-    target === undefined
-      ? pointAnchorOf(point, nearestNodeOf(input, point))
-      : anchorOf(
-          target.node,
-          scene === undefined
-            ? undefined
-            : offsetIn(
-                targetBounds(target, scene.bounds, scene.pseudoBounds),
-                point,
-              ),
-          point,
-          scene === undefined
-            ? undefined
-            : anchorIndexOf(scene.graph, target.node),
-          target.pseudo,
-        );
+    input.program === true
+      ? programAnchorOf(target?.node, point)
+      : target === undefined
+        ? pointAnchorOf(point, nearestNodeOf(input, point))
+        : anchorOf(
+            target.node,
+            scene === undefined
+              ? undefined
+              : offsetIn(
+                  targetBounds(target, scene.bounds, scene.pseudoBounds),
+                  point,
+                ),
+            point,
+            scene === undefined
+              ? undefined
+              : anchorIndexOf(scene.graph, target.node),
+            target.pseudo,
+          );
 
   input.onComment(anchor, point);
 };
@@ -390,10 +395,6 @@ const panMove = (
   }));
 };
 
-/** The px one wheel delta stands for, by its `deltaMode`. */
-const deltaScale = (mode: number, area: HTMLElement | null): number =>
-  mode === 1 ? 16 : mode === 2 ? (area?.clientHeight ?? 0) || 800 : 1;
-
 interface WheelInput {
   readonly surface: ContentPoint;
   readonly deltaX: number;
@@ -410,25 +411,31 @@ const wheel = (input: GestureInput, event: WheelInput): void => {
 
   // In the conversation the wheel scrolls the conversation: the node pans
   // only once the reader clicked it, and zooms only with the modifier.
-  if (input.chrome === 'node' && !event.zoom && !input.focusedRef.current)
-    return;
+  const gesture = wheelGesture({
+    deltaX: event.deltaX,
+    deltaY: event.deltaY,
+    deltaMode: event.deltaMode,
+    zoom: event.zoom,
+    captured: input.chrome !== 'node' || input.focusedRef.current,
+    pageHeight: input.wrapper.current?.clientHeight ?? 0,
+  });
+
+  if (gesture === undefined) return;
 
   event.preventDefault();
 
-  if (event.zoom) {
+  if (gesture.kind === 'zoom') {
     input.setViewport((current) =>
-      zoomAt(current, event.deltaY < 0 ? 1.1 : 1 / 1.1, event.surface),
+      zoomAt(current, gesture.factor, event.surface),
     );
 
     return;
   }
 
-  const factor = deltaScale(event.deltaMode, input.wrapper.current);
-
   input.setViewport((current) => ({
     ...current,
-    tx: current.tx - event.deltaX * factor,
-    ty: current.ty - event.deltaY * factor,
+    tx: current.tx + gesture.dx,
+    ty: current.ty + gesture.dy,
   }));
 };
 

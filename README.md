@@ -24,9 +24,9 @@ infrastructure you control.
   child is a normal conversation you can open, read and redirect.
 - **Review UI like a designer, not like a diff.** With
   [Papercraft](#papercraft-see-it-point-at-it-ship-it), the agent shows you a
-  live preview of the interface built from your real components. You pin
-  comments on the exact element you mean, and the agent changes the exact line
-  of code behind it.
+  live canvas of the interface built from your real components. You pin
+  comments on the exact element you mean, and the agent revises the UI behind
+  it.
 - **Nothing happens out of sight.** Browse the Project's files, review Git
   diffs, follow the agent's terminals, watch apps on the sandbox's screen, and
   see what every Thread, including its children, has cost you.
@@ -44,28 +44,31 @@ Asking an agent for UI changes usually means reading a diff and imagining the
 result, or describing in words which button you mean. Papercraft removes both
 problems.
 
-- **The agent shows the change.** It publishes a live preview as a node in the
-  conversation: a self-contained HTML page or one of your Project's own React
-  components, compiled and running with real state, hooks and interactions.
+- **The agent shows the change.** It writes a short OpenUI Lang program in a
+  `papercraft` fence of its answer, and the conversation draws it as a live
+  canvas node while the answer streams, with your Project's own components and
+  exports, compiled and running with real state, hooks and interactions.
 - **You point at what you mean.** Click any element and leave a comment pinned
-  to it, Figma-style. Every element is stamped with its source `file:line`, so
-  the comment reaches the agent as a precise instruction about specific code.
+  to it, Figma-style. The comment names the program statement behind the
+  element, so it reaches the agent as a precise instruction.
 - **The agent answers and revises.** It replies in each comment thread, asks a
   pointed question when a comment is ambiguous, resolves what it fixed, and
-  publishes a new revision beside the previous one so you can compare. Pins
-  follow their element from one revision to the next.
+  writes a patch: a new fence with the same identity holding only the
+  statements that change. Every patch is a new revision beside the previous
+  one, so you can compare.
 - **It fits your stack.** Existing Storybook stories, `.storybook/preview`
   providers and decorators, and your Tailwind v4 theme in light and dark all
-  work. If there is no story, the agent writes a draft one outside your source
-  tree.
-- **You choose the level of control.** By default the agent implements the
-  change and your comments steer the next round. Turn on review in
-  **Settings → Review**, and the agent is told to wait for your approval
-  before it writes the change into the Project's code.
+  work. Components you declare under `.doric/papercraft/schemas/` become a
+  library the agent can use by name. No other Project file is written.
 
-Open any preview in its own canvas window to pan, zoom, isolate elements,
+Open any program in its own canvas window to pan, zoom, isolate elements,
 browse the element tree and switch revisions. See the
 [Papercraft bundle](bundles/features/papercraft/README.md) for details.
+
+Beyond papercraft, the agent can answer with UI in the conversation itself:
+forms, tables and charts drawn from `openui-lang` fences, and a question form
+with which it asks you to choose. A click or an answer goes back to the agent
+as your next message. See the [OpenUI bundle](bundles/features/openui/README.md).
 
 ## What you can do
 
@@ -78,7 +81,7 @@ browse the element tree and switch revisions. See the
 - **Work with real development tools.** Agents find, read, edit and write
   files, run commands and use Git inside the sandbox, and research on the web.
   Open a manual terminal when you want to work alongside them.
-- **Review before you ship.** Comment on live UI previews with Papercraft,
+- **Review before you ship.** Comment on live UI canvases with Papercraft,
   inspect project files, review Git diffs, switch branches, watch agent
   terminals, and open the sandbox's screen in its own window to see graphical
   apps the agent is running.
@@ -255,7 +258,7 @@ Or try Papercraft on a UI change:
 > Show me a preview of a new empty state for the projects list before you
 > implement it.
 
-Click an element in the preview, leave a comment, and send it with
+Click an element in the canvas, leave a comment, and send it with
 `Cmd/Ctrl+Enter`.
 
 ## Things to know

@@ -12,19 +12,33 @@ import {
 import type { AnchorBlock } from '../../../../domain/comment-excerpt.js';
 import { bySeatPlace } from '../../../../domain/comment-seats.js';
 import { AGENT_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
+import { keyPrefixOf } from '../../../../domain/fences.js';
 import type { AgentTurn, PromptStatus } from '../../../../domain/projector.js';
+import { chatViewsRegistry } from '../../../../services/views.js';
 import {
   $createCommentSeatNode,
   $isCommentSeatNode,
   type CommentSeatNode,
 } from './comment-seat-node.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
-import { $appendMarkdown, $setMarkdown } from './markdown-blocks.js';
+import {
+  $appendMarkdown,
+  $setMarkdown,
+  type MarkdownFences,
+} from './markdown-blocks.js';
 import {
   applyTurnAvatar,
   sameTurnAvatar,
   type TurnAvatar,
 } from './turn-avatar.js';
+
+const noTags: ReadonlySet<string> = new Set();
+
+/** The window's fence tags and the turn's key prefix (openui.md D1). */
+const fencesOf = (turnKey: string): MarkdownFences => ({
+  tags: chatViewsRegistry()?.fenceTags() ?? noTags,
+  keyPrefix: keyPrefixOf(turnKey),
+});
 
 /**
  * The seats a turn holds, in the order they stand: after its blocks, or at the
@@ -253,7 +267,7 @@ export class AgentTurnNode extends ElementNode {
     for (const seat of seats) seat.remove();
     writable.clear();
     if (writable.__synced.length > 0)
-      $appendMarkdown(writable, writable.__synced);
+      $appendMarkdown(writable, writable.__synced, fencesOf(this.__turnKey));
     $placeSeats(writable, seats);
   }
 
@@ -280,24 +294,31 @@ export class AgentTurnNode extends ElementNode {
    * a delta to a streamed answer pays for the delta, not the answer. The source
    * is read, never rewritten: what the block holds is still what the model
    * wrote, and the reader keeps the caret where it was.
+   *
+   * `rebuild` builds every block again with the window's current fence tags,
+   * text unchanged or not: a fence renderer that starts or ends turns code
+   * blocks into fences or back (openui.md D1).
    */
-  setTurn(turn: AgentTurn): void {
+  setTurn(turn: AgentTurn, options: { readonly rebuild?: boolean } = {}): void {
+    const rebuild = options.rebuild === true;
     const value = turn.text.trim();
     const textChanged = value !== this.__synced;
-    if (!textChanged && this.__status === turn.status) return;
+    if (!rebuild && !textChanged && this.__status === turn.status) return;
 
     const writable = this.getWritable();
     if (writable.__status !== turn.status) writable.__status = turn.status;
-    if (!textChanged) return;
+    if (!rebuild && !textChanged) return;
 
-    const previous = writable.__synced;
+    // An empty `previous` makes the held blocks empty: a full rebuild.
+    const previous = rebuild ? '' : writable.__synced;
     writable.__synced = value;
     // The seats are not part of the markdown: they leave the children while the
     // source rebuilds it, and come back after their own blocks, so the answer's
     // text children stay the source's and each seat keeps its place.
     const seats = $seatsOf(writable);
     for (const seat of seats) seat.remove();
-    if (value.length > 0) $setMarkdown(writable, value, previous);
+    if (value.length > 0)
+      $setMarkdown(writable, value, previous, fencesOf(this.__turnKey));
     else writable.clear();
     $placeSeats(writable, seats);
   }
@@ -334,7 +355,7 @@ export function $createAgentTurnNode(
 ): AgentTurnNode {
   const value = text.trim();
   const node = new AgentTurnNode(turnKey, promptId, status, value, avatar);
-  if (value.length > 0) $appendMarkdown(node, value);
+  if (value.length > 0) $appendMarkdown(node, value, fencesOf(turnKey));
   return node;
 }
 

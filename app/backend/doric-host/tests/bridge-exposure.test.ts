@@ -17,6 +17,8 @@ const composition = 'app/backend/doric-host/composition.json';
 interface Snapshot {
   readonly methods: Readonly<Record<string, readonly string[]>>;
   readonly scopeKeys: readonly string[];
+  /** Contracts that accept other keys than `scopeKeys`; `[]` is no entry. */
+  readonly scopeKeysByContract?: Readonly<Record<string, readonly string[]>>;
 }
 
 const loadSnapshot = async (): Promise<Snapshot> =>
@@ -126,7 +128,6 @@ void test('the exposed methods of the built composition equal the frozen allowli
 
 void test('desktop providers expose exactly the operations used by clients', async () => {
   assert.deepEqual(await exposedMethods('desktopMain'), {
-    'artifacts.cache/v1': ['ensure'],
     'chat.composer/v1': [
       'addItem',
       'flush',
@@ -140,6 +141,8 @@ void test('desktop providers expose exactly the operations used by clients', asy
     'history.snapshots/v1': ['read', 'write'],
     'menus/v1': ['addItem', 'addKeybinding', 'setContext'],
     'notifications.observations/v1': ['report'],
+    'papercraft.cache/v1': ['ensure'],
+    'papercraft.snapshot/v1': ['capture'],
     'screen.views/v1': [
       'add',
       'deliver',
@@ -162,9 +165,11 @@ void test('every exposed bundle contract accepts exactly the frozen window scope
       continue;
     }
 
+    const expected = snapshot.scopeKeysByContract?.[contract];
+
     assert.deepEqual(
-      accepted[contract],
-      [...snapshot.scopeKeys].sort(),
+      expected === undefined ? accepted[contract] : (accepted[contract] ?? []),
+      [...(expected ?? snapshot.scopeKeys)].sort(),
       contract,
     );
   }

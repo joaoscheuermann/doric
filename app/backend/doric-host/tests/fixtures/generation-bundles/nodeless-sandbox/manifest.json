@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 1,
+  "id": "nodeless-sandbox",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "description": "Provides sandbox/v1 over in-memory sandboxes in which no command is found.",
+  "provides": ["sandbox/v1@1.0.0"],
+  "requires": []
+}

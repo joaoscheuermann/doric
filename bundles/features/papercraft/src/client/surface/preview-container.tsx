@@ -3,16 +3,15 @@
 // selection and layers (spec: "A UI no node e na janela").
 //
 // One surface, two moldings (`Uma superfície, duas molduras`). In the
-// conversation (`chrome: 'node'`) the surface is the body of the `artifacts`
-// registry's frame, and it draws its own header (the kind declares
-// `header: 'body'`): the frame keeps only `Autorizar` below it. The node is
-// a square — as tall as it is wide. The window (`chrome: 'canvas'`) draws
+// conversation (`chrome: 'node'`) the surface is a papercraft fence's node,
+// and it draws its own header. The node is a square — as tall as it is wide.
+// The window (`chrome: 'canvas'`) draws
 // the same surface full-screen, with the tree on the left and the command
 // bar centred on the bottom edge.
 //
 // What is view state here — the armed tool, pan/zoom, selection, isolation,
 // hidden layers, the open input — is local to the frame; what is durable stays
-// in the events and is read back through `preview-data.ts`, in the preview's
+// in the events and is read back through `program-data.ts`, in the program's
 // scope. The pins are both: the sent threads of the preview and its drafts,
 // on every revision — a thread carries over to the next revision, keeps its
 // number and re-places its pin through its anchor; a new comment is written
@@ -35,7 +34,7 @@
 // The frame composes its parts: the scene (`scene.ts`), the fit (`fit.ts`),
 // the focus (`frame-focus.ts`), the gestures and keys (`gestures.ts`), the
 // comment flow (`comment-flow.ts`) and what it draws (`comment-overlay.tsx`),
-// the conversation's requests (`thread-open.ts`) and the controller the
+// and the controller the
 // commands act on (`controller.ts`). The children that do not move with the
 // viewport — the header, the footer, the tree and the bar — are memoised on
 // stable actions, so a pan or a zoom re-renders the canvas and its overlay,
@@ -44,16 +43,24 @@
 import type { Services } from 'bundle/contracts';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import { cn } from 'desktop/ui/utils';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { CircleAlertIcon } from 'lucide-react';
+import type { ShownError } from 'openui/contracts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import type { ChatFence } from '../../contracts/chat.js';
 import {
+  COMMENT_THREAD_OPEN_EVENT,
+  type CommentThreadOpenDetail,
   PapercraftSnapshotV1,
+  PROGRAM_COMMENT_KIND,
   type PreviewScope,
   type PreviewTool,
 } from '../../contracts/index.js';
 import { touchController } from '../canvas-registry.js';
+import { programFrameSrc } from '../frame-url.js';
+import { type CanvasSource, canvasIdOf, targetKeyOf } from './canvas-source.js';
 import { CommandToolbar } from './command-toolbar.js';
-import { useCommentFlow, useCommentRequest } from './comment-flow.js';
+import { useCommentFlow } from './comment-flow.js';
 import { CommentOverlay } from './comment-overlay.js';
 import {
   type FrameReading,
@@ -63,22 +70,19 @@ import {
 import { useFit } from './fit.js';
 import { useFrameFocus } from './frame-focus.js';
 import { canvasKeys, useCanvasGestures } from './gestures.js';
+import type { ProgramContent } from './live-frame.js';
 import { useLiveFrame } from './live-frames.js';
 import { NodeFooter } from './node-footer.js';
 import { HoverOutline, SelectionOutline } from './overlays.js';
 import { anchorResolver } from './pin-geometry.js';
 import type { CommentPin } from './pins-layer.js';
-import { ensureRevisionCached, usePreviewData } from './preview-data.js';
 import { PreviewHeader } from './preview-header.js';
-import {
-  type FrameInput,
-  PreviewSurface,
-  type SurfaceMode,
-} from './preview-surface.js';
+import { type FrameInput, PreviewSurface } from './preview-surface.js';
+import { type OpenUIErrorOf, useProgramData } from './program-data.js';
+import { ProgramErrorsCard } from './program-errors-card.js';
 import { useScene } from './scene.js';
 import { targetBounds, targetById } from './scene-graph.js';
 import type { SurfaceSnapshots } from './snapshots.js';
-import { useThreadOpenRequests } from './thread-open.js';
 import { DETACHED_STEP, openCountOf, pinsOf } from './threads-view.js';
 import { TreePanel } from './tree-panel.js';
 import {
@@ -97,17 +101,113 @@ export interface PreviewContainerProps {
   readonly chrome: PreviewChrome;
   /** The Project and Thread of the preview: every host call's scope. */
   readonly scope: PreviewScope | undefined;
-  readonly artifactId: string;
-  /** The node shows the revision its block was created with; the window opens at the newest. */
-  readonly blockRevision?: number;
-  /**
-   * Bumped by each comment gesture of the registry's frame (the node is the
-   * body inside it): every change toggles the comment tool.
-   */
-  readonly commentRequest?: number;
+  /** What the canvas shows (D26): a papercraft program's identity in one Thread. */
+  readonly source: CanvasSource;
+  /** A program's node: the fences chat handed it, and its own fence's key. */
+  readonly fences?: readonly ChatFence[];
+  readonly fenceKey?: string;
 }
 
-const FALLBACK_NOTICE = 'o preview não carregou · mostrando o markup';
+/** What the canvas draws, read by the source's own data hook. */
+interface CanvasData {
+  readonly source: CanvasSource;
+  /** The header's name: the file, else the title. */
+  readonly title: string;
+  readonly sourcePath: string | undefined;
+  /** The canvas's title and source, for the stack's line to name. */
+  readonly refs: { readonly title?: string; readonly source?: string };
+  readonly revisions: {
+    readonly current: number;
+    readonly total: number;
+    readonly list: readonly number[];
+  };
+  readonly selectedRevision: number | undefined;
+  readonly selectRevision: (revision: number) => void;
+  readonly threads: ReturnType<typeof useProgramData>['threads'];
+  readonly drafts: ReturnType<typeof useProgramData>['drafts'];
+  readonly reloadComments: () => void;
+  readonly canComment: boolean;
+  readonly surface: {
+    readonly content: ProgramContent | undefined;
+    readonly onErrors?: (errors: readonly OpenUIErrorOf[]) => void;
+    /** The card's lines, which the "Nothing to draw" notice reads (D26). */
+    readonly errors: readonly ShownError[];
+    /** The shown fence is `closed` or `unterminated`. */
+    readonly complete: boolean;
+  };
+}
+
+/** One frame of a papercraft program's canvas, read by `useProgramData` (D6, D26). */
+export function PreviewContainer(props: PreviewContainerProps) {
+  const { services, chrome, scope, source, fences, fenceKey } = props;
+  const data = useProgramData({
+    services,
+    chrome,
+    scope,
+    threadId: source.threadId,
+    identity: source.identity,
+    ...(fenceKey === undefined ? {} : { fenceKey }),
+    ...(fences === undefined ? {} : { fences }),
+  });
+  const refs = useMemo(() => ({ title: source.identity }), [source.identity]);
+  const list = useMemo(
+    () => (data.revisions ?? []).map((one) => one.revision.revision),
+    [data.revisions],
+  );
+  const selectedRevision = data.selected?.revision.revision;
+
+  // The window names an identity no fence of the Thread has (yet).
+  if (
+    chrome === 'canvas' &&
+    data.revisions !== undefined &&
+    data.selected === undefined
+  ) {
+    return (
+      <div
+        data-testid="papercraft-no-ui"
+        className="flex h-full w-full items-center justify-center text-sm text-muted-foreground"
+      >
+        {`No UI named ${source.identity} in this thread.`}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex w-full flex-col gap-1">
+      <CanvasFrame
+        {...props}
+        data={{
+          source,
+          title: source.identity,
+          sourcePath: undefined,
+          refs,
+          revisions: {
+            current: selectedRevision ?? list.at(-1) ?? 1,
+            total: list.length,
+            list,
+          },
+          selectedRevision,
+          selectRevision: data.selectRevision,
+          threads: data.threads,
+          drafts: data.drafts,
+          reloadComments: data.reloadComments,
+          canComment: data.canComment,
+          surface: {
+            content: data.content,
+            onErrors: data.onErrors,
+            errors: data.errors.lines,
+            complete:
+              data.selected?.fence.state === 'closed' ||
+              data.selected?.fence.state === 'unterminated',
+          },
+        }}
+      />
+      {data.errors.lines.length === 0 ? null : (
+        <ProgramErrorsCard lines={data.errors.lines} sent={data.errors.sent} />
+      )}
+    </div>
+  );
+}
 
 /** The comment balloon the pointer becomes in comment mode; its tip is the hotspot. */
 const COMMENT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
@@ -120,41 +220,37 @@ interface Latest extends FrameReading {
   readonly tool: PreviewTool;
 }
 
-/** One frame of a preview: header, canvas, gesture, tree (window), bar (window). */
-export function PreviewContainer({
+/** One frame of a canvas: header, canvas, gesture, tree (window), bar (window). */
+function CanvasFrame({
   services,
   chrome,
   scope,
-  artifactId,
-  blockRevision,
-  commentRequest,
-}: PreviewContainerProps) {
+  data,
+}: PreviewContainerProps & { readonly data: CanvasData }) {
   const {
-    record,
-    policy,
-    preview,
+    source,
     selectedRevision,
     selectRevision,
-    reload,
     threads,
     drafts,
     reloadComments,
     canComment,
-    approved,
-  } = usePreviewData({
-    services,
-    chrome,
-    scope,
-    artifactId,
-    ...(blockRevision === undefined ? {} : { blockRevision }),
-  });
+    refs,
+    surface,
+  } = data;
+  /** The canvas's key for every per-canvas store (D26). */
+  const canvasId = canvasIdOf(source);
+  const target = useMemo(() => targetKeyOf(source), [source]);
+  const segment = useMemo(
+    () => ({ identity: source.identity }),
+    [source.identity],
+  );
 
   const [tool, setTool] = useState<PreviewTool>('select');
   const [viewport, setViewport] = useState<Viewport>(IDENTITY);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [hoverId, setHoverId] = useState<string | undefined>(undefined);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>('markup');
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [showResolved, setShowResolved] = useState(true);
 
@@ -173,7 +269,30 @@ export function PreviewContainer({
 
   /* The scene graph, derived by the frame from what the revision rendered --- */
 
-  const { scene, onScene } = useScene();
+  const { scene, onScene: setScene } = useScene();
+  // Whether the revision's last scene had no node; `undefined` before one.
+  const [sceneEmpty, setSceneEmpty] = useState<{
+    readonly revision: number | undefined;
+    readonly empty: boolean | undefined;
+  }>({ revision: undefined, empty: undefined });
+  const onScene = useCallback(
+    (nodes: Parameters<typeof setScene>[0]) => {
+      setScene(nodes);
+      setSceneEmpty({
+        revision: selectedRevision,
+        empty: nodes === undefined ? undefined : nodes.length === 0,
+      });
+    },
+    [setScene, selectedRevision],
+  );
+  // D26's "Nothing to draw": a complete revision whose errors leave it blank.
+  const nothingDrawn =
+    surface.complete &&
+    surface.errors.some(({ code }) => code !== undefined) &&
+    (surface.errors.some(
+      ({ code }) => code === 'no-root' || code === 'parse-failed',
+    ) ||
+      (sceneEmpty.revision === selectedRevision && sceneEmpty.empty === true));
   const requestMeasure = useCallback(
     () => setMeasureRequest((count) => count + 1),
     [],
@@ -191,8 +310,8 @@ export function PreviewContainer({
 
   const focusCanvas = useCallback(() => {
     wrapper.current?.focus?.({ preventScroll: true });
-    touchController(artifactId);
-  }, [artifactId]);
+    touchController(canvasId);
+  }, [canvasId]);
 
   const { focused, capture, focusedRef, consumeFramePointer, onFrameFocus } =
     useFrameFocus({
@@ -204,22 +323,13 @@ export function PreviewContainer({
   /** Whether the frame shows its controls and tools: the window always is. */
   const active = chrome === 'canvas' || focused;
 
-  const recordTitle = record?.title;
-  const recordPath = record?.path;
-  /** The preview's title and source, for the stack's line to name. */
-  const refs = useMemo(
-    () => ({
-      ...(recordTitle === undefined ? {} : { title: recordTitle }),
-      ...(recordPath === undefined ? {} : { source: recordPath }),
-    }),
-    [recordTitle, recordPath],
-  );
   const showResolvedPins = useCallback(() => setShowResolved(true), []);
 
   const flow = useCommentFlow({
     services,
     scope,
-    artifactId,
+    target,
+    itemKind: PROGRAM_COMMENT_KIND,
     revision: selectedRevision,
     threads,
     drafts,
@@ -230,17 +340,61 @@ export function PreviewContainer({
   });
   const inputOpen = flow.open !== undefined;
 
-  useThreadOpenRequests({
-    chrome,
-    artifactId,
-    ownRevision: blockRevision ?? selectedRevision,
-    knownRevisions: record?.revisions,
-    services,
-    scope,
+  /* The conversation asking to see a thread (`doric:comment-thread-open`) --- */
+
+  // When the target is this canvas's (its kind and id, D19), the frame opens
+  // the root's thread. Every revision shows every thread, so the window keeps
+  // the revision on screen. Of the conversation's nodes only one answers: the
+  // node of the revision the target names, or — a target without a revision
+  // means the latest — the node of the newest revision.
+  const threadOpen = useRef({
+    target,
+    ownRevision: selectedRevision,
+    newestRevision: data.revisions.list.at(-1),
     showThread: flow.showThread,
   });
+  threadOpen.current = {
+    target,
+    ownRevision: selectedRevision,
+    newestRevision: data.revisions.list.at(-1),
+    showThread: flow.showThread,
+  };
 
-  const contentKey = `${artifactId}@${String(selectedRevision ?? blockRevision ?? 1)}`;
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const onOpen = (event: Event): void => {
+      const detail = (event as CustomEvent<CommentThreadOpenDetail>).detail;
+      const {
+        target: own,
+        ownRevision,
+        newestRevision,
+        showThread,
+      } = threadOpen.current;
+
+      if (
+        typeof detail?.commentId !== 'string' ||
+        detail.target?.kind !== own.kind ||
+        detail.target.id !== own.id
+      )
+        return;
+
+      if (chrome === 'node') {
+        const asked = detail.target.revision ?? newestRevision;
+
+        if (asked === undefined || asked !== ownRevision) return;
+      }
+
+      showThread(detail.commentId);
+    };
+
+    document.addEventListener(COMMENT_THREAD_OPEN_EVENT, onOpen);
+
+    return () =>
+      document.removeEventListener(COMMENT_THREAD_OPEN_EVENT, onOpen);
+  }, [chrome]);
+
+  const contentKey = `${canvasId}@${String(selectedRevision ?? 1)}`;
 
   // The node holds a live frame only among the window's most recently used;
   // the canvas window's revision stays live outside that count.
@@ -263,7 +417,7 @@ export function PreviewContainer({
 
   const controller = usePreviewController({
     chrome,
-    artifactId,
+    canvasId,
     scopeProject,
     scopeThread,
     latest,
@@ -274,12 +428,11 @@ export function PreviewContainer({
     areaSize,
     fitContent,
     selectRevision,
-    reload,
     sendNow: flow.sendNow,
   });
   const { execute, openCanvas } = useCommandDispatch(
     services,
-    artifactId,
+    segment,
     scopeProject,
     scopeThread,
   );
@@ -333,6 +486,7 @@ export function PreviewContainer({
     focusCanvas,
     resolveInput: flow.resolveInput,
     onComment: flow.beginNew,
+    program: true,
   });
 
   /** The node lets go of the focus: the canvas's, or the preview's frame's. */
@@ -415,15 +569,6 @@ export function PreviewContainer({
     [services, chrome],
   );
 
-  useCommentRequest(commentRequest, {
-    canComment,
-    armed: () => latest.current.tool === 'comment',
-    toggle: () =>
-      setTool((current) => (current === 'comment' ? 'select' : 'comment')),
-    focusCanvas: () => wrapper.current?.focus?.({ preventScroll: true }),
-    closeInput: flow.closeInput,
-  });
-
   /* The pins: the preview's threads, on whatever revision, then its drafts --- */
 
   // Each anchor is placed once per scene; a pin whose anchor no longer
@@ -454,18 +599,12 @@ export function PreviewContainer({
   /* What the frame reads for its chrome ----------------------------------------- */
 
   // The header names the file (else the title) and the revision on screen.
-  const title = record?.path ?? record?.title ?? artifactId;
-  const revisionTotal = record?.revisions ?? 1;
-  const recordRevision = record?.revision;
+  const title = data.title;
+  const { current, total, list } = data.revisions;
 
   const revisions = useMemo(
-    () => ({
-      current: selectedRevision ?? recordRevision ?? 1,
-      total: revisionTotal,
-      list: Array.from({ length: revisionTotal }, (_, index) => index + 1),
-      approved,
-    }),
-    [selectedRevision, recordRevision, revisionTotal, approved],
+    () => ({ current, total, list }),
+    [current, total, list],
   );
 
   const resolvedToggle = useMemo(
@@ -572,21 +711,21 @@ export function PreviewContainer({
             }}
           >
             <PreviewSurface
-              artifactId={artifactId}
-              revision={selectedRevision ?? blockRevision ?? 1}
-              markup={preview?.markup}
-              entries={preview?.files.map((file) => file.path)}
-              // Path B: the revision's entries reach the desktop's verified
-              // cache before the surface imports its module.
-              ensure={(id, revision) =>
-                ensureRevisionCached(services, scope, id, revision)
-              }
+              canvasId={canvasId}
+              revision={selectedRevision ?? 1}
+              frameSrc={programFrameSrc()}
+              adopt={chrome === 'node'}
+              {...(surface.content === undefined
+                ? {}
+                : { program: surface.content })}
+              {...(surface.onErrors === undefined
+                ? {}
+                : { onErrors: surface.onErrors })}
               area={area}
               capture={capture}
               hidden={hidden}
               measureRequest={measureRequest}
               onScene={onScene}
-              onMode={setSurfaceMode}
               onInput={onFrameInput}
               // The comment cursor (and the pan hand) stays over the
               // artifact's own elements, whatever cursor they declare.
@@ -596,6 +735,18 @@ export function PreviewContainer({
               {...(snapshots === undefined ? {} : { snapshots })}
             />
           </div>
+
+          {nothingDrawn ? (
+            <div
+              data-testid="papercraft-nothing-drawn"
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            >
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-background/80 px-3 py-2 text-xs text-muted-foreground">
+                <CircleAlertIcon className="size-3.5 text-destructive" />
+                Nothing to draw: this program has errors.
+              </div>
+            </div>
+          ) : null}
 
           {scene !== undefined && hoverTarget !== undefined ? (
             <HoverOutline
@@ -623,23 +774,13 @@ export function PreviewContainer({
             resolve={resolve}
             viewport={viewport}
             area={areaSize()}
-            sourcePath={record?.path}
+            sourcePath={data.sourcePath}
             threaded={scopeThread !== undefined}
             showResolved={showResolved}
             onToggleShowResolved={toggleShowResolved}
             focusCanvas={focusCanvas}
           />
         </div>
-
-        {/* The one-line notice of a module that did not load (decision 10). */}
-        {surfaceMode === 'fallback' && preview !== undefined ? (
-          <div
-            data-testid="papercraft-notice"
-            className="absolute inset-x-0 bottom-9 z-10 mx-auto w-fit rounded bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
-          >
-            {FALLBACK_NOTICE}
-          </div>
-        ) : null}
 
         {chrome === 'node' && active ? (
           <NodeFooter
@@ -661,7 +802,7 @@ export function PreviewContainer({
               onToggleHidden={toggleHidden}
             />
             <CommandToolbar
-              artifactId={artifactId}
+              canvasId={canvasId}
               execute={execute}
               tool={tool}
               pinCount={commentCount}
@@ -669,11 +810,6 @@ export function PreviewContainer({
               hasHidden={hidden.size > 0}
               zoom={zoomPercent(viewport)}
               revisions={revisions}
-              approvalNeeded={
-                policy === 'request' &&
-                selectedRevision !== undefined &&
-                !approved
-              }
             />
           </>
         ) : null}

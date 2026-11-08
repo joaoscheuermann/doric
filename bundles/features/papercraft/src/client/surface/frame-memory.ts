@@ -12,16 +12,16 @@
 // first.
 
 import type {
-  FrameMessage,
   PreviewLayout,
   PreviewTheme,
+  ProgramFrameMessage,
   SceneNodeData,
 } from '../frame-protocol.js';
 import type { SurfaceMode } from './preview-surface.js';
 
 /** The content size a frame reported. */
 export type FrameSize = Pick<
-  Extract<FrameMessage, { kind: 'size' }>,
+  Extract<ProgramFrameMessage, { kind: 'size' }>,
   'width' | 'height'
 >;
 
@@ -42,22 +42,22 @@ export const FRAME_MEMORY_LIMIT = 64;
 const records = new Map<string, FrameRecord>();
 
 /** The key of one revision's record. */
-export const frameKeyOf = (artifactId: string, revision: number): string =>
-  `${artifactId}@${String(revision)}`;
+export const frameKeyOf = (canvasId: string, revision: number): string =>
+  `${canvasId}@${String(revision)}`;
 
 /** What the revision's frame last reported, if any frame of it ever did. */
 export const lastFrameOf = (
-  artifactId: string,
+  canvasId: string,
   revision: number,
-): FrameRecord | undefined => records.get(frameKeyOf(artifactId, revision));
+): FrameRecord | undefined => records.get(frameKeyOf(canvasId, revision));
 
 /** Merges what a frame reported now into its revision's record. */
 export const rememberFrame = (
-  artifactId: string,
+  canvasId: string,
   revision: number,
   patch: FrameRecord,
 ): void => {
-  const key = frameKeyOf(artifactId, revision);
+  const key = frameKeyOf(canvasId, revision);
   const next = { ...records.get(key), ...patch };
 
   // Re-inserted, so the map's order is the order of use.
