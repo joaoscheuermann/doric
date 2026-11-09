@@ -41,7 +41,7 @@ describe('native window options', () => {
         minWidth: 960,
         minHeight: 640,
         show: false,
-        backgroundColor: '#222222',
+        backgroundColor: '#1c1a17',
         titleBarStyle: 'hidden',
         trafficLightPosition: { x: 14, y: 14 },
         webPreferences,
@@ -55,17 +55,17 @@ describe('native window options', () => {
         minWidth: 960,
         minHeight: 640,
         show: false,
-        backgroundColor: '#222222',
+        backgroundColor: '#1c1a17',
         webPreferences,
       },
     );
   });
 
-  test('a light system preference paints the native window white before loading', () => {
+  test('a light appearance paints the native window #fbf8f2 before loading', () => {
     assert.equal(
       nativeOptions(workspace, tokens, 'darwin', screen, preload, false)
         .backgroundColor,
-      '#ffffff',
+      '#fbf8f2',
     );
   });
 
@@ -78,7 +78,7 @@ describe('native window options', () => {
         minWidth: 720,
         minHeight: 520,
         show: false,
-        backgroundColor: '#222222',
+        backgroundColor: '#1c1a17',
         titleBarStyle: 'hidden',
         trafficLightPosition: { x: 14, y: 14 },
         webPreferences,
@@ -92,7 +92,7 @@ describe('native window options', () => {
         minWidth: 720,
         minHeight: 520,
         show: false,
-        backgroundColor: '#222222',
+        backgroundColor: '#1c1a17',
         webPreferences,
       },
     );
@@ -110,7 +110,7 @@ describe('native window options', () => {
         frame: false,
         roundedCorners: false,
         resizable: false,
-        backgroundColor: '#222222',
+        backgroundColor: '#1c1a17',
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,

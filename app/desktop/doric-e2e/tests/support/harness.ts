@@ -190,10 +190,10 @@ export const startFakeHost = async (input: {
 };
 
 const SHELL = `<!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <title>Doric</title>
   </head>
   <body>

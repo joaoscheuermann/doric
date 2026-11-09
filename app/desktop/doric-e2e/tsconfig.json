@@ -26,6 +26,9 @@
       "path": "../../../packages/bundle"
     },
     {
+      "path": "../doric-renderer"
+    },
+    {
       "path": "../../../packages/desktop"
     },
     {

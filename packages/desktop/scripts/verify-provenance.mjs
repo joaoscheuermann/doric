@@ -220,9 +220,10 @@ const registryPatches = {
     inline: true,
   }),
   'components/button.tsx': [
-    // Commit `5fac0ee`: the default variant hovers by mixing in the foreground.
+    // Commit `5fac0ee`, then S4 (UR20): the default variant hovers by mixing in
+    // the foreground (light) or the primary foreground (dark).
     [
-      "        default:\n          'bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)]',\n",
+      "        default:\n          'bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_60%)] dark:hover:bg-[color-mix(in_oklch,var(--primary),var(--primary-foreground)_8%)]',\n",
       "        default: 'bg-primary text-primary-foreground hover:bg-primary/80',\n",
     ],
     solidButton,

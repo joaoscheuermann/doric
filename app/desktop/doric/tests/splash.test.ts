@@ -30,8 +30,8 @@ describe('splash screen', () => {
     assert.match(css, /background: var\(--background\)/u);
     assert.match(css, /color: var\(--foreground\)/u);
     assert.match(css, /font:\s*600 32px\s*\/\s*1\.2 system-ui,\s*sans-serif/u);
-    assert.equal(tokens.variants.dark['--background'], '#222222');
-    assert.equal(tokens.variants.dark['--foreground'], '#e9e9e9');
+    assert.equal(tokens.variants.dark['--background'], '#1c1a17');
+    assert.equal(tokens.variants.dark['--foreground'], '#e8e2d6');
   });
 
   test('stays visible for five seconds when the backend answers instantly', () => {

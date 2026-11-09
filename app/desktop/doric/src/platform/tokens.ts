@@ -15,7 +15,7 @@ export interface WindowTokens {
   /** A native color by token name; unknown names throw. */
   color(name: string, dark: boolean): string;
   /**
-   * `doric.tokens/v1.get()`: the shared tokens, the default (dark) variant
+   * `doric.tokens/v1.get()`: the shared tokens, the default (light) variant
    * and the window variables, as `desktop/ui`'s `resolvedVariables` states
    * them (a test pins the equality).
    */

@@ -4,6 +4,8 @@
 
 import { bootstrapWindow } from 'desktop/client';
 
+import { followScheme } from '../../../doric-renderer/src/scheme.ts';
+
 const exposed = window.doric.desktop;
 const desktop = {
   ...exposed,
@@ -16,6 +18,8 @@ const desktop = {
     await exposed.reportFailure(info);
   },
 };
+
+followScheme();
 
 void bootstrapWindow({
   desktop,

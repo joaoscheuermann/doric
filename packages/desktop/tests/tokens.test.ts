@@ -13,37 +13,34 @@ const read = (path: string): string =>
   readFileSync(join(packageRoot, path), 'utf8');
 
 describe('the palette', () => {
-  test('light and dark use Papermache root, panel and text tones', () => {
-    assert.equal(tokens.variants.light['--background'], '#ffffff');
-    assert.equal(tokens.variants.light['--sidebar'], '#f2f2f2');
-    assert.equal(tokens.variants.light['--paper-panel-highlight-1'], '#eaeaea');
-    assert.equal(tokens.variants.light['--paper-control'], '#f9f9f9');
-    assert.equal(tokens.variants.light['--paper-separator'], '#e2e2e2');
-    assert.equal(
-      tokens.variants.light['--paper-gray-1'],
-      'oklab(0% none none / 0.8)',
-    );
-    assert.equal(tokens.variants.dark['--background'], '#222222');
-    assert.equal(tokens.variants.dark['--sidebar'], '#2a2a2a');
-    assert.equal(tokens.variants.dark['--foreground'], '#e9e9e9');
-    assert.equal(tokens.variants.dark['--paper-panel-highlight-1'], '#333333');
-    assert.equal(tokens.variants.dark['--paper-control'], '#373737');
-    assert.equal(tokens.variants.dark['--paper-separator'], '#373737');
-    assert.equal(
-      tokens.variants.dark['--paper-gray-1'],
-      'oklab(100% 0 5.96046e-8 / 0.9)',
-    );
-  });
+  test('the UI uses Noto Sans first and Papermache control geometry', () => {
+    const face = "'Noto Sans', -apple-system, BlinkMacSystemFont, sans-serif";
 
-  test('the adapted UI uses the system face and Papermache control geometry', () => {
-    assert.equal(
-      tokens.shared['--font-sans'],
-      "-apple-system, BlinkMacSystemFont, 'Noto Sans', sans-serif",
-    );
+    assert.equal(tokens.shared['--font-sans'], face);
+    assert.equal(tokens.shared['--font-serif'], face);
     assert.equal(tokens.shared['--paper-text-base'], '12px');
     assert.equal(tokens.shared['--paper-radius-control'], '6px');
-    assert.equal(tokens.variants.light['--paper-focus'], 'oklch(74% 0.12 258)');
-    assert.equal(tokens.variants.dark['--paper-focus'], 'oklch(60% 0.15 258)');
+  });
+
+  test('both variants cast the same black shadows', () => {
+    const names = [
+      '--shadow-color',
+      '--shadow-2xs',
+      '--shadow-xs',
+      '--shadow-sm',
+      '--shadow',
+      '--shadow-md',
+      '--shadow-lg',
+      '--shadow-xl',
+      '--shadow-2xl',
+    ] as const;
+
+    for (const name of names) {
+      const light = tokens.variants.light[name];
+
+      assert.equal(tokens.variants.dark[name], light, name);
+      assert.match(String(light), /hsl\(0 0% 0%/u, name);
+    }
   });
 
   test('the stylesheet applies dark tokens before first paint with system preference', () => {
@@ -84,8 +81,10 @@ describe('the window tokens', () => {
   });
 
   test('native window backgrounds match both page backgrounds', () => {
-    assert.equal(tokens.window.backgrounds.window.light, '#ffffff');
-    assert.equal(tokens.window.backgrounds.window.dark, '#222222');
+    assert.deepEqual(tokens.window.backgrounds.window, {
+      light: '#fbf8f2',
+      dark: '#1c1a17',
+    });
   });
 
   for (const variant of ['light', 'dark'] as const) {
