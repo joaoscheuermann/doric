@@ -18,11 +18,13 @@ import {
 import {
   type ContentInput,
   type ContentRead,
+  type CreateInput,
   type DirectoryRead,
   FilesV1,
   filesMethods,
   type TreeRead,
 } from '../contracts/index.js';
+import { createEntry } from './writes.js';
 
 /** The largest text payload the content read returns. */
 export const CONTENT_LIMIT_BYTES = 262_144;
@@ -128,5 +130,21 @@ export const filesService = defineService(FilesV1, {
           (sandbox) => readContent(sandbox, input.path, input.encoding),
           call,
         ),
+  }),
+  createFile: defineMethod({
+    expose: 'desktop',
+    ...filesMethods.createFile,
+    execute: (input: CreateInput, call: Call, services) =>
+      services
+        .use(RuntimeLeaseV1, call.scope)
+        .withLease((sandbox) => createEntry(sandbox, input, 'file'), call),
+  }),
+  createDirectory: defineMethod({
+    expose: 'desktop',
+    ...filesMethods.createDirectory,
+    execute: (input: CreateInput, call: Call, services) =>
+      services
+        .use(RuntimeLeaseV1, call.scope)
+        .withLease((sandbox) => createEntry(sandbox, input, 'directory'), call),
   }),
 });

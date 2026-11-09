@@ -71,6 +71,18 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   with. Each read runs on the Project's current lease
   through `runtime.lease/v1.withLease` and never acquires one; a Project
   without a lease answers its lease state.
+- `files/v1` 1.2.0 adds the two writes behind New file and New folder,
+  `createFile` and `createDirectory` (`{ directory, name }`, desktop-exposed,
+  on the same lease). Each makes one empty entry and never overwrites: the name
+  is a single segment (no `/`, `\`, NUL, `.` or `..`, at most 255 UTF-8 bytes,
+  else `refused` `invalid-name`); `directory` is workspace-relative or absolute
+  under the sandbox root, and must be an existing directory inside it (else
+  `outside` or `no-directory`). One command creates the entry and fails when
+  the name exists (`set -C; : >` for a file, `mkdir --` for a directory), so a
+  name made in between answers `exists` and keeps its content. Success answers
+  `created` with the workspace-relative path; any other command failure answers
+  `failed` with its first stderr line. These are the only repository writes of
+  the bundle's UI (HC-007).
 - `files.sandbox/v1` (client) keeps the window's one tree read per Project and
   root, shared with the bundles that gate on it.
 - `files.refresh/v1` (client) is the Project refresh coordinator. It rereads
