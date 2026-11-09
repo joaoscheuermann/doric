@@ -5,13 +5,13 @@
 import type { DoricDesktopApi } from 'desktop/protocol';
 
 import {
-  loadingText,
   type RecoveryAction,
   SPLASH_CONTRACT,
   type SplashState,
 } from '../platform/splash/protocol';
 import { type SplashPhoto, startArt } from './art/choose-art';
 import { drawArt } from './art/run-effect';
+import { splashView } from './view';
 
 const desktop = (
   globalThis as unknown as { doric: { desktop: DoricDesktopApi } }
@@ -103,9 +103,6 @@ const button = (
   return node;
 };
 
-const retry = (): HTMLButtonElement =>
-  button('Retry', { action: 'retry' }, { icon: 'retry' });
-
 const status = document.querySelector('.splash-status') as HTMLElement;
 const details = document.querySelector('.splash-details') as HTMLElement;
 const actions = document.querySelector('.splash-actions') as HTMLElement;
@@ -133,112 +130,39 @@ const showStatus = (tone: 'loading' | 'error', text?: string): void => {
   ]);
 };
 
-const lines = (texts: readonly string[]): HTMLElement[] =>
-  texts.map((text) => element('div', text));
-
 const render = (state: SplashState): void => {
-  switch (state.state) {
-    case 'loading':
-      showStatus('loading', loadingText(state));
-      show(details, []);
-      show(actions, []);
-      return;
-    case 'host-unreachable':
-      showStatus('error', `Cannot reach ${state.hostUrl}`);
-      // One line, as Figma draws it (`302:22565`).
-      show(details, lines([`${state.lastError} · Attempt ${state.attempts}`]));
-      show(actions, [
-        retry(),
-        ...(state.hasSnapshot
-          ? [
-              button(
-                'Open last known composition',
-                { action: 'open-last-known' },
-                { icon: 'history' },
-              ),
-            ]
-          : []),
-      ]);
-      return;
-    case 'bundle-failure': {
-      const list = element('ul');
+  const view = splashView(state);
 
-      for (const bundle of state.bundles) {
-        list.append(
-          element(
-            'li',
-            `${bundle.id} ${bundle.version}: ${bundle.reasons.map((reason) => reason.message).join('; ')}`,
-          ),
-        );
+  showStatus(view.status?.tone ?? 'error', view.status?.text);
+
+  if (view.details.kind === 'list') {
+    const list = element('ul');
+
+    list.append(...view.details.items.map((item) => element('li', item)));
+    show(details, [list]);
+  } else {
+    show(
+      details,
+      view.details.items.map((item) => element('div', item)),
+    );
+  }
+
+  show(
+    actions,
+    view.actions.map((action) => {
+      const node = button(
+        action.label,
+        action.action,
+        action.icon === undefined ? {} : { icon: action.icon },
+      );
+
+      if (action.ariaLabel !== undefined) {
+        node.setAttribute('aria-label', action.ariaLabel);
       }
 
-      showStatus('error');
-      show(details, [list]);
-      show(actions, [
-        button('Continue without them', { action: 'continue' }),
-        ...state.bundles.map((bundle) => {
-          const node = button('Disable', {
-            action: 'disable',
-            bundleId: bundle.id,
-          });
-
-          node.setAttribute('aria-label', `Disable ${bundle.id}`);
-
-          return node;
-        }),
-        retry(),
-      ]);
-      return;
-    }
-    case 'core-failure':
-      showStatus('error', `${state.core.id} ${state.core.version}`);
-      show(details, lines([state.error]));
-      show(actions, [
-        ...(state.hasLastGoodCore
-          ? [
-              button('Use last core that worked', {
-                action: 'use-last-good-core',
-              }),
-            ]
-          : []),
-        button('Return to default composition', {
-          action: 'reset-composition',
-        }),
-        retry(),
-      ]);
-      return;
-    case 'recovery': {
-      const quarantined =
-        state.diagnostics?.bundles.filter(
-          (bundle) => bundle.state === 'quarantined',
-        ) ?? [];
-
-      showStatus('error', state.reason);
-      show(
-        details,
-        lines([
-          ...quarantined.map(
-            (bundle) =>
-              `${bundle.id}: ${bundle.reasons[0]?.message ?? 'quarantined'}`,
-          ),
-        ]),
-      );
-      show(actions, [
-        retry(),
-        ...(state.hasLastGoodCore
-          ? [
-              button('Use last core that worked', {
-                action: 'use-last-good-core',
-              }),
-            ]
-          : []),
-        button('Return to default composition', {
-          action: 'reset-composition',
-        }),
-      ]);
-      return;
-    }
-  }
+      return node;
+    }),
+  );
 };
 
 // The art pane (S32, S33): one bundled photograph shaded live with WebGPU,

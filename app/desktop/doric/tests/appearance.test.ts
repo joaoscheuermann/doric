@@ -108,7 +108,7 @@ describe('native window options', () => {
         width: 610,
         height: 487,
         frame: false,
-        roundedCorners: false,
+        roundedCorners: true,
         resizable: false,
         backgroundColor: '#1c1a17',
         webPreferences: {

@@ -100,8 +100,11 @@ body {
   display: none;
 }
 
-/* Status line (302:22447): the 14 px state icon, then 12/16.8 text. */
+/* Status line (302:22447): the 14 px state icon, then 12/16.8 text. The
+   clip keeps the spinner's corners, which leave the 16.8 px row near 45°,
+   from overflowing `.splash-state` and flashing its scrollbar. */
 .splash-status {
+  overflow: clip;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -204,13 +207,29 @@ body {
   background: color-mix(in srgb, var(--primary) 90%, transparent);
 }
 
+/* Secondary: in the light theme `--secondary` is too close to the
+   background to show the shape (1.04:1), so it takes `--accent` (1.29:1, as
+   `--secondary` in dark). Hover mixes toward the foreground like the shared
+   Button. */
 .splash-actions button[data-variant='secondary'] {
-  background: var(--secondary);
+  --splash-secondary: var(--accent);
+
+  background: var(--splash-secondary);
   color: var(--secondary-foreground);
 }
 
+@media (prefers-color-scheme: dark) {
+  .splash-actions button[data-variant='secondary'] {
+    --splash-secondary: var(--secondary);
+  }
+}
+
 .splash-actions button[data-variant='secondary']:hover {
-  background: color-mix(in srgb, var(--secondary) 80%, transparent);
+  background: color-mix(
+    in oklch,
+    var(--splash-secondary),
+    var(--foreground) 5%
+  );
 }
 
 .splash-actions button:focus-visible,
@@ -226,7 +245,8 @@ body {
   background: var(--paper-separator);
 }
 
-/* Credits (302:22451): 10.5/15.75 and 9/13.5 muted, gap 2. */
+/* Credits (302:22451): 10.5/15.75, then the license line 9/13.5 muted,
+   gap 2. */
 .splash-credits {
   display: flex;
   flex-direction: column;

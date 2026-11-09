@@ -1,7 +1,7 @@
-// The splash and recovery window (P3): a frameless 610x487 window (§4.5,
-// `302:22437`) on the window background, with the same preload as every
-// window so the page reaches `doric.splash/v1`. It is a technical window: no
-// key, never seen by bundles.
+// The splash and recovery window (P3): a frameless 610x487 window with rounded
+// corners (§4.5, `302:22437`) on the window background, with the same preload
+// as every window so the page reaches `doric.splash/v1`. It is a technical
+// window: no key, never seen by bundles.
 
 import { BrowserWindow } from 'electron';
 
@@ -14,7 +14,8 @@ export const splashWindowOptions = (input: {
   width: 610,
   height: 487,
   frame: false,
-  roundedCorners: false,
+  // macOS draws its native corner radius (Figma: 10, S12).
+  roundedCorners: true,
   resizable: false,
   backgroundColor: input.backgroundColor,
   webPreferences: {

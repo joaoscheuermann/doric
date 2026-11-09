@@ -11,6 +11,7 @@ import {
   splashArtOverride,
   splashWindowOptions,
 } from '../src/platform/splash/window';
+import { splashView } from '../src/splash-page/view';
 
 const page = (name: string): string =>
   readFileSync(resolve('app/desktop/doric/src/splash-page', name), 'utf8');
@@ -44,6 +45,16 @@ describe('splash screen', () => {
     assert.equal(options.height, 487);
   });
 
+  test('the splash window has rounded corners and no title bar (S12)', () => {
+    const options = splashWindowOptions({
+      backgroundColor: '#1c1a17',
+      preload: '/preload.js',
+    });
+
+    assert.equal(options.roundedCorners, true);
+    assert.equal(options.frame, false);
+  });
+
   test('DORIC_SPLASH_ART=shaded asks for the shaded art only in an unpackaged build', () => {
     const shaded = { DORIC_SPLASH_ART: 'shaded' };
 
@@ -65,5 +76,90 @@ describe('splash screen', () => {
     assert.equal(remainingSplashMs(4_999), 1);
     assert.equal(remainingSplashMs(5_000), 0);
     assert.equal(remainingSplashMs(30_000), 0);
+  });
+
+  describe('error states (S14, S15)', () => {
+    const labels = (state: Parameters<typeof splashView>[0]) =>
+      splashView(state).actions.map(
+        (action) => action.ariaLabel ?? action.label,
+      );
+
+    test('Retry comes first in every error state', () => {
+      assert.deepEqual(
+        labels({
+          state: 'host-unreachable',
+          hostUrl: 'http://127.0.0.1:3000',
+          lastError: 'connect ECONNREFUSED',
+          attempts: 1,
+          hasSnapshot: true,
+        }),
+        ['Retry', 'Open last known composition'],
+      );
+      assert.deepEqual(
+        labels({
+          state: 'bundle-failure',
+          bundles: [
+            { id: 'probe-a', version: '1.0.0', reasons: [] },
+            { id: 'probe-b', version: '1.0.0', reasons: [] },
+          ],
+        }),
+        [
+          'Retry',
+          'Continue without them',
+          'Disable probe-a',
+          'Disable probe-b',
+        ],
+      );
+      assert.deepEqual(
+        labels({
+          state: 'core-failure',
+          core: { id: 'badcore', version: '1.0.0' },
+          error: 'the core broke',
+          hasLastGoodCore: true,
+        }),
+        ['Retry', 'Use last core that worked', 'Return to default composition'],
+      );
+      assert.deepEqual(
+        labels({
+          state: 'core-failure',
+          core: { id: 'badcore', version: '1.0.0' },
+          error: 'the core broke',
+          hasLastGoodCore: false,
+        }),
+        ['Retry', 'Return to default composition'],
+      );
+      assert.deepEqual(
+        labels({
+          state: 'recovery',
+          reason: 'Recovery',
+          hasLastGoodCore: true,
+        }),
+        ['Retry', 'Use last core that worked', 'Return to default composition'],
+      );
+    });
+
+    test('a bundle failure says some bundles cannot load above the list', () => {
+      const view = splashView({
+        state: 'bundle-failure',
+        bundles: [
+          {
+            id: 'probe-new',
+            version: '1.0.0',
+            reasons: [
+              { code: 'engines_unsatisfied', message: 'needs doric ^2.0.0' },
+            ],
+          },
+        ],
+      });
+
+      assert.deepEqual(view.status, {
+        tone: 'error',
+        text: 'Some bundles cannot load',
+      });
+      assert.deepEqual(view.details, {
+        kind: 'list',
+        items: ['probe-new 1.0.0: needs doric ^2.0.0'],
+      });
+    });
   });
 });

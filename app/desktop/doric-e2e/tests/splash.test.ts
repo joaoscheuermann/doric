@@ -211,10 +211,10 @@ const STATES: readonly {
         },
       ],
     },
-    status: '',
-    icon: '',
+    status: 'Some bundles cannot load',
+    icon: 'alert',
     details: 'probe-new 1.0.0: needs doric ^2.0.0',
-    buttons: ['Continue without them', 'Disable probe-new', 'Retry'],
+    buttons: ['Retry', 'Continue without them', 'Disable probe-new'],
   },
   {
     name: 'core-failure',
@@ -228,9 +228,9 @@ const STATES: readonly {
     icon: 'alert',
     details: 'the core broke',
     buttons: [
+      'Retry',
       'Use last core that worked',
       'Return to default composition',
-      'Retry',
     ],
   },
   {
@@ -309,8 +309,8 @@ describe('splash and recovery page', () => {
 
       assert.ok((await text(contents)).includes('badcore 1.0.0'));
       assert.deepEqual(await buttons(contents), [
-        'Return to default composition',
         'Retry',
+        'Return to default composition',
       ]);
       assert.equal(booted.platform.registry.all().length, 0);
     } finally {
@@ -354,9 +354,9 @@ describe('splash and recovery page', () => {
 
       assert.ok((await text(contents)).includes('probe-new 1.0.0'));
       assert.deepEqual(await buttons(contents), [
+        'Retry',
         'Continue without them',
         'Disable probe-new',
-        'Retry',
       ]);
       assert.equal(reports.length, 1);
 
