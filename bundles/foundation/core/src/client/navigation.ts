@@ -58,11 +58,58 @@ const freeze = (entries: readonly RouteEntry[]): readonly RouteEntry[] =>
     ),
   );
 
-export const createNavigation = () => {
+/** Options of {@link createNavigation}. */
+export interface NavigationOptions {
+  /**
+   * Whether the provider has `forward` and `history` (navigation/v1@1.1.0).
+   * Defaults to whether the app's `navigationMethods` lists both, so a core
+   * on an older app provides exactly that app's method list (S35).
+   */
+  readonly historyMethods?: boolean;
+}
+
+/** Whether the app's `navigationMethods` lists both 1.1.0 methods. */
+const appListsHistoryMethods =
+  Object.hasOwn(navigationMethods, 'forward') &&
+  Object.hasOwn(navigationMethods, 'history');
+
+/** The S11 state of one history entry: its place and the list length. */
+interface Place {
+  readonly index: number;
+  readonly max: number;
+}
+
+const placeOf = (state: unknown): Place | undefined => {
+  if (typeof state !== 'object' || state === null || !('doric' in state)) {
+    return undefined;
+  }
+
+  const { doric } = state as { doric: unknown };
+
+  if (typeof doric !== 'object' || doric === null) {
+    return undefined;
+  }
+
+  const { index, max } = doric as { index?: unknown; max?: unknown };
+
+  return Number.isInteger(index) && Number.isInteger(max)
+    ? { index: index as number, max: max as number }
+    : undefined;
+};
+
+/** The entry state the core writes, and nothing else (S11). */
+const stateOf = ({ index, max }: Place) => ({ doric: { index, max } });
+
+export const createNavigation = ({
+  historyMethods = appListsHistoryMethods,
+}: NavigationOptions = {}) => {
   const routes: CompiledRoute[] = [];
   const listeners = new Set<Listener>();
   let chain: readonly RouteEntry[] = Object.freeze([]);
   let listening = false;
+  // S11: the current entry's place in the window's session history.
+  let index = 0;
+  let max = 0;
 
   const resolve = (): boolean => {
     const found = match(routes, window.location.pathname);
@@ -95,13 +142,54 @@ export const createNavigation = () => {
     }
 
     listening = true;
+
+    const start = placeOf(window.history.state);
+
+    if (start === undefined) {
+      window.history.replaceState(stateOf({ index, max }), '');
+    } else {
+      ({ index, max } = start);
+    }
+
     window.addEventListener('popstate', () => {
+      const landed = placeOf(window.history.state);
+
+      if (landed === undefined) {
+        index = 0;
+      } else {
+        index = landed.index;
+        max = Math.max(max, landed.max, index);
+        window.history.replaceState(stateOf({ index, max }), '');
+      }
+
       resolve();
       notify();
     });
   };
 
-  return defineService(NavigationV1, {
+  // navigation/v1@1.1.0: only when the app lists them, so a core on an older
+  // app provides exactly that app's method list (S35).
+  const historyDefinitions = {
+    forward: defineMethod({
+      input: navigationMethods.forward.input,
+      output: navigationMethods.forward.output,
+      execute: () => {
+        listen();
+        window.history.forward();
+      },
+    }),
+    history: defineMethod({
+      input: navigationMethods.history.input,
+      output: navigationMethods.history.output,
+      execute: () => {
+        listen();
+
+        return { canGoBack: index > 0, canGoForward: index < max };
+      },
+    }),
+  };
+
+  const methods = {
     register: defineMethod({
       input: navigationMethods.register.input,
       output: navigationMethods.register.output,
@@ -163,9 +251,11 @@ export const createNavigation = () => {
         }
 
         if (replace) {
-          window.history.replaceState(null, '', url);
+          window.history.replaceState(stateOf({ index, max }), '', url);
         } else {
-          window.history.pushState(null, '', url);
+          index += 1;
+          max = index;
+          window.history.pushState(stateOf({ index, max }), '', url);
         }
 
         resolve();
@@ -200,5 +290,9 @@ export const createNavigation = () => {
         return once(() => listeners.delete(listener));
       },
     }),
-  });
+  };
+
+  return historyMethods
+    ? defineService(NavigationV1, { ...methods, ...historyDefinitions })
+    : defineService(NavigationV1.id, methods);
 };

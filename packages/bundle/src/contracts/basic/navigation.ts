@@ -31,11 +31,26 @@ export interface RouteEntry {
   readonly route: RouteRegistration;
 }
 
-/** First provider in stage 9 (client, one per window). */
+/** Whether the window's history can move back or forward from its entry (S11). */
+export interface NavigationHistory {
+  readonly canGoBack: boolean;
+  readonly canGoForward: boolean;
+}
+
+/**
+ * First provider in stage 9 (client, one per window). `forward` and `history`
+ * came in 1.1.0 and are optional (`basicContracts['navigation/v1'].optional`):
+ * a provider written against 1.0.0 omits them, so a caller checks
+ * `Object.hasOwn(navigationMethods, 'history')` before it calls them.
+ */
 export interface Navigation {
   register(route: RouteRegistration): Disposable;
   navigate(path: string, options?: { readonly replace?: boolean }): void;
   back(): void;
+  /** Steps one entry forward in the window's history; `subscribe` fires after it. */
+  forward(): void;
+  /** Whether Back and Forward can move, from the core's `{ index, max }` (S11). */
+  history(): NavigationHistory;
   current(): RouteMatch | undefined;
   /**
    * Root-first chain of the active route through `parent`; `[]` when no
@@ -66,6 +81,13 @@ export const navigationMethods = {
     output: z.void(),
   },
   back: { input: noInput, output: z.void() },
+  forward: { input: noInput, output: z.void() },
+  history: {
+    input: noInput,
+    output: z
+      .object({ canGoBack: z.boolean(), canGoForward: z.boolean() })
+      .strict(),
+  },
   current: { input: noInput, output: routeMatchSchema.optional() },
   chain: {
     input: noInput,

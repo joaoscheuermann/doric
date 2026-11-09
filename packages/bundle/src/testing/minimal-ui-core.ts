@@ -48,10 +48,13 @@ interface Dom {
   readonly document: { createElement(tag: string): DomElement };
   readonly location?: { readonly pathname: string };
   readonly history?: {
-    pushState(data: unknown, unused: string, url: string): void;
-    replaceState(data: unknown, unused: string, url: string): void;
+    readonly state: unknown;
+    pushState(data: unknown, unused: string, url?: string): void;
+    replaceState(data: unknown, unused: string, url?: string): void;
     back(): void;
+    forward(): void;
   };
+  addEventListener?(type: 'popstate', listener: () => void): void;
 }
 
 const dom = (): Dom => globalThis as unknown as Dom;
@@ -96,11 +99,32 @@ const matchRoute = (
   return params;
 };
 
+/** The S11 place an entry's state holds, when it holds one. */
+const placeOf = (
+  state: unknown,
+): { readonly index: number; readonly max: number } | undefined => {
+  const doric = (state as { doric?: { index?: unknown; max?: unknown } } | null)
+    ?.doric;
+
+  return typeof doric?.index === 'number' && typeof doric.max === 'number'
+    ? { index: doric.index, max: doric.max }
+    : undefined;
+};
+
 const createNavigation = () => {
   const routes: RouteRegistration[] = [];
   const listeners = new Set<(match: RouteMatch | undefined) => void>();
   let path = dom().location?.pathname ?? '/';
   let chain: readonly RouteEntry[] = [];
+  // S11, as the default core keeps it: the entry's index and the list length.
+  const start = placeOf(dom().history?.state);
+  let index = start?.index ?? 0;
+  let max = start?.max ?? 0;
+  const state = () => ({ doric: { index, max } });
+
+  if (start === undefined) {
+    dom().history?.replaceState(state(), '');
+  }
 
   const resolve = (): void => {
     const route = routes.find(
@@ -133,6 +157,22 @@ const createNavigation = () => {
       listener(match);
     }
   };
+
+  dom().addEventListener?.('popstate', () => {
+    const landed = placeOf(dom().history?.state);
+
+    if (landed === undefined) {
+      index = 0;
+    } else {
+      index = landed.index;
+      max = Math.max(max, landed.max, index);
+      dom().history?.replaceState(state(), '');
+    }
+
+    path = dom().location?.pathname ?? path;
+    resolve();
+    notify();
+  });
 
   return defineService(NavigationV1, {
     register: defineMethod({
@@ -168,9 +208,11 @@ const createNavigation = () => {
         path = next;
 
         if (options?.replace === true) {
-          dom().history?.replaceState(null, '', next);
+          dom().history?.replaceState(state(), '', next);
         } else {
-          dom().history?.pushState(null, '', next);
+          index += 1;
+          max = index;
+          dom().history?.pushState(state(), '', next);
         }
 
         resolve();
@@ -181,6 +223,16 @@ const createNavigation = () => {
       input: navigationMethods.back.input,
       output: navigationMethods.back.output,
       execute: () => dom().history?.back(),
+    }),
+    forward: defineMethod({
+      input: navigationMethods.forward.input,
+      output: navigationMethods.forward.output,
+      execute: () => dom().history?.forward(),
+    }),
+    history: defineMethod({
+      input: navigationMethods.history.input,
+      output: navigationMethods.history.output,
+      execute: () => ({ canGoBack: index > 0, canGoForward: index < max }),
     }),
     current: defineMethod({
       input: navigationMethods.current.input,

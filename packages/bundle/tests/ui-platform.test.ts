@@ -44,6 +44,8 @@ void test('navigation/v1 adds chain(): no input, an array of route entries', () 
     'back',
     'chain',
     'current',
+    'forward',
+    'history',
     'navigate',
     'register',
     'subscribe',
@@ -258,7 +260,8 @@ void test('the minimal UI core provides hooks, ui, navigation and regions for th
   );
 });
 
-void test('the minimal core’s regions sort by order, then add order, and notify', async () => {
+/** The minimal core activated in one runtime, with a `layout` principal to call it. */
+const bootMinimalCore = async () => {
   const runtime = runtimeFor();
   const core = createPrincipal(runtime, {
     bundleId: 'mincore',
@@ -318,6 +321,12 @@ void test('the minimal core’s regions sort by order, then add order, and notif
     delete globals.HTMLElement;
   }
 
+  return { layout, definedTags };
+};
+
+void test('the minimal core’s regions sort by order, then add order, and notify', async () => {
+  const { layout, definedTags } = await bootMinimalCore();
+
   assert.deepEqual(definedTags, ['mincore-outlet']);
 
   const regions = layout.services.use(RegionsV1);
@@ -374,4 +383,135 @@ void test('the minimal core’s regions sort by order, then add order, and notif
   navigation.navigate('/nowhere');
   assert.deepEqual(navigation.chain(), []);
   assert.equal(navigation.current(), undefined);
+});
+
+/** A session history of one window: entries, a position and `popstate`. */
+class FakeHistory {
+  readonly entries: { state: unknown; url: string }[];
+  position = 0;
+  readonly listeners = new Set<(event: { state: unknown }) => void>();
+
+  constructor(url: string) {
+    this.entries = [{ state: null, url }];
+  }
+
+  get state(): unknown {
+    return this.entry().state;
+  }
+
+  get pathname(): string {
+    return this.entry().url;
+  }
+
+  entry(): { state: unknown; url: string } {
+    return this.entries[this.position] as { state: unknown; url: string };
+  }
+
+  pushState(state: unknown, _unused: string, url?: string): void {
+    this.entries.splice(this.position + 1);
+    this.entries.push({ state, url: url ?? this.pathname });
+    this.position += 1;
+  }
+
+  replaceState(state: unknown, _unused: string, url?: string): void {
+    this.entries[this.position] = { state, url: url ?? this.pathname };
+  }
+
+  back(): void {
+    this.go(-1);
+  }
+
+  forward(): void {
+    this.go(1);
+  }
+
+  go(delta: number): void {
+    const next = this.position + delta;
+
+    if (next < 0 || next >= this.entries.length) {
+      return;
+    }
+
+    this.position = next;
+
+    for (const listener of [...this.listeners]) {
+      listener({ state: this.state });
+    }
+  }
+}
+
+void test('the minimal core keeps the Back/Forward state of S11 in each entry it writes', async () => {
+  const globals = globalThis as unknown as Record<string, unknown>;
+  const history = new FakeHistory('/');
+
+  globals.history = history;
+  globals.location = history;
+  globals.addEventListener = (
+    type: string,
+    listener: (event: { state: unknown }) => void,
+  ) => {
+    if (type === 'popstate') history.listeners.add(listener);
+  };
+
+  try {
+    const { layout } = await bootMinimalCore();
+    const navigation = layout.services.use(NavigationV1);
+    const seen: (string | undefined)[] = [];
+
+    navigation.register({ path: '/t/:id', create: () => ({}) });
+    navigation.subscribe((match) => seen.push(match?.params.id));
+
+    assert.deepEqual(navigation.history(), {
+      canGoBack: false,
+      canGoForward: false,
+    });
+
+    navigation.navigate('/t/a');
+    navigation.navigate('/t/b');
+    assert.deepEqual(navigation.history(), {
+      canGoBack: true,
+      canGoForward: false,
+    });
+
+    navigation.back();
+    assert.equal(navigation.current()?.params.id, 'a');
+    assert.deepEqual(navigation.history(), {
+      canGoBack: true,
+      canGoForward: true,
+    });
+
+    navigation.forward();
+    assert.equal(navigation.current()?.params.id, 'b');
+    assert.deepEqual(navigation.history(), {
+      canGoBack: true,
+      canGoForward: false,
+    });
+
+    navigation.back();
+    navigation.navigate('/t/c', { replace: true });
+    assert.deepEqual(navigation.history(), {
+      canGoBack: true,
+      canGoForward: true,
+    });
+
+    navigation.navigate('/t/d');
+    assert.deepEqual(navigation.history(), {
+      canGoBack: true,
+      canGoForward: false,
+    });
+
+    assert.deepEqual(seen, ['a', 'b', 'a', 'b', 'a', 'c', 'd']);
+    assert.deepEqual(
+      history.entries.map((entry) => entry.state),
+      [
+        { doric: { index: 0, max: 0 } },
+        { doric: { index: 1, max: 2 } },
+        { doric: { index: 2, max: 2 } },
+      ],
+    );
+  } finally {
+    delete globals.history;
+    delete globals.location;
+    delete globals.addEventListener;
+  }
 });

@@ -21,17 +21,25 @@ export interface BasicContractSpec {
   readonly cardinality: Cardinality;
   readonly environments: readonly Environment[];
   readonly methods: MethodSpecs;
+  /**
+   * Methods of `methods` a provider may omit: those a later minor added, so a
+   * provider written against an earlier minor still registers (S35). `[]`
+   * except for `navigation/v1`.
+   */
+  readonly optional: readonly string[];
 }
 
 const spec = (
   cardinality: Cardinality,
   environments: readonly Environment[],
   methods: MethodSpecs,
+  optional: readonly string[] = [],
 ): BasicContractSpec =>
   Object.freeze({
     cardinality,
     environments: Object.freeze([...environments]),
     methods,
+    optional: Object.freeze([...optional]),
   });
 
 const all: readonly Environment[] = ['host', 'desktopMain', 'client'];
@@ -52,7 +60,10 @@ export const basicContracts = Object.freeze({
   'models.provider/v1': spec('many', ['host'], modelsProviderMethods),
   'commands/v1': spec('one', ['desktopMain', 'client'], commandsMethods),
   'ui/v1': spec('one', ['client'], uiMethods),
-  'navigation/v1': spec('one', ['client'], navigationMethods),
+  'navigation/v1': spec('one', ['client'], navigationMethods, [
+    'forward',
+    'history',
+  ]),
   'regions/v1': spec('one', ['client'], regionsMethods),
   'windows/v1': spec('one', ['desktopMain'], windowsMethods),
   'menus/v1': spec('one', ['desktopMain'], menusMethods),

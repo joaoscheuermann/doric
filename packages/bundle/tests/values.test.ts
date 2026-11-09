@@ -165,6 +165,8 @@ void test('every basic and platform method has a stated way across the envelope'
       register: 'refused',
       navigate: 'crosses',
       back: 'crosses',
+      forward: 'crosses',
+      history: 'crosses',
       current: 'crosses',
       chain: 'refused',
       subscribe: 'refused',
