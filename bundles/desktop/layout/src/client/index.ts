@@ -31,6 +31,7 @@ import { watchThreadTabs } from './services/thread-tabs.js';
 import { resetBottom } from './stores/bottom.js';
 import { disposeConnection, initConnection } from './stores/connection.js';
 import { resetDashboard } from './stores/dashboard.js';
+import { resetNewTab } from './stores/new-tab.js';
 import { resetPanel } from './stores/panel.js';
 import { resetRouteSelection } from './stores/route-selection.js';
 import { registerPane, resetStack } from './stores/stack.js';
@@ -98,6 +99,7 @@ export function activate({ services }: ClientContext): Cleanup {
     resetRouteSelection();
     resetPanel();
     resetDashboard();
+    resetNewTab();
     resetBottom();
     threadsRegistration.dispose();
     resetStack();

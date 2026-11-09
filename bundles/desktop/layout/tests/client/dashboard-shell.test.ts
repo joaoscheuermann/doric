@@ -251,3 +251,42 @@ for (const [form, inset] of [
     }
   });
 }
+
+// T-2.7, G3: "New project" from /projects opens the home body even though the
+// core outlet mounts a new `layout-workspace` for `/` (the route pattern
+// changes from `/projects`, `core/src/client/elements/outlet.ts:3-4`); the
+// doric-e2e harness found All projects there instead.
+test('New project on /projects opens the home body after the outlet remounts the workspace for /', async () => {
+  rendered = await renderDashboard('/projects');
+  only(single(rendered.root, TAB_BAR), 'button', 'New project').click();
+  await settle();
+  assert.equal(pathOf(rendered), '/', 'New project did not open /.');
+
+  await rendered.remount();
+
+  assert.equal(pathOf(rendered), '/', 'The remount left /.');
+  assert.equal(rendered.errors().length, 0, 'The remounted view failed.');
+  assert.equal(
+    rendered.root.querySelectorAll(ASIDE).length,
+    0,
+    'The remounted / shows All projects with the Dashboard sidebar, not the home body.',
+  );
+  assert.equal(
+    rendered.root.querySelectorAll(SEARCH).length,
+    1,
+    "The remounted / has no home body's Search projects field.",
+  );
+});
+
+// Contracts 2e §0.1: `/` reached without "New project" draws All projects.
+test('a fresh start on / without New project still shows All projects with the Dashboard sidebar', async () => {
+  rendered = await renderDashboard('/ at startup');
+
+  assert.equal(pathOf(rendered), '/', 'The workspace did not start on /.');
+  const aside = single(rendered.root, ASIDE);
+  assert.equal(
+    aside.querySelectorAll(SEARCH).length,
+    1,
+    "All projects' sidebar has no Search projects field.",
+  );
+});

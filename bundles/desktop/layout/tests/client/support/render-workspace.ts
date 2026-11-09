@@ -20,6 +20,15 @@ export interface RenderedWorkspace extends FakeHost {
    */
   errors(): readonly unknown[];
   /**
+   * Unmounts the view and renders a new `WorkspaceView` into a fresh `root`
+   * on the same bound host, as the core outlet does when the route pattern
+   * changes (`bundles/foundation/core/src/client/elements/outlet.ts:3-4`):
+   * host state (navigation, projects, region items) carries over, the view's
+   * own React state does not. `root` then names the new element. Resolves
+   * once the new render has settled; rejects if it throws.
+   */
+  remount(): Promise<void>;
+  /**
    * Unmounts the view, removes `root` and runs the layout's deactivation
    * (`bindLayout`'s unbind). Idempotent. Call it before the next
    * `renderWorkspace`, at the latest in the test's `after`/`finally`.
@@ -149,42 +158,57 @@ export const renderWorkspace = async (
   );
 
   const bound = bindLayout(fixture);
-  const root = document.createElement('div');
-  document.body.append(root);
   const errors: unknown[] = [];
-  const react = createRoot(root, {
-    onUncaughtError: (error) => errors.push(error),
-  });
+  const mount = () => {
+    const element = document.createElement('div');
+    document.body.append(element);
+    const root = createRoot(element, {
+      onUncaughtError: (error) => errors.push(error),
+    });
+    return { element, root };
+  };
+  let view = mount();
 
   let cleaned = false;
   const cleanup = (): void => {
     if (cleaned) return;
     cleaned = true;
     if (current === rendered) current = undefined;
-    react.unmount();
-    root.remove();
+    view.root.unmount();
+    view.element.remove();
     bound.unbind();
+  };
+  const show = async (): Promise<void> => {
+    try {
+      flushSync(() => view.root.render(createElement(WorkspaceView)));
+      await settle();
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+    if (errors.length > 0) {
+      cleanup();
+      throw errors[0];
+    }
   };
   const rendered: RenderedWorkspace = {
     services: bound.services,
     regionItems: bound.regionItems,
     executed: bound.executed,
-    root,
+    get root() {
+      return view.element;
+    },
     errors: () => [...errors],
+    remount: async () => {
+      view.root.unmount();
+      view.element.remove();
+      view = mount();
+      await show();
+    },
     cleanup,
   };
   current = rendered;
 
-  try {
-    flushSync(() => react.render(createElement(WorkspaceView)));
-    await settle();
-  } catch (error) {
-    cleanup();
-    throw error;
-  }
-  if (errors.length > 0) {
-    cleanup();
-    throw errors[0];
-  }
+  await show();
   return rendered;
 };

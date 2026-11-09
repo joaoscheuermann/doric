@@ -57,6 +57,7 @@ import { useWorkspaceTabs } from '../hooks/use-workspace-tabs.js';
 import { layoutQueryClient } from '../queries/client.js';
 import { layoutServices } from '../services/layout-services.js';
 import { bottomStore } from '../stores/bottom.js';
+import { newTabStore } from '../stores/new-tab.js';
 import { panelStore } from '../stores/panel.js';
 import { workspaceTabsStore } from '../stores/workspace-tabs.js';
 
@@ -72,9 +73,15 @@ const OPEN_SETTINGS = 'core.open-settings/v1';
 const Region = ({ name }: { readonly name: string }) =>
   createElement('core-region', { name });
 
+/** Marks `/` as opened through "New project", or clears that mark. */
+const setNewTab = (open: boolean) => newTabStore.getState().set(open);
+
 function Workspace() {
   const workspace = useWorkspace();
-  const [newTab, setNewTab] = useState(false);
+  const newTab = useSyncExternalStore(
+    newTabStore.subscribe,
+    () => newTabStore.getState().open,
+  );
   const frame = useRef<HTMLDivElement>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   useLayoutEffect(() => {
