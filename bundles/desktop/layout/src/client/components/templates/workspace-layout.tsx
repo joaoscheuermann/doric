@@ -52,6 +52,19 @@ type WorkspaceLayoutProps = {
    */
   readonly files?: ReactNode;
   /**
+   * The Files column's 40 px header (§2.6, `266:21741`), drawn in
+   * `div[data-slot="workspace-files-header"]` above `files`. The header strip is
+   * draggable; the caller's controls inside it are not. It is drawn only while
+   * the column is: when `files` is present and `filesOpen` is true.
+   */
+  readonly filesHeader?: ReactNode;
+  /**
+   * The Files column's footer band (40 px), drawn in
+   * `div[data-slot="workspace-files-footer"]` below `files`. It has no border
+   * and no fill. It is drawn only while the column is.
+   */
+  readonly filesFooter?: ReactNode;
+  /**
    * Whether the Files column is expanded. The state is controlled, so a drag
    * that shuts the column and the controls always agree.
    */
@@ -65,6 +78,8 @@ export function WorkspaceLayout({
   header,
   viewerTabs,
   files,
+  filesHeader,
+  filesFooter,
   filesOpen = false,
   fileViewer,
   onFilesOpenChange,
@@ -175,9 +190,17 @@ export function WorkspaceLayout({
                 <div className="flex h-full min-h-0 flex-col">
                   <div
                     data-slot="workspace-files-header"
-                    className="flex h-10 shrink-0 items-center [-webkit-app-region:drag]"
-                  />
-                  {files}
+                    className="flex h-10 shrink-0 items-center gap-2 px-2 [-webkit-app-region:drag]"
+                  >
+                    {filesHeader}
+                  </div>
+                  <div className="flex min-h-0 flex-1 flex-col">{files}</div>
+                  <div
+                    data-slot="workspace-files-footer"
+                    className="flex h-10 shrink-0 items-center px-2"
+                  >
+                    {filesFooter}
+                  </div>
                 </div>
               )}
             </ResizablePanel>

@@ -13,6 +13,7 @@ import {
   useState,
 } from 'react';
 
+import { AccountStatus } from '../../src/client/components/organisms/account-status.js';
 import {
   ProjectPanel,
   ProjectPanelTabs,
@@ -78,6 +79,8 @@ export function WorkspaceShell({
   const items = useRegionItems('layout.panel');
   const tabs = useWorkspaceTabs(owner);
   const viewer = tabs.items.length > 0;
+  const filesShown = panel && open;
+  const openSettings = () => console.info('Story open settings');
 
   return (
     <SidebarProvider
@@ -95,14 +98,12 @@ export function WorkspaceShell({
               actions={
                 <>
                   {region('layout.header')}
-                  <ProjectPanelTabs
-                    active={active}
-                    onActiveChange={(id) => {
-                      setActive(id);
-                      setOpen(true);
-                    }}
-                    items={items}
-                  />
+                  {!filesShown && (
+                    <>
+                      {createElement('files-toggle', { placement: 'header' })}
+                      <AccountStatus onOpenSettings={openSettings} />
+                    </>
+                  )}
                 </>
               }
               state={projectTabsOf([checkout, docs, billing])}
@@ -129,7 +130,28 @@ export function WorkspaceShell({
           files={
             panel ? <ProjectPanel active={active} items={items} /> : undefined
           }
-          filesOpen={panel && open}
+          filesHeader={
+            <>
+              <ProjectPanelTabs
+                active={active}
+                onActiveChange={(id) => {
+                  setActive(id);
+                  setOpen(true);
+                }}
+                items={items}
+              />
+              <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+                {createElement('files-toggle', { placement: 'panel' })}
+                <AccountStatus onOpenSettings={openSettings} />
+              </div>
+            </>
+          }
+          filesFooter={
+            <div className="flex h-7 min-w-0 flex-1 items-center gap-1">
+              {region('layout.panel.footer')}
+            </div>
+          }
+          filesOpen={filesShown}
           fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
           onFilesOpenChange={setOpen}
           sidebar={

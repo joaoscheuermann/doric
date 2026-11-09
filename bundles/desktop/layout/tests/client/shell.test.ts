@@ -639,8 +639,9 @@ test('the window names one control "Dashboard"', async () => {
 });
 
 // One header row: the tab bar keeps "New project", and its right end holds
-// the `layout.header` items and the account status.
-test('the tab bar keeps New project and ends with the header items and Account', async () => {
+// the `layout.header` items. While the Files column is open the account
+// status sits in the Files header (contracts 2d-2 §2.3, S27).
+test('the tab bar keeps New project and ends with the header items; Account is in the open Files header', async () => {
   rendered = await renderWorkspace({
     projects: [project],
     projectTabs: [project],
@@ -653,7 +654,11 @@ test('the tab bar keeps New project and ends with the header items and Account',
   const bar = tabBar(rendered);
   only(bar, 'button', 'New project');
   const end = single(bar, '[data-slot="project-tab-actions"]');
-  only(end, 'button', 'Account');
+  only(
+    single(rendered.root, '[data-slot="workspace-files-header"]'),
+    'button',
+    'Account',
+  );
   assert.equal(
     standIns(end, 'header-probe').length,
     1,
@@ -765,3 +770,198 @@ test('opening the first file shows the viewer', async () => {
     'The viewer does not show README.md.',
   );
 });
+
+// Phase 2d-2: the Files column gets its own header and footer (spec §2.6,
+// S9, S27; contracts 2d-2 §2.3–2.6). The header holds the view controls
+// ("Project views"), the "Hide files" toggle and the account status while the
+// column is open; collapsed, the toggle ("Show files") and the account status
+// move to the tab bar's right end, after the `layout.header` items. The
+// toggle is the stories' `<files-toggle>` stand-in (G6, story-elements.ts).
+
+/** The Project views the app's `layout.panel` region lists (fake-host.ts). */
+const panelViews = [
+  {
+    id: 'files',
+    tag: 'files-tree',
+    order: 100,
+    props: { label: 'Files', icon: 'files' },
+  },
+  {
+    id: 'changes',
+    tag: 'git-changes',
+    order: 200,
+    props: { label: 'Changes', icon: 'file-diff' },
+  },
+];
+
+/** A Project view with the panel's views and one `layout.header` item. */
+const withHeaderItems = (fixture: LayoutFixture): LayoutFixture => ({
+  ...fixture,
+  regions: {
+    'layout.panel': panelViews,
+    'layout.header': [{ id: 'header-probe', tag: 'header-probe', order: 10 }],
+  },
+});
+
+const filesHeaders = (workspace: RenderedWorkspace): HTMLElement[] => [
+  ...workspace.root.querySelectorAll<HTMLElement>(
+    '[data-slot="workspace-files-header"]',
+  ),
+];
+
+const tabBarEnd = (workspace: RenderedWorkspace): HTMLElement =>
+  single(tabBar(workspace), '[data-slot="project-tab-actions"]');
+
+/** Whether `root` holds the "Project views" controls, Files and Changes. */
+const holdsProjectViews = (root: ParentNode): boolean =>
+  root.querySelectorAll('[aria-label="Project views"]').length === 1 &&
+  named(root, '[aria-label]', 'Files').length === 1 &&
+  named(root, '[aria-label]', 'Changes').length === 1;
+
+/** Asserts that the window has exactly one "Account" button. */
+const oneAccount = (workspace: RenderedWorkspace, when: string): void => {
+  const accounts = named(workspace.root, 'button', 'Account');
+  assert.equal(
+    accounts.length,
+    1,
+    `${when}: the window has ${accounts.length} "Account" buttons.`,
+  );
+};
+
+// T-2.5, layout half
+test('layout.panel.footer items render in the Files footer, layout.footer items in the conversation band', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    path: `/projects/${project.id}`,
+    regions: {
+      'layout.panel.footer': [
+        { id: 'panel-footer-probe', tag: 'panel-footer-probe', order: 10 },
+      ],
+      'layout.footer': [{ id: 'footer-probe', tag: 'footer-probe', order: 10 }],
+    },
+  });
+
+  const filesFooter = single(
+    rendered.root,
+    '[data-slot="workspace-files-footer"]',
+  );
+  assert.equal(
+    standIns(filesFooter, 'panel-footer-probe').length,
+    1,
+    'The layout.panel.footer item is not in the Files footer.',
+  );
+  assert.equal(
+    standIns(filesFooter, 'footer-probe').length,
+    0,
+    'The layout.footer item is in the Files footer.',
+  );
+  const band = single(rendered.root, '[data-slot="workspace-footer"]');
+  assert.equal(
+    standIns(band, 'footer-probe').length,
+    1,
+    'The layout.footer item is not in the conversation band.',
+  );
+  assert.equal(
+    standIns(band, 'panel-footer-probe').length,
+    0,
+    'The layout.panel.footer item is in the conversation band.',
+  );
+});
+
+// §2.6, S27: the open Files column's header
+test('the open Files header holds the Project views, Hide files and Account; the tab bar holds neither', async () => {
+  rendered = await renderWorkspace(
+    withHeaderItems({
+      projects: [project],
+      projectTabs: [project],
+      path: `/projects/${project.id}`,
+    }),
+  );
+
+  const header = single(rendered.root, '[data-slot="workspace-files-header"]');
+  assert.ok(
+    holdsProjectViews(header),
+    `The Files header lacks the Project views; it names: ${[
+      ...header.querySelectorAll('[aria-label]'),
+    ]
+      .map(nameOf)
+      .join(' | ')}`,
+  );
+  only(header, 'button', 'Hide files');
+  only(header, 'button', 'Account');
+
+  const end = tabBarEnd(rendered);
+  assert.equal(
+    end.querySelectorAll('[aria-label="Project views"]').length,
+    0,
+    'The tab bar still holds the Project views.',
+  );
+  assert.equal(
+    named(end, 'button', 'Account').length,
+    0,
+    'The tab bar still holds Account.',
+  );
+  assert.equal(
+    standIns(end, 'header-probe').length,
+    1,
+    'The layout.header item left the tab bar.',
+  );
+});
+
+// T-2.6, S27; with a viewer tab open too (G17)
+for (const [label, fixture] of [
+  [
+    'without a viewer',
+    {
+      projects: [project],
+      projectTabs: [project],
+      path: `/projects/${project.id}`,
+    },
+  ],
+  ['with a viewer tab open', { ...withViewer, projectTabs: [project] }],
+] as const) {
+  test(`hiding and showing Files moves its toggle and Account between the Files header and the tab bar, ${label}`, async () => {
+    rendered = await renderWorkspace(withHeaderItems(fixture));
+    oneAccount(rendered, 'Files open');
+
+    const header = single(
+      rendered.root,
+      '[data-slot="workspace-files-header"]',
+    );
+    await click(only(header, 'button', 'Hide files'));
+
+    assert.equal(rendered.errors().length, 0, 'Hiding Files failed.');
+    assert.equal(
+      filesHeaders(rendered).length,
+      0,
+      'The Files header is still shown after Hide files.',
+    );
+    oneAccount(rendered, 'Files hidden');
+    const end = tabBarEnd(rendered);
+    const [probe] = standIns(end, 'header-probe');
+    assert.ok(probe !== undefined, 'The layout.header item left the tab bar.');
+    const show = only(end, 'button', 'Show files');
+    const account = only(end, 'button', 'Account');
+    assert.ok(
+      follows(probe, show) && follows(probe, account),
+      'Show files and Account do not come after the layout.header items.',
+    );
+
+    await click(show);
+
+    assert.equal(rendered.errors().length, 0, 'Showing Files failed.');
+    const reopened = single(
+      rendered.root,
+      '[data-slot="workspace-files-header"]',
+    );
+    only(reopened, 'button', 'Hide files');
+    only(reopened, 'button', 'Account');
+    assert.equal(
+      named(tabBarEnd(rendered), 'button', 'Show files').length +
+        named(tabBarEnd(rendered), 'button', 'Account').length,
+      0,
+      'Show files or Account stayed in the tab bar after Show files.',
+    );
+    oneAccount(rendered, 'Files shown again');
+  });
+}

@@ -142,8 +142,10 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
     },
   ],
   'layout.footer': [
-    { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10, owner: 'git' },
     { id: 'usage', tag: 'usage-summary', order: 30, owner: 'usage' },
+  ],
+  'layout.panel.footer': [
+    { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10, owner: 'git' },
   ],
   'layout.account.status': [
     {

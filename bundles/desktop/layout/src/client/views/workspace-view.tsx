@@ -236,12 +236,12 @@ function Workspace() {
               end: (
                 <>
                   <Region name="layout.header" />
-                  <ProjectPanelTabs
-                    active={panelView}
-                    onActiveChange={panel.show}
-                    items={panelItems}
-                  />
-                  <AccountStatus onOpenSettings={openSettings} />
+                  {!filesOpen && (
+                    <>
+                      {createElement('files-toggle', { placement: 'header' })}
+                      <AccountStatus onOpenSettings={openSettings} />
+                    </>
+                  )}
                 </>
               ),
             })}
@@ -251,6 +251,24 @@ function Workspace() {
               ) : undefined
             }
             files={<ProjectPanel active={panelView} items={panelItems} />}
+            filesHeader={
+              <>
+                <ProjectPanelTabs
+                  active={panelView}
+                  onActiveChange={panel.show}
+                  items={panelItems}
+                />
+                <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+                  {createElement('files-toggle', { placement: 'panel' })}
+                  <AccountStatus onOpenSettings={openSettings} />
+                </div>
+              </>
+            }
+            filesFooter={
+              <div className="flex h-7 min-w-0 flex-1 items-center gap-1">
+                <Region name="layout.panel.footer" />
+              </div>
+            }
             filesOpen={filesOpen}
             fileViewer={
               tabs.items.length === 0 || !tabOwner ? undefined : (

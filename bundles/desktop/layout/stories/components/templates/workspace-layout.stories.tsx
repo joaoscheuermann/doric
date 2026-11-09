@@ -54,7 +54,7 @@ export const NoOpenTabs = {
   ),
 };
 
-/** The Project panel closed: its controls stay in the tab bar. */
+/** The Files column collapsed: its toggle and the account status sit at the tab bar's right end (S27). */
 export const PanelClosed = {
   render: () => (
     <LayoutHost fixture={withTabs}>

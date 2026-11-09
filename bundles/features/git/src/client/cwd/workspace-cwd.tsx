@@ -2,7 +2,6 @@ import { messageFrom } from 'desktop/reads';
 import { Button } from 'desktop/ui/button';
 import { ReadFeedback } from 'desktop/ui/panels';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
-import { Separator } from 'desktop/ui/separator';
 import { toast } from 'desktop/ui/sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
 import {
@@ -121,7 +120,6 @@ export function WorkspaceCwd({
           </div>
           {git?.repo && (
             <>
-              <Separator />
               {/* Nested in the summary's popover: Base UI hands Escape to the
                   innermost open popover and stops it there, and a press in
                   this one is inside the summary's tree, so both close only

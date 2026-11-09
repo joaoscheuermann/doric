@@ -1,5 +1,5 @@
 // The Project panel's content and its compact controls. The controls live in
-// the workspace tab bar; the panel itself starts directly with its content.
+// the Files column header; the panel itself starts directly with its content.
 
 import type { RegionEntry } from 'bundle/contracts';
 import { TabStrip } from 'desktop/ui/panels';
@@ -51,7 +51,7 @@ type ProjectPanelProps = {
   readonly items: readonly RegionEntry[];
 };
 
-/** Compact, reorderable view controls for the workspace's top tab bar. */
+/** Compact, reorderable view controls for the Files column header. */
 export function ProjectPanelTabs({
   active,
   onActiveChange,
@@ -67,7 +67,7 @@ export function ProjectPanelTabs({
   const [held, setOrder] = useState<readonly string[]>(available);
   const order = panelOrder(held, available);
   return (
-    <div className="min-w-0 max-w-[40vw] [-webkit-app-region:no-drag]">
+    <div className="min-w-0 flex-1 [-webkit-app-region:no-drag]">
       <TabStrip
         variant="toggle"
         label="Project views"
@@ -119,7 +119,7 @@ export function ProjectPanel({
   const builtIn = builtIns.some((view) => view.id === active);
 
   return (
-    <Sidebar collapsible="none" className="overflow-hidden">
+    <Sidebar collapsible="none" className="overflow-hidden bg-transparent">
       <SidebarContent className="overflow-hidden p-0">
         <SidebarGroup className="h-full min-h-0 p-0">
           <SidebarGroupContent className="flex min-h-0 w-full flex-1 flex-col">
