@@ -430,7 +430,10 @@ test('a malformed credential of a managed kind still fails the list', async () =
 // The inset-card look (ui-redesign phase 3, Figma `36:22049`): the window is
 // the `--sidebar` canvas; the title bar and the nav sit on it with no fill and
 // no rule; the section and its footer are an inset card. The tables separate
-// their header from the rows by spacing alone (S22, `27:14990`).
+// their header from the rows by spacing alone (S22, `27:14990`); the Providers
+// and Credentials tables also draw no row dividers (G10, `27:15154`,
+// `27:15667`), while the two model tables keep both rules (`29:8582`,
+// `32:45370`).
 
 const classesOf = (element: Element | null | undefined): string[] => [
   ...(element?.classList ?? []),
@@ -449,6 +452,14 @@ const tableHeaders = (window: SettingsWindow): string[][] =>
   [...window.document.querySelectorAll('[data-slot="table-header"]')].map(
     classesOf,
   );
+
+/** Every table body row on screen, as the classes it carries. */
+const bodyRows = (window: SettingsWindow): string[][] =>
+  [
+    ...window.document.querySelectorAll(
+      '[data-slot="table-body"] [data-slot="table-row"]',
+    ),
+  ].map(classesOf);
 
 test('the window is one canvas: the title bar and the nav carry no fill and no rule', async () => {
   opened = await openSettingsWindow({ host: host() });
@@ -511,21 +522,57 @@ test('the section and its footer sit on an inset card', async () => {
     assert.ok(row.includes(name), `${name} in ${row.join(' ')}`);
 });
 
-test('the Providers and Credentials tables draw no header rule', async () => {
-  opened = await openSettingsWindow({ host: host() });
+test('the Providers and Credentials tables draw no header rule and no row dividers', async () => {
+  opened = await openSettingsWindow({
+    host: {
+      ...host(),
+      'secrets/v1.list': () => [
+        { id: token, kind: 'API_TOKEN', name: 'OpenRouter', hasSecret: true },
+      ],
+    },
+  });
   await settle(20);
 
   const providers = tableHeaders(opened);
   assert.equal(providers.length, 1, 'the Providers table');
   assert.ok(providers[0]?.includes('[&_tr]:border-b-0'));
+  const providerRows = bodyRows(opened);
+  assert.ok(providerRows.length > 0, 'the provider rows');
+  for (const row of providerRows)
+    assert.ok(row.includes('border-b-0'), `a divider in ${row.join(' ')}`);
 
   await openSection(opened, 'Credentials');
   const credentials = tableHeaders(opened);
   assert.equal(credentials.length, 1, 'the Credentials table');
   assert.ok(credentials[0]?.includes('[&_tr]:border-b-0'));
+  const credentialRows = bodyRows(opened);
+  assert.ok(credentialRows.length > 0, 'the credential rows');
+  for (const row of credentialRows)
+    assert.ok(row.includes('border-b-0'), `a divider in ${row.join(' ')}`);
 });
 
-test("a provider's catalog picker draws its table without a header rule", async () => {
+test('the Providers table fixes its columns at 170, 130, fill, 110 and 79 px', async () => {
+  opened = await openSettingsWindow({ host: host() });
+  await settle(20);
+
+  const table = opened.document.querySelector('[data-slot="table"]');
+  assert.ok(classesOf(table).includes('table-fixed'), 'a fixed table layout');
+  const heads = [
+    ...opened.document.querySelectorAll(
+      '[data-slot="table-header"] [data-slot="table-head"]',
+    ),
+  ].map((head) => classesOf(head).filter((name) => /^w-/.test(name)));
+  // Figma `27:15154`: Name 170, Kind 130, Address fills, Models 110, actions 79.
+  assert.deepEqual(heads, [
+    ['w-[170px]'],
+    ['w-[130px]'],
+    [],
+    ['w-[110px]'],
+    ['w-[79px]'],
+  ]);
+});
+
+test("a provider's catalog picker draws its table with a header rule and row dividers", async () => {
   const picked = {
     ...openrouter,
     fields: [
@@ -556,7 +603,10 @@ test("a provider's catalog picker draws its table without a header rule", async 
   trigger.click();
   await settle(20);
 
+  // Figma `32:45370` (in `33:4823`) draws the header rule and the dividers.
   const headers = tableHeaders(opened);
   assert.equal(headers.length, 1, 'the catalog table');
-  assert.ok(headers[0]?.includes('[&_tr]:border-b-0'));
+  assert.ok(!headers[0]?.includes('[&_tr]:border-b-0'));
+  for (const row of bodyRows(opened))
+    assert.ok(!row.includes('border-b-0'), `no divider in ${row.join(' ')}`);
 });

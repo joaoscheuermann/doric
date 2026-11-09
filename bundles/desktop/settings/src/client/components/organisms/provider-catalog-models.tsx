@@ -111,7 +111,7 @@ function CatalogModelsRead({
         </FieldDescription>
       ) : (
         <Table>
-          <TableHeader className="[&_tr]:border-b-0">
+          <TableHeader>
             <TableRow>
               <TableHead>Model</TableHead>
               <TableHead>Efforts</TableHead>

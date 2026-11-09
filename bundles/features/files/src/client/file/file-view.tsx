@@ -72,7 +72,7 @@ function TabFile({
         failed={query.isError}
       />
       <footer className="flex chrome-bar shrink-0 items-center px-3">
-        <span className="truncate font-mono text-xs" title={path}>
+        <span className="truncate font-mono text-xs font-light" title={path}>
           {path}
         </span>
         <span

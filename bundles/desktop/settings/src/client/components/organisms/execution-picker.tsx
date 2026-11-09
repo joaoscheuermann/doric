@@ -60,7 +60,7 @@ export function ExecutionPicker() {
   };
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="mr-auto flex items-center gap-1">
       {config.error !== undefined && (
         <span className="text-destructive" role="alert">
           {config.error}

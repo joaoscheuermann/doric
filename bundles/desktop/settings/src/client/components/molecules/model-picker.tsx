@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import { type ModelGroup, searchModelGroups } from '../../domain/config.js';
 import { ChoiceList } from './choice-list.js';
+import { footerTrigger } from './effort-picker.js';
 import { ModelIcon } from './model-icon.js';
 
 /** Reasoning stays visible even when the selected model cannot use it. */
@@ -78,7 +79,7 @@ export function ModelPicker({
             variant="ghost"
             size="sm"
             aria-label={ariaLabel}
-            className="max-w-72 min-w-0"
+            className={`${footerTrigger} max-w-72 min-w-0 gap-2`}
           />
         }
       >

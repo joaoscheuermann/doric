@@ -460,7 +460,7 @@ function CredentialTable({
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="cursor-pointer"
+                  className="cursor-pointer border-b-0"
                   onClick={() => onEdit(row.original.credential)}
                 >
                   {row.getVisibleCells().map((cell) => (

@@ -506,3 +506,43 @@ test("the provider page's header draws no rule under it; the dashboard's card ho
     `a rule in ${classes.join(' ')}`,
   );
 });
+
+test("the Providers group follows the Projects group's metrics: no inset, a 20 px label, 28 px rows", async () => {
+  const { window } = await openDashboard();
+
+  const group = window.document.querySelector(
+    'settings-dashboard-providers [data-sidebar="group"]',
+  );
+  assert.ok(group !== null, 'the Providers group');
+  const groupClasses = [...group.classList];
+  // The prototype's Projects group (`85:7520`): no padding, 4 px under the label.
+  for (const name of ['p-0', 'gap-1'])
+    assert.ok(
+      groupClasses.includes(name),
+      `${name} in ${groupClasses.join(' ')}`,
+    );
+
+  const label = group.querySelector('[data-sidebar="group-label"]');
+  const labelClasses = [...(label?.classList ?? [])];
+  for (const name of ['h-5', 'pl-1.5', 'gap-1'])
+    assert.ok(
+      labelClasses.includes(name),
+      `${name} in ${labelClasses.join(' ')}`,
+    );
+
+  const action = group.querySelector('[data-sidebar="group-action"]');
+  const actionClasses = [...(action?.classList ?? [])];
+  for (const name of ['top-0', 'right-1'])
+    assert.ok(
+      actionClasses.includes(name),
+      `${name} in ${actionClasses.join(' ')}`,
+    );
+
+  const drawn = rows(window);
+  assert.ok(drawn.length > 0, 'the provider rows');
+  for (const row of drawn) {
+    const classes = [...row.classList];
+    for (const name of ['h-7', 'gap-1.5', 'px-1.5', 'py-0', 'text-[13px]'])
+      assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+  }
+});

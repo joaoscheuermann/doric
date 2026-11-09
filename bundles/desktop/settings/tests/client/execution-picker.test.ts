@@ -257,3 +257,40 @@ test("the drawn icons hold no element of the host's SVG", async () => {
     assert.equal(window.document.getElementById(`fixture-icon-${name}`), null);
   }
 });
+
+test('the picker anchors the footer at its left and draws its triggers as unpadded 20 px text buttons', async () => {
+  const window = await openFooter(SONNET);
+
+  // Figma `99:8035`: the picker is the footer's first item and pushes the
+  // rest right (the ContentFooter rule: the first item carries `mr-auto`).
+  const model = trigger(window);
+  const picker = model.parentElement;
+  assert.ok(picker !== null, 'the picker root');
+  const rootClasses = [...picker.classList];
+  for (const name of ['mr-auto', 'gap-1'])
+    assert.ok(
+      rootClasses.includes(name),
+      `${name} in ${rootClasses.join(' ')}`,
+    );
+
+  // Figma `110:22082`: the model and effort are text buttons, 20 px tall, with
+  // no padding; 8 px from the model icon to its name; 4 px around the "·".
+  const effort = window.document.querySelector<HTMLElement>(
+    'settings-execution-picker [aria-label="Reasoning effort"]',
+  );
+  assert.ok(effort !== null, 'the effort trigger');
+  for (const button of [model, effort]) {
+    const classes = [...button.classList];
+    for (const name of ['h-5', 'px-0'])
+      assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+    assert.ok(
+      !classes.some((name) => /^(h-7|px-2\.5)$|:pl-1\.5$/.test(name)),
+      `padding in ${classes.join(' ')}`,
+    );
+    assert.ok(
+      classes.includes('focus-visible:ring-3'),
+      'the trigger keeps its focus ring',
+    );
+  }
+  assert.ok([...model.classList].includes('gap-2'), 'icon gap 8');
+});

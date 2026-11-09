@@ -53,7 +53,7 @@ export function ContentFooter() {
   return (
     <footer
       data-slot="workspace-footer"
-      className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal text-muted-foreground"
+      className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal"
     >
       {region('layout.footer')}
     </footer>

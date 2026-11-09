@@ -8,9 +8,9 @@
 // (`desktop/ui/<component>`), not from hand-rolled CSS: `ToggleGroup`/`Toggle`
 // for the armed tool, ghost icon buttons for the rest, `Tooltip` with a
 // `<kbd>` in its content for the label and the shortcut, `Badge` for the pin
-// count, a `Separator` shorter than the bar between the groups (the
-// `ToolbarDivider` drawing the chat composer uses is chat's; this is the same
-// recipe over the registry), and `lucide` icons.
+// count, a `Separator` shorter than the bar between the groups (the file's own
+// `ToolbarDivider`, a vertical `Separator` over the registry), and `lucide`
+// icons.
 //
 // Four groups, three dividers, left to right: the armed tool, what the
 // selection does, the viewport, and the proposal. Every control dispatches by

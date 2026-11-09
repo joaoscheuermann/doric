@@ -1015,7 +1015,7 @@ test('a child conversation footer stops its Thread while the main Thread stays s
 
 /** The classes of the conversation footer band (`workspace-view.tsx`). */
 const FOOTER_BAND =
-  'flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal text-muted-foreground';
+  'flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal';
 
 const classSet = (element: Element | null): string[] =>
   [...(element?.classList ?? [])].sort();

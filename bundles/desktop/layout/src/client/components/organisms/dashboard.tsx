@@ -388,10 +388,13 @@ export function Dashboard({
         <div className="mt-[56px] flex w-[520px] max-w-full flex-col gap-[2px]">
           {listContent}
           {!query && entries.length > 0 && !activity.isError && (
-            <div className="pt-[10px]">
+            // A flex row, so the link's 16 px line box starts 10 px under the
+            // list, as Figma `35:13094` draws it: inline, the row's own strut
+            // set it 3 px lower.
+            <div className="flex pt-[10px]">
               <button
                 type="button"
-                className="text-[12px] text-[var(--paper-gray-3)] hover:text-[var(--paper-gray-1)] focus-visible:rounded-[4px] focus-visible:outline-2 focus-visible:outline-[var(--paper-focus)]"
+                className="text-[12px] leading-4 text-[var(--paper-gray-3)] hover:text-[var(--paper-gray-1)] focus-visible:rounded-[4px] focus-visible:outline-2 focus-visible:outline-[var(--paper-focus)]"
                 onClick={() => navigate('/projects')}
               >
                 See all projects

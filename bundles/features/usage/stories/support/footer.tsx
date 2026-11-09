@@ -8,7 +8,7 @@ import type { ComponentType } from 'react';
 export const footerDecorator = (Story: ComponentType) => (
   <div className="mx-auto flex max-w-3xl flex-col bg-sidebar p-2">
     <div className="flex min-h-96 flex-col justify-end overflow-hidden rounded-xl bg-background shadow-sm">
-      <footer className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal text-muted-foreground">
+      <footer className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal">
         <Story />
       </footer>
     </div>

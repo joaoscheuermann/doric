@@ -80,7 +80,8 @@ export function AgentThreadControls({
   return (
     <>
       <span
-        className="mr-auto flex min-w-0 items-center gap-1.5 pr-2"
+        data-slot="agent-thread-identity"
+        className="mr-auto flex min-w-0 items-center gap-1.5 pr-2 text-xs font-light text-muted-foreground"
         title="An agent opened this thread. You can pause it, continue it or retry it."
       >
         <BotIcon aria-hidden="true" className="size-3.5 shrink-0" />

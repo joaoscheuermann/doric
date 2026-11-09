@@ -702,6 +702,12 @@ test('the conversation footer band is regular weight, borderless and draws layou
       !footer.classList.contains('font-light'),
     `The footer band is not regular weight: ${footer.className}`,
   );
+  // Figma `99:8035`: the picker and usage labels are `--foreground`; only
+  // their "·" separators are muted, and those carry their own class.
+  assert.ok(
+    !footer.classList.contains('text-muted-foreground'),
+    `The footer band mutes its items: ${footer.className}`,
+  );
   assert.ok(
     !footer.classList.contains('border-t'),
     'The footer band has a top border.',

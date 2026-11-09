@@ -127,7 +127,7 @@ export function CostBreakdown({
                   <Button
                     variant="ghost"
                     size="xs"
-                    className="group -ml-1 h-auto px-1 py-0 font-normal"
+                    className="group -ml-1 h-4 px-1 py-0 font-normal"
                     disabled={subthreads.length === 0}
                   />
                 }

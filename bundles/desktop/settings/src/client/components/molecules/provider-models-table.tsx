@@ -344,7 +344,7 @@ export function ProviderModelsTable({
       </div>
       <div className="overflow-hidden rounded-lg border">
         <Table>
-          <TableHeader className="[&_tr]:border-b-0">
+          <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (

@@ -88,6 +88,17 @@ type DataTableFeatures = typeof features;
 /** The provider columns, typed against the features and the row above. */
 const columnHelper = createColumnHelper<DataTableFeatures, ProviderRow>();
 
+/**
+ * The fixed column widths Figma draws (`27:15154`): Name 170, Kind 130,
+ * Models 110 and the actions 79 px; Address takes what is left.
+ */
+const columnWidths: Readonly<Record<string, string>> = {
+  id: 'w-[170px]',
+  kind: 'w-[130px]',
+  models: 'w-[110px]',
+  actions: 'w-[79px]',
+};
+
 /** How many rows a page holds, in the order the control offers them. */
 const pageSizes = [10, 20, 50];
 
@@ -304,12 +315,15 @@ function ProviderTable({
         </Button>
       </div>
       <div className="overflow-hidden rounded-lg border">
-        <Table>
+        <Table className="table-fixed">
           <TableHeader className="[&_tr]:border-b-0">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead
+                    key={header.id}
+                    className={columnWidths[header.column.id]}
+                  >
                     {header.isPlaceholder ? null : (
                       <table.FlexRender header={header} />
                     )}
@@ -336,11 +350,12 @@ function ProviderTable({
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="cursor-pointer"
+                  className="cursor-pointer border-b-0"
                   onClick={() => onEdit(row.original.index)}
                 >
                   {row.getAllCells().map((cell) => (
-                    <TableCell key={cell.id}>
+                    // A fixed column cuts a long value with an ellipsis.
+                    <TableCell key={cell.id} className="truncate">
                       <table.FlexRender cell={cell} />
                     </TableCell>
                   ))}
