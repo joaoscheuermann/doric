@@ -216,7 +216,19 @@ function Workspace() {
             end: <AccountStatus onOpenSettings={openSettings} />,
           })}
           sidebarHeader={
-            <SidebarHeader active onDashboard={() => openPath('/projects')} />
+            <SidebarHeader
+              active
+              onDashboard={() => openPath('/projects')}
+              onSearch={() => {
+                // As the Dashboard's ⌘F does on the list (plan-4 G3): the
+                // sidebar's "Search projects", the first in the frame.
+                const input = frame.current?.querySelector<HTMLInputElement>(
+                  'input[aria-label="Search projects"]',
+                );
+                input?.focus();
+                input?.select();
+              }}
+            />
           }
         />
         <DeleteDialog

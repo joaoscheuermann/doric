@@ -1,5 +1,5 @@
 import { Button } from 'desktop/ui/button';
-import { HouseIcon } from 'lucide-react';
+import { HouseIcon, SearchIcon } from 'lucide-react';
 
 import {
   HistoryButtons,
@@ -25,6 +25,13 @@ export type SidebarHeaderProps = {
    * lists the history methods.
    */
   readonly history?: HistoryButtonsProps;
+  /**
+   * Focuses the view's search field and selects its text, as its ⌘F does.
+   * Given: a ghost `icon-sm` "Search" button (lucide `SearchIcon`) before the
+   * Back/Forward group (the Dashboard, `85:7520`). Absent: no button (a
+   * Project, `99:8035`, whose field sits under the header; plan-4 G3).
+   */
+  readonly onSearch?: () => void;
 };
 
 /**
@@ -36,7 +43,8 @@ export type SidebarHeaderProps = {
  * - On its right side, the "History nav" (`256:20933`, filling the rest of the
  *   row, end-aligned, 4 px gaps) holds Back/Forward (`HistoryButtons`, §4.2),
  *   which draws nothing on an app without ButtonGroup or the history methods
- *   (S35).
+ *   (S35); before it, the "Search" button when `onSearch` is given (plan-4
+ *   G3, the Dashboard's `85:7520`).
  * - Pressing the button calls `onDashboard` once.
  * - While `active`, the button is marked as the current page and filled.
  * - It renders `div[data-slot="workspace-sidebar-header"]`. That slot was
@@ -47,6 +55,7 @@ export function SidebarHeader({
   onDashboard,
   active = false,
   history,
+  onSearch,
 }: SidebarHeaderProps) {
   const mac = navigator.userAgent.includes('Mac');
   return (
@@ -67,6 +76,18 @@ export function SidebarHeader({
         <HouseIcon aria-hidden="true" className="size-3.5" />
       </Button>
       <div className="flex flex-1 items-center justify-end gap-1">
+        {onSearch !== undefined && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Search"
+            title="Search"
+            className="[-webkit-app-region:no-drag]"
+            onClick={() => onSearch()}
+          >
+            <SearchIcon aria-hidden="true" className="size-3.5" />
+          </Button>
+        )}
         <HistoryButtons {...history} />
       </div>
     </div>

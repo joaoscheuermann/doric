@@ -9,7 +9,9 @@
 // the settings window on its Providers section (`settings-window`). Phase 4.1
 // adds its Appearance section with each tile selected
 // (`settings-appearance-<theme>`, `65:13666`); 4.2 adds Back after opening a
-// sub-thread (`history-back`).
+// sub-thread (`history-back`); 4.3 the sidebar's Thread search with a match,
+// with none and focused by ⌘F (`thread-search`, `thread-search-empty`,
+// `thread-search-focus`).
 
 import type { BrowserWindow, WebContents } from 'electron';
 
@@ -18,10 +20,12 @@ import {
   captureState,
   click,
   clickOn,
+  focused,
   go,
   inPage,
   painted,
   press,
+  type,
   waitFor,
   waitForSelector,
 } from './shell-page';
@@ -68,6 +72,25 @@ const SETTINGS_TITLE_BAR = '[data-slot="settings-title-bar"]';
 const SIDEBAR_HEADER = '[data-slot="workspace-sidebar-header"]';
 const BACK = 'button[aria-label="Back"]';
 const FORWARD = 'button[aria-label="Forward"]';
+const THREAD_SEARCH = 'input[aria-label="Search Threads"]';
+const THREADS_EMPTY = '[data-threads-empty]';
+const COMPOSER = '[aria-label="Thread conversation"] [contenteditable="true"]';
+/** Resolves once the sidebar tree shows (or no longer shows) `name`. */
+const treeShows = (
+  contents: WebContents,
+  name: string,
+  shown: boolean,
+): Promise<true> =>
+  until(
+    async () =>
+      (await inPage<boolean>(
+        contents,
+        `deepAll('[role="treeitem"][data-slot="sidebar-menu-sub-button"]').filter(visible).some((e) => (e.innerText ?? '').trim() === ${JSON.stringify(name)})`,
+      )) === shown
+        ? true
+        : undefined,
+    `the tree ${shown ? 'to show' : 'to hide'} ${name}`,
+  );
 /** A main Thread of Checkout redesign other than the open one. */
 const AUDIT_NAME = 'Accessibility audit';
 
@@ -423,6 +446,53 @@ export const capturePrototypeStates = async (input: {
   ) {
     await closeViewer(contents);
   }
+
+  // thread-search, thread-search-empty, thread-search-focus (4.3): "pay" and
+  // "zzz" typed into the sidebar's "Search Threads" (`I269:31402;331:42177`),
+  // then ⌘F with focus in the composer: the field focused, its ring drawn.
+  const clearSearch = async () => {
+    await explained(clickOn(contents, THREAD_SEARCH));
+    press(contents, 'Escape');
+    await explained(gone(contents, THREADS_EMPTY, 'the query to clear'));
+    await explained(treeShows(contents, AUDIT_NAME, true));
+  };
+  await explained(clickOn(contents, THREAD_SEARCH));
+  await type(contents, 'pay');
+  await explained(treeShows(contents, AUDIT_NAME, false));
+  await shoot(
+    'thread-search',
+    'Project / Checkout redesign · Search "pay"',
+    true,
+  );
+  await clearSearch();
+  await explained(clickOn(contents, THREAD_SEARCH));
+  await type(contents, 'zzz');
+  await explained(waitForSelector(contents, THREADS_EMPTY));
+  await shoot(
+    'thread-search-empty',
+    'Project / Checkout redesign · Search with no match',
+    true,
+  );
+  await clearSearch();
+  await inPage(
+    contents,
+    `deepAll(${JSON.stringify(COMPOSER)}).filter(visible).at(-1)?.focus()`,
+  );
+  press(contents, 'F', ['meta']);
+  await explained(
+    until(
+      async () =>
+        (await focused(contents))?.name === 'Search Threads' ? true : undefined,
+      'the ⌘F focus on Search Threads',
+    ),
+  );
+  await shoot(
+    'thread-search-focus',
+    'Project / Checkout redesign · ⌘F from the composer',
+    true,
+    false,
+  );
+  await inPage(contents, 'deepActive()?.blur?.()');
 
   // The Dashboard reads its relative times when it mounts, so the clock is
   // held from before it opens until the capture: the rows then read the

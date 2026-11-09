@@ -1,5 +1,11 @@
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from 'desktop/ui/input-group';
+import { Kbd, KbdGroup } from 'desktop/ui/kbd';
+import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -16,17 +22,32 @@ import {
   SidebarMenuSkeleton,
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
-import { AlertCircleIcon, ChevronRightIcon, PlusIcon } from 'lucide-react';
-import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  AlertCircleIcon,
+  ChevronRightIcon,
+  PlusIcon,
+  SearchIcon,
+} from 'lucide-react';
+import {
+  Fragment,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { usePanelRef } from 'react-resizable-panels';
 
 import type { StackPane } from '../../../contracts/index.js';
+import { searchShortcutKeys } from '../../domain/dashboard.js';
 import { threadIconKind } from '../../domain/sidebar.js';
 import {
   PANE_HEADER,
   paneExpanded,
   THREADS_PANE_ID,
 } from '../../domain/sidebar-stack.js';
+import { filterThreadTree } from '../../domain/thread-filter.js';
 import { threadLevel } from '../../domain/thread-tree.js';
 import type {
   Draft,
@@ -94,20 +115,26 @@ type ProjectSidebarProps = {
  * control and its own action element. A collapsed pane keeps its header, so no
  * resize of the stack can make the group vanish; the panel's open state is the
  * stack's, and a drag that reaches the header reports it collapsed.
+ *
+ * `headless`: the pane is the stack's only one (plan-4 G5, Figma `99:8035`
+ * draws no Threads header), so it draws no header, cannot collapse and always
+ * shows its content.
  */
 function PanePanel({
   action,
   children,
+  headless = false,
   pane,
 }: {
   readonly action?: ReactNode;
   readonly children?: ReactNode;
+  readonly headless?: boolean;
   readonly pane: StackPane;
 }) {
-  const open = usePaneOpen(pane.id);
+  const open = usePaneOpen(pane.id) || headless;
   const panel = usePanelRef();
   const header = useRef<HTMLDivElement>(null);
-  const collapsible = pane.collapsible !== false;
+  const collapsible = pane.collapsible !== false && !headless;
 
   const mounted = useRef(false);
 
@@ -148,31 +175,33 @@ function PanePanel({
       }
     >
       <SidebarGroup className="flex h-full min-h-0 flex-col p-0">
-        <div ref={header} className="relative">
-          <SidebarGroupLabel className="h-7 gap-1 rounded-none pl-3 pr-8 text-xs font-normal [&_svg]:size-4 [&_svg]:shrink-0">
-            {collapsible ? (
-              <button
-                type="button"
-                aria-expanded={open}
-                aria-label={`${open ? 'Collapse' : 'Expand'} ${pane.title}`}
-                className="flex min-w-0 flex-1 items-center gap-1 text-left outline-hidden focus-visible:ring-2"
-                onClick={() => togglePane(pane.id)}
-              >
-                <ChevronRightIcon
-                  aria-hidden
-                  className={cn(
-                    'size-4 shrink-0 transition-transform duration-[50ms] ease-out',
-                    open ? 'rotate-90' : 'rotate-0',
-                  )}
-                />
-                <span className="truncate">{pane.title}</span>
-              </button>
-            ) : (
-              <span className="min-w-0 flex-1 truncate">{pane.title}</span>
-            )}
-          </SidebarGroupLabel>
-          {action}
-        </div>
+        {!headless && (
+          <div ref={header} className="relative">
+            <SidebarGroupLabel className="h-7 gap-1 rounded-none pl-3 pr-8 text-xs font-normal [&_svg]:size-4 [&_svg]:shrink-0">
+              {collapsible ? (
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-label={`${open ? 'Collapse' : 'Expand'} ${pane.title}`}
+                  className="flex min-w-0 flex-1 items-center gap-1 text-left outline-hidden focus-visible:ring-2"
+                  onClick={() => togglePane(pane.id)}
+                >
+                  <ChevronRightIcon
+                    aria-hidden
+                    className={cn(
+                      'size-4 shrink-0 transition-transform duration-[50ms] ease-out',
+                      open ? 'rotate-90' : 'rotate-0',
+                    )}
+                  />
+                  <span className="truncate">{pane.title}</span>
+                </button>
+              ) : (
+                <span className="min-w-0 flex-1 truncate">{pane.title}</span>
+              )}
+            </SidebarGroupLabel>
+            {action}
+          </div>
+        )}
         {/* The rows sit 6 px in from the column edges (Figma `269:31402`:
             ProjectSidebar at x 6, 268 wide), so their 4 px rounded
             selection fill does not touch them. */}
@@ -197,7 +226,8 @@ function PanePanel({
  * The "+ New Thread" row (§2.2; drawn as the prototype's `Button · New thread`
  * in `269:31402`, a 28 px small button with a 14 px plus, which wins over the
  * component frame `110:23119`, UR1): a full-width sidebar menu button with
- * lucide `PlusIcon` and the text "New Thread", 8 px above the Threads label.
+ * lucide `PlusIcon` and the text "New Thread", 12 px under the search field
+ * and 12 px above the tree (plan-4 G4).
  * Pressing it calls `actions.beginThread(projectId)` once. That is the inline
  * root draft the Threads pane's "+" started before, and it shows as the "New
  * thread name" field at the end of the tree.
@@ -213,7 +243,7 @@ function PanePanel({
  */
 function NewThreadRow({ onBegin }: { readonly onBegin?: () => void }) {
   return (
-    <SidebarMenu className="mb-2 px-1.5 pt-1">
+    <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton
           className="h-7 gap-1.5 rounded-md px-2.5 text-[0.8rem] font-normal [&_svg]:size-3.5"
@@ -228,6 +258,65 @@ function NewThreadRow({ onBegin }: { readonly onBegin?: () => void }) {
   );
 }
 
+/**
+ * The "Search Threads" field under the sidebar header (§4.3, Figma
+ * `I269:31402;331:42177`, plan-4 G4): the Dashboard's search look
+ * (`InputGroup h-9 border-transparent bg-secondary shadow-none`), lucide
+ * `SearchIcon`, placeholder and accessible name "Search Threads", and the
+ * shortcut keys (`searchShortcutKeys`) while it is empty.
+ */
+function ThreadSearch({
+  input,
+  onChange,
+  onKeyDown,
+  value,
+}: {
+  readonly input: RefObject<HTMLInputElement | null>;
+  readonly onChange: (value: string) => void;
+  readonly onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  readonly value: string;
+}) {
+  return (
+    <InputGroup className="h-9 border-transparent bg-secondary shadow-none">
+      <InputGroupAddon>
+        <SearchIcon />
+      </InputGroupAddon>
+      <InputGroupInput
+        ref={input}
+        aria-label="Search Threads"
+        placeholder="Search Threads"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+      />
+      {!value && (
+        <InputGroupAddon align="inline-end">
+          <KbdGroup>
+            {searchShortcutKeys(navigator.platform).map((key) => (
+              <Kbd key={key}>{key}</Kbd>
+            ))}
+          </KbdGroup>
+        </InputGroupAddon>
+      )}
+    </InputGroup>
+  );
+}
+
+/**
+ * S13: ⌘F or Ctrl+F (no Alt, no Shift), not yet prevented, from anywhere but
+ * a Monaco editor or a terminal.
+ */
+const isSearchShortcut = (event: globalThis.KeyboardEvent): boolean => {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey)
+    return false;
+  if (event.key.toLowerCase() !== 'f' || event.defaultPrevented) return false;
+  const { target } = event;
+  return !(
+    target instanceof Element &&
+    target.closest('.monaco-editor, .xterm') !== null
+  );
+};
+
 export function ProjectSidebar({
   actions,
   header,
@@ -240,6 +329,56 @@ export function ProjectSidebar({
   const panes = useStackPanes();
   const projectId = model.selectedProjectId;
   const threads = projectId ? (model.threadsByProject[projectId] ?? []) : [];
+  // The search query (§4.3): never persisted, cleared with the Project.
+  const [query, setQuery] = useState('');
+  const searchInput = useRef<HTMLInputElement>(null);
+  const tree = useRef<HTMLDivElement>(null);
+  const [treeFocus, setTreeFocus] = useState(0);
+  const [queryProject, setQueryProject] = useState(projectId);
+  if (queryProject !== projectId) {
+    setQueryProject(projectId);
+    setQuery('');
+  }
+  useEffect(() => {
+    const focusSearch = (event: globalThis.KeyboardEvent) => {
+      if (!isSearchShortcut(event)) return;
+      event.preventDefault();
+      searchInput.current?.focus();
+      searchInput.current?.select();
+    };
+    document.addEventListener('keydown', focusSearch);
+    return () => document.removeEventListener('keydown', focusSearch);
+  }, []);
+  // G8: after Escape, the selected Thread's row, else the first row; with no
+  // row the field keeps focus.
+  useEffect(() => {
+    if (treeFocus === 0) return;
+    const rows = tree.current;
+    const row =
+      rows?.querySelector<HTMLElement>('[role="treeitem"][data-active]') ??
+      rows?.querySelector<HTMLElement>('[role="treeitem"]');
+    row?.focus();
+  }, [treeFocus]);
+  const level =
+    projectId === undefined
+      ? undefined
+      : threadLevel(threads, model.draft, projectId);
+  const filter =
+    query === '' || level === undefined
+      ? undefined
+      : filterThreadTree(level.nodes, query);
+  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    setQuery('');
+    setTreeFocus((count) => count + 1);
+  };
+  // G7: a draft is not in the filter, so beginning one ends the query.
+  const beginThread = (parentThreadId?: string) => {
+    if (projectId === undefined) return;
+    setQuery('');
+    actions.beginThread(projectId, parentThreadId);
+  };
   const loading =
     projectId !== undefined &&
     model.loadingProjectThreads.has(projectId) &&
@@ -258,7 +397,10 @@ export function ProjectSidebar({
       return next;
     });
   const threadActions: ThreadBranchesActions = {
-    beginChild: (thread) => actions.beginThread(thread.projectId, thread.id),
+    beginChild: (thread) => {
+      setQuery('');
+      actions.beginThread(thread.projectId, thread.id);
+    },
     cancelDraft: actions.cancelDraft,
     cancelRename: actions.cancelRename,
     copyId: actions.copyThreadId,
@@ -284,34 +426,45 @@ export function ProjectSidebar({
           <AlertDescription>{model.error}</AlertDescription>
         </Alert>
       )}
-      <SidebarMenu className="w-full gap-0">
-        {loading &&
-          THREAD_SKELETON_ROWS.map((row) => (
-            <SidebarMenuItem key={row}>
-              <SidebarMenuSkeleton
-                showIcon
-                className="h-7 rounded-none pl-3 pr-8"
-              />
+      <div ref={tree} className="contents">
+        <SidebarMenu className="w-full gap-0">
+          {loading &&
+            THREAD_SKELETON_ROWS.map((row) => (
+              <SidebarMenuItem key={row}>
+                <SidebarMenuSkeleton
+                  showIcon
+                  className="h-7 rounded-none pl-3 pr-8"
+                />
+              </SidebarMenuItem>
+            ))}
+          {projectId !== undefined && (
+            <ThreadBranches
+              actions={threadActions}
+              collapsed={collapsedThreads}
+              depth={0}
+              editingThreadId={
+                model.editing?.kind === 'thread'
+                  ? model.editing.value.id
+                  : undefined
+              }
+              {...(filter === undefined ? {} : { filter })}
+              repo={threadIconKind}
+              level={level ?? threadLevel(threads, model.draft, projectId)}
+              onExpand={expandThread}
+              onToggle={toggleThread}
+              selectedThreadId={model.selectedThreadId}
+            />
+          )}
+          {filter !== undefined && filter.shown.size === 0 && !loading && (
+            <SidebarMenuItem
+              data-threads-empty=""
+              className="px-2.5 py-1 text-[13px] leading-[19.5px] text-muted-foreground"
+            >
+              No threads match
             </SidebarMenuItem>
-          ))}
-        {projectId !== undefined && (
-          <ThreadBranches
-            actions={threadActions}
-            collapsed={collapsedThreads}
-            depth={0}
-            editingThreadId={
-              model.editing?.kind === 'thread'
-                ? model.editing.value.id
-                : undefined
-            }
-            repo={threadIconKind}
-            level={threadLevel(threads, model.draft, projectId)}
-            onExpand={expandThread}
-            onToggle={toggleThread}
-            selectedThreadId={model.selectedThreadId}
-          />
-        )}
-      </SidebarMenu>
+          )}
+        </SidebarMenu>
+      </div>
     </>
   );
 
@@ -324,18 +477,28 @@ export function ProjectSidebar({
     <Sidebar collapsible="none" className="overflow-hidden font-normal">
       {header}
       <SidebarContent className="overflow-hidden p-0">
-        <NewThreadRow
-          onBegin={
-            projectId === undefined
-              ? undefined
-              : () => actions.beginThread(projectId)
-          }
-        />
+        {/* Figma `269:31402`: the field 268×36 at y 40, New Thread at y 88,
+            the tree at y 128 (px 6, 12 px gaps; plan-4 G4). */}
+        <div className="flex shrink-0 flex-col gap-3 px-1.5 pb-3">
+          <ThreadSearch
+            input={searchInput}
+            value={query}
+            onChange={setQuery}
+            onKeyDown={onSearchKeyDown}
+          />
+          <NewThreadRow
+            onBegin={projectId === undefined ? undefined : () => beginThread()}
+          />
+        </div>
         <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
           {panes.map((pane, index) => (
             <Fragment key={pane.id}>
               {index > 0 && <ResizableHandle />}
-              <PanePanel action={paneAction(pane)} pane={pane}>
+              <PanePanel
+                action={paneAction(pane)}
+                headless={panes.length === 1}
+                pane={pane}
+              >
                 {pane.id === THREADS_PANE_ID ? threadsContent : undefined}
               </PanePanel>
             </Fragment>

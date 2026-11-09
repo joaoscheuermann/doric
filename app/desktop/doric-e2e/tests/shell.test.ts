@@ -397,7 +397,7 @@ describe('the real shell over the workspace bundles', () => {
     }
 
     console.log(`# shell captures:\n#   ${written.join('\n#   ')}`);
-    // Sixteen states, a PNG and its JSON rows each, in two themes.
-    assert.equal(written.length, 64);
+    // Nineteen states, a PNG and its JSON rows each, in two themes.
+    assert.equal(written.length, 76);
   });
 });

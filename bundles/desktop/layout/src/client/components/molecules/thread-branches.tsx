@@ -13,6 +13,7 @@ import { cn } from 'desktop/ui/utils';
 import { ChevronRightIcon } from 'lucide-react';
 
 import type { ThreadIconKind } from '../../domain/sidebar.js';
+import type { ThreadFilter } from '../../domain/thread-filter.js';
 import {
   threadControl,
   threadKind,
@@ -48,6 +49,14 @@ type ThreadBranchesProps = {
   readonly depth: number;
   readonly editingThreadId?: string;
   /**
+   * The sidebar's search (§4.3), passed down to every level. While set, a
+   * Thread not in `shown` is not drawn (its `layout.sidebar/v1` rows with it),
+   * a Thread in `expanded` is drawn expanded whatever `collapsed` holds, and
+   * toggling a row does not write `collapsed`, so clearing the filter draws
+   * the tree as it was. Absent: the whole tree, drawn from `collapsed`.
+   */
+  readonly filter?: ThreadFilter;
+  /**
    * The repository each Thread's cwd sits in, decided by the caller from the
    * Thread alone and drawn at the row's trailing edge. It defaults to no
    * repository, so a caller that knows no better draws the rows it always drew.
@@ -69,6 +78,7 @@ export function ThreadBranches({
   collapsed,
   depth,
   editingThreadId,
+  filter,
   repo = () => 'conversation',
   level,
   onExpand,
@@ -81,11 +91,15 @@ export function ThreadBranches({
     <>
       {level.nodes.map((node) => {
         const { thread } = node;
+        if (filter !== undefined && !filter.shown.has(thread.id)) return null;
         const selected = selectedThreadId === thread.id;
         const running =
           thread.state === 'running' && thread.activePromptId !== undefined;
         const expandable = node.expandable || hasThreadRows(rows, thread.id);
-        const expanded = expandable && !collapsed.has(thread.id);
+        const expanded =
+          expandable &&
+          (filter?.expanded.has(thread.id) === true ||
+            !collapsed.has(thread.id));
         const kind = threadKind(thread);
         const control = threadControl(thread);
         const repository = repo(thread);
@@ -97,8 +111,10 @@ export function ThreadBranches({
           actions.beginChild(thread);
         };
         const activate = () => {
-          if (selected && expandable) onToggle(thread.id);
-          else actions.select(thread);
+          // While a query is set the collapsed set is not written (§4.3).
+          if (selected && expandable) {
+            if (filter === undefined) onToggle(thread.id);
+          } else actions.select(thread);
         };
         const title = [
           threadKindHint[kind],
@@ -215,6 +231,7 @@ export function ThreadBranches({
                   collapsed={collapsed}
                   depth={depth + 1}
                   editingThreadId={editingThreadId}
+                  {...(filter === undefined ? {} : { filter })}
                   repo={repo}
                   level={node.children}
                   onExpand={onExpand}

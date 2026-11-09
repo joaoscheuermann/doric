@@ -1,5 +1,5 @@
 import { SidebarScope } from 'desktop/ui/sidebar';
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 
 import {
   ProjectSidebar,
@@ -28,10 +28,25 @@ const fill = { '--sidebar-width': '100%' } as CSSProperties;
 function Sidebar({
   fixture,
   model = sidebarModelOf(),
+  query,
 }: {
   readonly fixture?: LayoutFixture;
   readonly model?: SidebarModel;
+  /** Typed into "Search Threads" once mounted, as the reader would. */
+  readonly query?: string;
 }) {
+  const frame = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const input = frame.current?.querySelector<HTMLInputElement>(
+      'input[aria-label="Search Threads"]',
+    );
+    if (query === undefined || !input) return;
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set?.call(input, query);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, [query]);
   const [selectedThreadId, setSelected] = useState(model.selectedThreadId);
   const [draft, setDraft] = useState<Draft | undefined>(model.draft);
   const [editing, setEditing] = useState<Entity | undefined>(model.editing);
@@ -61,7 +76,7 @@ function Sidebar({
   return (
     <LayoutHost fixture={fixture}>
       <SidebarScope>
-        <div className="flex h-[640px] w-60 border" style={fill}>
+        <div ref={frame} className="flex h-[640px] w-60 border" style={fill}>
           <ProjectSidebar
             actions={actions}
             model={{ ...model, draft, editing, selectedThreadId }}
@@ -75,6 +90,7 @@ function Sidebar({
 const screensOpen: LayoutFixture = {
   panes: [{ ...screenPane, initiallyOpen: true }],
 };
+const threadsAlone: LayoutFixture = { panes: [] };
 const terminals: LayoutFixture = {
   terminalRows: { [planThread.id]: 1, [formThread.id]: 2 },
 };
@@ -84,9 +100,27 @@ export default {
   component: ProjectSidebar,
 };
 
-/** The Checkout Project's tree, with the collapsed Screens group below. */
+/**
+ * The Checkout Project's tree under an empty "Search Threads" field, with the
+ * collapsed Screens group below.
+ */
 export const Threads = {
   render: () => <Sidebar />,
+};
+
+/** "pay" in Search Threads: the match and its ancestors, drawn expanded. */
+export const SearchMatches = {
+  render: () => <Sidebar query="pay" />,
+};
+
+/** A query no Thread name contains. */
+export const SearchNoMatch = {
+  render: () => <Sidebar query="zzz" />,
+};
+
+/** The Threads pane alone in the stack: no Threads header (plan-4 G5). */
+export const ThreadsAlone = {
+  render: () => <Sidebar fixture={threadsAlone} />,
 };
 
 export const ChildSelected = {

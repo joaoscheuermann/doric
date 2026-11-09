@@ -290,6 +290,31 @@ export const BOXES: readonly (readonly [string, string])[] = [
     'forward button',
     '[data-slot="workspace-sidebar-header"] button[aria-label="Forward"]',
   ],
+  // 4.3: the Project sidebar's "Search Threads" field, New Thread and the
+  // tree's first row (`I269:31402;331:42177`, `269:31402`), and the Dashboard
+  // header's Search button (`85:7520`, plan-4 G3).
+  [
+    'thread search',
+    '[data-slot="input-group"]:has(input[aria-label="Search Threads"])',
+  ],
+  ['thread search input', 'input[aria-label="Search Threads"]'],
+  [
+    'thread search kbd',
+    '[data-slot="input-group"]:has(input[aria-label="Search Threads"]) [data-slot="kbd"]',
+  ],
+  [
+    'new thread row',
+    '[data-slot="sidebar-menu-button"]:has(> svg.lucide-plus)',
+  ],
+  [
+    'first thread row',
+    '[role="treeitem"][data-slot="sidebar-menu-sub-button"]',
+  ],
+  ['threads empty', '[data-threads-empty]'],
+  [
+    'header search button',
+    '[data-slot="workspace-sidebar-header"] button[aria-label="Search"]',
+  ],
   ['sidebar column', '[data-slot="workspace-sidebar-header"] + *'],
   ['sidebar menu', '[data-slot="sidebar-menu"]'],
   ['sidebar menu button', '[data-slot="sidebar-menu-button"]'],
