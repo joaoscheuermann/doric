@@ -1,6 +1,5 @@
 import { Button } from 'desktop/ui/button';
 import { type DiffControls, DiffEditor, fileLanguage } from 'desktop/ui/code';
-import { ToolbarDivider } from 'desktop/ui/panels';
 import { ToggleGroup, ToggleGroupItem } from 'desktop/ui/toggle-group';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 
@@ -20,7 +19,7 @@ const diffTokens = {
 const path = 'packages/desktop/src/chrome-bar.tsx';
 
 const Toolbar = ({ controls }: { readonly controls: DiffControls }) => (
-  <div className="flex h-9 shrink-0 items-center gap-1 px-2">
+  <div className="flex h-9 shrink-0 items-center gap-2 px-2">
     <span className="min-w-0 flex-1 truncate font-mono text-xs">{path}</span>
     <Button
       size="icon-xs"
@@ -38,7 +37,6 @@ const Toolbar = ({ controls }: { readonly controls: DiffControls }) => (
     >
       <ChevronDownIcon />
     </Button>
-    <ToolbarDivider />
     <ToggleGroup
       size="sm"
       value={[controls.layout]}

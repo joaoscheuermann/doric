@@ -96,7 +96,7 @@ function Row({
         <span className="min-w-0 truncate font-normal" title={label}>
           {label}
         </span>
-        {divider && <Separator className="min-w-0 flex-1" />}
+        {divider && <Separator className="min-w-0 flex-1 opacity-0" />}
         <Cost total={total} />
       </div>
       <Metrics total={total} />
@@ -144,12 +144,12 @@ export function CostBreakdown({
                   className="hidden group-data-panel-open:block"
                 />
               </CollapsibleTrigger>
-              <Separator className="min-w-0 flex-1" />
+              <Separator className="min-w-0 flex-1 opacity-0" />
               <Cost total={subtotal} />
             </div>
             <Metrics total={subtotal} />
           </div>
-          <CollapsibleContent className="border-t border-border bg-muted/40">
+          <CollapsibleContent className="bg-muted/40">
             <ul className="flex flex-col">
               {subthreads.map((entry) => (
                 <li
@@ -163,8 +163,7 @@ export function CostBreakdown({
           </CollapsibleContent>
         </Collapsible>
       </div>
-      <Separator />
-      <footer className="flex items-center justify-between gap-2 bg-sidebar px-3 py-2">
+      <footer className="mt-2 flex items-center justify-between gap-2 bg-sidebar px-3 py-2">
         <span>Total</span>
         <Cost total={usage.total} />
       </footer>
