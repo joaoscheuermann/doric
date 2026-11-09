@@ -9,7 +9,11 @@
       "dependsOn": [
         { "projects": "doric-app", "target": "build" },
         { "projects": "doric-app", "target": "typecheck" },
-        { "projects": "bundle-core", "target": "build" }
+        { "projects": "bundle-core", "target": "build" },
+        { "projects": "doric-renderer", "target": "build" },
+        { "projects": "bundle-layout", "target": "build" },
+        { "projects": "bundle-resources", "target": "build" },
+        { "projects": "bundle-runtime", "target": "build" }
       ],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {

@@ -27,6 +27,10 @@ const profile = mkdtempSync(join(tmpdir(), 'doric-electron-tests-'));
 
 app.setPath('userData', profile);
 
+// Containers give /dev/shm 64 MB: full-window captures (1920×1080, the shell
+// tests) exhaust it and the GPU process dies. Shared memory goes to /tmp.
+app.commandLine.appendSwitch('disable-dev-shm-usage');
+
 // Windows are never shown; quitting is the runner's decision.
 app.on('window-all-closed', () => undefined);
 

@@ -1,6 +1,7 @@
 // What the Electron tests boot: the real desktop platform over the built
 // platform assets, a fake host (a Socket.IO server in this process, the real
-// network boundary) and a fixture shell whose bootstrap is desktop/client's.
+// network boundary) and either a fixture shell whose bootstrap is
+// desktop/client's or the real built renderer shell.
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server as HttpServer } from 'node:http';
@@ -12,6 +13,11 @@ import type { DistributionCatalog } from 'bundle/runtime';
 import type { BrowserWindow, WebContents } from 'electron';
 import { Server, type Socket } from 'socket.io';
 
+import { createConnectionManager } from '../../../doric/src/connection/manager';
+import {
+  type ConnectionMonitor,
+  createConnectionService,
+} from '../../../doric/src/connection/status';
 import { DesktopPlatform } from '../../../doric/src/platform/app';
 import {
   createPlatformLog,
@@ -42,11 +48,23 @@ export interface FakeHost {
   ): void;
   /** Refuses the next `count` connections (the host is down). */
   refuse(count: number): void;
-  /** Answers `contract method` calls with `handler` (other host methods). */
+  /**
+   * Answers `contract method` calls with `handler` (other host methods); it
+   * receives the call's input and the scope the call carries.
+   */
   serve(
     contract: string,
     method: string,
-    handler: (input: unknown) => unknown,
+    handler: (input: unknown, scope: unknown) => unknown,
+  ): void;
+  /**
+   * Answers `contract method` subscriptions: `handler` receives the input and
+   * a `push` that sends one stream value; it may return a cleanup.
+   */
+  stream(
+    contract: string,
+    method: string,
+    handler: (input: unknown, push: (value: unknown) => void) => unknown,
   ): void;
   close(): Promise<void>;
 }
@@ -61,7 +79,15 @@ export const startFakeHost = async (input: {
   );
   const calls: HostCall[] = [];
   const watchers = new Map<string, Socket>();
-  const handlers = new Map<string, (input: unknown) => unknown>();
+  const handlers = new Map<
+    string,
+    (input: unknown, scope: unknown) => unknown
+  >();
+  const streams = new Map<
+    string,
+    (input: unknown, push: (value: unknown) => void) => unknown
+  >();
+  const cleanups = new Map<string, () => void>();
   let refusals = 0;
   const http: HttpServer = createServer();
   const io = new Server(http);
@@ -78,7 +104,7 @@ export const startFakeHost = async (input: {
     next();
   });
   bridge.on('connection', (socket) => {
-    socket.on('call', (message: { id: string } & HostCall) => {
+    socket.on('call', (message: { id: string; scope?: unknown } & HostCall) => {
       calls.push({
         contract: message.contract,
         method: message.method,
@@ -125,9 +151,16 @@ export const startFakeHost = async (input: {
       } else if (handlers.has(`${message.contract} ${message.method}`)) {
         const handler = handlers.get(
           `${message.contract} ${message.method}`,
-        ) as (input: unknown) => unknown;
+        ) as (input: unknown, scope: unknown) => unknown;
 
-        answer(handler(message.input));
+        void Promise.resolve()
+          .then(() => handler(message.input, message.scope))
+          .then(answer, (error: unknown) =>
+            fail(
+              'internal',
+              error instanceof Error ? error.message : String(error),
+            ),
+          );
       } else {
         fail(
           'unavailable',
@@ -147,11 +180,28 @@ export const startFakeHost = async (input: {
         message.method === 'watch'
       ) {
         watchers.set(message.id, socket);
+      } else if (streams.has(`${message.contract} ${message.method}`)) {
+        const handler = streams.get(
+          `${message.contract} ${message.method}`,
+        ) as (input: unknown, push: (value: unknown) => void) => unknown;
+        const cleanup = handler(message.input, (value) =>
+          socket.emit('event', {
+            kind: 'event',
+            id: message.id,
+            values: [value],
+          }),
+        );
+
+        if (typeof cleanup === 'function') {
+          cleanups.set(message.id, cleanup as () => void);
+        }
       }
     });
-    socket.on('unsubscribe', (message: { id: string }) =>
-      watchers.delete(message.id),
-    );
+    socket.on('unsubscribe', (message: { id: string }) => {
+      watchers.delete(message.id);
+      cleanups.get(message.id)?.();
+      cleanups.delete(message.id);
+    });
   });
 
   await new Promise<void>((done) => http.listen(0, '127.0.0.1', done));
@@ -181,6 +231,9 @@ export const startFakeHost = async (input: {
     },
     serve: (contract, method, handler) => {
       handlers.set(`${contract} ${method}`, handler);
+    },
+    stream: (contract, method, handler) => {
+      streams.set(`${contract} ${method}`, handler);
     },
     close: async () => {
       io.disconnectSockets(true);
@@ -320,10 +373,20 @@ export const bootPlatform = async (input: {
   readonly flushDeadlineMs?: number;
   readonly userData?: string;
   readonly start?: boolean;
+  /**
+   * The shell the windows load: a fixture whose bootstrap is
+   * desktop/client's (default), or the real built renderer
+   * (`nx build doric-renderer`), which also follows the host connection as
+   * the app's `main.ts` does.
+   */
+  readonly shell?: 'fixture' | 'renderer';
 }): Promise<Booted> => {
   const userData =
     input.userData ?? (await mkdtemp(join(tmpdir(), 'doric-electron-')));
-  const shellRoot = await fixtureShell(userData);
+  const shellRoot =
+    input.shell === 'renderer'
+      ? resourcesFor(MAIN_DIR).shellRoot
+      : await fixtureShell(userData);
   const notified: Notified[] = [];
   const logs: LogEntry[] = [];
   const notifications: NotificationApi = {
@@ -350,6 +413,17 @@ export const bootPlatform = async (input: {
   });
 
   await platform.prepare();
+
+  // What `main.ts` attaches: the `/doric/bridge` connection monitor every
+  // window's `doric.connection/v1` follows (the badge, the layout).
+  let connection: ConnectionMonitor | undefined;
+
+  if (input.shell === 'renderer') {
+    connection = createConnectionService(
+      createConnectionManager(input.host.url),
+    );
+    platform.connection.attach(connection);
+  }
 
   if (process.env.DORIC_TEST_LOG !== undefined) {
     platform.splashStates.subscribe((state) =>
@@ -378,10 +452,15 @@ export const bootPlatform = async (input: {
       await until(
         async () =>
           !contents.isLoading() &&
-          (await page<string | undefined>(
-            contents,
-            'document.body?.dataset.ready',
-          )) === 'yes',
+          // The fixture shell marks its ready(); the real one is loaded once
+          // its document is (callers wait for what it draws).
+          (input.shell === 'renderer'
+            ? (await page<string>(contents, 'document.readyState')) ===
+              'complete'
+            : (await page<string | undefined>(
+                contents,
+                'document.body?.dataset.ready',
+              )) === 'yes'),
         `the "${key}" window to be ready`,
         timeoutMs,
       );
@@ -389,6 +468,7 @@ export const bootPlatform = async (input: {
       return entry.window as BrowserWindow;
     },
     dispose: async () => {
+      connection?.close();
       await platform.dispose();
 
       // A directory the caller passed is the caller's.

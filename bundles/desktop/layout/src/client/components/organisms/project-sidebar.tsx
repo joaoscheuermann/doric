@@ -213,7 +213,7 @@ function NewThreadRow({ onBegin }: { readonly onBegin?: () => void }) {
     <SidebarMenu className="mb-2 px-2 pt-1">
       <SidebarMenuItem>
         <SidebarMenuButton
-          className="h-7 justify-center gap-1.5 rounded-md px-2.5 text-[0.8rem] font-normal [&_svg]:size-3.5"
+          className="h-7 gap-1.5 rounded-md px-2.5 text-[0.8rem] font-normal [&_svg]:size-3.5"
           disabled={onBegin === undefined}
           onClick={onBegin}
         >
