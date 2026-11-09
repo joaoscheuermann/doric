@@ -20,6 +20,8 @@ import {
   layoutTabsMethods,
   type TabRequest,
 } from 'layout/contracts';
+import { FileIcon } from 'lucide-react';
+import { isValidElement } from 'react';
 
 import { openComparisonCommand } from '../../src/client/commands.js';
 
@@ -84,6 +86,10 @@ describe('A6 Open file on a comparison tab', () => {
         tab.menu?.map(({ label, destructive }) => ({ label, destructive })),
         [{ label: 'Open file', destructive: undefined }],
       );
+      // Figma's ViewerTabDiff "Open file" leads with lucide `file` (S6).
+      const icon = (tab.menu?.[0] as { icon?: unknown } | undefined)?.icon;
+      assert.ok(isValidElement(icon), 'the entry carries a React element icon');
+      assert.equal(icon.type, FileIcon);
       tab.menu?.[0]?.run();
       await settle();
 

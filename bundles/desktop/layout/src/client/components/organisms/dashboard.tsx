@@ -28,6 +28,7 @@ import type { Workspace } from '../../hooks/use-workspace.js';
 import { dashboardStore } from '../../stores/dashboard.js';
 import { ElementHost } from '../molecules/element-host.js';
 import { type ProjectEntry, ProjectItem } from '../molecules/project-item.js';
+import { SEARCH_FIELD } from '../molecules/search-field.js';
 import { INSET_CARD } from '../templates/inset-card.js';
 import { DashboardSidebar } from './dashboard-sidebar.js';
 
@@ -229,7 +230,7 @@ export function Dashboard({
     </label>
   );
   const dashboardSearch = (
-    <InputGroup className="h-9 border-transparent bg-secondary shadow-none">
+    <InputGroup className={SEARCH_FIELD}>
       <InputGroupAddon>
         <SearchIcon />
       </InputGroupAddon>

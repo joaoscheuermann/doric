@@ -141,6 +141,7 @@ export function ThreadBranches({
                 : {})}
               onCopyId={() => actions.copyId(thread.id)}
               onOpenInTab={() => actions.openInTab(thread)}
+              openIn={kind === 'main' ? 'new-tab' : 'viewer'}
             >
               <div className="group/tree-row relative w-full" title={title}>
                 <TreeGuides depth={depth} />

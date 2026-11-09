@@ -22,7 +22,7 @@ import {
 import { ScrollArea } from 'desktop/ui/scroll-area';
 import { SidebarMenu } from 'desktop/ui/sidebar';
 import { LayoutTabsV1, LayoutWorkspaceV1 } from 'layout/contracts';
-import { CopyIcon, FilePlusIcon, FolderPlusIcon } from 'lucide-react';
+import { CopyIcon, FolderIcon, PlusIcon } from 'lucide-react';
 import {
   memo,
   type ReactNode,
@@ -303,11 +303,11 @@ const FilesView = memo(function FilesView({
       return (
         <ContextMenuGroup>
           <ContextMenuItem onClick={begin('file')}>
-            <FilePlusIcon />
+            <PlusIcon />
             New file
           </ContextMenuItem>
           <ContextMenuItem onClick={begin('directory')}>
-            <FolderPlusIcon />
+            <FolderIcon />
             New folder
           </ContextMenuItem>
         </ContextMenuGroup>

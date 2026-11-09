@@ -33,7 +33,11 @@ export function ProjectColorMenu({ onSelect, value }: ProjectColorMenuProps) {
         <ProjectAvatar color={value} />
         Color
       </ContextMenuSubTrigger>
-      <ContextMenuSubContent>
+      {/* Figma (D14): the palette sits flush against the menu's right edge,
+          its top 3 px above the trigger's. The trigger is inset by the
+          menu's 4 px padding, so a 4 px side offset clears it; the
+          primitive's default align offset (+4) would put it 4 px below. */}
+      <ContextMenuSubContent sideOffset={4} alignOffset={-3}>
         <ContextMenuRadioGroup
           value={value ?? noColor}
           onValueChange={(next) =>

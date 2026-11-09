@@ -20,6 +20,7 @@ import {
   layoutTabsMethods,
   type TabRequest,
 } from 'layout/contracts';
+import { isValidElement } from 'react';
 
 import { filePathOf, openFileCommand } from '../src/client/commands.js';
 import { OPEN_FILE_COMMAND } from '../src/contracts/index.js';
@@ -137,6 +138,11 @@ describe('files.open-file/v1', () => {
           destructive: undefined,
         },
       ],
+    );
+    const icon = (tabs[0]?.menu?.[0] as { icon?: unknown } | undefined)?.icon;
+    assert.ok(
+      isValidElement(icon),
+      'Reveal in Files carries a leading icon element (S6)',
     );
   });
 

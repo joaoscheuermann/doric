@@ -10,7 +10,13 @@ import {
 import { Input } from 'desktop/ui/input';
 import { indentation, TreeGuides } from 'desktop/ui/panels';
 import { SidebarMenuSubButton, SidebarMenuSubItem } from 'desktop/ui/sidebar';
-import { CopyIcon, PencilIcon, SquareIcon, TerminalIcon } from 'lucide-react';
+import {
+  CopyIcon,
+  OctagonXIcon,
+  PencilIcon,
+  SquareIcon,
+  TerminalIcon,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { terminalNameLimit } from '../../contracts/index.js';
@@ -94,13 +100,18 @@ export function TerminalRows({
             }
           />
           <ContextMenuContent>
+            {onRename && (
+              <>
+                <ContextMenuGroup>
+                  <ContextMenuItem onClick={() => setRenaming(terminal.id)}>
+                    <PencilIcon />
+                    Rename
+                  </ContextMenuItem>
+                </ContextMenuGroup>
+                <ContextMenuSeparator />
+              </>
+            )}
             <ContextMenuGroup>
-              {onRename && (
-                <ContextMenuItem onClick={() => setRenaming(terminal.id)}>
-                  <PencilIcon />
-                  Rename
-                </ContextMenuItem>
-              )}
               <ContextMenuItem onClick={() => copyCommand(terminal)}>
                 <CopyIcon />
                 Copy command
@@ -114,7 +125,7 @@ export function TerminalRows({
                     variant="destructive"
                     onClick={() => onStop(terminal.id)}
                   >
-                    <SquareIcon />
+                    <OctagonXIcon />
                     Kill terminal
                   </ContextMenuItem>
                 </ContextMenuGroup>

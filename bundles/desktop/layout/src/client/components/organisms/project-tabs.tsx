@@ -18,6 +18,7 @@ import {
   useTabStrip,
 } from 'desktop/ui/panels';
 import { cn } from 'desktop/ui/utils';
+import { PencilIcon, PlusIcon, XIcon } from 'lucide-react';
 import { type ReactNode, useLayoutEffect, useState } from 'react';
 
 import type { ProjectTabs } from '../../domain/project-tabs.js';
@@ -200,42 +201,47 @@ function ProjectTab({
             : undefined
         }
       >
+        {/* Figma `layout/ContextMenu` ProjectTab (363:230, note 364:23948):
+            no "Open project" (the tab is the Project); the close entries
+            without an icon are inset; one that would close nothing is
+            hidden, not disabled. */}
         <ContextMenuGroup>
-          <ContextMenuItem
-            onClick={() =>
-              navigate(`/projects/${encodeURIComponent(project.id)}`)
-            }
-          >
-            Open project
-          </ContextMenuItem>
           <ContextMenuItem onClick={() => newThread(project)}>
+            <PlusIcon />
             New thread
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setRenameFromMenu(true)}>
+            <PencilIcon />
             Rename
           </ContextMenuItem>
+          <ProjectColorMenu
+            value={project.color}
+            onSelect={(color) => setColor(project, color)}
+          />
         </ContextMenuGroup>
         <ContextMenuSeparator />
-        <ProjectColorMenu
-          value={project.color}
-          onSelect={(color) => setColor(project, color)}
-        />
-        <ContextMenuSeparator />
         <ContextMenuGroup>
-          <ContextMenuItem onClick={closeThis}>Close tab</ContextMenuItem>
-          <ContextMenuItem
-            disabled={order.length < 2}
-            onClick={() => closeMany(order.filter((id) => id !== project.id))}
-          >
-            Close other tabs
+          <ContextMenuItem onClick={closeThis}>
+            <XIcon />
+            Close tab
           </ContextMenuItem>
-          <ContextMenuItem
-            disabled={index === order.length - 1}
-            onClick={() => closeMany(order.slice(index + 1))}
-          >
-            Close tabs to the right
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => closeMany(order)}>
+          {order.length > 1 && (
+            <ContextMenuItem
+              inset
+              onClick={() => closeMany(order.filter((id) => id !== project.id))}
+            >
+              Close other tabs
+            </ContextMenuItem>
+          )}
+          {index < order.length - 1 && (
+            <ContextMenuItem
+              inset
+              onClick={() => closeMany(order.slice(index + 1))}
+            >
+              Close tabs to the right
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem inset onClick={() => closeMany(order)}>
             Close all tabs
           </ContextMenuItem>
         </ContextMenuGroup>

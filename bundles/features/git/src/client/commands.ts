@@ -9,9 +9,11 @@ import { CommandsV1, defineCommand } from 'bundle/contracts';
 import { baseName, joinPath } from 'desktop/reads';
 import {
   type CurrentTab,
+  type TabRequest as LayoutTabRequest,
   LayoutTabsV1,
-  type TabRequest,
 } from 'layout/contracts';
+import { FileIcon } from 'lucide-react';
+import { createElement, type ReactElement } from 'react';
 
 import {
   OPEN_COMPARISON_COMMAND,
@@ -19,6 +21,17 @@ import {
   openComparisonInput,
 } from '../contracts/index.js';
 import { OPEN_FILE_COMMAND } from './api/peers.js';
+
+/**
+ * A tab request whose menu items may carry `icon`, the item's 16 px leading
+ * icon (`layout.tabs/v1@1.2.0` TabMenuItem), typed here until git reads that
+ * version of the contract.
+ */
+export type TabRequest = Omit<LayoutTabRequest, 'menu'> & {
+  readonly menu?: readonly (NonNullable<LayoutTabRequest['menu']>[number] & {
+    readonly icon?: ReactElement;
+  })[];
+};
 
 /** The tag of the diff tab's element. */
 export const FILE_DIFF_TAG = 'git-file-diff';
@@ -53,7 +66,16 @@ export const comparisonTab = (
   tooltip: input.path,
   ...(openFile === undefined
     ? {}
-    : { menu: [{ id: 'open-file', label: 'Open file', run: openFile }] }),
+    : {
+        menu: [
+          {
+            id: 'open-file',
+            label: 'Open file',
+            icon: createElement(FileIcon),
+            run: openFile,
+          },
+        ],
+      }),
 });
 
 /**

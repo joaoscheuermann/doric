@@ -65,7 +65,7 @@ export function DiscardDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         {message !== undefined && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-center text-sm text-destructive">
             {message}
           </p>
         )}

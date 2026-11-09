@@ -390,6 +390,12 @@ describe('Discard answers in the dialog (T-4.4.11)', () => {
         dialogText().includes(text),
         `"${text}" is not in the dialog: ${dialogText()}`,
       );
+      // S10: the message is centred like the dialog's header.
+      const alert = dialog()?.querySelector<HTMLElement>('[role="alert"]');
+      assert.ok(
+        alert?.classList.contains('text-center'),
+        'the message is centred',
+      );
       await press('Cancel');
       assert.ok(dialog() === null, 'the dialog closed');
     });

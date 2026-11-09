@@ -12,6 +12,8 @@ import {
   LayoutWorkspaceV1,
   type TabRequest,
 } from 'layout/contracts';
+import { FilesIcon } from 'lucide-react';
+import { createElement, type ReactElement } from 'react';
 
 import {
   OPEN_FILE_COMMAND,
@@ -72,11 +74,22 @@ export const revealFile = (
   }
 };
 
+/**
+ * A tab request whose menu entries may carry a leading `icon` element
+ * (`layout.tabs/v1@1.2.0` `TabMenuItem.icon`), typed here until layout's
+ * contract declares it.
+ */
+type FileTabRequest = Omit<TabRequest, 'menu'> & {
+  readonly menu?: readonly (NonNullable<TabRequest['menu']>[number] & {
+    readonly icon?: ReactElement;
+  })[];
+};
+
 /** The tab a file opens as; with `services`, its menu holds Reveal in Files. */
 export const fileTab = (
   input: OpenFileInput,
   services?: Services,
-): TabRequest => ({
+): FileTabRequest => ({
   id: fileTabId(input.path),
   title: baseName(input.path),
   tag: FILE_VIEW_TAG,
@@ -90,6 +103,7 @@ export const fileTab = (
           {
             id: 'reveal-in-files',
             label: 'Reveal in Files',
+            icon: createElement(FilesIcon),
             run: () => revealFile(services, input),
           },
         ],

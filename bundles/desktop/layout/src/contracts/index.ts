@@ -9,6 +9,7 @@ import {
   noInput,
   ref,
 } from 'bundle/contracts';
+import { isValidElement, type ReactElement } from 'react';
 import type { Project, Thread } from 'runtime/contracts';
 import { z } from 'zod';
 
@@ -27,8 +28,10 @@ export interface TabRequest {
   /** 1.1.0: the trigger's tooltip (`title` attribute); defaults to `title`. */
   readonly tooltip?: string;
   /**
-   * 1.2.0: the entries the tab's context menu shows above "Close tab", in
-   * order. The tab keeps them for its life: they are fixed when it opens.
+   * 1.2.0: the entries the tab's context menu shows besides "Close tab". The
+   * non-destructive ones come first, in order, then a separator and "Close
+   * tab"; the destructive ones come last, in order, behind a separator. The
+   * tab keeps them for its life: they are fixed when it opens.
    */
   readonly menu?: readonly TabMenuItem[];
 }
@@ -37,6 +40,13 @@ export interface TabRequest {
 export interface TabMenuItem {
   readonly id: string;
   readonly label: string;
+  /**
+   * The entry's leading 16 px icon: a React element, such as
+   * `createElement(FolderOpenIcon)` from lucide-react, drawn before the label.
+   * Anything but a valid React element fails `invalid_input`. Absent, the
+   * label aligns with the labels of the entries that have one.
+   */
+  readonly icon?: ReactElement;
   /** Drawn with the destructive item variant. */
   readonly destructive?: boolean;
   /** Runs when the reader picks the entry; the menu closes. */
@@ -108,6 +118,11 @@ export const tabRequestSchema = z
           .object({
             id: z.string(),
             label: z.string(),
+            icon: z
+              .custom<ReactElement>((value) => isValidElement(value), {
+                message: 'Expected a React element.',
+              })
+              .optional(),
             destructive: z.boolean().optional(),
             run: functionSchema<() => void>(),
           })

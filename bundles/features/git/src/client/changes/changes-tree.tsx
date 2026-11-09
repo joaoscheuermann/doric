@@ -19,7 +19,7 @@ import {
   SidebarMenuSub,
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
-import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
+import { ChevronRightIcon, GitBranchIcon, RotateCcwIcon } from 'lucide-react';
 import { memo, type ReactNode, useMemo } from 'react';
 
 import type { ProjectChange } from '../../contracts/index.js';
@@ -75,6 +75,7 @@ export const ChangesTree = memo(function ChangesTree({
   const label = repository.path || 'workspace';
   const discard = (target: DiscardTarget, text: string): ReactNode => (
     <ContextMenuItem variant="destructive" onClick={() => onDiscard?.(target)}>
+      <RotateCcwIcon />
       {text}
     </ContextMenuItem>
   );

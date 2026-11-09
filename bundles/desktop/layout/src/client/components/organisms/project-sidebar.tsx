@@ -60,6 +60,7 @@ import { openThreadTab } from '../../hooks/thread-navigation.js';
 import { usePaneOpen, useStackPanes } from '../../hooks/use-stack-panes.js';
 import { setPaneOpen, togglePane } from '../../stores/stack.js';
 import { ElementHost } from '../molecules/element-host.js';
+import { SEARCH_FIELD } from '../molecules/search-field.js';
 import {
   ThreadBranches,
   type ThreadBranchesActions,
@@ -262,7 +263,7 @@ function NewThreadRow({ onBegin }: { readonly onBegin?: () => void }) {
 /**
  * The "Search Threads" field under the sidebar header (§4.3, Figma
  * `I269:31402;331:42177`, plan-4 G4): the Dashboard's search look
- * (`InputGroup h-9 border-transparent bg-secondary shadow-none`), lucide
+ * (`InputGroup` with `SEARCH_FIELD`), lucide
  * `SearchIcon`, placeholder and accessible name "Search Threads", and the
  * shortcut keys (`searchShortcutKeys`) while it is empty.
  */
@@ -278,7 +279,7 @@ function ThreadSearch({
   readonly value: string;
 }) {
   return (
-    <InputGroup className="h-9 border-transparent bg-secondary shadow-none">
+    <InputGroup className={SEARCH_FIELD}>
       <InputGroupAddon>
         <SearchIcon />
       </InputGroupAddon>
@@ -485,7 +486,10 @@ export function ProjectSidebar({
   return (
     <Sidebar collapsible="none" className="overflow-hidden font-normal">
       {header}
-      <SidebarContent className="overflow-hidden p-0">
+      {/* Not clipped: the search field's focus ring (3 px) reaches above the
+          content's top edge, into the header's last 3 px. The panes below
+          bound their own overflow. */}
+      <SidebarContent className="overflow-visible p-0">
         {/* Figma `269:31402`: the field 268×36 at y 40, New Thread at y 88,
             the tree at y 128 (px 6, 12 px gaps; plan-4 G4). */}
         <div className="flex shrink-0 flex-col gap-3 px-1.5 pb-3">

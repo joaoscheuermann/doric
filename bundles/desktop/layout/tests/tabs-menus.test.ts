@@ -8,6 +8,7 @@ import { beforeEach, describe, test } from 'node:test';
 
 import { isContractError } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
+import { createElement, type ReactElement } from 'react';
 
 import { emptyTabs } from '../src/client/domain/workspace-tabs.js';
 import { createLayoutTabs } from '../src/client/services/layout-tabs.js';
@@ -100,6 +101,55 @@ describe('layout.tabs/v1@1.2.0 menu', () => {
     assert.equal(tabOf('thread-1', 'file:a'), undefined);
     await dispose();
   });
+
+  test('a menu entry keeps the React element it gives as its icon', async () => {
+    const { tabs, tabOf, dispose } = setup();
+    const icon = createElement('svg', { 'data-probe': 'reveal' });
+
+    await tabs.open({
+      id: 'file:a',
+      title: 'a.ts',
+      tag: 'file-view',
+      menu: [
+        { id: 'reveal', label: 'Reveal in Files', icon, run: () => undefined },
+      ],
+    });
+
+    const tab = tabOf('thread-1', 'file:a');
+    const menu = tab?.kind === 'element' ? (tab.menu ?? []) : [];
+    assert.equal(menu[0]?.icon, icon);
+    await dispose();
+  });
+
+  for (const [name, icon] of [
+    ['an icon name', 'folder-open'],
+    ['a component', () => null],
+    ['a plain object', { type: 'svg', props: {} }],
+  ] as const) {
+    test(`a menu entry whose icon is ${name} fails invalid_input`, async () => {
+      const { tabs, tabOf, dispose } = setup();
+
+      await assert.rejects(
+        async () =>
+          tabs.open({
+            id: 'file:a',
+            title: 'a.ts',
+            tag: 'file-view',
+            menu: [
+              {
+                id: 'reveal',
+                label: 'Reveal in Files',
+                icon: icon as unknown as ReactElement,
+                run: () => undefined,
+              },
+            ],
+          }),
+        invalidInput,
+      );
+      assert.equal(tabOf('thread-1', 'file:a'), undefined);
+      await dispose();
+    });
+  }
 });
 
 describe('layout.tabs/v1@1.2.0 retitle', () => {

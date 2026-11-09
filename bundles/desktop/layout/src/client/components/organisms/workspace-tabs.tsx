@@ -9,7 +9,7 @@ import {
 } from 'desktop/ui/context-menu';
 import { TabStrip } from 'desktop/ui/panels';
 import { TabsContent } from 'desktop/ui/tabs';
-import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
+import { FileDiffIcon, FileIcon, TerminalIcon, XIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 import { LayoutTabsV1, type TabMenuItem } from '../../../contracts/index.js';
@@ -73,9 +73,27 @@ const tabMenuOf = (tab: WorkspaceTab | undefined) =>
   tab?.kind === 'element' ? (tab.menu ?? []) : [];
 
 /**
- * A viewer tab's context menu (S15): the entries its opener stated
- * (`layout.tabs/v1@1.2.0` `menu`), a separator when there are any, then
- * "Close tab", which closes it as its close button does.
+ * One entry the opener stated, its icon leading; without one it is inset.
+ * `inset` is left out rather than false: the item writes it to `data-inset`,
+ * whose presence alone insets it.
+ */
+const OpenerEntry = ({ item }: { readonly item: TabMenuItem }) => (
+  <ContextMenuItem
+    inset={item.icon === undefined ? true : undefined}
+    variant={item.destructive ? 'destructive' : 'default'}
+    onClick={item.run}
+  >
+    {item.icon}
+    {item.label}
+  </ContextMenuItem>
+);
+
+/**
+ * A viewer tab's context menu (S15, Figma `layout/ContextMenu` 29:5570): the
+ * opener's non-destructive entries (`layout.tabs/v1@1.2.0` `menu`), a
+ * separator, "Close tab" (which closes it as its close button does), then the
+ * opener's destructive entries last, behind a separator. "Close tab" carries
+ * an icon, so an entry without one is inset to align with the labels.
  */
 function TabMenu({
   items,
@@ -84,27 +102,36 @@ function TabMenu({
   readonly items: readonly TabMenuItem[];
   readonly onClose: () => void;
 }) {
+  const leading = items.filter((item) => !item.destructive);
+  const destructive = items.filter((item) => item.destructive);
   return (
     <>
-      {items.length > 0 && (
+      {leading.length > 0 && (
         <>
           <ContextMenuGroup>
-            {items.map((item) => (
-              <ContextMenuItem
-                key={item.id}
-                variant={item.destructive ? 'destructive' : 'default'}
-                onClick={item.run}
-              >
-                {item.label}
-              </ContextMenuItem>
+            {leading.map((item) => (
+              <OpenerEntry key={item.id} item={item} />
             ))}
           </ContextMenuGroup>
           <ContextMenuSeparator />
         </>
       )}
       <ContextMenuGroup>
-        <ContextMenuItem onClick={onClose}>Close tab</ContextMenuItem>
+        <ContextMenuItem onClick={onClose}>
+          <XIcon />
+          Close tab
+        </ContextMenuItem>
       </ContextMenuGroup>
+      {destructive.length > 0 && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuGroup>
+            {destructive.map((item) => (
+              <OpenerEntry key={item.id} item={item} />
+            ))}
+          </ContextMenuGroup>
+        </>
+      )}
     </>
   );
 }

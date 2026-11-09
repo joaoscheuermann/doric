@@ -178,6 +178,12 @@ void describe('the terminal tab (A7, T-4.4.6, T-4.4.7)', () => {
     );
   });
 
+  test('its Kill terminal entry carries a React element icon', async () => {
+    const { isValidElement } = await import('react');
+    const tab = terminalTab(terminalFrom(session()), () => undefined);
+    assert.ok(isValidElement(tab.menu?.[0]?.icon));
+  });
+
   test('Close tab leaves the process running; Kill terminal ends it', async () => {
     const { host, calls } = fakeHost();
     const { store } = storeOver(host);
@@ -342,6 +348,31 @@ void describe('the terminal row menu (A13–A15)', () => {
       ['Rename', 'Copy command', 'Kill terminal'],
     );
     assert.equal(entries().at(-1)?.dataset.variant, 'destructive');
+  });
+
+  test('the row menu groups Rename | Copy command | Kill terminal', async () => {
+    rendered = await renderRows([shell], {
+      onStop: () => undefined,
+      onRename: async () => undefined,
+    });
+    await openMenu(row(rendered.root));
+    const content = document.querySelector(
+      '[data-slot="context-menu-content"]',
+    );
+    const sequence = [
+      ...(content?.querySelectorAll(
+        '[role="menuitem"], [data-slot="context-menu-separator"]',
+      ) ?? []),
+    ].map((node) =>
+      node.getAttribute('role') === 'menuitem' ? node.textContent?.trim() : '|',
+    );
+    assert.deepEqual(sequence, [
+      'Rename',
+      '|',
+      'Copy command',
+      '|',
+      'Kill terminal',
+    ]);
   });
 
   test('A15: Kill terminal stops the terminal', async () => {

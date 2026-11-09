@@ -5,6 +5,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from 'desktop/ui/context-menu';
+import { FolderOpenIcon, Trash2Icon } from 'lucide-react';
 
 import type { api } from '../../api/workspace-api.js';
 import type { Workspace } from '../../hooks/use-workspace.js';
@@ -135,8 +136,10 @@ export function ProjectItem({
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        {/* A2 (§4.4): the row's own open-or-select, first. */}
+        {/* A2 (§4.4): the row's own open-or-select, first; Delete last,
+            behind a separator (Figma `layout/ContextMenu` Project 29:5569). */}
         <ContextMenuItem onClick={() => onOpen(entry)}>
+          <FolderOpenIcon />
           Open project
         </ContextMenuItem>
         <ContextMenuSeparator />
@@ -146,7 +149,9 @@ export function ProjectItem({
             workspace.actions.setProjectColor(project, color)
           }
         />
+        <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onClick={remove}>
+          <Trash2Icon />
           Delete project
         </ContextMenuItem>
       </ContextMenuContent>

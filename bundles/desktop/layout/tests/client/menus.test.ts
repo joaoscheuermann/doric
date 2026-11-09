@@ -1,18 +1,24 @@
 // The layout's ◆ menu entries and the viewer tab menu (§4.4 A1–A4, S15;
 // T-4.4.1 for A1–A4, T-4.4.9), as the reader meets them in the workspace:
-// - a viewer tab's context menu shows the entries its opener stated
-//   (`layout.tabs/v1@1.2.0` `menu`), a separator, then "Close tab"; a tab
-//   opened without `menu` shows only "Close tab";
-// - A1 "Open in new tab" on a Thread row opens the Thread in a viewer tab and
+// - a viewer tab's context menu shows the opener's non-destructive entries
+//   (`layout.tabs/v1@1.2.0` `menu`), a separator, "Close tab", then the
+//   opener's destructive entries behind a separator; a tab opened without
+//   `menu` shows only "Close tab"; an entry's `icon` leads it;
+// - A1 "Open in new tab" on a main Thread row ("Open in viewer" on a
+//   sub-thread or agent Thread row) opens the Thread in a viewer tab and
 //   selects it, while the conversation column keeps its Thread;
 // - A2 "Open project" leads a Dashboard row's menu and opens the Project;
 // - A3 "New thread" on a Project tab selects the Project and starts a draft;
-// - A4 "Color" on a Project tab colors the Project's tab and Dashboard row.
+// - A4 "Color" on a Project tab colors the Project's tab and Dashboard row;
+// - the groups of each menu follow Figma `layout/ContextMenu` (29:5570): Open
+//   → Create → Edit → Copy → Close → Destructive, destructive last behind a
+//   separator, and entries that would do nothing are hidden, not disabled.
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
 
 import { NavigationV1 } from 'bundle/contracts';
+import { createElement } from 'react';
 
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
@@ -120,6 +126,34 @@ const entries = (): HTMLElement[] => [
 const labels = (): string[] =>
   entries().map((entry) => normalized(entry.textContent));
 
+/**
+ * The open menu's entries split into the groups its separators draw, as
+ * labels; the submenus it opens are not part of it.
+ */
+const groups = (): string[][] => {
+  const content = document.querySelector('[data-slot="context-menu-content"]');
+  assert.ok(content, 'No open context menu.');
+  const result: string[][] = [[]];
+  for (const node of content.querySelectorAll<HTMLElement>(
+    '[role="menuitem"], [data-slot="context-menu-separator"]',
+  )) {
+    if (node.dataset.slot === 'context-menu-separator') result.push([]);
+    else result.at(-1)?.push(normalized(node.textContent));
+  }
+  return result.filter((group) => group.length > 0);
+};
+
+const entry = (label: string): HTMLElement => {
+  const found = entries().find(
+    (item) => normalized(item.textContent) === label,
+  );
+  assert.ok(
+    found,
+    `No entry "${label}"; the menu holds ${labels().join(' | ')}`,
+  );
+  return found;
+};
+
 const pick = async (label: string): Promise<void> => {
   const entry = entries().find(
     (item) => normalized(item.textContent) === label,
@@ -170,7 +204,7 @@ const tabsService = async () => {
 };
 
 describe('the viewer tab menu', () => {
-  test("shows the opener's entries, a separator, then Close tab", async () => {
+  test("shows the opener's entries, then Close tab, then its destructive entries last", async () => {
     await render({ path: planPath });
     const ran: string[] = [];
     const tabs = await tabsService();
@@ -179,12 +213,43 @@ describe('the viewer tab menu', () => {
       title: 'npm test',
       tag: 'terminal-view',
       menu: [
-        { id: 'copy', label: 'Copy command', run: () => ran.push('copy') },
         {
           id: 'kill',
           label: 'Kill terminal',
           destructive: true,
           run: () => ran.push('kill'),
+        },
+        { id: 'copy', label: 'Copy command', run: () => ran.push('copy') },
+      ],
+    });
+    await settle();
+
+    await openMenu(viewerTab('terminal:1'));
+
+    assert.deepEqual(groups(), [
+      ['Copy command'],
+      ['Close tab'],
+      ['Kill terminal'],
+    ]);
+    assert.equal(entry('Kill terminal').dataset.variant, 'destructive');
+    assert.notEqual(entry('Close tab').dataset.variant, 'destructive');
+    await pick('Kill terminal');
+    assert.deepEqual(ran, ['kill']);
+  });
+
+  test('a terminal tab shows Close tab, then Kill terminal behind a separator', async () => {
+    await render({ path: planPath });
+    const tabs = await tabsService();
+    await tabs.open({
+      id: 'terminal:1',
+      title: 'npm test',
+      tag: 'terminal-view',
+      menu: [
+        {
+          id: 'kill',
+          label: 'Kill terminal',
+          destructive: true,
+          run: () => undefined,
         },
       ],
     });
@@ -192,21 +257,43 @@ describe('the viewer tab menu', () => {
 
     await openMenu(viewerTab('terminal:1'));
 
-    assert.deepEqual(labels(), ['Copy command', 'Kill terminal', 'Close tab']);
-    const [, kill, close] = entries();
-    assert.equal(kill?.dataset.variant, 'destructive');
-    assert.notEqual(close?.dataset.variant, 'destructive');
-    const separator = document.querySelector(
-      '[data-slot="context-menu-content"] [data-slot="context-menu-separator"]',
-    );
-    assert.ok(separator, 'No separator above Close tab.');
+    assert.deepEqual(groups(), [['Close tab'], ['Kill terminal']]);
+  });
+
+  test("an entry's icon leads it; an entry without one aligns with the labels", async () => {
+    await render({ path: planPath });
+    const tabs = await tabsService();
+    await tabs.open({
+      id: 'file:a',
+      title: 'a.ts',
+      tag: 'file-view',
+      menu: [
+        {
+          id: 'reveal',
+          label: 'Reveal in Files',
+          icon: createElement('svg', { 'data-probe': 'reveal' }),
+          run: () => undefined,
+        },
+        { id: 'copy', label: 'Copy path', run: () => undefined },
+      ],
+    });
+    await settle();
+
+    await openMenu(viewerTab('file:a'));
+
+    const reveal = entry('Reveal in Files');
     assert.ok(
-      (kill?.compareDocumentPosition(separator) ?? 0) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      'The separator is not between the entries and Close tab.',
+      reveal.querySelector('svg[data-probe="reveal"]'),
+      'Reveal in Files does not show its icon.',
     );
-    await pick('Kill terminal');
-    assert.deepEqual(ran, ['kill']);
+    assert.equal(
+      reveal.firstElementChild?.getAttribute('data-probe'),
+      'reveal',
+    );
+    assert.ok(
+      entry('Copy path').hasAttribute('data-inset'),
+      'Copy path, without an icon, is not inset.',
+    );
   });
 
   test('a tab opened without menu shows only Close tab, which closes it', async () => {
@@ -231,6 +318,121 @@ describe('the viewer tab menu', () => {
     );
     await pick('Close tab');
     assert.deepEqual(viewerTabIds(), ['file:b']);
+  });
+});
+
+describe('the Thread menu', () => {
+  const subThread: Thread = {
+    ...thread('7e9f1a3b-5c7d-4e9f-a1b3-c5d7e9f1a3b5', 'Build the form'),
+    parentThreadId: plan.id,
+  };
+  const agentThread: Thread = {
+    ...thread('2c4e6a8b-0d1f-4a3c-8e5b-7d9f1b3c5e7a', 'Validate inputs'),
+    parentThreadId: plan.id,
+    origin: 'agent',
+  };
+  const renderTree = () =>
+    render({ path: planPath, threads: [plan, subThread, agentThread, audit] });
+
+  test('a main Thread: Open and Create, then Copy thread ID, then Delete', async () => {
+    await render({ path: planPath });
+
+    await openMenu(threadRow('Plan the checkout'));
+
+    assert.deepEqual(groups(), [
+      ['Open in new tab', 'New sub-thread in Plan the checkout'],
+      ['Copy thread ID'],
+      ['Delete thread'],
+    ]);
+  });
+
+  test('a sub-thread opens in the viewer, and its row opens the Thread there', async () => {
+    const workspace = await renderTree();
+
+    await openMenu(threadRow('Build the form'));
+
+    assert.deepEqual(groups(), [
+      ['Open in viewer'],
+      ['Copy thread ID'],
+      ['Delete thread'],
+    ]);
+    await pick('Open in viewer');
+    assert.equal(viewerTab(`thread:${subThread.id}`).dataset.active, 'true');
+    assert.equal(pathOf(workspace), planPath);
+  });
+
+  test('an agent Thread opens in the viewer and copies its ID', async () => {
+    await renderTree();
+
+    await openMenu(threadRow('Validate inputs'));
+
+    assert.deepEqual(groups(), [['Open in viewer'], ['Copy thread ID']]);
+  });
+});
+
+describe('the Project tab menu', () => {
+  test('the first tab: New thread, Rename, Color, then every Close entry', async () => {
+    await render({ path: planPath });
+
+    await openMenu(projectTab(project.id));
+
+    assert.deepEqual(groups(), [
+      ['New thread', 'Rename', 'Color'],
+      [
+        'Close tab',
+        'Close other tabs',
+        'Close tabs to the right',
+        'Close all tabs',
+      ],
+    ]);
+    assert.ok(
+      entry('Close other tabs').hasAttribute('data-inset'),
+      'Close other tabs, without an icon, is not inset.',
+    );
+  });
+
+  test('the last tab hides Close tabs to the right instead of disabling it', async () => {
+    await render({ path: planPath });
+
+    await openMenu(projectTab(docs.id));
+
+    assert.deepEqual(groups(), [
+      ['New thread', 'Rename', 'Color'],
+      ['Close tab', 'Close other tabs', 'Close all tabs'],
+    ]);
+    assert.ok(
+      entries().every((item) => !item.hasAttribute('data-disabled')),
+      'An entry is drawn disabled.',
+    );
+  });
+
+  test('the only tab hides Close other tabs and Close tabs to the right', async () => {
+    await render({ path: planPath, projectTabs: [project] });
+
+    await openMenu(projectTab(project.id));
+
+    assert.deepEqual(groups(), [
+      ['New thread', 'Rename', 'Color'],
+      ['Close tab', 'Close all tabs'],
+    ]);
+  });
+});
+
+describe('the Dashboard row menu', () => {
+  test('Open project, Color, then Delete project behind a separator', async () => {
+    await render({ path: '/projects', projectTabs: [] });
+    const row = document.querySelector<HTMLElement>(
+      `[data-project-id="${docs.id}"]`,
+    );
+    assert.ok(row, 'No Dashboard row for Docs site.');
+
+    await openMenu(row);
+
+    assert.deepEqual(groups(), [
+      ['Open project'],
+      ['Color'],
+      ['Delete project'],
+    ]);
   });
 });
 

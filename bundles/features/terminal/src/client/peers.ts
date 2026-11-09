@@ -5,6 +5,7 @@
 // cycle between the projects.
 
 import { type CallArg, type Disposable, ref } from 'bundle/contracts';
+import type { ReactNode } from 'react';
 
 /** The fields of a Thread record this part reads. */
 export interface ThreadRecord {
@@ -27,6 +28,8 @@ export interface TabMenuItem {
   readonly id: string;
   readonly label: string;
   readonly destructive?: boolean;
+  /** 1.2.0: the item's 16 px leading icon, a React element. */
+  readonly icon?: ReactNode;
   readonly run: () => void;
 }
 
