@@ -19,7 +19,7 @@
     "src/client/commands.ts",
     "tests/**/*.ts"
   ],
-  "exclude": [],
+  "exclude": ["tests/client/**"],
   "references": [
     {
       "path": "../../../packages/bundle/tsconfig.lib.json"

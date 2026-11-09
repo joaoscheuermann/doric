@@ -30,13 +30,14 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["build", "^build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "rm -rf bundles/features/files/dist-tests",
           "tsc -p bundles/features/files/tsconfig.spec.json",
-          "node --test bundles/features/files/dist-tests/tests/*.test.js"
+          "tsc -p bundles/features/files/tsconfig.client-spec.json",
+          "node --test --test-force-exit bundles/features/files/dist-tests/tests/*.test.js bundles/features/files/dist-tests/tests/client/*.test.js"
         ],
         "parallel": false
       }
