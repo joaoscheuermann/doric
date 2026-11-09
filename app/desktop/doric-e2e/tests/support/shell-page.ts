@@ -277,6 +277,19 @@ export const painted = async (
 /** The boxes of the §1:1 rows: a name and the selector of the element. */
 export const BOXES: readonly (readonly [string, string])[] = [
   ['sidebar header', '[data-slot="workspace-sidebar-header"]'],
+  // 4.2: Back/Forward in the sidebar header (`349:95622`, `256:20933`).
+  [
+    'history group',
+    '[data-slot="workspace-sidebar-header"] [data-slot="button-group"]',
+  ],
+  [
+    'back button',
+    '[data-slot="workspace-sidebar-header"] button[aria-label="Back"]',
+  ],
+  [
+    'forward button',
+    '[data-slot="workspace-sidebar-header"] button[aria-label="Forward"]',
+  ],
   ['sidebar column', '[data-slot="workspace-sidebar-header"] + *'],
   ['sidebar menu', '[data-slot="sidebar-menu"]'],
   ['sidebar menu button', '[data-slot="sidebar-menu-button"]'],

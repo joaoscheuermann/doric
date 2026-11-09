@@ -164,6 +164,9 @@ const registryPatches = {
     footerRule,
   ],
   'components/badge.tsx': [regular('text-xs font-medium whitespace-nowrap')],
+  'components/button-group.tsx': [
+    regular('rounded-lg border bg-muted px-2.5 text-sm font-medium'),
+  ],
   'components/combobox.tsx': [
     ...portalContainer({
       primitive: 'ComboboxPrimitive',

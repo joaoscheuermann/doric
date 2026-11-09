@@ -18,8 +18,9 @@ shadcn/ui files edited locally. Each comes from one of two origins, which
   `collapsible`, `combobox`, `command`, `context-menu`, `dialog`,
   `dropdown-menu`, `input`, `input-group`, `kbd`, `label`, `marker`, `popover`,
   `progress`, `scroll-area`, `select`, `separator`, `sheet`, `sidebar`, `tabs`,
-  `toggle`, `toggle-group` and `tooltip`. `switch` was added later from the
-  same CLI and style.
+  `toggle`, `toggle-group` and `tooltip`. `switch` and `button-group` (the
+  Back/Forward group, UI redesign 4.2) were added later from the same CLI and
+  style.
 
 `scripts/verify-provenance.mjs` checks this. `desktop:test` runs it. For each
 file, it undoes the import rewrites and the patches below and compares the
@@ -119,11 +120,12 @@ compares:
   overlays land in the container a `PortalContainerProvider` names (a
   Papercraft comment thread keeps its menus inside itself). The exported `*Portal` wrappers pass it
   before their spread props, so a caller's own `container` still wins.
-- `alert-dialog.tsx`, `alert.tsx`, `badge.tsx`, `button.tsx`, `combobox.tsx`,
-  `command.tsx`, `context-menu.tsx`, `dialog.tsx`, `dropdown-menu.tsx`,
-  `empty.tsx`, `field.tsx`, `input-group.tsx`, `input.tsx`, `kbd.tsx`,
-  `label.tsx`, `popover.tsx`, `progress.tsx`, `sheet.tsx`, `sidebar.tsx`,
-  `table.tsx`, `tabs.tsx` and `toggle.tsx`: labels and titles take the regular
+- `alert-dialog.tsx`, `alert.tsx`, `badge.tsx`, `button-group.tsx`,
+  `button.tsx`, `combobox.tsx`, `command.tsx`, `context-menu.tsx`,
+  `dialog.tsx`, `dropdown-menu.tsx`, `empty.tsx`, `field.tsx`,
+  `input-group.tsx`, `input.tsx`, `kbd.tsx`, `label.tsx`, `popover.tsx`,
+  `progress.tsx`, `sheet.tsx`, `sidebar.tsx`, `table.tsx`, `tabs.tsx` and
+  `toggle.tsx`: labels and titles take the regular
   weight, `font-normal` (400), where shadcn writes `font-medium`; `field.tsx`'s
   description and error take `font-light` (300), the theme's running-text
   weight.

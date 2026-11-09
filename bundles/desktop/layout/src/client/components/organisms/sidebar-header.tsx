@@ -1,6 +1,11 @@
 import { Button } from 'desktop/ui/button';
 import { HouseIcon } from 'lucide-react';
 
+import {
+  HistoryButtons,
+  type HistoryButtonsProps,
+} from '../molecules/history-buttons.js';
+
 export type SidebarHeaderProps = {
   /**
    * Opens the Dashboard. The workspace view passes its tab navigation with
@@ -14,6 +19,12 @@ export type SidebarHeaderProps = {
    * False or absent in a Project (`99:8035`).
    */
   readonly active?: boolean;
+  /**
+   * Passed to the Back/Forward group (`HistoryButtons`); the app leaves it
+   * out, a test or story names how ButtonGroup loads and whether the app
+   * lists the history methods.
+   */
+  readonly history?: HistoryButtonsProps;
 };
 
 /**
@@ -22,8 +33,10 @@ export type SidebarHeaderProps = {
  * lucide `HouseIcon`, ghost `icon-sm`, accessible name "Dashboard".
  *
  * - The header is a window drag region; its buttons are not.
- * - It draws nothing on its right side (S29); 4.2 and 4.3 add Back/Forward and
- *   Search there.
+ * - On its right side, the "History nav" (`256:20933`, filling the rest of the
+ *   row, end-aligned, 4 px gaps) holds Back/Forward (`HistoryButtons`, §4.2),
+ *   which draws nothing on an app without ButtonGroup or the history methods
+ *   (S35).
  * - Pressing the button calls `onDashboard` once.
  * - While `active`, the button is marked as the current page and filled.
  * - It renders `div[data-slot="workspace-sidebar-header"]`. That slot was
@@ -33,6 +46,7 @@ export type SidebarHeaderProps = {
 export function SidebarHeader({
   onDashboard,
   active = false,
+  history,
 }: SidebarHeaderProps) {
   const mac = navigator.userAgent.includes('Mac');
   return (
@@ -52,6 +66,9 @@ export function SidebarHeader({
       >
         <HouseIcon aria-hidden="true" className="size-3.5" />
       </Button>
+      <div className="flex flex-1 items-center justify-end gap-1">
+        <HistoryButtons {...history} />
+      </div>
     </div>
   );
 }

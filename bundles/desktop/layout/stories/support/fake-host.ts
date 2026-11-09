@@ -5,7 +5,7 @@
 // services the layout itself provides (`layout.tabs/v1` and the rest) are
 // kept and answered in process, so a child Thread still opens its tab.
 
-import type { DoricAbout, ProviderInfo } from 'bundle/contracts';
+import type { DoricAbout, Navigation, ProviderInfo } from 'bundle/contracts';
 import { type ComponentProps, createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -405,13 +405,15 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       for (const listener of [...routeListeners]) listener(match);
     },
     back: () => undefined,
+    forward: () => undefined,
+    history: () => ({ canGoBack: false, canGoForward: false }),
     current: () => matchPath(path),
     chain: () => [],
     subscribe: (listener: (match: RouteMatch | undefined) => void) => {
       routeListeners.add(listener);
       return { dispose: () => routeListeners.delete(listener) };
     },
-  };
+  } satisfies Navigation;
 
   const regions = new Map<string, readonly RegionEntry[]>();
   const regionItems = (region: string): readonly RegionEntry[] => {

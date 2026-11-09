@@ -8,7 +8,8 @@
 // (`file-viewer`), the Changes tab (`changes`) and a diff (`git-diff`), and
 // the settings window on its Providers section (`settings-window`). Phase 4.1
 // adds its Appearance section with each tile selected
-// (`settings-appearance-<theme>`, `65:13666`).
+// (`settings-appearance-<theme>`, `65:13666`); 4.2 adds Back after opening a
+// sub-thread (`history-back`).
 
 import type { BrowserWindow, WebContents } from 'electron';
 
@@ -64,6 +65,11 @@ const CHANGES_TAB = `${FILES_HEADER} [data-tab-id="changes"]`;
 const FILES_TAB = `${FILES_HEADER} [data-tab-id="files"]`;
 const REPOSITORY_ROW = '[role="treeitem"][aria-label*="lines added"]';
 const SETTINGS_TITLE_BAR = '[data-slot="settings-title-bar"]';
+const SIDEBAR_HEADER = '[data-slot="workspace-sidebar-header"]';
+const BACK = 'button[aria-label="Back"]';
+const FORWARD = 'button[aria-label="Forward"]';
+/** A main Thread of Checkout redesign other than the open one. */
+const AUDIT_NAME = 'Accessibility audit';
 
 /** Resolves once no visible element matches `selector`. */
 const gone = (
@@ -373,6 +379,50 @@ export const capturePrototypeStates = async (input: {
   await closeViewer(contents);
   await explained(clickOn(contents, FILES_TAB));
   await explained(waitForSelector(contents, treeRow('payment-form.tsx')));
+
+  // history-back (4.2): another main Thread opened from the sidebar, then
+  // Back in the sidebar header: the open Thread again, Forward enabled, Back
+  // as the window's stack allows. The prototype's hotspot (`122:26445`) opens
+  // "Build the payment form", but a sub-thread opens in the viewer and writes
+  // no history entry; a main Thread's selection is pushed to the path.
+  await clickOn(contents, SIDEBAR_ROWS, AUDIT_NAME);
+  await explained(
+    until(
+      async () =>
+        (await page<string>(contents, 'location.pathname')) !== THREAD_PATH
+          ? true
+          : undefined,
+      'the window to leave the open Thread',
+    ),
+  );
+  await painted(contents, 300);
+  await explained(clickOn(contents, `${SIDEBAR_HEADER} ${BACK}`));
+  await at(THREAD_PATH);
+  await explained(
+    until(
+      async () =>
+        (await inPage<boolean>(
+          contents,
+          `deepAll(${JSON.stringify(`${SIDEBAR_HEADER} ${FORWARD}`)}).some((e) => visible(e) && !e.disabled)`,
+        ))
+          ? true
+          : undefined,
+      'Forward to be enabled after Back',
+    ),
+  );
+  await shoot(
+    'history-back',
+    'Project / Checkout redesign · Back after opening a sub-thread',
+    true,
+  );
+  if (
+    await inPage<boolean>(
+      contents,
+      `deepAll(${JSON.stringify(VIEWER)}).some(visible)`,
+    )
+  ) {
+    await closeViewer(contents);
+  }
 
   // The Dashboard reads its relative times when it mounts, so the clock is
   // held from before it opens until the capture: the rows then read the
