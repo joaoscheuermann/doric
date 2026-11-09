@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 
 import { AgentThreadControls } from '../../../src/client/components/organisms/agent-thread-controls.js';
 import type { AgentControl } from '../../../src/client/domain/agent-control.js';
+import { FooterBand, InsetCard } from '../../support/inset-card.js';
 
 const control = (overrides: Partial<AgentControl>): AgentControl => ({
   status: 'idle',
@@ -18,9 +19,11 @@ export default {
   component: AgentThreadControls,
   decorators: [
     (Story: ComponentType) => (
-      <footer className="flex chrome-bar w-full max-w-2xl items-center justify-end gap-2 border-t bg-sidebar px-2 text-xs text-muted-foreground">
-        <Story />
-      </footer>
+      <InsetCard className="w-full max-w-2xl">
+        <FooterBand>
+          <Story />
+        </FooterBand>
+      </InsetCard>
     ),
   ],
   args: {

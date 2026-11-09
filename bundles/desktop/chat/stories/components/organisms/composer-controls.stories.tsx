@@ -7,6 +7,7 @@ import type { ComponentType } from 'react';
 import { ComposerControls } from '../../../src/client/components/organisms/composer-controls.js';
 import { ChatHost } from '../../support/chat-host.js';
 import { threadIds, threadQueues, threads } from '../../support/fixtures.js';
+import { FooterBand, InsetCard } from '../../support/inset-card.js';
 import { seedQueueEdit } from '../../support/queue-edit.js';
 
 const send = (): void => console.info('Doric story: send');
@@ -24,12 +25,11 @@ export default {
   decorators: [
     (Story: ComponentType) => (
       <ChatHost>
-        <footer
-          className="flex chrome-bar items-center justify-end gap-2 border-t bg-sidebar px-2"
-          data-slot="chat-thread-footer"
-        >
-          <Story />
-        </footer>
+        <InsetCard>
+          <FooterBand data-slot="chat-thread-footer">
+            <Story />
+          </FooterBand>
+        </InsetCard>
       </ChatHost>
     ),
   ],

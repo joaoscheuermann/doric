@@ -517,9 +517,12 @@ export const Conversation = memo(function Conversation({
         ref={scrollRoot}
         className="conversation-scroll min-h-0 min-w-0 w-full flex-1"
       >
-        {/* The top padding keeps the first block off the header, since the
-          transcript grows from the top of the scroll view. */}
-        <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col px-4 pt-6 pb-80 text-sm font-light">
+        {/* The column holds the gutter mark inside its own left padding (the
+          mark's 1.875rem), so the text is 722 px wide in the 768 px column,
+          and its first line sits 2 px under the top (Figma `99:8035`
+          `171:52891`). A pane narrower than the column widens both
+          (`styles.css`). */}
+        <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col pl-[1.875rem] pr-4 pt-0.5 pb-80 text-sm font-light">
           <ConversationThreadContext.Provider value={threadInfo}>
             <CommentThreadsContext.Provider value={threads}>
               <ChatBlocksContext.Provider value={blocksSource}>

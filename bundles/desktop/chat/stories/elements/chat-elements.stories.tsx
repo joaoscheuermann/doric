@@ -16,6 +16,7 @@ import {
 import type { RenderBlock } from '../../src/contracts/index.js';
 import { installChatHost, selectThread } from '../support/chat-host.js';
 import { projectId, threadIds } from '../support/fixtures.js';
+import { FooterBand, InsetCard } from '../support/inset-card.js';
 
 type ElementClass = typeof ChatViewElement;
 
@@ -83,23 +84,27 @@ export default {
 
 export const ChatViewRoute = {
   render: () => (
-    <ElementHost
-      tag="story-chat-view"
-      element={ChatViewElement}
-      props={conversation}
-      className="flex h-[720px] min-h-0 overflow-hidden rounded-lg border"
-    />
+    <InsetCard className="h-[720px]">
+      <ElementHost
+        tag="story-chat-view"
+        element={ChatViewElement}
+        props={conversation}
+        className="flex min-h-0 flex-1"
+      />
+    </InsetCard>
   ),
 };
 
 export const ThreadPanel = {
   render: () => (
-    <ElementHost
-      tag="story-chat-thread-panel"
-      element={ChatThreadPanelElement}
-      props={running}
-      className="flex h-[720px] min-h-0 overflow-hidden rounded-lg border"
-    />
+    <InsetCard className="h-[720px]">
+      <ElementHost
+        tag="story-chat-thread-panel"
+        element={ChatThreadPanelElement}
+        props={running}
+        className="flex min-h-0 flex-1"
+      />
+    </InsetCard>
   ),
 };
 
@@ -107,9 +112,14 @@ export const FooterComposer = {
   render: () => {
     selectThread(threadIds.queued);
     return (
-      <footer className="flex chrome-bar items-center justify-end gap-2 border-t bg-sidebar px-2">
-        <ElementHost tag="story-chat-composer" element={ChatComposerElement} />
-      </footer>
+      <InsetCard>
+        <FooterBand>
+          <ElementHost
+            tag="story-chat-composer"
+            element={ChatComposerElement}
+          />
+        </FooterBand>
+      </InsetCard>
     );
   },
 };

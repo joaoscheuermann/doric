@@ -10,7 +10,6 @@ import {
 import type { ComponentType } from 'react';
 
 import type { AgentControl, AgentStatus } from '../../domain/agent-control.js';
-import { ToolbarDivider } from '../molecules/toolbar-divider.js';
 
 /** What the agent Thread is doing, in one word beside its mark. */
 const STATUS_LABEL: Record<AgentStatus, string> = {
@@ -64,6 +63,8 @@ function Lever({
  * (`chat-composer.tsx`): who owns the Thread and the three levers the reader has
  * on it — pause the run, continue the prompt it left unfinished, or send the last
  * words once more. The reader writes nothing here, so nothing to type is drawn.
+ * The levers stand 8 px after the identity, with no rule between (Figma
+ * `32:49080`).
  */
 export function AgentThreadControls({
   control,
@@ -79,7 +80,7 @@ export function AgentThreadControls({
   return (
     <>
       <span
-        className="mr-auto flex min-w-0 items-center gap-1.5"
+        className="mr-auto flex min-w-0 items-center gap-1.5 pr-2"
         title="An agent opened this thread. You can pause it, continue it or retry it."
       >
         <BotIcon aria-hidden="true" className="size-3.5 shrink-0" />
@@ -89,7 +90,6 @@ export function AgentThreadControls({
           {STATUS_LABEL[control.status]}
         </span>
       </span>
-      <ToolbarDivider />
       <Lever
         enabled={control.canPause}
         hint="Pause the run"

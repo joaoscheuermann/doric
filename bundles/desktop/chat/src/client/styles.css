@@ -193,8 +193,9 @@
 
 /* The mark a turn wears in the column's left gutter, drawn by the block itself
    as its own pseudo-element: nothing outside the block positions it, so the
-   blocks' `contain: layout style` still holds. It hangs outside the column's
-   `px-4`, where a wide pane leaves room, so the text column never moves for it.
+   blocks' `contain: layout style` still holds. It stands in the column's own
+   left padding, which is wide enough for it in every pane, so the text column
+   never moves for it.
    The reader's mark is the block's `::after`, never its `::before`: the prompt
    wears the reader's mark too, and its `::before` is the placeholder's.
 
@@ -281,22 +282,24 @@
   content: none;
 }
 
-/* The pane is the measure the mark is drawn against, not the column: the mark
-   hangs outside the column's own padding. It states the transcript's weight
-   too: the column is set in light, and the few places that need the plain
-   weight say `font-normal` on their own element. */
+/* The pane is the measure the narrow rule below reads, not the column. It
+   states the transcript's weight too: the column is set in light, and the few
+   places that need the plain weight say `font-normal` on their own element. */
 .conversation-scroll {
   container-type: inline-size;
   font-weight: 300;
 }
 
-/* A narrow pane has no room outside the column (the column's 48rem plus the
-   mark and its gap on each side), so the mark stands in the column's own left
-   padding, which widens to hold it whole — never cut by the pane's edge — with
-   the same gap to the text as in a wide pane. */
-@container (max-width: 54rem) {
+/* The column's own left padding holds the mark (1.875rem, `index.tsx`). A
+   pane narrower than the column's 48rem — a viewer beside the conversation —
+   gives the text more room from the pane's edge and the first line more room
+   from the top: 40 px and 16 px, as Figma's 432 px viewer draws them
+   (`99:8508`, `36:21281`). The mark still stands whole inside the padding,
+   with the same gap to the text as in a wide pane. */
+@container (max-width: 48rem) {
   .conversation-scroll > [data-slot='scroll-area-viewport'] > div {
     padding-inline-start: 2.5rem;
+    padding-top: 1rem;
   }
 }
 
