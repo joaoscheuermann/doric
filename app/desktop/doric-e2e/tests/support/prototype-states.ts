@@ -6,7 +6,9 @@
 // bundles' own surfaces: both usage popovers (`usage-context`, `usage-cost`),
 // the agent thread in the viewer (`viewer-agent`), a file in the viewer
 // (`file-viewer`), the Changes tab (`changes`) and a diff (`git-diff`), and
-// the settings window on its Providers section (`settings-window`).
+// the settings window on its Providers section (`settings-window`). Phase 4.1
+// adds its Appearance section with each tile selected
+// (`settings-appearance-<theme>`, `65:13666`).
 
 import type { BrowserWindow, WebContents } from 'electron';
 
@@ -466,11 +468,93 @@ const captureSettingsWindow = async (input: {
       theme,
     });
 
-    return [shot.png, shot.json];
+    return [
+      shot.png,
+      shot.json,
+      ...(await captureAppearance({ booted, window, dir, theme })),
+    ];
   } finally {
     await new Promise<void>((done) => {
       window.once('closed', () => done());
       window.close();
     });
   }
+};
+
+/** The Appearance section's tiles, in the order of `65:13666`. */
+const APPEARANCE_TILES = [
+  ['dark', 'Dark (default)'],
+  ['light', 'Light'],
+  ['system', 'System'],
+] as const;
+
+/**
+ * Opens the settings window's Appearance section and captures it with each
+ * tile selected (`settings-appearance-<tile>`, `65:13465`, `65:13565`,
+ * `65:13665`). `DORIC_THEME` holds the window in the capture's theme while a
+ * choice is saved, as a development run does (§4.1), so "Light selected" is
+ * drawn in a dark window as Figma draws it; the variable is restored after.
+ */
+const captureAppearance = async (input: {
+  readonly booted: Booted;
+  readonly window: BrowserWindow;
+  readonly dir: string;
+  readonly theme: 'dark' | 'light';
+}): Promise<string[]> => {
+  const { booted, window, dir, theme } = input;
+  const settings = window.webContents;
+  const previous = process.env.DORIC_THEME;
+  const written: string[] = [];
+
+  process.env.DORIC_THEME = theme;
+
+  try {
+    await clickOn(
+      settings,
+      '[data-slot="sidebar"] :is(a, button, [role="link"])',
+      'Appearance',
+    );
+    await until(
+      async () =>
+        (await page<string>(settings, 'location.pathname')) ===
+        '/settings/appearance'
+          ? true
+          : undefined,
+      'the Appearance section',
+    );
+
+    for (const [tile, title] of APPEARANCE_TILES) {
+      await clickOn(settings, '[role="radiogroup"] [role="radio"]', title);
+      await until(
+        () =>
+          inPage<boolean>(
+            settings,
+            `deepAll('[role="radio"][aria-checked="true"]').some((e) => e.dataset.theme === ${JSON.stringify(tile)})`,
+          ).then((selected) => (selected ? true : undefined)),
+        `the ${title} tile to be selected`,
+      );
+      await restPointer(settings);
+      await painted(settings, 300);
+
+      const shot = await captureState({
+        booted,
+        window,
+        key: 'settings',
+        dir,
+        node: `settings-appearance-${tile}`,
+        state: `Settings window · Appearance · ${title} selected`,
+        theme,
+      });
+
+      written.push(shot.png, shot.json);
+    }
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DORIC_THEME;
+    } else {
+      process.env.DORIC_THEME = previous;
+    }
+  }
+
+  return written;
 };

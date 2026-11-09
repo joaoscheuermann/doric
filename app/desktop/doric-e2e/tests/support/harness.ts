@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import type { DistributionCatalog } from 'bundle/runtime';
-import type { BrowserWindow, WebContents } from 'electron';
+import { BrowserWindow, nativeTheme, type WebContents } from 'electron';
 import { Server, type Socket } from 'socket.io';
 
 import { createConnectionManager } from '../../../doric/src/connection/manager';
@@ -412,9 +412,24 @@ export const bootPlatform = async (input: {
       : { flushDeadlineMs: input.flushDeadlineMs }),
   });
 
+  // What `main.ts` attaches before `prepare()`: a theme change repaints every
+  // window's native background (T-4.1.1).
+  const repaintBackgrounds = () => {
+    const color = platform.tokens.color(
+      'window',
+      nativeTheme.shouldUseDarkColors,
+    );
+
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.setBackgroundColor(color);
+    }
+  };
+
+  nativeTheme.on('updated', repaintBackgrounds);
+
   await platform.prepare();
 
-  // What `main.ts` attaches: the `/doric/bridge` connection monitor every
+  // Also what `main.ts` attaches: the `/doric/bridge` connection monitor every
   // window's `doric.connection/v1` follows (the badge, the layout).
   let connection: ConnectionMonitor | undefined;
 
@@ -468,6 +483,7 @@ export const bootPlatform = async (input: {
       return entry.window as BrowserWindow;
     },
     dispose: async () => {
+      nativeTheme.off('updated', repaintBackgrounds);
       connection?.close();
       await platform.dispose();
 

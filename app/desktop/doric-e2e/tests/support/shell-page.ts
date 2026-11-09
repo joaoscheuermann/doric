@@ -368,6 +368,27 @@ export const BOXES: readonly (readonly [string, string])[] = [
     'settings table row',
     ':has(> [data-slot="settings-title-bar"]) main tbody tr',
   ],
+  // Phase 4.1: the Appearance section (`65:13666`), its selected tile's parts
+  // (`65:13362`) and its preview (`65:13174`).
+  [
+    'appearance heading',
+    ':has(> [data-slot="settings-title-bar"]) main header:has(> h1)',
+  ],
+  ['appearance field label', '#appearance-theme'],
+  ['appearance tile', '[role="radio"][aria-checked="true"]'],
+  [
+    'appearance preview frame',
+    '[role="radio"][aria-checked="true"] [data-slot="theme-preview-frame"]',
+  ],
+  [
+    'appearance choice card',
+    '[role="radio"][aria-checked="true"] [data-slot="theme-choice-card"]',
+  ],
+  [
+    'appearance check',
+    '[role="radio"][aria-checked="true"] [data-slot="theme-check"]',
+  ],
+  ['appearance description', '[data-slot="theme-description"]'],
 ];
 
 const PROPERTIES = [

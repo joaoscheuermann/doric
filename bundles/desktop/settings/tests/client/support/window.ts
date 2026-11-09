@@ -451,7 +451,13 @@ export const openSettingsWindow = async (input: {
     call: async (envelope) => {
       calls.push(envelope);
 
-      if (envelope.contract === 'doric.shell/v1') {
+      // Main answers the window's own `doric.shell/v1` calls; a test answers
+      // the ones it names (the app's `doric.appearance/v1` behind
+      // `appearanceGet` and `appearanceSet`), and every other one succeeds.
+      if (
+        envelope.contract === 'doric.shell/v1' &&
+        input.host[`doric.shell/v1.${envelope.method}`] === undefined
+      ) {
         return { ok: true, output: undefined };
       }
 

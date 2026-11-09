@@ -18,6 +18,7 @@
     "src/client/input-queue.ts",
     "src/client/domain/**/*.ts",
     "src/client/store.ts",
+    "src/client/view/color-scheme.ts",
     "tests/**/*.ts"
   ],
   "exclude": ["tests/client/**"],

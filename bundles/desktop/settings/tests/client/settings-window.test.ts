@@ -1,7 +1,8 @@
 // The settings window as the user meets it: opened at `/settings`, the nav
-// of its own five sections (Versioning is the git bundle's, WP-10N), each
-// section a route, the search, and the save the
-// window's close waits for.
+// of its own six sections (Versioning is the git bundle's, WP-10N; Appearance
+// shows while the app answers `doric.appearance/v1`, as this window's app
+// does), each section a route, the search, and the save the window's close
+// waits for.
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
@@ -156,6 +157,7 @@ test('a window opened at /settings shows the Providers section and names itself'
   assert.equal(heading(opened), 'Providers');
   assert.deepEqual(navRows(opened), [
     'Profile',
+    'Appearance',
     'Providers',
     'Execution',
     'Tools',
@@ -345,6 +347,7 @@ test('a section another bundle adds is headed by its link and saves through the 
   assert.equal(heading(opened), 'Git');
   assert.deepEqual(navRows(opened), [
     'Profile',
+    'Appearance',
     'Providers',
     'Execution',
     'Tools',
@@ -609,4 +612,165 @@ test("a provider's catalog picker draws its table with a header rule and row div
   assert.ok(!headers[0]?.includes('[&_tr]:border-b-0'));
   for (const row of bodyRows(opened))
     assert.ok(!row.includes('border-b-0'), `no divider in ${row.join(' ')}`);
+});
+
+// T-4.1.9: the Appearance section reads the theme each time it mounts and
+// saves a choice through `doric.appearance/v1`, which the window answers
+// through `doric.shell/v1` (`appearanceGet`, `appearanceSet`).
+
+/** A promise the test settles. */
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+};
+
+/** The app's answers to the window's appearance calls. */
+const appearanceHost = (answers: {
+  readonly get: () => unknown;
+  readonly set?: (input: unknown) => unknown;
+}) => ({
+  ...host(),
+  'doric.shell/v1.appearanceGet': answers.get,
+  'doric.shell/v1.appearanceSet': answers.set ?? (() => undefined),
+});
+
+const refused = (message: string) => () => {
+  throw { code: 'unavailable', message };
+};
+
+const openAppearance = async (
+  answers: Parameters<typeof appearanceHost>[0],
+): Promise<SettingsWindow> => {
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/appearance',
+    host: appearanceHost(answers),
+  });
+  await settle(20);
+  return opened;
+};
+
+/** The Theme field's tiles: name, whether checked, whether disabled. */
+const tiles = (window: SettingsWindow) => {
+  const group = window.document.querySelector('[role="radiogroup"]');
+  return [
+    ...(group?.querySelectorAll<HTMLElement>('[role="radio"]') ?? []),
+  ].map((tile) => ({
+    element: tile,
+    name: tile.querySelector('[data-slot="theme-title"]')?.textContent ?? '',
+    checked: tile.getAttribute('aria-checked') === 'true',
+    disabled: tile.getAttribute('aria-disabled') === 'true',
+  }));
+};
+
+const checkedTile = (window: SettingsWindow): string[] =>
+  tiles(window)
+    .filter((tile) => tile.checked)
+    .map((tile) => tile.name);
+
+const tile = (window: SettingsWindow, name: string): HTMLElement => {
+  const found = tiles(window).find((entry) => entry.name === name);
+  assert.ok(found, `no tile ${name}`);
+  return found.element;
+};
+
+const text = (window: SettingsWindow): string =>
+  window.document.body.textContent ?? '';
+
+test('the Appearance section offers the three themes in a group named Theme', async () => {
+  const window = await openAppearance({ get: () => ({ theme: 'dark' }) });
+
+  assert.equal(heading(window), 'Appearance');
+  assert.equal(activeRow(window), 'Appearance');
+  const group = window.document.querySelector('[role="radiogroup"]');
+  const labelledBy = group?.getAttribute('aria-labelledby') ?? '';
+  assert.equal(
+    window.document.getElementById(labelledBy)?.textContent,
+    'Theme',
+  );
+  assert.deepEqual(
+    tiles(window).map((entry) => entry.name),
+    ['Dark (default)', 'Light', 'System'],
+  );
+  assert.match(text(window), /Earthy dark surfaces with a cream accent/);
+  assert.match(text(window), /Warm light surfaces/);
+  assert.match(text(window), /Follow the macOS appearance/);
+  assert.deepEqual(checkedTile(window), ['Dark (default)']);
+});
+
+test('while the theme is read the tiles are disabled and none is selected', async () => {
+  const window = await openAppearance({
+    get: () => deferred<unknown>().promise,
+  });
+
+  assert.equal(tiles(window).length, 3);
+  assert.ok(tiles(window).every((entry) => entry.disabled));
+  assert.deepEqual(checkedTile(window), []);
+});
+
+test("the read theme's tile is selected and every tile is enabled", async () => {
+  const window = await openAppearance({ get: () => ({ theme: 'light' }) });
+
+  assert.deepEqual(checkedTile(window), ['Light']);
+  assert.ok(tiles(window).every((entry) => !entry.disabled));
+});
+
+test('a failed read says so with the tiles enabled and none selected, and a saved choice selects its tile', async () => {
+  const saved: unknown[] = [];
+  const window = await openAppearance({
+    get: refused('The appearance store is not open.'),
+    set: (input) => {
+      saved.push(input);
+      return undefined;
+    },
+  });
+
+  assert.match(text(window), /Could not read the appearance\./);
+  assert.ok(tiles(window).every((entry) => !entry.disabled));
+  assert.deepEqual(checkedTile(window), []);
+
+  tile(window, 'System').click();
+  await settle(20);
+
+  assert.deepEqual(saved, [{ theme: 'system' }]);
+  assert.deepEqual(checkedTile(window), ['System']);
+  assert.doesNotMatch(text(window), /Could not read the appearance\./);
+});
+
+test('a failed save says so and keeps the selected tile', async () => {
+  const window = await openAppearance({
+    get: () => ({ theme: 'dark' }),
+    set: refused('Could not save the appearance.'),
+  });
+
+  tile(window, 'Light').click();
+  await settle(20);
+
+  assert.match(text(window), /Could not save the appearance\. Try again\./);
+  assert.deepEqual(checkedTile(window), ['Dark (default)']);
+  assert.ok(tiles(window).every((entry) => !entry.disabled));
+});
+
+test('while a save is pending the tiles are disabled and the selection moves only when it resolves', async () => {
+  const save = deferred<undefined>();
+  const window = await openAppearance({
+    get: () => ({ theme: 'dark' }),
+    set: () => save.promise,
+  });
+
+  tile(window, 'Light').click();
+  await settle(20);
+
+  assert.ok(tiles(window).every((entry) => entry.disabled));
+  assert.deepEqual(checkedTile(window), ['Dark (default)']);
+
+  save.resolve(undefined);
+  await settle(20);
+
+  assert.deepEqual(checkedTile(window), ['Light']);
+  assert.ok(tiles(window).every((entry) => !entry.disabled));
 });
