@@ -7,6 +7,7 @@
 import type { FakeHost } from './harness';
 import { EXECUTION, serveSettings } from './settings-host';
 import {
+  CHANGED_FILE,
   CWD,
   conversation,
   type GitCalls,
@@ -437,7 +438,54 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
     },
   }));
 
+  serveWorkspaceWrites(host);
   serveSettings(host);
 
   return serveSandbox(host);
+};
+
+/** The name New file and New folder answer `exists` for (A9, A10). */
+export const TAKEN_NAME = 'checkout.tsx';
+
+/** The path Discard changes refuses: a file with a merge conflict (A11). */
+export const REFUSED_DISCARD = CHANGED_FILE;
+
+/**
+ * The §4.4 writes: `files/v1` `createFile` and `createDirectory` create every
+ * name but `TAKEN_NAME`, which is refused as `exists`; `git.commands/v1`
+ * `discard` discards every target but `REFUSED_DISCARD`, refused with the
+ * host's merge-conflict sentence. Nothing is written: later reads answer as
+ * before.
+ */
+const serveWorkspaceWrites = (host: FakeHost): void => {
+  const create = (input: unknown) => {
+    const { directory, name } = first(input) as {
+      directory: string;
+      name: string;
+    };
+
+    return {
+      status: 'ready',
+      value:
+        name === TAKEN_NAME
+          ? { status: 'refused', reason: 'exists' }
+          : {
+              status: 'created',
+              path: directory === '' ? name : `${directory}/${name}`,
+            },
+    };
+  };
+
+  host.serve('files/v1', 'createFile', create);
+  host.serve('files/v1', 'createDirectory', create);
+  host.serve('git.commands/v1', 'discard', (input) => {
+    const { paths } = first(input) as { paths?: readonly string[] };
+
+    return paths?.includes(REFUSED_DISCARD)
+      ? {
+          status: 'refused',
+          message: `${REFUSED_DISCARD} has a merge conflict. Resolve it before discarding.`,
+        }
+      : { status: 'ready', value: { discarded: paths ?? [CHANGED_FILE] } };
+  });
 };

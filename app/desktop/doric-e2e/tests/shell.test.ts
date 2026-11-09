@@ -8,7 +8,8 @@
 // bar's right end. With `DORIC_SHELL_CAPTURES=<dir>`,
 // the prototype states are captured at 1920×1080 in dark and light for the
 // §2.9 shell check, with the phase 3 states of the bundles' own surfaces
-// (the settings window at 1024×720) and phase 4.1's Appearance section.
+// (the settings window at 1024×720), phase 4.1's Appearance section and
+// phase 4.4's context menus, name row and Discard dialog.
 
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
@@ -397,7 +398,8 @@ describe('the real shell over the workspace bundles', () => {
     }
 
     console.log(`# shell captures:\n#   ${written.join('\n#   ')}`);
-    // Nineteen states, a PNG and its JSON rows each, in two themes.
-    assert.equal(written.length, 76);
+    // Thirty-three states (nineteen, and fourteen of 4.4's menus, name row
+    // and Discard dialog), a PNG and its JSON rows each, in two themes.
+    assert.equal(written.length, 132);
   });
 });

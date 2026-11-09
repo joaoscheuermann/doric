@@ -11,7 +11,10 @@
 // (`settings-appearance-<theme>`, `65:13666`); 4.2 adds Back after opening a
 // sub-thread (`history-back`); 4.3 the sidebar's Thread search with a match,
 // with none and focused by ⌘F (`thread-search`, `thread-search-empty`,
-// `thread-search-focus`).
+// `thread-search-focus`); 4.4 its context menus by right-click (G16), the
+// Files name row with a taken name and the Discard dialog with a refusal
+// (`menu-*`, `new-file-row`, `new-file-exists`, `discard-dialog`,
+// `discard-refused`).
 
 import type { BrowserWindow, WebContents } from 'electron';
 
@@ -22,9 +25,11 @@ import {
   clickOn,
   focused,
   go,
+  hover,
   inPage,
   painted,
   press,
+  rightClick,
   type,
   waitFor,
   waitForSelector,
@@ -36,6 +41,8 @@ import {
   DOCS,
   FROZEN_NOW,
   PAYMENT_FORM,
+  PLAN,
+  TAKEN_NAME,
   THREAD_PATH,
   VALIDATE_CARDS,
 } from './workspace-host';
@@ -221,8 +228,11 @@ export const capturePrototypeStates = async (input: {
     state: string,
     frozen = false,
     blur = true,
+    rest = true,
   ) => {
-    await restPointer(contents, blur);
+    if (rest) {
+      await restPointer(contents, blur);
+    }
     await painted(contents, 300);
 
     const capture = () =>
@@ -494,6 +504,8 @@ export const capturePrototypeStates = async (input: {
   );
   await inPage(contents, 'deepActive()?.blur?.()');
 
+  await explained(captureMenus(contents, shoot));
+
   // The Dashboard reads its relative times when it mounts, so the clock is
   // held from before it opens until the capture: the rows then read the
   // prototype's "just now" … "4 days ago" (`85:7726`, `85:7520`).
@@ -516,6 +528,22 @@ export const capturePrototypeStates = async (input: {
     await click(contents, 'Dashboard');
     await at('/projects');
     await shoot('85:7520', 'Home / Dashboard · All projects');
+
+    // menu-dashboard-row (4.4 A2): a Project row's menu on the Dashboard.
+    await explained(
+      rightClick(
+        contents,
+        `[data-slot="dashboard-content"] [data-project-id="${CHECKOUT.id}"]`,
+      ),
+    );
+    await explained(waitForSelector(contents, MENU));
+    await shoot(
+      'menu-dashboard-row',
+      'Home / Dashboard · Project row menu',
+      false,
+      false,
+    );
+    await closeMenu(contents);
   });
 
   // settings-window: the account menu's Settings opens the settings window,
@@ -525,6 +553,206 @@ export const capturePrototypeStates = async (input: {
   );
 
   return written;
+};
+
+const MENU = '[data-slot="context-menu-content"]';
+const MENU_ITEM = `${MENU} :is([data-slot="context-menu-item"], [data-slot="context-menu-sub-trigger"])`;
+const SUB_MENU = '[data-slot="context-menu-sub-content"]';
+const DIALOG = '[data-slot="alert-dialog-content"]';
+const NAME_ROW = 'input[aria-label="New file name"]';
+const VIEWER_TAB = '[data-slot="workspace-viewer-header"] [data-tab-id]';
+
+/** Closes the open context menu (and its submenu) with Escape. */
+const closeMenu = async (contents: WebContents): Promise<void> => {
+  for (let tries = 0; tries < 3; tries += 1) {
+    if (
+      !(await inPage<boolean>(
+        contents,
+        `deepAll(${JSON.stringify(MENU)}).some(visible)`,
+      ))
+    ) {
+      break;
+    }
+    press(contents, 'Escape');
+    await painted(contents, 200);
+  }
+  await gone(contents, MENU, 'the context menu to close');
+};
+
+type Shoot = (
+  node: string,
+  state: string,
+  frozen?: boolean,
+  blur?: boolean,
+  rest?: boolean,
+) => Promise<void>;
+
+/**
+ * The §4.4 menus over the Project view (`99:8035`), reached by right-click as
+ * a reader opens them (G16: `ContextMenu/Content` `18:645`, `ContextMenu/Item`
+ * `16:339`, destructive `16:363`): the Thread row (A1), the Project tab (A3)
+ * and its Color submenu, the Files rows (A8–A10) with the name row and its
+ * `exists` answer, a file's tab (A5), the Changes rows (A11, A12) with the
+ * Discard dialog and its refusal, and a diff's tab (A6). Each menu is captured
+ * with the pointer off it and its focus kept (an open menu holds focus).
+ */
+const captureMenus = async (
+  contents: WebContents,
+  shoot: Shoot,
+): Promise<void> => {
+  const menu = async (
+    node: string,
+    state: string,
+    selector: string,
+    text?: string,
+  ) => {
+    await rightClick(contents, selector, text);
+    await waitForSelector(contents, MENU);
+    await shoot(node, state, true, false);
+  };
+
+  // menu-thread (A1): "Plan the checkout flow"'s row.
+  await menu(
+    'menu-thread',
+    'Project / Checkout redesign · Thread row menu',
+    SIDEBAR_ROWS,
+    PLAN.name,
+  );
+  await closeMenu(contents);
+
+  // menu-project-tab, menu-project-color (A3): the Project tab's menu, then
+  // its Color submenu opened by hovering its trigger; the pointer stays on the
+  // trigger, so the submenu stays open.
+  await menu(
+    'menu-project-tab',
+    'Project / Checkout redesign · Project tab menu',
+    `[aria-label="Workspace tabs"] button[aria-label=${JSON.stringify(CHECKOUT.name)}]`,
+  );
+  await hover(contents, '[data-slot="context-menu-sub-trigger"]');
+  await waitForSelector(contents, SUB_MENU);
+  await shoot(
+    'menu-project-color',
+    'Project / Checkout redesign · Project tab menu · Color',
+    true,
+    false,
+    false,
+  );
+  await closeMenu(contents);
+
+  // menu-file-row, menu-folder-row (A8–A10): a file's and a folder's rows.
+  await menu(
+    'menu-file-row',
+    'Project / Checkout redesign · File row menu',
+    treeRow('payment-form.tsx'),
+  );
+  await closeMenu(contents);
+  await menu(
+    'menu-folder-row',
+    'Project / Checkout redesign · Folder row menu',
+    treeRow('checkout'),
+  );
+
+  // new-file-row, new-file-exists (A9): New file's name row in the folder,
+  // then a taken name answered `exists`: the text under the row.
+  await clickOn(contents, MENU_ITEM, 'New file');
+  await waitForSelector(contents, NAME_ROW);
+  await gone(contents, MENU, 'the context menu to close');
+  await shoot(
+    'new-file-row',
+    'Project / Checkout redesign · New file name row',
+    true,
+    false,
+  );
+  await type(contents, TAKEN_NAME);
+  press(contents, 'Enter');
+  await showing(
+    contents,
+    '[role="alert"]',
+    `${TAKEN_NAME} already exists.`,
+    'the name row to say the name is taken',
+  );
+  await shoot(
+    'new-file-exists',
+    'Project / Checkout redesign · New file name taken',
+    true,
+    false,
+  );
+  press(contents, 'Escape');
+  await gone(contents, NAME_ROW, 'the name row to close');
+
+  // menu-file-tab (A5): payment-form.tsx opened, its tab's menu.
+  await clickOn(contents, treeRow('payment-form.tsx'));
+  await waitForSelector(contents, FILE_VIEW_FOOTER);
+  await menu(
+    'menu-file-tab',
+    'Project / Checkout redesign · File tab menu',
+    VIEWER_TAB,
+  );
+  await closeMenu(contents);
+  await closeViewer(contents);
+
+  // menu-change-row, menu-repository-row (A11, A12): the Changes rows.
+  await clickOn(contents, CHANGES_TAB);
+  await waitForSelector(contents, REPOSITORY_ROW);
+  await waitForSelector(contents, treeRow('payment-form.tsx'));
+  await menu(
+    'menu-change-row',
+    'Project / Checkout redesign · Changed file row menu',
+    treeRow('payment-form.tsx'),
+  );
+  await closeMenu(contents);
+  await menu(
+    'menu-repository-row',
+    'Project / Checkout redesign · Repository row menu',
+    REPOSITORY_ROW,
+  );
+  await closeMenu(contents);
+
+  // discard-dialog, discard-refused (A11): Discard changes asks, Discard
+  // answers the host's refusal under the header and the dialog stays.
+  await rightClick(contents, treeRow('payment-form.tsx'));
+  await waitForSelector(contents, MENU);
+  await clickOn(contents, MENU_ITEM, 'Discard changes');
+  await waitForSelector(contents, DIALOG);
+  await gone(contents, MENU, 'the context menu to close');
+  await shoot(
+    'discard-dialog',
+    'Project / Checkout redesign · Discard changes dialog',
+    true,
+    false,
+  );
+  await clickOn(
+    contents,
+    `${DIALOG} [data-slot="alert-dialog-action"]`,
+    'Discard',
+  );
+  await showing(
+    contents,
+    `${DIALOG} [role="alert"]`,
+    'has a merge conflict',
+    'the dialog to show the refusal',
+  );
+  await shoot(
+    'discard-refused',
+    'Project / Checkout redesign · Discard refused',
+    true,
+    false,
+  );
+  await clickOn(contents, `${DIALOG} [data-slot="alert-dialog-cancel"]`);
+  await gone(contents, DIALOG, 'the dialog to close');
+
+  // menu-diff-tab (A6): the changed file's diff, its tab's menu.
+  await clickOn(contents, treeRow('payment-form.tsx'));
+  await waitForSelector(contents, '[data-slot="diff-toolbar"]');
+  await menu(
+    'menu-diff-tab',
+    'Project / Checkout redesign · Diff tab menu',
+    VIEWER_TAB,
+  );
+  await closeMenu(contents);
+  await closeViewer(contents);
+  await clickOn(contents, FILES_TAB);
+  await waitForSelector(contents, treeRow('payment-form.tsx'));
 };
 
 /**

@@ -102,14 +102,16 @@ export const waitForSelector = (
   );
 
 /**
- * Clicks the first visible element matching `selector` (and whose text
- * starts with `text`, when given) with real mouse input.
+ * Waits for the first visible element matching `selector` (and whose text
+ * starts with `text`, when given) and answers a point of it the pointer hits:
+ * the first of a 5×5 grid over it (centre first) where the element itself is
+ * hit, else its centre.
  */
-export const clickOn = async (
+const pointOn = async (
   contents: WebContents,
   selector: string,
   text?: string,
-): Promise<void> => {
+): Promise<{ x: number; y: number }> => {
   const find = `deepAll(${JSON.stringify(selector)}).filter(visible).find((e) => ${
     text === undefined
       ? 'true'
@@ -151,20 +153,65 @@ export const clickOn = async (
     })()`,
   );
 
+  return centre;
+};
+
+/** Presses and releases `button` at `point` with real mouse input. */
+const pressButton = (
+  contents: WebContents,
+  point: { x: number; y: number },
+  button: 'left' | 'right',
+): void => {
   contents.focus();
-  contents.sendInputEvent({ type: 'mouseMove', ...centre });
+  contents.sendInputEvent({ type: 'mouseMove', ...point });
   contents.sendInputEvent({
     type: 'mouseDown',
-    ...centre,
-    button: 'left',
+    ...point,
+    button,
     clickCount: 1,
   });
-  contents.sendInputEvent({
-    type: 'mouseUp',
-    ...centre,
-    button: 'left',
-    clickCount: 1,
-  });
+  contents.sendInputEvent({ type: 'mouseUp', ...point, button, clickCount: 1 });
+};
+
+/**
+ * Clicks the first visible element matching `selector` (and whose text
+ * starts with `text`, when given) with real mouse input.
+ */
+export const clickOn = async (
+  contents: WebContents,
+  selector: string,
+  text?: string,
+): Promise<void> => {
+  pressButton(contents, await pointOn(contents, selector, text), 'left');
+};
+
+/**
+ * Right-clicks the first visible element matching `selector` (and whose text
+ * starts with `text`, when given) with real mouse input, as a reader opens
+ * its context menu (§4.4).
+ */
+export const rightClick = async (
+  contents: WebContents,
+  selector: string,
+  text?: string,
+): Promise<void> => {
+  pressButton(contents, await pointOn(contents, selector, text), 'right');
+};
+
+/**
+ * Moves the pointer onto the first visible element matching `selector` (and
+ * whose text starts with `text`, when given), as a reader hovers a submenu's
+ * trigger.
+ */
+export const hover = async (
+  contents: WebContents,
+  selector: string,
+  text?: string,
+): Promise<void> => {
+  const point = await pointOn(contents, selector, text);
+
+  contents.focus();
+  contents.sendInputEvent({ type: 'mouseMove', ...point });
 };
 
 /**
@@ -427,6 +474,51 @@ export const BOXES: readonly (readonly [string, string])[] = [
     '[role="radio"][aria-checked="true"] [data-slot="theme-check"]',
   ],
   ['appearance description', '[data-slot="theme-description"]'],
+  // Phase 4.4: the open context menu (`ContextMenu/Content` `18:645`), an
+  // item (`ContextMenu/Item` `16:339`), a destructive item (`16:363`), the
+  // separator, an item's icon, the Color submenu; the files name row and the
+  // Discard dialog.
+  ['context menu', '[data-slot="context-menu-content"]'],
+  [
+    'context menu item',
+    '[data-slot="context-menu-content"] [data-slot="context-menu-item"][data-variant="default"]',
+  ],
+  [
+    'context menu destructive item',
+    '[data-slot="context-menu-content"] [data-slot="context-menu-item"][data-variant="destructive"]',
+  ],
+  [
+    'context menu separator',
+    '[data-slot="context-menu-content"] [data-slot="context-menu-separator"]',
+  ],
+  [
+    'context menu item icon',
+    '[data-slot="context-menu-content"] [data-slot="context-menu-item"] > svg',
+  ],
+  ['context menu sub trigger', '[data-slot="context-menu-sub-trigger"]'],
+  ['context menu sub content', '[data-slot="context-menu-sub-content"]'],
+  [
+    'context menu radio item',
+    '[data-slot="context-menu-sub-content"] [data-slot="context-menu-radio-item"]',
+  ],
+  [
+    'name row input',
+    'input:is([aria-label="New file name"], [aria-label="New folder name"])',
+  ],
+  [
+    'name row message',
+    ':has(> div > input[aria-invalid="true"]) > p[role="alert"]',
+  ],
+  ['discard dialog', '[data-slot="alert-dialog-content"]'],
+  ['discard dialog title', '[data-slot="alert-dialog-title"]'],
+  [
+    'discard dialog message',
+    '[data-slot="alert-dialog-content"] p[role="alert"]',
+  ],
+  [
+    'discard dialog action',
+    '[data-slot="alert-dialog-content"] [data-slot="alert-dialog-action"]',
+  ],
 ];
 
 const PROPERTIES = [
