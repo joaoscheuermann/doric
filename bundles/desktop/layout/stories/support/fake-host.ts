@@ -17,6 +17,7 @@ import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { activate } from '../../src/client/index.js';
 import type { StackPane, ThreadRows } from '../../src/contracts/index.js';
 import { placeholderElement } from './placeholder.js';
+import { attachStoryServices } from './story-elements.js';
 import { type FixtureTerminal, TerminalRowsFixture } from './terminal-rows.js';
 
 export type { StackPane, ThreadRows };
@@ -442,6 +443,14 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
     'ui/v1': {
       define: () => disposable,
       create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
+        if (tag === 'files-toggle' && customElements.get(tag) !== undefined) {
+          // As `ui/v1` `create` makes a bundle's element: attach the
+          // services scope, then assign the props as properties.
+          const element = document.createElement(tag);
+          attachStoryServices(element, services);
+          Object.assign(element, props ?? {});
+          return element;
+        }
         const threadId = props?.['thread-id'];
         return tag === 'terminal-rows' && typeof threadId === 'string'
           ? terminalRowsElement(

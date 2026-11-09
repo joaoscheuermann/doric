@@ -13,6 +13,7 @@ import {
   useState,
 } from 'react';
 
+import { ElementHost } from '../../src/client/components/molecules/element-host.js';
 import { AccountStatus } from '../../src/client/components/organisms/account-status.js';
 import {
   ProjectPanel,
@@ -42,6 +43,10 @@ import {
 const panelWidth = { '--sidebar-width': '100%' } as CSSProperties;
 
 const region = (name: string) => createElement('core-region', { name });
+
+/** `<files-toggle placement>` props; made through `ui/v1` (`ElementHost`). */
+const headerToggle = { placement: 'header' } as const;
+const panelToggle = { placement: 'panel' } as const;
 
 /** The bar under the conversation: the `layout.footer` region. */
 export function ContentFooter() {
@@ -100,7 +105,7 @@ export function WorkspaceShell({
                   {region('layout.header')}
                   {!filesShown && (
                     <>
-                      {createElement('files-toggle', { placement: 'header' })}
+                      <ElementHost tag="files-toggle" props={headerToggle} />
                       <AccountStatus onOpenSettings={openSettings} />
                     </>
                   )}
@@ -141,7 +146,7 @@ export function WorkspaceShell({
                 items={items}
               />
               <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-                {createElement('files-toggle', { placement: 'panel' })}
+                <ElementHost tag="files-toggle" props={panelToggle} />
                 <AccountStatus onOpenSettings={openSettings} />
               </div>
             </>

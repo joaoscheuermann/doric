@@ -778,7 +778,8 @@ test('opening the first file shows the viewer', async () => {
 // ("Project views"), the "Hide files" toggle and the account status while the
 // column is open; collapsed, the toggle ("Show files") and the account status
 // move to the tab bar's right end, after the `layout.header` items. The
-// toggle is the stories' `<files-toggle>` stand-in (G6, story-elements.ts).
+// toggle is the stories' `<files-toggle>` stand-in (G6, story-elements.ts),
+// which draws only when made through the fake host's `ui/v1` `create`.
 
 /** The Project views the app's `layout.panel` region lists (fake-host.ts). */
 const panelViews = [

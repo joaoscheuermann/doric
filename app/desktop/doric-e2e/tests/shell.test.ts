@@ -3,7 +3,9 @@
 // T-2.2 and T-2.4: the real renderer shell with the real core, layout and
 // resources bundles draws the account status. T-2.5: with the real git, files
 // and chat bundles, the working directory and branch sit in the Files column
-// footer and the branch picker switches. With `DORIC_SHELL_CAPTURES=<dir>`,
+// footer and the branch picker switches. T-2.6: the files bundle's toggle
+// hides the Files column from its header and shows it again from the tab
+// bar's right end. With `DORIC_SHELL_CAPTURES=<dir>`,
 // the prototype states are captured at 1920×1080 in dark and light for the
 // §2.9 shell check.
 
@@ -29,6 +31,7 @@ import {
   startFakeHost,
   until,
 } from './support/harness';
+import { capturePrototypeStates } from './support/prototype-states';
 import {
   click,
   clickOn,
@@ -42,12 +45,7 @@ import {
   waitFor,
   waitForSelector,
 } from './support/shell-page';
-import { capturePrototypeStates } from './support/prototype-states';
-import {
-  BRANCH,
-  CWD,
-  type GitCalls,
-} from './support/workspace-content';
+import { BRANCH, CWD, type GitCalls } from './support/workspace-content';
 import {
   PAYMENT_FORM,
   serveWorkspace,
@@ -324,6 +322,43 @@ describe('the real shell over the workspace bundles', () => {
     );
     press(contents, 'Escape');
     press(contents, 'Escape');
+  });
+
+  test("the files bundle's toggle hides the Files column and shows it again from the tab bar (T-2.6)", async () => {
+    const filesHeader = '[data-slot="workspace-files-header"]';
+    const tabBarEnd = '[data-slot="project-tab-actions"]';
+    const shown = (name: string, within: string): Promise<boolean> =>
+      inPage<boolean>(
+        contents,
+        `deepAll(${JSON.stringify(`${within} button[aria-label="${name}"]`)}).some(visible)`,
+      );
+
+    await go(contents, THREAD_PATH);
+    await waitFor(contents, 'Hide files', 'button', 20_000, filesHeader).catch(
+      async (error: unknown) => {
+        console.log(await diagnose());
+        throw error;
+      },
+    );
+    assert.equal(await shown('Show files', tabBarEnd), false);
+
+    await click(contents, 'Hide files', 'button', filesHeader);
+    await until(
+      async () =>
+        (await inPage<boolean>(
+          contents,
+          `deepAll(${JSON.stringify(filesHeader)}).some(visible)`,
+        ))
+          ? undefined
+          : true,
+      'the Files column to collapse',
+    );
+    await waitFor(contents, 'Show files', 'button', 20_000, tabBarEnd);
+    assert.equal(await shown('Hide files', 'body'), false);
+
+    await click(contents, 'Show files', 'button', tabBarEnd);
+    await waitFor(contents, 'Hide files', 'button', 20_000, filesHeader);
+    assert.equal(await shown('Show files', tabBarEnd), false);
   });
 
   const dir = process.env.DORIC_SHELL_CAPTURES;

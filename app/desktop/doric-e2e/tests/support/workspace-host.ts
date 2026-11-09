@@ -6,8 +6,8 @@
 
 import type { FakeHost } from './harness';
 import {
-  conversation,
   CWD,
+  conversation,
   type GitCalls,
   serveSandbox,
   type ThreadEventRow,

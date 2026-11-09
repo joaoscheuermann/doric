@@ -29,6 +29,7 @@ import {
 } from 'react';
 
 import { DeleteDialog } from '../components/molecules/delete-dialog.js';
+import { ElementHost } from '../components/molecules/element-host.js';
 import { AccountStatus } from '../components/organisms/account-status.js';
 import { Dashboard } from '../components/organisms/dashboard.js';
 import {
@@ -72,6 +73,13 @@ const OPEN_SETTINGS = 'core.open-settings/v1';
 /** A `<core-region name>`: `display: contents`, no role of its own. */
 const Region = ({ name }: { readonly name: string }) =>
   createElement('core-region', { name });
+
+/**
+ * The files bundle's `<files-toggle placement>` props (G6). The toggle is made
+ * through `ui/v1` (`ElementHost`), which gives it its services scope.
+ */
+const headerToggle = { placement: 'header' } as const;
+const panelToggle = { placement: 'panel' } as const;
 
 /** Marks `/` as opened through "New project", or clears that mark. */
 const setNewTab = (open: boolean) => newTabStore.getState().set(open);
@@ -254,7 +262,7 @@ function Workspace() {
                   <Region name="layout.header" />
                   {!filesOpen && (
                     <>
-                      {createElement('files-toggle', { placement: 'header' })}
+                      <ElementHost tag="files-toggle" props={headerToggle} />
                       <AccountStatus onOpenSettings={openSettings} />
                     </>
                   )}
@@ -275,7 +283,7 @@ function Workspace() {
                   items={panelItems}
                 />
                 <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-                  {createElement('files-toggle', { placement: 'panel' })}
+                  <ElementHost tag="files-toggle" props={panelToggle} />
                   <AccountStatus onOpenSettings={openSettings} />
                 </div>
               </>
