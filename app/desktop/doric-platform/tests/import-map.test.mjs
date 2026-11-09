@@ -226,7 +226,7 @@ describe('the platform import map', () => {
     )
       .filter((name) => name.endsWith('.tsx'))
       .map((name) => name.slice(0, -'.tsx'.length));
-    assert.equal(components.length, 34);
+    assert.equal(components.length, 36);
     for (const name of [
       ...components,
       'chrome-bar',
