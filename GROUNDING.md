@@ -189,9 +189,12 @@ notification, bounded again on both of its lines and dropped in silence where
 the platform supports none, so a missing notice never hides a completion the
 Thread's own log still states.
 The macOS workspace window retains always-visible native traffic lights over a
-renderer-owned draggable title bar. Splash, native theme, renderer, Monaco and
-notifications follow the system light or dark preference, including changes
-while a window is open. The compact, resizable shadcn sidebar stacks its
+renderer-owned draggable title bar. The app is Dark: main sets the native theme
+to dark before the splash opens, whatever the system preference, and splash,
+renderer, Monaco and the Sonner toasts follow the native theme; native OS
+notifications are drawn by the operating system. An unpackaged
+development run may set `DORIC_THEME` to `light`, `dark` or `system`; a
+packaged build ignores it. The compact, resizable shadcn sidebar stacks its
 groups behind draggable dividers: each is a pane a bundle registers through the
 layout's `layout.stack/v1` — today the `screen` bundle's views, each row
 carrying that view's state — above the selected Project's recursive Threads,
@@ -262,7 +265,8 @@ status and read-only Markdown. Mouse and keyboard share the node's open state,
 which survives transcript updates.
 The packaged CSP permits downloaded fonts from `self` only (a Papercraft
 preview frame, whose origin is opaque, from `doric://app`). App surfaces use
-the macOS system sans stack with vendored Noto Sans as fallback, while the
+vendored Noto Sans first, with the system sans as fallback (Noto Sans ships
+its Latin and Latin Extended subsets only), while the
 conversation body uses vendored IBM Plex Mono. The sidebar
 tree follows the selected Project's live
 subscription, so a
@@ -274,7 +278,7 @@ directly; the all-Projects sidebar has no Doric avatar or brand heading. Locally
 Project tabs remember their list view, order and last path. Their navigation
 subscription stays stable across renders and is disposed on unmount; observing
 the same route again does not replace their state. The fixed 40-pixel
-top bar uses the panel surface (#2a2a2a in dark mode) and follows Papermache's
+top bar uses the panel surface and follows Papermache's
 compact pill tabs: Dashboard stays pinned, the active
 tab has a subtly raised neutral control surface. Project tabs show the Project's
 colored avatar, with neutral backgrounds and no shadows or colored border.
@@ -381,9 +385,10 @@ Git color; mixed statuses use modified yellow, while conflicts take priority.
 A Changes tab shows changed files as
 a directory tree grouped by repository, with individual folder expansion and no
 search or collapse-all toolbar. Its tab shows total added and removed lines, and
-each repository is the same tree row Files draws — a row that expands like a
-directory, carrying its branch icon and its totals in green and red as that
-row's own badge, with its changed paths nested under it as the same file rows.
+each repository is a tree row that expands like a directory, carrying a chevron
+beside its branch icon and its totals in green and red as that row's own badge.
+Unlike the file rows, which share Files' single 16 px lead slot, `gap-1.5` and
+4 px radius, the repository row keeps square corners and the default gap. Its changed paths nest under it as file rows.
 Counts compare HEAD with working content (or empty with new files), include
 untracked files and omit binary line counts. Git numstat supplies these totals
 without sending file contents or patches to the renderer.
@@ -463,7 +468,7 @@ delays. Read failures appear as deduplicated Sonner toasts with a retry action
 and clear after success, without inserting error cards into the tree or editor.
 The panel header carries no updating label. Initial reads use skeleton rows
 matching the tree's indentation, icons and row heights; the Changes skeleton
-reserves a repository row of the same geometry, with its totals, and nests the
+reserves a root row with the file rows' geometry (one lead slot), with its totals, and nests the
 rows it shows one level deeper beneath it.
 Background refresh preserves cached content and the reader's position instead
 of replacing it with a loading placeholder; directory expansion is retained per
@@ -1709,7 +1714,8 @@ contract to the window, the `desktopMain` generation or the host; at stage 8 the
 legacy Project, Thread, settings and terminal IPC channels remained beside it
 and the renderer was the shell's legacy React tree (both removed by stage 9);
 the shared desktop package is `packages/desktop`: `desktop/ui` supplies tokens,
-theme, fonts and shadcn/ui components, whose overlays portal into the
+theme, fonts, shadcn/ui components and the reader's identity
+(`desktop/ui/identity`, `desktop/ui/reader-avatar`), whose overlays portal into the
 container the nearest `PortalContainerProvider` (`desktop/ui/portal-container`,
 also exported by `desktop/ui`) names, else into `document.body`, while a
 `container` passed to a `*Portal` wins; `desktop/client` runs the window;

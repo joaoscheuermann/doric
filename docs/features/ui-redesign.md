@@ -1,6 +1,6 @@
 # Feature: UI redesign to the Doric-UI Figma file
 
-- Status: `accepted` (2026-11-08; proposed the same day)
+- Status: `accepted` (2026-11-08; proposed the same day); phase 1 implemented (2026-11-08)
 - Brief: this document, the concept of bringing Doric's desktop UI in line with the Figma file Doric-UI: the same behaviors in the new layouts, plus the features the design draws that the code lacks.
 - Specs: [docs/designs/ui-redesign.md](../designs/ui-redesign.md), one spec delivered in four phases ([UR5](#decisions), [UR7](#decisions)).
 - Decisions: UR1–UR25 below, made by the user on 2026-11-08. UR10 accepts the author's proposals P1–P22 as written, except where UR7, UR8 and UR9 replace them (P4, P5, P7); UR12–UR25 answer the spec's questions and reviews; UR18 replaces the photograph source of UR17, and UR22 replaces UR18's single bundled photograph.
@@ -98,8 +98,8 @@ The Figma file is the design the user wants shipped, and the code differs from i
 
 ## Scope
 
-1. **Foundations**: the Light and Dark palettes, font order, shadows, the Doric wordmark (`289:20857`), the lucide icons the file uses, three custom glyphs (cloud-fill `179:32`, cloud-off-fill `179:45`, brand-github `294:4`; brand-discord `294:7` is dropped by UR14) and the native window background colors.
-2. **Shared components** in `packages/desktop`: ButtonGroup, the invisible Resizable handle, the tree row's single lead slot where the chevron replaces the icon on hover (FileTree `21:51` and siblings), the inset card (P20), InsetHeader, and the borderless ChromeBar and DiffEditor toolbar and footer.
+1. **Foundations**: the Light and Dark palettes, font order, shadows, the lucide icons the file uses and the native window background colors. The cloud glyphs (cloud-fill `179:32`, cloud-off-fill `179:45`) ship in phase 2 inside the `resources` bundle (UR24); brand-discord `294:7` is dropped by UR14. There is no wordmark component.
+2. **Shared components** in `packages/desktop`: the tree row's single lead slot where the chevron replaces the icon on hover (FileTree `21:51` and siblings), dialog and alert-dialog footers without a top rule, and the filled button's hover. The invisible Resizable handle lands at its call site in phase 2 (S24), the layout draws the inset card (S34), and ChromeBar does not change.
 3. **The shell** as the prototype draws it (`99:8035` Project · Thread, `99:8508` Sub-thread in viewer, `85:7520` and `85:7726` Dashboard).
 4. **Bundle restyles**: chat, usage, settings, files, git, terminal, resources, papercraft; tokens only for threads, mcp, screen and openui.
 5. **New features** of UR2, with the platform, host and bundle changes they need.
@@ -209,8 +209,9 @@ Each phase is its own plan → tests → implementation cycle (UR5), lands with 
 
 ### Phase 1 — Foundations and shared primitives
 
-- **Delivers.** The Figma palettes, shadows (black at today's opacities in both themes, UR10), window background colors and font order (P12) in the token module; the app fixed to Dark (UR8); the wordmark and the three custom glyphs (no Discord glyph, UR14) as components outside the vendored files; the lucide icons the file uses; ButtonGroup, the invisible Resizable handle, the borderless ChromeBar and DiffEditor bars, the tree row lead slot and InsetHeader, each vendored change with its provenance record (HC-008); the reader's identity moved (P11); the MIT `LICENSE` file (UR11); a story per new or changed primitive.
-- **Does not change** any layout, region or contract.
+- **Delivers.** The Figma palettes, shadows (black at today's opacities in both themes, UR10), window background colors and font order (P12) in the token module; the app fixed to Dark (UR8); the lucide icons the file uses; the tree row lead slot; the vendored dialog and alert-dialog footers without a top rule and the filled button's hover, each with its provenance record (HC-008); the reader's identity moved (P11); the MIT `LICENSE` file (UR11); the reader avatar's story moved with it, while tree rows and dialogs keep their existing stories. There is no InsetHeader and no wordmark component; the cloud glyphs ship in phase 2 inside the `resources` bundle (UR24), and ButtonGroup lands in 4.2.
+- **Status.** Built (`73ee8c9e`, `679fb87a`, `14ce383d`).
+- **Does not change** any layout or region. The only contract changes are the two import-map specifiers `desktop/ui/identity` and `desktop/ui/reader-avatar`, `PLATFORM_VERSION` raised to 1.1.0, and chat's `engines.doric` raised to `^1.1.0`, so chat 1.6.1 is refused on an app before 1.1.0.
 - **Exit criteria.** The token check passes ([How 1:1 is verified](#how-11-is-verified)); every window opens Dark whatever the OS preference; `verify-provenance` passes; every changed primitive's story matches its Figma node in both themes; the `desktop` package's typecheck, test and build, `npm run lint` and `npm run format:check` pass.
 - **GROUNDING.md areas.** Theme (no longer the system preference), fonts and literal colors.
 
@@ -363,7 +364,17 @@ Each phase updates, in the same change:
 
 ## Current behavior and contracts
 
-None yet: the redesign is accepted, not built. Today's behavior is the one `GROUNDING.md` and the code describe.
+Phase 1 is built; later phases are not. Today's behavior is the one `GROUNDING.md` and the code describe. Phase 1 adds:
+
+- The app is Dark: `resolveThemeSource` (`app/desktop/doric/src/platform/appearance.ts`) returns `'dark'` unless an unpackaged run sets `DORIC_THEME` to `light`, `dark` or `system`; windows follow `prefers-color-scheme`.
+- Tokens: the Figma Light and Dark palettes; shadows are black in both themes; the native window backgrounds are `#fbf8f2` (light) and `#1c1a17` (dark).
+- The filled (default) button hovers by mixing in oklch: `--primary` with 60% `--foreground` in light, with 8% `--primary-foreground` in dark.
+- Dialog and alert-dialog footers draw no top rule.
+- The window bootstrap and the doric-e2e fixture shell share `followScheme` (`app/desktop/doric-renderer/src/scheme.ts`), which keeps `.dark` equal to `prefers-color-scheme`.
+- Fonts: Noto Sans first, the system sans as fallback, Latin and Latin Extended subsets only.
+- The reader's identity lives in `packages/desktop/src/identity/`, exported as `desktop/ui/identity` (`initials`, `identityTone`, `identityRing`, `READER_NAME`) and `desktop/ui/reader-avatar` (`ReaderAvatar`). `PLATFORM_VERSION` is 1.1.0; `PLATFORM_ASSETS_VERSION` stays 1.0.0. Chat 1.6.1 requires `engines.doric` `^1.1.0`.
+- The tree row has a 28 px height, a 16 px lead slot where a folder's icon swaps to the chevron on hover or focus, and 12 px indent steps.
+- The repository carries an MIT `LICENSE`.
 
 ## Evolution
 
@@ -376,3 +387,4 @@ None yet: the redesign is accepted, not built. Today's behavior is the one `GROU
 - 2026-11-08: version 7. The user chose the spec's three proposed splash photographs, with any replacement subject to the user's approval (UR23).
 - 2026-11-08: version 8. The user chose the prototype's cloud glyphs for the connection badge instead of the dot (UR24).
 - 2026-11-08: version 9. The user chose that bundles adapt to an older or newer app instead of shipping with it (UR25).
+- 2026-11-08: phase 1 implemented (`73ee8c9e`, `679fb87a`, `14ce383d`; [spec](../designs/ui-redesign.md)). No InsetHeader or wordmark component; the cloud glyphs move to phase 2 in `resources` (UR24); ButtonGroup moves to 4.2.

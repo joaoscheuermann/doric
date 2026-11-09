@@ -46,7 +46,8 @@ core cannot be disabled.
   Thread is part of that path).
 - On macOS, the window keeps always-visible native traffic lights over the
   app's own draggable title bar.
-- Windows follow the system light or dark theme.
+- Windows show the dark theme: main sets `nativeTheme.themeSource` to
+  `dark`. Only an unpackaged run can override it with `DORIC_THEME`.
 - The footer reports `Connected` or `Disconnected` from the main process's
   subscription to the host's `/status` Socket.IO namespace.
 
@@ -84,11 +85,12 @@ That builds the generation runner, serves `doric-renderer` on
 `http://localhost:4200`, waits for it, and starts Electron through
 `nx serve doric-app`.
 
-| Variable                    | Default                 | Meaning                                                     |
-| --------------------------- | ----------------------- | ----------------------------------------------------------- |
-| `DORIC_HOST_URL`            | `http://127.0.0.1:3000` | The host the app's bridge and connection monitor reach.     |
-| `DORIC_RENDERER_DEV_URL`    | `http://localhost:4200` | The renderer dev server the shell is forwarded from.        |
-| `DORIC_ELECTRON_NO_SANDBOX` | unset                   | `1` starts Electron with `--no-sandbox` without being root. |
+| Variable                    | Default                 | Meaning                                                                                       |
+| --------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| `DORIC_HOST_URL`            | `http://127.0.0.1:3000` | The host the app's bridge and connection monitor reach.                                       |
+| `DORIC_RENDERER_DEV_URL`    | `http://localhost:4200` | The renderer dev server the shell is forwarded from.                                          |
+| `DORIC_ELECTRON_NO_SANDBOX` | unset                   | `1` starts Electron with `--no-sandbox` without being root.                                   |
+| `DORIC_THEME`               | unset (`dark`)          | `light`, `dark` or `system` sets the theme of an unpackaged run; a packaged build ignores it. |
 
 Chromium cannot use its setuid sandbox helper as root, so when the process runs
 as root — a root container, for instance — the `serve` target starts Electron

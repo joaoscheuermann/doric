@@ -16,7 +16,9 @@ Electron main process that serves this shell is described in the
 
 - `shell.html`, the template main renders per request (import map, theme,
   CSP);
-- the bootstrap script, which follows the system light or dark scheme and
+- the bootstrap script, which calls `followScheme` (`src/scheme.ts`, shared
+  with the doric-e2e fixture shell) to keep `.dark` equal to
+  `prefers-color-scheme` — the native theme main sets, Dark by default — and
   calls desktop/client's `bootstrapWindow({})`;
 - the shell stylesheet, holding only window-wide rules and the sorted utility
   set;

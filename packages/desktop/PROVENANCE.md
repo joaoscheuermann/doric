@@ -87,12 +87,19 @@ compares:
   (`export { Toaster, toast }`). Every `toast` call in a window then reaches the
   store that the window's `Toaster` reads, whichever platform chunk loaded it
   (stage 8, S8-21).
-- `sonner.tsx`: now defaults to Sonner's `system` theme so native notifications
-  follow the operating system while the window remains open.
+- `sonner.tsx`: now defaults to Sonner's `system` theme, so toasts follow
+  `prefers-color-scheme`, which the native theme drives (Dark in the app),
+  including changes while the window remains open.
 - `button.tsx`: the default variant hovers with
-  `hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)]`
-  (commit `5fac0ee`; the secondary variant's 5 % mix is now the registry's
-  own).
+  `hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_60%)]` in
+  light and
+  `dark:hover:bg-[color-mix(in_oklch,var(--primary),var(--primary-foreground)_8%)]`
+  in dark (introduced in commit `5fac0ee` at 12 %, changed by S4 of the
+  ui-redesign spec in `679fb87a`; the secondary variant's 5 % mix is now the
+  registry's own).
+- `dialog.tsx` and `alert-dialog.tsx`: the footer drops the registry's
+  `border-t`, so a dialog's footer draws no rule above it (S23 of the
+  ui-redesign spec; Figma `21:787`, `21:954`).
 - `button.tsx`: also defines the `solid` variant, the composer's white control: a
   white fill with an icon that stays dark on it in either theme. Filling a
   primary button white would have meant turning the theme's `--primary` into
