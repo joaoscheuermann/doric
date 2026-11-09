@@ -9,6 +9,7 @@ import { describe, test } from 'node:test';
 import { app, nativeTheme, type WebContents } from 'electron';
 
 import type { SplashState } from '../../doric/src/platform/splash/protocol';
+import { SPLASH_PHOTOS } from '../../doric/src/splash-page/art/choose-art';
 import { coreDistribution } from '../../doric/tests/support/core';
 import {
   type Booted,
@@ -57,6 +58,54 @@ const art = (contents: WebContents) =>
     contents,
     `[...(document.querySelector('[data-art-pane]')?.children ?? [])].map((node) => node.dataset.art + (node.dataset.photo ? ':' + node.dataset.photo : ''))`,
   );
+
+/**
+ * Waits until the art pane shows its art and answers it: exactly one of the
+ * shader canvas on a bundled photograph (`shader:<id>`) or the shaded image
+ * (S32). Until one is drawn the pane is empty.
+ */
+const shownArt = async (contents: WebContents): Promise<string> => {
+  const shown = await until(async () => {
+    const children = await art(contents);
+
+    return children.length > 0 ? children : undefined;
+  }, 'the art');
+
+  assert.equal(shown.length, 1, `one art, not ${JSON.stringify(shown)}`);
+
+  const [one] = shown;
+
+  assert.ok(
+    one === 'shaded' || SPLASH_PHOTOS.some((id) => one === `shader:${id}`),
+    one,
+  );
+
+  return one;
+};
+
+/** Runs `body` with `DORIC_SPLASH_ART` set to `value` (unset when undefined). */
+const withSplashArt = async <T>(
+  value: string | undefined,
+  body: () => Promise<T>,
+): Promise<T> => {
+  const previous = process.env.DORIC_SPLASH_ART;
+
+  if (value === undefined) {
+    delete process.env.DORIC_SPLASH_ART;
+  } else {
+    process.env.DORIC_SPLASH_ART = value;
+  }
+
+  try {
+    return await body();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DORIC_SPLASH_ART;
+    } else {
+      process.env.DORIC_SPLASH_ART = previous;
+    }
+  }
+};
 
 /** The status line's text, or '' while it is hidden. */
 const statusText = (contents: WebContents) =>
@@ -580,7 +629,7 @@ describe('splash layout (§4.5)', () => {
     }
   });
 
-  test('every state shows its status, details and buttons by accessible name, with the wordmark, the GitHub link and the shaded art', async () => {
+  test('every state shows its status, details and buttons by accessible name, with the wordmark, the GitHub link and one art', async () => {
     const host = await startFakeHost(await coreDistribution());
     const booted = await bootPlatform({ host, argv: ['--recovery'] });
     const dir = process.env.DORIC_SHELL_CAPTURES;
@@ -633,7 +682,7 @@ describe('splash layout (§4.5)', () => {
           );
           assert.equal(await wordmarks(contents), 1, expected.name);
           assert.deepEqual(await links(contents), ['GitHub'], expected.name);
-          assert.deepEqual(await art(contents), ['shaded'], expected.name);
+          await shownArt(contents);
 
           if (dir !== undefined) {
             await captureSplash({ booted, dir, name: expected.name, theme });
@@ -687,10 +736,7 @@ describe('splash layout (§4.5)', () => {
       const contents = await splashContents(booted);
 
       assert.equal(new URL(contents.getURL()).search, '?art=shaded');
-      await until(
-        async () => (await art(contents)).length > 0 || undefined,
-        'the art',
-      );
+      assert.equal(await shownArt(contents), 'shaded');
       assert.deepEqual(await art(contents), ['shaded']);
 
       const dir = process.env.DORIC_SHELL_CAPTURES;
@@ -714,4 +760,48 @@ describe('splash layout (§4.5)', () => {
       await host.close();
     }
   });
+});
+
+describe('splash art (§4.5, T-4.5.7)', () => {
+  test('the art pane holds exactly one art: the shader on a bundled photograph or the shaded image', async (t) => {
+    await withSplashArt(undefined, async () => {
+      const host = await startFakeHost(await coreDistribution());
+      const booted = await bootPlatform({ host, argv: ['--recovery'] });
+
+      try {
+        const contents = await splashContents(booted);
+
+        assert.equal(new URL(contents.getURL()).search, '');
+
+        const shown = await shownArt(contents);
+
+        // Without WebGPU (Xvfb here, G15) this is the shaded image.
+        t.diagnostic(`art: ${shown}`);
+      } finally {
+        await booted.dispose();
+        await host.close();
+      }
+    });
+  });
+
+  for (const value of [undefined, 'shaded'] as const) {
+    test(`the splash closes once the workspace window is open (DORIC_SPLASH_ART ${value ?? 'unset'})`, async () => {
+      await withSplashArt(value, async () => {
+        const host = await startFakeHost(await coreDistribution());
+        const booted = await bootPlatform({ host });
+
+        try {
+          await booted.window('workspace');
+          await until(
+            () => booted.platform.splashWindow === undefined || undefined,
+            'the splash to close',
+            5_000,
+          );
+        } finally {
+          await booted.dispose();
+          await host.close();
+        }
+      });
+    });
+  }
 });

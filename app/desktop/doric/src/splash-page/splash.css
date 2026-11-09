@@ -43,6 +43,17 @@ body {
   background: #24211d;
 }
 
+/* The live art: layer 302:22443, 372.067×538.276 at left 0, top 0.5 px,
+   clipped by the pane (run-effect.ts sizes the backing store). */
+.splash-art > canvas[data-art='shader'] {
+  position: absolute;
+  left: 0;
+  top: 0.5px;
+  display: block;
+  width: 372.067px;
+  height: 538.276px;
+}
+
 .splash-art > img[data-art='shaded'] {
   display: block;
   width: 300px;

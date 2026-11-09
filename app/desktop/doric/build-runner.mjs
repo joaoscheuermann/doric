@@ -84,6 +84,9 @@ for (const file of [
   'splash.css',
   'blank.html',
   'art-shaded.webp',
+  'photo-M1mNrZ3t7bI.jpg',
+  'photo-ycojSfbMZQc.jpg',
+  'photo-yEsyprCZcEY.jpg',
 ]) {
   await copyFile(join(page, file), join(splash, file));
 }

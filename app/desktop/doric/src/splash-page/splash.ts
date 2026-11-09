@@ -10,6 +10,8 @@ import {
   SPLASH_CONTRACT,
   type SplashState,
 } from '../platform/splash/protocol';
+import { type SplashPhoto, startArt } from './art/choose-art';
+import { drawArt } from './art/run-effect';
 
 const desktop = (
   globalThis as unknown as { doric: { desktop: DoricDesktopApi } }
@@ -239,7 +241,9 @@ const render = (state: SplashState): void => {
   }
 };
 
-// The art pane: until the live art (4.5b), the shaded export of `302:22439`.
+// The art pane (S32, S33): one bundled photograph shaded live with WebGPU,
+// or the shaded export of `302:22439` on any failure. Until either is drawn,
+// the pane shows its `#24211d` ground.
 const artPane = document.querySelector('[data-art-pane]') as HTMLElement;
 
 const showShaded = (): void => {
@@ -255,7 +259,58 @@ const showShaded = (): void => {
   artPane.replaceChildren(image);
 };
 
-showShaded();
+// An image load, which the policy's `img-src 'self'` allows (`fetch` is
+// blocked by `connect-src 'none'`).
+const loadPhoto = async (id: SplashPhoto): Promise<ImageBitmap> => {
+  const image = new Image();
+
+  image.src = `photo-${id}.jpg`;
+  await image.decode();
+
+  return createImageBitmap(image);
+};
+
+const drawPhoto = (
+  device: GPUDevice,
+  photo: ImageBitmap,
+  id: SplashPhoto,
+): (() => void) => {
+  const canvas = element('canvas');
+
+  canvas.dataset.art = 'shader';
+  canvas.dataset.photo = id;
+  canvas.setAttribute('aria-hidden', 'true');
+  artPane.replaceChildren(canvas);
+
+  return drawArt({ canvas, device, image: photo });
+};
+
+// Calls the listener each time the device-pixel ratio changes.
+const onResolutionChange = (listener: () => void): (() => void) => {
+  let query: MediaQueryList | undefined;
+  const changed = (): void => {
+    listener();
+    watch();
+  };
+  const watch = (): void => {
+    query?.removeEventListener('change', changed);
+    query = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    query.addEventListener('change', changed);
+  };
+
+  watch();
+
+  return () => query?.removeEventListener('change', changed);
+};
+
+void startArt({
+  search: location.search,
+  gpu: (navigator as { gpu?: GPU }).gpu,
+  loadPhoto,
+  draw: drawPhoto,
+  onResolutionChange,
+  showShaded,
+});
 
 // The credits' version is the app's (S7).
 void desktop
