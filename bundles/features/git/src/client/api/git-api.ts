@@ -18,6 +18,7 @@ import type { ProjectLeaseState } from 'files/contracts';
 
 import {
   type ChangesRead,
+  type Discard,
   type FileDiffRead,
   type Git,
   GitCommandsV1,
@@ -336,6 +337,18 @@ export interface GitApi {
     branch: string,
     cwd: string,
   ): Promise<GitBranches>;
+  /**
+   * Discards changes of one repository (`git.commands/v1@1.1.0`): the paths
+   * given, or every change without `paths`. Answers the host's outcome
+   * unchanged, so the dialog can say why; rejects only when the call itself
+   * fails.
+   */
+  discard(input: {
+    readonly threadId: string;
+    readonly cwd: string;
+    readonly repository: string;
+    readonly paths?: readonly string[];
+  }): Promise<Discard>;
 }
 
 /** The REST query: the workspace root sent no path. */
@@ -417,6 +430,19 @@ export const createGitApi = (git: (scope: CallScope) => Git): GitApi => ({
       throw new Error(gitMessages.threadConflict);
     }
     return branchesFrom(result.value);
+  },
+  discard: async ({ threadId, cwd, repository, paths }) => {
+    const id = identifier(threadId);
+    const directory = workingDirectory(cwd);
+    // The outcome is the host's, unread: the dialog says why for each.
+    return await host(() =>
+      git({ threadId: id }).discard({
+        threadId: id,
+        cwd: directory,
+        repository,
+        ...(paths === undefined ? {} : { paths }),
+      }),
+    );
   },
 });
 

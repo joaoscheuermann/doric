@@ -84,12 +84,28 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   working directory, shared with the bundles that decorate from it, such as
   the files tree.
 - `git.open-comparison/v1` opens one file's comparison as a workspace tab
-  (`git-file-diff`).
+  (`git-file-diff`). The tab's context menu holds "Open file", which runs
+  `files.open-file/v1` as the diff toolbar's button does (`layout.tabs/v1@1.2.0`
+  `menu`, so the bundle requires `layout.tabs/v1@^1.2.0`). The entry is fixed
+  when the tab opens, so a deleted file's tab has it too, and the file tab then
+  says the file cannot be shown.
 - The Changes view (`git-changes`, with its `git-changes-badge`) is a
   `layout.panel` item, the working directory and branch (`git-workspace-cwd`)
   a `layout.panel.footer` item (the change counts stay in the Changes tab's
   badge), and the Versioning section (`/settings/git`) chooses
   which stored credentials the agent commits and pushes with.
+- In the Changes view a changed file's row has a context menu with "Discard
+  changes" and the repository row one with "Discard all changes" (directory
+  rows have none; both entries are destructive). Either opens a confirmation
+  that names the file or repository and says it cannot be undone; confirming
+  calls `discard` with the working directory the view read with. After a
+  `ready` or `failed` answer the view waits for the Project's refresh before
+  it closes the dialog or shows the message, so the tree already shows what is
+  left. A refusal, a Thread that is missing, not running or still starting,
+  and a call that fails show their sentence in the dialog, which stays open
+  until Cancel. Without a selected Thread the rows have no menu, and an app
+  whose `FileTree` predates `rowMenu` drops the file rows' menu; the
+  repository row's menu stays.
 
 ## Change the bundle
 

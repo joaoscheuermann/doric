@@ -12,7 +12,10 @@ import { type ReactNode, useState } from 'react';
 import type { Project, Thread } from 'runtime/contracts';
 
 import type { GitApi } from '../../src/client/api/git-api.js';
-import type { TreeObservation } from '../../src/client/api/peers.js';
+import type {
+  FilesRefresh,
+  TreeObservation,
+} from '../../src/client/api/peers.js';
 import {
   createGitStore,
   type GitStore,
@@ -46,27 +49,32 @@ export const fakeGitApi = (answers: Partial<GitApi> = {}): GitApi => ({
   git: async () => notRepository,
   branches: async () => branches,
   switchBranch: async () => branches,
+  discard: async () => ({ status: 'ready', value: { discarded: [] } }),
   ...answers,
 });
 
 /** Makes `store` the window's git client, as the activation does. */
-const bind = (store: GitStore): void => {
-  if (gitClient()?.store !== store)
-    setGitClient({ store, refresh: () => undefined });
+const bind = (store: GitStore, refresh?: FilesRefresh): void => {
+  const client = gitClient();
+  if (client?.store !== store || client.refresh() !== refresh)
+    setGitClient({ store, refresh: () => refresh });
 };
 
 /** The git client's providers over a fake API. */
 export function GitHarness({
   api,
+  refresh,
   children,
 }: {
   readonly api: GitApi;
+  /** The files bundle's refresh coordinator; absent: no files bundle. */
+  readonly refresh?: FilesRefresh;
   readonly children?: ReactNode;
 }) {
   const [store] = useState(() => createGitStore(() => api));
   // Before the children render: `ChangesView` reads the client while
   // rendering and the hooks read it in their (earlier-running) effects.
-  bind(store);
+  bind(store, refresh);
   return (
     <QueryClientProvider client={store.client}>
       <TooltipProvider>

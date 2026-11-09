@@ -47,21 +47,22 @@ describe('git.open-comparison/v1', () => {
       harness.services,
     );
 
-    assert.deepEqual(opened, [
-      {
-        id: '["diff","project-1","packages/app","src/main.ts"]',
-        title: 'main.ts',
-        tag: 'git-file-diff',
-        props: {
-          projectId: 'project-1',
-          repository: 'packages/app',
-          path: 'src/main.ts',
-        },
-        icon: 'file-diff',
-        ariaLabel: 'main.ts changes',
-        tooltip: 'src/main.ts',
+    assert.equal(opened.length, 1);
+    // Its context menu (A6) is checked in `tests/client/open-file.test.ts`.
+    const { menu: _menu, ...tab } = opened[0] as TabRequest;
+    assert.deepEqual(tab, {
+      id: '["diff","project-1","packages/app","src/main.ts"]',
+      title: 'main.ts',
+      tag: 'git-file-diff',
+      props: {
+        projectId: 'project-1',
+        repository: 'packages/app',
+        path: 'src/main.ts',
       },
-    ]);
+      icon: 'file-diff',
+      ariaLabel: 'main.ts changes',
+      tooltip: 'src/main.ts',
+    });
   });
 
   test('names the compared workspace path of a comparison tab only', () => {
