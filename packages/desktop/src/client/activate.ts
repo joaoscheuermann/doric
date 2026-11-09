@@ -24,6 +24,7 @@ import {
   type ServiceRuntime,
 } from 'bundle/runtime';
 
+import { provideAppearance } from './appearance.js';
 import { remoteContractRecord } from './bridge.js';
 import { provideBrowser } from './browser.js';
 import { provideConnection } from './connection.js';
@@ -198,8 +199,9 @@ export const activateClientBundles = async (input: {
   });
 
   // Stage 9 window platform contracts: elements, connection and the system
-  // browser (`doric.browser/v1`). The client `doric.notifications/v1` (D9-6)
-  // is gone since WP-10N.
+  // browser (`doric.browser/v1`); since platform 1.3.0 the theme preference
+  // (`doric.appearance/v1`). The client `doric.notifications/v1` (D9-6) is
+  // gone since WP-10N.
   const principals = new Map<string, Principal>();
 
   provideElements(platform, {
@@ -211,6 +213,7 @@ export const activateClientBundles = async (input: {
   });
   const connection = provideConnection(platform, desktop);
   provideBrowser(platform, desktop);
+  provideAppearance(platform, desktop);
 
   // A contract the window's own client parts provide is served here: its
   // desktopMain or host provider stays reachable only through that

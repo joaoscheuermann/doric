@@ -19,6 +19,8 @@ export interface DesktopPaths {
   readonly windows: string;
   /** `doric/catalog-snapshot.json`: the last distribution that activated. */
   readonly catalogSnapshot: string;
+  /** `doric/appearance.json`: the theme preference (`{ "theme" }`). */
+  readonly appearance: string;
 }
 
 export const desktopPaths = (userData: string): DesktopPaths => ({
@@ -31,4 +33,5 @@ export const desktopPaths = (userData: string): DesktopPaths => ({
   state: join(userData, 'doric', 'state.json'),
   windows: join(userData, 'doric', 'windows.json'),
   catalogSnapshot: join(userData, 'doric', 'catalog-snapshot.json'),
+  appearance: join(userData, 'doric', 'appearance.json'),
 });

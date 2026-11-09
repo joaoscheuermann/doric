@@ -14,7 +14,6 @@ import {
   createConnectionService,
 } from './connection/status';
 import { DesktopPlatform } from './platform/app';
-import { resolveThemeSource } from './platform/appearance';
 import { HOST_URL } from './platform/bridge/host-bridge';
 import { createPlatformLog } from './platform/log';
 import type { NotificationApi } from './platform/native/notifications';
@@ -28,10 +27,7 @@ const electronNotifications: NotificationApi = {
 };
 
 void app.whenReady().then(async () => {
-  nativeTheme.themeSource = resolveThemeSource({
-    packaged: app.isPackaged,
-    env: process.env,
-  });
+  // The theme is set in `platform.prepare()`, from the saved preference.
   const log = createPlatformLog();
   // The host origin the app reaches Doric on: `DORIC_HOST_URL` for a host
   // that is not on the app's own loopback, the loopback default otherwise.

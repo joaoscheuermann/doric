@@ -500,6 +500,9 @@ export const shellMethods = {
   connection: { stream: true },
   // `doric.browser/v1`: an https URL main opens in the system browser.
   openExternal: { stream: false },
+  // `doric.appearance/v1`: the theme preference main keeps and shows.
+  appearanceGet: { stream: false },
+  appearanceSet: { stream: false },
 } as const;
 
 export type ShellMethod = keyof typeof shellMethods;

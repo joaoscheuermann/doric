@@ -42,6 +42,8 @@ import {
 } from 'electron';
 
 import { ConnectionRelay } from '../connection/relay';
+import { applyTheme, resolveThemeSource } from './appearance';
+import { AppearanceStore } from './appearance-store';
 import { removeArtifactsCache } from './artifacts-cleanup';
 import {
   cacheSchemaReader,
@@ -183,6 +185,8 @@ export class DesktopPlatform {
   readonly #preload: string;
   readonly #runnerPath: string;
   #state: DesktopState | undefined;
+  /** The theme preference (`appearance.json`), opened in `prepare`. */
+  #appearance: AppearanceStore | undefined;
   #windowPaths: WindowPaths | undefined;
   #newest: number | undefined;
   #counter = 0;
@@ -373,6 +377,21 @@ export class DesktopPlatform {
           ? shell.openExternal(url)
           : options.openExternal(url);
       },
+      // No window exists before `prepare` opens the store, so neither
+      // fallback is reached in the app (§4.1).
+      appearanceGet: () => this.#appearance?.get() ?? 'dark',
+      appearanceSet: (theme) =>
+        this.#appearance === undefined
+          ? Promise.reject(new Error('The appearance store is not open.'))
+          : applyTheme({
+              store: this.#appearance,
+              theme,
+              packaged: app.isPackaged,
+              env: process.env,
+              setThemeSource: (source) => {
+                nativeTheme.themeSource = source;
+              },
+            }),
     });
     const host = this.host;
 
@@ -475,6 +494,15 @@ export class DesktopPlatform {
   async prepare(): Promise<void> {
     await removeArtifactsCache(this.#paths);
     this.#state = await DesktopState.open(this.#paths.state);
+    // The saved theme, before `start()` opens the splash and the first
+    // window, so both open in it. A development switch reads Electron's
+    // `app.isPackaged`, never `options.packaged` (§4.1).
+    this.#appearance = await AppearanceStore.open(this.#paths.appearance);
+    nativeTheme.themeSource = resolveThemeSource({
+      packaged: app.isPackaged,
+      env: process.env,
+      stored: this.#appearance.get(),
+    });
     this.#windowPaths = await WindowPaths.open(this.#paths.windows);
 
     const stored = this.#state.data.lastGoodCore;

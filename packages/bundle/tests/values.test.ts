@@ -226,6 +226,7 @@ void test('every basic and platform method has a stated way across the envelope'
     'doric.connection/v1': { status: 'crosses', subscribe: 'refused' },
     'doric.browser/v1': { open: 'crosses' },
     'doric.about/v1': { get: 'crosses' },
+    'doric.appearance/v1': { get: 'crosses', set: 'crosses' },
   };
   const actual = Object.fromEntries(
     Object.entries({

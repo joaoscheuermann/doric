@@ -10,6 +10,7 @@ import { type ProviderRecord, ServiceDirectory } from 'bundle/runtime';
 
 import { ConnectionRelay } from '../src/connection/relay';
 import type { ConnectionListener } from '../src/connection/status';
+import type { ThemeSource } from '../src/platform/appearance';
 import {
   type GenerationView,
   generationView,
@@ -217,6 +218,12 @@ let hostConnected: boolean;
 let relay: ConnectionRelay;
 let opened: string[];
 let splashId: number | undefined;
+/** The theme the `appearanceGet` dependency answers. */
+let heldTheme: ThemeSource;
+/** Every theme the `appearanceSet` dependency was called with. */
+let savedThemes: ThemeSource[];
+/** What the `appearanceSet` dependency does with a theme. */
+let saveTheme: (theme: ThemeSource) => Promise<void>;
 
 /** The `/status` monitor's surface: a status and its change listeners. */
 const statusSource = (initial: 'connected' | 'disconnected') => {
@@ -259,6 +266,9 @@ beforeEach(() => {
   relay = new ConnectionRelay();
   opened = [];
   splashId = undefined;
+  heldTheme = 'dark';
+  savedThemes = [];
+  saveTheme = async () => undefined;
 
   const resolution = resolveDistribution(catalog, 1);
 
@@ -367,6 +377,12 @@ beforeEach(() => {
     connection: relay,
     openExternal: async (url) => {
       opened.push(url);
+    },
+    appearanceGet: () => heldTheme,
+    appearanceSet: (theme) => {
+      savedThemes.push(theme);
+
+      return saveTheme(theme);
     },
   });
 });
@@ -660,6 +676,65 @@ describe('desktop IPC dispatcher', () => {
     assert.deepEqual(opened, [
       'https://claude.com/cai/oauth/authorize?state=s',
     ]);
+  });
+
+  const appearanceCall = (id: string, method: string, input: unknown) =>
+    dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({
+        id,
+        bundleId: null,
+        contract: 'doric.shell/v1',
+        method,
+        input,
+      }),
+    });
+
+  test('a window reads the theme preference main holds (T-4.1.6)', async () => {
+    await describeWindow();
+    heldTheme = 'system';
+
+    assert.deepEqual(await appearanceCall('w-get', 'appearanceGet', {}), {
+      ok: true,
+      output: { theme: 'system' },
+    });
+  });
+
+  test('a window saves a theme main checks first, and nothing else reaches the store (T-4.1.6)', async () => {
+    await describeWindow();
+
+    const saved = await appearanceCall('w-set', 'appearanceSet', {
+      theme: 'light',
+    });
+    const refused = await Promise.all(
+      [{ theme: 'blue' }, { theme: 'light', extra: true }, {}, 'light'].map(
+        (input, index) =>
+          appearanceCall(`w-refused-${index}`, 'appearanceSet', input),
+      ),
+    );
+
+    assert.deepEqual(saved, { ok: true, output: undefined });
+    for (const result of refused) {
+      assert.equal(
+        (result as { error?: { code: string } }).error?.code,
+        'invalid_input',
+      );
+    }
+    assert.deepEqual(savedThemes, ['light']);
+  });
+
+  test('a theme main cannot save fails unavailable (T-4.1.8)', async () => {
+    await describeWindow();
+    saveTheme = () => Promise.reject(new Error('EACCES: read-only'));
+
+    const result = await appearanceCall('w-fail', 'appearanceSet', {
+      theme: 'light',
+    });
+
+    assert.deepEqual(
+      (result as { error?: { code: string; message: string } }).error,
+      { code: 'unavailable', message: 'Could not save the appearance.' },
+    );
   });
 
   test('a window can no longer show a native notification itself (WP-10N)', async () => {

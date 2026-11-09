@@ -12,6 +12,7 @@ import {
 } from 'bundle/contracts';
 import {
   type ProviderRecord,
+  platformContracts,
   restoreCall,
   type SchemaValidators,
   type WireCall,
@@ -35,6 +36,7 @@ import {
 import { z } from 'zod';
 
 import type { ConnectionSource } from '../../connection/relay';
+import type { ThemeSource } from '../appearance';
 import type { GenerationProcess } from '../generation/process';
 import type { PlatformLog } from '../log';
 import {
@@ -107,6 +109,13 @@ export interface DispatcherDeps {
   readonly connection: ConnectionSource;
   /** `doric.browser/v1`: hands an already checked https URL to the OS browser. */
   readonly openExternal: (url: string) => Promise<void>;
+  /** `doric.appearance/v1` get: the preference main holds (no Electron here). */
+  readonly appearanceGet: () => ThemeSource;
+  /**
+   * `doric.appearance/v1` set: saves the preference, then shows it in every
+   * window; rejects when it cannot be saved, which leaves both unchanged.
+   */
+  readonly appearanceSet: (theme: ThemeSource) => Promise<void>;
   readonly now?: () => number;
 }
 
@@ -858,6 +867,26 @@ export class Dispatcher {
             .parse(envelope.input);
 
           await this.#deps.openExternal(url);
+
+          return ok(undefined);
+        }
+        case 'appearanceGet':
+          return ok({ theme: this.#deps.appearanceGet() });
+        case 'appearanceSet': {
+          // Checked here with the contract's strict schema: main decides.
+          const { theme } = platformContracts[
+            'doric.appearance/v1'
+          ].methods.set.input.parse(envelope.input);
+
+          try {
+            await this.#deps.appearanceSet(theme);
+          } catch (error) {
+            this.#deps.log.error({ error }, 'Saving the appearance failed');
+            throw new ContractError(
+              'unavailable',
+              'Could not save the appearance.',
+            );
+          }
 
           return ok(undefined);
         }

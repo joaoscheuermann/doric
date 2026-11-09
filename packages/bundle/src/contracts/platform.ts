@@ -824,6 +824,32 @@ export interface DoricBrowser {
 }
 
 /**
+ * The app's theme preference: `dark` (the default), `light`, or `system`,
+ * which follows the operating system's appearance. The source of truth for
+ * the union: bundles cannot import the app.
+ */
+export const doricThemeSchema = z.enum(['dark', 'light', 'system']);
+
+export type DoricTheme = z.output<typeof doricThemeSchema>;
+
+/**
+ * `doric.appearance/v1` (client only; platform 1.3.0): the theme preference
+ * of every window, which main keeps in `userData/doric/appearance.json`. A
+ * bundle on an older app finds no provider; it detects the contract with
+ * `services.whenAvailable` and omits what needs it.
+ */
+export interface DoricAppearance {
+  /** The saved preference (`dark` when none is saved or it is unreadable). */
+  get(call?: CallArg): Promise<{ readonly theme: DoricTheme }>;
+  /**
+   * Saves the preference and only then repaints every window in it. Rejects
+   * `invalid_input` for a value outside the three themes and `unavailable`
+   * when the file cannot be written; the saved preference is then unchanged.
+   */
+  set(input: { readonly theme: DoricTheme }, call?: CallArg): Promise<void>;
+}
+
+/**
  * A unit of work a generation keeps running until it is disposed. The owner
  * is the calling bundle (`call.caller.bundleId`), never part of the input; the
  * key is opaque to the platform.
@@ -921,6 +947,7 @@ export const DoricStartupV1 = ref<DoricStartup>('doric.startup/v1');
 export const DoricElementsV1 = ref<DoricElements>('doric.elements/v1');
 export const DoricConnectionV1 = ref<DoricConnection>('doric.connection/v1');
 export const DoricBrowserV1 = ref<DoricBrowser>('doric.browser/v1');
+export const DoricAppearanceV1 = ref<DoricAppearance>('doric.appearance/v1');
 
 const noInput = z.tuple([]);
 
@@ -1165,6 +1192,19 @@ export const platformContracts = Object.freeze({
   'doric.browser/v1': {
     environments: ['client'],
     methods: { open: { input: browserUrlSchema, output: z.void() } },
+  },
+  'doric.appearance/v1': {
+    environments: ['client'],
+    methods: {
+      get: {
+        input: noInput,
+        output: z.object({ theme: doricThemeSchema }).strict(),
+      },
+      set: {
+        input: z.object({ theme: doricThemeSchema }).strict(),
+        output: z.void(),
+      },
+    },
   },
 } satisfies Record<string, PlatformContractSpec>);
 
