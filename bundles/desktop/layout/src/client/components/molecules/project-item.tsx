@@ -37,8 +37,10 @@ function relativeTime(value: string): string {
  * `'list'` (the `/projects` table row) or `'grid'` (a card). The element
  * carries `data-project-id`, which the search's arrow keys scroll to.
  * Pressing it calls `onOpen(entry)` once. `highlighted` draws the search's
- * current match. Moved verbatim from `dashboard.tsx:34-157`, together with
- * its private `relativeTime`; nothing it draws changes.
+ * current match. Figma `85:7726`/`85:7520`: a recent row is 54 px (13/20
+ * name over a 12/16 state) and overhangs its 520 px column by 8 px on each
+ * side; a list row spans the table's width with four equal cells (Name,
+ * Activity, Created, State), so its text lines up under the page title.
  */
 export function ProjectItem({
   entry,
@@ -67,7 +69,7 @@ export function ProjectItem({
             className={
               isGrid
                 ? `group relative min-w-0 overflow-hidden rounded-[8px] bg-[var(--paper-control)] outline -outline-offset-1 dark:bg-[var(--paper-panel)] ${highlighted ? 'outline-2 outline-[var(--paper-focus)]' : 'outline-1 outline-black/5 dark:outline-white/5'}`
-                : `group relative -mx-[8px] flex min-w-0 items-center rounded-[6px] p-[8px] hover:bg-[var(--paper-ghost-hover)] ${highlighted ? 'bg-[var(--paper-thumbnail-selected)] outline outline-2 -outline-offset-2 outline-[var(--paper-focus)]' : ''}`
+                : `group relative flex min-w-0 items-center rounded-[6px] p-[8px] hover:bg-[var(--paper-ghost-hover)] ${mode === 'recent' ? '-mx-[8px]' : ''} ${highlighted ? 'bg-[var(--paper-thumbnail-selected)] outline outline-2 -outline-offset-2 outline-[var(--paper-focus)]' : ''}`
             }
           />
         }
@@ -97,7 +99,7 @@ export function ProjectItem({
             </>
           ) : mode === 'list' ? (
             <>
-              <span className="flex min-w-0 flex-[2] items-center gap-[8px] overflow-hidden">
+              <span className="flex min-w-0 flex-1 items-center gap-[8px] overflow-hidden">
                 <ProjectAvatar color={project.color} />
                 <span className="truncate text-[12px] leading-[16px] text-[var(--paper-gray-1)]">
                   {project.name}
@@ -117,7 +119,7 @@ export function ProjectItem({
             <>
               <ProjectAvatar color={project.color} />
               <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                <span className="truncate text-[13px] leading-[16px] text-[var(--paper-gray-1)]">
+                <span className="truncate text-[13px] leading-[20px] text-[var(--paper-gray-1)]">
                   {project.name}
                 </span>
                 <span className="truncate text-[12px] leading-[16px] capitalize text-[var(--paper-gray-3)]">

@@ -22,8 +22,8 @@ const at = (minutesAgo: number): string =>
 export interface WorkspaceProject {
   readonly id: string;
   readonly name: string;
-  readonly color: string;
-  readonly state: 'ready';
+  readonly color?: string;
+  readonly state: 'ready' | 'queued';
   readonly configRevision: number;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -44,18 +44,28 @@ export interface WorkspaceThread {
   readonly updatedAt: string;
 }
 
+const DAY = 1_440;
+
+/**
+ * A Project last active `minutesAgo` and created `createdMinutesAgo` before
+ * `EPOCH`, so the Dashboard's Activity and Created columns read the
+ * prototype's relative times at the captures' clock (`FROZEN_NOW`, `85:7520`).
+ * No `color` draws the hollow dot.
+ */
 const project = (
   id: string,
   name: string,
-  color: string,
+  color: string | undefined,
   minutesAgo: number,
+  createdMinutesAgo: number,
+  state: WorkspaceProject['state'] = 'ready',
 ): WorkspaceProject => ({
   id,
   name,
-  color,
-  state: 'ready',
+  ...(color === undefined ? {} : { color }),
+  state,
   configRevision: 1,
-  createdAt: at(minutesAgo + 600),
+  createdAt: at(createdMinutesAgo),
   updatedAt: at(minutesAgo),
 });
 
@@ -92,38 +102,57 @@ export const CHECKOUT = project(
   '11111111-1111-4111-8111-111111111111',
   'Checkout redesign',
   'violet',
-  5,
+  4,
+  12 * DAY,
 );
 export const DOCS = project(
   '22222222-2222-4222-8222-222222222222',
   'Docs site',
   'teal',
-  40,
+  60,
+  30 * DAY,
 );
 export const BILLING = project(
   '33333333-3333-4333-8333-333333333333',
   'Billing service',
   'amber',
-  180,
+  DAY,
+  45 * DAY,
 );
 
-/** Every Project of the workspace, most recently active first. */
+/**
+ * Every Project of the workspace, in the order the sidebar lists them
+ * (`85:7520`, which leaves out "Fresh workspace"; it stays first here). The
+ * activity read answers them most recently active first, as the Recent rows
+ * and the table show them: Fresh workspace (just now), Checkout redesign
+ * (4 minutes), Docs site (1 hour), Mobile onboarding (3 hours, Queued, no
+ * colour), Billing service (1 day), Pricing research (4 days).
+ */
 export const PROJECTS: readonly WorkspaceProject[] = [
-  project('66666666-6666-4666-8666-666666666666', 'Fresh workspace', 'blue', 1),
+  project(
+    '66666666-6666-4666-8666-666666666666',
+    'Fresh workspace',
+    'blue',
+    1,
+    1,
+  ),
   CHECKOUT,
   DOCS,
   BILLING,
   project(
     '44444444-4444-4444-8444-444444444444',
     'Mobile onboarding',
-    'green',
-    1_440,
+    undefined,
+    180,
+    3 * DAY,
+    'queued',
   ),
   project(
     '55555555-5555-4555-8555-555555555555',
     'Pricing research and the long tail of competitor plans',
     'pink',
-    4_320,
+    4 * DAY,
+    60 * DAY,
   ),
 ];
 
@@ -326,13 +355,15 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
     return PROJECTS.find((item) => item.id === id);
   });
   host.serve('runtime/v1', 'projectActivity', () =>
-    PROJECTS.map((item) => ({
-      project: item,
-      activityAt: item.updatedAt,
-      ...(threadsOf(item.id).length > 0
-        ? { latestActiveThreadId: PLAN.id }
-        : {}),
-    })),
+    [...PROJECTS]
+      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+      .map((item) => ({
+        project: item,
+        activityAt: item.updatedAt,
+        ...(threadsOf(item.id).length > 0
+          ? { latestActiveThreadId: PLAN.id }
+          : {}),
+      })),
   );
   host.stream('runtime/v1', 'watchProject', (input, push) => {
     const { projectId } = first(input);

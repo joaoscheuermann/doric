@@ -5,15 +5,22 @@
 // - the Project tab bar, with the account status at its right end, is the top
 //   row of the content column, not of the window, and it holds no
 //   `layout.header` item (G13);
-// - only the home body (`/` reached through "New project"), which has no
-//   sidebar, keeps the macOS inset in the tab bar (G3);
-// - Ctrl+F focuses whichever "Search projects" field is mounted (S13).
+// - the home body (`/` reached through "New project", Figma `85:7726`) shows
+//   the same Dashboard sidebar with no row selected, so no Dashboard form
+//   keeps the macOS inset in the tab bar (UR1 over G3);
+// - every form draws its content in an inset card (S34) and marks the
+//   sidebar header's Dashboard button as the current page;
+// - the sidebar search shows its shortcut as two keys (Figma `34:12218`);
+// - Ctrl+F focuses the sidebar's search on the list and the home body's
+//   own search on the home body (S13).
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
 import { NavigationV1 } from 'bundle/contracts';
 
+import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
+import { searchShortcutKeys } from '../../src/client/domain/dashboard.js';
 import type { Project } from '../../src/client/domain/workspace.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
 import {
@@ -152,7 +159,7 @@ test('on /projects the Dashboard sidebar is 280 px wide', async () => {
 });
 
 // T-2.7: the sidebar header's Dashboard button heads the Dashboard sidebar
-for (const form of ['/projects', '/ at startup'] as const) {
+for (const form of Object.keys(forms) as Form[]) {
   test(`on ${form} the Dashboard button precedes Search projects in the sidebar, and All settings stays`, async () => {
     rendered = await renderDashboard(form);
 
@@ -209,16 +216,23 @@ for (const form of Object.keys(forms) as Form[]) {
   });
 }
 
-// T-2.7: the home body has no sidebar, and its own search takes Ctrl+F
-test('on / through New project there is no sidebar, and Ctrl+F focuses the home Search projects field', async () => {
+/** The sidebar rows drawn as selected. */
+const selectedRows = (aside: ParentNode): string[] =>
+  [...aside.querySelectorAll('[data-sidebar="menu-button"][data-active]')].map(
+    nameOf,
+  );
+
+// UR1, Figma `85:7726`: the home body shows the Dashboard sidebar, no row
+// selected; its own search still takes Ctrl+F
+test('on / through New project the Dashboard sidebar shows with no row selected, and Ctrl+F focuses the home Search projects field', async () => {
   rendered = await renderDashboard('/ through New project');
 
-  assert.equal(
-    rendered.root.querySelectorAll(ASIDE).length,
-    0,
-    'The home body has a Dashboard sidebar.',
-  );
-  const search = single(rendered.root, SEARCH);
+  const aside = single(rendered.root, ASIDE);
+  single(aside, SEARCH);
+  only(aside, 'button', 'All projects');
+  assert.deepEqual(selectedRows(aside), [], 'A sidebar row is selected on /.');
+  const content = single(rendered.root, 'div[data-slot="dashboard-content"]');
+  const search = single(content, SEARCH);
   await pressCtrlF();
 
   assert.ok(
@@ -227,9 +241,19 @@ test('on / through New project there is no sidebar, and Ctrl+F focuses the home 
   );
 });
 
-// G3: only the home body keeps the macOS inset in the tab bar
+// `85:7520`: All projects is the selected row on the list
+test('on /projects All projects is the one selected sidebar row', async () => {
+  rendered = await renderDashboard('/projects');
+
+  assert.deepEqual(selectedRows(single(rendered.root, ASIDE)), [
+    'All projects',
+  ]);
+});
+
+// G3, UR1: every Dashboard form has the sidebar before the tab bar, so none
+// keeps the macOS inset
 for (const [form, inset] of [
-  ['/ through New project', true],
+  ['/ through New project', false],
   ['/projects', false],
   ['/ at startup', false],
 ] as const) {
@@ -266,16 +290,106 @@ test('New project on /projects opens the home body after the outlet remounts the
 
   assert.equal(pathOf(rendered), '/', 'The remount left /.');
   assert.equal(rendered.errors().length, 0, 'The remounted view failed.');
+  const content = single(rendered.root, 'div[data-slot="dashboard-content"]');
+  only(content, 'button', 'Browse all projects');
   assert.equal(
-    rendered.root.querySelectorAll(ASIDE).length,
-    0,
-    'The remounted / shows All projects with the Dashboard sidebar, not the home body.',
-  );
-  assert.equal(
-    rendered.root.querySelectorAll(SEARCH).length,
+    content.querySelectorAll(SEARCH).length,
     1,
     "The remounted / has no home body's Search projects field.",
   );
+  assert.deepEqual(
+    selectedRows(single(rendered.root, ASIDE)),
+    [],
+    'The remounted / shows All projects, not the home body.',
+  );
+});
+
+// S34, UR1 (`85:7726`, `85:7520`): the content is an inset card on the
+// sidebar canvas, with no padding of its own and the right and bottom insets
+const CARD = 'div[data-slot="dashboard-content"] [data-slot="dashboard-card"]';
+const cardClasses = `${INSET_CARD.replace(/\bp-2\b/, 'p-0')} mr-2 mb-2`;
+for (const form of Object.keys(forms) as Form[]) {
+  test(`on ${form} the content is an inset card with no left border`, async () => {
+    rendered = await renderDashboard(form);
+
+    const card = single(rendered.root, CARD);
+    const missing = cardClasses
+      .split(/\s+/)
+      .filter((name) => name !== '' && !card.classList.contains(name));
+    assert.deepEqual(missing, [], `The card lacks classes: ${card.className}`);
+    const content = single(rendered.root, 'div[data-slot="dashboard-content"]');
+    assert.ok(
+      content.classList.contains('bg-sidebar'),
+      `The content column is not on the sidebar canvas: ${content.className}`,
+    );
+    assert.equal(
+      content.querySelectorAll('.border-l').length,
+      0,
+      'The Dashboard content keeps a left border.',
+    );
+  });
+}
+
+// UR1, Figma `256:20963` (Dashboard=Active): the Dashboard button shows it is
+// the current page on every Dashboard form
+for (const form of Object.keys(forms) as Form[]) {
+  test(`on ${form} the Dashboard button is the current page`, async () => {
+    rendered = await renderDashboard(form);
+
+    const header = single(
+      rendered.root,
+      '[data-slot="workspace-sidebar-header"]',
+    );
+    const button = only(header, 'button', 'Dashboard');
+    assert.equal(button.getAttribute('aria-current'), 'page');
+    assert.ok(
+      button.hasAttribute('data-active'),
+      'The Dashboard button has no data-active.',
+    );
+  });
+}
+
+// Figma `34:12218`: the sidebar search's shortcut is two keys
+test('the sidebar search shows its shortcut as two keys', async () => {
+  rendered = await renderDashboard('/projects');
+
+  const aside = single(rendered.root, ASIDE);
+  const keys = [...aside.querySelectorAll('[data-slot="kbd"]')].map((key) =>
+    normalized(key.textContent),
+  );
+  assert.deepEqual(keys, [...searchShortcutKeys(navigator.platform)]);
+});
+
+// `85:7520`: the table's four columns share the width equally, and the
+// header and rows line up with the page title (no overhang)
+test('on /projects the four table columns are equal and the table aligns with the title', async () => {
+  rendered = await renderDashboard('/projects');
+
+  const content = single(rendered.root, 'div[data-slot="dashboard-content"]');
+  const header = single(content, '[data-slot="dashboard-columns"]');
+  const cells = [...header.children];
+  assert.deepEqual(cells.map(nameOf), ['Name', 'Activity', 'Created', 'State']);
+  for (const cell of cells) {
+    assert.ok(
+      cell.classList.contains('flex-1'),
+      `Column ${nameOf(cell)} is not flex-1: ${cell.className}`,
+    );
+  }
+  const row = single(content, '[data-project-id]');
+  const rowCells = [...single(row, 'button').children];
+  assert.equal(rowCells.length, 4, 'A row does not have four cells.');
+  for (const cell of rowCells) {
+    assert.ok(
+      cell.classList.contains('flex-1'),
+      `A row cell is not flex-1: ${cell.className}`,
+    );
+  }
+  for (const element of [header, row]) {
+    assert.ok(
+      !element.classList.contains('-mx-[8px]'),
+      `The table overhangs the title: ${element.className}`,
+    );
+  }
 });
 
 // Contracts 2e §0.1: `/` reached without "New project" draws All projects.

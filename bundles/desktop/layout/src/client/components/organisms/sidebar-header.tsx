@@ -7,6 +7,13 @@ export type SidebarHeaderProps = {
    * `/projects`, the call the Home tab made (`project-tabs.tsx:292`).
    */
   readonly onDashboard: () => void;
+  /**
+   * True while the Dashboard is the current page (`/` and `/projects`). The
+   * button then carries `aria-current="page"` and `data-active` and draws
+   * Figma's active fill, `--paper-control` (`256:20963`, Dashboard=Active).
+   * False or absent in a Project (`99:8035`).
+   */
+  readonly active?: boolean;
 };
 
 /**
@@ -18,11 +25,15 @@ export type SidebarHeaderProps = {
  * - It draws nothing on its right side (S29); 4.2 and 4.3 add Back/Forward and
  *   Search there.
  * - Pressing the button calls `onDashboard` once.
+ * - While `active`, the button is marked as the current page and filled.
  * - It renders `div[data-slot="workspace-sidebar-header"]`. That slot was
  *   freed by the deleted `WorkspaceSidebarHeader`; `sidebar-header` is
  *   `desktop/ui/sidebar`'s own slot (`sidebar.tsx:354`).
  */
-export function SidebarHeader({ onDashboard }: SidebarHeaderProps) {
+export function SidebarHeader({
+  onDashboard,
+  active = false,
+}: SidebarHeaderProps) {
   const mac = navigator.userAgent.includes('Mac');
   return (
     <div
@@ -34,7 +45,9 @@ export function SidebarHeader({ onDashboard }: SidebarHeaderProps) {
         size="icon-sm"
         aria-label="Dashboard"
         title="Dashboard"
-        className="[-webkit-app-region:no-drag]"
+        aria-current={active ? 'page' : undefined}
+        data-active={active ? '' : undefined}
+        className="[-webkit-app-region:no-drag] data-active:bg-[var(--paper-control)]"
         onClick={() => onDashboard()}
       >
         <HouseIcon aria-hidden="true" className="size-3.5" />

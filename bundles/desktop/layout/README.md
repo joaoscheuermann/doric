@@ -31,9 +31,10 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   creation time and state, and a "New project" action. Its sidebar holds the
   search, "All projects", a Projects group, the groups other bundles add, and
   "All settings".
-- **Project tabs.** A "Dashboard" tab and one tab per open Project, which you
-  can reorder, rename and close; each remembers its last path, saved in the
-  window's local storage.
+- **Project tabs.** One tab per open Project, which you can reorder, rename
+  and close; each remembers its last path, saved in the window's local
+  storage. The sidebar header's Dashboard button opens the Dashboard and shows
+  as current while it is open.
 - **Sidebar.** The selected Project's recursive Thread tree. Rows can be
   renamed, and a context menu adds, copies, colors (Projects only) and
   deletes. The sidebar is a stack of resizable, collapsible panes, so other

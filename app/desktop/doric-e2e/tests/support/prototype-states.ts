@@ -103,8 +103,9 @@ const restPointer = async (contents: WebContents): Promise<void> => {
 
 /**
  * Runs `step` with the page's `Date.now` held at `FROZEN_NOW`, so the running
- * Thread's elapsed badge reads the prototype's 02:00 on every run. The badge
- * reads the clock once a second: the hold lasts past one reading.
+ * Thread's elapsed badge reads the prototype's 02:00 on every run, and a
+ * Dashboard opened inside `step` reads the prototype's relative times. The
+ * badge reads the clock once a second: the hold lasts past one reading.
  */
 const atFrozenClock = async <T>(
   contents: WebContents,
@@ -248,21 +249,29 @@ export const capturePrototypeStates = async (input: {
   await clickOn(contents, `${SUB_THREAD_TAB} [data-slot="tab-close"]`);
   await gone(contents, SUB_THREAD_TAB, 'the sub-thread tab to close');
 
+  // The Dashboard reads its relative times when it mounts, so the clock is
+  // held from before it opens until the capture: the rows then read the
+  // prototype's "just now" … "4 days ago" (`85:7726`, `85:7520`).
+
   // 85:7726: the new tab's Recent Dashboard, from the Project view's "+".
-  await click(
-    contents,
-    'New project',
-    'button',
-    '[aria-label="Workspace tabs"]',
-  );
-  await at('/');
-  await shoot('85:7726', 'Home / Dashboard · Recent (new tab)');
+  await atFrozenClock(contents, async () => {
+    await click(
+      contents,
+      'New project',
+      'button',
+      '[aria-label="Workspace tabs"]',
+    );
+    await at('/');
+    await shoot('85:7726', 'Home / Dashboard · Recent (new tab)');
+  });
 
   // 85:7520: the Dashboard of every Project, from the sidebar header.
   await go(contents, THREAD_PATH);
-  await click(contents, 'Dashboard');
-  await at('/projects');
-  await shoot('85:7520', 'Home / Dashboard · All projects');
+  await atFrozenClock(contents, async () => {
+    await click(contents, 'Dashboard');
+    await at('/projects');
+    await shoot('85:7520', 'Home / Dashboard · All projects');
+  });
 
   return written;
 };

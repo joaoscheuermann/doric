@@ -8,6 +8,7 @@ import type { RegionEntry } from 'bundle/contracts';
 
 import {
   dashboardPage,
+  searchShortcutKeys,
   searchShortcutLabel,
 } from '../src/client/domain/dashboard.js';
 
@@ -47,6 +48,21 @@ describe('search shortcut label', () => {
   test('other platforms show Ctrl+F', () => {
     for (const platform of ['Win32', 'Linux x86_64', '']) {
       assert.equal(searchShortcutLabel(platform), 'Ctrl+F', platform);
+    }
+  });
+});
+
+// §2.8, Figma `34:12218`: the sidebar search draws its shortcut as two keys.
+describe('search shortcut keys', () => {
+  test('Apple platforms show the keys ⌘ and F', () => {
+    for (const platform of ['MacIntel', 'iPhone', 'iPad']) {
+      assert.deepEqual(searchShortcutKeys(platform), ['⌘', 'F'], platform);
+    }
+  });
+
+  test('other platforms show the keys Ctrl and F', () => {
+    for (const platform of ['Win32', 'Linux x86_64', '']) {
+      assert.deepEqual(searchShortcutKeys(platform), ['Ctrl', 'F'], platform);
     }
   });
 });

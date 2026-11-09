@@ -606,6 +606,24 @@ test('the Dashboard button in the sidebar header opens the Dashboard', async () 
   assert.equal(pathOf(rendered), '/projects');
 });
 
+// UR1, Figma `99:8035`: in a Project the Dashboard button is not the current
+// page (it is on `/` and `/projects`, dashboard-shell.test.ts)
+test('in a Project the Dashboard button is not the current page', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    projectTabs: [project],
+    path: `/projects/${project.id}`,
+  });
+
+  const header = single(
+    rendered.root,
+    '[data-slot="workspace-sidebar-header"]',
+  );
+  const button = only(header, 'button', 'Dashboard');
+  assert.equal(button.getAttribute('aria-current'), null);
+  assert.equal(button.hasAttribute('data-active'), false);
+});
+
 // T-2.7, first clause
 test('the Project tab bar has no Dashboard tab', async () => {
   rendered = await renderWorkspace({

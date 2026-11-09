@@ -69,12 +69,11 @@ function Board({
             createRequest={createRequest}
             onOpenSettings={() => undefined}
             sidebarHeader={
-              <SidebarHeader onDashboard={() => navigate('/projects')} />
+              <SidebarHeader active onDashboard={() => navigate('/projects')} />
             }
             header={
               <ProjectTabBar
                 actions={<AccountStatus onOpenSettings={() => undefined} />}
-                inset={!all}
                 state={projectTabsOf([checkout, docs, billing])}
                 path={all ? '/projects' : '/'}
                 projects={[checkout, docs, billing]}
@@ -109,8 +108,8 @@ export const AllProjects = {
 };
 
 /**
- * The new-tab page: actions, search and the ten most recent Projects; the tab
- * bar keeps the macOS inset.
+ * The new-tab page (`85:7726`): the Dashboard sidebar with no row selected,
+ * then actions, search and the ten most recent Projects in the inset card.
  */
 export const Recent = {
   render: () => <Board all={false} />,

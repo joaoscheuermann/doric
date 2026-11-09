@@ -12,9 +12,19 @@ export const dashboardPage = (
   active === undefined ? undefined : items.find((item) => item.id === active);
 
 /**
- * The search shortcut's hint, as both "Search projects" fields draw it:
- * `'⌘F'` when `platform` names an Apple platform (Mac, iPhone, iPad),
- * `'Ctrl+F'` otherwise. Pure; never throws.
+ * The search shortcut's hint as the home body's "Search projects" field draws
+ * it, as one text: `'⌘F'` when `platform` names an Apple platform (Mac,
+ * iPhone, iPad), `'Ctrl+F'` otherwise. Pure; never throws.
  */
 export const searchShortcutLabel = (platform: string): '⌘F' | 'Ctrl+F' =>
   /Mac|iPhone|iPad/.test(platform) ? '⌘F' : 'Ctrl+F';
+
+/**
+ * The search shortcut as the Dashboard sidebar's "Search projects" field draws
+ * it, one key per entry (Figma `34:12218`): `['⌘', 'F']` on an Apple platform,
+ * `['Ctrl', 'F']` otherwise. Pure; never throws.
+ */
+export const searchShortcutKeys = (
+  platform: string,
+): readonly ['⌘' | 'Ctrl', 'F'] =>
+  /Mac|iPhone|iPad/.test(platform) ? ['⌘', 'F'] : ['Ctrl', 'F'];

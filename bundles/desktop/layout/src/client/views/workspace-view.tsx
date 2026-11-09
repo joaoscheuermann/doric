@@ -176,16 +176,9 @@ function Workspace() {
     projectTabs.navigate(path);
     setFocusRequest((count) => count + 1);
   };
-  const tabBar = ({
-    end,
-    inset,
-  }: {
-    readonly end?: ReactNode;
-    readonly inset?: boolean;
-  }) => (
+  const tabBar = ({ end }: { readonly end?: ReactNode }) => (
     <ProjectTabBar
       actions={end}
-      inset={inset}
       state={projectTabs.state}
       path={projectTabs.path}
       projects={workspace.projects}
@@ -203,8 +196,8 @@ function Workspace() {
     />
   );
   if (projectTabs.path === '/' || projectTabs.path === '/projects') {
-    // The home body is the only Dashboard form with no sidebar before the tab
-    // bar, so only it keeps the macOS inset (G3).
+    // Every Dashboard form, the home body included (`85:7726`, UR1), has the
+    // Dashboard sidebar before the tab bar, so none keeps the macOS inset.
     const home = newTab && projectTabs.path === '/';
     return (
       <div
@@ -221,10 +214,9 @@ function Workspace() {
           }}
           header={tabBar({
             end: <AccountStatus onOpenSettings={openSettings} />,
-            inset: home,
           })}
           sidebarHeader={
-            <SidebarHeader onDashboard={() => openPath('/projects')} />
+            <SidebarHeader active onDashboard={() => openPath('/projects')} />
           }
         />
         <DeleteDialog
