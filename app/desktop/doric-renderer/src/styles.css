@@ -73,17 +73,6 @@
   #root {
     height: 100%;
   }
-
-  /*
-   * Lucide draws every icon at a 2px stroke, which reads heavier than the app's
-   * thin type. The weight is stated once here rather than at each call site: the
-   * icons carry it as a presentation attribute, which any rule outranks, and
-   * absolute stroke width stays off, so the stroke scales with the size an icon
-   * is drawn at instead of holding a fixed pixel weight.
-   */
-  .lucide {
-    stroke-width: 1.25px;
-  }
 }
 
 /*

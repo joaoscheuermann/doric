@@ -16,11 +16,14 @@ export const RESOURCES_DIST = resolve('bundles/features/resources/dist');
 export const GIT_DIST = resolve('bundles/features/git/dist');
 export const FILES_DIST = resolve('bundles/features/files/dist');
 export const CHAT_DIST = resolve('bundles/desktop/chat/dist');
+export const USAGE_DIST = resolve('bundles/features/usage/dist');
 /** The real runtime bundle: only its manifest, descriptor and schemas are read. */
 export const RUNTIME_DIST = resolve('bundles/runtime/runtime/dist');
 /** The real comments bundle: only its manifest, descriptor, schemas and contracts module. */
 export const COMMENTS_DIST = resolve('bundles/features/comments/dist');
 const SETTINGS_DIST = resolve('bundles/desktop/settings/dist');
+/** The real host-config bundle: only its manifest, descriptor and schemas. */
+const HOST_CONFIG_DIST = resolve('bundles/foundation/host-config/dist');
 
 /** The host-only foundation that satisfies the core's backends. */
 export const memoryFoundation: FixtureBundle = {
@@ -315,18 +318,20 @@ export function activate({ services }) {
 });
 
 /** The bundles whose host contracts the e2e host answers itself. */
-const HOST_ONLY_DISTS = [RUNTIME_DIST, COMMENTS_DIST];
+const HOST_ONLY_DISTS = [RUNTIME_DIST, COMMENTS_DIST, HOST_CONFIG_DIST];
 
 /**
- * The workspace distribution: the real core, layout, resources, git, files
- * and chat, the memory foundation, and host-only cuts of the runtime and
- * comments bundles that provide the host contracts those bundles `require`
- * and none of them provides (`runtime/v1`, `runtime.threads/v1`,
- * `runtime.lease/v1`, `runtime.workspace/v1`, `runtime.attachments/v1`,
- * `comments/v1`) with their real versions and schemas. The host answers those
- * calls, and the real bundles' own host contracts (`git.commands/v1`,
- * `files/v1`; see the e2e `workspace-host`). `settings.config/v1` comes from
- * a fixture. `bundles` adds fixture bundles after them.
+ * The workspace distribution: the real core, layout, resources, git, files,
+ * chat and usage, the memory foundation, and host-only cuts of the runtime,
+ * comments and host-config bundles that provide the host contracts those
+ * bundles `require` and none of them provides (`runtime/v1`,
+ * `runtime.threads/v1`, `runtime.lease/v1`, `runtime.workspace/v1`,
+ * `runtime.attachments/v1`, `runtime.usage/v1`, `comments/v1`,
+ * `host-config/v1`) with their real versions and schemas.
+ * The host answers those calls, and the real bundles' own host contracts
+ * (`git.commands/v1`, `files/v1`, `usage/v1`; see the e2e `workspace-host`).
+ * `settings.config/v1` comes from a fixture. `bundles` adds fixture bundles
+ * after them.
  */
 export const workspaceDistribution = async (
   input: { readonly bundles?: readonly FixtureBundle[] } = {},
@@ -341,6 +346,7 @@ export const workspaceDistribution = async (
     await builtBundle(FILES_DIST),
     await builtBundle(GIT_DIST),
     await builtBundle(CHAT_DIST),
+    await builtBundle(USAGE_DIST),
   ];
   const provided = new Set(
     real.flatMap(({ bundle }) => contractsOf(bundle).map((entry) => entry.id)),

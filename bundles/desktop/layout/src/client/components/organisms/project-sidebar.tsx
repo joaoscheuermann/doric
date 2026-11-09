@@ -173,8 +173,11 @@ function PanePanel({
           </SidebarGroupLabel>
           {action}
         </div>
+        {/* The rows sit 6 px in from the column edges (Figma `269:31402`:
+            ProjectSidebar at x 6, 268 wide), so their 4 px rounded
+            selection fill does not touch them. */}
         {open && (
-          <SidebarGroupContent className="min-h-0 w-full flex-1 overflow-y-auto">
+          <SidebarGroupContent className="min-h-0 w-full flex-1 overflow-y-auto px-1.5">
             {pane.tag === undefined ? (
               (children ?? null)
             ) : (
@@ -210,7 +213,7 @@ function PanePanel({
  */
 function NewThreadRow({ onBegin }: { readonly onBegin?: () => void }) {
   return (
-    <SidebarMenu className="mb-2 px-2 pt-1">
+    <SidebarMenu className="mb-2 px-1.5 pt-1">
       <SidebarMenuItem>
         <SidebarMenuButton
           className="h-7 gap-1.5 rounded-md px-2.5 text-[0.8rem] font-normal [&_svg]:size-3.5"

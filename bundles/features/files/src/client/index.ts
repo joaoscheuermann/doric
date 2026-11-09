@@ -59,7 +59,7 @@ export const filesRegions: readonly {
       id: 'files',
       tag: 'files-tree',
       order: 100,
-      props: { label: 'Files', icon: 'files' },
+      props: { label: 'Files', icon: 'file' },
     },
   },
 ];

@@ -1,8 +1,9 @@
 // The Thread tree's rows after phase 2e (spec §2.2, §2.3; contracts 2e §2.2,
 // §2.3, §5):
-// - one 16 px lead slot per row (S25): the kind icon on a row that opens
-//   nothing; the chevron alone, turned down, on an open row; on a closed
-//   expandable row the kind icon, which the chevron replaces on hover or focus;
+// - one 16 px lead slot per row: the kind icon on a row that opens nothing;
+//   on an expandable row, open or closed, the kind icon at rest, which the
+//   chevron replaces on hover or focus, turned down while open (the approved
+//   decision that follows the prototype `99:8035` over S25 for thread rows);
 //   no 50 ms rotate;
 // - the trailing marks show only while the row is hovered or running: an idle
 //   row's repository mark is transparent at rest, a running row says "Agent
@@ -178,23 +179,45 @@ test("a non-expandable row's lead slot holds only the kind icon", async () => {
   }
 });
 
-// §2.2: an open row shows the chevron alone, turned down
-test("an open row's lead slot holds only a chevron turned down", async () => {
+// Prototype `99:8035` (approved over S25): an open row shows its kind icon at
+// rest; the chevron, turned down, replaces it on hover or focus
+test('an open row shows its kind icon at rest and the turned-down chevron only on hover or focus', async () => {
   rendered = await renderTree();
 
   for (const name of [plan.name, form.name]) {
     const slot = lead(row(rendered, name), name);
     const { chevrons, kinds } = iconsOf(slot);
-    assert.equal(kinds.length, 0, `The open row "${name}" draws a kind icon.`);
+    assert.equal(kinds.length, 1, `The open row "${name}" has no kind icon.`);
     assert.equal(chevrons.length, 1, `The open row "${name}" has no chevron.`);
+    const [kind] = kinds;
+    const [chevron] = chevrons;
+    assert.ok(kind !== undefined && chevron !== undefined);
+    assert.deepEqual(
+      missing(kind, slot, [
+        'group-hover/tree-row:hidden',
+        'group-focus-within/tree-row:hidden',
+      ]),
+      [],
+      `The kind icon of the open row "${name}" does not hide on hover or focus.`,
+    );
     assert.ok(
-      chevrons.every((chevron) => chevron.classList.contains('rotate-90')),
-      `The chevron of the open row "${name}" is not turned down (rotate-90).`,
+      !carries(kind, slot, 'hidden'),
+      `The kind icon of the open row "${name}" is hidden at rest.`,
+    );
+    assert.deepEqual(
+      missing(chevron, slot, [
+        'hidden',
+        'group-hover/tree-row:block',
+        'group-focus-within/tree-row:block',
+        'rotate-90',
+      ]),
+      [],
+      `The chevron of the open row "${name}" is not hidden at rest, shown on hover or focus and turned down.`,
     );
   }
 });
 
-// §2.2 (S25): a closed expandable row swaps its kind icon for the chevron
+// §2.2: a closed expandable row swaps its kind icon for the chevron
 test('a closed expandable row shows its kind icon and the chevron only on hover', async () => {
   rendered = await renderTree();
 

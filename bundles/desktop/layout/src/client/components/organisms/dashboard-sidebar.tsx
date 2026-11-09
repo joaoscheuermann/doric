@@ -31,6 +31,10 @@ import type { Project } from '../../domain/workspace.js';
 import { ElementHost } from '../molecules/element-host.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
 
+/** A 28 px sidebar row: 6 px padding and gap, 13 px regular text (`85:7520`). */
+const row =
+  'h-7 gap-1.5 px-1.5 py-0 text-[13px] font-normal data-active:font-normal';
+
 /**
  * The /projects dashboard's side menu: the sidebar header (the Dashboard
  * button) above the search, the search, "All projects", the
@@ -73,15 +77,18 @@ export function DashboardSidebar({
         className="h-full w-[280px] shrink-0 font-normal"
       >
         {header}
-        <SidebarHeader>{search}</SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
+        {/* Prototype density (`85:7520`, DashboardSidebar): 6 px side inset,
+            the search directly under the header, 12 px between the search
+            and each group, 28 px rows with 13 px regular names. */}
+        <SidebarHeader className="px-1.5 py-0">{search}</SidebarHeader>
+        <SidebarContent className="gap-3 px-1.5 pt-3">
+          <SidebarGroup className="p-0">
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={listActive}
                   onClick={onAllProjects}
-                  className="data-active:font-normal"
+                  className={row}
                 >
                   <FolderIcon />
                   <span>All projects</span>
@@ -90,15 +97,16 @@ export function DashboardSidebar({
             </SidebarMenu>
           </SidebarGroup>
           <Collapsible defaultOpen className="group/collapsible">
-            <SidebarGroup>
+            <SidebarGroup className="gap-1 p-0">
               <SidebarGroupLabel
                 render={<CollapsibleTrigger />}
-                className="gap-1 pl-1.5 font-normal"
+                className="h-5 gap-1 pl-1.5 font-normal"
               >
                 <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
                 Projects
               </SidebarGroupLabel>
               <SidebarGroupAction
+                className="top-0 right-1"
                 title="New project"
                 aria-label="New project"
                 onClick={onNewProject}
@@ -111,13 +119,14 @@ export function DashboardSidebar({
                     {projects.map((project) => (
                       <SidebarMenuItem key={project.id}>
                         <SidebarMenuButton
+                          className={row}
                           onClick={() => onSelectProject(project)}
                         >
                           <ProjectAvatar
                             color={project.color}
-                            className="size-3"
+                            className="size-4"
                           />
-                          <span className="min-w-0 flex-1 truncate font-light">
+                          <span className="min-w-0 flex-1 truncate">
                             {project.name}
                           </span>
                           <ArrowUpRightIcon className="text-sidebar-foreground/60 opacity-0 group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100" />

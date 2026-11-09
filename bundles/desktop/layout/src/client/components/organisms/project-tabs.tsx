@@ -114,7 +114,10 @@ function ProjectTab({
             data-tab-id={project.id}
             className={cn(
               tab,
-              'min-w-[100px] max-w-[280px] shrink-0 motion-reduce:!transition-none',
+              // 172 px wide, as every `ProjectTab` in the prototype
+              // (`99:8035`, `85:7520`); they shrink to 100 px before the
+              // strip scrolls.
+              'w-[172px] min-w-[100px] shrink motion-reduce:!transition-none',
             )}
             style={sortable.style}
             data-active={active ? 'true' : undefined}

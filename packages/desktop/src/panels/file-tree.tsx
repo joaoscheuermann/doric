@@ -1,4 +1,9 @@
-import { ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react';
+import {
+  ChevronRightIcon,
+  FileIcon,
+  FolderIcon,
+  FolderOpenIcon,
+} from 'lucide-react';
 
 import { Badge } from '../components/badge.js';
 import {
@@ -148,12 +153,19 @@ export function FileTree({
                 >
                   {!directory ? (
                     <FileIcon />
-                  ) : open ? (
-                    <ChevronRightIcon className="rotate-90" />
                   ) : (
                     <>
-                      <FolderIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-                      <ChevronRightIcon className="hidden group-hover/tree-row:block group-focus-within/tree-row:block" />
+                      {open ? (
+                        <FolderOpenIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
+                      ) : (
+                        <FolderIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
+                      )}
+                      <ChevronRightIcon
+                        className={cn(
+                          'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
+                          open && 'rotate-90',
+                        )}
+                      />
                     </>
                   )}
                 </span>
@@ -161,9 +173,7 @@ export function FileTree({
                   className={cn(
                     'min-w-0 flex-1 truncate',
                     decoration?.tone !== undefined && decoration.tone,
-                    decoration?.tone !== undefined
-                      ? 'font-normal'
-                      : 'font-light',
+                    'font-normal',
                     !directory && decoration?.struck && 'line-through',
                   )}
                 >

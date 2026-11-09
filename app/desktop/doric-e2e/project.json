@@ -18,7 +18,9 @@
         { "projects": "bundle-files", "target": "build" },
         { "projects": "bundle-chat", "target": "build" },
         { "projects": "bundle-comments", "target": "build" },
-        { "projects": "bundle-settings", "target": "build" }
+        { "projects": "bundle-settings", "target": "build" },
+        { "projects": "bundle-usage", "target": "build" },
+        { "projects": "bundle-host-config", "target": "build" }
       ],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {

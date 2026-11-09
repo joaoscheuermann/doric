@@ -142,33 +142,36 @@ export function ThreadBranches({
                   isActive={selected}
                   size="sm"
                   className={cn(
-                    'h-7 w-full translate-x-0 rounded-none',
+                    'h-7 w-full translate-x-0 rounded-md',
                     running ? 'pr-16' : 'pr-8',
                     rowInteraction(selected),
                   )}
                   style={{ paddingLeft: indentation(depth) }}
                 >
-                  {/* One 16 px lead slot (S25, Figma `112:22161`): the kind
-                      icon; on a closed expandable row the chevron replaces it
-                      while the row is hovered or holds focus (CSS only); an
-                      open row shows the chevron alone, turned down. */}
+                  {/* One 16 px lead slot (Figma `112:22161`, `99:8035`): the
+                      kind icon at rest; on an expandable row, open or closed,
+                      the chevron replaces it while the row is hovered or
+                      holds focus (CSS only), turned down while open. */}
                   <span
                     aria-hidden
                     data-slot="thread-lead"
                     className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
                   >
-                    {!expandable ? (
-                      <ThreadKindIcon kind={kind} />
-                    ) : expanded ? (
-                      <ChevronRightIcon className="rotate-90" />
-                    ) : (
+                    {expandable ? (
                       <>
                         <ThreadKindIcon
                           kind={kind}
                           className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden"
                         />
-                        <ChevronRightIcon className="hidden group-hover/tree-row:block group-focus-within/tree-row:block" />
+                        <ChevronRightIcon
+                          className={cn(
+                            'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
+                            expanded && 'rotate-90',
+                          )}
+                        />
                       </>
+                    ) : (
+                      <ThreadKindIcon kind={kind} />
                     )}
                   </span>
                   <EditableName

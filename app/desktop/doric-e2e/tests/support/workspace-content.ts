@@ -1,5 +1,5 @@
 // What the prototype's Project shows inside a Thread (Figma `99:8035`): the
-// conversation of "Build the payment form", the sandbox's file tree and its
+// conversation of "Plan the checkout flow", the sandbox's file tree and its
 // Git state, answered over the fake host for what the real chat, files and
 // git bundles call (`runtime.threads/v1.watchThread`, `files/v1`,
 // `git.commands/v1`). Shapes follow the dev fake host (`scripts/fake-host/`)

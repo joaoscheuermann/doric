@@ -2,7 +2,8 @@
 
 `git` lets the Doric agent clone, commit, rebase, resolve conflicts and push
 inside its Project's sandbox, and lets you follow that work in the desktop
-app: the Changes view, file comparisons, the current branch in the footer and
+app: the Changes view, file comparisons, the working directory and branch in the Files
+column's footer and
 the Versioning settings for the identity the agent commits with.
 
 It is a feature bundle with a host part (the `git` tool and
@@ -19,8 +20,8 @@ platform. See the [main README](../../../README.md) for Doric as a whole and
   `git.open-comparison/v1` command.
 - **Credentials:** the `GIT` credential kind, a Git identity (username and
   email) registered with `secrets/v1`.
-- **UI:** the Changes view, the comparison tab, the footer's working directory
-  and branch picker, and the Versioning settings section.
+- **UI:** the Changes view, the comparison tab, the Files column footer's
+  working directory and branch picker, and the Versioning settings section.
 
 ## The `git` tool
 
@@ -70,7 +71,8 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   (`git-file-diff`).
 - The Changes view (`git-changes`, with its `git-changes-badge`) is a
   `layout.panel` item, the working directory and branch (`git-workspace-cwd`)
-  a `layout.footer` item, and the Versioning section (`/settings/git`) chooses
+  a `layout.panel.footer` item (the change counts stay in the Changes tab's
+  badge), and the Versioning section (`/settings/git`) chooses
   which stored credentials the agent commits and pushes with.
 
 ## Change the bundle

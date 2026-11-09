@@ -116,8 +116,9 @@ export default {
 
 /**
  * The Checkout tree: child Threads, a running agent, git and GitHub working
- * directories and an unnamed Thread. Open branches show the chevron alone;
- * marks show only on hover or while running.
+ * directories and an unnamed Thread. Open branches show their kind icon at
+ * rest and the turned-down chevron on hover or focus; marks show only on hover
+ * or while running.
  */
 export const CheckoutTree = {
   render: () => <ThreadTree />,

@@ -46,11 +46,7 @@ import {
   waitForSelector,
 } from './support/shell-page';
 import { BRANCH, CWD, type GitCalls } from './support/workspace-content';
-import {
-  PAYMENT_FORM,
-  serveWorkspace,
-  THREAD_PATH,
-} from './support/workspace-host';
+import { PLAN, serveWorkspace, THREAD_PATH } from './support/workspace-host';
 
 describe('the shell in an app window', () => {
   let host: FakeHost;
@@ -291,7 +287,7 @@ describe('the real shell over the workspace bundles', () => {
       'the branch switch',
     );
     assert.deepEqual(git.switches, [
-      { threadId: PAYMENT_FORM.id, branch: 'feat/apple-pay', cwd: CWD },
+      { threadId: PLAN.id, branch: 'feat/apple-pay', cwd: CWD },
     ]);
     await until(
       async () =>

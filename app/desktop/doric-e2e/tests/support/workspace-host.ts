@@ -35,7 +35,9 @@ export interface WorkspaceThread {
   readonly parentThreadId?: string;
   readonly origin?: 'user' | 'agent';
   readonly name: string;
-  readonly state: 'ready';
+  readonly state: 'ready' | 'running';
+  readonly activePromptId?: string;
+  readonly executionStartedAt?: string;
   readonly lastSequence: number;
   readonly cwd: string;
   readonly createdAt: string;
@@ -63,7 +65,15 @@ const thread = (
   name: string,
   minutesAgo: number,
   more: Partial<
-    Pick<WorkspaceThread, 'parentThreadId' | 'origin' | 'lastSequence'>
+    Pick<
+      WorkspaceThread,
+      | 'parentThreadId'
+      | 'origin'
+      | 'lastSequence'
+      | 'state'
+      | 'activePromptId'
+      | 'executionStartedAt'
+    >
   > = {},
 ): WorkspaceThread => ({
   id,
@@ -117,11 +127,22 @@ export const PROJECTS: readonly WorkspaceProject[] = [
   ),
 ];
 
+// The Threads of Checkout redesign, as the prototype's sidebar draws them
+// (`269:31402`, in `99:8035` and `99:8508`), in its order:
+//
+//   Plan the checkout flow            main, the open Thread
+//   ├ Build the payment form          sub-thread, running for 02:00
+//   │ └ Validate card numbers         agent thread
+//   └ Review error copy               sub-thread
+//   Accessibility audit               main
+//   Untitled                          main, no name yet
+
+const PLAN_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const PAYMENT_FORM_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 /** What the Threads of the prototype said, by Thread. */
 const LOGS: ReadonlyMap<string, readonly ThreadEventRow[]> = new Map(
-  [PAYMENT_FORM_ID, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'].map((threadId) => [
+  [PLAN_ID, PAYMENT_FORM_ID].map((threadId) => [
     threadId,
     conversation({ projectId: CHECKOUT.id, threadId, at: at(5) }),
   ]),
@@ -130,44 +151,154 @@ const LOGS: ReadonlyMap<string, readonly ThreadEventRow[]> = new Map(
 const logOf = (threadId: string): readonly ThreadEventRow[] =>
   LOGS.get(threadId) ?? [];
 
-/** The Thread the Project view selects, with the prototype's conversation. */
+/**
+ * When the running Thread's agent started: two minutes before `EPOCH`, so
+ * its elapsed badge reads the prototype's 02:00 at the captures' clock
+ * (`FROZEN_NOW`).
+ */
+export const RUNNING_SINCE = at(2);
+
+/** The page clock the captures freeze: just past `EPOCH`. */
+export const FROZEN_NOW = Date.parse(EPOCH) + 500;
+
+/** The Thread the Project view opens (`99:8035`): selected, with children. */
+export const PLAN = thread(PLAN_ID, CHECKOUT.id, 'Plan the checkout flow', 5, {
+  lastSequence: logOf(PLAN_ID).length,
+});
+
+/**
+ * A sub-thread of the open Thread whose agent is running: the sidebar's
+ * elapsed badge and shimmer, and the viewer of `99:8508`.
+ */
 export const PAYMENT_FORM = thread(
   PAYMENT_FORM_ID,
   CHECKOUT.id,
   'Build the payment form',
-  5,
-  { lastSequence: logOf(PAYMENT_FORM_ID).length },
+  4,
+  {
+    parentThreadId: PLAN_ID,
+    origin: 'user',
+    state: 'running',
+    activePromptId: 'aaaaaaaa-0000-4000-8000-000000000002',
+    executionStartedAt: RUNNING_SINCE,
+    lastSequence: logOf(PAYMENT_FORM_ID).length,
+  },
 );
 
-/** A sub-thread of the selected Thread: it opens in the viewer (`99:8508`). */
+/** The thread an agent opened under the running one: the bot mark, depth 2. */
 export const VALIDATE_CARDS = thread(
   'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   CHECKOUT.id,
   'Validate card numbers',
-  4,
-  {
-    parentThreadId: PAYMENT_FORM_ID,
-    origin: 'user',
-    lastSequence: logOf('cccccccc-cccc-4ccc-8ccc-cccccccccccc').length,
-  },
+  3,
+  { parentThreadId: PAYMENT_FORM_ID, origin: 'agent' },
 );
 
 export const THREADS: readonly WorkspaceThread[] = [
-  thread(
-    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-    CHECKOUT.id,
-    'Plan the checkout flow',
-    90,
-  ),
+  PLAN,
   PAYMENT_FORM,
   VALIDATE_CARDS,
+  thread(
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    CHECKOUT.id,
+    'Review error copy',
+    30,
+    { parentThreadId: PLAN_ID, origin: 'user' },
+  ),
+  thread(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    CHECKOUT.id,
+    'Accessibility audit',
+    120,
+  ),
+  // No name yet: the sidebar draws its "Untitled" placeholder.
+  thread('ffffffff-ffff-4fff-8fff-ffffffffffff', CHECKOUT.id, '', 240),
 ];
+
+/** The model the prototype's footers name. */
+const MODEL = 'anthropic/claude-sonnet-4.5';
+
+/** One Thread's own charges in a usage answer. */
+const charges = (
+  item: WorkspaceThread,
+  cost: number,
+  calls: number,
+  inputTokens: number,
+) => ({
+  threadId: item.id,
+  name: item.name,
+  ...(item.parentThreadId === undefined
+    ? {}
+    : { parentThreadId: item.parentThreadId }),
+  calls,
+  unpricedCalls: 0,
+  cost,
+  inputTokens,
+  outputTokens: Math.round(inputTokens / 8),
+  cachedInputTokens: Math.round(inputTokens / 2),
+  reasoningTokens: Math.round(inputTokens / 20),
+});
+
+/** A `usage/v1` answer: the context in use and the subtree's charges summed. */
+const usageOf = (
+  inputTokens: number,
+  threads: readonly ReturnType<typeof charges>[],
+) => ({
+  context: {
+    model: MODEL,
+    contextWindowSource: 'catalog',
+    contextWindow: 200_000,
+    inputTokens,
+  },
+  total: threads.reduce(
+    (sum, entry) => ({
+      calls: sum.calls + entry.calls,
+      unpricedCalls: sum.unpricedCalls + entry.unpricedCalls,
+      cost: sum.cost + entry.cost,
+      inputTokens: sum.inputTokens + entry.inputTokens,
+      outputTokens: sum.outputTokens + entry.outputTokens,
+      cachedInputTokens: sum.cachedInputTokens + entry.cachedInputTokens,
+      reasoningTokens: sum.reasoningTokens + entry.reasoningTokens,
+    }),
+    {
+      calls: 0,
+      unpricedCalls: 0,
+      cost: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedInputTokens: 0,
+      reasoningTokens: 0,
+    },
+  ),
+  threads,
+});
+
+const PAYMENT_FORM_CHARGES = [
+  charges(PAYMENT_FORM, 0.3, 9, 96_000),
+  charges(VALIDATE_CARDS, 0.12, 4, 31_000),
+];
+
+/**
+ * What the footers read for each Thread (`99:8035`: "64.3K / 200K · 32%",
+ * "~$1.75"; `99:8508`'s viewer: "38.2K / 200K · 19%", "~$0.42"). A Thread
+ * without usage answers no calls, which the footer draws as "—".
+ */
+const USAGE: ReadonlyMap<string, ReturnType<typeof usageOf>> = new Map([
+  [
+    PLAN.id,
+    usageOf(64_300, [
+      charges(PLAN, 1.33, 21, 212_000),
+      ...PAYMENT_FORM_CHARGES,
+    ]),
+  ],
+  [PAYMENT_FORM.id, usageOf(38_200, PAYMENT_FORM_CHARGES)],
+]);
 
 /** The Project view of Checkout redesign. */
 export const PROJECT_PATH = `/projects/${CHECKOUT.id}`;
 
 /** Checkout redesign with its Thread open (`99:8035`): the chat bundle's route. */
-export const THREAD_PATH = `${PROJECT_PATH}/threads/${PAYMENT_FORM.id}`;
+export const THREAD_PATH = `${PROJECT_PATH}/threads/${PLAN.id}`;
 
 /** A tuple's first item, or the value: the argument a wire message carries. */
 const first = (input: unknown): Record<string, unknown> => {
@@ -199,7 +330,7 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
       project: item,
       activityAt: item.updatedAt,
       ...(threadsOf(item.id).length > 0
-        ? { latestActiveThreadId: PAYMENT_FORM.id }
+        ? { latestActiveThreadId: PLAN.id }
         : {}),
     })),
   );
@@ -222,6 +353,14 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
 
     return THREADS.find((item) => item.id === id);
   });
+  // Nothing queued behind any Thread's prompt.
+  host.serve('runtime.threads/v1', 'queue', (input) => {
+    const id = Array.isArray(input) ? input[0] : input;
+
+    return THREADS.some((item) => item.id === id)
+      ? { revision: 0, paused: false, stopping: false, items: [] }
+      : undefined;
+  });
   host.stream('runtime.threads/v1', 'watchThread', (input, push) => {
     const { threadId, afterSequence } = first(input);
     const found = THREADS.find((item) => item.id === threadId);
@@ -236,6 +375,14 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
       events: logOf(String(threadId)).filter((row) => row.sequence > from),
     });
   });
+  host.serve('usage/v1', 'thread', (input) => {
+    const id = String(Array.isArray(input) ? input[0] : input);
+
+    return THREADS.some((item) => item.id === id)
+      ? (USAGE.get(id) ?? { total: usageOf(0, []).total, threads: [] })
+      : undefined;
+  });
+  host.serve('usage/v1', 'compactionTarget', () => ({ pressurePercent: 80 }));
   host.serve('resources/v1', 'host', () => ({
     at: EPOCH,
     cpuCount: 8,

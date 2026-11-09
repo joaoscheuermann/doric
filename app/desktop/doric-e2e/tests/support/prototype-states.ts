@@ -22,8 +22,9 @@ import {
   BILLING,
   CHECKOUT,
   DOCS,
+  FROZEN_NOW,
+  PAYMENT_FORM,
   THREAD_PATH,
-  VALIDATE_CARDS,
 } from './workspace-host';
 
 /** The directories the prototype's Files column shows open. */
@@ -43,7 +44,7 @@ const treeRow = (name: string): string =>
 const VIEWER = 'section[aria-label="Viewer"]';
 const TAB_BAR_END = '[data-slot="project-tab-actions"]';
 const FILES_HEADER = '[data-slot="workspace-files-header"]';
-const SUB_THREAD_TAB = `[data-tab-id="thread:${VALIDATE_CARDS.id}"]`;
+const SUB_THREAD_TAB = `[data-tab-id="thread:${PAYMENT_FORM.id}"]`;
 
 /** Resolves once no visible element matches `selector`. */
 const gone = (
@@ -78,6 +79,55 @@ const showing = (
     what,
   );
 
+/**
+ * Moves the pointer onto an empty spot of the page's main card (the
+ * conversation, else the Dashboard's content) and takes focus off the control
+ * the last click focused, so neither a hover fill nor a focus state is
+ * captured.
+ */
+const restPointer = async (contents: WebContents): Promise<void> => {
+  const spot = await inPage<{ x: number; y: number }>(
+    contents,
+    `(() => {
+      const card = ['[aria-label="Thread conversation"]', '[data-slot="dashboard-content"]']
+        .map((selector) => deepAll(selector).find(visible))
+        .find(Boolean);
+      const rect = card ? card.getBoundingClientRect() : { x: 0, y: 0, width: innerWidth, height: innerHeight };
+      return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height * 0.8) };
+    })()`,
+  );
+
+  contents.sendInputEvent({ type: 'mouseMove', ...spot });
+  await inPage(contents, 'deepActive()?.blur?.()');
+};
+
+/**
+ * Runs `step` with the page's `Date.now` held at `FROZEN_NOW`, so the running
+ * Thread's elapsed badge reads the prototype's 02:00 on every run. The badge
+ * reads the clock once a second: the hold lasts past one reading.
+ */
+const atFrozenClock = async <T>(
+  contents: WebContents,
+  step: () => Promise<T>,
+): Promise<T> => {
+  await page(
+    contents,
+    `(() => { window.__doricRealNow ??= Date.now; Date.now = () => ${FROZEN_NOW}; })()`,
+  );
+
+  try {
+    await new Promise((done) => setTimeout(done, 1_200));
+    await painted(contents, 100);
+
+    return await step();
+  } finally {
+    await page(
+      contents,
+      '(() => { if (window.__doricRealNow) Date.now = window.__doricRealNow; })()',
+    );
+  }
+};
+
 /** The answer's first words, as the conversation draws them. */
 const ANSWER_START = ANSWER.slice(0, ANSWER.indexOf('`')).trim();
 
@@ -95,15 +145,15 @@ export const capturePrototypeStates = async (input: {
   const { booted, window, dir, theme } = input;
   const contents = window.webContents;
   const written: string[] = [];
-  const shoot = async (node: string, state: string) => {
-    const shot = await captureState({
-      booted,
-      window,
-      dir,
-      node,
-      state,
-      theme,
-    });
+  const shoot = async (node: string, state: string, frozen = false) => {
+    await restPointer(contents);
+    await painted(contents, 300);
+
+    const capture = () =>
+      captureState({ booted, window, dir, node, state, theme });
+    const shot = frozen
+      ? await atFrozenClock(contents, capture)
+      : await capture();
 
     written.push(shot.png, shot.json);
   };
@@ -163,18 +213,22 @@ export const capturePrototypeStates = async (input: {
     }
   }
   await explained(waitForSelector(contents, treeRow('payment-form.tsx')));
-  await shoot('99:8035', 'Project / Checkout redesign · Thread');
+  await shoot('99:8035', 'Project / Checkout redesign · Thread', true);
 
-  // 99:8508: the sub-thread opened from the sidebar, in the viewer.
+  // 99:8508: the running sub-thread opened from the sidebar, in the viewer.
   await clickOn(
     contents,
     '[data-slot="sidebar-menu-button"], [data-slot="sidebar-menu-sub-button"]',
-    VALIDATE_CARDS.name,
+    PAYMENT_FORM.name,
   );
   await explained(
     showing(contents, VIEWER, ANSWER_START, 'the sub-thread in the viewer'),
   );
-  await shoot('99:8508', 'Project / Checkout redesign · Sub-thread in viewer');
+  await shoot(
+    '99:8508',
+    'Project / Checkout redesign · Sub-thread in viewer',
+    true,
+  );
 
   // S27: the Files column collapsed while the viewer stays open, through
   // the "Hide files" toggle in the column's header.
@@ -187,6 +241,7 @@ export const capturePrototypeStates = async (input: {
   await shoot(
     'S27',
     'Project / Checkout redesign · Files collapsed, viewer open',
+    true,
   );
   await explained(click(contents, 'Show files', 'button', TAB_BAR_END));
   await explained(waitForSelector(contents, FILES_HEADER));

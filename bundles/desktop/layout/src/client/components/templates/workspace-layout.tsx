@@ -41,7 +41,9 @@ type WorkspaceLayoutProps = {
    * When it is present, the layout draws an invisible handle and then the viewer
    * column. The handle is full height, 8 px wide and has no line (S24, G1). The
    * column holds `viewerTabs` above a `<section aria-label="Viewer">` that
-   * carries `INSET_CARD` and the S34 margins.
+   * carries `INSET_CARD` and the S34 margins. The column opens 448 px wide,
+   * the prototype's viewer card (`99:8508`: a 456 px column with the 8 px
+   * handle), and the conversation takes the rest.
    */
   readonly fileViewer?: ReactNode;
   /**
@@ -59,9 +61,11 @@ type WorkspaceLayoutProps = {
    */
   readonly filesHeader?: ReactNode;
   /**
-   * The Files column's footer band (40 px), drawn in
-   * `div[data-slot="workspace-files-footer"]` below `files`. It has no border
-   * and no fill. It is drawn only while the column is.
+   * The Files column's footer row, drawn in
+   * `div[data-slot="workspace-files-footer"]` below `files`: 28 px high with
+   * 8 px above and below it, 4 px left and 12 px right padding and a 6 px gap
+   * (`layout/WorkspaceFooter` `266:21739` in `99:8035`). It has no border and
+   * no fill. It is drawn only while the column is.
    */
   readonly filesFooter?: ReactNode;
   /**
@@ -140,7 +144,7 @@ export function WorkspaceLayout({
             <ResizableHandle className="z-10 w-2 bg-transparent [app-region:no-drag]" />
             <ResizablePanel
               className="overflow-hidden"
-              defaultSize="34rem"
+              defaultSize="448px"
               minSize="18rem"
               maxSize="60rem"
             >
@@ -197,7 +201,7 @@ export function WorkspaceLayout({
                   <div className="flex min-h-0 flex-1 flex-col">{files}</div>
                   <div
                     data-slot="workspace-files-footer"
-                    className="flex h-10 shrink-0 items-center px-2"
+                    className="my-2 flex h-7 shrink-0 items-center gap-1.5 pr-3 pl-1"
                   >
                     {filesFooter}
                   </div>

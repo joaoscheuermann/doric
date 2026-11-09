@@ -67,7 +67,10 @@ export function ProjectPanelTabs({
   const [held, setOrder] = useState<readonly string[]>(available);
   const order = panelOrder(held, available);
   return (
-    <div className="min-w-0 flex-1 [-webkit-app-region:no-drag]">
+    // One joined segmented group (Figma `266:21741` "Panel tabs"): no gap,
+    // 28 px tabs with 6 px side padding, the 6 px radius on the group's outer
+    // corners only, and `--accent` behind the selected view.
+    <div className="min-w-0 flex-1 [-webkit-app-region:no-drag] [&_[data-tab-id]]:h-7 [&_[data-tab-id]]:px-1.5 [&_[data-tab-id]:not(:first-child)]:rounded-l-none [&_[data-tab-id]:not(:last-child)]:rounded-r-none [&_[data-tab-id][aria-pressed=true]]:bg-accent [&_[role=group]]:gap-0">
       <TabStrip
         variant="toggle"
         label="Project views"

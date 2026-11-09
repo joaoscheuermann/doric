@@ -719,6 +719,83 @@ test('the handle before the viewer is a full-height transparent 8 px strip', asy
   assert.deepEqual(missingClasses(handle, 'bg-transparent w-2'), []);
 });
 
+// Check 2, item 5 (`99:8508`): the viewer opens with the prototype's 448 px
+// card and the conversation takes the rest. happy-dom lays nothing out, so the
+// panels report a width that adds up to a 1920 px window while this renders;
+// react-resizable-panels then sizes each panel as a share of that width.
+test('the viewer opens 448 px wide and the conversation takes the rest', async () => {
+  // A first render installs happy-dom's window, whose `HTMLElement` this patches.
+  (await renderWorkspace(withViewer)).cleanup();
+  const windowWidth = 1920;
+  const columns = 4; // sidebar, conversation, viewer, Files
+  let owner: object | null = HTMLElement.prototype;
+  while (
+    owner !== null &&
+    Object.getOwnPropertyDescriptor(owner, 'offsetWidth') === undefined
+  ) {
+    owner = Object.getPrototypeOf(owner);
+  }
+  const original =
+    owner === null
+      ? undefined
+      : Object.getOwnPropertyDescriptor(owner, 'offsetWidth');
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+    configurable: true,
+    get(this: HTMLElement): number {
+      return this.dataset.panel === undefined ? 0 : windowWidth / columns;
+    },
+  });
+  try {
+    rendered = await renderWorkspace(withViewer);
+
+    const card = conversationCard(rendered);
+    const viewer = single(rendered.root, 'section[aria-label="Viewer"]');
+    const panelOf = (element: HTMLElement): HTMLElement => {
+      const panel = element.closest<HTMLElement>('[data-panel]');
+      assert.ok(panel !== null, 'The card is not inside a resizable panel.');
+      return panel;
+    };
+    const width = (element: HTMLElement): number =>
+      Math.round((Number(panelOf(element).style.flexGrow) / 100) * windowWidth);
+    assert.equal(width(viewer), 448, 'The viewer does not open 448 px wide.');
+    assert.equal(
+      width(card),
+      windowWidth - 280 - 448 - 328,
+      'The conversation does not take the rest of the window.',
+    );
+  } finally {
+    delete (HTMLElement.prototype as { offsetWidth?: number }).offsetWidth;
+    if (owner === HTMLElement.prototype && original !== undefined)
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', original);
+  }
+});
+
+// Check 2, item 9 (`99:8035`, `85:7520`): every Project tab is 172 px wide,
+// and may shrink, down to its 100 px floor, before the strip scrolls.
+test('every Project tab is 172 px wide and may shrink', async () => {
+  rendered = await renderWorkspace({
+    projects: [project, docs, billing],
+    projectTabs: [project, docs, billing],
+    path: `/projects/${project.id}`,
+  });
+
+  const tabs = [
+    ...tabBar(rendered).querySelectorAll<HTMLElement>('[data-tab-id]'),
+  ];
+  assert.equal(tabs.length, 3, 'The tab bar does not show three Projects.');
+  for (const tab of tabs) {
+    assert.deepEqual(
+      missingClasses(tab, 'w-[172px] min-w-[100px] shrink'),
+      [],
+      `The tab "${nameOf(tab)}" is not 172 px wide with a 100 px floor.`,
+    );
+    assert.ok(
+      !tab.classList.contains('shrink-0'),
+      `The tab "${nameOf(tab)}" cannot shrink.`,
+    );
+  }
+});
+
 // Contracts 2d-1 §1.8: the stale header organism is gone.
 test('the old workspace header organism is deleted', () => {
   // The compiled test runs from `dist-tests/tests/client`; three levels up is

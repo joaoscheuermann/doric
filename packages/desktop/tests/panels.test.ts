@@ -199,14 +199,30 @@ describe('the lead slot of a tree row', () => {
     assert.ok(!chevron.includes('rotate-90'));
   });
 
-  test('an open directory shows only a turned chevron', () => {
+  test('an open directory swaps its open folder for a turned chevron on hover or focus, in one slot', () => {
     const inner = row(markup, 'open');
     const slot = leadSlot(inner);
-    assert.equal(iconCount(inner), 1);
-    assert.equal(iconCount(slot), 1);
-    assert.equal(iconClasses(inner, 'folder'), undefined);
+    assert.equal(
+      iconCount(slot),
+      2,
+      'the slot holds the open folder and the chevron',
+    );
+    assert.equal(iconCount(inner), 2, 'no icon sits outside the lead slot');
+    assert.ok(
+      !/\blucide-folder[\s"]/u.test(inner),
+      'the open directory shows no closed folder',
+    );
+
+    const folder = iconClasses(slot, 'folder-open');
+    assert.ok(folder, 'the open directory shows an open folder');
+    assert.ok(folder.includes('group-hover/tree-row:hidden'));
+    assert.ok(folder.includes('group-focus-within/tree-row:hidden'));
+
     const chevron = iconClasses(slot, 'chevron-right');
-    assert.ok(chevron, 'the open directory shows a chevron');
+    assert.ok(chevron, 'the open directory carries a chevron');
+    assert.ok(chevron.includes('hidden'));
+    assert.ok(chevron.includes('group-hover/tree-row:block'));
+    assert.ok(chevron.includes('group-focus-within/tree-row:block'));
     assert.ok(chevron.includes('rotate-90'));
   });
 
@@ -217,5 +233,14 @@ describe('the lead slot of a tree row', () => {
     assert.equal(iconCount(slot), 1);
     assert.ok(iconClasses(slot, 'file'), 'the file row shows a file icon');
     assert.equal(iconClasses(inner, 'chevron-right'), undefined);
+  });
+
+  test('an undecorated name is set in the normal weight', () => {
+    const classes = /<span[^>]*class="([^"]*)"[^>]*>file\.ts<\/span>/u
+      .exec(row(markup, 'file.ts'))?.[1]
+      ?.split(/\s+/u);
+    assert.ok(classes, 'the name sits in its own span');
+    assert.ok(classes.includes('font-normal'), classes.join(' '));
+    assert.ok(!classes.includes('font-light'), classes.join(' '));
   });
 });

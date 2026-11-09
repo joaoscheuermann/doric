@@ -13,30 +13,15 @@ import {
 import { useState } from 'react';
 import type { Thread } from 'runtime/contracts';
 
-import type { ChangesObservation } from '../../contracts/index.js';
-import { ChangeCounts } from '../changes/change-counts.js';
 import { gitLine, gitStatusLine } from '../domain/thread-git.js';
 import { useThreadGit } from '../hooks/use-thread-git.js';
-import { changedLineTotals } from '../reads/change-tree.js';
 import { BranchPicker } from './branch-picker.js';
 
-/** The conversation's worktree context and directory-scoped changes shortcut. */
-export function WorkspaceCwd({
-  thread,
-  changes,
-  onShowChanges,
-}: {
-  readonly thread?: Thread;
-  readonly changes: ChangesObservation['read'];
-  readonly onShowChanges: () => void;
-}) {
+/** The conversation's worktree context: its directory and branch picker. */
+export function WorkspaceCwd({ thread }: { readonly thread?: Thread }) {
   const { error, git, refreshing, refresh } = useThreadGit(thread);
   const [branchesOpen, setBranchesOpen] = useState(false);
   if (!thread) return null;
-  const totals =
-    changes.status === 'ready'
-      ? changedLineTotals(changes.value.repositories)
-      : undefined;
   const root = git?.repo ? git.root : thread.cwd;
   const environment =
     git?.repo === false && git.status !== undefined
@@ -163,28 +148,6 @@ export function WorkspaceCwd({
           )}
         </PopoverContent>
       </Popover>
-      {git?.repo && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="xs"
-                className="shrink-0"
-                aria-label="View changes in current directory"
-                onClick={onShowChanges}
-              />
-            }
-          >
-            {totals ? (
-              <ChangeCounts {...totals} />
-            ) : (
-              <span className="text-muted-foreground">…</span>
-            )}
-          </TooltipTrigger>
-          <TooltipContent>View changes in current directory</TooltipContent>
-        </Tooltip>
-      )}
     </>
   );
 }
