@@ -85,7 +85,7 @@ export function ExecutionPicker() {
         <Input
           aria-label="Execution model"
           autoComplete="off"
-          className="w-48 border-transparent bg-transparent shadow-none hover:bg-muted focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+          className="w-48 border-transparent bg-transparent shadow-none hover:bg-muted dark:hover:bg-muted/50 dark:bg-transparent"
           placeholder="Model id"
           value={model}
           onChange={(event) =>

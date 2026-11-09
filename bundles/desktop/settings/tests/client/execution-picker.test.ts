@@ -258,7 +258,7 @@ test("the drawn icons hold no element of the host's SVG", async () => {
   }
 });
 
-test('the picker anchors the footer at its left and draws its triggers as unpadded 20 px text buttons', async () => {
+test('the picker anchors the footer at its left and draws its triggers as ghost `sm` buttons', async () => {
   const window = await openFooter(SONNET);
 
   // Figma `99:8035`: the picker is the footer's first item and pushes the
@@ -273,24 +273,87 @@ test('the picker anchors the footer at its left and draws its triggers as unpadd
       `${name} in ${rootClasses.join(' ')}`,
     );
 
-  // Figma `110:22082`: the model and effort are text buttons, 20 px tall, with
-  // no padding; 8 px from the model icon to its name; 4 px around the "·".
+  // Figma `31:15450`: the model and effort are the plain ghost `sm` button,
+  // 28 px tall with its own padding, radius, hover, open and focus states; the
+  // model trigger keeps 8 px from its icon to its name and a truncating width.
   const effort = window.document.querySelector<HTMLElement>(
     'settings-execution-picker [aria-label="Reasoning effort"]',
   );
   assert.ok(effort !== null, 'the effort trigger');
   for (const button of [model, effort]) {
     const classes = [...button.classList];
-    for (const name of ['h-5', 'px-0'])
+    for (const name of [
+      'h-7',
+      'px-2.5',
+      'rounded-[min(var(--radius-md),12px)]',
+      'focus-visible:ring-3',
+      'hover:bg-muted',
+      'aria-expanded:bg-muted',
+    ])
       assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
-    assert.ok(
-      !classes.some((name) => /^(h-7|px-2\.5)$|:pl-1\.5$/.test(name)),
-      `padding in ${classes.join(' ')}`,
+    const overrides = classes.filter(
+      (name) =>
+        name === 'h-5' ||
+        name === 'px-0' ||
+        /:p[lr]-0$/.test(name) ||
+        name.startsWith('after:'),
     );
-    assert.ok(
-      classes.includes('focus-visible:ring-3'),
-      'the trigger keeps its focus ring',
-    );
+    assert.deepEqual(overrides, [], `overrides in ${classes.join(' ')}`);
   }
-  assert.ok([...model.classList].includes('gap-2'), 'icon gap 8');
+  const modelClasses = [...model.classList];
+  for (const name of [
+    'has-data-[icon=inline-start]:pl-1.5',
+    'gap-2',
+    'max-w-72',
+    'min-w-0',
+  ])
+    assert.ok(
+      modelClasses.includes(name),
+      `${name} in ${modelClasses.join(' ')}`,
+    );
+});
+
+test('a provider that lists no models gets a typed model field with the input focus ring and a muted hover', async () => {
+  // No listed models and no model chosen yet: nothing to pick, so the reader
+  // types the model id.
+  const configuration = configurationOn('');
+  opened = await openSettingsWindow({
+    url: 'doric://app/footer',
+    host: {
+      ...host(''),
+      'host-config/v1.current': () => ({
+        configuration: {
+          ...configuration,
+          providers: configuration.providers.map((provider) => ({
+            ...provider,
+            models: [],
+          })),
+        },
+        revision: 1,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    },
+    probe: footerProbe,
+  });
+  await settle(20);
+  await settle(20);
+
+  const field = trigger(opened);
+  assert.equal(field.tagName, 'INPUT');
+  const classes = [...field.classList];
+  for (const name of [
+    'focus-visible:border-ring',
+    'focus-visible:ring-3',
+    'focus-visible:ring-ring/50',
+    'hover:bg-muted',
+    'dark:hover:bg-muted/50',
+    'h-8',
+    'w-48',
+  ])
+    assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+  for (const name of [
+    'focus-visible:ring-0',
+    'focus-visible:border-transparent',
+  ])
+    assert.ok(!classes.includes(name), `${name} in ${classes.join(' ')}`);
 });

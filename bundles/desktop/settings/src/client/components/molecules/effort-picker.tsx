@@ -21,16 +21,8 @@ type EffortPickerProps = {
 };
 
 /**
- * The footer's execution triggers as Figma draws them (`110:22082`): text
- * buttons 20 px tall with no padding, so the "·" between them sits 4 px from
- * each. An invisible 4 px margin keeps the 28 px hit area the ghost `sm`
- * button had; the focus ring is the button's own.
- */
-export const footerTrigger =
-  "relative h-5 px-0 has-data-[icon=inline-start]:pl-0 has-data-[icon=inline-end]:pr-0 after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']";
-
-/**
- * The reasoning effort a prompt requests, worn as a ghost button: opening it
+ * The reasoning effort a prompt requests, worn as a ghost `sm` button as Figma
+ * draws the footer's triggers (`settings/ExecutionPicker` `31:15450`): opening it
  * lists the efforts the model itself accepts, each a row that commits on click.
  * A model that lists none has nothing to choose, so the button is disabled and
  * the popover is never opened.
@@ -49,14 +41,7 @@ export function EffortPicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         disabled={disabled}
-        render={
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={ariaLabel}
-            className={footerTrigger}
-          />
-        }
+        render={<Button variant="ghost" size="sm" aria-label={ariaLabel} />}
       >
         {label}
       </PopoverTrigger>

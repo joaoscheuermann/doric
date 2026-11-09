@@ -70,6 +70,7 @@ O Tailwind gera CSS a partir das classes encontradas no código-fonte, e cada bu
 - `desktop/ui/theme.css` emite uma única vez o preflight, as variáveis dos tokens e as classes usadas pelos componentes de `desktop/ui`.
 - Cada bundle compila só os utilitários das suas próprias classes, referenciando os tokens da plataforma sem emiti-los de novo, dentro da camada `utilities`. Classes repetidas entre bundles geram regras idênticas, e as camadas fixam a ordem.
 - Bundles não estendem `@theme` nem criam tokens; valores novos de design entram nos tokens da plataforma.
+- A escala de raio (`--radius-sm/md/lg/xl`) fica em `@theme static`, e não em `@theme inline`: os componentes a leem por `var()` em valores arbitrários (`rounded-[min(var(--radius-md),12px)]`), que o Tailwind não reconhece como uso do token, então uma variável inline só seria emitida se alguma classe a citasse.
 
 Esboço do CSS de um bundle (a sintaxe exata do Tailwind 4 será validada na primeira extração):
 
