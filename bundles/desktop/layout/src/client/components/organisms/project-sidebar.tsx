@@ -56,6 +56,7 @@ import type {
   ProjectColor,
   Thread,
 } from '../../domain/workspace.js';
+import { openThreadTab } from '../../hooks/thread-navigation.js';
 import { usePaneOpen, useStackPanes } from '../../hooks/use-stack-panes.js';
 import { setPaneOpen, togglePane } from '../../stores/stack.js';
 import { ElementHost } from '../molecules/element-host.js';
@@ -339,6 +340,13 @@ export function ProjectSidebar({
     setQueryProject(projectId);
     setQuery('');
   }
+  // G7 for drafts begun outside the sidebar (A3, the Project tab's "New
+  // thread"): a new draft ends the query, so its row shows.
+  const [queryDraft, setQueryDraft] = useState(model.draft);
+  if (queryDraft !== model.draft) {
+    setQueryDraft(model.draft);
+    if (model.draft !== undefined) setQuery('');
+  }
   useEffect(() => {
     const focusSearch = (event: globalThis.KeyboardEvent) => {
       if (!isSearchShortcut(event)) return;
@@ -406,6 +414,7 @@ export function ProjectSidebar({
     copyId: actions.copyThreadId,
     create: actions.createThread,
     delete: (thread) => actions.deleteEntity({ kind: 'thread', value: thread }),
+    openInTab: (thread) => void openThreadTab(thread),
     rename: (thread, name) =>
       actions.rename({ kind: 'thread', value: thread }, name),
     select: actions.selectThread,

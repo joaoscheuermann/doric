@@ -7,7 +7,7 @@
   },
   "description": "The workspace frame: Projects and Threads, header, side panel, tabs and footers.",
   "provides": [
-    "layout.tabs/v1@1.1.0",
+    "layout.tabs/v1@1.2.0",
     "layout.workspace/v1@1.1.0",
     "layout.panel/v1@1.0.0",
     "layout.dashboard/v1@1.0.0",

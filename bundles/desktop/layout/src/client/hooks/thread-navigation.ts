@@ -8,6 +8,27 @@ import { layoutServices } from '../services/layout-services.js';
 import { rewriteRoute } from '../stores/route-selection.js';
 import { workspaceStore } from '../stores/workspace.js';
 
+/**
+ * Opens `thread` in a viewer tab of the active owner, as a sub-thread opens
+ * (P18), and selects the tab; the conversation column keeps what it shows. A
+ * refusal is reported in the sidebar.
+ */
+export const openThreadTab = async (thread: Thread): Promise<void> => {
+  try {
+    await layoutServices()
+      .use(LayoutTabsV1)
+      .open({
+        id: `thread:${thread.id}`,
+        title: thread.name || 'Untitled',
+        tag: 'chat-thread-panel',
+        props: { projectId: thread.projectId, threadId: thread.id },
+        icon: 'thread',
+      });
+  } catch (reason) {
+    workspaceStore.getState().fail(reason);
+  }
+};
+
 /** Resolves a child into the right-hand tabs while keeping a root conversation. */
 export function createThreadNavigation({
   intent,
@@ -49,19 +70,7 @@ export function createThreadNavigation({
       // The tab service takes ownership from the route. Canonicalize it before
       // opening, so a direct child link cannot own a second set of tabs.
       rewriteRoute(selection);
-      try {
-        await layoutServices()
-          .use(LayoutTabsV1)
-          .open({
-            id: `thread:${target.id}`,
-            title: target.name || 'Untitled',
-            tag: 'chat-thread-panel',
-            props: { projectId: target.projectId, threadId: target.id },
-            icon: 'thread',
-          });
-      } catch (reason) {
-        store.fail(reason);
-      }
+      await openThreadTab(target);
     }
     if (intent.current !== requestIntent) return undefined;
     if (!described) void loadThreads(main.projectId);

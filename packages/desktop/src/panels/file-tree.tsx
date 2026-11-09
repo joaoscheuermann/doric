@@ -4,8 +4,14 @@ import {
   FolderIcon,
   FolderOpenIcon,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 import { Badge } from '../components/badge.js';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from '../components/context-menu.js';
 import {
   SidebarMenuBadge,
   SidebarMenuButton,
@@ -62,6 +68,21 @@ type FileTreeProps = {
   readonly expanded: ReadonlySet<string>;
   readonly selectedPath?: string;
   readonly decorations?: ReadonlyMap<string, TreeDecoration>;
+  /**
+   * The context menu of a row: the content of a `ContextMenu` whose trigger is
+   * the row. `null` draws the row with no context menu, as does leaving this
+   * out. Passed down to every level.
+   */
+  readonly rowMenu?: (node: TreeNode) => ReactNode | null;
+  /**
+   * A row drawn as the first child of the open directory whose `path` is
+   * `directory`, one step deeper, before its children; in an empty directory
+   * it replaces the empty-directory notice. Passed down to every level.
+   */
+  readonly pending?: {
+    readonly directory: string;
+    readonly row: ReactNode;
+  };
 };
 
 /**
@@ -80,6 +101,8 @@ export function FileTree({
   expanded,
   selectedPath,
   decorations,
+  rowMenu,
+  pending,
 }: FileTreeProps) {
   return (
     <>
@@ -93,6 +116,85 @@ export function FileTree({
         };
         const children = directory ? (entry.children ?? []) : [];
         const decoration = decorations?.get(entry.path);
+        const menu = rowMenu?.(entry) ?? null;
+        const pendingRow =
+          pending?.directory === entry.path ? pending.row : undefined;
+        const button = (
+          <SidebarMenuButton
+            isActive={selected}
+            size="sm"
+            className={cn(
+              'h-7 w-full min-w-0 gap-1.5 rounded-[4px]',
+              decoration === undefined ? 'pr-1.5' : 'pr-8',
+              rowInteraction(selected),
+            )}
+            style={{ paddingLeft: indentation(depth) }}
+            render={
+              <div
+                role="treeitem"
+                tabIndex={0}
+                aria-expanded={directory ? open : undefined}
+                aria-selected={selected}
+                aria-label={
+                  decoration === undefined
+                    ? entry.name
+                    : `${entry.name}, ${decoration.description}`
+                }
+                title={
+                  decoration === undefined
+                    ? entry.path
+                    : `${entry.path}\n${decoration.description}`
+                }
+                onClick={activate}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    activate();
+                  } else if (event.key === 'ArrowRight' && directory && !open) {
+                    event.preventDefault();
+                    actions.toggle(entry.path);
+                  } else if (event.key === 'ArrowLeft' && open) {
+                    event.preventDefault();
+                    actions.toggle(entry.path);
+                  }
+                }}
+              />
+            }
+          >
+            <span
+              aria-hidden
+              className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
+            >
+              {!directory ? (
+                <FileIcon />
+              ) : (
+                <>
+                  {open ? (
+                    <FolderOpenIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
+                  ) : (
+                    <FolderIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
+                  )}
+                  <ChevronRightIcon
+                    className={cn(
+                      'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
+                      open && 'rotate-90',
+                    )}
+                  />
+                </>
+              )}
+            </span>
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate',
+                decoration?.tone !== undefined && decoration.tone,
+                'font-normal',
+                !directory && decoration?.struck && 'line-through',
+              )}
+            >
+              {entry.name}
+            </span>
+          </SidebarMenuButton>
+        );
 
         return (
           <SidebarMenuItem
@@ -102,84 +204,14 @@ export function FileTree({
           >
             <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
               <TreeGuides depth={depth} />
-              <SidebarMenuButton
-                isActive={selected}
-                size="sm"
-                className={cn(
-                  'h-7 w-full min-w-0 gap-1.5 rounded-[4px]',
-                  decoration === undefined ? 'pr-1.5' : 'pr-8',
-                  rowInteraction(selected),
-                )}
-                style={{ paddingLeft: indentation(depth) }}
-                render={
-                  <div
-                    role="treeitem"
-                    tabIndex={0}
-                    aria-expanded={directory ? open : undefined}
-                    aria-selected={selected}
-                    aria-label={
-                      decoration === undefined
-                        ? entry.name
-                        : `${entry.name}, ${decoration.description}`
-                    }
-                    title={
-                      decoration === undefined
-                        ? entry.path
-                        : `${entry.path}\n${decoration.description}`
-                    }
-                    onClick={activate}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        activate();
-                      } else if (
-                        event.key === 'ArrowRight' &&
-                        directory &&
-                        !open
-                      ) {
-                        event.preventDefault();
-                        actions.toggle(entry.path);
-                      } else if (event.key === 'ArrowLeft' && open) {
-                        event.preventDefault();
-                        actions.toggle(entry.path);
-                      }
-                    }}
-                  />
-                }
-              >
-                <span
-                  aria-hidden
-                  className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
-                >
-                  {!directory ? (
-                    <FileIcon />
-                  ) : (
-                    <>
-                      {open ? (
-                        <FolderOpenIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-                      ) : (
-                        <FolderIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-                      )}
-                      <ChevronRightIcon
-                        className={cn(
-                          'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
-                          open && 'rotate-90',
-                        )}
-                      />
-                    </>
-                  )}
-                </span>
-                <span
-                  className={cn(
-                    'min-w-0 flex-1 truncate',
-                    decoration?.tone !== undefined && decoration.tone,
-                    'font-normal',
-                    !directory && decoration?.struck && 'line-through',
-                  )}
-                >
-                  {entry.name}
-                </span>
-              </SidebarMenuButton>
+              {menu === null ? (
+                button
+              ) : (
+                <ContextMenu>
+                  <ContextMenuTrigger render={button} />
+                  <ContextMenuContent>{menu}</ContextMenuContent>
+                </ContextMenu>
+              )}
               {decoration !== undefined && (
                 <SidebarMenuBadge className="z-10 bg-sidebar/90">
                   <Badge variant="ghost" className="px-1" aria-hidden>
@@ -192,15 +224,16 @@ export function FileTree({
             </div>
             {open && (
               <SidebarMenuSub role="group" className={treeClassName}>
-                {children.length === 0 ? (
+                {pendingRow !== undefined && (
                   <SidebarMenuSubItem
                     role="presentation"
-                    className="w-full py-1 text-xs text-muted-foreground"
+                    className="w-full min-w-0"
                     style={{ paddingLeft: indentation(depth + 1) }}
                   >
-                    {emptyDirectoryNotice}
+                    {pendingRow}
                   </SidebarMenuSubItem>
-                ) : (
+                )}
+                {children.length > 0 ? (
                   <FileTree
                     actions={actions}
                     depth={depth + 1}
@@ -208,7 +241,19 @@ export function FileTree({
                     expanded={expanded}
                     selectedPath={selectedPath}
                     decorations={decorations}
+                    rowMenu={rowMenu}
+                    pending={pending}
                   />
+                ) : (
+                  pendingRow === undefined && (
+                    <SidebarMenuSubItem
+                      role="presentation"
+                      className="w-full py-1 text-xs text-muted-foreground"
+                      style={{ paddingLeft: indentation(depth + 1) }}
+                    >
+                      {emptyDirectoryNotice}
+                    </SidebarMenuSubItem>
+                  )
                 )}
               </SidebarMenuSub>
             )}

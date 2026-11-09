@@ -22,9 +22,10 @@ import { type ReactNode, useLayoutEffect, useState } from 'react';
 
 import type { ProjectTabs } from '../../domain/project-tabs.js';
 import { projectIdFromPath } from '../../domain/project-tabs.js';
-import type { Project } from '../../domain/workspace.js';
+import type { Project, ProjectColor } from '../../domain/workspace.js';
 import { EditableName } from '../molecules/editable-name.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
+import { ProjectColorMenu } from '../molecules/project-color-menu.js';
 
 const tab = cn('group', compactTabClassName);
 
@@ -74,6 +75,8 @@ function ProjectTab({
   closeMany,
   events,
   rename,
+  newThread,
+  setColor,
 }: {
   readonly project: Project;
   readonly active: boolean;
@@ -85,6 +88,8 @@ function ProjectTab({
   readonly closeMany: (ids: readonly string[]) => void;
   readonly events: ReturnType<typeof useTabStrip>;
   readonly rename: (project: Project, name: string) => Promise<void>;
+  readonly newThread: (project: Project) => void;
+  readonly setColor: (project: Project, color?: ProjectColor) => void;
 }) {
   const [editing, setEditing] = useState(false);
   // "Rename" opens the name only once the menu has closed, so the focus the
@@ -203,10 +208,18 @@ function ProjectTab({
           >
             Open project
           </ContextMenuItem>
+          <ContextMenuItem onClick={() => newThread(project)}>
+            New thread
+          </ContextMenuItem>
           <ContextMenuItem onClick={() => setRenameFromMenu(true)}>
             Rename
           </ContextMenuItem>
         </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ProjectColorMenu
+          value={project.color}
+          onSelect={(color) => setColor(project, color)}
+        />
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={closeThis}>Close tab</ContextMenuItem>
@@ -250,6 +263,8 @@ export function ProjectTabBar({
   move,
   onNewProject,
   rename,
+  onNewThread,
+  setColor,
 }: {
   /**
    * What the bar draws at its right end, after "New project", outside the drag
@@ -277,6 +292,10 @@ export function ProjectTabBar({
   readonly move: (from: string, to: string) => void;
   readonly onNewProject: () => void;
   readonly rename: (project: Project, name: string) => Promise<void>;
+  /** A3 (§4.4): selects the Project and starts a Thread draft in it. */
+  readonly onNewThread: (project: Project) => void;
+  /** A4 (§4.4): the Project's color, as the Dashboard row's menu sets it. */
+  readonly setColor: (project: Project, color?: ProjectColor) => void;
 }) {
   const selected = projectIdFromPath(path);
   const mac = navigator.userAgent.includes('Mac');
@@ -324,6 +343,8 @@ export function ProjectTabBar({
                     closeMany={closeMany}
                     events={events}
                     rename={rename}
+                    newThread={onNewThread}
+                    setColor={setColor}
                   />
                 );
               })}

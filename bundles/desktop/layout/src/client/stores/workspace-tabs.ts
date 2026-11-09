@@ -5,6 +5,7 @@ import {
   emptyTabs,
   moveTab,
   openTab,
+  retitleTab,
   type WorkspaceTab,
   type WorkspaceTabs,
 } from '../domain/workspace-tabs.js';
@@ -14,6 +15,8 @@ type TabsState = {
   open(threadId: string, tab: WorkspaceTab): void;
   close(threadId: string, id: string): void;
   select(threadId: string, id: string): void;
+  /** Sets an element tab's title (`layout.tabs/v1@1.2.0` `retitle`). */
+  retitle(threadId: string, id: string, title: string): void;
   move(threadId: string, from: string, to: string): void;
 };
 
@@ -38,6 +41,13 @@ export const workspaceTabsStore = createStore<TabsState>()((set) => ({
       threads: {
         ...state.threads,
         [threadId]: closeTab(state.threads[threadId] ?? emptyTabs, id),
+      },
+    })),
+  retitle: (threadId, id, title) =>
+    set((state) => ({
+      threads: {
+        ...state.threads,
+        [threadId]: retitleTab(state.threads[threadId] ?? emptyTabs, id, title),
       },
     })),
   // Reselecting the selected tab (reopening it through `layout.tabs/v1`)

@@ -38,6 +38,8 @@ export type ThreadBranchesActions = {
   readonly copyId: (id: string) => void;
   readonly create: (name: string) => Promise<void>;
   readonly delete: (thread: Thread) => void;
+  /** A1 (§4.4): opens the Thread in a viewer tab. */
+  readonly openInTab: (thread: Thread) => void;
   readonly rename: (thread: Thread, name: string) => Promise<void>;
   readonly select: (thread: Thread) => void;
   readonly startRename: (thread: Thread) => void;
@@ -138,6 +140,7 @@ export function ThreadBranches({
                   }
                 : {})}
               onCopyId={() => actions.copyId(thread.id)}
+              onOpenInTab={() => actions.openInTab(thread)}
             >
               <div className="group/tree-row relative w-full" title={title}>
                 <TreeGuides depth={depth} />

@@ -3,7 +3,8 @@
 // selected Project, exactly as the workspace's own file, diff and terminal
 // tabs do; an element tab shows the element `ui/v1` created for it. 1.1.0
 // (WP-10P, R-9.3): the trigger's icon, aria label and tooltip, closing in a
-// named owner, and the current tab with its change notifications.
+// named owner, and the current tab with its change notifications. 1.2.0
+// (S15): a tab's own menu entries, and `retitle`.
 
 import {
   ContractError,
@@ -85,6 +86,7 @@ export const createLayoutTabs = ({
               ? {}
               : { ariaLabel: input.ariaLabel }),
             ...(input.tooltip === undefined ? {} : { tooltip: input.tooltip }),
+            ...(input.menu === undefined ? {} : { menu: input.menu }),
           });
         }),
     }),
@@ -112,6 +114,23 @@ export const createLayoutTabs = ({
           const tabOwner = activeOwner();
           if (tabOf(tabOwner, id) === undefined) return;
           workspaceTabsStore.getState().select(tabOwner, id);
+        }),
+    }),
+    retitle: defineMethod({
+      ...layoutTabsMethods.retitle,
+      execute: ({
+        id,
+        title,
+        threadId,
+      }: {
+        readonly id: string;
+        readonly title: string;
+        readonly threadId?: string;
+      }) =>
+        settled(() => {
+          const tabOwner = threadId ?? activeOwner();
+          if (tabOf(tabOwner, id) === undefined) return;
+          workspaceTabsStore.getState().retitle(tabOwner, id, title);
         }),
     }),
     current: defineMethod({

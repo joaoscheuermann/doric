@@ -50,6 +50,10 @@ const setup = (owner: string | null = 'thread-1') => {
           ...layoutTabsMethods.focus,
           execute: async () => undefined,
         }),
+        retitle: defineMethod({
+          ...layoutTabsMethods.retitle,
+          execute: async () => undefined,
+        }),
         current: defineMethod({
           ...layoutTabsMethods.current,
           execute: () => {

@@ -28,19 +28,23 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
 ## What you see
 
 - **Dashboard.** Every Project as a grid or a list, with search, activity,
-  creation time and state, and a "New project" action. Its sidebar holds the
+  creation time and state, and a "New project" action; a Project's context
+  menu opens it, colors it or deletes it. Its sidebar holds the
   search, "All projects", a Projects group, the groups other bundles add, and
   "All settings".
 - **Project tabs.** One tab per open Project, which you can reorder, rename
   and close; each remembers its last path, saved in the window's local
-  storage. The sidebar header's Dashboard button opens the Dashboard and shows
-  as current while it is open.
+  storage. A tab's context menu opens the Project, starts a new Thread in it,
+  renames it, colors it and closes tabs. The sidebar header's Dashboard
+  button opens the Dashboard and shows as current while it is open.
 - **Sidebar.** The selected Project's recursive Thread tree. Rows can be
-  renamed, and a context menu adds, copies, colors (Projects only) and
+  renamed, and a context menu opens a Thread in a new tab, adds, copies and
   deletes. The sidebar is a stack of resizable, collapsible panes, so other
   bundles can add groups above or below the Threads.
 - **Conversation.** The selected Thread fills the main area; a child Thread
-  opens as a tab beside its root Thread instead of replacing it.
+  opens as a tab beside its root Thread instead of replacing it. Each of these
+  viewer tabs has a context menu: the entries the bundle that opened it
+  stated, then "Close tab".
 - **Project panel.** An icon tab strip of views beside the conversation, open
   or closed by the reader.
 - **Footers.** The conversation footer, and one window-wide footer with the
@@ -76,14 +80,14 @@ footer, where the composer would be.
 
 ## Contracts
 
-| Contract              | What another bundle can do                                                                                                                         | Used by                                                                       |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `layout.tabs/v1`      | open, focus or close a tab drawn by its own element (with icon, aria label and tooltip) in the active Thread's or Project's tabs; read the current | `files`, `git`, `terminal`                                                    |
-| `layout.workspace/v1` | read the tree, the selection, a Project's Threads and the connection; subscribe; show or hide the `layout.main.bottom` split                       | `chat`, `files`, `git`, `resources`, `screen`, `terminal`, `threads`, `usage` |
-| `layout.panel/v1`     | read, show or toggle the Project panel and its active view                                                                                         | `files`                                                                       |
-| `layout.dashboard/v1` | read, show or close the `layout.dashboard.page` item the `/projects` dashboard draws instead of its project list; subscribe                        | `settings`                                                                    |
-| `layout.sidebar/v1`   | add rows under each Thread of the sidebar tree (`addThreadRows`)                                                                                   | `terminal`                                                                    |
-| `layout.stack/v1`     | register a sidebar pane with title, order, header action and size limits                                                                           | `screen`                                                                      |
+| Contract              | What another bundle can do                                                                                                                                                                                    | Used by                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `layout.tabs/v1`      | open, focus or close a tab drawn by its own element (with icon, aria label, tooltip and, from 1.2.0, its context-menu entries) in the active Thread's or Project's tabs; retitle it (1.2.0); read the current | `files`, `git`, `terminal`                                                    |
+| `layout.workspace/v1` | read the tree, the selection, a Project's Threads and the connection; subscribe; show or hide the `layout.main.bottom` split                                                                                  | `chat`, `files`, `git`, `resources`, `screen`, `terminal`, `threads`, `usage` |
+| `layout.panel/v1`     | read, show or toggle the Project panel and its active view                                                                                                                                                    | `files`                                                                       |
+| `layout.dashboard/v1` | read, show or close the `layout.dashboard.page` item the `/projects` dashboard draws instead of its project list; subscribe                                                                                   | `settings`                                                                    |
+| `layout.sidebar/v1`   | add rows under each Thread of the sidebar tree (`addThreadRows`)                                                                                                                                              | `terminal`                                                                    |
+| `layout.stack/v1`     | register a sidebar pane with title, order, header action and size limits                                                                                                                                      | `screen`                                                                      |
 
 A duplicate pane or row id fails with `registration_conflict`, and opening a
 tab with no Thread or Project selected fails with `unavailable`.

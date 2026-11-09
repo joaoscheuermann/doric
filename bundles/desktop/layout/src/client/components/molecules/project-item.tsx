@@ -2,6 +2,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from 'desktop/ui/context-menu';
 
@@ -32,8 +33,8 @@ function relativeTime(value: string): string {
 }
 
 /**
- * One Project in the Dashboard's lists, with the context menu that recolours
- * or deletes it. `mode` picks the drawing: `'recent'` (the home body),
+ * One Project in the Dashboard's lists, with the context menu that opens,
+ * recolours or deletes it. `mode` picks the drawing: `'recent'` (the home body),
  * `'list'` (the `/projects` table row) or `'grid'` (a card). The element
  * carries `data-project-id`, which the search's arrow keys scroll to.
  * Pressing it calls `onOpen(entry)` once. `highlighted` draws the search's
@@ -134,6 +135,11 @@ export function ProjectItem({
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        {/* A2 (§4.4): the row's own open-or-select, first. */}
+        <ContextMenuItem onClick={() => onOpen(entry)}>
+          Open project
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ProjectColorMenu
           value={project.color}
           onSelect={(color) =>

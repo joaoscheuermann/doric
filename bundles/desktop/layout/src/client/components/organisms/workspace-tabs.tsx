@@ -2,12 +2,17 @@
 // element (`layout.tabs/v1`) since WP-10N moved the file, diff and terminal
 // tabs to the files, git and terminal bundles.
 
+import {
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from 'desktop/ui/context-menu';
 import { TabStrip } from 'desktop/ui/panels';
 import { TabsContent } from 'desktop/ui/tabs';
 import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
-import { LayoutTabsV1 } from '../../../contracts/index.js';
+import { LayoutTabsV1, type TabMenuItem } from '../../../contracts/index.js';
 import { type ThreadKind, threadKind } from '../../domain/thread-kind.js';
 import type {
   WorkspaceTabs as TabsState,
@@ -26,18 +31,25 @@ export function WorkspaceTabBar({
   readonly threadId: string;
 }) {
   const actions = workspaceTabsStore.getState();
+  const close = (id: string) => {
+    void layoutServices()
+      .use(LayoutTabsV1)
+      .close({ id, threadId })
+      .catch((reason: unknown) => workspaceStore.getState().fail(reason));
+  };
   return (
     <TabStrip
       variant="project"
       label="Files, changes, terminals and threads"
       selected={state.selected}
       onMove={(from, to) => actions.move(threadId, from, to)}
-      onClose={(id) => {
-        void layoutServices()
-          .use(LayoutTabsV1)
-          .close({ id, threadId })
-          .catch((reason: unknown) => workspaceStore.getState().fail(reason));
-      }}
+      onClose={close}
+      tabMenu={(id) => (
+        <TabMenu
+          items={tabMenuOf(state.items.find((tab) => tab.id === id))}
+          onClose={() => close(id)}
+        />
+      )}
       items={state.items.flatMap((tab) =>
         tab.kind === 'element'
           ? [
@@ -54,6 +66,46 @@ export function WorkspaceTabBar({
           : [],
       )}
     />
+  );
+}
+
+const tabMenuOf = (tab: WorkspaceTab | undefined) =>
+  tab?.kind === 'element' ? (tab.menu ?? []) : [];
+
+/**
+ * A viewer tab's context menu (S15): the entries its opener stated
+ * (`layout.tabs/v1@1.2.0` `menu`), a separator when there are any, then
+ * "Close tab", which closes it as its close button does.
+ */
+function TabMenu({
+  items,
+  onClose,
+}: {
+  readonly items: readonly TabMenuItem[];
+  readonly onClose: () => void;
+}) {
+  return (
+    <>
+      {items.length > 0 && (
+        <>
+          <ContextMenuGroup>
+            {items.map((item) => (
+              <ContextMenuItem
+                key={item.id}
+                variant={item.destructive ? 'destructive' : 'default'}
+                onClick={item.run}
+              >
+                {item.label}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuGroup>
+          <ContextMenuSeparator />
+        </>
+      )}
+      <ContextMenuGroup>
+        <ContextMenuItem onClick={onClose}>Close tab</ContextMenuItem>
+      </ContextMenuGroup>
+    </>
   );
 }
 

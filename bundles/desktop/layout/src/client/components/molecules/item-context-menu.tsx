@@ -6,7 +6,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from 'desktop/ui/context-menu';
-import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import { CopyIcon, ExternalLinkIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import type { ReactElement } from 'react';
 
 import type { ProjectColor } from '../../domain/workspace.js';
@@ -25,10 +25,12 @@ type ItemContextMenuProps = {
   readonly onAdd?: () => void;
   readonly onCopyId?: () => void;
   readonly onDelete?: () => void;
+  /** A1: present on Thread rows, which open in a viewer tab (§4.4). */
+  readonly onOpenInTab?: () => void;
 };
 
 /**
- * The add/copy/color/delete menu wrapped around a project or thread row. A row
+ * The open/add/copy/color/delete menu wrapped around a project or thread row. A row
  * offers only what its kind allows — a sub-thread has no children of its own, and
  * an agent Thread is neither renamed nor deleted by the reader — so each section
  * is drawn only when its action arrives.
@@ -41,6 +43,7 @@ export function ItemContextMenu({
   onAdd,
   onCopyId,
   onDelete,
+  onOpenInTab,
 }: ItemContextMenuProps) {
   const adding = onAdd !== undefined && addLabel !== undefined;
   const deleting = onDelete !== undefined && deleteLabel !== undefined;
@@ -48,8 +51,14 @@ export function ItemContextMenu({
     <ContextMenu>
       <ContextMenuTrigger render={children} />
       <ContextMenuContent>
-        {(adding || onCopyId !== undefined) && (
+        {(onOpenInTab !== undefined || adding || onCopyId !== undefined) && (
           <ContextMenuGroup>
+            {onOpenInTab && (
+              <ContextMenuItem onClick={onOpenInTab}>
+                <ExternalLinkIcon />
+                Open in new tab
+              </ContextMenuItem>
+            )}
             {adding && (
               <ContextMenuItem onClick={onAdd}>
                 <PlusIcon />

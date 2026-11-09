@@ -62,6 +62,7 @@ function ThreadTree({
       return Promise.resolve();
     },
     delete: report('delete'),
+    openInTab: report('openInTab'),
     rename: (thread, name) => {
       report('rename')(thread.id, name);
       setEditingId(undefined);

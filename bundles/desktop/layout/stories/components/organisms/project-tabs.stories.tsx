@@ -53,6 +53,12 @@ function Strip({
         })
       }
       onNewProject={() => navigate('/')}
+      onNewThread={(project) =>
+        console.info('Story action: new thread', project.id)
+      }
+      setColor={(project, color) =>
+        console.info('Story action: color', project.id, color)
+      }
       rename={(project, name) => {
         console.info('Story action: rename', project.id, name);
         return Promise.resolve();

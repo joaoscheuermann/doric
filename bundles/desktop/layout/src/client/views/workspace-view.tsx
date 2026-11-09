@@ -189,6 +189,11 @@ function Workspace() {
       rename={(project, name) =>
         actions.rename({ kind: 'project', value: project }, name)
       }
+      onNewThread={(project) => {
+        setNewTab(false);
+        actions.beginThread(project.id);
+      }}
+      setColor={actions.setProjectColor}
       onNewProject={() => {
         projectTabs.navigate('/');
         setNewTab(true);

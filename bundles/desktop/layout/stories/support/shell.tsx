@@ -119,6 +119,10 @@ export function WorkspaceShell({
               closeMany={(ids) => console.info('Story close tabs', ids)}
               move={(from, to) => console.info('Story move tab', from, to)}
               onNewProject={workspaceActions.beginProject}
+              onNewThread={(project) =>
+                workspaceActions.beginThread(project.id)
+              }
+              setColor={workspaceActions.setProjectColor}
               rename={(project, name) =>
                 workspaceActions.rename(
                   { kind: 'project', value: project },

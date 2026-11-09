@@ -42,8 +42,8 @@ const manifests = (): Map<string, { engines?: { doric?: string } }> => {
 };
 
 describe('the platform version', () => {
-  test('is 1.4.0 once navigation/v1@1.1.0 joins the platform', () => {
-    assert.equal(PLATFORM_VERSION, '1.4.0');
+  test('is 1.5.0 once the row and tab menus of the panels join the platform', () => {
+    assert.equal(PLATFORM_VERSION, '1.5.0');
   });
 
   test('leaves the folders and URLs at 1.0.0', () => {

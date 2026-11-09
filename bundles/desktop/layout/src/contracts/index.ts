@@ -26,6 +26,21 @@ export interface TabRequest {
   readonly ariaLabel?: string;
   /** 1.1.0: the trigger's tooltip (`title` attribute); defaults to `title`. */
   readonly tooltip?: string;
+  /**
+   * 1.2.0: the entries the tab's context menu shows above "Close tab", in
+   * order. The tab keeps them for its life: they are fixed when it opens.
+   */
+  readonly menu?: readonly TabMenuItem[];
+}
+
+/** One entry of a viewer tab's context menu (1.2.0). */
+export interface TabMenuItem {
+  readonly id: string;
+  readonly label: string;
+  /** Drawn with the destructive item variant. */
+  readonly destructive?: boolean;
+  /** Runs when the reader picks the entry; the menu closes. */
+  readonly run: () => void;
 }
 
 /** The icons a tab trigger may carry (1.1.0). */
@@ -58,6 +73,20 @@ export interface LayoutTabs {
     call?: CallArg,
   ): Promise<void>;
   focus(input: { readonly id: string }, call?: CallArg): Promise<void>;
+  /**
+   * 1.2.0: sets the title of the tab with that id among the tabs of the owner
+   * `threadId` names, else the active owner (as `close` resolves it). Without
+   * such a tab it does nothing. `open` with an open id only selects the tab, so
+   * this is how a tab's title follows its content.
+   */
+  retitle(
+    input: {
+      readonly id: string;
+      readonly title: string;
+      readonly threadId?: string;
+    },
+    call?: CallArg,
+  ): Promise<void>;
   /** 1.1.0: the selected tab of the active owner, if any (local). */
   current(call?: CallArg): CurrentTab | undefined;
   /** 1.1.0: called after every change of the tabs or of the owner (local). */
@@ -73,6 +102,26 @@ export const tabRequestSchema = z
     icon: z.enum(['file', 'file-diff', 'terminal', 'thread']).optional(),
     ariaLabel: z.string().optional(),
     tooltip: z.string().optional(),
+    menu: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            label: z.string(),
+            destructive: z.boolean().optional(),
+            run: functionSchema<() => void>(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+
+const tabRetitleSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string(),
+    threadId: z.string().optional(),
   })
   .strict();
 
@@ -94,6 +143,7 @@ export const layoutTabsMethods = {
   open: { input: tabRequestSchema, output: z.void() },
   close: { input: tabCloseSchema, output: z.void() },
   focus: { input: tabIdSchema, output: z.void() },
+  retitle: { input: tabRetitleSchema, output: z.void() },
   current: { input: noInput, output: currentTabSchema },
   subscribe: { input: listenerSchema, output: disposableSchema },
 } as const;
