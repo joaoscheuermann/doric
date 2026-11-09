@@ -15,6 +15,7 @@ import {
 import { RuntimeV1 } from './api/host.js';
 import { disposeProjectWatch, initProjectWatch } from './api/project-watch.js';
 import { disposeWorkspaceApi, initWorkspaceApi } from './api/workspace-api.js';
+import { followAbout } from './domain/about.js';
 import { tabOwnerOf } from './domain/route-selection.js';
 import { threadsPane } from './domain/sidebar-stack.js';
 import { LayoutWorkspaceElement } from './elements/workspace-element.js';
@@ -43,6 +44,7 @@ export function activate({ services }: ClientContext): Cleanup {
   const connection = services.use(DoricConnectionV1);
   initConnection(connection);
   initProjectWatch({ runtime: services.use(RuntimeV1), connection });
+  const about = followAbout(services);
 
   // WP-10N: the footer's working directory and usage, the header's
   // new-terminal button and the panel's views are other bundles' region items
@@ -91,6 +93,7 @@ export function activate({ services }: ClientContext): Cleanup {
     stopThreadTabs();
     disposeProjectWatch();
     disposeConnection();
+    about.dispose();
     disposeWorkspaceApi();
     resetRouteSelection();
     resetPanel();

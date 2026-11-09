@@ -89,16 +89,17 @@ tab with no Thread or Project selected fails with `unavailable`.
 
 ## Regions
 
-| Region                  | Where                                                       | Items today                                                     |
-| ----------------------- | ----------------------------------------------------------- | --------------------------------------------------------------- |
-| `layout.header`         | header actions, after the breadcrumb                        | `terminal`'s "New terminal" button                              |
-| `layout.panel`          | the Project panel's views                                   | `files`, `git`                                                  |
-| `layout.footer`         | the conversation footer                                     | `settings`' execution picker, `chat`'s composer, `git`, `usage` |
-| `layout.global-footer`  | the window-wide footer                                      | `resources`                                                     |
-| `layout.main.bottom`    | a split under the conversation                              | shown while an item asks through `layout.workspace/v1`          |
-| `layout.overlay`        | a floating layer over the conversation                      | items place themselves; the layer never intercepts a pointer    |
-| `layout.dashboard.nav`  | groups of the `/projects` dashboard sidebar, after Projects | `settings`' Providers group                                     |
-| `layout.dashboard.page` | a page the dashboard draws instead of its project list      | `settings`' provider page, shown through `layout.dashboard/v1`  |
+| Region                  | Where                                                                                 | Items today                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `layout.header`         | header actions, after the breadcrumb                                                  | `terminal`'s "New terminal" button                              |
+| `layout.panel`          | the Project panel's views                                                             | `files`, `git`                                                  |
+| `layout.footer`         | the conversation footer                                                               | `settings`' execution picker, `chat`'s composer, `git`, `usage` |
+| `layout.global-footer`  | the window-wide footer                                                                | `resources`                                                     |
+| `layout.account.status` | a 14×14 slot over the account avatar's bottom-right corner, at the header's right end | none yet; `resources`' connection badge in 2c                   |
+| `layout.main.bottom`    | a split under the conversation                                                        | shown while an item asks through `layout.workspace/v1`          |
+| `layout.overlay`        | a floating layer over the conversation                                                | items place themselves; the layer never intercepts a pointer    |
+| `layout.dashboard.nav`  | groups of the `/projects` dashboard sidebar, after Projects                           | `settings`' Providers group                                     |
+| `layout.dashboard.page` | a page the dashboard draws instead of its project list                                | `settings`' provider page, shown through `layout.dashboard/v1`  |
 
 A `layout.panel` item carries `{ label, icon, badgeTag? }`; its element mounts
 only while the panel is open and the item is selected. A `layout.dashboard.nav`

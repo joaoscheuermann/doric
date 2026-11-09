@@ -19,7 +19,7 @@
     "src/client/services/**/*.ts",
     "src/client/stores/**/*.ts",
     "src/client/utility/**/*.ts",
-    "tests/**/*.ts"
+    "tests/*.ts"
   ],
   "references": [
     {

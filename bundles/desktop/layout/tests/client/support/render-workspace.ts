@@ -1,0 +1,166 @@
+// The layout's whole workspace view in this process: happy-dom's window as
+// the globals (as `tests/project-tabs-navigation.test.ts:12-17` installs
+// them), the layout activated on the story host by `bindLayout`, and
+// `WorkspaceView` rendered as `<layout-workspace>` renders it. A test reads
+// the DOM and what the host was asked; the host is the stories' fake host.
+
+import { Window } from 'happy-dom';
+
+import type { FakeHost } from '../../../stories/support/fake-host.js';
+import type { LayoutFixture } from '../../../stories/support/layout-host.js';
+
+/** One rendered workspace, and the fake host it is bound to. */
+export interface RenderedWorkspace extends FakeHost {
+  /** The element the view renders into, attached to `document.body`. */
+  readonly root: HTMLElement;
+  /**
+   * Unmounts the view, removes `root` and runs the layout's deactivation
+   * (`bindLayout`'s unbind). Idempotent. Call it before the next
+   * `renderWorkspace`, at the latest in the test's `after`/`finally`.
+   */
+  cleanup(): void;
+}
+
+/** The window's globals a rendered view reaches for, as chat's harness lists them. */
+const globalNames = (window: Window): string[] => [
+  'window',
+  'document',
+  'navigator',
+  'location',
+  'history',
+  'localStorage',
+  'sessionStorage',
+  'customElements',
+  'MutationObserver',
+  'getComputedStyle',
+  'getSelection',
+  'matchMedia',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+  'innerWidth',
+  'innerHeight',
+  ...Object.getOwnPropertyNames(window).filter((name) =>
+    /^(HTML|SVG)\w*Element$|^\w*Event$|^(Node|Element|Text|Comment|DocumentFragment|ShadowRoot|Range|Selection|StaticRange|DOMRect|ResizeObserver|IntersectionObserver|DataTransfer|NodeFilter)$/.test(
+      name,
+    ),
+  ),
+];
+
+let installed: Window | undefined;
+
+/** Installs happy-dom's window as the process's globals, once. */
+const installWindow = (): Window => {
+  if (installed !== undefined) return installed;
+  const window = new Window({
+    url: 'http://localhost/',
+    width: 1280,
+    height: 800,
+  });
+  // happy-dom runs no Web Animations and implements `getAnimations` on shadow
+  // roots alone; base-ui asks an element for the animations in progress
+  // before it unmounts a popup, and here, truthfully, there are none.
+  const element = window.Element.prototype as unknown as Record<
+    string,
+    unknown
+  >;
+  if (typeof element.getAnimations !== 'function')
+    element.getAnimations = (): unknown[] => [];
+  for (const name of globalNames(window)) {
+    const value = (window as unknown as Record<string, unknown>)[name];
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      writable: true,
+      value:
+        typeof value === 'function' && !/^[A-Z]/.test(name)
+          ? (value as (...args: unknown[]) => unknown).bind(window)
+          : value,
+    });
+  }
+  installed = window;
+  return window;
+};
+
+/** Waits for queued microtasks, immediates and short timers, after a click or an answer. */
+export const settle = async (): Promise<void> => {
+  for (let index = 0; index < 10; index += 1) {
+    await new Promise<void>((done) => setImmediate(done));
+  }
+  await new Promise<void>((done) => setTimeout(done, 20));
+  for (let index = 0; index < 10; index += 1) {
+    await new Promise<void>((done) => setImmediate(done));
+  }
+};
+
+let current: RenderedWorkspace | undefined;
+
+/**
+ * Renders the workspace for `fixture`.
+ * - Installs happy-dom's `window`, `document` and `localStorage` as globals
+ *   the first time it is called. It loads React DOM and the layout only after
+ *   them, so a test file must not import `react-dom` or layout client modules
+ *   statically.
+ * - Binds the layout to a fake host built from `fixture` (`bindLayout`, with
+ *   the app's region items) and renders `WorkspaceView` with `createRoot` and
+ *   `flushSync`.
+ * - Resolves once the first render and the answers it started have settled,
+ *   so the about version is in place when the host answers it.
+ * - `<core-region>` is the stories' stand-in (`defineStoryElements`,
+ *   `story-elements.ts:26-40`), which draws `regionItems(name)` as
+ *   placeholders, so a region's seeded items appear in `root`.
+ * - Rejects if rendering throws. Binding again unbinds a workspace still
+ *   bound.
+ */
+export const renderWorkspace = async (
+  fixture: LayoutFixture = {},
+): Promise<RenderedWorkspace> => {
+  current?.cleanup();
+  installWindow();
+  const { createElement } = await import('react');
+  const { flushSync } = await import('react-dom');
+  const { createRoot } = await import('react-dom/client');
+  const { bindLayout } = await import(
+    '../../../stories/support/layout-host.js'
+  );
+  const { WorkspaceView } = await import(
+    '../../../src/client/views/workspace-view.js'
+  );
+
+  const bound = bindLayout(fixture);
+  const root = document.createElement('div');
+  document.body.append(root);
+  const errors: unknown[] = [];
+  const react = createRoot(root, {
+    onUncaughtError: (error) => errors.push(error),
+  });
+
+  let cleaned = false;
+  const cleanup = (): void => {
+    if (cleaned) return;
+    cleaned = true;
+    if (current === rendered) current = undefined;
+    react.unmount();
+    root.remove();
+    bound.unbind();
+  };
+  const rendered: RenderedWorkspace = {
+    services: bound.services,
+    regionItems: bound.regionItems,
+    executed: bound.executed,
+    root,
+    cleanup,
+  };
+  current = rendered;
+
+  try {
+    flushSync(() => react.render(createElement(WorkspaceView)));
+    await settle();
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+  if (errors.length > 0) {
+    cleanup();
+    throw errors[0];
+  }
+  return rendered;
+};

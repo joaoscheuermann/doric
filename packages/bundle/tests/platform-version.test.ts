@@ -52,15 +52,18 @@ describe('the platform version', () => {
 });
 
 describe('the platform each bundle asks for', () => {
-  test('chat asks for ^1.1.0 and every other bundle for ^1.0.0', () => {
+  test('chat and layout ask for ^1.1.0 and every other bundle for ^1.0.0', () => {
+    const onMinorOne = new Set(['desktop/chat', 'desktop/layout']);
     const found = manifests();
-    assert.ok(found.has('desktop/chat'), [...found.keys()].join(', '));
-    assert.ok(found.size > 1, [...found.keys()].join(', '));
+    for (const name of onMinorOne) {
+      assert.ok(found.has(name), [...found.keys()].join(', '));
+    }
+    assert.ok(found.size > onMinorOne.size, [...found.keys()].join(', '));
 
     for (const [name, manifest] of found) {
       assert.equal(
         manifest.engines?.doric,
-        name === 'desktop/chat' ? '^1.1.0' : '^1.0.0',
+        onMinorOne.has(name) ? '^1.1.0' : '^1.0.0',
         name,
       );
     }

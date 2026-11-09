@@ -28,6 +28,7 @@ import {
 } from 'react';
 
 import { DeleteDialog } from '../components/molecules/delete-dialog.js';
+import { AccountStatus } from '../components/organisms/account-status.js';
 import { Dashboard } from '../components/organisms/dashboard.js';
 import {
   ProjectPanel,
@@ -236,6 +237,7 @@ function Workspace() {
                   onActiveChange={panel.show}
                   items={panelItems}
                 />
+                <AccountStatus onOpenSettings={openSettings} />
               </>
             }
             files={<ProjectPanel active={panelView} items={panelItems} />}
