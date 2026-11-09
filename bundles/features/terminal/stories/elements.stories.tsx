@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { defineTerminalElements } from '../src/client/elements.js';
 import { ElementHost } from './support/element-host.js';
 import { devServer, threadId } from './support/fixtures.js';
+import { InsetCard } from './support/inset-card.js';
 import { still, storyServices } from './support/services.js';
 import {
   storyTerminalApi,
@@ -55,17 +56,14 @@ export const View = {
   render: function View() {
     const { elements, services } = useElements(true);
     return (
-      <div
-        className="overflow-hidden rounded-md border"
-        style={{ height: 380 }}
-      >
+      <InsetCard height={380}>
         <ElementHost
           tag="story-terminal-view"
           element={elements.view}
           services={services}
           properties={viewProperties}
         />
-      </div>
+      </InsetCard>
     );
   },
 };
@@ -75,7 +73,7 @@ export const Rows = {
     const { elements, services } = useElements(true);
     return (
       <div
-        className="overflow-hidden rounded-md border bg-sidebar py-1 text-sidebar-foreground"
+        className="overflow-hidden bg-sidebar py-1 text-sidebar-foreground"
         style={{ width: 288 }}
       >
         <SidebarScope>
@@ -104,7 +102,7 @@ export const NewTerminalButton = {
   render: function NewTerminalButton() {
     const { elements, services } = useElements(true);
     return (
-      <div className="flex chrome-bar w-72 items-center justify-end rounded-md border bg-sidebar">
+      <div className="flex chrome-bar w-72 items-center justify-end bg-sidebar">
         <ElementHost
           tag="story-terminal-new-button"
           element={elements.newButton}
@@ -120,7 +118,7 @@ export const NewTerminalButtonDisabled = {
   render: function NewTerminalButtonDisabled() {
     const { elements, services } = useElements(false);
     return (
-      <div className="flex chrome-bar w-72 items-center justify-end rounded-md border bg-sidebar">
+      <div className="flex chrome-bar w-72 items-center justify-end bg-sidebar">
         <ElementHost
           tag="story-terminal-new-button-off"
           element={elements.newButton}

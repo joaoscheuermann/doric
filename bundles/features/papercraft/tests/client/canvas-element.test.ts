@@ -1857,3 +1857,79 @@ test('the node footer zooms, returns to 100% and centres; the window has none', 
   const { node: canvas } = await mountWindow();
   assert.equal(q(canvas.element, 'papercraft-footer'), null);
 });
+
+/* The redesign's look (ui-redesign §3.1 papercraft row) ---------------------- */
+
+/** The classes of `element`, split. */
+const classesOf = (element: Element): string[] =>
+  (element.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+
+test("the node's preview is a card: radius 10, shadow-sm, no border; the window's canvas is neither", async () => {
+  const { node } = await mountNode();
+  const card = node.element.querySelector('.papercraft-container') as Element;
+  const classes = classesOf(card);
+  for (const name of ['rounded-xl', 'shadow-sm', 'bg-card'])
+    assert.ok(classes.includes(name), `the node lacks ${name}: ${classes}`);
+  for (const name of ['border', 'rounded-lg'])
+    assert.ok(!classes.includes(name), `the node has ${name}: ${classes}`);
+
+  const { node: canvas } = await mountWindow();
+  const window = classesOf(
+    canvas.element.querySelector('.papercraft-container') as Element,
+  );
+  for (const name of ['rounded-none', 'border-0'])
+    assert.ok(window.includes(name), `the window lacks ${name}: ${window}`);
+  assert.ok(
+    !window.includes('shadow-sm'),
+    `the window casts a shadow: ${window}`,
+  );
+});
+
+test('the node footer draws no divider line: 8 px of space before Centralizar', async () => {
+  const { node } = await mountNode();
+  await focusNode(node);
+  const footer = q(node.element, 'papercraft-footer') as HTMLElement;
+  assert.ok(footer !== null, 'the focused node has no footer');
+  assert.equal(footer.querySelectorAll('[data-slot="separator"]').length, 0);
+  const center = footer.querySelector('[aria-label="Centralizar"]');
+  const gap = center?.previousElementSibling;
+  assert.ok(gap != null, 'nothing precedes Centralizar');
+  assert.ok(
+    classesOf(gap).includes('w-2'),
+    `not an 8 px gap: ${classesOf(gap)}`,
+  );
+  assert.equal(gap.getAttribute('aria-hidden'), 'true');
+});
+
+test('the canvas tree floats without a rule: radius 6, --background at 80%, blur 4 px, no shadow', async () => {
+  const { node } = await mountWindow();
+  const tree = node.element.querySelector('.papercraft-tree') as Element;
+  const classes = classesOf(tree);
+  for (const name of ['rounded-lg', 'bg-background/80', 'backdrop-blur-[4px]'])
+    assert.ok(classes.includes(name), `the tree lacks ${name}: ${classes}`);
+  for (const name of ['border-r', 'border', 'backdrop-blur'])
+    assert.ok(!classes.includes(name), `the tree has ${name}: ${classes}`);
+  assert.ok(
+    !classes.some((name) => name.startsWith('shadow')),
+    `the tree casts a shadow: ${classes}`,
+  );
+});
+
+test('a thread draws no rule under its header', async () => {
+  const { node } = await mountNode({
+    items: [draftOf('comment-d1', 1, 'first take')],
+  });
+  await commenting(node);
+  await click(await untilPin(node, 'the draft never became a pin'));
+  const thread = threadOf(node) as HTMLElement;
+  assert.ok(thread !== null, 'the thread never opened');
+  let header = q(thread, 'papercraft-thread-title') as Element | null;
+  while (header !== null && header.parentElement !== thread)
+    header = header.parentElement;
+  assert.ok(header !== null, 'the thread has no header');
+  const classes = classesOf(header);
+  assert.ok(
+    !classes.includes('border-b') && !classes.includes('border-border'),
+    `the header draws a rule: ${classes}`,
+  );
+});

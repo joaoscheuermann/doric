@@ -42,8 +42,8 @@ import {
   flush,
   type Host,
   type HostOptions,
-  type MountedElement,
   MODULES,
+  type MountedElement,
   moduleRef,
   PROJECT,
   programFence,
@@ -579,10 +579,13 @@ test("PC34: a closed fence's card lists the app's check, then the frame's errors
     assert.equal(line.includes('unknown-function'), false, line);
     assert.equal(line.includes('unknown-component'), false, line);
   }
-  assert.ok(card.textContent?.includes(SENT_LINE), 'no footer after the report');
+  assert.ok(
+    card.textContent?.includes(SENT_LINE),
+    'no footer after the report',
+  );
 });
 
-test("PC34: a later errors [] from the frame leaves the app's line alone and the header \"1 error\"", async () => {
+test('PC34: a later errors [] from the frame leaves the app\'s line alone and the header "1 error"', async () => {
   const host = await start();
   const node = await host.mountFence(viewOf(programFence(WITH_BUTTON)));
   await until(
@@ -699,10 +702,7 @@ test('PC34: the canvas window draws the same lines without the footer', async ()
   );
   await flush();
 
-  assert.deepEqual(linesOf(canvas), [
-    `btn: ${TO_ASSISTANT}`,
-    `card: ${HELLO}`,
-  ]);
+  assert.deepEqual(linesOf(canvas), [`btn: ${TO_ASSISTANT}`, `card: ${HELLO}`]);
   assert.equal(headerOf(canvas), '2 errors');
   assert.equal(cardOf(canvas)?.textContent?.includes(SENT_LINE), false);
 });
@@ -754,7 +754,11 @@ test('PC35: a closed revision 1 holding only a patch (no-root) shows the notice,
 test('PC35: an empty scene with a type-mismatch shows the notice', async () => {
   const host = await start(rendering(''));
   const node = await host.mountFence(viewOf(programFence(SIMPLE)));
-  await until(() => scenes(node), (count) => count > 0, 'no scene came');
+  await until(
+    () => scenes(node),
+    (count) => count > 0,
+    'no scene came',
+  );
   node.frame()?.errors(TYPE_MISMATCH);
 
   await until(
@@ -767,7 +771,11 @@ test('PC35: an empty scene with a type-mismatch shows the notice', async () => {
 test('PC35: an empty scene with no error shows no notice', async () => {
   const host = await start(rendering(''));
   const node = await host.mountFence(viewOf(programFence(SIMPLE)));
-  await until(() => scenes(node), (count) => count > 0, 'no scene came');
+  await until(
+    () => scenes(node),
+    (count) => count > 0,
+    'no scene came',
+  );
   node.frame()?.errors([]);
   await flush();
 
@@ -779,7 +787,11 @@ test('PC35: a streaming fence with an empty scene and a type-mismatch shows no n
   const node = await host.mountFence(
     viewOf(programFence(SIMPLE, { state: 'streaming' })),
   );
-  await until(() => scenes(node), (count) => count > 0, 'no scene came');
+  await until(
+    () => scenes(node),
+    (count) => count > 0,
+    'no scene came',
+  );
   node.frame()?.errors(TYPE_MISMATCH);
   await flush();
 

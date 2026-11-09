@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "terminal",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engines": { "doric": "^1.0.0" },
   "description": "Tracked shell commands and manual terminal sessions.",
   "provides": ["terminal/v1@1.1.0"],

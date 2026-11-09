@@ -646,10 +646,11 @@ function CanvasFrame({
         ref={container}
         className={cn(
           // `papercraft-container` carries the chrome's face (styles.css).
-          'papercraft-container relative overflow-hidden rounded-lg border border-border bg-card',
-          // The node is a square: as tall as the conversation is wide. Every
-          // child is absolute, so the ratio is the container's own.
-          chrome === 'node' && 'aspect-square w-full',
+          'papercraft-container relative overflow-hidden bg-card',
+          // The node is a card (Figma `82:59323`): radius 10, `shadow-sm`, no
+          // border. It is a square: as tall as the conversation is wide.
+          // Every child is absolute, so the ratio is the container's own.
+          chrome === 'node' && 'aspect-square w-full rounded-xl shadow-sm',
           chrome === 'canvas' && 'h-full w-full rounded-none border-0',
           // The focused node says so in the app's primary colour.
           chrome === 'node' && focused && 'outline-2 outline-primary',

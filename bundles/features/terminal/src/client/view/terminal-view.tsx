@@ -143,7 +143,7 @@ export function TerminalView({
       className="flex h-full min-h-0 flex-col bg-background"
     >
       {showHeader && (
-        <header className="flex chrome-bar shrink-0 items-center gap-2 border-b bg-sidebar px-2">
+        <header className="flex chrome-bar shrink-0 items-center gap-2 px-2">
           <span className="min-w-0 flex-1 truncate font-mono text-xs">
             {session.command}
             {session.state === 'exited' ? ' · exited' : ''}

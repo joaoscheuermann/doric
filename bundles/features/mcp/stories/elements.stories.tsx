@@ -12,11 +12,12 @@ import { McpPane } from './support/pane.js';
 export default {
   title: 'MCP/Elements/MCP pane',
   component: defineMcpElements,
-  // The pane at the sidebar's width, on the sidebar's background, where the
-  // layout draws it.
+  // The pane at the sidebar's width, on the window's `--sidebar` canvas, where
+  // the layout draws it: the sidebar has no card and no edge of its own
+  // (ui-redesign S34).
   decorators: [
     (Story: ComponentType) => (
-      <div className="w-64 rounded-md border border-sidebar-border bg-sidebar py-1 text-sidebar-foreground">
+      <div className="w-64 bg-sidebar py-1 text-sidebar-foreground">
         <Story />
       </div>
     ),

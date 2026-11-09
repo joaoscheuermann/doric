@@ -4,7 +4,6 @@
 // and inside the conversation, has only these.
 
 import { Button } from 'desktop/ui/button';
-import { Separator } from 'desktop/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
 import { FocusIcon, MinusIcon, PlusIcon } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
@@ -65,7 +64,7 @@ export const NodeFooter = memo(function NodeFooter({
   return (
     <div
       data-testid="papercraft-footer"
-      className="absolute inset-x-0 bottom-2 z-30 mx-auto flex w-fit items-center gap-0.5 rounded-lg border border-border bg-background/80 p-0.5 shadow-sm backdrop-blur"
+      className="absolute inset-x-0 bottom-2 z-30 mx-auto flex w-fit items-center gap-0.5 rounded-lg border border-border bg-background/80 p-0.5 shadow-sm backdrop-blur-[4px]"
     >
       <Control
         label="Diminuir zoom"
@@ -89,11 +88,9 @@ export const NodeFooter = memo(function NodeFooter({
       >
         <PlusIcon aria-hidden="true" />
       </Control>
-      <Separator
-        orientation="vertical"
-        // The primitive stretches a vertical rule; a short one is centred.
-        className="mx-0.5 h-4 data-vertical:self-center"
-      />
+      {/* No rule between the zoom and the centring (Figma `27:11973`): 8 px
+          of space. */}
+      <span aria-hidden="true" className="w-2 shrink-0" />
       <Control
         label="Centralizar"
         testId="papercraft-center"
