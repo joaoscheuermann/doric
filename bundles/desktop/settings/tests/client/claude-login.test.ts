@@ -524,6 +524,9 @@ test('a claude kind whose models are its catalog fills them from the catalog onc
   assert.match(text, /claude-opus-5-5/);
   assert.match(text, /Medium \(default\)/);
   assert.match(text, /claude-haiku-4-5/);
+  // The list separates its header by spacing alone (S22).
+  const header = opened.document.querySelector('[data-slot="table-header"]');
+  assert.ok(header?.classList.contains('[&_tr]:border-b-0'));
 
   // The save carries the catalog's models, so the execution section offers them.
   await settle(700);

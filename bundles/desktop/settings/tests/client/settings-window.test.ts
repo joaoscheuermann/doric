@@ -426,3 +426,137 @@ test('a malformed credential of a managed kind still fails the list', async () =
     opened = undefined;
   }
 });
+
+// The inset-card look (ui-redesign phase 3, Figma `36:22049`): the window is
+// the `--sidebar` canvas; the title bar and the nav sit on it with no fill and
+// no rule; the section and its footer are an inset card. The tables separate
+// their header from the rows by spacing alone (S22, `27:14990`).
+
+const classesOf = (element: Element | null | undefined): string[] => [
+  ...(element?.classList ?? []),
+];
+
+const openSection = async (window: SettingsWindow, label: string) => {
+  const row = [
+    ...window.document.querySelectorAll('[data-sidebar="menu-button"]'),
+  ].find((entry) => entry.textContent === label) as HTMLElement;
+  row.click();
+  await settle(20);
+};
+
+/** Every table header on screen, as the classes it carries. */
+const tableHeaders = (window: SettingsWindow): string[][] =>
+  [...window.document.querySelectorAll('[data-slot="table-header"]')].map(
+    classesOf,
+  );
+
+test('the window is one canvas: the title bar and the nav carry no fill and no rule', async () => {
+  opened = await openSettingsWindow({ host: host() });
+  await settle(20);
+
+  const canvas = opened.document.querySelector('[data-slot="sidebar-wrapper"]');
+  assert.ok(
+    classesOf(canvas).includes('bg-sidebar'),
+    'the canvas is --sidebar',
+  );
+
+  const bar = opened.document.querySelector('[data-slot="settings-title-bar"]');
+  assert.ok(bar !== null, 'the window draws its title bar');
+  assert.ok(
+    !classesOf(bar).includes('bg-sidebar'),
+    'the title bar is transparent',
+  );
+
+  const nav = opened.document.querySelector('[data-slot="sidebar"]');
+  assert.ok(
+    classesOf(nav).includes('bg-transparent'),
+    'the nav is transparent',
+  );
+  assert.ok(!classesOf(nav).includes('bg-sidebar'), 'the nav has no fill');
+
+  assert.equal(
+    opened.document.querySelectorAll('[data-slot="separator"]').length,
+    0,
+    'no separator in the window',
+  );
+  const footers = [
+    opened.document.querySelector('[data-slot="sidebar-footer"]'),
+    opened.document.querySelector('main > footer'),
+  ];
+  for (const footer of footers) {
+    assert.ok(footer !== null, 'the window draws both footers');
+    assert.ok(
+      !classesOf(footer).includes('border-t'),
+      `no rule over ${classesOf(footer).join(' ')}`,
+    );
+  }
+});
+
+test('the section and its footer sit on an inset card', async () => {
+  opened = await openSettingsWindow({ host: host() });
+  await settle(20);
+
+  const card = opened.document.querySelector('main');
+  assert.ok(card !== null, 'the window draws its content');
+  // The card: --background, radius 10, shadow-sm, no stroke.
+  const classes = classesOf(card);
+  for (const name of ['bg-background', 'rounded-xl', 'shadow-sm'])
+    assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+  assert.ok(!classes.some((name) => name.startsWith('border')));
+  assert.ok(card.querySelector('footer') !== null, 'the footer is on the card');
+  // The row it stands in (Figma's Body): 8 px of canvas right and bottom, 0
+  // left beside the nav and 8 px when the nav is hidden.
+  const row = classesOf(card.parentElement);
+  for (const name of ['pr-2', 'pb-2', 'pl-2', 'md:pl-0'])
+    assert.ok(row.includes(name), `${name} in ${row.join(' ')}`);
+});
+
+test('the Providers and Credentials tables draw no header rule', async () => {
+  opened = await openSettingsWindow({ host: host() });
+  await settle(20);
+
+  const providers = tableHeaders(opened);
+  assert.equal(providers.length, 1, 'the Providers table');
+  assert.ok(providers[0]?.includes('[&_tr]:border-b-0'));
+
+  await openSection(opened, 'Credentials');
+  const credentials = tableHeaders(opened);
+  assert.equal(credentials.length, 1, 'the Credentials table');
+  assert.ok(credentials[0]?.includes('[&_tr]:border-b-0'));
+});
+
+test("a provider's catalog picker draws its table without a header rule", async () => {
+  const picked = {
+    ...openrouter,
+    fields: [
+      ...openrouter.fields,
+      { key: 'modelsUrl', label: 'Models URL', kind: 'url', required: false },
+    ],
+  };
+  opened = await openSettingsWindow({
+    host: {
+      ...host(),
+      'models/v1.kinds': () => [picked],
+      'models/v1.kind': () => picked,
+      'models/v1.catalog': () => ({ status: 'read', models: [] }),
+    },
+  });
+  await settle(20);
+
+  const row = opened.document.querySelector(
+    '[data-slot="table-body"] [data-slot="table-row"]',
+  ) as HTMLElement | null;
+  assert.ok(row !== null, 'the provider row');
+  row.click();
+  await settle(20);
+  const trigger = [...opened.document.querySelectorAll('button')].find(
+    (button) => button.textContent?.includes('1 offered'),
+  );
+  assert.ok(trigger !== undefined, 'the models picker');
+  trigger.click();
+  await settle(20);
+
+  const headers = tableHeaders(opened);
+  assert.equal(headers.length, 1, 'the catalog table');
+  assert.ok(headers[0]?.includes('[&_tr]:border-b-0'));
+});

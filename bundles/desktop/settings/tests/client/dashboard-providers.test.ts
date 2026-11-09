@@ -489,3 +489,20 @@ test('the dashboard closing the page leaves no provider open', async () => {
     'The provider form is still drawn after the page closed.',
   );
 });
+
+test("the provider page's header draws no rule under it; the dashboard's card holds the page", async () => {
+  const { window } = await openProviderPage('openrouter');
+
+  const header = window.document.querySelector(
+    'settings-dashboard-provider header',
+  );
+  assert.ok(header !== null, 'The page draws no header.');
+  const classes = [...header.classList];
+  // Figma `36:22108` PageHeader: h56, px24, gap 8, --background, no stroke.
+  for (const name of ['h-14', 'px-6', 'gap-2', 'bg-background'])
+    assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+  assert.ok(
+    !classes.some((name) => name.startsWith('border')),
+    `a rule in ${classes.join(' ')}`,
+  );
+});

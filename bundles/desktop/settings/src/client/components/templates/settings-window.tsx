@@ -1,5 +1,4 @@
 import { Button } from 'desktop/ui/button';
-import { Separator } from 'desktop/ui/separator';
 import { SidebarProvider } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
 import { ArrowLeftIcon } from 'lucide-react';
@@ -30,8 +29,8 @@ type SettingsWindowProps = {
 
 /**
  * The way back to the page above the one showing, drawn only while there is one
- * above to reach. The nav column's header holds it, flush to the divider that
- * closes the column, and the breadcrumb's row holds it again under the width
+ * above to reach. The nav column's header holds it, flush to the column's
+ * edge, and the breadcrumb's row holds it again under the width
  * that hides that column, so the way out is always somewhere on screen.
  */
 function BackControl({
@@ -59,7 +58,11 @@ function BackControl({
 /**
  * The settings window's frame: the shared settings surface under the window's
  * own title bar, matching the main window's bar — a 40px draggable strip whose
- * left inset clears the native traffic lights, closed by a separator.
+ * left inset clears the native traffic lights.
+ *
+ * The frame is the window's `--sidebar` canvas (ui-redesign, Figma
+ * `36:22049`): the bar and the surface's nav sit on it with no fill and no rule
+ * of their own, and the surface sets its section on an inset card.
  *
  * The bar is where the window states what it is showing, so the breadcrumb
  * naming the page lives here rather than in the surface below it, and a page
@@ -70,8 +73,8 @@ function BackControl({
  *
  * The bar and the surface are two rows of one grid, so both are drawn inside the
  * sidebar provider this frame owns: the bar's first cell and the surface's nav
- * column are the same width, which is what lands the divider in the bar on the
- * separator below it.
+ * column are the same width, which lines the breadcrumb up with the content of
+ * the card below it.
  */
 export function SettingsWindow({
   children,
@@ -86,30 +89,30 @@ export function SettingsWindow({
 }: SettingsWindowProps) {
   return (
     <SidebarProvider
-      className="h-svh min-h-0 flex-col overflow-hidden"
+      className="h-svh min-h-0 flex-col overflow-hidden bg-sidebar"
       style={{ '--sidebar-width': '240px' } as CSSProperties}
     >
       <div
         data-slot="settings-title-bar"
-        className="relative flex chrome-bar shrink-0 items-center bg-sidebar [app-region:drag]"
+        className="relative flex chrome-bar shrink-0 items-center [app-region:drag]"
       >
-        <Separator className="pointer-events-none absolute inset-x-0 bottom-0 [app-region:no-drag]" />
         {/*
           The nav column's own header. It clears the native traffic lights that
           sit over the column it heads, and carries the way back out of a page
-          nested under a section, flush to the divider that closes the column.
+          nested under a section, flush to the column's edge.
         */}
         <div className="hidden h-full w-(--sidebar-width) shrink-0 items-center justify-end md:flex">
           <BackControl onBack={onBack} />
         </div>
-        <Separator orientation="vertical" className="hidden md:block" />
         {/*
           The left inset clears the traffic lights whenever the nav column is
-          not drawn, as the main window's header does while its sidebar is shut.
+          not drawn, as the main window's header does while its sidebar is shut;
+          beside the column it is the card's own 16px, so the breadcrumb starts
+          where the section's content does.
           The way back rides in the nav column's header, so under the width that
           hides that column it falls back to this side, the only one left.
         */}
-        <div className="relative z-10 flex h-full min-w-0 flex-1 items-center gap-1 pr-3 pl-20 md:pl-3">
+        <div className="relative z-10 flex h-full min-w-0 flex-1 items-center gap-1 pr-3 pl-20 md:pl-4">
           <BackControl className="md:hidden" onBack={onBack} />
           <SettingsBreadcrumb trail={trail} />
         </div>
