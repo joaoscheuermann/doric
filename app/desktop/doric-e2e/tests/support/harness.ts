@@ -296,6 +296,8 @@ export interface Booted {
   readonly host: FakeHost;
   readonly userData: string;
   readonly notified: Notified[];
+  /** Every URL main asked the system browser to open; none is opened. */
+  readonly opened: string[];
   /** Waits until a window of this key is open and its shell called ready(). */
   window(key: string, timeoutMs?: number): Promise<BrowserWindow>;
   dispose(): Promise<void>;
@@ -388,6 +390,7 @@ export const bootPlatform = async (input: {
       ? resourcesFor(MAIN_DIR).shellRoot
       : await fixtureShell(userData);
   const notified: Notified[] = [];
+  const opened: string[] = [];
   const logs: LogEntry[] = [];
   const notifications: NotificationApi = {
     isSupported: () => true,
@@ -407,6 +410,9 @@ export const bootPlatform = async (input: {
     resources: { ...resourcesFor(MAIN_DIR), shellRoot },
     preload: PRELOAD,
     clock: holdlessClock(),
+    openExternal: async (url) => {
+      opened.push(url);
+    },
     ...(input.flushDeadlineMs === undefined
       ? {}
       : { flushDeadlineMs: input.flushDeadlineMs }),
@@ -456,6 +462,7 @@ export const bootPlatform = async (input: {
     host: input.host,
     userData,
     notified,
+    opened,
     window: async (key, timeoutMs) => {
       const entry = await until(
         () => platform.registry.byKey(key),

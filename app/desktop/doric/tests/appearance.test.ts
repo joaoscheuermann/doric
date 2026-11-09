@@ -105,8 +105,8 @@ describe('native window options', () => {
         preload,
       }),
       {
-        width: 420,
-        height: 260,
+        width: 610,
+        height: 487,
         frame: false,
         roundedCorners: false,
         resizable: false,

@@ -42,7 +42,9 @@ import type { PlatformLog } from '../log';
 import {
   recoveryActionSchema,
   SPLASH_CONTRACT,
+  SPLASH_LINKS,
   type SplashState,
+  type StartupAction,
 } from '../splash/state';
 import { type PushTarget, push } from '../windows/push';
 import type { WindowEntry, WindowRegistry } from '../windows/registry';
@@ -79,9 +81,8 @@ export interface DispatcherDeps {
   readonly splashStates: {
     subscribe(listener: (state: SplashState) => void): () => void;
   };
-  readonly splashAct: (
-    action: z.output<typeof recoveryActionSchema>,
-  ) => Promise<void>;
+  /** Every splash action but `open-link`, which the dispatcher handles. */
+  readonly splashAct: (action: StartupAction) => Promise<void>;
   /** The generation's view while main retains it. */
   readonly view: (generation: number) => GenerationView | undefined;
   readonly process: (generation: number) => GenerationProcess | undefined;
@@ -310,6 +311,13 @@ export class Dispatcher {
         }
 
         try {
+          // The GitHub link is main's to open (S20); the page never names a URL.
+          if (action.data.action === 'open-link') {
+            await this.#deps.openExternal(SPLASH_LINKS[action.data.link]);
+
+            return ok(undefined);
+          }
+
           await this.#deps.splashAct(action.data);
 
           return ok(undefined);

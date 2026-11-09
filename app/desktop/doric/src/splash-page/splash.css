@@ -1,3 +1,8 @@
+/* The splash (§4.5, Figma `302:22437`): a 610×487 window, a 1 px frame, the
+   art pane (300×485) and the info pane. Colors are tokens of the theme
+   stylesheet, except the frame and the art pane's ground, which Figma states
+   as literals. */
+
 html,
 body {
   height: 100%;
@@ -5,41 +10,137 @@ body {
 }
 
 body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   background: var(--background);
   color: var(--foreground);
-  overflow: auto;
+  font-family: var(--font-sans);
+  overflow: hidden;
 }
 
 .splash {
+  /* Figma's frame stroke; the light theme, which Figma does not draw, uses
+     the border token. */
+  --splash-frame: var(--border);
+
+  box-sizing: border-box;
+  display: flex;
+  height: 100%;
+  border: 1px solid var(--splash-frame);
+}
+
+@media (prefers-color-scheme: dark) {
+  .splash {
+    --splash-frame: #050404;
+  }
+}
+
+/* Art pane (302:22439): the mask 302:22441 clips the art. */
+.splash-art {
+  flex: none;
+  position: relative;
+  width: 300px;
+  height: 485px;
+  overflow: hidden;
+  background: #24211d;
+}
+
+.splash-art > img[data-art='shaded'] {
+  display: block;
+  width: 300px;
+  height: 485px;
+}
+
+/* Info pane (302:22444): padding 40/40/20, the wordmark at the top and the
+   footer at the bottom. */
+.splash-info {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  max-width: 380px;
-  padding: 16px;
-  text-align: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 40px 40px 20px;
 }
 
-/* verbatim from the former startup/splash.ts */
-.splash-title {
-  font:
-    600 32px / 1.2 system-ui,
-    sans-serif;
+.splash-wordmark {
+  flex: none;
+  display: block;
+  width: 228px;
+  height: 66px;
+  color: var(--primary);
 }
 
+.splash-footer {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Status, details and actions (Figma "Error" 302:22564, gap 8). */
+.splash-state {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.splash-state:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+/* Status line (302:22447): the 14 px state icon, then 12/16.8 text. */
 .splash-status {
-  font: 400 12px / 1.4 var(--font-sans);
-  color: var(--muted-foreground);
-  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16.8px;
+  color: var(--foreground);
 }
 
-.splash-details {
-  font: 400 12px / 1.4 var(--font-sans);
+.splash-status[data-tone='loading'] {
   color: var(--muted-foreground);
-  margin-top: 4px;
+}
+
+.splash-status > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.splash-status > svg[data-icon='alert'] {
+  color: var(--paper-red);
+}
+
+.splash-status > svg[data-icon='spinner'] {
+  animation: splash-spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-status > svg[data-icon='spinner'] {
+    animation: none;
+  }
+}
+
+@keyframes splash-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.splash-status > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Details (302:22565): 11/16.5 muted. */
+.splash-details {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16.5px;
+  color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
 
@@ -49,21 +150,117 @@ body {
   list-style: none;
 }
 
+/* Actions (302:22566): full-width buttons, gap 8, py 8. */
 .splash-actions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 12px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
 }
 
+/* Button size default (Figma Button 9:296): h 32, px 10, gap 6, 14/20. */
 .splash-actions button {
-  font: 400 12px / 1.4 var(--font-sans);
-  color: var(--foreground);
-  background: var(--secondary);
-  border: 1px solid var(--border);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
   border-radius: var(--radius);
-  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.splash-actions button > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.splash-actions button[data-variant='primary'] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.splash-actions button[data-variant='primary']:hover {
+  background: color-mix(in srgb, var(--primary) 90%, transparent);
+}
+
+.splash-actions button[data-variant='secondary'] {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.splash-actions button[data-variant='secondary']:hover {
+  background: color-mix(in srgb, var(--secondary) 80%, transparent);
+}
+
+.splash-actions button:focus-visible,
+.splash-link:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ring) 50%, transparent);
+  outline-offset: 0;
+}
+
+/* Divider (302:22450). */
+.splash-divider {
+  flex: none;
+  height: 1px;
+  background: var(--paper-separator);
+}
+
+/* Credits (302:22451): 10.5/15.75 and 9/13.5 muted, gap 2. */
+.splash-credits {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.splash-credits p {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 15.75px;
+  color: var(--foreground);
+}
+
+.splash-credits p:last-child {
+  font-size: 9px;
+  line-height: 13.5px;
+  color: var(--muted-foreground);
+}
+
+/* Links (302:22454) and the GitHub link (302:22455): 12 px glyph, gap 6,
+   11/16.5 underlined muted text. */
+.splash-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.splash-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16.5px;
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  border-radius: 2px;
+}
+
+.splash-links .splash-link > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
 }
 
 .splash-status[hidden],

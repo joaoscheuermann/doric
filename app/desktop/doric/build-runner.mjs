@@ -79,6 +79,11 @@ await build({
   logLevel: 'warning',
 });
 
-for (const file of ['index.html', 'splash.css', 'blank.html']) {
+for (const file of [
+  'index.html',
+  'splash.css',
+  'blank.html',
+  'art-shaded.webp',
+]) {
   await copyFile(join(page, file), join(splash, file));
 }

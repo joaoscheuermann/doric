@@ -99,7 +99,11 @@ import {
 import { createShellRenderer } from './protocol/shell';
 import { SplashStates } from './splash/state';
 import { type Clock, systemClock } from './splash/timing';
-import { openSplashWindow, type SplashWindow } from './splash/window';
+import {
+  openSplashWindow,
+  type SplashWindow,
+  splashArtOverride,
+} from './splash/window';
 import { DesktopState, WindowPaths } from './state';
 import { loadWindowTokens, type WindowTokens } from './tokens';
 import { chromeFor } from './windows/appearance';
@@ -625,6 +629,9 @@ export class DesktopPlatform {
       ),
       preload: this.#preload,
       path: splashPath(this.resources),
+      // Electron's `isPackaged`, not `options.packaged`: the doric-e2e harness
+      // runs the packaged paths unpackaged and needs the override (§4.5).
+      art: splashArtOverride({ packaged: app.isPackaged, env: process.env }),
       closed: () => {
         this.#splash = undefined;
       },

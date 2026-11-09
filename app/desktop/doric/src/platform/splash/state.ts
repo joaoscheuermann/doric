@@ -11,6 +11,7 @@ export {
   type RecoveryAction,
   SPLASH_CONTRACT,
   type SplashState,
+  type StartupAction,
 } from './protocol';
 
 export const recoveryActionSchema: z.ZodType<RecoveryAction> = z.union([
@@ -20,7 +21,15 @@ export const recoveryActionSchema: z.ZodType<RecoveryAction> = z.union([
   z.object({ action: z.literal('disable'), bundleId: z.string() }).strict(),
   z.object({ action: z.literal('use-last-good-core') }).strict(),
   z.object({ action: z.literal('reset-composition') }).strict(),
+  z
+    .object({ action: z.literal('open-link'), link: z.literal('github') })
+    .strict(),
 ]);
+
+/** Where each splash link leads; main opens it, the page names only the key (S20). */
+export const SPLASH_LINKS: Readonly<
+  Record<Extract<RecoveryAction, { action: 'open-link' }>['link'], string>
+> = { github: 'https://github.com/joaoscheuermann/doric' };
 
 /** Holds the current state and tells the splash page every change. */
 export class SplashStates {

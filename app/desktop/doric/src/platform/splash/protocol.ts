@@ -54,7 +54,15 @@ export type RecoveryAction =
   | { readonly action: 'continue' }
   | { readonly action: 'disable'; readonly bundleId: string }
   | { readonly action: 'use-last-good-core' }
-  | { readonly action: 'reset-composition' };
+  | { readonly action: 'reset-composition' }
+  /** The splash's GitHub link: main maps `github` to the repository (S20). */
+  | { readonly action: 'open-link'; readonly link: 'github' };
+
+/** The actions main hands to the startup: every one but `open-link`. */
+export type StartupAction = Exclude<
+  RecoveryAction,
+  { readonly action: 'open-link' }
+>;
 
 /** The visible status line of each loading step. */
 export const loadingText = (

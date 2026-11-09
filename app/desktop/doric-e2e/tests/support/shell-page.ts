@@ -415,10 +415,11 @@ const PROPERTIES = [
 /** `getComputedStyle` values and the box of the first visible match of each row. */
 export const computedBoxes = (
   contents: WebContents,
+  boxes: readonly (readonly [string, string])[] = BOXES,
 ): Promise<Record<string, unknown>> =>
   inPage(
     contents,
-    `Object.fromEntries(${JSON.stringify(BOXES)}.map(([name, selector]) => {
+    `Object.fromEntries(${JSON.stringify(boxes)}.map(([name, selector]) => {
       const element = deepAll(selector).find(visible);
       if (!element) return [name, null];
       const rect = element.getBoundingClientRect();
@@ -483,6 +484,89 @@ export const captureState = async (input: {
         capture: { width: shot.width, height: shot.height, scale: shot.scale },
         path: await page<string>(contents, 'location.pathname'),
         boxes: await computedBoxes(contents),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  return { png: `${base}.png`, json: `${base}.json` };
+};
+
+/** The splash check's rows (§4.5 1:1): a name and the selector of the element. */
+export const SPLASH_BOXES: readonly (readonly [string, string])[] = [
+  ['splash art pane', '[data-art-pane]'],
+  ['splash art', '[data-art-pane] > [data-art]'],
+  ['splash info pane', '[data-info-pane]'],
+  ['splash wordmark', 'svg[aria-label="Doric"]'],
+  ['splash footer', '.splash-footer'],
+  ['splash status', '.splash-status'],
+  ['splash status icon', '.splash-status > svg'],
+  ['splash status text', '.splash-status > span'],
+  ['splash details', '.splash-details'],
+  ['splash actions', '.splash-actions'],
+  ['splash primary action', '.splash-actions button[data-variant="primary"]'],
+  [
+    'splash secondary action',
+    '.splash-actions button[data-variant="secondary"]',
+  ],
+  ['splash divider', '.splash-divider'],
+  ['splash credits', '.splash-credits'],
+  ['splash author', '.splash-credits > :first-child'],
+  ['splash license', '.splash-credits > :last-child'],
+  ['splash link', 'a.splash-link'],
+  ['splash link icon', 'a.splash-link > svg'],
+];
+
+/**
+ * Captures the splash window's page to `<dir>/splash-<name>-<theme>.png` and
+ * the splash rows' computed boxes to `.json` (`webContents.capturePage()`:
+ * the splash is a technical window `doric.windows/v1` does not know).
+ */
+export const captureSplash = async (input: {
+  readonly booted: Booted;
+  readonly dir: string;
+  readonly name: string;
+  readonly theme: 'dark' | 'light';
+}): Promise<{ png: string; json: string }> => {
+  const window = input.booted.platform.splashWindow;
+
+  if (window === undefined) {
+    throw new Error('The splash is not open.');
+  }
+
+  const contents = window.webContents;
+
+  await painted(contents);
+
+  const take = () => contents.capturePage();
+  // Xvfb's software GPU process can die mid-copy; the next capture succeeds.
+  const image = await take().catch(async () => {
+    await new Promise((done) => setTimeout(done, 1_000));
+    await painted(contents);
+
+    return take();
+  });
+  const [width = 0, height = 0] = window.getContentSize();
+  const base = join(input.dir, `splash-${input.name}-${input.theme}`);
+
+  await mkdir(input.dir, { recursive: true });
+  await writeFile(`${base}.png`, image.toPNG());
+  await writeFile(
+    `${base}.json`,
+    `${JSON.stringify(
+      {
+        node: 'splash',
+        state: input.name,
+        theme: input.theme,
+        window: 'splash',
+        content: { width, height },
+        capture: image.getSize(),
+        path: await page<string>(
+          contents,
+          'location.pathname + location.search',
+        ),
+        boxes: await computedBoxes(contents, SPLASH_BOXES),
       },
       null,
       2,

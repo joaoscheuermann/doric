@@ -218,6 +218,8 @@ let hostConnected: boolean;
 let relay: ConnectionRelay;
 let opened: string[];
 let splashId: number | undefined;
+/** Every action the `splashAct` dependency received. */
+let splashActs: unknown[];
 /** The theme the `appearanceGet` dependency answers. */
 let heldTheme: ThemeSource;
 /** Every theme the `appearanceSet` dependency was called with. */
@@ -266,6 +268,7 @@ beforeEach(() => {
   relay = new ConnectionRelay();
   opened = [];
   splashId = undefined;
+  splashActs = [];
   heldTheme = 'dark';
   savedThemes = [];
   saveTheme = async () => undefined;
@@ -346,7 +349,9 @@ beforeEach(() => {
     log: silentLog,
     splashContents: () => splashId,
     splashStates: new SplashStates(),
-    splashAct: async () => undefined,
+    splashAct: async (action) => {
+      splashActs.push(action);
+    },
     view: (generation) => (generation === 1 ? view : undefined),
     process: (generation) =>
       generation === 1
@@ -438,6 +443,57 @@ describe('desktop IPC dispatcher', () => {
 
     assert.equal(description.kind, 'technical');
     assert.deepEqual(description.app, { version: '0.0.1' });
+  });
+
+  test('the splash GitHub link opens the repository through openExternal, never splashAct', async () => {
+    const splash = fakeContents(21, 'doric://app/splash@0.0.0/index.html');
+
+    splashId = splash.contents.id;
+
+    const result = await dispatcher.handle(event(splash.contents), {
+      op: 'call',
+      envelope: envelope({
+        contract: 'doric.splash/v1',
+        method: 'act',
+        input: { action: 'open-link', link: 'github' },
+        bundleId: null,
+      }),
+    });
+
+    assert.deepEqual(result, { ok: true, output: undefined });
+    assert.deepEqual(opened, ['https://github.com/joaoscheuermann/doric']);
+    assert.deepEqual(splashActs, []);
+  });
+
+  test('a splash open-link with another link or a url fails invalid_input', async () => {
+    const splash = fakeContents(21, 'doric://app/splash@0.0.0/index.html');
+
+    splashId = splash.contents.id;
+
+    for (const input of [
+      { action: 'open-link', link: 'discord' },
+      { action: 'open-link', link: 'github', url: 'https://example.com' },
+      { action: 'open-link', url: 'https://example.com' },
+    ]) {
+      const result = await dispatcher.handle(event(splash.contents), {
+        op: 'call',
+        envelope: envelope({
+          contract: 'doric.splash/v1',
+          method: 'act',
+          input,
+          bundleId: null,
+        }),
+      });
+
+      assert.equal(
+        (result as { error?: { code: string } }).error?.code,
+        'invalid_input',
+        JSON.stringify(input),
+      );
+    }
+
+    assert.deepEqual(opened, []);
+    assert.deepEqual(splashActs, []);
   });
 
   test('a shell of a generation main no longer retains is reloaded', async () => {
