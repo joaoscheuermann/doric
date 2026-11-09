@@ -20,7 +20,7 @@ const diffTokens = {
 const path = 'packages/desktop/src/chrome-bar.tsx';
 
 const Toolbar = ({ controls }: { readonly controls: DiffControls }) => (
-  <div className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
+  <div className="flex h-9 shrink-0 items-center gap-1 px-2">
     <span className="min-w-0 flex-1 truncate font-mono text-xs">{path}</span>
     <Button
       size="icon-xs"
@@ -55,7 +55,7 @@ const Toolbar = ({ controls }: { readonly controls: DiffControls }) => (
 );
 
 const Footer = ({ controls }: { readonly controls: DiffControls }) => (
-  <div className="flex h-7 shrink-0 items-center gap-2 border-t px-2 text-xs text-muted-foreground">
+  <div className="flex h-7 shrink-0 items-center gap-2 px-2 text-xs text-muted-foreground">
     {controls.counts === undefined ? (
       <span>Comparing…</span>
     ) : (

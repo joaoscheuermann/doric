@@ -147,6 +147,12 @@ const rendererPatches = {
   ],
 };
 
+/** The footer patch: a dialog's footer draws no rule above it. */
+const footerRule = [
+  "'-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl bg-muted/50 p-4",
+  "'-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4",
+];
+
 /** The local patches of the `registry` files, each undone exactly. */
 const registryPatches = {
   'components/alert-dialog.tsx': [
@@ -155,6 +161,7 @@ const registryPatches = {
       spread: wrapped('AlertDialogPrimitive', 'alert-dialog-portal'),
     }),
     regular("'text-base font-medium sm:"),
+    footerRule,
   ],
   'components/badge.tsx': [regular('text-xs font-medium whitespace-nowrap')],
   'components/combobox.tsx': [
@@ -179,6 +186,7 @@ const registryPatches = {
       spread: oneLine('DialogPrimitive', 'dialog-portal'),
     }),
     regular("'text-base leading-none font-medium'"),
+    footerRule,
   ],
   'components/dropdown-menu.tsx': [
     ...portalContainer({

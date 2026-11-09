@@ -101,7 +101,8 @@ export function FileTree({
                 isActive={selected}
                 size="sm"
                 className={cn(
-                  'h-7 w-full min-w-0 rounded-none pr-8',
+                  'h-7 w-full min-w-0 gap-1.5 rounded-[4px]',
+                  decoration === undefined ? 'pr-1.5' : 'pr-8',
                   rowInteraction(selected),
                 )}
                 style={{ paddingLeft: indentation(depth) }}
@@ -141,16 +142,21 @@ export function FileTree({
                   />
                 }
               >
-                {directory && (
-                  <ChevronRightIcon
-                    aria-hidden
-                    className={cn(
-                      'transition-transform duration-[50ms] ease-out',
-                      open ? 'rotate-90' : 'rotate-0',
-                    )}
-                  />
-                )}
-                {directory ? <FolderIcon /> : <FileIcon />}
+                <span
+                  aria-hidden
+                  className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
+                >
+                  {!directory ? (
+                    <FileIcon />
+                  ) : open ? (
+                    <ChevronRightIcon className="rotate-90" />
+                  ) : (
+                    <>
+                      <FolderIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
+                      <ChevronRightIcon className="hidden group-hover/tree-row:block group-focus-within/tree-row:block" />
+                    </>
+                  )}
+                </span>
                 <span
                   className={cn(
                     'min-w-0 flex-1 truncate',

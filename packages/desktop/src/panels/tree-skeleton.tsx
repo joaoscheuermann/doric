@@ -2,13 +2,13 @@ import { Skeleton } from '../components/skeleton.js';
 import { indentation, TreeGuides } from './tree-guides.js';
 
 const rows = [
-  { id: 'root', depth: 0, folder: true, width: 'w-24' },
-  { id: 'folder-a', depth: 1, folder: true, width: 'w-28' },
-  { id: 'file-a1', depth: 2, folder: false, width: 'w-24' },
-  { id: 'file-a2', depth: 2, folder: false, width: 'w-32' },
-  { id: 'file-a3', depth: 1, folder: false, width: 'w-20' },
-  { id: 'folder-b', depth: 0, folder: true, width: 'w-20' },
-  { id: 'file-b1', depth: 1, folder: false, width: 'w-28' },
+  { id: 'root', depth: 0, width: 'w-24' },
+  { id: 'folder-a', depth: 1, width: 'w-28' },
+  { id: 'file-a1', depth: 2, width: 'w-24' },
+  { id: 'file-a2', depth: 2, width: 'w-32' },
+  { id: 'file-a3', depth: 1, width: 'w-20' },
+  { id: 'folder-b', depth: 0, width: 'w-20' },
+  { id: 'file-b1', depth: 1, width: 'w-28' },
 ];
 
 /**
@@ -37,11 +37,12 @@ export function TreeSkeleton({
       <div aria-hidden className="py-1">
         {root && (
           <div
-            className="relative flex h-7 items-center gap-2 pr-8"
+            className="relative flex h-7 items-center gap-1.5 pr-8"
             style={{ paddingLeft: indentation(0) }}
           >
-            <Skeleton className="size-3 shrink-0" />
-            <Skeleton className="size-4 shrink-0" />
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <Skeleton className="size-3.5" />
+            </span>
             <Skeleton className="h-3 w-28" />
             <Skeleton className="absolute right-1 h-3 w-12" />
           </div>
@@ -49,12 +50,13 @@ export function TreeSkeleton({
         {levels.map((row) => (
           <div
             key={row.id}
-            className="relative flex h-7 items-center gap-2 pr-8"
+            className="relative flex h-7 items-center gap-1.5 pr-8"
             style={{ paddingLeft: indentation(row.depth) }}
           >
             <TreeGuides depth={row.depth} />
-            {row.folder && <Skeleton className="size-3 shrink-0" />}
-            <Skeleton className="size-4 shrink-0" />
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <Skeleton className="size-3.5" />
+            </span>
             <Skeleton className={`h-3 ${row.width}`} />
           </div>
         ))}
