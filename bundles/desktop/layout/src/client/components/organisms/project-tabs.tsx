@@ -252,7 +252,8 @@ export function ProjectTabBar({
    * What the bar draws at its right end, after "New project", outside the drag
    * region, in `div[data-slot="project-tab-actions"]`. The workspace view
    * passes the `layout.header` region, followed by the controls of the Files
-   * column while that column is collapsed (S27). Absent: nothing is drawn.
+   * column while that column is collapsed (S27). On the Dashboard it passes the
+   * account status alone (G13). Absent: nothing is drawn.
    */
   readonly actions?: ReactNode;
   /**

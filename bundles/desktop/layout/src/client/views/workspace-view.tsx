@@ -188,20 +188,29 @@ function Workspace() {
     />
   );
   if (projectTabs.path === '/' || projectTabs.path === '/projects') {
+    // The home body is the only Dashboard form with no sidebar before the tab
+    // bar, so only it keeps the macOS inset (G3).
+    const home = newTab && projectTabs.path === '/';
     return (
       <div
         ref={frame}
         className="flex h-svh min-h-0 flex-col bg-background text-foreground"
       >
-        {tabBar({ inset: true })}
         <Dashboard
           workspace={workspace}
           onOpenSettings={openSettings}
-          all={!newTab || projectTabs.path !== '/'}
+          all={!home}
           navigate={(path) => {
             setNewTab(false);
             projectTabs.navigate(path);
           }}
+          header={tabBar({
+            end: <AccountStatus onOpenSettings={openSettings} />,
+            inset: home,
+          })}
+          sidebarHeader={
+            <SidebarHeader onDashboard={() => openPath('/projects')} />
+          }
         />
         <DeleteDialog
           entity={workspace.deleting}

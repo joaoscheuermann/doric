@@ -32,12 +32,14 @@ import { ElementHost } from '../molecules/element-host.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
 
 /**
- * The /projects dashboard's side menu: the search, "All projects", the
+ * The /projects dashboard's side menu: the sidebar header (the Dashboard
+ * button) above the search, the search, "All projects", the
  * Projects group, the groups other bundles add to `layout.dashboard.nav`
  * (each draws its own `SidebarGroup`), and "All settings" at the foot. It
  * draws its own sidebar scope, since the dashboard has no `SidebarProvider`.
  */
 export function DashboardSidebar({
+  header,
   search,
   projects,
   listActive,
@@ -47,6 +49,14 @@ export function DashboardSidebar({
   onSelectProject,
   onOpenSettings,
 }: {
+  /**
+   * The sidebar's 40 px header: the `SidebarHeader` organism (macOS inset,
+   * then the "Dashboard" button). It is drawn as the first child of the
+   * `<Sidebar>`, above the search, outside the scrolling content. The
+   * workspace view supplies it through `Dashboard.sidebarHeader`. Required: the
+   * Dashboard sidebar always starts at the window's left edge.
+   */
+  readonly header: ReactNode;
   readonly search: ReactNode;
   readonly projects: readonly Project[];
   readonly listActive: boolean;
@@ -60,8 +70,9 @@ export function DashboardSidebar({
     <SidebarScope>
       <Sidebar
         collapsible="none"
-        className="h-full w-[240px] shrink-0 font-normal"
+        className="h-full w-[280px] shrink-0 font-normal"
       >
+        {header}
         <SidebarHeader>{search}</SidebarHeader>
         <SidebarContent>
           <SidebarGroup>

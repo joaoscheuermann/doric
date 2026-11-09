@@ -29,13 +29,26 @@ const glyph: Record<ThreadKindIconName, typeof MessageCircleIcon> = {
  * wrapper sets the size, so a surface that forces a size on its own icons (the
  * sidebar button, the tab strip) cannot make the mark heavier than the text
  * beside it.
+ *
+ * `className` is merged after the wrapper's own classes (`cn`). The tree row
+ * passes the S25 hover-swap classes through it. Absent: the mark draws as
+ * before. It is always `aria-hidden`.
  */
-export function ThreadKindIcon({ kind }: { readonly kind: ThreadKind }) {
+export function ThreadKindIcon({
+  className,
+  kind,
+}: {
+  readonly className?: string;
+  readonly kind: ThreadKind;
+}) {
   const Icon = glyph[threadKindIcon[kind]];
   return (
     <span
       aria-hidden
-      className="flex shrink-0 items-center justify-center [&>svg]:size-3.5"
+      className={cn(
+        'flex shrink-0 items-center justify-center [&>svg]:size-3.5',
+        className,
+      )}
     >
       <Icon />
     </span>

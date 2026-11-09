@@ -1,19 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from 'desktop/ui/context-menu';
-import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from 'desktop/ui/input-group';
-import { Kbd, KbdGroup } from 'desktop/ui/kbd';
 import { PlusIcon, SearchIcon } from 'lucide-react';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useRef,
@@ -21,152 +15,49 @@ import {
 } from 'react';
 
 import { api } from '../../api/workspace-api.js';
-import { dashboardPage, searchShortcutKeys } from '../../domain/dashboard.js';
+import { dashboardPage, searchShortcutLabel } from '../../domain/dashboard.js';
 import { useDashboardPage } from '../../hooks/use-dashboard-page.js';
 import { useRegionItems } from '../../hooks/use-region-items.js';
 import type { Workspace } from '../../hooks/use-workspace.js';
 import { dashboardStore } from '../../stores/dashboard.js';
 import { ElementHost } from '../molecules/element-host.js';
-import { ProjectAvatar } from '../molecules/project-avatar.js';
-import { ProjectColorMenu } from '../molecules/project-color-menu.js';
+import { type ProjectEntry, ProjectItem } from '../molecules/project-item.js';
 import { DashboardSidebar } from './dashboard-sidebar.js';
-
-type Entry = Awaited<ReturnType<typeof api.projects.activity>>[number];
-type ViewMode = 'grid' | 'list';
-
-function relativeTime(value: string): string {
-  const minutes = Math.max(
-    0,
-    Math.floor((Date.now() - Date.parse(value)) / 60_000),
-  );
-  if (!Number.isFinite(minutes)) return '—';
-  if (minutes < 2) return 'just now';
-  if (minutes < 60) return `${minutes} minutes ago`;
-  if (minutes < 1_440) {
-    const hours = Math.floor(minutes / 60);
-    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-  }
-  const days = Math.floor(minutes / 1_440);
-  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-}
-
-function ProjectItem({
-  entry,
-  mode,
-  highlighted,
-  workspace,
-  onOpen,
-}: {
-  readonly entry: Entry;
-  readonly mode: 'recent' | ViewMode;
-  readonly highlighted: boolean;
-  readonly workspace: Workspace;
-  readonly onOpen: (entry: Entry) => void;
-}) {
-  const { project, activityAt } = entry;
-  const remove = () =>
-    workspace.actions.requestDelete({ kind: 'project', value: project });
-  const isGrid = mode === 'grid';
-
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger
-        render={
-          <div
-            data-project-id={project.id}
-            className={
-              isGrid
-                ? `group relative min-w-0 overflow-hidden rounded-[8px] bg-[var(--paper-control)] outline -outline-offset-1 dark:bg-[var(--paper-panel)] ${highlighted ? 'outline-2 outline-[var(--paper-focus)]' : 'outline-1 outline-black/5 dark:outline-white/5'}`
-                : `group relative -mx-[8px] flex min-w-0 items-center rounded-[6px] p-[8px] hover:bg-[var(--paper-ghost-hover)] ${highlighted ? 'bg-[var(--paper-thumbnail-selected)] outline outline-2 -outline-offset-2 outline-[var(--paper-focus)]' : ''}`
-            }
-          />
-        }
-      >
-        <button
-          type="button"
-          className={
-            isGrid
-              ? 'block w-full min-w-0 text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--paper-focus)]'
-              : 'flex w-full min-w-0 items-center gap-[16px] text-left outline-none focus-visible:rounded-[6px] focus-visible:outline-2 focus-visible:outline-[var(--paper-focus)]'
-          }
-          onClick={() => onOpen(entry)}
-        >
-          {isGrid ? (
-            <>
-              <span className="flex min-w-0 flex-col items-start p-[8px] pt-[6px] text-[12px] leading-[18px]">
-                <span className="flex min-h-[22px] max-w-full items-center truncate text-[var(--paper-gray-1)]">
-                  {project.name}
-                </span>
-                <span className="max-w-full truncate capitalize text-[var(--paper-gray-3)]">
-                  {project.state} · {relativeTime(activityAt)}
-                </span>
-              </span>
-              <span className="m-[4px] mt-0 grid aspect-[256/168] place-items-center overflow-hidden rounded-[4px] bg-[var(--paper-thumbnail)]">
-                <ProjectAvatar color={project.color} />
-              </span>
-            </>
-          ) : mode === 'list' ? (
-            <>
-              <span className="flex min-w-0 flex-[2] items-center gap-[8px] overflow-hidden">
-                <ProjectAvatar color={project.color} />
-                <span className="truncate text-[12px] leading-[16px] text-[var(--paper-gray-1)]">
-                  {project.name}
-                </span>
-              </span>
-              <span className="min-w-0 flex-1 truncate text-[12px] leading-[16px] text-[var(--paper-gray-2)]">
-                {relativeTime(activityAt)}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-[12px] leading-[16px] text-[var(--paper-gray-2)]">
-                {relativeTime(project.createdAt)}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-[12px] leading-[16px] capitalize text-[var(--paper-gray-2)]">
-                {project.state}
-              </span>
-            </>
-          ) : (
-            <>
-              <ProjectAvatar color={project.color} />
-              <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                <span className="truncate text-[13px] leading-[16px] text-[var(--paper-gray-1)]">
-                  {project.name}
-                </span>
-                <span className="truncate text-[12px] leading-[16px] capitalize text-[var(--paper-gray-3)]">
-                  {project.state}
-                </span>
-              </span>
-              <span className="ml-[12px] w-[104px] shrink-0 text-right text-[12px] leading-[16px] text-[var(--paper-gray-3)]">
-                {relativeTime(activityAt)}
-              </span>
-            </>
-          )}
-        </button>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ProjectColorMenu
-          value={project.color}
-          onSelect={(color) =>
-            workspace.actions.setProjectColor(project, color)
-          }
-        />
-        <ContextMenuItem variant="destructive" onClick={remove}>
-          Delete project
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
 
 export function Dashboard({
   workspace,
   all,
   navigate,
   createRequest = 0,
+  header,
+  sidebarHeader,
   onOpenSettings,
 }: {
   readonly workspace: Workspace;
+  /**
+   * True: the Projects list with the Dashboard sidebar (`/projects`, and `/`
+   * unless it was reached through "New project"). False: the home body, which
+   * has no sidebar. (Unchanged meaning, documented.)
+   */
   readonly all: boolean;
   readonly navigate: (path: string) => void;
   readonly createRequest?: number;
+  /**
+   * The content column's top row (G4): the Project tab bar with the account
+   * status at its right end (§2.8, `85:7520`). It is drawn once, as the first
+   * child of `div[data-slot="dashboard-content"]`, above the content's scroll
+   * container. That holds for the list, for a `layout.dashboard.page` page
+   * and for the home body alike, so it never scrolls away. `Dashboard`
+   * neither reads nor wraps it. Required: the window has no other tab bar on
+   * the Dashboard.
+   */
+  readonly header: ReactNode;
+  /**
+   * The Dashboard sidebar's header, passed unchanged to
+   * `DashboardSidebar.header`. It is drawn only when `all` is true; the home
+   * body has no sidebar.
+   */
+  readonly sidebarHeader: ReactNode;
   readonly onOpenSettings: () => void;
 }) {
   const [search, setSearch] = useState('');
@@ -238,7 +129,7 @@ export function Dashboard({
         .id ?? filtered[0]?.project.id)
     : undefined;
 
-  const open = ({ project }: Entry) => {
+  const open = ({ project }: ProjectEntry) => {
     workspace.actions.selectProject(project);
   };
   const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -294,13 +185,13 @@ export function Dashboard({
       />
       {!search && (
         <kbd className="pointer-events-none absolute right-[10px] text-[12px] leading-[16px] text-[var(--paper-gray-4)]">
-          {/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘F' : 'Ctrl+F'}
+          {searchShortcutLabel(navigator.platform)}
         </kbd>
       )}
     </label>
   );
   const dashboardSearch = (
-    <InputGroup className="h-8 bg-background shadow-none">
+    <InputGroup className="h-9 border-transparent bg-secondary shadow-none">
       <InputGroupAddon>
         <SearchIcon />
       </InputGroupAddon>
@@ -314,13 +205,9 @@ export function Dashboard({
       />
       {!search && (
         <InputGroupAddon align="inline-end">
-          <KbdGroup>
-            {searchShortcutKeys(navigator.platform).map((key) => (
-              <Kbd key={key} className="font-normal">
-                {key}
-              </Kbd>
-            ))}
-          </KbdGroup>
+          <kbd className="pointer-events-none flex h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1 text-xs font-normal text-muted-foreground">
+            {searchShortcutLabel(navigator.platform)}
+          </kbd>
         </InputGroupAddon>
       )}
     </InputGroup>
@@ -431,107 +318,49 @@ export function Dashboard({
 
   if (!all) {
     return (
-      <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--paper-root)] text-[var(--paper-gray-1)] [scrollbar-gutter:stable]">
-        <div className="flex min-h-full flex-col items-center px-[40px] pb-[60px] pt-[60px]">
-          <div className="mt-[28px] flex w-[520px] max-w-full items-center gap-[10px]">
-            <button
-              type="button"
-              className="inline-flex h-[36px] min-w-0 flex-1 items-center justify-between gap-[8px] rounded-[8px] bg-[#1e1e1e] px-[16px] text-[13px] font-normal text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 active:bg-[#333] dark:bg-[#f2f2f2] dark:active:bg-[#d4d4d4]"
-              onClick={beginCreation}
-            >
-              <span>New project</span>
-              <kbd className="text-[12px] font-normal opacity-50">
-                {/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘N' : 'Ctrl+N'}
-              </kbd>
-            </button>
-            <button
-              type="button"
-              className="h-[36px] min-w-0 flex-1 rounded-[8px] bg-[var(--paper-control)] px-[16px] text-[13px] font-normal text-[var(--paper-gray-1)] shadow-[var(--paper-shadow-control)] outline-[var(--paper-focus)] focus-visible:outline-2 focus-visible:-outline-offset-1 active:bg-[var(--paper-control-pressed)]"
-              onClick={() => navigate('/projects')}
-            >
-              Browse all projects
-            </button>
-          </div>
-          <div className="mt-[10px] w-[520px] max-w-full">{searchField}</div>
-          {creating && (
-            <div className="mt-[10px] w-[520px] max-w-full">{createForm}</div>
-          )}
-          <div className="mt-[56px] flex w-[520px] max-w-full flex-col gap-[2px]">
-            {listContent}
-            {!query && entries.length > 0 && !activity.isError && (
-              <div className="pt-[10px]">
-                <button
-                  type="button"
-                  className="text-[12px] text-[var(--paper-gray-3)] hover:text-[var(--paper-gray-1)] focus-visible:rounded-[4px] focus-visible:outline-2 focus-visible:outline-[var(--paper-focus)]"
-                  onClick={() => navigate('/projects')}
-                >
-                  See all projects
-                </button>
-              </div>
-            )}
-            {workspace.error && (
-              <p
-                className="py-[12px] text-[12px] text-destructive"
-                role="alert"
+      <div
+        data-slot="dashboard-content"
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        {header}
+        <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--paper-root)] text-[var(--paper-gray-1)] [scrollbar-gutter:stable]">
+          <div className="flex min-h-full flex-col items-center px-[40px] pb-[60px] pt-[60px]">
+            <div className="mt-[28px] flex w-[520px] max-w-full items-center gap-[10px]">
+              <button
+                type="button"
+                className="inline-flex h-[36px] min-w-0 flex-1 items-center justify-between gap-[8px] rounded-[8px] bg-[#1e1e1e] px-[16px] text-[13px] font-normal text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 active:bg-[#333] dark:bg-[#f2f2f2] dark:active:bg-[#d4d4d4]"
+                onClick={beginCreation}
               >
-                {workspace.error}
-              </p>
-            )}
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 bg-[var(--paper-panel)] text-[var(--paper-gray-1)]">
-      <aside className="flex shrink-0" aria-label="Dashboard navigation">
-        <DashboardSidebar
-          search={dashboardSearch}
-          projects={workspace.projects}
-          listActive={page === undefined}
-          navItems={navItems}
-          onAllProjects={() => dashboardStore.getState().close()}
-          onNewProject={beginCreation}
-          onSelectProject={workspace.actions.selectProject}
-          onOpenSettings={onOpenSettings}
-        />
-      </aside>
-      {page !== undefined ? (
-        <main className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--paper-separator)] bg-background">
-          <ElementHost key={page.id} tag={page.tag} className="block h-full" />
-        </main>
-      ) : (
-        <main
-          className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--paper-separator)] bg-[var(--paper-root)] [scrollbar-gutter:stable]"
-          onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
-        >
-          <div
-            className={`sticky top-0 z-10 border-b bg-[var(--paper-root)] px-[80px] pt-[32px] pb-[12px] max-[900px]:px-[24px] ${scrolled ? 'border-[var(--paper-separator)]' : 'border-transparent'}`}
-          >
-            <div className="mx-auto flex h-[32px] w-full max-w-[1376px] items-center justify-between gap-[48px]">
-              <h1 className="min-w-0 truncate text-[24px] leading-[32px] tracking-[0.005em]">
-                Projects
-              </h1>
-              <div className="flex h-[28px] shrink-0 items-center gap-[12px]">
-                <button
-                  type="button"
-                  className="flex h-[28px] items-center gap-[6px] rounded-[6px] bg-[#1e1e1e] px-[12px] text-[12px] font-normal text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 dark:bg-[#f2f2f2]"
-                  onClick={beginCreation}
-                >
-                  <PlusIcon size={12} /> New project
-                </button>
-              </div>
+                <span>New project</span>
+                <kbd className="text-[12px] font-normal opacity-50">
+                  {/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘N' : 'Ctrl+N'}
+                </kbd>
+              </button>
+              <button
+                type="button"
+                className="h-[36px] min-w-0 flex-1 rounded-[8px] bg-[var(--paper-control)] px-[16px] text-[13px] font-normal text-[var(--paper-gray-1)] shadow-[var(--paper-shadow-control)] outline-[var(--paper-focus)] focus-visible:outline-2 focus-visible:-outline-offset-1 active:bg-[var(--paper-control-pressed)]"
+                onClick={() => navigate('/projects')}
+              >
+                Browse all projects
+              </button>
             </div>
-          </div>
-          <div className="px-[80px] pt-[48px] pb-[32px] max-[900px]:px-[24px]">
-            <div className="mx-auto w-full max-w-[1376px]">
-              {creating && (
-                <div className="mb-[24px] w-[520px] max-w-full">
-                  {createForm}
+            <div className="mt-[10px] w-[520px] max-w-full">{searchField}</div>
+            {creating && (
+              <div className="mt-[10px] w-[520px] max-w-full">{createForm}</div>
+            )}
+            <div className="mt-[56px] flex w-[520px] max-w-full flex-col gap-[2px]">
+              {listContent}
+              {!query && entries.length > 0 && !activity.isError && (
+                <div className="pt-[10px]">
+                  <button
+                    type="button"
+                    className="text-[12px] text-[var(--paper-gray-3)] hover:text-[var(--paper-gray-1)] focus-visible:rounded-[4px] focus-visible:outline-2 focus-visible:outline-[var(--paper-focus)]"
+                    onClick={() => navigate('/projects')}
+                  >
+                    See all projects
+                  </button>
                 </div>
               )}
-              {listContent}
               {workspace.error && (
                 <p
                   className="py-[12px] text-[12px] text-destructive"
@@ -543,7 +372,82 @@ export function Dashboard({
             </div>
           </div>
         </main>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 bg-[var(--paper-panel)] text-[var(--paper-gray-1)]">
+      <aside className="flex shrink-0" aria-label="Dashboard navigation">
+        <DashboardSidebar
+          header={sidebarHeader}
+          search={dashboardSearch}
+          projects={workspace.projects}
+          listActive={page === undefined}
+          navItems={navItems}
+          onAllProjects={() => dashboardStore.getState().close()}
+          onNewProject={beginCreation}
+          onSelectProject={workspace.actions.selectProject}
+          onOpenSettings={onOpenSettings}
+        />
+      </aside>
+      <div
+        data-slot="dashboard-content"
+        className="flex min-w-0 flex-1 flex-col"
+      >
+        {header}
+        {page !== undefined ? (
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto border-l border-[var(--paper-separator)] bg-background">
+            <ElementHost
+              key={page.id}
+              tag={page.tag}
+              className="block h-full"
+            />
+          </main>
+        ) : (
+          <main
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto border-l border-[var(--paper-separator)] bg-[var(--paper-root)] [scrollbar-gutter:stable]"
+            onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
+          >
+            <div
+              className={`sticky top-0 z-10 border-b bg-[var(--paper-root)] px-[80px] pt-[32px] pb-[12px] max-[900px]:px-[24px] ${scrolled ? 'border-[var(--paper-separator)]' : 'border-transparent'}`}
+            >
+              <div className="mx-auto flex h-[32px] w-full max-w-[1376px] items-center justify-between gap-[48px]">
+                <h1 className="min-w-0 truncate text-[24px] leading-[32px] tracking-[0.005em]">
+                  Projects
+                </h1>
+                <div className="flex h-[28px] shrink-0 items-center gap-[12px]">
+                  <button
+                    type="button"
+                    className="flex h-[28px] items-center gap-[6px] rounded-[6px] bg-[#1e1e1e] px-[12px] text-[12px] font-normal text-[var(--paper-control)] outline-[var(--paper-focus)] focus-visible:outline-2 dark:bg-[#f2f2f2]"
+                    onClick={beginCreation}
+                  >
+                    <PlusIcon size={12} /> New project
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="px-[80px] pt-[48px] pb-[32px] max-[900px]:px-[24px]">
+              <div className="mx-auto w-full max-w-[1376px]">
+                {creating && (
+                  <div className="mb-[24px] w-[520px] max-w-full">
+                    {createForm}
+                  </div>
+                )}
+                {listContent}
+                {workspace.error && (
+                  <p
+                    className="py-[12px] text-[12px] text-destructive"
+                    role="alert"
+                  >
+                    {workspace.error}
+                  </p>
+                )}
+              </div>
+            </div>
+          </main>
+        )}
+      </div>
     </div>
   );
 }

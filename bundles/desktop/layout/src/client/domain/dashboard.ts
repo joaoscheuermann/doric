@@ -11,8 +11,10 @@ export const dashboardPage = (
 ): RegionEntry | undefined =>
   active === undefined ? undefined : items.find((item) => item.id === active);
 
-/** The keys of the dashboard search's shortcut, as the platform names them. */
-export const searchShortcutKeys = (
-  platform: string,
-): readonly [string, string] =>
-  /Mac|iPhone|iPad/.test(platform) ? ['⌘', 'F'] : ['Ctrl', 'F'];
+/**
+ * The search shortcut's hint, as both "Search projects" fields draw it:
+ * `'⌘F'` when `platform` names an Apple platform (Mac, iPhone, iPad),
+ * `'Ctrl+F'` otherwise. Pure; never throws.
+ */
+export const searchShortcutLabel = (platform: string): '⌘F' | 'Ctrl+F' =>
+  /Mac|iPhone|iPad/.test(platform) ? '⌘F' : 'Ctrl+F';

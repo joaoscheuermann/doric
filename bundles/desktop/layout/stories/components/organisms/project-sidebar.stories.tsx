@@ -164,7 +164,7 @@ export const EmptyProject = {
   ),
 };
 
-/** No Project selected: the "New thread" action is disabled. */
+/** No Project selected: the "New Thread" row is disabled. */
 export const NoProject = {
   render: () => (
     <Sidebar

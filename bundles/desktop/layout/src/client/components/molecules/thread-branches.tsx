@@ -59,7 +59,6 @@ type ThreadBranchesProps = {
   readonly selectedThreadId?: string;
 };
 
-
 /**
  * Renders one level of the thread tree and recurses into each node's children.
  * It reads nothing itself: the level, the selected/editing ids and the row
@@ -149,16 +148,29 @@ export function ThreadBranches({
                   )}
                   style={{ paddingLeft: indentation(depth) }}
                 >
-                  <ThreadKindIcon kind={kind} />
-                  {expandable && (
-                    <ChevronRightIcon
-                      aria-hidden
-                      className={cn(
-                        'transition-transform duration-[50ms] ease-out',
-                        expanded ? 'rotate-90' : 'rotate-0',
-                      )}
-                    />
-                  )}
+                  {/* One 16 px lead slot (S25, Figma `112:22161`): the kind
+                      icon; on a closed expandable row the chevron replaces it
+                      while the row is hovered or holds focus (CSS only); an
+                      open row shows the chevron alone, turned down. */}
+                  <span
+                    aria-hidden
+                    data-slot="thread-lead"
+                    className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
+                  >
+                    {!expandable ? (
+                      <ThreadKindIcon kind={kind} />
+                    ) : expanded ? (
+                      <ChevronRightIcon className="rotate-90" />
+                    ) : (
+                      <>
+                        <ThreadKindIcon
+                          kind={kind}
+                          className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden"
+                        />
+                        <ChevronRightIcon className="hidden group-hover/tree-row:block group-focus-within/tree-row:block" />
+                      </>
+                    )}
+                  </span>
                   <EditableName
                     className={cn(running && 'shimmer')}
                     editing={editingThreadId === thread.id}
@@ -174,9 +186,8 @@ export function ThreadBranches({
                     onSubmit={(name) => actions.rename(thread, name)}
                   />
                 </SidebarMenuSubButton>
-                {/* Drawn on every row: the repository it works in sits where
-                    the plus appears, and a row the reader cannot open under
-                    (an agent thread) still shows that and its elapsed time. */}
+                {/* Drawn on every row; its marks show only while the row is
+                    hovered or running (`27:13973`). */}
                 <RowAddAction
                   label={marked}
                   onAdd={marked === undefined ? undefined : addChild}

@@ -436,8 +436,10 @@ test('a file opened through layout.tabs/v1 gets a viewer tab and shows; closing 
     0,
     'The viewer is still there after its last tab closed.',
   );
+  // 2e (T-2.8): the Project view's witness is the "New Thread" row; the
+  // Threads pane's "New thread" plus it replaces is gone.
   assert.ok(
-    named(rendered.root, '[role="treeitem"], button', 'New thread').length > 0,
+    named(rendered.root, '[role="treeitem"], button', 'New Thread').length > 0,
     'The Project view is gone with the viewer.',
   );
 });
@@ -965,3 +967,85 @@ for (const [label, fixture] of [
     oneAccount(rendered, 'Files shown again');
   });
 }
+
+// Phase 2e, T-2.8 (spec §2.2, contracts 2e §1): a "+ New Thread" row above
+// the sidebar's stack starts the inline root draft; the Threads pane header
+// loses its "New thread" plus.
+
+// T-2.8
+test('pressing New Thread with a selected Project shows the new thread name field in the tree', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, formThread],
+    path: `/projects/${project.id}`,
+  });
+  assert.equal(
+    named(rendered.root, '[role="textbox"]', 'New thread name').length,
+    0,
+    'A new thread name field is open before New Thread is pressed.',
+  );
+
+  await click(only(rendered.root, 'button', 'New Thread'));
+
+  assert.equal(rendered.errors().length, 0, 'Pressing New Thread failed.');
+  const fields = [
+    ...rendered.root.querySelectorAll<HTMLElement>('[role="textbox"]'),
+  ].filter(
+    (element) => element.getAttribute('aria-label') === 'New thread name',
+  );
+  assert.equal(fields.length, 1, 'No single "New thread name" field shows.');
+  const items = [
+    ...rendered.root.querySelectorAll<HTMLElement>('[role="treeitem"]'),
+  ];
+  assert.ok(
+    fields[0] !== undefined &&
+      items.length > 0 &&
+      items.every((item) => follows(item, fields[0] as HTMLElement)),
+    'The new thread name field is not at the end of the tree.',
+  );
+});
+
+// T-2.8
+test('the Threads pane header has no New thread control', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, formThread],
+    path: `/projects/${project.id}`,
+  });
+
+  only(rendered.root, 'button', 'New Thread');
+  assert.equal(
+    named(rendered.root, 'button, [aria-label]', 'New thread').length,
+    0,
+    'A control named "New thread" is still in the sidebar.',
+  );
+});
+
+// T-2.8. The workspace always selects the Project its path names, and sends
+// any other path to the Dashboard, so the sidebar without a selected Project
+// is rendered alone, as its `NoProject` story draws it.
+test('New Thread is disabled while no Project is selected', async () => {
+  // Rendering the workspace once installs happy-dom's window as the globals.
+  (await renderWorkspace()).cleanup();
+  const { createElement } = await import('react');
+  const { flushSync } = await import('react-dom');
+  const { createRoot } = await import('react-dom/client');
+  const { NoProject } = await import(
+    '../../stories/components/organisms/project-sidebar.stories.js'
+  );
+  const root = document.createElement('div');
+  document.body.append(root);
+  const react = createRoot(root);
+  try {
+    flushSync(() => react.render(createElement(() => NoProject.render())));
+    await settle();
+
+    const row = only(root, 'button', 'New Thread');
+    assert.ok(
+      row.hasAttribute('disabled'),
+      'New Thread is enabled without a selected Project.',
+    );
+  } finally {
+    react.unmount();
+  }
+});

@@ -8,10 +8,10 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
-  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from 'desktop/ui/sidebar';
@@ -190,6 +190,41 @@ function PanePanel({
   );
 }
 
+/**
+ * The "+ New Thread" row (§2.2; drawn as the prototype's `Button · New thread`
+ * in `269:31402`, a 28 px small button with a 14 px plus, which wins over the
+ * component frame `110:23119`, UR1): a full-width sidebar menu button with
+ * lucide `PlusIcon` and the text "New Thread", 8 px above the Threads label.
+ * Pressing it calls `actions.beginThread(projectId)` once. That is the inline
+ * root draft the Threads pane's "+" started before, and it shows as the "New
+ * thread name" field at the end of the tree.
+ *
+ * - Accessible name: "New Thread" (its text). It is a `button`
+ *   (`SidebarMenuButton`, `data-slot="sidebar-menu-button"`) inside
+ *   `ul[data-slot="sidebar-menu"]`, outside the panes' resizable group, so it
+ *   neither collapses nor scrolls with the tree.
+ * - With no selected Project (`model.selectedProjectId === undefined`), it
+ *   stays visible, carries the `disabled` attribute and does nothing when
+ *   pressed. It never calls `beginThread` without a Project id.
+ * - It is drawn once, whatever panes the stack holds.
+ */
+function NewThreadRow({ onBegin }: { readonly onBegin?: () => void }) {
+  return (
+    <SidebarMenu className="mb-2 px-2 pt-1">
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          className="h-7 justify-center gap-1.5 rounded-md px-2.5 text-[0.8rem] font-normal [&_svg]:size-3.5"
+          disabled={onBegin === undefined}
+          onClick={onBegin}
+        >
+          <PlusIcon />
+          <span>New Thread</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
+}
+
 export function ProjectSidebar({
   actions,
   header,
@@ -233,9 +268,10 @@ export function ProjectSidebar({
       actions.startRename({ kind: 'thread', value: thread }),
   };
 
-  // The Threads pane is the layout's own: its rows are this tree, and its header
-  // action creates a Thread of the selected Project. Every other pane names the
-  // element that draws its content and the one that draws its header action.
+  // The Threads pane is the layout's own: its rows are this tree, and the New
+  // Thread row above the stack creates a Thread of the selected Project. Every
+  // other pane names the element that draws its content and the one that draws
+  // its header action.
   const threadsContent = (
     <>
       {model.error && (
@@ -276,31 +312,22 @@ export function ProjectSidebar({
     </>
   );
 
-  const paneAction = (pane: StackPane): ReactNode => {
-    if (pane.id !== THREADS_PANE_ID) {
-      return pane.headerTag === undefined ? null : (
-        <ElementHost tag={pane.headerTag} />
-      );
-    }
-
-    return (
-      <SidebarGroupAction
-        className="top-1 right-1"
-        aria-label="New thread"
-        disabled={projectId === undefined}
-        onClick={() => {
-          if (projectId !== undefined) actions.beginThread(projectId);
-        }}
-      >
-        <PlusIcon />
-      </SidebarGroupAction>
+  const paneAction = (pane: StackPane): ReactNode =>
+    pane.id === THREADS_PANE_ID || pane.headerTag === undefined ? null : (
+      <ElementHost tag={pane.headerTag} />
     );
-  };
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden font-normal">
       {header}
       <SidebarContent className="overflow-hidden p-0">
+        <NewThreadRow
+          onBegin={
+            projectId === undefined
+              ? undefined
+              : () => actions.beginThread(projectId)
+          }
+        />
         <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
           {panes.map((pane, index) => (
             <Fragment key={pane.id}>

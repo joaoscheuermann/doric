@@ -116,7 +116,8 @@ export default {
 
 /**
  * The Checkout tree: child Threads, a running agent, git and GitHub working
- * directories and an unnamed Thread.
+ * directories and an unnamed Thread. Open branches show the chevron alone;
+ * marks show only on hover or while running.
  */
 export const CheckoutTree = {
   render: () => <ThreadTree />,
@@ -136,7 +137,10 @@ export const ChildSelected = {
   render: () => <ThreadTree selected={validationThread.id} />,
 };
 
-/** A branch collapsed: its chevron points right and its children hide. */
+/**
+ * A branch collapsed: its kind icon shows, and the chevron replaces it on hover
+ * or focus.
+ */
 export const Collapsed = {
   render: () => <ThreadTree initialCollapsed={[planThread.id]} />,
 };
