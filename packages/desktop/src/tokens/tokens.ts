@@ -13,7 +13,10 @@ export interface TokenSet {
 }
 
 export interface Tokens {
-  /** The platform version these tokens ship with. */
+  /**
+   * The assets version these tokens ship with (`PLATFORM_ASSETS_VERSION`, the
+   * `desktop@<v>` folder they are written to), not the platform version.
+   */
   readonly version: string;
   /** The light CSS fallback before the system preference is evaluated. */
   readonly defaultVariant: 'light';

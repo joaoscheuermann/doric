@@ -47,7 +47,7 @@ export const lexicalRoots = [
  */
 export const esmPackages = ['zod', '@base-ui/react'];
 
-/** Platform-owned packages; their folders carry `PLATFORM_VERSION`. */
+/** Platform-owned packages; their folders carry `PLATFORM_ASSETS_VERSION`. */
 export const bundleContracts = {
   specifier: 'bundle/contracts',
   package: 'bundle',

@@ -48,3 +48,10 @@ export const identityTone = (name: string): string =>
  */
 export const identityRing = (name: string): string =>
   `color-mix(in oklch, ${identityTone(name)} 85%, var(--background))`;
+
+/**
+ * The reader at this install: their turns, their prompt and the stack items
+ * they add wear this name. The host does not report who is who yet, so it is
+ * fixed here, the one place that is replaced the day it does.
+ */
+export const READER_NAME = 'jao.scheuermann';

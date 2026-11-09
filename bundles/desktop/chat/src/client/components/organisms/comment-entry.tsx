@@ -28,6 +28,7 @@
 // the way the composer's stack notes are.
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { ReaderAvatar } from 'desktop/ui/reader-avatar';
 import { cn } from 'desktop/ui/utils';
 import { HISTORIC_TAG } from 'lexical';
 import {
@@ -58,7 +59,6 @@ import { composerStackStore } from '../../stores/composer-stack.js';
 import { isolate } from '../../utility/isolate.js';
 import { placeCaret } from '../../utility/note-caret.js';
 import { commentLineLabel } from '../molecules/comment-line.js';
-import { ReaderAvatar } from '../molecules/reader-avatar.js';
 import { noteText, StackNote } from '../molecules/stack-note.js';
 import type { CommentSeatBlock } from './conversation/nodes/comment-seat-node.js';
 import { releaseSeat, takeTyped } from './conversation/plugins/seat-claims.js';

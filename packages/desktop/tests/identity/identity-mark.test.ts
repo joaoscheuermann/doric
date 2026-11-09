@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { identityTone, initials } from '../src/client/utility/identity-mark.js';
+import { identityTone, initials } from 'desktop/ui/identity';
 
 describe('the initials a name reads as', () => {
   test('takes the first letter of the first two parts of a name', () => {

@@ -1,10 +1,5 @@
-import { cn } from 'desktop/ui/utils';
-
-import {
-  identityRing,
-  identityTone,
-  initials,
-} from '../../utility/identity-mark.js';
+import { cn } from '../lib/utils.js';
+import { identityRing, identityTone, initials } from './identity-mark.js';
 
 /**
  * The frame the reader's initials are drawn in: a compact circle the name beside

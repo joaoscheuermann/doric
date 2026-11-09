@@ -21,6 +21,7 @@ import {
   distributionArtifactSchema,
   distributionCatalogSchema,
   newTrace,
+  PLATFORM_ASSETS_VERSION,
   PLATFORM_VERSION,
   ServiceDirectory,
   statesOf,
@@ -205,7 +206,7 @@ export class DesktopPlatform {
     this.tokens = loadWindowTokens(
       join(
         this.resources.platformRoot,
-        `desktop@${PLATFORM_VERSION}`,
+        `desktop@${PLATFORM_ASSETS_VERSION}`,
         'tokens.json',
       ),
     );
@@ -513,7 +514,7 @@ export class DesktopPlatform {
           : () => devProxy.template(),
       generation: () => this.#newest ?? null,
       importMap: (generation) => this.#importMap(generation),
-      themeHref: `/platform/desktop@${PLATFORM_VERSION}/theme.css`,
+      themeHref: `/platform/desktop@${PLATFORM_ASSETS_VERSION}/theme.css`,
       devServerOrigin,
     });
 

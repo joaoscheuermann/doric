@@ -12,6 +12,7 @@
 // and a sent comment is immutable until a new event says otherwise.
 
 import { Button } from 'desktop/ui/button';
+import { ReaderAvatar } from 'desktop/ui/reader-avatar';
 import { ArrowUpLeftIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -19,7 +20,6 @@ import { CHAT_COMMENT_LINE_TAG } from '../../../contracts/index.js';
 import type { Excerpt } from '../../domain/comment-excerpt.js';
 import { anchorLabel } from '../../domain/composer-stack.js';
 import { READER_NAME } from '../../domain/conversation-authors.js';
-import { ReaderAvatar } from './reader-avatar.js';
 
 /** What one comment line draws. */
 export interface CommentLineItem {

@@ -20,6 +20,7 @@ import {
   type Descriptor,
   type ManifestV1,
   manifestV1Schema,
+  PLATFORM_VERSION,
   resolveEnvironment,
 } from 'bundle/runtime';
 import {
@@ -301,7 +302,7 @@ export const openWindow = async (
         enabled: ['core', 'memory', ...probes.map(({ id }) => id)],
         providers: {},
       },
-      platformVersion: '1.0.0',
+      platformVersion: PLATFORM_VERSION,
       generation: 3,
     },
     'client',

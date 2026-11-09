@@ -26,7 +26,7 @@ const out = resolve(
     : process.argv[outIndex + 1],
 );
 const production = process.env.NODE_ENV === 'production';
-const { PLATFORM_VERSION } = await import('bundle/runtime');
+const { PLATFORM_ASSETS_VERSION } = await import('bundle/runtime');
 const contractsEntry = fileURLToPath(import.meta.resolve('bundle/contracts'));
 
 await rm(join(out, 'generation-chunks'), { recursive: true, force: true });
@@ -61,7 +61,7 @@ await build({
   logLevel: 'warning',
 });
 
-const splash = join(out, 'platform', `splash@${PLATFORM_VERSION}`);
+const splash = join(out, 'platform', `splash@${PLATFORM_ASSETS_VERSION}`);
 const page = join(here, 'src', 'splash-page');
 
 await rm(splash, { recursive: true, force: true });

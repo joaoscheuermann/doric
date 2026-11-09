@@ -1,4 +1,4 @@
-import { ReaderAvatar } from '../../../src/client/components/molecules/reader-avatar.js';
+import { ReaderAvatar } from 'desktop/ui/reader-avatar';
 
 /**
  * The reader's mark: the initials of a name over a tone derived from it. The

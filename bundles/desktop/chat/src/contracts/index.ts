@@ -178,7 +178,7 @@ export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');
  * they add wear this name. The host does not report who is who yet, so it is
  * fixed here, the one place that is replaced the day it does.
  */
-export const READER_NAME = 'jao.scheuermann';
+export { READER_NAME } from 'desktop/ui/identity';
 
 export interface ChatLexical {
   /** Accepted until the window's first conversation editor exists; then `frozen`. */

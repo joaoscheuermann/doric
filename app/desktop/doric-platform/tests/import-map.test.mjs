@@ -5,6 +5,7 @@ import { dirname, join, relative } from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { PLATFORM_ASSETS_VERSION } from 'bundle/runtime';
 import * as esbuild from 'esbuild';
 
 const project = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -101,7 +102,7 @@ describe('the platform import map', () => {
     }
   });
 
-  test('names third-party folders by npm version and platform folders by PLATFORM_VERSION', () => {
+  test('names third-party folders by npm version and platform folders by PLATFORM_ASSETS_VERSION', () => {
     const version = (name) =>
       manifest(join(workspace, 'node_modules', name, 'package.json')).version;
     assert.equal(imports.react, `${prefix}react@${version('react')}/index.js`);
@@ -120,9 +121,12 @@ describe('the platform import map', () => {
     );
     assert.equal(
       imports['bundle/contracts'],
-      `${prefix}bundle@1.0.0/contracts.js`,
+      `${prefix}bundle@${PLATFORM_ASSETS_VERSION}/contracts.js`,
     );
-    assert.equal(imports['desktop/ui/'], `${prefix}desktop@1.0.0/`);
+    assert.equal(
+      imports['desktop/ui/'],
+      `${prefix}desktop@${PLATFORM_ASSETS_VERSION}/`,
+    );
   });
 
   test('maps every Lexical specifier the client bundles import', () => {
@@ -232,9 +236,53 @@ describe('the platform import map', () => {
     ]) {
       assert.equal(
         imports[`desktop/ui/${name}`],
-        `${prefix}desktop@1.0.0/${name}.js`,
+        `${prefix}desktop@${PLATFORM_ASSETS_VERSION}/${name}.js`,
       );
     }
+  });
+
+  test('maps the identity mark and the reader avatar by their own entries', () => {
+    assert.equal(
+      imports['desktop/ui/identity'],
+      `${prefix}desktop@${PLATFORM_ASSETS_VERSION}/identity.js`,
+    );
+    assert.equal(
+      imports['desktop/ui/reader-avatar'],
+      `${prefix}desktop@${PLATFORM_ASSETS_VERSION}/reader-avatar.js`,
+    );
+  });
+
+  test('serves the identity mark without any package, so a React-free importer loads no React', async () => {
+    const identity = join(
+      platform,
+      `desktop@${PLATFORM_ASSETS_VERSION}`,
+      'identity.js',
+    );
+    assert.ok(existsSync(identity), `${identity} is missing`);
+    // esbuild follows identity.js and its relative chunks; each bare import is recorded.
+    const bare = [];
+    await esbuild.build({
+      entryPoints: [identity],
+      bundle: true,
+      write: false,
+      format: 'esm',
+      logLevel: 'silent',
+      plugins: [
+        {
+          name: 'collect-bare-imports',
+          setup(build) {
+            build.onResolve({ filter: /^[^./]/ }, (args) => {
+              if (args.kind === 'entry-point') return undefined;
+              bare.push(
+                `${relative(platform, args.importer)} imports ${args.path}`,
+              );
+              return { path: args.path, external: true };
+            });
+          },
+        },
+      ],
+    });
+    assert.deepEqual(bare, []);
   });
 
   test('leaves no emitted file importing a package the map does not serve', async () => {
@@ -326,7 +374,7 @@ describe('a window module loaded through the map', () => {
 });
 
 describe('the desktop/ui stylesheet', () => {
-  const folder = join(platform, 'desktop@1.0.0');
+  const folder = join(platform, `desktop@${PLATFORM_ASSETS_VERSION}`);
   const theme = readFileSync(join(folder, 'theme.css'), 'utf8');
 
   test('resolves every url() to a font the build copied', () => {

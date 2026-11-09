@@ -5,10 +5,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { ReaderAvatar } from 'desktop/ui/reader-avatar';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-
-import { ReaderAvatar } from '../../src/client/components/molecules/reader-avatar.js';
 
 /** The classes of the markup's outermost element. */
 const classesOf = (markup: string): string[] =>

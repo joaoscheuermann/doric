@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { PLATFORM_VERSION } from 'bundle';
+import { PLATFORM_ASSETS_VERSION } from 'bundle';
 import { resolvedVariables, tokens, tokensCss } from 'desktop/ui';
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -66,8 +66,8 @@ describe('the palette', () => {
     );
   });
 
-  test('the tokens carry the platform version', () => {
-    assert.equal(tokens.version, PLATFORM_VERSION);
+  test('the tokens carry the platform assets version', () => {
+    assert.equal(tokens.version, PLATFORM_ASSETS_VERSION);
   });
 });
 
