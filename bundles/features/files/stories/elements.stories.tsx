@@ -141,7 +141,7 @@ export const Tree = {
     const { elements, services } = useElements();
     return (
       <div
-        className="flex flex-col overflow-hidden rounded-md border bg-sidebar text-sidebar-foreground"
+        className="flex flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
         style={{ width: 320, height: 420 }}
       >
         <ElementHost
@@ -158,16 +158,15 @@ export const FileTab = {
   render: function FileTab() {
     const { elements, services } = useElements();
     return (
-      <div
-        className="flex flex-col overflow-hidden rounded-md border"
-        style={{ height: 480 }}
-      >
-        <ElementHost
-          tag="story-files-file-view"
-          element={elements.fileView}
-          services={services}
-          properties={fileTabProperties}
-        />
+      <div className="flex flex-col bg-sidebar p-2" style={{ height: 480 }}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-background p-2 shadow-sm">
+          <ElementHost
+            tag="story-files-file-view"
+            element={elements.fileView}
+            services={services}
+            properties={fileTabProperties}
+          />
+        </div>
       </div>
     );
   },

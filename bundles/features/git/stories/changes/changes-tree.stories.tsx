@@ -28,7 +28,7 @@ function Tree({
   );
   const [selectedPath, setSelectedPath] = useState(initialPath);
   return (
-    <SidebarMenu role="tree" className="w-full gap-0 py-1">
+    <SidebarMenu role="tree" className="w-full gap-0 px-1 py-1">
       <ChangesTree
         repository={repository}
         collapsed={collapsed}

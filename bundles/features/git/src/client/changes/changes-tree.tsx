@@ -61,7 +61,7 @@ export const ChangesTree = memo(function ChangesTree({
         <SidebarMenuButton
           size="sm"
           className={cn(
-            'h-7 w-full min-w-0 rounded-none pr-8',
+            'h-7 w-full min-w-0 gap-1.5 rounded-[4px] pr-8',
             rowInteraction(false),
           )}
           style={{ paddingLeft: indentation(0) }}
@@ -88,15 +88,19 @@ export const ChangesTree = memo(function ChangesTree({
             />
           }
         >
-          <ChevronRightIcon
+          <span
             aria-hidden
-            className={cn(
-              'transition-transform duration-[50ms] ease-out',
-              open ? 'rotate-90' : 'rotate-0',
-            )}
-          />
-          <GitBranchIcon />
-          <span className="min-w-0 flex-1 truncate font-light">{label}</span>
+            className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
+          >
+            <GitBranchIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
+            <ChevronRightIcon
+              className={cn(
+                'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
+                open && 'rotate-90',
+              )}
+            />
+          </span>
+          <span className="min-w-0 flex-1 truncate font-normal">{label}</span>
         </SidebarMenuButton>
         <SidebarMenuBadge className="z-10 bg-sidebar/90">
           <Badge variant="ghost" className="px-1" aria-hidden>

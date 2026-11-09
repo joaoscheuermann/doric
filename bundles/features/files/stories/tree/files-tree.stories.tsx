@@ -84,7 +84,7 @@ function TreeStory({
   });
   return (
     <div
-      className="flex flex-col overflow-hidden rounded-md border bg-sidebar text-sidebar-foreground"
+      className="flex flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
       style={{ width: 320, height: 560 }}
     >
       <SidebarScope>

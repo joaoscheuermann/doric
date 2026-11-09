@@ -71,7 +71,7 @@ function TabFile({
         file={fileReadState(query.data, query.isPending, query.isError)}
         failed={query.isError}
       />
-      <footer className="flex chrome-bar shrink-0 items-center border-t px-3">
+      <footer className="flex chrome-bar shrink-0 items-center px-3">
         <span className="truncate font-mono text-xs" title={path}>
           {path}
         </span>
@@ -153,7 +153,7 @@ export function FileContent({ file }: { readonly file: ProjectFileContent }) {
         <CodeView language={fileLanguage(file.path)} value={file.content} />
       )}
       {notice !== undefined && (
-        <p className="shrink-0 border-t px-3 py-1.5 text-xs text-muted-foreground">
+        <p className="shrink-0 px-3 py-1.5 text-xs text-muted-foreground">
           {notice}
         </p>
       )}
