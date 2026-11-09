@@ -13,8 +13,14 @@ import { type FixtureBundle, fixtureDistribution } from './distribution';
 export const CORE_DIST = resolve('bundles/foundation/core/dist');
 export const LAYOUT_DIST = resolve('bundles/desktop/layout/dist');
 export const RESOURCES_DIST = resolve('bundles/features/resources/dist');
+export const GIT_DIST = resolve('bundles/features/git/dist');
+export const FILES_DIST = resolve('bundles/features/files/dist');
+export const CHAT_DIST = resolve('bundles/desktop/chat/dist');
 /** The real runtime bundle: only its manifest, descriptor and schemas are read. */
 export const RUNTIME_DIST = resolve('bundles/runtime/runtime/dist');
+/** The real comments bundle: only its manifest, descriptor, schemas and contracts module. */
+export const COMMENTS_DIST = resolve('bundles/features/comments/dist');
+const SETTINGS_DIST = resolve('bundles/desktop/settings/dist');
 
 /** The host-only foundation that satisfies the core's backends. */
 export const memoryFoundation: FixtureBundle = {
@@ -272,12 +278,55 @@ export const coreDistribution = async (
 };
 
 /**
- * The workspace distribution: the real core, layout and resources, the
- * memory foundation, and a host-only runtime that provides the host contracts
- * those bundles `require` and none of them provides (`runtime/v1`,
- * `runtime.threads/v1`, `runtime.lease/v1`) with the real runtime's versions
- * and schemas. The host answers those calls (see the e2e `workspace-host`).
- * `bundles` adds fixture bundles after them.
+ * `settings.config/v1` (client, local) for the git bundle's Versioning
+ * section, without the settings window: a draft that never loads, as the
+ * contract allows before the settings view published one. The schema is the
+ * real settings bundle's.
+ */
+const settingsConfigFixture = async (): Promise<FixtureBundle> => ({
+  id: 'settings-config',
+  requires: [],
+  provides: [
+    {
+      id: 'settings.config/v1',
+      environment: 'client',
+      local: true,
+      document: JSON.parse(
+        await readFile(
+          join(SETTINGS_DIST, 'schemas/settings.config/v1.json'),
+          'utf8',
+        ),
+      ),
+    },
+  ],
+  files: {
+    'client/index.js': `import { defineMethod, defineService, disposableSchema, functionSchema, noInput, ref } from 'bundle/contracts';
+import { z } from 'zod';
+export function activate({ services }) {
+  const provided = services.provide(defineService(ref('settings.config/v1'), {
+    draft: defineMethod({ input: noInput, output: z.undefined(), execute: () => undefined }),
+    setDraft: defineMethod({ input: functionSchema(), output: z.void(), execute: () => undefined }),
+    subscribe: defineMethod({ input: functionSchema(), output: disposableSchema, execute: () => ({ dispose: () => undefined }) }),
+  }));
+  return () => provided.dispose();
+}
+`,
+  },
+});
+
+/** The bundles whose host contracts the e2e host answers itself. */
+const HOST_ONLY_DISTS = [RUNTIME_DIST, COMMENTS_DIST];
+
+/**
+ * The workspace distribution: the real core, layout, resources, git, files
+ * and chat, the memory foundation, and host-only cuts of the runtime and
+ * comments bundles that provide the host contracts those bundles `require`
+ * and none of them provides (`runtime/v1`, `runtime.threads/v1`,
+ * `runtime.lease/v1`, `runtime.workspace/v1`, `runtime.attachments/v1`,
+ * `comments/v1`) with their real versions and schemas. The host answers those
+ * calls, and the real bundles' own host contracts (`git.commands/v1`,
+ * `files/v1`; see the e2e `workspace-host`). `settings.config/v1` comes from
+ * a fixture. `bundles` adds fixture bundles after them.
  */
 export const workspaceDistribution = async (
   input: { readonly bundles?: readonly FixtureBundle[] } = {},
@@ -289,18 +338,33 @@ export const workspaceDistribution = async (
     await coreBundle(),
     await builtBundle(LAYOUT_DIST),
     await builtBundle(RESOURCES_DIST),
+    await builtBundle(FILES_DIST),
+    await builtBundle(GIT_DIST),
+    await builtBundle(CHAT_DIST),
   ];
   const provided = new Set(
     real.flatMap(({ bundle }) => contractsOf(bundle).map((entry) => entry.id)),
   );
-  const hostOnly = real
-    .flatMap(({ bundle }) => bundle.manifest?.requires ?? [])
-    .map((entry) => entry.slice(0, entry.indexOf('@')))
-    .filter((id) => !provided.has(id) && !id.endsWith('.backend/v1'));
-  const runtime = await hostOnlyBundle(RUNTIME_DIST, [...new Set(hostOnly)]);
+  const missing = new Set(
+    real
+      .flatMap(({ bundle }) => bundle.manifest?.requires ?? [])
+      .map((entry) => entry.slice(0, entry.indexOf('@')))
+      .filter((id) => !provided.has(id) && !id.endsWith('.backend/v1')),
+  );
+  const hostOnly: BuiltBundle[] = [];
+
+  for (const dist of HOST_ONLY_DISTS) {
+    const ids = contractsOf((await builtBundle(dist)).bundle)
+      .filter((entry) => entry.environment === 'host' && missing.has(entry.id))
+      .map((entry) => entry.id);
+
+    if (ids.length > 0) {
+      hostOnly.push(await hostOnlyBundle(dist, ids));
+    }
+  }
 
   return builtDistribution({
-    built: [...real, runtime],
-    ...(input.bundles === undefined ? {} : { bundles: input.bundles }),
+    built: [...real, ...hostOnly],
+    bundles: [await settingsConfigFixture(), ...(input.bundles ?? [])],
   });
 };

@@ -13,7 +13,12 @@
         { "projects": "doric-renderer", "target": "build" },
         { "projects": "bundle-layout", "target": "build" },
         { "projects": "bundle-resources", "target": "build" },
-        { "projects": "bundle-runtime", "target": "build" }
+        { "projects": "bundle-runtime", "target": "build" },
+        { "projects": "bundle-git", "target": "build" },
+        { "projects": "bundle-files", "target": "build" },
+        { "projects": "bundle-chat", "target": "build" },
+        { "projects": "bundle-comments", "target": "build" },
+        { "projects": "bundle-settings", "target": "build" }
       ],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {

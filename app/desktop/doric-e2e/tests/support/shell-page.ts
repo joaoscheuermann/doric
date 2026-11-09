@@ -82,11 +82,52 @@ export const click = async (
   within = '',
 ): Promise<void> => {
   await waitFor(contents, name, role, 20_000, within);
+  await clickOn(contents, selectorOf(name, role, within));
+};
+
+/** Waits until a visible element matches `selector`. */
+export const waitForSelector = (
+  contents: WebContents,
+  selector: string,
+  timeoutMs = 20_000,
+): Promise<true> =>
+  until(
+    () =>
+      inPage<boolean>(
+        contents,
+        `deepAll(${JSON.stringify(selector)}).some(visible)`,
+      ).then((found) => (found ? true : undefined)),
+    `an element matching ${selector}`,
+    timeoutMs,
+  );
+
+/**
+ * Clicks the first visible element matching `selector` (and whose text
+ * starts with `text`, when given) with real mouse input.
+ */
+export const clickOn = async (
+  contents: WebContents,
+  selector: string,
+  text?: string,
+): Promise<void> => {
+  const find = `deepAll(${JSON.stringify(selector)}).filter(visible).find((e) => ${
+    text === undefined
+      ? 'true'
+      : `(e.innerText ?? e.textContent).trim().startsWith(${JSON.stringify(text)})`
+  })`;
+
+  await until(
+    () =>
+      inPage<boolean>(contents, `Boolean(${find})`).then((found) =>
+        found ? true : undefined,
+      ),
+    `an element matching ${selector}${text === undefined ? '' : ` reading "${text}"`}`,
+  );
 
   const centre = await inPage<{ x: number; y: number }>(
     contents,
     `(() => {
-      const element = deepAll(${JSON.stringify(selectorOf(name, role, within))}).find(visible);
+      const element = ${find};
       const rect = element.getBoundingClientRect();
       const hit = (x, y) => {
         let found = document.elementFromPoint(x, y);
@@ -125,6 +166,74 @@ export const click = async (
     clickCount: 1,
   });
 };
+
+/**
+ * Drags the rightmost visible element matching `selector` by `dx` pixels
+ * with real mouse input, in steps, as a reader drags a resize handle.
+ */
+export const dragBy = async (
+  contents: WebContents,
+  selector: string,
+  dx: number,
+): Promise<void> => {
+  await waitForSelector(contents, selector);
+
+  const from = await inPage<{ x: number; y: number }>(
+    contents,
+    `(() => {
+      const rects = deepAll(${JSON.stringify(selector)}).filter(visible).map((e) => e.getBoundingClientRect());
+      const rect = rects.reduce((a, b) => (b.x > a.x ? b : a));
+      return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) };
+    })()`,
+  );
+  const steps = 12;
+
+  contents.focus();
+  contents.sendInputEvent({ type: 'mouseMove', ...from });
+  contents.sendInputEvent({
+    type: 'mouseDown',
+    ...from,
+    button: 'left',
+    clickCount: 1,
+  });
+
+  for (let step = 1; step <= steps; step += 1) {
+    await new Promise((done) => setTimeout(done, 16));
+    contents.sendInputEvent({
+      type: 'mouseMove',
+      x: Math.round(from.x + (dx * step) / steps),
+      y: from.y,
+      modifiers: ['leftbuttondown'],
+    });
+  }
+
+  contents.sendInputEvent({
+    type: 'mouseUp',
+    x: from.x + dx,
+    y: from.y,
+    button: 'left',
+    clickCount: 1,
+  });
+};
+
+/** Types `text` into the focused element, as an input method inserts it. */
+export const type = async (
+  contents: WebContents,
+  text: string,
+): Promise<void> => {
+  contents.focus();
+  await contents.insertText(text);
+};
+
+/** The visible text of every visible element matching `selector`. */
+export const textsOf = (
+  contents: WebContents,
+  selector: string,
+): Promise<string[]> =>
+  inPage(
+    contents,
+    `deepAll(${JSON.stringify(selector)}).filter(visible).map((e) => e.innerText ?? e.textContent)`,
+  );
 
 /** Presses one key with real keyboard input. */
 export const press = (

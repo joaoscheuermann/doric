@@ -1,10 +1,17 @@
 // The host side of a workspace window: the Projects and Threads of the
-// prototype (Figma `99:8035`, `85:7520`), answered over the fake host for
-// what the real core, layout and resources bundles call
-// (`runtime/v1`, `runtime.threads/v1`, `resources/v1`).
+// prototype (Figma `99:8035`, `99:8508`, `85:7520`), answered over the fake
+// host for what the real core, layout, resources, chat, files and git bundles
+// call (`runtime/v1`, `runtime.threads/v1`, `resources/v1`, and through
+// `workspace-content` `files/v1` and `git.commands/v1`).
 
-import type { FixtureBundle } from '../../../doric/tests/support/distribution';
 import type { FakeHost } from './harness';
+import {
+  conversation,
+  CWD,
+  type GitCalls,
+  serveSandbox,
+  type ThreadEventRow,
+} from './workspace-content';
 
 /** A fixed moment, so every record reads the same on every run. */
 const EPOCH = '2026-01-05T09:00:00.000Z';
@@ -25,6 +32,8 @@ export interface WorkspaceProject {
 export interface WorkspaceThread {
   readonly id: string;
   readonly projectId: string;
+  readonly parentThreadId?: string;
+  readonly origin?: 'user' | 'agent';
   readonly name: string;
   readonly state: 'ready';
   readonly lastSequence: number;
@@ -53,15 +62,19 @@ const thread = (
   projectId: string,
   name: string,
   minutesAgo: number,
+  more: Partial<
+    Pick<WorkspaceThread, 'parentThreadId' | 'origin' | 'lastSequence'>
+  > = {},
 ): WorkspaceThread => ({
   id,
   projectId,
   name,
   state: 'ready',
   lastSequence: 0,
-  cwd: '/workspace/checkout',
+  cwd: CWD,
   createdAt: at(minutesAgo + 60),
   updatedAt: at(minutesAgo),
+  ...more,
 });
 
 /** The Project the Project view shows, with its two prototype tabs. */
@@ -104,12 +117,39 @@ export const PROJECTS: readonly WorkspaceProject[] = [
   ),
 ];
 
-/** The Thread the Project view selects. */
+const PAYMENT_FORM_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+/** What the Threads of the prototype said, by Thread. */
+const LOGS: ReadonlyMap<string, readonly ThreadEventRow[]> = new Map(
+  [PAYMENT_FORM_ID, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'].map((threadId) => [
+    threadId,
+    conversation({ projectId: CHECKOUT.id, threadId, at: at(5) }),
+  ]),
+);
+
+const logOf = (threadId: string): readonly ThreadEventRow[] =>
+  LOGS.get(threadId) ?? [];
+
+/** The Thread the Project view selects, with the prototype's conversation. */
 export const PAYMENT_FORM = thread(
-  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  PAYMENT_FORM_ID,
   CHECKOUT.id,
   'Build the payment form',
   5,
+  { lastSequence: logOf(PAYMENT_FORM_ID).length },
+);
+
+/** A sub-thread of the selected Thread: it opens in the viewer (`99:8508`). */
+export const VALIDATE_CARDS = thread(
+  'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  CHECKOUT.id,
+  'Validate card numbers',
+  4,
+  {
+    parentThreadId: PAYMENT_FORM_ID,
+    origin: 'user',
+    lastSequence: logOf('cccccccc-cccc-4ccc-8ccc-cccccccccccc').length,
+  },
 );
 
 export const THREADS: readonly WorkspaceThread[] = [
@@ -120,44 +160,14 @@ export const THREADS: readonly WorkspaceThread[] = [
     90,
   ),
   PAYMENT_FORM,
+  VALIDATE_CARDS,
 ];
 
 /** The Project view of Checkout redesign. */
 export const PROJECT_PATH = `/projects/${CHECKOUT.id}`;
 
-/**
- * Checkout redesign with its Thread open (`99:8035`). The chat bundle
- * registers this route; without it the outlet has nothing to show there.
- */
+/** Checkout redesign with its Thread open (`99:8035`): the chat bundle's route. */
 export const THREAD_PATH = `${PROJECT_PATH}/threads/${PAYMENT_FORM.id}`;
-
-/**
- * A stand-in for the chat bundle's Thread route (2f-2 brings the real one):
- * `THREAD_PATH` under the workspace, drawing an empty conversation. The
- * layout opens a Project on its latest Thread, so without this route a
- * Project view has nothing registered to show.
- */
-export const threadRouteFixture: FixtureBundle = {
-  id: 'thread-route',
-  requires: ['ui/v1@^1.0.0', 'navigation/v1@^1.0.0'],
-  files: {
-    'client/index.js': `import { NavigationV1 } from 'bundle/contracts';
-export function activate({ services }) {
-  const route = services.use(NavigationV1).register({
-    path: '/projects/:projectId/threads/:threadId',
-    parent: '/',
-    create: () => {
-      const view = document.createElement('div');
-      view.dataset.slot = 'thread-route-fixture';
-      view.style.cssText = 'display: flex; flex: 1; min-height: 0';
-      return view;
-    },
-  });
-  return () => route.dispose();
-}
-`,
-  },
-};
 
 /** A tuple's first item, or the value: the argument a wire message carries. */
 const first = (input: unknown): Record<string, unknown> => {
@@ -170,8 +180,11 @@ const first = (input: unknown): Record<string, unknown> => {
 
 const GIB = 1024 ** 3;
 
-/** Serves the workspace's Projects, Threads and resource readings. */
-export const serveWorkspace = (host: FakeHost): void => {
+/**
+ * Serves the workspace's Projects, Threads and their conversations, resource
+ * readings, files and Git state; answers the `git.commands/v1` calls made.
+ */
+export const serveWorkspace = (host: FakeHost): GitCalls => {
   const threadsOf = (projectId: unknown) =>
     THREADS.filter((item) => item.projectId === projectId);
 
@@ -209,6 +222,20 @@ export const serveWorkspace = (host: FakeHost): void => {
 
     return THREADS.find((item) => item.id === id);
   });
+  host.stream('runtime.threads/v1', 'watchThread', (input, push) => {
+    const { threadId, afterSequence } = first(input);
+    const found = THREADS.find((item) => item.id === threadId);
+    const from = typeof afterSequence === 'number' ? afterSequence : 0;
+
+    push({
+      kind: 'snapshot',
+      threadId,
+      projectId: found?.projectId ?? null,
+      project: PROJECTS.find((item) => item.id === found?.projectId) ?? null,
+      thread: found ?? null,
+      events: logOf(String(threadId)).filter((row) => row.sequence > from),
+    });
+  });
   host.serve('resources/v1', 'host', () => ({
     at: EPOCH,
     cpuCount: 8,
@@ -229,4 +256,6 @@ export const serveWorkspace = (host: FakeHost): void => {
       memoryLimitBytes: 4 * GIB,
     },
   }));
+
+  return serveSandbox(host);
 };

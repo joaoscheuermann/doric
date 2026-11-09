@@ -1,9 +1,11 @@
 // The shell's view of the app in a real window. T-2.10: the window's
 // description carries the version main reads with `app.getVersion()`.
 // T-2.2 and T-2.4: the real renderer shell with the real core, layout and
-// resources bundles draws the account status. With
-// `DORIC_SHELL_CAPTURES=<dir>`, the prototype states are captured at
-// 1920×1080 in dark and light for the §2.9 shell check.
+// resources bundles draws the account status. T-2.5: with the real git, files
+// and chat bundles, the working directory and branch sit in the Files column
+// footer and the branch picker switches. With `DORIC_SHELL_CAPTURES=<dir>`,
+// the prototype states are captured at 1920×1080 in dark and light for the
+// §2.9 shell check.
 
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
@@ -28,22 +30,28 @@ import {
   until,
 } from './support/harness';
 import {
-  captureState,
   click,
+  clickOn,
   focused,
   go,
   inPage,
   painted,
   press,
+  textsOf,
+  type,
   waitFor,
+  waitForSelector,
 } from './support/shell-page';
+import { capturePrototypeStates } from './support/prototype-states';
 import {
-  BILLING,
-  CHECKOUT,
-  DOCS,
+  BRANCH,
+  CWD,
+  type GitCalls,
+} from './support/workspace-content';
+import {
+  PAYMENT_FORM,
   serveWorkspace,
   THREAD_PATH,
-  threadRouteFixture,
 } from './support/workspace-host';
 
 describe('the shell in an app window', () => {
@@ -79,6 +87,7 @@ describe('the real shell over the workspace bundles', () => {
   let window: BrowserWindow;
   let contents: WebContents;
   let themeSource: typeof nativeTheme.themeSource;
+  let git: GitCalls;
 
   const consoleLines: string[] = [];
   const recordConsole = (_event: unknown, created: WebContents) =>
@@ -96,10 +105,8 @@ describe('the real shell over the workspace bundles', () => {
   before(async () => {
     app.on('web-contents-created', recordConsole);
     themeSource = nativeTheme.themeSource;
-    host = await startFakeHost(
-      await workspaceDistribution({ bundles: [threadRouteFixture] }),
-    );
-    serveWorkspace(host);
+    host = await startFakeHost(await workspaceDistribution());
+    git = serveWorkspace(host);
     booted = await bootPlatform({ host, shell: 'renderer' });
     window = await booted.window('workspace');
     contents = window.webContents;
@@ -217,6 +224,108 @@ describe('the real shell over the workspace bundles', () => {
     );
   });
 
+  test('the working directory and branch sit in the Files footer, and the branch picker switches (T-2.5)', async () => {
+    const filesFooter = '[data-slot="workspace-files-footer"]';
+    const conversationFooter = '[data-slot="workspace-footer"]';
+    const summary = 'Working directory and branch';
+    const option = (branch: string) =>
+      `[role="option"][data-value=${JSON.stringify(branch)}]`;
+
+    await go(contents, THREAD_PATH);
+    await waitFor(contents, summary, 'button', 20_000, filesFooter).catch(
+      async (error: unknown) => {
+        console.log(await diagnose());
+        throw error;
+      },
+    );
+    await until(
+      async () =>
+        (await textsOf(contents, filesFooter)).join('\n').includes(BRANCH)
+          ? true
+          : undefined,
+      'the branch in the Files footer',
+    );
+
+    const files = (await textsOf(contents, filesFooter)).join('\n');
+    const conversation = (await textsOf(contents, conversationFooter)).join(
+      '\n',
+    );
+
+    assert.ok(files.includes(CWD), `The Files footer reads: ${files}`);
+    assert.ok(files.includes(BRANCH), `The Files footer reads: ${files}`);
+    assert.ok(
+      !conversation.includes(CWD) && !conversation.includes(BRANCH),
+      `The conversation footer reads: ${conversation}`,
+    );
+    assert.equal(
+      await inPage<number>(
+        contents,
+        `deepAll(${JSON.stringify(`${conversationFooter} [aria-label="${summary}"]`)}).length`,
+      ),
+      0,
+    );
+
+    // The summary, then its branch picker, then a search that keeps one branch.
+    await click(contents, summary, 'button', filesFooter);
+    await click(contents, 'Select branch');
+    await waitForSelector(contents, 'input[aria-label="Search branches"]');
+    await waitForSelector(contents, option('main'));
+    await type(contents, 'apple');
+    await until(
+      async () =>
+        (await textsOf(contents, '[role="option"]')).length === 1
+          ? true
+          : undefined,
+      'the search to keep one branch',
+      5_000,
+    ).catch(() => undefined);
+
+    const shown = await inPage<string[]>(
+      contents,
+      `deepAll('[role="option"]').filter(visible).map((o) => o.dataset.value)`,
+    );
+
+    assert.deepEqual(shown, ['feat/apple-pay']);
+
+    await clickOn(contents, option('feat/apple-pay'));
+    await until(
+      async () => (git.switches.length > 0 ? true : undefined),
+      'the branch switch',
+    );
+    assert.deepEqual(git.switches, [
+      { threadId: PAYMENT_FORM.id, branch: 'feat/apple-pay', cwd: CWD },
+    ]);
+    await until(
+      async () =>
+        (await textsOf(contents, filesFooter))
+          .join('\n')
+          .includes('feat/apple-pay')
+          ? true
+          : undefined,
+      'the switched branch in the Files footer',
+    );
+
+    // Back to the prototype's branch for the captures: the switch closed the
+    // branch picker, and the summary stays open over the footer.
+    await painted(contents);
+    if (
+      !(await inPage<boolean>(
+        contents,
+        `deepAll('button[aria-label="Select branch"]').some(visible)`,
+      ))
+    ) {
+      await click(contents, summary, 'button', filesFooter);
+    }
+    await click(contents, 'Select branch');
+    await clickOn(contents, option(BRANCH));
+    await until(
+      async () => (git.switches.length > 1 ? true : undefined),
+      'the switch back',
+    );
+    press(contents, 'Escape');
+    press(contents, 'Escape');
+  });
+
   const dir = process.env.DORIC_SHELL_CAPTURES;
 
   test('captures the prototype states at 1920×1080 in dark and light (§2.9)', {
@@ -230,16 +339,6 @@ describe('the real shell over the workspace bundles', () => {
     }, 'the 1920×1080 content size');
 
     const written: string[] = [];
-    const at = async (path: string) => {
-      await until(
-        async () =>
-          (await page<string>(contents, 'location.pathname')) === path
-            ? true
-            : undefined,
-        `the window at ${path}`,
-      );
-      await painted(contents, 500);
-    };
 
     for (const theme of ['dark', 'light'] as const) {
       nativeTheme.themeSource = theme;
@@ -254,80 +353,19 @@ describe('the real shell over the workspace bundles', () => {
             : undefined,
         `the ${theme} theme`,
       );
-
-      // The Project view (99:8035) with its three Project tabs and its
-      // Thread open; the conversation is empty until the chat bundle (2f-2).
-      for (const path of [
-        THREAD_PATH,
-        `/projects/${DOCS.id}`,
-        `/projects/${BILLING.id}`,
-        THREAD_PATH,
-      ]) {
-        await go(contents, path);
-        await painted(contents, 100);
-      }
-      await waitFor(contents, CHECKOUT.name)
-        .then(() => waitFor(contents, BILLING.name))
-        .catch(async (error: unknown) => {
-          console.log(await diagnose());
-          throw error;
-        });
-      const shots = [
-        await captureState({
+      written.push(
+        ...(await capturePrototypeStates({
           booted,
           window,
           dir: dir as string,
-          node: '99:8035',
-          state:
-            'Project / Checkout redesign · Thread (empty conversation: no chat bundle)',
           theme,
-        }),
-      ];
-
-      // The new tab's Recent Dashboard (85:7726), from the tab bar's "+".
-      // (From /projects the same "+" shows the All projects form: the
-      // outlet recreates the workspace for the `/` route and the new-tab
-      // state is lost; see the 2f-1 report.)
-      await click(
-        contents,
-        'New project',
-        'button',
-        '[aria-label="Workspace tabs"]',
+          diagnose,
+        })),
       );
-      await at('/');
-      shots.push(
-        await captureState({
-          booted,
-          window,
-          dir: dir as string,
-          node: '85:7726',
-          state: 'Home / Dashboard · Recent (new tab)',
-          theme,
-        }),
-      );
-
-      // The Dashboard of every Project (85:7520), from the Project view's
-      // sidebar header.
-      await go(contents, THREAD_PATH);
-      await click(contents, 'Dashboard');
-      await at('/projects');
-      shots.push(
-        await captureState({
-          booted,
-          window,
-          dir: dir as string,
-          node: '85:7520',
-          state: 'Home / Dashboard · All projects',
-          theme,
-        }),
-      );
-
-      for (const shot of shots) {
-        written.push(shot.png, shot.json);
-      }
     }
 
     console.log(`# shell captures:\n#   ${written.join('\n#   ')}`);
-    assert.equal(written.length, 12);
+    // Five states, a PNG and its JSON rows each, in two themes.
+    assert.equal(written.length, 20);
   });
 });
