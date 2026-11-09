@@ -629,10 +629,10 @@ describe('splash layout (§4.5)', () => {
     }
   });
 
-  test('every state shows its status, details and buttons by accessible name, with the wordmark, the GitHub link and one art', async () => {
+  /** T-4.5.1 in every state of `STATES`, captured dark and light into `dir`. */
+  const everyState = async (dir: string | undefined) => {
     const host = await startFakeHost(await coreDistribution());
     const booted = await bootPlatform({ host, argv: ['--recovery'] });
-    const dir = process.env.DORIC_SHELL_CAPTURES;
     const themeSource = nativeTheme.themeSource;
 
     try {
@@ -694,6 +694,17 @@ describe('splash layout (§4.5)', () => {
       await booted.dispose();
       await host.close();
     }
+  };
+
+  test('every state shows its status, details and buttons by accessible name, with the wordmark, the GitHub link and one art', async () => {
+    const dir = process.env.DORIC_SHELL_CAPTURES;
+
+    // The 1:1 captures show the shaded art in every state (§4.5, G15): the
+    // shader and its photograph depend on the GPU and on chance.
+    await withSplashArt(
+      dir === undefined ? process.env.DORIC_SPLASH_ART : 'shaded',
+      () => everyState(dir),
+    );
   });
 
   test('the GitHub link asks main to open the repository and leaves the splash where it is', async () => {
@@ -767,6 +778,7 @@ describe('splash art (§4.5, T-4.5.7)', () => {
     await withSplashArt(undefined, async () => {
       const host = await startFakeHost(await coreDistribution());
       const booted = await bootPlatform({ host, argv: ['--recovery'] });
+      const themeSource = nativeTheme.themeSource;
 
       try {
         const contents = await splashContents(booted);
@@ -777,7 +789,30 @@ describe('splash art (§4.5, T-4.5.7)', () => {
 
         // Without WebGPU (Xvfb here, G15) this is the shaded image.
         t.diagnostic(`art: ${shown}`);
+
+        const dir = process.env.DORIC_SHELL_CAPTURES;
+
+        // The shader capture of the 1:1 check (G15): on the reference Mac,
+        // `splash-art-shader-M1mNrZ3t7bI-<theme>` once that photograph shows.
+        if (dir !== undefined) {
+          await until(
+            async () =>
+              (await buttons(contents)).includes('Retry') || undefined,
+            'the recovery state',
+          );
+
+          for (const theme of ['dark', 'light'] as const) {
+            nativeTheme.themeSource = theme;
+            await captureSplash({
+              booted,
+              dir,
+              name: `art-${shown.replace(':', '-')}`,
+              theme,
+            });
+          }
+        }
       } finally {
+        nativeTheme.themeSource = themeSource;
         await booted.dispose();
         await host.close();
       }
