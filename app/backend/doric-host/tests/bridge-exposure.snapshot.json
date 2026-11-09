@@ -12,11 +12,18 @@
       "watch"
     ],
     "doric.diagnostics/v1": ["report"],
-    "files/v1": ["content", "directory", "tree"],
+    "files/v1": [
+      "content",
+      "createDirectory",
+      "createFile",
+      "directory",
+      "tree"
+    ],
     "git.commands/v1": [
       "branches",
       "changes",
       "diff",
+      "discard",
       "fileDiff",
       "status",
       "switchBranch"
