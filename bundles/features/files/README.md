@@ -90,8 +90,22 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   `onSandboxActivityHook`), when the selected Project or Thread changes, on
   window focus, and every 15 s while the window is visible and connected.
 - `files.open-file/v1` opens a file as a workspace tab (`files-file-view`).
+  The tab's context menu holds "Reveal in Files" (`layout.tabs/v1@1.2.0`
+  `menu`, so the bundle requires `layout.tabs/v1@^1.2.0`): it opens the
+  file's ancestor directories under the tree's root, shows the Files panel and
+  selects the tab, so the tree selects the file's row. A file outside the root
+  only shows the panel.
 - The Files view (`files-tree`) is a `layout.panel` region item, selected from
   the workspace's tab bar; `files-toggle` is the panel toggle.
+- A row's context menu in the Files view: on a file row, "Copy relative path"
+  copies the path relative to the tree's root (the Thread's working
+  directory); on a folder row, "New file" and "New folder" open the folder
+  and show an inline name row as its first child. Enter sends the trimmed
+  name to `createFile` or `createDirectory`; Escape, a blur or an empty name
+  cancels. A created entry closes the row and refreshes the Project
+  (`files.refresh/v1`); any other answer shows its reason under the row,
+  which keeps the typed name. On an app whose `FileTree` draws no row menus
+  these entries are absent and the view works as before.
 
 ## Change the bundle
 
