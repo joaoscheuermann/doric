@@ -20,7 +20,6 @@ import {
 import type { SidebarModel } from '../../src/client/components/organisms/project-sidebar.js';
 import { ProjectSidebar } from '../../src/client/components/organisms/project-sidebar.js';
 import { ProjectTabBar } from '../../src/client/components/organisms/project-tabs.js';
-import { WorkspaceGlobalFooter } from '../../src/client/components/organisms/workspace-footer.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
@@ -79,73 +78,66 @@ export function WorkspaceShell({
   const viewer = tabs.items.length > 0;
 
   return (
-    <>
-      <SidebarProvider
-        style={panelWidth}
-        className="min-h-0 flex-1 flex-col overflow-hidden"
+    <SidebarProvider
+      style={panelWidth}
+      className="min-h-0 flex-1 flex-col overflow-hidden"
+    >
+      <Tabs
+        value={tabs.selected ?? ''}
+        onValueChange={(id) => workspaceTabsStore.getState().select(owner, id)}
+        className="min-h-0 flex-1 gap-0"
       >
-        <Tabs
-          value={tabs.selected ?? ''}
-          onValueChange={(id) =>
-            workspaceTabsStore.getState().select(owner, id)
+        <WorkspaceLayout
+          header={
+            <ProjectTabBar
+              state={projectTabsOf([checkout, docs, billing])}
+              path={path}
+              projects={[checkout, docs, billing]}
+              navigate={(path) => console.info('Story navigate', path)}
+              close={(id) => console.info('Story close tab', id)}
+              closeMany={(ids) => console.info('Story close tabs', ids)}
+              move={(from, to) => console.info('Story move tab', from, to)}
+              onNewProject={workspaceActions.beginProject}
+              rename={(project, name) =>
+                workspaceActions.rename(
+                  { kind: 'project', value: project },
+                  name,
+                )
+              }
+            />
           }
-          className="min-h-0 flex-1 gap-0"
-        >
-          <WorkspaceLayout
-            header={
-              <ProjectTabBar
-                state={projectTabsOf([checkout, docs, billing])}
-                path={path}
-                projects={[checkout, docs, billing]}
-                navigate={(path) => console.info('Story navigate', path)}
-                close={(id) => console.info('Story close tab', id)}
-                closeMany={(ids) => console.info('Story close tabs', ids)}
-                move={(from, to) => console.info('Story move tab', from, to)}
-                onNewProject={workspaceActions.beginProject}
-                rename={(project, name) =>
-                  workspaceActions.rename(
-                    { kind: 'project', value: project },
-                    name,
-                  )
-                }
+          viewerTabs={
+            viewer ? (
+              <WorkspaceTabBar state={tabs} threadId={owner} />
+            ) : undefined
+          }
+          headerActions={
+            <>
+              {region('layout.header')}
+              <ProjectPanelTabs
+                active={active}
+                onActiveChange={(id) => {
+                  setActive(id);
+                  setOpen(true);
+                }}
+                items={items}
               />
-            }
-            viewerTabs={
-              viewer ? (
-                <WorkspaceTabBar state={tabs} threadId={owner} />
-              ) : undefined
-            }
-            headerActions={
-              <>
-                {region('layout.header')}
-                <ProjectPanelTabs
-                  active={active}
-                  onActiveChange={(id) => {
-                    setActive(id);
-                    setOpen(true);
-                  }}
-                  items={items}
-                />
-              </>
-            }
-            files={
-              panel ? <ProjectPanel active={active} items={items} /> : undefined
-            }
-            filesOpen={panel && open}
-            fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
-            onFilesOpenChange={setOpen}
-            sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
-          >
-            <SidebarInset className="min-h-0">
-              {children}
-              <ContentFooter />
-            </SidebarInset>
-          </WorkspaceLayout>
-        </Tabs>
-      </SidebarProvider>
-      <WorkspaceGlobalFooter
-        onOpenSettings={() => console.info('Story: open settings')}
-      />
-    </>
+            </>
+          }
+          files={
+            panel ? <ProjectPanel active={active} items={items} /> : undefined
+          }
+          filesOpen={panel && open}
+          fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
+          onFilesOpenChange={setOpen}
+          sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
+        >
+          <SidebarInset className="min-h-0">
+            {children}
+            <ContentFooter />
+          </SidebarInset>
+        </WorkspaceLayout>
+      </Tabs>
+    </SidebarProvider>
   );
 }

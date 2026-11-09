@@ -10,8 +10,11 @@ import type { CSSProperties } from 'react';
 export interface ElementInfo {
   readonly label: string;
   readonly owner: string;
-  /** `inline` sits in a bar, `row` in the sidebar tree, `block` fills a slot. */
-  readonly shape: 'inline' | 'row' | 'block';
+  /**
+   * `inline` sits in a bar, `row` in the sidebar tree, `block` fills a slot,
+   * `badge` is a 14×14 round mark with no text (its label is the `title`).
+   */
+  readonly shape: 'inline' | 'row' | 'block' | 'badge';
 }
 
 /** The elements the running app mounts in the layout, by tag. */
@@ -32,9 +35,9 @@ export const elementInfo: Readonly<Record<string, ElementInfo>> = {
     shape: 'inline',
   },
   'resources-monitor': {
-    label: 'CPU 14% · RAM 3.2 GB',
+    label: 'Connection and resources',
     owner: 'resources',
-    shape: 'inline',
+    shape: 'badge',
   },
   'terminal-new-button': {
     label: 'New terminal',
@@ -100,6 +103,13 @@ const shapeStyle: Record<ElementInfo['shape'], CSSProperties> = {
     textAlign: 'center',
     color: 'var(--muted-foreground)',
   },
+  badge: {
+    display: 'block',
+    width: '14px',
+    height: '14px',
+    borderRadius: '9999px',
+    border: '1px dashed var(--border)',
+  },
 };
 
 const caption = (tag: string, info: ElementInfo): string =>
@@ -113,13 +123,15 @@ export const placeholderElement = (
 ): HTMLElement => {
   const info = infoOf(tag);
   const element = document.createElement(
-    info.shape === 'inline' ? 'span' : 'div',
+    info.shape === 'inline' || info.shape === 'badge' ? 'span' : 'div',
   );
   element.dataset.storyPlaceholder = tag;
   Object.assign(element.style, shapeStyle[info.shape]);
   element.title = caption(tag, info);
   const text = label ?? info.label;
-  if (info.shape === 'block') {
+  if (info.shape === 'badge') {
+    element.title = `${text} · ${caption(tag, info)}`;
+  } else if (info.shape === 'block') {
     const title = document.createElement('span');
     title.textContent = text;
     title.style.color = 'var(--foreground)';
@@ -146,6 +158,14 @@ export function Placeholder({
   readonly label?: string;
 }) {
   const info = infoOf(tag);
+  if (info.shape === 'badge') {
+    return (
+      <span
+        style={shapeStyle.badge}
+        title={`${label ?? info.label} · ${caption(tag, info)}`}
+      />
+    );
+  }
   if (info.shape !== 'block') {
     return (
       <span style={shapeStyle[info.shape]} title={caption(tag, info)}>

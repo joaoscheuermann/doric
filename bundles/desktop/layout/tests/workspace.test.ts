@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { connectionLabel } from '../src/client/domain/connection.js';
 import {
   limitName,
   nameError,
@@ -23,13 +22,6 @@ const thread = (id: string, projectId: string): Thread => ({
   cwd: '/workspace/doric',
   createdAt: '',
   updatedAt: '',
-});
-
-describe('connection status', () => {
-  test('presents each preload status as its user-visible label', () => {
-    assert.equal(connectionLabel('connected'), 'Connected');
-    assert.equal(connectionLabel('disconnected'), 'Disconnected');
-  });
 });
 
 describe('workspace state helpers', () => {

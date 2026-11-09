@@ -94,8 +94,7 @@ tab with no Thread or Project selected fails with `unavailable`.
 | `layout.header`         | header actions, after the breadcrumb                                                  | `terminal`'s "New terminal" button                              |
 | `layout.panel`          | the Project panel's views                                                             | `files`, `git`                                                  |
 | `layout.footer`         | the conversation footer                                                               | `settings`' execution picker, `chat`'s composer, `git`, `usage` |
-| `layout.global-footer`  | the window-wide footer                                                                | `resources`                                                     |
-| `layout.account.status` | a 14×14 slot over the account avatar's bottom-right corner, at the header's right end | none yet; `resources`' connection badge in 2c                   |
+| `layout.account.status` | a 14×14 slot over the account avatar's bottom-right corner, at the header's right end | `resources` (the connection badge)                              |
 | `layout.main.bottom`    | a split under the conversation                                                        | shown while an item asks through `layout.workspace/v1`          |
 | `layout.overlay`        | a floating layer over the conversation                                                | items place themselves; the layer never intercepts a pointer    |
 | `layout.dashboard.nav`  | groups of the `/projects` dashboard sidebar, after Projects                           | `settings`' Providers group                                     |

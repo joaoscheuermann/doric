@@ -5,12 +5,16 @@ import { ResourcesV1 } from '../../contracts/index.js';
 import { LayoutWorkspaceV1 } from '../api/peers.js';
 import { createResourcesReads } from '../api/resources.js';
 import { useService, useSubscribed } from '../hooks/use-service.js';
-import { ResourceMonitor } from './resource-monitor.js';
+import { ConnectionBadge } from './connection-badge.js';
 
 /**
- * `<resources-monitor>`: the monitor for the Project the workspace shows,
- * as the layout's footer drew it with `selectedProject?.id`. Without the
- * layout there is no selection, so only the machine control has a reading.
+ * `<resources-monitor>`: the connection badge for the Project the workspace
+ * shows. It reads `layout.workspace/v1` for the selection (`selection()`) and
+ * the connection (`connected()`) through `useSubscribed`, so both follow
+ * `subscribe`.
+ *
+ * Without a `layout.workspace/v1` provider, `useService` answers `undefined`.
+ * The badge then shows Disconnected and polls the machine only (G10).
  */
 export function ResourcesMonitorView({
   services,
@@ -23,6 +27,11 @@ export function ResourcesMonitorView({
     () => workspace?.selection().project?.id,
     undefined,
   );
+  const connected = useSubscribed(
+    workspace,
+    () => workspace?.connected() ?? false,
+    false,
+  );
   const reads = useMemo(
     () =>
       createResourcesReads((id) =>
@@ -33,5 +42,11 @@ export function ResourcesMonitorView({
       ),
     [services],
   );
-  return <ResourceMonitor reads={reads} projectId={projectId} />;
+  return (
+    <ConnectionBadge
+      reads={reads}
+      projectId={projectId}
+      connected={connected}
+    />
+  );
 }

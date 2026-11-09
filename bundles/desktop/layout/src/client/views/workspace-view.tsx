@@ -40,7 +40,6 @@ import {
   type SidebarModel,
 } from '../components/organisms/project-sidebar.js';
 import { ProjectTabBar } from '../components/organisms/project-tabs.js';
-import { WorkspaceGlobalFooter } from '../components/organisms/workspace-footer.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
@@ -193,7 +192,6 @@ function Workspace() {
             projectTabs.navigate(path);
           }}
         />
-        <WorkspaceGlobalFooter onOpenSettings={openSettings} />
         <DeleteDialog
           entity={workspace.deleting}
           pending={workspace.deletingPending}
@@ -311,7 +309,6 @@ function Workspace() {
           }}
         />
       </SidebarProvider>
-      <WorkspaceGlobalFooter onOpenSettings={openSettings} />
     </div>
   );
 }
