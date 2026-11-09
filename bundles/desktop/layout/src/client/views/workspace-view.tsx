@@ -19,6 +19,7 @@ import { TooltipProvider } from 'desktop/ui/tooltip';
 import {
   type CSSProperties,
   createElement,
+  type ReactNode,
   StrictMode,
   useEffect,
   useLayoutEffect,
@@ -40,11 +41,13 @@ import {
   type SidebarModel,
 } from '../components/organisms/project-sidebar.js';
 import { ProjectTabBar } from '../components/organisms/project-tabs.js';
+import { SidebarHeader } from '../components/organisms/sidebar-header.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
 } from '../components/organisms/workspace-tabs.js';
 import { ConversationTerminals } from '../components/templates/conversation-terminals.js';
+import { INSET_CARD } from '../components/templates/inset-card.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
 import { useProjectTabs } from '../hooks/use-project-tabs.js';
@@ -153,17 +156,25 @@ function Workspace() {
       });
   };
 
-  const tabBar = (
+  const openPath = (path: string) => {
+    setNewTab(false);
+    projectTabs.navigate(path);
+    setFocusRequest((count) => count + 1);
+  };
+  const tabBar = ({
+    end,
+    inset,
+  }: {
+    readonly end?: ReactNode;
+    readonly inset?: boolean;
+  }) => (
     <ProjectTabBar
-      trailing={projectTabs.path === '/' || projectTabs.path === '/projects'}
+      actions={end}
+      inset={inset}
       state={projectTabs.state}
       path={projectTabs.path}
       projects={workspace.projects}
-      navigate={(path) => {
-        setNewTab(false);
-        projectTabs.navigate(path);
-        setFocusRequest((count) => count + 1);
-      }}
+      navigate={openPath}
       close={projectTabs.close}
       closeMany={projectTabs.closeMany}
       move={projectTabs.move}
@@ -182,7 +193,7 @@ function Workspace() {
         ref={frame}
         className="flex h-svh min-h-0 flex-col bg-background text-foreground"
       >
-        {tabBar}
+        {tabBar({ inset: true })}
         <Dashboard
           workspace={workspace}
           onOpenSettings={openSettings}
@@ -207,7 +218,7 @@ function Workspace() {
   return (
     <div
       ref={frame}
-      className="flex h-svh min-h-0 flex-col bg-background text-foreground"
+      className="flex h-svh min-h-0 flex-col bg-sidebar text-foreground"
     >
       <SidebarProvider
         style={panelWidth}
@@ -221,22 +232,23 @@ function Workspace() {
           className="min-h-0 flex-1 gap-0"
         >
           <WorkspaceLayout
-            header={tabBar}
+            header={tabBar({
+              end: (
+                <>
+                  <Region name="layout.header" />
+                  <ProjectPanelTabs
+                    active={panelView}
+                    onActiveChange={panel.show}
+                    items={panelItems}
+                  />
+                  <AccountStatus onOpenSettings={openSettings} />
+                </>
+              ),
+            })}
             viewerTabs={
               tabs.items.length > 0 && tabOwner ? (
                 <WorkspaceTabBar state={tabs} threadId={tabOwner} />
               ) : undefined
-            }
-            headerActions={
-              <>
-                <Region name="layout.header" />
-                <ProjectPanelTabs
-                  active={panelView}
-                  onActiveChange={panel.show}
-                  items={panelItems}
-                />
-                <AccountStatus onOpenSettings={openSettings} />
-              </>
             }
             files={<ProjectPanel active={panelView} items={panelItems} />}
             filesOpen={filesOpen}
@@ -246,9 +258,17 @@ function Workspace() {
               )
             }
             onFilesOpenChange={panel.setOpen}
-            sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
+            sidebar={
+              <ProjectSidebar
+                header={
+                  <SidebarHeader onDashboard={() => openPath('/projects')} />
+                }
+                actions={sidebarActions}
+                model={model}
+              />
+            }
           >
-            <SidebarInset className="min-h-0">
+            <SidebarInset className={INSET_CARD}>
               <ConversationTerminals
                 bottom={bottomVisible && <Region name="layout.main.bottom" />}
               >
@@ -282,7 +302,7 @@ function Workspace() {
               </ConversationTerminals>
               <footer
                 data-slot="workspace-footer"
-                className="flex chrome-bar shrink-0 items-center justify-end gap-1 px-2 text-[11px] font-light text-muted-foreground"
+                className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal text-muted-foreground"
               >
                 <Region name="layout.footer" />
               </footer>

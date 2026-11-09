@@ -164,7 +164,7 @@ export const ProjectWithoutThreads = {
   ),
 };
 
-/** The Dashboard tab: every Project, with its activity. */
+/** The Dashboard: every Project, with its activity. */
 export const Dashboard = {
   render: () => (
     <LayoutHost fixture={fixtures.dashboard}>

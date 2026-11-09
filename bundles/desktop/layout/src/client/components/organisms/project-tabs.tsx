@@ -18,7 +18,6 @@ import {
   useTabStrip,
 } from 'desktop/ui/panels';
 import { cn } from 'desktop/ui/utils';
-import { HouseIcon } from 'lucide-react';
 import { type ReactNode, useLayoutEffect, useState } from 'react';
 
 import type { ProjectTabs } from '../../domain/project-tabs.js';
@@ -28,24 +27,6 @@ import { EditableName } from '../molecules/editable-name.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
 
 const tab = cn('group', compactTabClassName);
-
-/**
- * The Dashboard tab's mark: lucide's house, drawn as lucide draws it.
- *
- * Its color is solid on purpose: the paper grays are translucent, and this
- * glyph's strokes overlap at the door, so a translucent color doubles up into
- * patches instead of a clean line. `--muted-foreground` and `--foreground` are
- * the solid pair of the tab's idle and active grays.
- */
-function HomeTabIcon() {
-  return (
-    <HouseIcon
-      aria-hidden="true"
-      className="-ml-[1px] shrink-0 text-muted-foreground group-data-[active=true]:text-foreground"
-      size={15}
-    />
-  );
-}
 
 function CloseTabIcon() {
   return (
@@ -247,9 +228,16 @@ function ProjectTab({
   );
 }
 
+/**
+ * The Project tab bar (§2.3): one tab per open Project, the "New project"
+ * button, and `actions` at the right end. It is 40 px high and a window drag
+ * region, apart from its controls. It is transparent on the canvas and has no
+ * bottom border. It draws no Dashboard tab: the sidebar header's Dashboard
+ * button replaces it (§2.2). It keeps no right-edge reserve (G2).
+ */
 export function ProjectTabBar({
   actions,
-  trailing = true,
+  inset = false,
   state,
   path,
   projects,
@@ -260,12 +248,25 @@ export function ProjectTabBar({
   onNewProject,
   rename,
 }: {
+  /**
+   * What the bar draws at its right end, after "New project", outside the drag
+   * region, in `div[data-slot="project-tab-actions"]`. The workspace view
+   * passes the `layout.header` region, followed by the controls of the Files
+   * column while that column is collapsed (S27). Absent: nothing is drawn.
+   */
   readonly actions?: ReactNode;
-  /** Whether this strip reaches the window's trailing native controls. */
-  readonly trailing?: boolean;
+  /**
+   * Whether the bar starts at the window's left edge, where macOS draws its
+   * window controls. When true, it keeps the `--doric-safe-left` padding so the
+   * first tab clears those controls (G3). When false (the default), it starts
+   * at the edge of the column before it.
+   */
+  readonly inset?: boolean;
   readonly state: ProjectTabs;
+  /** The window path. The tab whose Project it names is selected; `/` and `/projects` select none. */
   readonly path: string;
   readonly projects: readonly Project[];
+  /** Opens a Project tab's remembered path. */
   readonly navigate: (path: string) => void;
   readonly close: (id: string) => void;
   readonly closeMany: (ids: readonly string[]) => void;
@@ -279,24 +280,8 @@ export function ProjectTabBar({
   return (
     <nav
       aria-label="Workspace tabs"
-      className={`flex h-[40px] min-h-[40px] min-w-0 items-center gap-[4px] border-b border-[var(--paper-separator)] bg-[var(--paper-panel)] pr-[8px] [-webkit-app-region:drag] ${mac ? 'pl-[var(--doric-safe-left,80px)]' : trailing ? 'pl-[8px] pr-[140px]' : 'pl-[8px]'}`}
+      className={`flex h-[40px] min-h-[40px] min-w-0 items-center gap-[4px] pr-[8px] [-webkit-app-region:drag] ${inset ? (mac ? 'pl-[var(--doric-safe-left,80px)]' : 'pl-[8px]') : 'pl-0'}`}
     >
-      <button
-        type="button"
-        className={`${tab} shrink-0 focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-[var(--paper-focus)]`}
-        data-active={selected === undefined ? 'true' : undefined}
-        // The tab draws its icon alone; the name it lost stays its label.
-        aria-label="Dashboard"
-        title="Dashboard"
-        aria-current={selected === undefined ? 'page' : undefined}
-        onClick={() => navigate('/projects')}
-      >
-        <HomeTabIcon />
-      </button>
-      <div
-        aria-hidden="true"
-        className="h-[18px] w-px shrink-0 border-r border-[var(--paper-separator)]"
-      />
       {state.order.length > 0 && (
         <DndContext
           sensors={events.sensors}
@@ -352,7 +337,10 @@ export function ProjectTabBar({
         <NewTabIcon />
       </button>
       {actions && (
-        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 pl-3 [-webkit-app-region:no-drag]">
+        <div
+          data-slot="project-tab-actions"
+          className="ml-auto flex min-w-0 shrink-0 items-center gap-2 pl-3 [-webkit-app-region:no-drag]"
+        >
           {actions}
         </div>
       )}

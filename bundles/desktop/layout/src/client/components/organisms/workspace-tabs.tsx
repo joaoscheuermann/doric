@@ -61,7 +61,7 @@ export function WorkspaceTabs({ state }: { readonly state: TabsState }) {
   return (
     <section
       aria-label="Files, changes, terminals and threads"
-      className="flex h-full min-h-0 flex-col bg-sidebar"
+      className="flex h-full min-h-0 flex-col"
     >
       {/* Keep panels in stable DOM order when their triggers are moved. */}
       {state.items
@@ -103,7 +103,8 @@ function tabIcon(tab: Extract<WorkspaceTab, { readonly kind: 'element' }>) {
       return <TerminalIcon />;
     case 'thread': {
       const thread = threadOfTab(tab);
-      const kind: ThreadKind = thread === undefined ? 'main' : threadKind(thread);
+      const kind: ThreadKind =
+        thread === undefined ? 'main' : threadKind(thread);
       return <ThreadKindIcon kind={kind} />;
     }
     default:

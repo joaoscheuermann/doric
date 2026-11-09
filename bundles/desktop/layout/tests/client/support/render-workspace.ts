@@ -14,6 +14,12 @@ export interface RenderedWorkspace extends FakeHost {
   /** The element the view renders into, attached to `document.body`. */
   readonly root: HTMLElement;
   /**
+   * The errors React could not recover from since the view rendered, in
+   * order: such an error unmounts the view and leaves `root` empty. Each call
+   * returns a new array.
+   */
+  errors(): readonly unknown[];
+  /**
    * Unmounts the view, removes `root` and runs the layout's deactivation
    * (`bindLayout`'s unbind). Idempotent. Call it before the next
    * `renderWorkspace`, at the latest in the test's `after`/`finally`.
@@ -65,6 +71,23 @@ const installWindow = (): Window => {
   >;
   if (typeof element.getAnimations !== 'function')
     element.getAnimations = (): unknown[] => [];
+  // happy-dom lays nothing out, so every `offsetLeft` is 0. react-resizable-
+  // panels orders a horizontal group's panels and separators by
+  // `element.offsetLeft`, then `offsetWidth`
+  // (`react-resizable-panels/dist/react-resizable-panels.js:325-333`); with
+  // all ties a panel mounted between siblings sorts last, unlike in a browser.
+  // Stand in a row in document order: 100px per position among the parent's
+  // element children. `offsetWidth` stays happy-dom's, as the library also
+  // sizes panels from it.
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetLeft', {
+    configurable: true,
+    get(this: HTMLElement): number {
+      const siblings = this.parentElement?.children;
+      return siblings === undefined
+        ? 0
+        : Array.prototype.indexOf.call(siblings, this) * 100;
+    },
+  });
   for (const name of globalNames(window)) {
     const value = (window as unknown as Record<string, unknown>)[name];
     Object.defineProperty(globalThis, name, {
@@ -147,6 +170,7 @@ export const renderWorkspace = async (
     regionItems: bound.regionItems,
     executed: bound.executed,
     root,
+    errors: () => [...errors],
     cleanup,
   };
   current = rendered;

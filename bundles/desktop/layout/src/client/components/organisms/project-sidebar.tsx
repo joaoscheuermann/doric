@@ -79,6 +79,12 @@ export type SidebarActions = {
 
 type ProjectSidebarProps = {
   readonly actions: SidebarActions;
+  /**
+   * The column's 40 px header (`SidebarHeader`), drawn above the panes as the
+   * first child of the `<Sidebar collapsible="none">` (`:291`), outside the
+   * panes' vertical resizable group. Absent: the panes start at the top.
+   */
+  readonly header?: ReactNode;
   readonly model: SidebarModel;
 };
 
@@ -184,7 +190,11 @@ function PanePanel({
   );
 }
 
-export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
+export function ProjectSidebar({
+  actions,
+  header,
+  model,
+}: ProjectSidebarProps) {
   // Threads start open; selection never closes another branch.
   const [collapsedThreads, setCollapsedThreads] = useState<ReadonlySet<string>>(
     new Set(),
@@ -289,6 +299,7 @@ export function ProjectSidebar({ actions, model }: ProjectSidebarProps) {
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden font-normal">
+      {header}
       <SidebarContent className="overflow-hidden p-0">
         <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
           {panes.map((pane, index) => (

@@ -20,10 +20,12 @@ import {
 import type { SidebarModel } from '../../src/client/components/organisms/project-sidebar.js';
 import { ProjectSidebar } from '../../src/client/components/organisms/project-sidebar.js';
 import { ProjectTabBar } from '../../src/client/components/organisms/project-tabs.js';
+import { SidebarHeader } from '../../src/client/components/organisms/sidebar-header.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
 } from '../../src/client/components/organisms/workspace-tabs.js';
+import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import { WorkspaceLayout } from '../../src/client/components/templates/workspace-layout.js';
 import { useRegionItems } from '../../src/client/hooks/use-region-items.js';
 import { useWorkspaceTabs } from '../../src/client/hooks/use-workspace-tabs.js';
@@ -45,7 +47,7 @@ export function ContentFooter() {
   return (
     <footer
       data-slot="workspace-footer"
-      className="flex chrome-bar shrink-0 items-center justify-end gap-1 px-2 text-[11px] font-light text-muted-foreground"
+      className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal text-muted-foreground"
     >
       {region('layout.footer')}
     </footer>
@@ -90,6 +92,19 @@ export function WorkspaceShell({
         <WorkspaceLayout
           header={
             <ProjectTabBar
+              actions={
+                <>
+                  {region('layout.header')}
+                  <ProjectPanelTabs
+                    active={active}
+                    onActiveChange={(id) => {
+                      setActive(id);
+                      setOpen(true);
+                    }}
+                    items={items}
+                  />
+                </>
+              }
               state={projectTabsOf([checkout, docs, billing])}
               path={path}
               projects={[checkout, docs, billing]}
@@ -111,28 +126,27 @@ export function WorkspaceShell({
               <WorkspaceTabBar state={tabs} threadId={owner} />
             ) : undefined
           }
-          headerActions={
-            <>
-              {region('layout.header')}
-              <ProjectPanelTabs
-                active={active}
-                onActiveChange={(id) => {
-                  setActive(id);
-                  setOpen(true);
-                }}
-                items={items}
-              />
-            </>
-          }
           files={
             panel ? <ProjectPanel active={active} items={items} /> : undefined
           }
           filesOpen={panel && open}
           fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
           onFilesOpenChange={setOpen}
-          sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
+          sidebar={
+            <ProjectSidebar
+              header={
+                <SidebarHeader
+                  onDashboard={() =>
+                    console.info('Story navigate', '/projects')
+                  }
+                />
+              }
+              actions={sidebarActions}
+              model={model}
+            />
+          }
         >
-          <SidebarInset className="min-h-0">
+          <SidebarInset className={INSET_CARD}>
             {children}
             <ContentFooter />
           </SidebarInset>
