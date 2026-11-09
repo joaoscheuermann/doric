@@ -6,6 +6,7 @@
 // and the bundles' contracts.
 
 import type { FakeHost } from './harness';
+import { EXECUTION } from './settings-host';
 
 /** The sandbox mount, the Thread's working directory. */
 export const CWD = '/workspace';
@@ -140,7 +141,9 @@ export interface ThreadEventRow {
 
 /**
  * The conversation of one Thread: the prompt, a thought, a `grep` call and
- * the answer, one finished turn (`scripts/fake-host/seed.mjs`'s shape).
+ * the answer, one finished turn (`scripts/fake-host/seed.mjs`'s shape). The
+ * response names the model that answered (as the runtime's executor records
+ * it), so the agent's mark is that model's icon (`99:8035`'s ✳︎).
  */
 export const conversation = (input: {
   readonly projectId: string;
@@ -158,6 +161,11 @@ export const conversation = (input: {
     },
     { type: 'prompt.started' },
     { type: 'agent.started' },
+    {
+      type: 'response.started',
+      providerId: EXECUTION.providerId,
+      model: EXECUTION.model,
+    },
     { type: 'reasoning.delta', delta: THOUGHT },
     {
       type: 'tool.started',

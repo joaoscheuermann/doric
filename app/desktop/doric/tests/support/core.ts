@@ -21,9 +21,15 @@ export const USAGE_DIST = resolve('bundles/features/usage/dist');
 export const RUNTIME_DIST = resolve('bundles/runtime/runtime/dist');
 /** The real comments bundle: only its manifest, descriptor, schemas and contracts module. */
 export const COMMENTS_DIST = resolve('bundles/features/comments/dist');
-const SETTINGS_DIST = resolve('bundles/desktop/settings/dist');
+/** The real settings bundle: the settings window and the execution picker. */
+export const SETTINGS_DIST = resolve('bundles/desktop/settings/dist');
 /** The real host-config bundle: only its manifest, descriptor and schemas. */
 const HOST_CONFIG_DIST = resolve('bundles/foundation/host-config/dist');
+/**
+ * The real claude-login bundle: only its contracts module, which the settings
+ * client imports (`claude-login/contracts`) for its optional sign-in.
+ */
+const CLAUDE_LOGIN_DIST = resolve('bundles/features/claude-login/dist');
 
 /** The host-only foundation that satisfies the core's backends. */
 export const memoryFoundation: FixtureBundle = {
@@ -280,58 +286,23 @@ export const coreDistribution = async (
   });
 };
 
-/**
- * `settings.config/v1` (client, local) for the git bundle's Versioning
- * section, without the settings window: a draft that never loads, as the
- * contract allows before the settings view published one. The schema is the
- * real settings bundle's.
- */
-const settingsConfigFixture = async (): Promise<FixtureBundle> => ({
-  id: 'settings-config',
-  requires: [],
-  provides: [
-    {
-      id: 'settings.config/v1',
-      environment: 'client',
-      local: true,
-      document: JSON.parse(
-        await readFile(
-          join(SETTINGS_DIST, 'schemas/settings.config/v1.json'),
-          'utf8',
-        ),
-      ),
-    },
-  ],
-  files: {
-    'client/index.js': `import { defineMethod, defineService, disposableSchema, functionSchema, noInput, ref } from 'bundle/contracts';
-import { z } from 'zod';
-export function activate({ services }) {
-  const provided = services.provide(defineService(ref('settings.config/v1'), {
-    draft: defineMethod({ input: noInput, output: z.undefined(), execute: () => undefined }),
-    setDraft: defineMethod({ input: functionSchema(), output: z.void(), execute: () => undefined }),
-    subscribe: defineMethod({ input: functionSchema(), output: disposableSchema, execute: () => ({ dispose: () => undefined }) }),
-  }));
-  return () => provided.dispose();
-}
-`,
-  },
-});
-
 /** The bundles whose host contracts the e2e host answers itself. */
 const HOST_ONLY_DISTS = [RUNTIME_DIST, COMMENTS_DIST, HOST_CONFIG_DIST];
 
 /**
  * The workspace distribution: the real core, layout, resources, git, files,
- * chat and usage, the memory foundation, and host-only cuts of the runtime,
+ * chat, usage and settings, the memory foundation, and host-only cuts of the runtime,
  * comments and host-config bundles that provide the host contracts those
  * bundles `require` and none of them provides (`runtime/v1`,
  * `runtime.threads/v1`, `runtime.lease/v1`, `runtime.workspace/v1`,
  * `runtime.attachments/v1`, `runtime.usage/v1`, `comments/v1`,
  * `host-config/v1`) with their real versions and schemas.
  * The host answers those calls, and the real bundles' own host contracts
- * (`git.commands/v1`, `files/v1`, `usage/v1`; see the e2e `workspace-host`).
- * `settings.config/v1` comes from a fixture. `bundles` adds fixture bundles
- * after them.
+ * (`git.commands/v1`, `files/v1`, `usage/v1`; see the e2e `workspace-host`),
+ * and the core's that the settings bundle calls (`models/v1`, `secrets/v1`,
+ * `tools/v1`). The claude-login bundle comes as its contracts module alone,
+ * providing nothing: the settings client imports it, and its sign-in stays
+ * unavailable. `bundles` adds fixture bundles after them.
  */
 export const workspaceDistribution = async (
   input: { readonly bundles?: readonly FixtureBundle[] } = {},
@@ -347,6 +318,7 @@ export const workspaceDistribution = async (
     await builtBundle(GIT_DIST),
     await builtBundle(CHAT_DIST),
     await builtBundle(USAGE_DIST),
+    await builtBundle(SETTINGS_DIST),
   ];
   const provided = new Set(
     real.flatMap(({ bundle }) => contractsOf(bundle).map((entry) => entry.id)),
@@ -370,7 +342,7 @@ export const workspaceDistribution = async (
   }
 
   return builtDistribution({
-    built: [...real, ...hostOnly],
-    bundles: [await settingsConfigFixture(), ...(input.bundles ?? [])],
+    built: [...real, ...hostOnly, await hostOnlyBundle(CLAUDE_LOGIN_DIST, [])],
+    bundles: [...(input.bundles ?? [])],
   });
 };

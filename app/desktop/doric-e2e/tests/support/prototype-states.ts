@@ -2,7 +2,11 @@
 // over the workspace bundles and captured at the window's size in one theme:
 // `99:8035` (Project view, Thread open), `99:8508` (a sub-thread in the
 // viewer), S27 (Files collapsed, viewer open), `85:7726` (the new tab's Recent
-// Dashboard) and `85:7520` (the Dashboard of every Project).
+// Dashboard) and `85:7520` (the Dashboard of every Project). Phase 3 adds the
+// bundles' own surfaces: both usage popovers (`usage-context`, `usage-cost`),
+// the agent thread in the viewer (`viewer-agent`), a file in the viewer
+// (`file-viewer`), the Changes tab (`changes`) and a diff (`git-diff`), and
+// the settings window on its Providers section (`settings-window`).
 
 import type { BrowserWindow, WebContents } from 'electron';
 
@@ -14,6 +18,7 @@ import {
   go,
   inPage,
   painted,
+  press,
   waitFor,
   waitForSelector,
 } from './shell-page';
@@ -25,6 +30,7 @@ import {
   FROZEN_NOW,
   PAYMENT_FORM,
   THREAD_PATH,
+  VALIDATE_CARDS,
 } from './workspace-host';
 
 /** The directories the prototype's Files column shows open. */
@@ -45,6 +51,17 @@ const VIEWER = 'section[aria-label="Viewer"]';
 const TAB_BAR_END = '[data-slot="project-tab-actions"]';
 const FILES_HEADER = '[data-slot="workspace-files-header"]';
 const SUB_THREAD_TAB = `[data-tab-id="thread:${PAYMENT_FORM.id}"]`;
+const AGENT_THREAD_TAB = `[data-tab-id="thread:${VALIDATE_CARDS.id}"]`;
+const SIDEBAR_ROWS =
+  '[data-slot="sidebar-menu-button"], [data-slot="sidebar-menu-sub-button"]';
+const VIEWER_TAB_CLOSE =
+  '[data-slot="workspace-viewer-header"] [data-slot="tab-close"]';
+const POPOVER = '[data-slot="popover-content"]';
+const FILE_VIEW_FOOTER = `${VIEWER} footer:not([data-slot])`;
+const CHANGES_TAB = `${FILES_HEADER} [data-tab-id="changes"]`;
+const FILES_TAB = `${FILES_HEADER} [data-tab-id="files"]`;
+const REPOSITORY_ROW = '[role="treeitem"][aria-label*="lines added"]';
+const SETTINGS_TITLE_BAR = '[data-slot="settings-title-bar"]';
 
 /** Resolves once no visible element matches `selector`. */
 const gone = (
@@ -81,15 +98,19 @@ const showing = (
 
 /**
  * Moves the pointer onto an empty spot of the page's main card (the
- * conversation, else the Dashboard's content) and takes focus off the control
- * the last click focused, so neither a hover fill nor a focus state is
- * captured.
+ * conversation, else the Dashboard's content, else the settings content) and,
+ * unless `blur` is false (an open popover keeps its focus), takes focus off
+ * the control the last click focused, so neither a hover fill nor a focus
+ * state is captured.
  */
-const restPointer = async (contents: WebContents): Promise<void> => {
+const restPointer = async (
+  contents: WebContents,
+  blur = true,
+): Promise<void> => {
   const spot = await inPage<{ x: number; y: number }>(
     contents,
     `(() => {
-      const card = ['[aria-label="Thread conversation"]', '[data-slot="dashboard-content"]']
+      const card = ['[aria-label="Thread conversation"]', '[data-slot="dashboard-content"]', 'main']
         .map((selector) => deepAll(selector).find(visible))
         .find(Boolean);
       const rect = card ? card.getBoundingClientRect() : { x: 0, y: 0, width: innerWidth, height: innerHeight };
@@ -98,7 +119,25 @@ const restPointer = async (contents: WebContents): Promise<void> => {
   );
 
   contents.sendInputEvent({ type: 'mouseMove', ...spot });
-  await inPage(contents, 'deepActive()?.blur?.()');
+
+  if (blur) {
+    await inPage(contents, 'deepActive()?.blur?.()');
+  }
+};
+
+/** Closes every tab of the viewer, so the viewer itself closes. */
+const closeViewer = async (contents: WebContents): Promise<void> => {
+  while (
+    await inPage<boolean>(
+      contents,
+      `deepAll(${JSON.stringify(VIEWER_TAB_CLOSE)}).some(visible)`,
+    )
+  ) {
+    await clickOn(contents, VIEWER_TAB_CLOSE);
+    await painted(contents, 200);
+  }
+
+  await gone(contents, VIEWER, 'the viewer to close');
 };
 
 /**
@@ -146,8 +185,13 @@ export const capturePrototypeStates = async (input: {
   const { booted, window, dir, theme } = input;
   const contents = window.webContents;
   const written: string[] = [];
-  const shoot = async (node: string, state: string, frozen = false) => {
-    await restPointer(contents);
+  const shoot = async (
+    node: string,
+    state: string,
+    frozen = false,
+    blur = true,
+  ) => {
+    await restPointer(contents, blur);
     await painted(contents, 300);
 
     const capture = () =>
@@ -214,14 +258,39 @@ export const capturePrototypeStates = async (input: {
     }
   }
   await explained(waitForSelector(contents, treeRow('payment-form.tsx')));
+  // The execution picker (settings) and the agent's model mark (models/v1)
+  // are drawn once their reads answer.
+  await explained(
+    waitForSelector(
+      contents,
+      '[data-slot="workspace-footer"] [aria-label="Execution model"]',
+    ),
+  );
   await shoot('99:8035', 'Project / Checkout redesign · Thread', true);
 
+  // usage-context and usage-cost: the footer's two usage popovers open over
+  // 99:8035 (Figma `39:877`, `39:236`).
+  for (const [node, name, state] of [
+    [
+      'usage-context',
+      'Context window usage',
+      'Project / Checkout redesign · Thread · Context popover',
+    ],
+    [
+      'usage-cost',
+      'Show conversation cost breakdown',
+      'Project / Checkout redesign · Thread · Cost breakdown',
+    ],
+  ] as const) {
+    await explained(click(contents, name));
+    await explained(waitForSelector(contents, POPOVER));
+    await shoot(node, state, true, false);
+    press(contents, 'Escape');
+    await explained(gone(contents, POPOVER, `the ${node} popover to close`));
+  }
+
   // 99:8508: the running sub-thread opened from the sidebar, in the viewer.
-  await clickOn(
-    contents,
-    '[data-slot="sidebar-menu-button"], [data-slot="sidebar-menu-sub-button"]',
-    PAYMENT_FORM.name,
-  );
+  await clickOn(contents, SIDEBAR_ROWS, PAYMENT_FORM.name);
   await explained(
     showing(contents, VIEWER, ANSWER_START, 'the sub-thread in the viewer'),
   );
@@ -246,8 +315,62 @@ export const capturePrototypeStates = async (input: {
   );
   await explained(click(contents, 'Show files', 'button', TAB_BAR_END));
   await explained(waitForSelector(contents, FILES_HEADER));
+
+  // viewer-agent: the agent's thread under the sub-thread, in the viewer: its
+  // footer carries the AgentThreadControls (Figma `32:49144`).
+  await clickOn(contents, SIDEBAR_ROWS, VALIDATE_CARDS.name);
+  await explained(waitForSelector(contents, AGENT_THREAD_TAB));
+  await explained(waitFor(contents, 'Pause agent thread'));
+  await shoot(
+    'viewer-agent',
+    'Project / Checkout redesign · Agent thread in viewer',
+    true,
+  );
   await clickOn(contents, `${SUB_THREAD_TAB} [data-slot="tab-close"]`);
   await gone(contents, SUB_THREAD_TAB, 'the sub-thread tab to close');
+  await closeViewer(contents);
+
+  // file-viewer: payment-form.tsx opened from the Files tree, in the viewer:
+  // the file view and its footer, the selected row and its badge (Figma
+  // `30:12630`, `30:12640`, `30:12956`).
+  await clickOn(contents, treeRow('payment-form.tsx'));
+  await explained(waitForSelector(contents, FILE_VIEW_FOOTER));
+  await explained(
+    showing(contents, VIEWER, 'PaymentForm', 'the file in the viewer'),
+  );
+  await shoot(
+    'file-viewer',
+    'Project / Checkout redesign · File in viewer',
+    true,
+  );
+  await closeViewer(contents);
+
+  // changes: the Files column's Changes tab, its repository row and the
+  // changed file (Figma `27:8827`, `27:9693`).
+  await explained(clickOn(contents, CHANGES_TAB));
+  await explained(waitForSelector(contents, REPOSITORY_ROW));
+
+  if (
+    await inPage<boolean>(
+      contents,
+      `deepAll(${JSON.stringify(REPOSITORY_ROW)}).find(visible).getAttribute('aria-expanded') === 'false'`,
+    )
+  ) {
+    await clickOn(contents, REPOSITORY_ROW);
+  }
+  await explained(waitForSelector(contents, treeRow('payment-form.tsx')));
+  await shoot('changes', 'Project / Checkout redesign · Changes', true);
+
+  // git-diff: the changed file's diff in the viewer, its toolbar and footer
+  // (Figma `27:14162`, `27:14284`).
+  await clickOn(contents, treeRow('payment-form.tsx'));
+  await explained(waitForSelector(contents, '[data-slot="diff-toolbar"]'));
+  await explained(waitForSelector(contents, '[data-slot="diff-footer"]'));
+  await painted(contents, 500);
+  await shoot('git-diff', 'Project / Checkout redesign · Diff in viewer', true);
+  await closeViewer(contents);
+  await explained(clickOn(contents, FILES_TAB));
+  await explained(waitForSelector(contents, treeRow('payment-form.tsx')));
 
   // The Dashboard reads its relative times when it mounts, so the clock is
   // held from before it opens until the capture: the rows then read the
@@ -273,5 +396,81 @@ export const capturePrototypeStates = async (input: {
     await shoot('85:7520', 'Home / Dashboard · All projects');
   });
 
+  // settings-window: the account menu's Settings opens the settings window,
+  // sized 1024×720, on its Providers section (Figma `36:22049`, `36:19734`).
+  written.push(
+    ...(await captureSettingsWindow({ booted, contents, dir, theme })),
+  );
+
   return written;
+};
+
+/**
+ * Opens the settings window from the account menu, shows its Providers
+ * section at 1024×720, captures it (key `settings`) and closes it.
+ */
+const captureSettingsWindow = async (input: {
+  readonly booted: Booted;
+  readonly contents: WebContents;
+  readonly dir: string;
+  readonly theme: 'dark' | 'light';
+}): Promise<string[]> => {
+  const { booted, contents, dir, theme } = input;
+
+  await click(contents, 'Account');
+  await clickOn(contents, '[role="menuitem"]', 'Settings');
+
+  const window = await booted.window('settings');
+  const settings = window.webContents;
+
+  try {
+    window.setContentSize(1024, 720);
+    await until(() => {
+      const [width, height] = window.getContentSize();
+
+      return width === 1024 && height === 720 ? true : undefined;
+    }, 'the 1024×720 settings window');
+    await waitForSelector(settings, SETTINGS_TITLE_BAR);
+
+    const providers = '[data-slot="sidebar"] :is(a, button, [role="link"])';
+
+    if (
+      await inPage<boolean>(
+        settings,
+        `deepAll(${JSON.stringify(providers)}).filter(visible).some((e) => (e.innerText ?? '').trim().startsWith('Providers'))`,
+      )
+    ) {
+      await clickOn(settings, providers, 'Providers');
+    } else {
+      await go(settings, '/settings/providers');
+    }
+    await until(
+      async () =>
+        (await page<string>(settings, 'location.pathname')) ===
+        '/settings/providers'
+          ? true
+          : undefined,
+      'the Providers section',
+    );
+    await waitForSelector(settings, 'main tbody tr');
+    await restPointer(settings);
+    await painted(settings, 500);
+
+    const shot = await captureState({
+      booted,
+      window,
+      key: 'settings',
+      dir,
+      node: 'settings-window',
+      state: 'Settings window · Providers',
+      theme,
+    });
+
+    return [shot.png, shot.json];
+  } finally {
+    await new Promise<void>((done) => {
+      window.once('closed', () => done());
+      window.close();
+    });
+  }
 };

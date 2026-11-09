@@ -295,6 +295,79 @@ export const BOXES: readonly (readonly [string, string])[] = [
   ['account status', '[data-slot="account-status"]'],
   ['account avatar', 'button[aria-label="Account"]'],
   ['connection badge', '[data-slot="connection-badge"]'],
+  // Phase 3: the bundles' own surfaces (chat, usage, settings, files, git).
+  [
+    'conversation column',
+    '[aria-label="Thread conversation"] .conversation-scroll .max-w-3xl',
+  ],
+  [
+    'first turn',
+    '[aria-label="Thread conversation"] [data-lexical-editor] > [data-turn-avatar]',
+  ],
+  [
+    'agent turn',
+    '[aria-label="Thread conversation"] [data-lexical-editor] > [data-turn-avatar="agent"]',
+  ],
+  [
+    'execution picker',
+    '[data-slot="workspace-footer"] :has(> [aria-label="Execution model"])',
+  ],
+  [
+    'execution model',
+    '[data-slot="workspace-footer"] [aria-label="Execution model"]',
+  ],
+  [
+    'reasoning effort',
+    '[data-slot="workspace-footer"] [aria-label="Reasoning effort"]',
+  ],
+  [
+    'thread usage',
+    '[data-slot="workspace-footer"] :has(> [aria-label="Context window usage"])',
+  ],
+  [
+    'composer button',
+    '[data-slot="workspace-footer"] button:is([aria-label^="Send"], [aria-label^="Stop"])',
+  ],
+  ['usage popover', '[data-slot="popover-content"]'],
+  ['chat thread footer', '[data-slot="chat-thread-footer"]'],
+  ['chat thread footer items', '[data-slot="chat-thread-footer"] > *'],
+  [
+    'viewer composer button',
+    '[data-slot="chat-thread-footer"] button:is([aria-label^="Send"], [aria-label^="Stop"])',
+  ],
+  [
+    'viewer conversation column',
+    'section[aria-label="Viewer"] .conversation-scroll .max-w-3xl',
+  ],
+  ['files tree', '[role="tree"]'],
+  [
+    'files selected row',
+    '[role="tree"] [role="treeitem"][aria-selected="true"]',
+  ],
+  [
+    'files selected badge',
+    ':has(> [role="treeitem"][aria-selected="true"]) > [data-slot="sidebar-menu-badge"] > *',
+  ],
+  ['changes repository row', '[role="treeitem"][aria-label*="lines added"]'],
+  ['file view footer', 'section[aria-label="Viewer"] footer:not([data-slot])'],
+  ['diff toolbar', '[data-slot="diff-toolbar"]'],
+  ['diff footer', '[data-slot="diff-footer"]'],
+  ['terminal header', '[data-slot="terminal-view"] > :first-child'],
+  ['settings title bar', '[data-slot="settings-title-bar"]'],
+  [
+    'settings nav',
+    ':has(> [data-slot="settings-title-bar"]) [data-slot="sidebar"]',
+  ],
+  ['settings card', ':has(> [data-slot="settings-title-bar"]) main'],
+  ['settings footer', ':has(> [data-slot="settings-title-bar"]) main footer'],
+  [
+    'settings table header',
+    ':has(> [data-slot="settings-title-bar"]) main thead tr',
+  ],
+  [
+    'settings table row',
+    ':has(> [data-slot="settings-title-bar"]) main tbody tr',
+  ],
 ];
 
 const PROPERTIES = [
@@ -339,12 +412,14 @@ export const computedBoxes = (
   );
 
 /**
- * Captures the whole 1920×1080 content of the `workspace` window to
- * `<dir>/<node>-<theme>.png`, and the computed boxes to `<node>-<theme>.json`.
+ * Captures the whole content of the window of `key` (`workspace` unless
+ * given; `window` is that window) to `<dir>/<node>-<theme>.png`, and the
+ * computed boxes to `<node>-<theme>.json`.
  */
 export const captureState = async (input: {
   readonly booted: Booted;
   readonly window: BrowserWindow;
+  readonly key?: string;
   readonly dir: string;
   readonly node: string;
   readonly state: string;
@@ -357,7 +432,7 @@ export const captureState = async (input: {
   const [width = 0, height = 0] = input.window.getContentSize();
   const take = () =>
     input.booted.platform.windows.capture({
-      key: 'workspace',
+      key: input.key ?? 'workspace',
       rect: { x: 0, y: 0, width, height },
     });
   // Xvfb's software GPU process can die mid-copy (`UnknownVizError`); it
@@ -382,6 +457,7 @@ export const captureState = async (input: {
         node: input.node,
         state: input.state,
         theme: input.theme,
+        window: input.key ?? 'workspace',
         content: { width, height },
         capture: { width: shot.width, height: shot.height, scale: shot.scale },
         path: await page<string>(contents, 'location.pathname'),

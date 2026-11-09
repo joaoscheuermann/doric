@@ -5,6 +5,7 @@
 // `workspace-content` `files/v1` and `git.commands/v1`).
 
 import type { FakeHost } from './harness';
+import { EXECUTION, serveSettings } from './settings-host';
 import {
   CWD,
   conversation,
@@ -245,7 +246,7 @@ export const THREADS: readonly WorkspaceThread[] = [
 ];
 
 /** The model the prototype's footers name. */
-const MODEL = 'anthropic/claude-sonnet-4.5';
+const MODEL = EXECUTION.model;
 
 /** One Thread's own charges in a usage answer. */
 const charges = (
@@ -342,7 +343,8 @@ const GIB = 1024 ** 3;
 
 /**
  * Serves the workspace's Projects, Threads and their conversations, resource
- * readings, files and Git state; answers the `git.commands/v1` calls made.
+ * readings, files and Git state, and the settings bundle's host contracts
+ * (`settings-host`); answers the `git.commands/v1` calls made.
  */
 export const serveWorkspace = (host: FakeHost): GitCalls => {
   const threadsOf = (projectId: unknown) =>
@@ -434,6 +436,8 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
       memoryLimitBytes: 4 * GIB,
     },
   }));
+
+  serveSettings(host);
 
   return serveSandbox(host);
 };
