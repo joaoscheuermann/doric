@@ -1,6 +1,6 @@
 # Feature: UI redesign to the Doric-UI Figma file
 
-- Status: `accepted` (2026-11-08; proposed the same day); phase 1 implemented (2026-11-08)
+- Status: `accepted` (2026-11-08; proposed the same day); phase 1 implemented (2026-11-08); phases 2 and 3 implemented (2026-11-09)
 - Brief: this document, the concept of bringing Doric's desktop UI in line with the Figma file Doric-UI: the same behaviors in the new layouts, plus the features the design draws that the code lacks.
 - Specs: [docs/designs/ui-redesign.md](../designs/ui-redesign.md), one spec delivered in four phases ([UR5](#decisions), [UR7](#decisions)).
 - Decisions: UR1–UR25 below, made by the user on 2026-11-08. UR10 accepts the author's proposals P1–P22 as written, except where UR7, UR8 and UR9 replace them (P4, P5, P7); UR12–UR25 answer the spec's questions and reviews; UR18 replaces the photograph source of UR17, and UR22 replaces UR18's single bundled photograph.
@@ -388,3 +388,5 @@ Phase 1 is built; later phases are not. Today's behavior is the one `GROUNDING.m
 - 2026-11-08: version 8. The user chose the prototype's cloud glyphs for the connection badge instead of the dot (UR24).
 - 2026-11-08: version 9. The user chose that bundles adapt to an older or newer app instead of shipping with it (UR25).
 - 2026-11-08: phase 1 implemented (`73ee8c9e`, `679fb87a`, `14ce383d`; [spec](../designs/ui-redesign.md)). No InsetHeader or wordmark component; the cloud glyphs move to phase 2 in `resources` (UR24); ButtonGroup moves to 4.2.
+- 2026-11-09: phase 2 implemented (`f54add06`–`7fc5072e`; spec versions 9–11, [spec](../designs/ui-redesign.md)). The user decided: an open directory row shows its open icon at rest and the chevron only on hover or focus (S25); the Files toggle stays in the Files header; lucide icons draw at their own 2-unit stroke, with the renderer's global `1.25px` rule removed; every Dashboard form has the 280 px Dashboard sidebar and its content on an inset card, with no macOS inset in the tab bar (UR1: the prototype wins).
+- 2026-11-09: phase 3 implemented (`1bd6b3f8`–`bebdc3c3`; spec version 12, [spec](../designs/ui-redesign.md)). The user approved G1–G10 and R3: the prototype's conversation column (G1), the viewer footer restyled only (G2), transcript composition kept (G3), `icon-xs` send and Stop (G4), settings on an inset card (G5), one version bump per bundle on the branch (G6), the extra files (G7), the capture method (G8), status-text weights (G9), Providers and Credentials tables without row dividers (G10, S22), and the execution picker as the footer's left anchor (R3).
