@@ -125,7 +125,7 @@ bundles in the window.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
 The conversation footer shows OpenRouter context usage without a text
-prefix or progress bar and an approximate dollar total. Vertical dividers separate
+prefix or progress bar and an approximate dollar total. Spacing alone separates
 the execution picker, context text and cost. Context uses the selected Thread's last
 reported input count and the capacity advertised by that call's model catalog;
 an absent capacity or measurement stays unknown. OpenRouter response-start events
@@ -140,7 +140,7 @@ edges without container margin or padding; each row aligns its content with the
 summary above.
 The toggle uses ChevronsUpDown to open and ChevronsDownUp to close.
 The popover follows the conversation trail's bordered surface and shaded footer,
-with the total below a divider. Partial costs carry an asterisk with an explanation;
+with the total set apart by spacing. Partial costs carry an asterisk with an explanation;
 cached/reasoning details and accounting descriptions stay off this compact surface. Missing
 costs make the aggregate explicitly partial; zero-cost calls remain free, and
 cached/reasoning tokens are details, never added again to input/output totals.
@@ -385,10 +385,9 @@ Git color; mixed statuses use modified yellow, while conflicts take priority.
 A Changes tab shows changed files as
 a directory tree grouped by repository, with individual folder expansion and no
 search or collapse-all toolbar. Its tab shows total added and removed lines, and
-each repository is a tree row that expands like a directory, carrying a chevron
-beside its branch icon and its totals in green and red as that row's own badge.
-Unlike the file rows, which share Files' single 16 px lead slot, `gap-1.5` and
-4 px radius, the repository row keeps square corners and the default gap. Its changed paths nest under it as file rows.
+each repository is the same tree row Files draws — a row that expands like a
+directory, carrying its branch icon and its totals in green and red as that
+row's own badge, with its changed paths nested under it as the same file rows.
 Counts compare HEAD with working content (or empty with new files), include
 untracked files and omit binary line counts. Git numstat supplies these totals
 without sending file contents or patches to the renderer.
@@ -468,7 +467,7 @@ delays. Read failures appear as deduplicated Sonner toasts with a retry action
 and clear after success, without inserting error cards into the tree or editor.
 The panel header carries no updating label. Initial reads use skeleton rows
 matching the tree's indentation, icons and row heights; the Changes skeleton
-reserves a root row with the file rows' geometry (one lead slot), with its totals, and nests the
+reserves a repository row of the same geometry, with its totals, and nests the
 rows it shows one level deeper beneath it.
 Background refresh preserves cached content and the reader's position instead
 of replacing it with a loading placeholder; directory expansion is retained per
