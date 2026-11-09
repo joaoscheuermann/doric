@@ -16,8 +16,8 @@ platform. See the [main README](../../../README.md) for Doric as a whole and
 - **Tool:** `git`, structured and non-interactive Git commands in the sandbox.
 - **Skills:** cloning, commit preparation, conflict resolution, rebasing,
   remote synchronization and linked worktrees.
-- **Contracts:** `git.commands/v1` (host), `git.changes/v1` (client) and the
-  `git.open-comparison/v1` command.
+- **Contracts:** `git.commands/v1` (host, 1.1.0 with `discard`),
+  `git.changes/v1` (client) and the `git.open-comparison/v1` command.
 - **Credentials:** the `GIT` credential kind, a Git identity (username and
   email) registered with `secrets/v1`.
 - **UI:** the Changes view, the comparison tab, the Files column footer's
@@ -64,6 +64,22 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   `runtime.lease/v1`; none acquires a lease. While some bundle provides
   `runtime.terminals/v1`, the Project's terminals feed the branch switch's busy
   check; without one, only running prompts block a switch.
+- `git.commands/v1@1.1.0` adds `discard`: it discards changes of one
+  repository the Thread's working directory reads, either the listed `paths`
+  or, without `paths`, every listed change. It cannot be undone, so it runs
+  under the Project lock and refuses, with nothing written, a working
+  directory the Changes view no longer shows, a repository the read does not
+  list, running work (a prompt or terminal) inside the repository, in a
+  repository nested in it or in a directory above it, a path with no listed
+  change (an unchanged or ignored file, a path under a symlinked directory),
+  a nested repository or submodule, and any conflicted target. Untracked
+  files go through `git clean` without `-x`, so ignored files stay; every other
+  change through `git restore --source=HEAD --staged --worktree` (a rename's
+  origin with it, a copy's origin never), or `git rm --force` for a staged new
+  file in a repository without a commit. Paths are literal, never patterns.
+  Discard all leaves nested repositories and submodules listed. A new read
+  decides `discarded`; a failing command or a target still listed answers
+  `failed` with what was discarded before it.
 - `git.changes/v1` (client) keeps the window's one changes read per Project and
   working directory, shared with the bundles that decorate from it, such as
   the files tree.

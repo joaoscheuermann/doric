@@ -113,7 +113,8 @@ export const projectChanges = async (
 const reachable = (scope: string, root: string): boolean =>
   scope === '' || under(scope, root) || under(root, scope);
 
-const under = (base: string, value: string): boolean =>
+/** Whether `value` is `base` or lies inside it; `''` holds every path. */
+export const under = (base: string, value: string): boolean =>
   base === '' || value === base || value.startsWith(`${base}/`);
 
 /** One porcelain line: two status characters, a space, then the path. */
