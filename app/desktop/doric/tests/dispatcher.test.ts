@@ -216,6 +216,7 @@ let window: ReturnType<typeof fakeContents>;
 let hostConnected: boolean;
 let relay: ConnectionRelay;
 let opened: string[];
+let splashId: number | undefined;
 
 /** The `/status` monitor's surface: a status and its change listeners. */
 const statusSource = (initial: 'connected' | 'disconnected') => {
@@ -257,6 +258,7 @@ beforeEach(() => {
   hostConnected = false;
   relay = new ConnectionRelay();
   opened = [];
+  splashId = undefined;
 
   const resolution = resolveDistribution(catalog, 1);
 
@@ -332,7 +334,7 @@ beforeEach(() => {
     validators: createSchemaValidators(),
     host,
     log: silentLog,
-    splashContents: () => undefined,
+    splashContents: () => splashId,
     splashStates: new SplashStates(),
     splashAct: async () => undefined,
     view: (generation) => (generation === 1 ? view : undefined),
@@ -355,6 +357,7 @@ beforeEach(() => {
       safeArea: { top: 0, left: 80, right: 0 },
     }),
     tokens: () => ({}),
+    appVersion: '0.0.1',
     answerClose: () => undefined,
     windowReady: () => undefined,
     windowFailure: () => undefined,
@@ -404,8 +407,21 @@ describe('desktop IPC dispatcher', () => {
       },
       mode: 'connected',
       tokens: {},
+      app: { version: '0.0.1' },
     });
     assert.equal(workspace.pinnedGeneration, 1);
+  });
+
+  test('describes the splash as a technical surface carrying the app version', async () => {
+    const splash = fakeContents(21, 'doric://app/splash@0.0.0/index.html');
+    splashId = splash.contents.id;
+
+    const description = (await dispatcher.handle(event(splash.contents), {
+      op: 'describeWindow',
+    })) as { kind?: unknown; app?: unknown };
+
+    assert.equal(description.kind, 'technical');
+    assert.deepEqual(description.app, { version: '0.0.1' });
   });
 
   test('a shell of a generation main no longer retains is reloaded', async () => {

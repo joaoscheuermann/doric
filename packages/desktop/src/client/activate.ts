@@ -194,6 +194,7 @@ export const activateClientBundles = async (input: {
     diagnostics,
     desktop,
     tokens: description.tokens,
+    app: description.app,
   });
 
   // Stage 9 window platform contracts: elements, connection and the system

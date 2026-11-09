@@ -446,6 +446,7 @@ export const openThreadsWindow = async (input: {
       },
       mode: 'connected',
       tokens: {},
+      app: { version: '0.0.1' },
     }),
     ready: async () => undefined,
     reportFailure: async () => undefined,

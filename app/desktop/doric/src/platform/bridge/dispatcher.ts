@@ -87,6 +87,12 @@ export interface DispatcherDeps {
   readonly pinWindow: (entry: WindowEntry, generation: number) => boolean;
   readonly chrome: (entry: WindowEntry | undefined) => WindowChrome;
   readonly tokens: () => Readonly<Record<string, string>>;
+  /**
+   * The app's version (`app.getVersion()`; the dispatcher imports no
+   * Electron). Written unchanged as `app.version` into every description it
+   * answers, the splash's included.
+   */
+  readonly appVersion: string;
   readonly answerClose: (id: string, answer: CloseAnswer) => void;
   readonly windowReady: (entry: WindowEntry) => void;
   readonly windowFailure: (entry: WindowEntry, failure: WindowFailure) => void;
@@ -258,6 +264,7 @@ export class Dispatcher {
           chrome: this.#deps.chrome(undefined),
           mode: 'connected',
           tokens: { ...this.#deps.tokens() },
+          app: { version: this.#deps.appVersion },
         } satisfies WindowDescription;
       case 'ready':
       case 'reportFailure':
@@ -396,6 +403,7 @@ export class Dispatcher {
           chrome: this.#deps.chrome(entry),
           mode: view.mode,
           tokens: { ...this.#deps.tokens() },
+          app: { version: this.#deps.appVersion },
         } satisfies WindowDescription;
       }
       case 'catalog':

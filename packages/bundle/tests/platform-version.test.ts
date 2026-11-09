@@ -42,8 +42,8 @@ const manifests = (): Map<string, { engines?: { doric?: string } }> => {
 };
 
 describe('the platform version', () => {
-  test('is 1.1.0 once the identity mark and the reader avatar join the platform', () => {
-    assert.equal(PLATFORM_VERSION, '1.1.0');
+  test('is 1.2.0 once doric.about/v1 joins the platform', () => {
+    assert.equal(PLATFORM_VERSION, '1.2.0');
   });
 
   test('leaves the folders and URLs at 1.0.0', () => {

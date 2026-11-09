@@ -1,9 +1,10 @@
 /**
  * The platform version `engines.doric` ranges are checked against and every
  * `doric.*` provider carries. It rises by a minor per phase that adds to the
- * platform (1.1.0: `desktop/ui/identity`, `desktop/ui/reader-avatar`).
+ * platform (1.1.0: `desktop/ui/identity`, `desktop/ui/reader-avatar`; 1.2.0:
+ * `doric.about/v1`).
  */
-export const PLATFORM_VERSION = '1.1.0';
+export const PLATFORM_VERSION = '1.2.0';
 
 /**
  * The version segment of the platform folders and URLs (`desktop@<v>`,

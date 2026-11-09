@@ -391,6 +391,7 @@ export const describe = (
   chrome,
   mode: 'connected',
   tokens: { titlebarHeight: '36', window: '#101010' },
+  app: { version: '0.0.1' },
   ...overrides,
 });
 

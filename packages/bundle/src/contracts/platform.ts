@@ -728,6 +728,20 @@ export interface DoricTokens {
   get(call?: CallArg): Promise<Readonly<Record<string, string>>>;
 }
 
+/**
+ * `doric.about/v1` (client only; platform 1.2.0): what the app says about
+ * itself. A bundle on an older app finds no provider; it detects the contract
+ * with `services.whenAvailable` and omits what needs it.
+ */
+export interface DoricAbout {
+  /**
+   * The app's version, the one main reads with `app.getVersion()` and writes
+   * into the window's description. Same answer for every call in a window;
+   * never rejects while the provider is registered.
+   */
+  get(call?: CallArg): Promise<{ readonly version: string }>;
+}
+
 /** Outcome of a one-time storage migration (`doric.migrations/v1`). */
 export type MigrationResult = (typeof migrationResults)[number];
 
@@ -898,6 +912,7 @@ export const DoricMenusV1 = ref<DoricMenus>('doric.menus/v1');
 export const DoricCacheV1 = ref<DoricCache>('doric.cache/v1');
 export const DoricMigrationsV1 = ref<DoricMigrations>('doric.migrations/v1');
 export const DoricTokensV1 = ref<DoricTokens>('doric.tokens/v1');
+export const DoricAboutV1 = ref<DoricAbout>('doric.about/v1');
 export const DoricNotificationsV1 = ref<DoricNotifications>(
   'doric.notifications/v1',
 );
@@ -1100,6 +1115,15 @@ export const platformContracts = Object.freeze({
     environments: ['client', 'desktopMain'],
     methods: {
       get: { input: noInput, output: z.record(z.string(), z.string()) },
+    },
+  },
+  'doric.about/v1': {
+    environments: ['client'],
+    methods: {
+      get: {
+        input: noInput,
+        output: z.object({ version: z.string() }).strict(),
+      },
     },
   },
   // WP-10N: desktopMain only again; the notifications bundle decides there.

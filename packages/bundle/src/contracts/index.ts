@@ -111,6 +111,8 @@ export {
   type DistributionCatalog,
   type DistributionFile,
   type DistributionParts,
+  type DoricAbout,
+  DoricAboutV1,
   type DoricBrowser,
   DoricBrowserV1,
   type DoricBundle,

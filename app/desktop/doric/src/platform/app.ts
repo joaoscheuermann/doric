@@ -353,6 +353,7 @@ export class DesktopPlatform {
       pinWindow: (entry, generation) => this.#pin(entry, generation),
       chrome: (entry) => this.chrome(entry),
       tokens: () => this.tokens.variables(),
+      appVersion: app.getVersion(),
       answerClose: (id, answer) => this.answers.answer(id, answer),
       windowReady: () => this.startup.windowReady(),
       windowFailure: (entry, failure) => this.#windowFailure(entry, failure),
