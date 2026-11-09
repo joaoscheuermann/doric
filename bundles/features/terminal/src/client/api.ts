@@ -38,11 +38,16 @@ export interface TerminalApi {
   input(id: string, data: string): Promise<void>;
   resize(id: string, cols: number, rows: number): Promise<void>;
   stop(id: string): Promise<void>;
+  /**
+   * terminal/v1 1.2.0 (A13): names the terminal, or clears its name for
+   * `null`; `false` when it no longer exists.
+   */
+  rename(id: string, name: string | null): Promise<boolean>;
 }
 
 export type TerminalHost = Pick<
   TerminalService,
-  'list' | 'create' | 'snapshot' | 'input' | 'resize' | 'stop'
+  'list' | 'create' | 'snapshot' | 'input' | 'resize' | 'stop' | 'rename'
 >;
 
 const identifier = (value: unknown): string => {
@@ -108,6 +113,7 @@ export const terminalFrom = (value: unknown): Terminal => {
     !['id', 'projectId', 'threadId', 'command', 'cwd', 'startedAt'].every(
       (key) => typeof item[key] === 'string',
     ) ||
+    !(item.name === undefined || typeof item.name === 'string') ||
     !['agent', 'user'].includes(String(item.origin)) ||
     !['starting', 'running', 'exited'].includes(String(item.state)) ||
     typeof item.pty !== 'boolean' ||
@@ -132,6 +138,7 @@ export const terminalFrom = (value: unknown): Terminal => {
     timeoutMs: terminal.timeoutMs,
     state: terminal.state,
     pty: terminal.pty,
+    ...(terminal.name === undefined ? {} : { name: terminal.name }),
   };
 };
 
@@ -198,6 +205,11 @@ export const createTerminalApi = (
       const id = identifier(terminalId);
       // The route answers 204 whether or not the terminal still existed.
       await terminalHost(() => terminals().stop(id));
+    },
+    rename: async (terminalId, name) => {
+      const id = identifier(terminalId);
+      // `false` is `terminal_missing`: the row goes with its removal notice.
+      return await terminalHost(() => terminals().rename(id, name));
     },
   };
 };

@@ -30,6 +30,7 @@ export const storyTerminalApi = (
   input: async () => undefined,
   resize: async () => undefined,
   stop: async () => undefined,
+  rename: async () => true,
 });
 
 /** What one terminal's watch sends: a snapshot, then timed chunks. */
@@ -78,7 +79,7 @@ export const storyWatches = (
   },
 });
 
-/** A store over a fixed list; create and stop change nothing. */
+/** A store over a fixed list; create, stop and rename change nothing. */
 export const storyTerminalStore = (
   terminals: readonly Terminal[] = fixtureTerminals,
 ): TerminalStore => ({
@@ -89,6 +90,7 @@ export const storyTerminalStore = (
     terminals.filter((terminal) => terminal.threadId === threadId),
   create: async () => undefined,
   stop: () => undefined,
+  rename: async () => undefined,
   subscribe: () => disposed,
   dispose: () => undefined,
 });

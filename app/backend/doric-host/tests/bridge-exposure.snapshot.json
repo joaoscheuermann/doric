@@ -103,6 +103,7 @@
       "create",
       "input",
       "list",
+      "rename",
       "resize",
       "snapshot",
       "stop",

@@ -324,6 +324,21 @@ export const createTerminalRegistry = (
       await process.resize(cols, rows);
       return true;
     },
+    /**
+     * terminal/v1 1.2.0 `rename`: keeps the trimmed name with the session in
+     * memory (none for `null` or a blank name) and publishes the session's
+     * `updated` notice; `false` when no such session exists.
+     */
+    rename: (id: string, name: string | null): boolean => {
+      const session = sessions.get(id);
+      if (session === undefined) return false;
+      const { name: _previous, ...terminal } = session.terminal;
+      const trimmed = name?.trim() ?? '';
+      session.terminal =
+        trimmed === '' ? terminal : { ...terminal, name: trimmed };
+      publisher.terminalUpdated(session.terminal);
+      return true;
+    },
     close: async (threadIds: readonly string[]) => {
       const ids = new Set(threadIds);
       await Promise.all(

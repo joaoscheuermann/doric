@@ -347,3 +347,53 @@ void test('starts manual shells with terminal metadata and agent commands with s
   assert.deepEqual(g.input()?.cmd, ['sh', '-lc', 'npm run dev']);
   assert.equal(g.input()?.tty, false);
 });
+
+// terminal/v1 1.2.0 `rename` (T-4.4.7, host): the name lives with the session
+// in memory and reaches every window through the session's `updated` notice.
+
+void test('rename stores the trimmed name and publishes an updated notice with it', async () => {
+  const f = fixture();
+  const session = await f.start('user');
+  const id = session.terminal.id;
+  const before = f.notices.length;
+
+  assert.equal(f.registry.rename(id, '  Dev server  '), true);
+
+  assert.equal(f.registry.snapshot(id)?.terminal.name, 'Dev server');
+  assert.equal(f.registry.list('p')[0]?.name, 'Dev server');
+  const published = f.notices.slice(before);
+  assert.equal(published.length, 1);
+  assert.ok(published[0]?.kind === 'updated');
+  assert.equal(published[0].terminal.id, id);
+  assert.equal(published[0].terminal.name, 'Dev server');
+  assert.equal(published[0].terminal.command, 'npm run dev');
+  // A later change of the session keeps the name.
+  f.output('\u001b]633;E;npm test\u0007');
+  assert.equal(f.registry.snapshot(id)?.terminal.name, 'Dev server');
+  assert.equal(f.registry.snapshot(id)?.terminal.command, 'npm test');
+  await f.registry.stop(id);
+});
+
+void test('rename with a whitespace-only name, an empty one or null clears it', async () => {
+  const f = fixture();
+  const session = await f.start('agent');
+  const id = session.terminal.id;
+  for (const cleared of ['   ', '', null]) {
+    f.registry.rename(id, 'Named');
+    const before = f.notices.length;
+    assert.equal(f.registry.rename(id, cleared), true);
+    const terminal = f.registry.snapshot(id)?.terminal;
+    assert.ok(terminal);
+    assert.equal(Object.hasOwn(terminal, 'name'), false);
+    const published = f.notices.slice(before);
+    assert.ok(published[0]?.kind === 'updated');
+    assert.equal(Object.hasOwn(published[0].terminal, 'name'), false);
+  }
+  await f.registry.stop(id);
+});
+
+void test('rename of a missing terminal answers false and publishes nothing', () => {
+  const f = fixture();
+  assert.equal(f.registry.rename('missing', 'Dev server'), false);
+  assert.deepEqual(f.notices, []);
+});

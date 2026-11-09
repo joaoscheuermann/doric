@@ -6,6 +6,7 @@
 import type { Services } from 'bundle/contracts';
 import { Button } from 'desktop/ui/button';
 import { defineReactElement } from 'desktop/ui/react-element';
+import { toast } from 'desktop/ui/sonner';
 import { TerminalIcon } from 'lucide-react';
 
 import type { TerminalApi } from './api.js';
@@ -21,7 +22,7 @@ import { TerminalRows } from './rows/terminal-rows.js';
 import type { TerminalStore } from './store.js';
 import { TerminalView } from './view/terminal-view.js';
 
-export const TERMINAL_VIEW_TAG = 'terminal-view';
+export { TERMINAL_VIEW_TAG } from './tab.js';
 
 export interface TerminalClient {
   readonly api: TerminalApi;
@@ -96,6 +97,8 @@ export const defineTerminalElements = (client: TerminalClient) => {
         depth={rowsDepth(workspace, threadId)}
         onOpen={client.open}
         onStop={store.stop}
+        onRename={store.rename}
+        onError={(message) => toast.error(message)}
       />
     );
   }
