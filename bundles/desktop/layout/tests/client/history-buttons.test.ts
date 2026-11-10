@@ -55,9 +55,7 @@ before(async () => {
   header = await import(
     '../../src/client/components/organisms/sidebar-header.js'
   );
-  layoutServices = await import(
-    '../../src/client/services/layout-services.js'
-  );
+  layoutServices = await import('../../src/client/services/layout-services.js');
   const { flushSync } = await import('react-dom');
   const { createRoot } = await import('react-dom/client');
   render = async (element) => {

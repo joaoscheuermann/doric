@@ -71,10 +71,7 @@ describe('the appearance store', () => {
     await store.set('light');
 
     assert.equal(store.get(), 'light');
-    assert.equal(
-      (await AppearanceStore.open(paths.appearance)).get(),
-      'light',
-    );
+    assert.equal((await AppearanceStore.open(paths.appearance)).get(), 'light');
     assert.deepEqual(JSON.parse(await readFile(paths.appearance, 'utf8')), {
       theme: 'light',
     });
