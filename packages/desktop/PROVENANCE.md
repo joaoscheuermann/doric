@@ -96,7 +96,7 @@ compares:
   light and
   `dark:hover:bg-[color-mix(in_oklch,var(--primary),var(--primary-foreground)_8%)]`
   in dark (introduced in commit `5fac0ee` at 12 %, changed by S4 of the
-  ui-redesign spec in `679fb87a`; the secondary variant's 5 % mix is now the
+  ui-redesign spec in `2b00a1dc`; the secondary variant's 5 % mix is now the
   registry's own).
 - `dialog.tsx` and `alert-dialog.tsx`: the footer drops the registry's
   `border-t`, so a dialog's footer draws no rule above it (S23 of the
