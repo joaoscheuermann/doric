@@ -547,7 +547,8 @@ sidebar or Thread — edits the host's configuration: a Profile section with the
 user's optional name and time zone (a host-time-zone choice that stores none,
 and UTC always offered), the configured providers as
 an editable table, the execution model with its reasoning effort, the execution
-turn limit, and a Credentials section over the host's credential store. A
+turn limit, and a Credentials section over the credential kinds the window
+manages in the host's credential store. A
 provider is configured on a page of its own, opened from the providers table,
 whose breadcrumb names the provider and whose back control returns to the table.
 The same provider page also opens in the workspace window's `/projects`
@@ -2797,8 +2798,12 @@ provider replays only its own.
   (`whenAvailable`): a composition without `claude-login` keeps a working
   settings window, with the kind's token chosen by hand. While the row is
   offered it takes the token field's place — no credential is picked by hand,
-  an unsigned provider asks to sign in, and a signed-in one names its
-  credential and offers to sign in again. The `useClaudeLogin` hook calls
+  and a signed-in one (its token names a listed `API_TOKEN` credential) names
+  its credential and offers to sign in again. An unsigned provider whose
+  draft cannot be saved asks "Sign in with Claude to finish this provider."
+  when its token is empty, and says "The credential this provider names is no
+  longer stored: sign in with Claude again." when its token names a credential
+  the store no longer holds. The `useClaudeLogin` hook calls
   `start()`, opens the answered URL in the system browser through
   `doric.browser/v1` (the row also shows the URL while the sign-in waits),
   then waits on `finish()`. It settles the answered credential into the

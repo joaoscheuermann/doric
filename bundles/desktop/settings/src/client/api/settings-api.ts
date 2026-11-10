@@ -1020,6 +1020,19 @@ const toolCatalogFrom = (value: unknown): readonly ToolCatalogEntry[] => {
   });
 };
 
+/**
+ * Whether a listed entry is a credential of a kind this window does not
+ * manage: a record whose `kind` is a string outside `credentialKinds`, such as
+ * the MCP bundle's `MCP_TOKEN`. Such entries are left out of the list whatever
+ * else they carry, since the window never reads them. Never fails. Answers
+ * `false` for an entry of a managed kind, a non-string kind, or a non-record,
+ * so those still go through `credentialFrom` and its strict checks.
+ */
+const isUnmanagedCredential = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value.kind === 'string' &&
+  !isCredentialKind(value.kind);
+
 const credentialFrom = (value: unknown): Credential => {
   if (
     !isRecord(value) ||
@@ -1068,6 +1081,15 @@ export interface SettingsApi {
     icons(requests: readonly IconRequest[]): Promise<ModelIconAnswers>;
   };
   readonly credentials: {
+    /**
+     * The stored credentials of the kinds this window manages
+     * (`credentialKinds`), in the host's order. Credentials of kinds other
+     * bundles store are left out, so they never fail the list. Fails with a
+     * `SettingsApiError`: "Doric returned an invalid response." for an answer
+     * that is not a list or that holds a malformed entry of a managed kind,
+     * and the adapter's usual messages when the host is out of reach or
+     * refuses the call.
+     */
     list(): Promise<readonly Credential[]>;
     create(input: CredentialCreate): Promise<Credential>;
     update(id: string, input: CredentialUpdate): Promise<Credential>;
@@ -1168,7 +1190,9 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
     list: async () => {
       const listed = await reach(() => services.use(SecretsV1).list());
       if (!Array.isArray(listed)) return invalidResponse();
-      return listed.map(credentialFrom);
+      return listed
+        .filter((entry) => !isUnmanagedCredential(entry))
+        .map(credentialFrom);
     },
     create: async (input) => {
       const create = routeCreate(guardedCredentialCreate(input));

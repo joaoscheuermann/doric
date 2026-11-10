@@ -34,7 +34,7 @@ section that window showed, or Providers.
 | `/settings/providers`   | Providers   | every provider Doric may call, its fields, its models and the credential it uses  |
 | `/settings/execution`   | Execution   | the provider and model that run a prompt, its reasoning effort and the turn limit |
 | `/settings/tools`       | Tools       | the fields each tool of the loaded bundles declares in the `tools/v1` catalog     |
-| `/settings/credentials` | Credentials | secrets the host stores and never sends back                                      |
+| `/settings/credentials` | Credentials | the secrets of the kinds it manages, which the host stores and never sends back   |
 
 Other bundles add sections the same way:
 
@@ -83,7 +83,12 @@ All host calls go through one adapter, `src/client/api/settings-api.ts`:
   its endpoint; a kind that sets `modelsFromCatalog` (Claude) has no model
   editor: its models are that catalog, read once the provider can sign in and
   shown read-only;
-- `secrets/v1` lists, creates, updates and removes credentials;
+- `secrets/v1` lists, creates, updates and removes credentials; the window
+  lists only the kinds it manages (API token, Username and password, Git
+  identity) and leaves out every other kind, such as the MCP bundle's sign-in
+  tokens; a malformed entry of a managed kind, or one whose kind is not a
+  string, still fails the list, and the Credentials section then shows no
+  credentials;
 - `tools/v1` reads the tool catalog and each tool's declared fields.
 
 ## Development
