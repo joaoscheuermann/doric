@@ -1,6 +1,6 @@
 // The files bundle's client part (stage 10, §3.6): `files.sandbox/v1`,
-// `files.refresh/v1`, the `files.open-file/v1` command and the three
-// elements — the Files panel view, the panel toggle and the file tab. All of
+// `files.refresh/v1`, the `files.open-file/v1` command and the two
+// elements — the Files panel view and the file tab. All of
 // it is bound to the activation services, never to an element's (D9-17).
 //
 // The panel region item (`filesRegions`) is registered by the activation.
@@ -89,7 +89,6 @@ export function activate({ services }: ClientContext): Cleanup {
   const elements = defineFilesElements(store);
   const defined = [
     ui.define('files-tree', elements.tree),
-    ui.define('files-toggle', elements.toggle),
     ui.define(FILE_VIEW_TAG, elements.fileView),
   ];
   const command = services.use(CommandsV1).register(openFileCommand);

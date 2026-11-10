@@ -136,7 +136,6 @@ export const windowServices = (fixture: WindowFixture = {}): Services => {
             },
       subscribe: still,
     },
-    'layout.panel/v1': { show: () => undefined, subscribe: still },
     'commands/v1': { execute: async () => undefined },
     ...(tree === undefined
       ? {}

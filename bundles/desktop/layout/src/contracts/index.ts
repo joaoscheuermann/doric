@@ -231,21 +231,20 @@ export const layoutWorkspaceMethods = {
 export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
 
 /**
- * The Project panel beside the conversation (1.0.0, WP-10P). Its views are
- * the `layout.panel` region items `{ id, tag, order, props: { label, icon,
- * badgeTag? } }`, drawn as the icon-only "Project views" tab strip; an item's
- * element mounts only while the panel is open and the item is selected.
+ * The Project panel beside the conversation (2.0.0, ui-redesign S36). Its
+ * views are the `layout.panel` region items `{ id, tag, order, props: { label,
+ * icon, badgeTag? } }`, drawn as the icon-only "Project views" tab strip; the
+ * selected item's element is mounted. The panel is always shown: it has no
+ * open state, and nothing about it is persisted.
  */
 export interface LayoutPanel {
-  isOpen(call?: CallArg): boolean;
-  /** The selected view's id. */
-  active(call?: CallArg): string;
-  /** Opens the panel and selects the view. */
-  show(id: string, call?: CallArg): void;
-  /** Opens or closes the panel. */
-  toggle(call?: CallArg): void;
-  /** Called after every change of the open state or of the selected view. */
-  subscribe(listener: () => void, call?: CallArg): Disposable;
+  /**
+   * Selects the view whose `layout.panel` item id is `id`. An id no item has
+   * is kept: the panel draws no view until an item with that id registers.
+   * Selecting the selected view changes nothing; an empty id is refused
+   * (`invalid_input`).
+   */
+  select(id: string, call?: CallArg): void;
 }
 
 /** The props of a `layout.panel` region item. */
@@ -258,14 +257,10 @@ export interface PanelItemProps {
 }
 
 export const layoutPanelMethods = {
-  isOpen: { input: noInput, output: z.boolean() },
-  active: { input: noInput, output: z.string() },
-  show: { input: z.string().min(1), output: z.void() },
-  toggle: { input: noInput, output: z.void() },
-  subscribe: { input: listenerSchema, output: disposableSchema },
+  select: { input: z.string().min(1), output: z.void() },
 } as const;
 
-export const LayoutPanelV1 = ref<LayoutPanel>('layout.panel/v1');
+export const LayoutPanelV2 = ref<LayoutPanel>('layout.panel/v2');
 
 /**
  * The dashboard's shown page (1.0.0). Two regions extend the dashboard:

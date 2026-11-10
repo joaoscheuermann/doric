@@ -1,8 +1,8 @@
 // The §2.9 shell check's states, reached as a reader would in the real shell
 // over the workspace bundles and captured at the window's size in one theme:
 // `99:8035` (Project view, Thread open), `99:8508` (a sub-thread in the
-// viewer), S27 (Files collapsed, viewer open), `85:7726` (the new tab's Recent
-// Dashboard) and `85:7520` (the Dashboard of every Project). Phase 3 adds the
+// viewer), `85:7726` (the new tab's Recent Dashboard) and `85:7520` (the
+// Dashboard of every Project). Phase 3 adds the
 // bundles' own surfaces: both usage popovers (`usage-context`, `usage-cost`),
 // the agent thread in the viewer (`viewer-agent`), a file in the viewer
 // (`file-viewer`), the Changes tab (`changes`) and a diff (`git-diff`), and
@@ -62,7 +62,6 @@ const treeRow = (name: string): string =>
   `[role="treeitem"][aria-label=${JSON.stringify(name)}], [role="treeitem"][aria-label^=${JSON.stringify(`${name},`)}]`;
 
 const VIEWER = 'section[aria-label="Viewer"]';
-const TAB_BAR_END = '[data-slot="project-tab-actions"]';
 const FILES_HEADER = '[data-slot="workspace-files-header"]';
 const SUB_THREAD_TAB = `[data-tab-id="thread:${PAYMENT_FORM.id}"]`;
 const AGENT_THREAD_TAB = `[data-tab-id="thread:${VALIDATE_CARDS.id}"]`;
@@ -340,22 +339,6 @@ export const capturePrototypeStates = async (input: {
     'Project / Checkout redesign · Sub-thread in viewer',
     true,
   );
-
-  // S27: the Files column collapsed while the viewer stays open, through
-  // the "Hide files" toggle in the column's header.
-  await explained(click(contents, 'Hide files', 'button', FILES_HEADER));
-  await explained(gone(contents, FILES_HEADER, 'the Files column to collapse'));
-  await explained(
-    waitFor(contents, 'Show files', 'button', 20_000, TAB_BAR_END),
-  );
-  await painted(contents, 300);
-  await shoot(
-    'S27',
-    'Project / Checkout redesign · Files collapsed, viewer open',
-    true,
-  );
-  await explained(click(contents, 'Show files', 'button', TAB_BAR_END));
-  await explained(waitForSelector(contents, FILES_HEADER));
 
   // viewer-agent: the agent's thread under the sub-thread, in the viewer: its
   // footer carries the AgentThreadControls (Figma `32:49144`).

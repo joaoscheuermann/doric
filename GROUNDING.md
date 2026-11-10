@@ -315,7 +315,7 @@ Socket.IO connection status, while the content side carries the execution picker
 settings trigger. The conversation footer combines the selected Thread's working
 directory and branch in one popover trigger, without a Git icon. An adjacent
 added/removed line-count button opens the right panel's Changes tab for the current
-directory; counts share its lightweight status query even while the panel is closed.
+directory; counts share its lightweight status query.
 The footer shows the full CWD, a middle dot and the branch, truncating the path
 when needed. Its compact popover identifies the current worktree root and main
 versus linked worktrees, with a copy-path action and no manual CWD editing.
@@ -365,16 +365,19 @@ branches, conflicts and in-progress Git operations are refused. Active prompts o
 terminal commands in the same worktree block switching under the Project mutation
 queue. A successful switch revalidates Git summaries, files and comparisons together;
 failures use toasts. The popover retains ahead/behind, dirty and operation details.
-The Project tab bar is the workspace's only top header. Its right side hosts
-the New terminal action followed by Files/Changes tabs. These tabs use the
+The Project tab bar is the workspace's only top header. The right end of its
+tab bar holds only the `layout.header` region, where the terminal bundle
+contributes the New terminal action. The Files/Changes tabs sit in the Files
+column header (below). These tabs use the
 standard shadcn Toggle with only an icon and an accessible name, with only
 the active view pressed. Changes shows 12-pixel, regular-weight added/removed
 counts only when at least one line was added or removed. The
 conversation has no breadcrumb or title header.
 
-A Project-scoped sandbox surface sits in a resizable right-hand panel that starts
-open. It has no header or hide button; selecting a compact panel tab in the
-Project tab bar also reopens the panel if it was collapsed by resizing. It reads the selected
+A Project-scoped sandbox surface sits in a right-hand Files column that is always
+shown, with its header (the Files/Changes tabs and the account status) and its
+footer. It is 328 px wide by default, resizes between 14rem and 30rem and cannot
+be hidden or collapsed. It reads the selected
 Project's one sandbox, but roots its tree at the selected Thread's working
 directory rather than at the workspace root, so selecting another Thread
 re-roots what it shows while the sandbox it reads stays the Project's, and it
@@ -453,11 +456,11 @@ revalidates a Project's tree, lightweight Git status, open comparisons and files
 summaries together. It observes completed `write`, `edit`, `git`, and `terminal`
 calls from every watched conversation, including background Threads, and follows
 the selected Project's Thread lifecycle and terminal command/lifecycle changes.
-Selection, working-directory and Project-state changes, reopening the panel,
+Selection, working-directory and Project-state changes,
 returning to the window, and reconnecting to the host also revalidate it.
 There is no filesystem watcher: a fifteen-second check while a sandbox surface
 is visible covers external changes and Threads whose conversations are not
-watched. The file tabs continue to refresh when the right panel is closed.
+watched. The file tabs refresh with the always-shown Files column.
 Refresh signals within 250 milliseconds share a read; changes arriving during
 a read retain a follow-up read. Inactive queries are marked stale without being
 read, and periodic checks do not restart exhausted failures or lease/path states.
@@ -1796,6 +1799,9 @@ layout also provides `layout.dashboard/v1@1.0.0`: the `/projects` dashboard's
 shown page, one of the `layout.dashboard.page` region items drawn instead of the
 project list, beside the `layout.dashboard.nav` groups of its sidebar. The layout
 imports the shared widgets from `desktop/ui/workspace` and `desktop/ui/code`.
+Part 2i of the UI redesign replaces `layout.panel/v1` with
+`layout.panel/v2@2.0.0`, whose one method is `select(id)`, and the layout is
+2.0.0.
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and, for tools, never consulted: every registered
 tool is bound on every prompt. For skills it decides where the default agent

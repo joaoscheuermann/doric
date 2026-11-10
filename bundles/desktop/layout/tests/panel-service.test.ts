@@ -1,6 +1,5 @@
-// layout.panel/v1 (R-9.2): the Project panel starts open on Files, `show`
-// opens it and selects a view (the footer's changes button), `toggle` flips
-// it, and subscribers hear each change until they dispose.
+// layout.panel/v2 (spec part 2i, S36): the Project panel always shows; the
+// contract only selects which `layout.panel` view it draws.
 
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
@@ -13,65 +12,35 @@ import {
 } from '../src/client/domain/panel-order.js';
 import { createLayoutPanel } from '../src/client/services/layout-panel.js';
 import { panelStore, resetPanel } from '../src/client/stores/panel.js';
-import { LayoutPanelV1 } from '../src/contracts/index.js';
+import { LayoutPanelV2, layoutPanelMethods } from '../src/contracts/index.js';
 
 const setup = () => {
   const harness = createTestServices({
-    bundle: { id: 'git' },
+    bundle: { id: 'files' },
     provide: [createLayoutPanel()],
   });
   return {
-    panel: harness.services.use(LayoutPanelV1),
+    panel: harness.services.use(LayoutPanelV2),
     dispose: harness.dispose,
   };
 };
 
 beforeEach(resetPanel);
 
-describe('layout.panel/v1', () => {
-  test('the panel starts open on the Files view', async () => {
+describe('layout.panel/v2', () => {
+  test('select selects the view it names', async () => {
     const { panel, dispose } = setup();
-    assert.equal(panel.isOpen(), true);
-    assert.equal(panel.active(), 'files');
+
+    panel.select('changes');
+    assert.equal(panelStore.getState().active, 'changes');
+
+    panel.select('files');
+    assert.equal(panelStore.getState().active, 'files');
     await dispose();
   });
 
-  test('show opens a closed panel on the view it names', async () => {
-    const { panel, dispose } = setup();
-    panel.toggle();
-    assert.equal(panel.isOpen(), false);
-
-    panel.show('changes');
-
-    assert.equal(panel.isOpen(), true);
-    assert.equal(panel.active(), 'changes');
-    await dispose();
-  });
-
-  test('the reader closing the panel by its handle is what the contract reports', async () => {
-    const { panel, dispose } = setup();
-    panelStore.getState().setOpen(false);
-    assert.equal(panel.isOpen(), false);
-    panelStore.getState().select('changes');
-    assert.equal(panel.active(), 'changes');
-    await dispose();
-  });
-
-  test('subscribers hear each change until they dispose', async () => {
-    const { panel, dispose } = setup();
-    let heard = 0;
-    const subscription = panel.subscribe(() => {
-      heard += 1;
-    });
-
-    panel.toggle();
-    panel.show('files');
-    panel.show('files');
-    subscription.dispose();
-    panel.toggle();
-
-    assert.equal(heard, 2);
-    await dispose();
+  test('the contract has select only', () => {
+    assert.deepEqual(Object.keys(layoutPanelMethods), ['select']);
   });
 });
 

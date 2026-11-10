@@ -92,13 +92,7 @@ const useElements = () =>
           ...still,
           current: () => ({ id: `file:${paymentForm.path}` }),
         },
-        'layout.panel/v1': {
-          ...still,
-          isOpen: () => false,
-          active: () => 'files',
-          show: () => undefined,
-          toggle: () => undefined,
-        },
+        'layout.panel/v2': { ...still, select: () => undefined },
         'commands/v1': { execute: async () => undefined },
         'git.changes/v1': {
           observe: (
@@ -129,8 +123,6 @@ const fileTabProperties = {
   projectId: project.id,
   path: paymentForm.path,
 };
-
-const headerProperties = { placement: 'header' };
 
 export default {
   title: 'Files/Elements/Files elements',
@@ -167,22 +159,6 @@ export const FileTab = {
             properties={fileTabProperties}
           />
         </div>
-      </div>
-    );
-  },
-};
-
-export const HeaderToggle = {
-  render: function HeaderToggle() {
-    const { elements, services } = useElements();
-    return (
-      <div className="flex chrome-bar w-96 items-center justify-end rounded-md border">
-        <ElementHost
-          tag="story-files-toggle"
-          element={elements.toggle}
-          services={services}
-          properties={headerProperties}
-        />
       </div>
     );
   },

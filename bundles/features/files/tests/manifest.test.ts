@@ -26,6 +26,15 @@ describe('the files manifest', () => {
     );
   });
 
+  // Part 2i (S36): the panel no longer opens or closes; Reveal in Files only
+  // selects the Files view, through `layout.panel/v2`.
+  test('requires layout.panel/v2@^2.0.0 and no other layout.panel contract', () => {
+    assert.deepEqual(
+      manifest.requires.filter((ref) => ref.startsWith('layout.panel/')),
+      ['layout.panel/v2@^2.0.0'],
+    );
+  });
+
   test('provides files/v1@1.2.0 at version 1.6.0 and keeps engines.doric', () => {
     assert.equal(manifest.version, '1.6.0');
     assert.ok(manifest.provides.includes('files/v1@1.2.0'));

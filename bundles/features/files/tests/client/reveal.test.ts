@@ -1,9 +1,9 @@
 // A5 "Reveal in Files" (§4.4, S16; T-4.4.1 for A5): the file tab the
 // `files.open-file/v1` command opens carries one menu entry, a closure of the
-// files bundle. Running it shows the Files panel, opens every ancestor
+// files bundle. Running it selects the Files view, opens every ancestor
 // directory of the file under the tree's root (the Thread's working
 // directory) and selects the file's tab, so the tree selects the file's row.
-// A file outside that root only shows the panel.
+// A file outside that root only selects the Files view.
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
@@ -23,7 +23,7 @@ afterEach(() => {
 
 type Fakes = {
   readonly services: Services;
-  readonly shown: string[];
+  readonly selected: string[];
   readonly focused: string[];
 };
 
@@ -33,15 +33,15 @@ const fakes = async (thread: Thread): Promise<Fakes> => {
   const { still, storyServices } = await import(
     '../../stories/support/services.js'
   );
-  const shown: string[] = [];
+  const selected: string[] = [];
   const focused: string[] = [];
   let current: string | undefined;
   const services = storyServices({
     apis: {
-      'layout.panel/v1': {
+      'layout.panel/v2': {
         ...still,
-        show: (id: string) => {
-          shown.push(id);
+        select: (id: string) => {
+          selected.push(id);
         },
       },
       'layout.workspace/v1': {
@@ -59,7 +59,7 @@ const fakes = async (thread: Thread): Promise<Fakes> => {
       'commands/v1': { execute: async () => undefined },
     },
   });
-  return { services, shown, focused };
+  return { services, selected, focused };
 };
 
 /** The open directories of the Project's tree rooted at `cwd`. */
@@ -84,18 +84,18 @@ const reveal = async (services: Services, path: string): Promise<void> => {
 };
 
 describe('A5 Reveal in Files', () => {
-  test('shows the Files panel, opens the file ancestors and selects its row', async () => {
+  test('selects the Files view, opens the file ancestors and selects its row', async () => {
     const fixtures = await import('../../stories/support/fixtures.js');
     const { resetExpansion } = await import(
       '../../src/client/stores/expansion.js'
     );
     resetExpansion();
-    const { services, shown, focused } = await fakes(fixtures.thread);
+    const { services, selected, focused } = await fakes(fixtures.thread);
     const path = 'apps/web/src/checkout/payment-form.tsx';
 
     await reveal(services, path);
 
-    assert.deepEqual(shown, ['files']);
+    assert.deepEqual(selected, ['files']);
     assert.deepEqual(focused, [`file:${path}`]);
     assert.deepEqual(await openOf('/workspace'), [
       'apps',
@@ -136,28 +136,28 @@ describe('A5 Reveal in Files', () => {
       '../../src/client/stores/expansion.js'
     );
     resetExpansion();
-    const { services, shown } = await fakes(fixtures.nestedThread);
+    const { services, selected } = await fakes(fixtures.nestedThread);
 
     await reveal(services, 'apps/web/src/checkout/payment-form.tsx');
 
-    assert.deepEqual(shown, ['files']);
+    assert.deepEqual(selected, ['files']);
     assert.deepEqual(await openOf('/workspace/apps/web'), [
       'apps/web/src',
       'apps/web/src/checkout',
     ]);
   });
 
-  test('a file outside the tree root only shows the panel', async () => {
+  test('a file outside the tree root only selects the Files view', async () => {
     const fixtures = await import('../../stories/support/fixtures.js');
     const { resetExpansion } = await import(
       '../../src/client/stores/expansion.js'
     );
     resetExpansion();
-    const { services, shown } = await fakes(fixtures.nestedThread);
+    const { services, selected } = await fakes(fixtures.nestedThread);
 
     await reveal(services, 'packages/pricing/src/totals.ts');
 
-    assert.deepEqual(shown, ['files']);
+    assert.deepEqual(selected, ['files']);
     assert.deepEqual(await openOf('/workspace/apps/web'), []);
   });
 });

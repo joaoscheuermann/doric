@@ -7,7 +7,7 @@
 import { defineCommand, type Services } from 'bundle/contracts';
 import { baseName } from 'desktop/reads';
 import {
-  LayoutPanelV1,
+  LayoutPanelV2,
   LayoutTabsV1,
   LayoutWorkspaceV1,
   type TabRequest,
@@ -60,7 +60,7 @@ export const revealFile = (
     // Without the workspace's selection there is no tree to open.
   }
   try {
-    services.use(LayoutPanelV1).show('files');
+    services.use(LayoutPanelV2).select('files');
   } catch {
     // The panel is the layout's; without it there is nothing to show.
   }

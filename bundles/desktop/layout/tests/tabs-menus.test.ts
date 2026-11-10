@@ -211,12 +211,14 @@ describe('layout.tabs/v1@1.2.0 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v1@1.2.0 and stays at version 1.4.0', () => {
+  test('provides layout.tabs/v1@1.2.0 and layout.panel/v2@2.0.0, not v1, at version 2.0.0', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
     ) as { version: string; provides: string[] };
 
-    assert.equal(manifest.version, '1.4.0');
+    assert.equal(manifest.version, '2.0.0');
     assert.ok(manifest.provides.includes('layout.tabs/v1@1.2.0'));
+    assert.ok(manifest.provides.includes('layout.panel/v2@2.0.0'));
+    assert.ok(!manifest.provides.includes('layout.panel/v1@1.0.0'));
   });
 });

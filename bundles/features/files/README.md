@@ -92,11 +92,12 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
 - `files.open-file/v1` opens a file as a workspace tab (`files-file-view`).
   The tab's context menu holds "Reveal in Files" (`layout.tabs/v1@1.2.0`
   `menu`, so the bundle requires `layout.tabs/v1@^1.2.0`): it opens the
-  file's ancestor directories under the tree's root, shows the Files panel and
-  selects the tab, so the tree selects the file's row. A file outside the root
-  only shows the panel.
+  file's ancestor directories under the tree's root, selects the Files view
+  (`select('files')`) and selects the tab, so the tree selects the file's row. A
+  file outside the root only selects the Files view.
 - The Files view (`files-tree`) is a `layout.panel` region item, selected from
-  the workspace's tab bar; `files-toggle` is the panel toggle.
+  the Files column header's tab strip. The bundle defines no panel toggle; it requires
+  `layout.panel/v2` to select the Files view.
 - A row's context menu in the Files view: on a file row, "Copy relative path"
   copies the path relative to the tree's root (the Thread's working
   directory); on a folder row, "New file" and "New folder" open the folder

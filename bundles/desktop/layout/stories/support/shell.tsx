@@ -13,7 +13,6 @@ import {
   useState,
 } from 'react';
 
-import { ElementHost } from '../../src/client/components/molecules/element-host.js';
 import { AccountStatus } from '../../src/client/components/organisms/account-status.js';
 import {
   ProjectPanel,
@@ -44,10 +43,6 @@ const panelWidth = { '--sidebar-width': '100%' } as CSSProperties;
 
 const region = (name: string) => createElement('core-region', { name });
 
-/** `<files-toggle placement>` props; made through `ui/v1` (`ElementHost`). */
-const headerToggle = { placement: 'header' } as const;
-const panelToggle = { placement: 'panel' } as const;
-
 /** The bar under the conversation: the `layout.footer` region. */
 export function ContentFooter() {
   return (
@@ -63,7 +58,6 @@ export function ContentFooter() {
 export function WorkspaceShell({
   children,
   panel = true,
-  panelOpen = true,
   owner = planThread.id,
   path = threadRoute(planThread),
   model = sidebarModelOf(),
@@ -72,19 +66,16 @@ export function WorkspaceShell({
   readonly children: ReactNode;
   /** Whether the Project panel exists at all. */
   readonly panel?: boolean;
-  readonly panelOpen?: boolean;
   /** The owner of the tabs drawn beside the conversation. */
   readonly owner?: string;
   /** The window path the Project tabs show. */
   readonly path?: string;
   readonly model?: SidebarModel;
 }) {
-  const [open, setOpen] = useState(panelOpen);
   const [active, setActive] = useState('files');
   const items = useRegionItems('layout.panel');
   const tabs = useWorkspaceTabs(owner);
   const viewer = tabs.items.length > 0;
-  const filesShown = panel && open;
   const openSettings = () => console.info('Story open settings');
 
   return (
@@ -100,17 +91,7 @@ export function WorkspaceShell({
         <WorkspaceLayout
           header={
             <ProjectTabBar
-              actions={
-                <>
-                  {region('layout.header')}
-                  {!filesShown && (
-                    <>
-                      <ElementHost tag="files-toggle" props={headerToggle} />
-                      <AccountStatus onOpenSettings={openSettings} />
-                    </>
-                  )}
-                </>
-              }
+              actions={region('layout.header')}
               state={projectTabsOf([checkout, docs, billing])}
               path={path}
               projects={[checkout, docs, billing]}
@@ -143,14 +124,10 @@ export function WorkspaceShell({
             <>
               <ProjectPanelTabs
                 active={active}
-                onActiveChange={(id) => {
-                  setActive(id);
-                  setOpen(true);
-                }}
+                onActiveChange={setActive}
                 items={items}
               />
               <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-                <ElementHost tag="files-toggle" props={panelToggle} />
                 <AccountStatus onOpenSettings={openSettings} />
               </div>
             </>
@@ -160,9 +137,7 @@ export function WorkspaceShell({
               {region('layout.panel.footer')}
             </div>
           }
-          filesOpen={filesShown}
           fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
-          onFilesOpenChange={setOpen}
           sidebar={
             <ProjectSidebar
               header={

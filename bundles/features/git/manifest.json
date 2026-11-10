@@ -20,7 +20,6 @@
     "navigation/v1@^1.0.0",
     "commands/v1@^1.0.0",
     "layout.workspace/v1@^1.1.0",
-    "layout.panel/v1@^1.0.0",
     "layout.tabs/v1@^1.2.0",
     "settings.config/v1@^1.0.0",
     "secrets/v1@^1.0.0"

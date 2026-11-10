@@ -115,8 +115,8 @@ void test('the runtime activates after its providers and before the bundles that
     candidate(
       provider('desktop-surfaces', [
         'layout.workspace/v1@1.1.0',
-        'layout.panel/v1@1.0.0',
-        'layout.tabs/v1@1.1.0',
+        'layout.panel/v2@2.0.0',
+        'layout.tabs/v1@1.2.0',
         'settings.config/v1@1.0.0',
       ]),
     ),

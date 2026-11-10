@@ -3,9 +3,8 @@
 // T-2.2 and T-2.4: the real renderer shell with the real core, layout and
 // resources bundles draws the account status. T-2.5: with the real git, files
 // and chat bundles, the working directory and branch sit in the Files column
-// footer and the branch picker switches. T-2.6: the files bundle's toggle
-// hides the Files column from its header and shows it again from the tab
-// bar's right end. With `DORIC_SHELL_CAPTURES=<dir>`,
+// footer and the branch picker switches. T-2.17: the Files column has no
+// toggle and does not collapse. With `DORIC_SHELL_CAPTURES=<dir>`,
 // the prototype states are captured at 1920×1080 in dark and light for the
 // §2.9 shell check, with the phase 3 states of the bundles' own surfaces
 // (the settings window at 1024×720), phase 4.1's Appearance section and
@@ -37,6 +36,7 @@ import { capturePrototypeStates } from './support/prototype-states';
 import {
   click,
   clickOn,
+  dragBy,
   focused,
   go,
   inPage,
@@ -322,41 +322,49 @@ describe('the real shell over the workspace bundles', () => {
     press(contents, 'Escape');
   });
 
-  test("the files bundle's toggle hides the Files column and shows it again from the tab bar (T-2.6)", async () => {
+  test('the Files column has no FilesToggle and does not collapse (T-2.17)', async () => {
     const filesHeader = '[data-slot="workspace-files-header"]';
-    const tabBarEnd = '[data-slot="project-tab-actions"]';
-    const shown = (name: string, within: string): Promise<boolean> =>
+    const visibleButton = (name: string): Promise<boolean> =>
       inPage<boolean>(
         contents,
-        `deepAll(${JSON.stringify(`${within} button[aria-label="${name}"]`)}).some(visible)`,
+        `deepAll(${JSON.stringify(`button[aria-label="${name}"]`)}).some(visible)`,
+      );
+    const columnWidth = (): Promise<number> =>
+      inPage<number>(
+        contents,
+        `(() => {
+          const header = deepAll(${JSON.stringify(filesHeader)}).find(visible);
+          const column = header?.closest('[data-panel]');
+          return column ? Math.round(column.getBoundingClientRect().width) : 0;
+        })()`,
       );
 
     await go(contents, THREAD_PATH);
-    await waitFor(contents, 'Hide files', 'button', 20_000, filesHeader).catch(
+    await waitFor(contents, 'Account', 'button', 20_000, filesHeader).catch(
       async (error: unknown) => {
         console.log(await diagnose());
         throw error;
       },
     );
-    assert.equal(await shown('Show files', tabBarEnd), false);
-
-    await click(contents, 'Hide files', 'button', filesHeader);
-    await until(
-      async () =>
-        (await inPage<boolean>(
-          contents,
-          `deepAll(${JSON.stringify(filesHeader)}).some(visible)`,
-        ))
-          ? undefined
-          : true,
-      'the Files column to collapse',
+    assert.equal(await visibleButton('Hide files'), false);
+    assert.equal(await visibleButton('Show files'), false);
+    assert.equal(
+      await inPage<boolean>(
+        contents,
+        `customElements.get('files-toggle') === undefined`,
+      ),
+      true,
+      'The files-toggle element is still defined.',
     );
-    await waitFor(contents, 'Show files', 'button', 20_000, tabBarEnd);
-    assert.equal(await shown('Hide files', 'body'), false);
 
-    await click(contents, 'Show files', 'button', tabBarEnd);
-    await waitFor(contents, 'Hide files', 'button', 20_000, filesHeader);
-    assert.equal(await shown('Show files', tabBarEnd), false);
+    // The Files handle is the rightmost; dragging it right shrinks the column
+    // toward collapse. It stops at the 14rem (224 px) minimum.
+    await dragBy(contents, '[data-slot="resizable-handle"]', 2000);
+    await new Promise((done) => setTimeout(done, 200));
+
+    const width = await columnWidth();
+    assert.ok(width >= 224, `The Files column is ${width} px wide.`);
+    await waitFor(contents, 'Account', 'button', 20_000, filesHeader);
   });
 
   const dir = process.env.DORIC_SHELL_CAPTURES;
@@ -398,8 +406,8 @@ describe('the real shell over the workspace bundles', () => {
     }
 
     console.log(`# shell captures:\n#   ${written.join('\n#   ')}`);
-    // Thirty-three states (nineteen, and fourteen of 4.4's menus, name row
+    // Thirty-two states (eighteen, and fourteen of 4.4's menus, name row
     // and Discard dialog), a PNG and its JSON rows each, in two themes.
-    assert.equal(written.length, 132);
+    assert.equal(written.length, 128);
   });
 });

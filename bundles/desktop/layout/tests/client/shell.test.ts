@@ -17,7 +17,7 @@ import { NavigationV1 } from 'bundle/contracts';
 
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
-import { LayoutTabsV1 } from '../../src/contracts/index.js';
+import { LayoutPanelV2, LayoutTabsV1 } from '../../src/contracts/index.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
 import {
   type RenderedWorkspace,
@@ -659,9 +659,9 @@ test('the window names one control "Dashboard"', async () => {
 });
 
 // One header row: the tab bar keeps "New project", and its right end holds
-// the `layout.header` items. While the Files column is open the account
-// status sits in the Files header (contracts 2d-2 §2.3, S27).
-test('the tab bar keeps New project and ends with the header items; Account is in the open Files header', async () => {
+// the `layout.header` items. The account status sits in the Files header
+// (contracts 2d-2 §2.3; part 2i, S36).
+test('the tab bar keeps New project and ends with the header items; Account is in the Files header', async () => {
   rendered = await renderWorkspace({
     projects: [project],
     projectTabs: [project],
@@ -875,12 +875,10 @@ test('opening the first file shows the viewer', async () => {
 });
 
 // Phase 2d-2: the Files column gets its own header and footer (spec §2.6,
-// S9, S27; contracts 2d-2 §2.3–2.6). The header holds the view controls
-// ("Project views"), the "Hide files" toggle and the account status while the
-// column is open; collapsed, the toggle ("Show files") and the account status
-// move to the tab bar's right end, after the `layout.header` items. The
-// toggle is the stories' `<files-toggle>` stand-in (G6, story-elements.ts),
-// which draws only when made through the fake host's `ui/v1` `create`.
+// S9; contracts 2d-2 §2.3–2.6). The header holds the view controls ("Project
+// views") and the account status. Part 2i (S36, T-2.17): the column always
+// shows; nothing hides or collapses it, and `layout.panel/v2` only selects
+// the view it draws.
 
 /** The Project views the app's `layout.panel` region lists (fake-host.ts). */
 const panelViews = [
@@ -972,8 +970,8 @@ test('layout.panel.footer items render in the Files footer, layout.footer items 
   );
 });
 
-// §2.6, S27: the open Files column's header
-test('the open Files header holds the Project views, Hide files and Account; the tab bar holds neither', async () => {
+// §2.6, S36: the Files column's header
+test('the Files header holds the Project views and Account; the tab bar holds neither', async () => {
   rendered = await renderWorkspace(
     withHeaderItems({
       projects: [project],
@@ -991,7 +989,6 @@ test('the open Files header holds the Project views, Hide files and Account; the
       .map(nameOf)
       .join(' | ')}`,
   );
-  only(header, 'button', 'Hide files');
   only(header, 'button', 'Account');
 
   const end = tabBarEnd(rendered);
@@ -1012,7 +1009,24 @@ test('the open Files header holds the Project views, Hide files and Account; the
   );
 });
 
-// T-2.6, S27; with a viewer tab open too (G17)
+/** The one Files header; fails if the column draws none or several. */
+const filesHeader = (workspace: RenderedWorkspace): HTMLElement => {
+  const headers = filesHeaders(workspace);
+  const [first] = headers;
+  assert.ok(
+    headers.length === 1 && first !== undefined,
+    `Expected one Files header, found ${headers.length}.`,
+  );
+  return first;
+};
+
+/** Whether the Project view control named `name` is the selected one. */
+const isSelectedView = (header: HTMLElement, name: string): boolean =>
+  only(header, 'button', name).getAttribute('aria-pressed') === 'true';
+
+// Part 2i, T-2.17 (S36): nothing in the window hides the Files column, so no
+// files-toggle is drawn and Account stays in the Files header; with a viewer
+// tab open too (G17).
 for (const [label, fixture] of [
   [
     'without a viewer',
@@ -1024,51 +1038,125 @@ for (const [label, fixture] of [
   ],
   ['with a viewer tab open', { ...withViewer, projectTabs: [project] }],
 ] as const) {
-  test(`hiding and showing Files moves its toggle and Account between the Files header and the tab bar, ${label}`, async () => {
+  test(`the window draws no files-toggle and one Account button, in the Files header, ${label}`, async () => {
     rendered = await renderWorkspace(withHeaderItems(fixture));
-    oneAccount(rendered, 'Files open');
 
-    const header = single(
-      rendered.root,
-      '[data-slot="workspace-files-header"]',
-    );
-    await click(only(header, 'button', 'Hide files'));
-
-    assert.equal(rendered.errors().length, 0, 'Hiding Files failed.');
     assert.equal(
-      filesHeaders(rendered).length,
+      rendered.root.querySelectorAll('files-toggle').length +
+        standIns(rendered.root, 'files-toggle').length,
       0,
-      'The Files header is still shown after Hide files.',
+      'The window draws a files-toggle.',
     );
-    oneAccount(rendered, 'Files hidden');
-    const end = tabBarEnd(rendered);
-    const [probe] = standIns(end, 'header-probe');
-    assert.ok(probe !== undefined, 'The layout.header item left the tab bar.');
-    const show = only(end, 'button', 'Show files');
-    const account = only(end, 'button', 'Account');
-    assert.ok(
-      follows(probe, show) && follows(probe, account),
-      'Show files and Account do not come after the layout.header items.',
-    );
-
-    await click(show);
-
-    assert.equal(rendered.errors().length, 0, 'Showing Files failed.');
-    const reopened = single(
-      rendered.root,
-      '[data-slot="workspace-files-header"]',
-    );
-    only(reopened, 'button', 'Hide files');
-    only(reopened, 'button', 'Account');
-    assert.equal(
-      named(tabBarEnd(rendered), 'button', 'Show files').length +
-        named(tabBarEnd(rendered), 'button', 'Account').length,
-      0,
-      'Show files or Account stayed in the tab bar after Show files.',
-    );
-    oneAccount(rendered, 'Files shown again');
+    for (const name of ['Hide files', 'Show files']) {
+      assert.equal(
+        named(rendered.root, 'button', name).length,
+        0,
+        `The window draws a "${name}" button.`,
+      );
+    }
+    oneAccount(rendered, label);
+    only(filesHeader(rendered), 'button', 'Account');
   });
 }
+
+// T-2.17: `layout.panel/v2` `select` only selects a view; the column stays.
+test('layout.panel/v2 select selects the view and the Files column stays', async () => {
+  rendered = await renderWorkspace(
+    withHeaderItems({
+      projects: [project],
+      projectTabs: [project],
+      path: `/projects/${project.id}`,
+      panel: { active: 'changes' },
+    }),
+  );
+  assert.ok(isSelectedView(filesHeader(rendered), 'Changes'));
+
+  rendered.services.use(LayoutPanelV2).select('files');
+  await settle();
+
+  assert.equal(rendered.errors().length, 0, 'Selecting Files failed.');
+  const header = filesHeader(rendered);
+  assert.ok(isSelectedView(header, 'Files'), 'Files is not the selected view.');
+  assert.ok(!isSelectedView(header, 'Changes'), 'Changes is still selected.');
+  assert.equal(standIns(rendered.root, 'files-tree').length, 1);
+  assert.equal(standIns(rendered.root, 'git-changes').length, 0);
+  single(rendered.root, '[data-slot="workspace-files-footer"]');
+});
+
+// T-2.17, regression guard: choosing a view in the header keeps the column.
+test('selecting the Changes tab draws the Changes view and keeps the Files header and footer', async () => {
+  rendered = await renderWorkspace(
+    withHeaderItems({
+      projects: [project],
+      projectTabs: [project],
+      path: `/projects/${project.id}`,
+    }),
+  );
+
+  await click(only(filesHeader(rendered), 'button', 'Changes'));
+
+  assert.equal(rendered.errors().length, 0, 'Selecting Changes failed.');
+  assert.ok(
+    isSelectedView(filesHeader(rendered), 'Changes'),
+    'Changes is not the selected view.',
+  );
+  assert.equal(standIns(rendered.root, 'git-changes').length, 1);
+  assert.equal(standIns(rendered.root, 'files-tree').length, 0);
+  single(rendered.root, '[data-slot="workspace-files-footer"]');
+});
+
+// T-2.17, UR28: without the files bundle `layout.panel` lists only Changes.
+// The panel still selects `files`, which no item has, so it draws no view.
+test('without the files bundle the Files header holds the Changes tab and Account only', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    projectTabs: [project],
+    path: `/projects/${project.id}`,
+    regions: {
+      'layout.panel': panelViews.filter((view) => view.id === 'changes'),
+    },
+  });
+
+  const header = filesHeader(rendered);
+  only(header, 'button', 'Changes');
+  only(header, 'button', 'Account');
+  for (const name of ['Files', 'Hide files', 'Show files']) {
+    assert.equal(
+      named(header, 'button, [aria-label]', name).length,
+      0,
+      `The Files header holds "${name}".`,
+    );
+  }
+  assert.equal(
+    standIns(rendered.root, 'git-changes').length +
+      standIns(rendered.root, 'files-tree').length,
+    0,
+    'The panel draws a view no selected item names.',
+  );
+});
+
+// T-2.17 (S36), guard: the Files column's handle resizes but never collapses.
+test('the Files column cannot be collapsed', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    projectTabs: [project],
+    path: `/projects/${project.id}`,
+  });
+
+  const handle = [
+    ...rendered.root.querySelectorAll<HTMLElement>(
+      '[data-slot="resizable-handle"]',
+    ),
+  ].at(-1);
+  assert.ok(handle !== undefined, 'The Files column has no handle.');
+  assert.equal(
+    handle.getAttribute('aria-disabled'),
+    null,
+    'The Files column handle is disabled.',
+  );
+  filesHeader(rendered);
+  single(rendered.root, '[data-slot="workspace-files-footer"]');
+});
 
 // Phase 2e, T-2.8 (spec §2.2, contracts 2e §1): a "+ New Thread" row above
 // the sidebar's stack starts the inline root draft; the Threads pane header

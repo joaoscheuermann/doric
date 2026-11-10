@@ -11,10 +11,6 @@ import type { ReactNode } from 'react';
 
 import { FileView } from './file/file-view.js';
 import type { SandboxStore } from './sandbox-store.js';
-import {
-  FilesToggleView,
-  type TogglePlacement,
-} from './toggle/files-toggle.js';
 import { FilesTreeView } from './tree/files-tree.js';
 
 export const defineFilesElements = (store: SandboxStore) => {
@@ -35,12 +31,6 @@ export const defineFilesElements = (store: SandboxStore) => {
         <SidebarScope>
           <FilesTreeView services={services} />
         </SidebarScope>
-      ),
-    }),
-    toggle: defineReactElement<{ readonly placement?: TogglePlacement }>({
-      props: ['placement'],
-      render: ({ services, placement }) => (
-        <FilesToggleView services={services} placement={placement} />
       ),
     }),
     fileView: defineReactElement<{

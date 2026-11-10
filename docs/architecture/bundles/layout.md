@@ -110,11 +110,9 @@ Uma região é um lugar com nome no template, marcado com `<core-region name="�
 // files, client/index.ts
 const ui = services.use(UiV1);
 ui.define('files-tree', FilesTree);
-ui.define('files-toggle', FilesToggle);
 
 const regions = services.use(RegionsV1);
 regions.add('layout.panel', { id: 'files', tag: 'files-tree' });
-regions.add('layout.header', { id: 'files-toggle', tag: 'files-toggle' });
 ```
 
 `<core-region>` cria cada item com `ui.create(tag, props)`, na ordem de `order` e depois na ordem de ativação, e o remove quando o bundle dono é desativado. Se o layout não estiver na composição, nenhuma `<core-region name="layout.panel">` existe e os itens simplesmente não aparecem.
@@ -123,7 +121,6 @@ Na composição padrão:
 
 | Região          | Bundle      | Elemento                                      |
 | --------------- | ----------- | --------------------------------------------- |
-| `layout.header` | `files`     | `<files-toggle>`, que abre e fecha o painel   |
 | `layout.header` | `terminal`  | `<terminal-new-button>`, que cria um terminal |
 | `layout.panel`  | `files`     | `<files-tree>`, a árvore de arquivos          |
 | `layout.panel`  | `git`       | `<git-changes>`, a lista de Changes           |

@@ -4,8 +4,7 @@ import {
   ResizablePanelGroup,
 } from 'desktop/ui/resizable';
 import { cn } from 'desktop/ui/utils';
-import { type ReactNode, useLayoutEffect } from 'react';
-import { usePanelRef } from 'react-resizable-panels';
+import type { ReactNode } from 'react';
 
 import { INSET_CARD } from './inset-card.js';
 
@@ -48,16 +47,15 @@ type WorkspaceLayoutProps = {
   readonly fileViewer?: ReactNode;
   /**
    * The Files column's panel: the selected `layout.panel` view. Absent when
-   * unsupported. The column is full height and collapsible to 0: 328 px by
-   * default, between 14rem and 30rem. It is mounted only while `filesOpen` is
-   * true; when collapsed it is zero width and mounts nothing.
+   * unsupported. When it is given, the column is always shown, full height
+   * and not collapsible: 328 px by default, between 14rem and 30rem.
    */
   readonly files?: ReactNode;
   /**
    * The Files column's 40 px header (§2.6, `266:21741`), drawn in
    * `div[data-slot="workspace-files-header"]` above `files`. The header strip is
-   * draggable; the caller's controls inside it are not. It is drawn only while
-   * the column is: when `files` is present and `filesOpen` is true.
+   * draggable; the caller's controls inside it are not. It is drawn whenever
+   * the column is: when `files` is present.
    */
   readonly filesHeader?: ReactNode;
   /**
@@ -65,16 +63,9 @@ type WorkspaceLayoutProps = {
    * `div[data-slot="workspace-files-footer"]` below `files`: 28 px high with
    * 8 px above and below it, 4 px left and 12 px right padding and a 6 px gap
    * (`layout/WorkspaceFooter` `266:21739` in `99:8035`). It has no border and
-   * no fill. It is drawn only while the column is.
+   * no fill. It is drawn whenever the column is: when `files` is present.
    */
   readonly filesFooter?: ReactNode;
-  /**
-   * Whether the Files column is expanded. The state is controlled, so a drag
-   * that shuts the column and the controls always agree.
-   */
-  readonly filesOpen?: boolean;
-  /** Reports that the Files column opened or closed, from its handle or elsewhere. */
-  readonly onFilesOpenChange?: (open: boolean) => void;
 };
 
 export function WorkspaceLayout({
@@ -84,23 +75,11 @@ export function WorkspaceLayout({
   files,
   filesHeader,
   filesFooter,
-  filesOpen = false,
   fileViewer,
-  onFilesOpenChange,
   sidebar,
 }: WorkspaceLayoutProps) {
-  const filesPanel = usePanelRef();
   const viewerOpen = fileViewer !== undefined;
-  const filesShown = files !== undefined && filesOpen;
-
-  useLayoutEffect(() => {
-    try {
-      if (filesOpen) filesPanel.current?.expand();
-      else filesPanel.current?.collapse();
-    } catch {
-      // The group or panel may be unmounting or not registered yet.
-    }
-  }, [filesOpen, filesPanel]);
+  const filesShown = files !== undefined;
 
   return (
     <div
@@ -172,41 +151,28 @@ export function WorkspaceLayout({
         )}
         {files !== undefined && (
           <>
-            <ResizableHandle
-              disabled={!filesOpen}
-              className={
-                filesOpen
-                  ? 'bg-transparent [app-region:no-drag]'
-                  : 'pointer-events-none w-0! bg-transparent after:hidden [app-region:no-drag]'
-              }
-            />
+            <ResizableHandle className="bg-transparent [app-region:no-drag]" />
             <ResizablePanel
-              panelRef={filesPanel}
               className="overflow-hidden"
-              collapsible
-              collapsedSize={0}
               defaultSize="328px"
               minSize="14rem"
               maxSize="30rem"
-              onResize={(size) => onFilesOpenChange?.(size.inPixels > 0)}
             >
-              {filesOpen && (
-                <div className="flex h-full min-h-0 flex-col">
-                  <div
-                    data-slot="workspace-files-header"
-                    className="flex h-10 shrink-0 items-center gap-2 px-2 [-webkit-app-region:drag]"
-                  >
-                    {filesHeader}
-                  </div>
-                  <div className="flex min-h-0 flex-1 flex-col">{files}</div>
-                  <div
-                    data-slot="workspace-files-footer"
-                    className="my-2 flex h-7 shrink-0 items-center gap-1.5 pr-3 pl-1"
-                  >
-                    {filesFooter}
-                  </div>
+              <div className="flex h-full min-h-0 flex-col">
+                <div
+                  data-slot="workspace-files-header"
+                  className="flex h-10 shrink-0 items-center gap-2 px-2 [-webkit-app-region:drag]"
+                >
+                  {filesHeader}
                 </div>
-              )}
+                <div className="flex min-h-0 flex-1 flex-col">{files}</div>
+                <div
+                  data-slot="workspace-files-footer"
+                  className="my-2 flex h-7 shrink-0 items-center gap-1.5 pr-3 pl-1"
+                >
+                  {filesFooter}
+                </div>
+              </div>
             </ResizablePanel>
           </>
         )}

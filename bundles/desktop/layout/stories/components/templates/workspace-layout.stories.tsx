@@ -53,25 +53,3 @@ export const NoOpenTabs = {
     </LayoutHost>
   ),
 };
-
-/** The Files column collapsed: its toggle and the account status sit at the tab bar's right end (S27). */
-export const PanelClosed = {
-  render: () => (
-    <LayoutHost fixture={withTabs}>
-      <WorkspaceShell panelOpen={false}>
-        <Conversation />
-      </WorkspaceShell>
-    </LayoutHost>
-  ),
-};
-
-/** Only the sidebar and the conversation: no tabs, panel closed. */
-export const Focused = {
-  render: () => (
-    <LayoutHost fixture={noTabs}>
-      <WorkspaceShell panelOpen={false}>
-        <Conversation />
-      </WorkspaceShell>
-    </LayoutHost>
-  ),
-};

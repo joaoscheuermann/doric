@@ -19,4 +19,16 @@ describe('the git manifest', () => {
       ['layout.tabs/v1@^1.2.0'],
     );
   });
+
+  // Part 2i (S36): git uses no layout.panel contract.
+  test('requires no layout.panel contract', () => {
+    const manifest = JSON.parse(
+      readFileSync('bundles/features/git/manifest.json', 'utf8'),
+    ) as { requires: string[] };
+
+    assert.deepEqual(
+      manifest.requires.filter((ref) => ref.startsWith('layout.panel/')),
+      [],
+    );
+  });
 });

@@ -29,7 +29,6 @@ import {
 } from 'react';
 
 import { DeleteDialog } from '../components/molecules/delete-dialog.js';
-import { ElementHost } from '../components/molecules/element-host.js';
 import { AccountStatus } from '../components/organisms/account-status.js';
 import { Dashboard } from '../components/organisms/dashboard.js';
 import {
@@ -74,13 +73,6 @@ const OPEN_SETTINGS = 'core.open-settings/v1';
 const Region = ({ name }: { readonly name: string }) =>
   createElement('core-region', { name });
 
-/**
- * The files bundle's `<files-toggle placement>` props (G6). The toggle is made
- * through `ui/v1` (`ElementHost`), which gives it its services scope.
- */
-const headerToggle = { placement: 'header' } as const;
-const panelToggle = { placement: 'panel' } as const;
-
 /** Marks `/` as opened through "New project", or clears that mark. */
 const setNewTab = (open: boolean) => newTabStore.getState().set(open);
 
@@ -116,12 +108,6 @@ function Workspace() {
       : undefined);
   const tabs = useWorkspaceTabs(tabOwner);
   const { actions } = workspace;
-  // The sandbox panel starts open and keeps the reader's choice
-  // (`layout.panel/v1`).
-  const filesOpen = useSyncExternalStore(
-    panelStore.subscribe,
-    () => panelStore.getState().open,
-  );
   const panelView = useSyncExternalStore(
     panelStore.subscribe,
     () => panelStore.getState().active,
@@ -266,17 +252,7 @@ function Workspace() {
         >
           <WorkspaceLayout
             header={tabBar({
-              end: (
-                <>
-                  <Region name="layout.header" />
-                  {!filesOpen && (
-                    <>
-                      <ElementHost tag="files-toggle" props={headerToggle} />
-                      <AccountStatus onOpenSettings={openSettings} />
-                    </>
-                  )}
-                </>
-              ),
+              end: <Region name="layout.header" />,
             })}
             viewerTabs={
               tabs.items.length > 0 && tabOwner ? (
@@ -288,11 +264,10 @@ function Workspace() {
               <>
                 <ProjectPanelTabs
                   active={panelView}
-                  onActiveChange={panel.show}
+                  onActiveChange={panel.select}
                   items={panelItems}
                 />
                 <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-                  <ElementHost tag="files-toggle" props={panelToggle} />
                   <AccountStatus onOpenSettings={openSettings} />
                 </div>
               </>
@@ -302,13 +277,11 @@ function Workspace() {
                 <Region name="layout.panel.footer" />
               </div>
             }
-            filesOpen={filesOpen}
             fileViewer={
               tabs.items.length === 0 || !tabOwner ? undefined : (
                 <WorkspaceTabs state={tabs} />
               )
             }
-            onFilesOpenChange={panel.setOpen}
             sidebar={
               <ProjectSidebar
                 header={
