@@ -193,7 +193,10 @@ export function SettingsProviderScreen({
   const tokens = credentialsOfKind(credentials, 'API_TOKEN');
   // The `claude` kind's token is what its sign-in stores: while the sign-in
   // is offered, the row takes the token field's place, and the operator never
-  // picks a credential by hand.
+  // picks a credential by hand. While the provider is not signed in, its id is
+  // filled and the draft has an issue, the sign-in message stands in for that
+  // issue: an empty token asks to sign in, and a token naming a credential the
+  // store no longer holds asks to sign in again.
   const signInField =
     kind?.id === 'claude' && claudeLogin !== undefined
       ? kind.fields.find((field) => field.kind === 'secret')
@@ -209,12 +212,14 @@ export function SettingsProviderScreen({
       ? 'Choose a provider kind.'
       : providerIssue(draft, kind, credentials);
   const issue =
-    signInField !== undefined &&
-    signedIn === undefined &&
-    draft.id.trim() !== '' &&
-    draftIssue !== undefined
-      ? 'Sign in with Claude to finish this provider.'
-      : draftIssue;
+    signInField === undefined ||
+    signedIn !== undefined ||
+    draft.id.trim() === '' ||
+    draftIssue === undefined
+      ? draftIssue
+      : (draft.configuration[signInField.key] ?? '').trim() === ''
+        ? 'Sign in with Claude to finish this provider.'
+        : 'The credential this provider names is no longer stored: sign in with Claude again.';
 
   const setValue = (key: string, value: string): void =>
     onChange({

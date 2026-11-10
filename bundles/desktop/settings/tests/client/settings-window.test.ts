@@ -375,3 +375,54 @@ test('a section another bundle adds is headed by its link and saves through the 
   const sent = saves[0]?.input as Draft | undefined;
   assert.equal(sent?.execution.maxTurns, 12);
 });
+
+/** The credentials section's text once `secrets/v1.list` answers `listed`. */
+const credentialsSection = async (listed: unknown): Promise<string> => {
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/credentials',
+    host: { ...host(), 'secrets/v1.list': () => listed },
+  });
+  await settle(20);
+  assert.equal(heading(opened), 'Credentials');
+  return opened.document.body.textContent ?? '';
+};
+
+test('the credentials section lists the credentials it manages and leaves other kinds out', async () => {
+  const text = await credentialsSection([
+    { id: token, kind: 'API_TOKEN', name: 'OpenRouter', hasSecret: true },
+    {
+      id: '00000000-0000-4000-8000-0000000000dd',
+      kind: 'MCP_TOKEN',
+      name: 'mcp:server',
+      hasSecret: true,
+    },
+  ]);
+
+  assert.match(text, /OpenRouter/);
+  assert.doesNotMatch(text, /mcp:server/);
+  assert.doesNotMatch(text, /Doric returned an invalid response\./);
+});
+
+test('a malformed credential of a managed kind still fails the list', async () => {
+  for (const malformed of [
+    { id: token, kind: 'API_TOKEN', name: 7, hasSecret: true },
+    { id: token, kind: 42, name: 'Broken', hasSecret: true },
+  ]) {
+    const text = await credentialsSection([
+      malformed,
+      {
+        id: '00000000-0000-4000-8000-000000000002',
+        kind: 'API_TOKEN',
+        name: 'OpenRouter',
+        hasSecret: true,
+      },
+    ]);
+
+    // The section draws no list error, so the failed list shows as the
+    // valid entry beside the malformed one missing too.
+    assert.doesNotMatch(text, /OpenRouter/);
+    assert.match(text, /No credentials are stored yet\./);
+    await opened?.close();
+    opened = undefined;
+  }
+});

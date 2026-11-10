@@ -79,7 +79,13 @@ const authorizeUrl = 'https://claude.com/cai/oauth/authorize?state=s';
  * A host answering the sign-in's `finish` with `finish` and storing every
  * replace, with the `claude` kind first so the add-provider page is its own.
  */
-const claudeHost = (finish: HostAnswer) => {
+const claudeHost = (
+  finish: HostAnswer,
+  stored: {
+    readonly configuration?: unknown;
+    readonly credentials?: readonly unknown[];
+  } = {},
+) => {
   let revision = 1;
   const replaces: unknown[] = [];
 
@@ -87,7 +93,7 @@ const claudeHost = (finish: HostAnswer) => {
     replaces,
     host: {
       'host-config/v1.current': () => ({
-        configuration,
+        configuration: stored.configuration ?? configuration,
         revision,
         updatedAt: '2026-01-01T00:00:00.000Z',
       }),
@@ -104,7 +110,7 @@ const claudeHost = (finish: HostAnswer) => {
         };
       },
       'models/v1.kinds': () => [claude, openrouter],
-      'secrets/v1.list': () => [openrouterToken],
+      'secrets/v1.list': () => stored.credentials ?? [openrouterToken],
       'tools/v1.catalog': () => [],
       'claude.login/v1.start': () => ({ url: authorizeUrl }),
       'claude.login/v1.finish': finish,
@@ -182,6 +188,101 @@ const addProviderPage = async (
   await settle(20);
   return opened;
 };
+
+/** The configuration with a saved `claude` provider whose token is `token`. */
+const withClaude = (token: string) => ({
+  ...configuration,
+  providers: [
+    ...configuration.providers,
+    {
+      id: 'claude',
+      kind: 'claude',
+      configuration: { endpoint: 'https://api.anthropic.com', token },
+    },
+  ],
+});
+
+/** A credential of a kind another bundle stores: the MCP bundle's token. */
+const mcpToken = {
+  id: '00000000-0000-4000-8000-0000000000dd',
+  kind: 'MCP_TOKEN',
+  name: 'mcp:server',
+  hasSecret: true,
+};
+
+/** Opens the window and the page of the saved provider named `name`. */
+const providerPage = async (
+  host: Readonly<Record<string, HostAnswer>>,
+  name: string,
+): Promise<SettingsWindow> => {
+  const opened = await openSettingsWindow({ host });
+  await settle(20);
+  const row = [
+    ...opened.document.querySelectorAll(
+      '[data-slot="table-body"] [data-slot="table-row"]',
+    ),
+  ].find((candidate) => (candidate.textContent ?? '').includes(name)) as
+    | HTMLElement
+    | undefined;
+  assert.ok(row !== undefined, `The providers table has no ${name} row.`);
+  row.click();
+  await settle(20);
+  return opened;
+};
+
+test('a signed-in claude provider stays finished when the store also holds an MCP token', async () => {
+  const { replaces, host } = claudeHost(() => signedIn, {
+    configuration: withClaude(signedIn.id),
+    credentials: [openrouterToken, signedIn, mcpToken],
+  });
+  opened = await providerPage(host, 'claude');
+
+  const text = opened.document.body.textContent ?? '';
+  assert.doesNotMatch(text, /Sign in with Claude to finish this provider\./);
+  assert.doesNotMatch(text, /cannot be saved yet/);
+  assert.match(
+    fieldDescriptionOf(opened, 'Claude login') ?? '',
+    /this provider uses the 'Claude' credential/,
+  );
+
+  // An edit the page offers reaches the host.
+  type(
+    opened.document.getElementById('provider-endpoint') as HTMLInputElement,
+    'https://claude.example.com',
+  );
+  await settle(700);
+  const sent = replaces.at(-1) as
+    | {
+        readonly providers: readonly {
+          readonly kind: string;
+          readonly configuration: Readonly<Record<string, string>>;
+        }[];
+      }
+    | undefined;
+  const provider = sent?.providers.find((entry) => entry.kind === 'claude');
+  assert.deepEqual(provider?.configuration, {
+    endpoint: 'https://claude.example.com',
+    token: signedIn.id,
+  });
+});
+
+test('a claude provider whose token names a credential the store no longer holds asks to sign in again', async () => {
+  const { host } = claudeHost(() => signedIn, {
+    configuration: withClaude('00000000-0000-4000-8000-0000000000ee'),
+    credentials: [openrouterToken],
+  });
+  opened = await providerPage(host, 'claude');
+
+  const text = opened.document.body.textContent ?? '';
+  assert.match(
+    text,
+    /The credential this provider names is no longer stored: sign in with Claude again\./,
+  );
+  assert.doesNotMatch(text, /Sign in with Claude to finish this provider\./);
+  assert.doesNotMatch(text, /Choose the API token/);
+  const signIn = buttonOf(opened, 'Sign in with Claude');
+  assert.ok(signIn !== undefined, 'The sign-in button is missing.');
+});
 
 test('the claude provider page offers the sign-in its own kind draws', async () => {
   opened = await addProviderPage(claudeHost(() => signedIn).host);
