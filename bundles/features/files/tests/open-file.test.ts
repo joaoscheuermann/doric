@@ -20,6 +20,7 @@ import {
   layoutTabsMethods,
   type TabRequest,
 } from 'layout/contracts';
+import { isValidElement } from 'react';
 
 import { filePathOf, openFileCommand } from '../src/client/commands.js';
 import { OPEN_FILE_COMMAND } from '../src/contracts/index.js';
@@ -48,6 +49,10 @@ const setup = (owner: string | null = 'thread-1') => {
         }),
         focus: defineMethod({
           ...layoutTabsMethods.focus,
+          execute: async () => undefined,
+        }),
+        retitle: defineMethod({
+          ...layoutTabsMethods.retitle,
           execute: async () => undefined,
         }),
         current: defineMethod({
@@ -96,16 +101,49 @@ describe('files.open-file/v1', () => {
       path: 'src/deep/b.ts',
     });
 
-    assert.deepEqual(tabs, [
-      {
-        id: 'file:src/deep/b.ts',
-        title: 'b.ts',
-        tag: 'files-file-view',
-        props: { projectId: 'p-1', path: 'src/deep/b.ts' },
-        icon: 'file',
-        tooltip: 'src/deep/b.ts',
-      },
-    ]);
+    assert.deepEqual(
+      tabs.map(({ menu: _menu, ...tab }) => tab),
+      [
+        {
+          id: 'file:src/deep/b.ts',
+          title: 'b.ts',
+          tag: 'files-file-view',
+          props: { projectId: 'p-1', path: 'src/deep/b.ts' },
+          icon: 'file',
+          tooltip: 'src/deep/b.ts',
+        },
+      ],
+    );
+  });
+
+  test('the file tab menu holds Reveal in Files (A5, layout.tabs/v1@1.2.0)', async (t) => {
+    const { tabs, commands, dispose } = setup();
+    t.after(dispose);
+
+    await commands.execute(OPEN_FILE_COMMAND, {
+      projectId: 'p-1',
+      path: 'src/deep/b.ts',
+    });
+
+    assert.deepEqual(
+      tabs[0]?.menu?.map(({ id, label, destructive }) => ({
+        id,
+        label,
+        destructive,
+      })),
+      [
+        {
+          id: 'reveal-in-files',
+          label: 'Reveal in Files',
+          destructive: undefined,
+        },
+      ],
+    );
+    const icon = (tabs[0]?.menu?.[0] as { icon?: unknown } | undefined)?.icon;
+    assert.ok(
+      isValidElement(icon),
+      'Reveal in Files carries a leading icon element (S6)',
+    );
   });
 
   test('a file at the workspace root is titled by its own name', async (t) => {

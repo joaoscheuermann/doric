@@ -1,33 +1,19 @@
-// layout.panel/v1 (WP-10P, R-9.2): the Project panel's open state and
-// selected view, backed by the panel store the workspace view draws.
+// layout.panel/v2 (ui-redesign S36): selects the Project panel's view, backed
+// by the panel store the workspace view draws. The panel is always shown.
 
 import { defineMethod, defineService } from 'bundle/contracts';
 
-import { LayoutPanelV1, layoutPanelMethods } from '../../contracts/index.js';
+import { LayoutPanelV2, layoutPanelMethods } from '../../contracts/index.js';
 import { panelStore } from '../stores/panel.js';
-import { watchAll } from './subscription.js';
 
+/**
+ * Provides `layout.panel/v2` with only `select`, which sets the panel store's
+ * selected view. Returns the service definition; it never fails at creation.
+ */
 export const createLayoutPanel = () =>
-  defineService(LayoutPanelV1, {
-    isOpen: defineMethod({
-      ...layoutPanelMethods.isOpen,
-      execute: () => panelStore.getState().open,
-    }),
-    active: defineMethod({
-      ...layoutPanelMethods.active,
-      execute: () => panelStore.getState().active,
-    }),
-    show: defineMethod({
-      ...layoutPanelMethods.show,
-      execute: (id: string) => panelStore.getState().show(id),
-    }),
-    toggle: defineMethod({
-      ...layoutPanelMethods.toggle,
-      execute: () => panelStore.getState().toggle(),
-    }),
-    subscribe: defineMethod({
-      ...layoutPanelMethods.subscribe,
-      execute: (listener: () => void) =>
-        watchAll(listener, [(notify) => panelStore.subscribe(notify)]),
+  defineService(LayoutPanelV2, {
+    select: defineMethod({
+      ...layoutPanelMethods.select,
+      execute: (id: string) => panelStore.getState().select(id),
     }),
   });

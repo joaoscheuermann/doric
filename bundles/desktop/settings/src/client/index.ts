@@ -13,6 +13,7 @@ import { ClaudeLoginV1 } from 'claude-login/contracts';
 import { LayoutDashboardV1 } from 'layout/contracts';
 
 import { initSettingsApi, setDashboardAvailable } from './api/settings-api.js';
+import { registerAppearanceSection } from './appearance-section.js';
 import { createSectionRoute, sectionPath } from './domain/section-route.js';
 import { sectionLink, sections } from './domain/sections.js';
 import {
@@ -51,14 +52,19 @@ export function activate({ services }: ClientContext): () => void {
       path: '/settings',
       create: () => ui.create('settings-page'),
     }),
-    ...sections.flatMap((section) => [
-      navigation.register({
-        path: sectionPath(section.id),
-        parent: '/settings',
-        create: () => ui.create(`settings-${section.id}`),
-      }),
-      regions.add('settings.sections', sectionLink(section)),
-    ]),
+    // Appearance registers its route and link only while the app answers
+    // `doric.appearance/v1` (S35).
+    ...sections
+      .filter((section) => section.id !== 'appearance')
+      .flatMap((section) => [
+        navigation.register({
+          path: sectionPath(section.id),
+          parent: '/settings',
+          create: () => ui.create(`settings-${section.id}`),
+        }),
+        regions.add('settings.sections', sectionLink(section)),
+      ]),
+    registerAppearanceSection({ services, ui, navigation, regions }),
     regions.add('layout.footer', {
       id: 'execution',
       tag: 'settings-execution-picker',

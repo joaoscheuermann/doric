@@ -23,6 +23,7 @@ export const linkHosts = portalHosts<SettingsLinkProps>([
 
 export const sectionIds = [
   'profile',
+  'appearance',
   'providers',
   'execution',
   'tools',
@@ -33,6 +34,7 @@ export type SectionId = (typeof sectionIds)[number];
 
 export const sectionHosts = {
   profile: portalHosts<Record<string, never>>([]),
+  appearance: portalHosts<Record<string, never>>([]),
   providers: portalHosts<Record<string, never>>([]),
   execution: portalHosts<Record<string, never>>([]),
   tools: portalHosts<Record<string, never>>([]),

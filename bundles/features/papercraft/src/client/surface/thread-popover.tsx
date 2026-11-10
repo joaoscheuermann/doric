@@ -322,7 +322,7 @@ export function ThreadPopover({
       }}
     >
       <PortalContainerProvider container={surface}>
-        <div className="flex items-center gap-0.5 border-b border-border py-1.5 pr-1.5 pl-3">
+        <div className="flex items-center gap-0.5 py-1.5 pr-1.5 pl-3">
           <span
             className="mr-auto flex min-w-0 items-center gap-2 text-sm font-normal"
             title={anchor}

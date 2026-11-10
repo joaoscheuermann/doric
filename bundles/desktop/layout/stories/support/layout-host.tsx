@@ -47,8 +47,8 @@ export interface TabSeed {
 export interface LayoutFixture extends HostOptions {
   /** Open tabs by owner (a Thread id or `project:<id>`); the last is selected. */
   readonly tabs?: Readonly<Record<string, readonly TabSeed[]>>;
-  /** The Project panel: open on Files unless a story says otherwise. */
-  readonly panel?: { readonly open?: boolean; readonly active?: string };
+  /** The Project panel's selected view: Files unless a story says otherwise. */
+  readonly panel?: { readonly active?: string };
   /** Whether an item asked for the `layout.main.bottom` split. */
   readonly bottom?: boolean;
   /** Sidebar groups other bundles add below the Threads tree. */
@@ -166,10 +166,7 @@ export const bindLayout = (
     count: (threadId) => counts[threadId] ?? 0,
     subscribe: () => ({ dispose: () => undefined }),
   });
-  panelStore.setState({
-    open: fixture.panel?.open ?? true,
-    active: fixture.panel?.active ?? 'files',
-  });
+  panelStore.setState({ active: fixture.panel?.active ?? 'files' });
   if (fixture.bottom) bottomStore.getState().set('terminals', true);
 
   const unbind = () => {

@@ -1008,6 +1008,92 @@ test('a child conversation footer stops its Thread while the main Thread stays s
   );
 });
 
+// The inset-card look (ui-redesign phase 3, Figma `99:8035`, `99:8508`): the
+// footer's composer stands 8 px after what precedes it with no rule between,
+// its button is the prototype's small one, and a sub-thread viewer's footer
+// is the band the conversation footer is.
+
+/** The classes of the conversation footer band (`workspace-view.tsx`). */
+const FOOTER_BAND =
+  'flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal';
+
+const classSet = (element: Element | null): string[] =>
+  [...(element?.classList ?? [])].sort();
+
+test('the footer composer stands after an 8 px gap with no rule, and its button is 24 px', async () => {
+  opened = await openChatWindow({
+    url: 'doric://app/elsewhere',
+    host: host(thread()),
+  });
+  const region = await footer(opened);
+
+  const send = button(region, 'Send (Cmd+Enter)');
+  assert.equal(send !== null, true, 'the footer offers a send');
+  assert.equal(
+    region.querySelector('[data-slot="separator"]') === null,
+    true,
+    'no rule before the controls',
+  );
+  assert.ok(send?.classList.contains('size-6'), 'the send button is 24 px');
+  const row = send?.parentElement;
+  assert.ok(row?.classList.contains('pl-2'), '8 px before the first control');
+  assert.ok(row?.classList.contains('gap-2'), '8 px between the controls');
+});
+
+test('a sub-thread viewer draws its composer in the conversation footer band', async () => {
+  const childId = '44444444-4444-4444-8444-444444444444';
+  let create:
+    | ((tag: string, props: Record<string, string>) => HTMLElement)
+    | undefined;
+  const records = [thread(), thread({ id: childId })];
+  const workspace = workspaceProbe(
+    () => records[0],
+    (id) => records.find((entry) => entry.id === id),
+  );
+  opened = await openChatWindow({
+    url: 'doric://app/elsewhere',
+    host: host(thread()),
+    probe: {
+      provides: workspace.provides,
+      requires: ['ui/v1@^1.0.0'],
+      activate: async (context: ClientContext) => {
+        await workspace.activate(context);
+        const ui = context.services.use(UiV1);
+        create = (tag, props) => ui.create(tag, props) as HTMLElement;
+      },
+    },
+  });
+  assert.ok(create);
+  const panel = create('chat-thread-panel', { projectId, threadId: childId });
+  opened.document.body.append(panel);
+  await settle(100);
+
+  const band = panel.querySelector('[data-slot="chat-thread-footer"]');
+  assert.equal(band !== null, true, 'the viewer draws its footer');
+  assert.deepEqual(classSet(band), FOOTER_BAND.split(' ').sort());
+  assert.equal(button(band as Element, 'Send (Cmd+Enter)') !== null, true);
+  assert.equal(
+    band?.querySelector('[data-slot="separator"]') === null,
+    true,
+    'no rule before the composer',
+  );
+});
+
+test("the column's own left padding holds the gutter mark, and the first line sits 2 px under the top", async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+
+  const column = opened.document.querySelector(
+    '.conversation-scroll [data-slot="scroll-area-viewport"] > div',
+  );
+  assert.equal(column !== null, true, 'the transcript column');
+  // The mark hangs 1.875rem left of the text (styles.css), so the column's
+  // left padding must be at least that for the mark to stay inside it.
+  const classes = classSet(column);
+  for (const name of ['pl-[1.875rem]', 'pr-4', 'pt-0.5'])
+    assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+});
+
 // R-9.7 and R-9.9: another Thread's input. Chat draws it itself until a
 // bundle registers a renderer for `chat.delegated-input/v1`; then the turn
 // hosts that element, handing it the block, and the element can show the

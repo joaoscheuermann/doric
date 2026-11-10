@@ -14,7 +14,13 @@ export type Terminal = {
   readonly timeoutMs: number | null;
   readonly state: 'starting' | 'running' | 'exited';
   readonly pty: boolean;
+  /** terminal/v1 1.2.0: the reader's name for it (A13); absent when none. */
+  readonly name?: string;
 };
+
+/** What names a terminal on its row and tab: its name, else its command. */
+export const terminalTitle = (terminal: Terminal): string =>
+  terminal.name ?? (terminal.command || 'Terminal');
 
 export type TerminalUpdate =
   | { readonly kind: 'snapshot'; readonly terminals: readonly Terminal[] }
@@ -32,7 +38,8 @@ export type TerminalOutputUpdate =
   | { readonly kind: 'error'; readonly message: string };
 
 export const terminalLabel = (terminal: Terminal, now: number): string => {
-  if (terminal.origin === 'user') return terminal.command;
+  const title = terminal.name ?? terminal.command;
+  if (terminal.origin === 'user') return title;
   const elapsed = Math.max(
     0,
     Math.floor((now - Date.parse(terminal.startedAt)) / 1000),
@@ -41,7 +48,7 @@ export const terminalLabel = (terminal: Terminal, now: number): string => {
     .toString()
     .padStart(2, '0')}:${(elapsed % 60).toString().padStart(2, '0')}`;
   const limit = timeoutLabel(terminal.timeoutMs);
-  return `${terminal.command} · ${time} (${limit})`;
+  return `${title} · ${time} (${limit})`;
 };
 
 const timeoutLabel = (milliseconds: number | null): string => {

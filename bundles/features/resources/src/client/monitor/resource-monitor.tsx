@@ -1,7 +1,4 @@
-import { Button } from 'desktop/ui/button';
-import { ToolbarDivider } from 'desktop/ui/panels';
-import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
+import { svgMask } from 'desktop/ui/svg-mask';
 import { cn } from 'desktop/ui/utils';
 import { CpuIcon, MemoryStickIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -21,22 +18,58 @@ import {
   useHostResources,
   useProjectResources,
 } from '../hooks/use-resources.js';
+import { CLOUD_FILL_SVG, CLOUD_OFF_FILL_SVG } from './cloud-glyphs.js';
 
 /**
- * The footer's resource monitor: one control for the selected Project's sandbox
- * and one for the machine Doric runs on, each a snapshot the host answers with on
- * a poll. It is read-only and quiet — a value, a dash when the host cannot say,
- * and a warning tone only on the value that crossed its threshold. Nothing here
- * animates, announces or toasts: a failed read keeps the last value rather than
- * flashing an empty state.
+ * One section of the resources popover, Sandbox or Machine, as the last poll
+ * left it. It holds no DOM and reads no clock.
  */
-export function ResourceMonitor({
-  reads,
-  projectId,
-}: {
-  readonly reads: ResourcesReads;
-  readonly projectId?: string;
-}) {
+export interface ResourceSectionModel {
+  /** The section heading. */
+  readonly title: 'Sandbox' | 'Machine';
+  /** `memoryLabel(used, limit)`: "1.2 / 4 GiB", the used value alone without a limit, or "—". */
+  readonly memory: string;
+  /** `cpuLabel(percent)`: "23%" or "—". */
+  readonly cpu: string;
+  /** `severity(...) === 'warning'`: memory ≥ `memorySaturationRatio` of its limit. */
+  readonly memoryWarning: boolean;
+  /** The sustained cpu verdict of `useCpuSustain`, never a single hot reading. */
+  readonly cpuWarning: boolean;
+  /** used/limit clamped to [0, 1]; absent without both. */
+  readonly memoryRatio?: number;
+  /** percent/100; absent without a finite percent. */
+  readonly cpuRatio?: number;
+  /**
+   * Sandbox only: `resourceNotice(result)`, which is "Preparing environment…",
+   * "Environment unavailable" or "Resources unavailable in this provider" (G11).
+   * When set, the section shows the sentence in place of its gauges.
+   */
+  readonly notice?: string;
+}
+
+/** Everything the badge and its popover draw for one poll. */
+export interface ResourcesSnapshot {
+  readonly sandbox: ResourceSectionModel;
+  readonly machine: ResourceSectionModel;
+  /**
+   * The reading the header's freshness is measured from: the sandbox reading's
+   * `at` (`:52`), else the machine reading's (`:102`). Absent when neither has
+   * a reading.
+   */
+  readonly at?: string;
+}
+
+/**
+ * Polls `reads` while mounted: the host every 3 s, and the Project's sandbox
+ * while `projectId` is set, at the pending hint otherwise (`use-resources.ts`).
+ * It returns the current snapshot. The cpu verdicts advance once per new
+ * reading `at`, never on a re-render. It needs a `QueryClientProvider` above it
+ * and does not throw.
+ */
+export const useResourcesSnapshot = (
+  reads: ResourcesReads,
+  projectId: string | undefined,
+): ResourcesSnapshot => {
   const host = useHostResources(reads);
   const project = useProjectResources(reads, projectId);
 
@@ -46,77 +79,52 @@ export function ResourceMonitor({
   const containerCpu = useCpuSustain(container?.at, container?.cpuPercent);
   const hostCpu = useCpuSustain(host.data?.at, host.data?.cpuPercent);
 
-  const sandbox = containerModel(container, containerCpu, {
-    subject: 'Sandbox resources',
-    notice: resourceNotice(project.data),
-    at: container?.at,
-  });
-  const machine = hostModel(host.data, hostCpu);
-
-  return (
-    <>
-      <ResourceControl model={sandbox} />
-      <ToolbarDivider />
-      <ResourceControl model={machine} />
-    </>
-  );
-}
-
-/** Everything one control draws, without reaching for the DOM or a clock. */
-type ResourceControlModel = {
-  readonly subject: string;
-  readonly memory: string;
-  readonly cpu: string;
-  readonly memoryWarning: boolean;
-  readonly cpuWarning: boolean;
-  readonly memoryRatio?: number;
-  readonly cpuRatio?: number;
-  readonly notice?: string;
-  readonly freshness?: string;
+  return {
+    sandbox: containerModel(
+      container,
+      containerCpu,
+      resourceNotice(project.data),
+    ),
+    machine: hostModel(host.data, hostCpu),
+    at: container?.at ?? host.data?.at,
+  };
 };
 
 const containerModel = (
   container: ContainerResources | undefined,
   cpuSustained: boolean,
-  context: {
-    readonly subject: string;
-    readonly notice?: string;
-    readonly at?: string;
-  },
-): ResourceControlModel =>
+  notice: string | undefined,
+): ResourceSectionModel =>
   controlModel({
-    at: context.at,
     cpuPercent: container?.cpuPercent,
     cpuSustained,
     memoryLimitBytes: container?.memoryLimitBytes,
     memoryUsedBytes: container?.memoryUsedBytes,
-    notice: context.notice,
-    subject: context.subject,
+    notice,
+    title: 'Sandbox',
   });
 
 const hostModel = (
   host: HostResources | undefined,
   cpuSustained: boolean,
-): ResourceControlModel =>
+): ResourceSectionModel =>
   controlModel({
-    at: host?.at,
     cpuPercent: host?.cpuPercent,
     cpuSustained,
     memoryLimitBytes: host?.memoryTotalBytes,
     memoryUsedBytes: host?.memoryUsedBytes,
-    subject: 'Machine resources',
+    title: 'Machine',
   });
 
 const controlModel = (input: {
-  readonly subject: string;
-  readonly at?: string;
+  readonly title: ResourceSectionModel['title'];
   readonly memoryUsedBytes?: number;
   readonly memoryLimitBytes?: number;
   readonly cpuPercent?: number;
   readonly cpuSustained: boolean;
   readonly notice?: string;
-}): ResourceControlModel => ({
-  subject: input.subject,
+}): ResourceSectionModel => ({
+  title: input.title,
   memory: memoryLabel(input.memoryUsedBytes, input.memoryLimitBytes),
   cpu: cpuLabel(input.cpuPercent),
   memoryWarning:
@@ -132,7 +140,6 @@ const controlModel = (input: {
       ? input.cpuPercent / 100
       : undefined,
   notice: input.notice,
-  freshness: input.at === undefined ? undefined : freshnessLabel(input.at),
 });
 
 const ratio = (used?: number, limit?: number): number | undefined =>
@@ -141,85 +148,100 @@ const ratio = (used?: number, limit?: number): number | undefined =>
     : undefined;
 
 /**
- * One monitored subject: a ghost button carrying its memory and cpu values, a
- * tooltip that names the subject and its staleness, and a popover with the gauge
- * the resting control does not draw.
+ * The popover's body (`32:1463`) with no popover around it, so a story can show
+ * any state of `176:394`. It renders, in order:
+ * - `data-slot="resources-popover-header"`:
+ *   - when `connected` and `snapshot.at` is set, "Connected · " +
+ *     `freshnessLabel(snapshot.at)` ("Connected · Updated 2s ago");
+ *   - when connected without `at`, "Connected";
+ *   - when not connected, "Disconnected".
+ * - A "Sandbox" section, then a "Machine" section. Each shows its `notice` or
+ *   the Memory and CPU gauges (`Gauge`, `32:1377`) in the warning tone of their
+ *   flags.
+ *
+ * The freshness reads the wall clock at render, so it advances with each poll's
+ * re-render.
  */
-function ResourceControl({ model }: { readonly model: ResourceControlModel }) {
-  const ariaLabel = `${model.subject}: memory ${model.memory}, cpu ${model.cpu}`;
-  const tooltip = [model.subject, model.notice, model.freshness]
-    .filter((part): part is string => Boolean(part))
-    .join(' · ');
+export function ResourcesPopoverBody({
+  connected,
+  snapshot,
+}: {
+  readonly connected: boolean;
+  readonly snapshot: ResourcesSnapshot;
+}) {
+  const freshness =
+    connected && snapshot.at !== undefined
+      ? freshnessLabel(snapshot.at)
+      : undefined;
+  const glyph = connected ? CLOUD_FILL_SVG : CLOUD_OFF_FILL_SVG;
+  const mask = `${svgMask(glyph)} center / contain no-repeat`;
 
   return (
-    <Popover>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="min-w-0 shrink gap-1.5"
-                  aria-label={ariaLabel}
-                />
-              }
-            />
-          }
-        >
-          <span
-            className={cn(
-              'min-w-0 truncate tabular-nums',
-              model.memoryWarning ? 'text-warning' : 'text-muted-foreground',
-            )}
-          >
-            {model.memory}
-          </span>
-          <span className="text-muted-foreground">·</span>
-          <span
-            className={cn(
-              'min-w-0 truncate tabular-nums',
-              model.cpuWarning ? 'text-warning' : 'text-muted-foreground',
-            )}
-          >
-            {model.cpu}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="top"
-        align="start"
-        className="w-64 max-w-[calc(100vw-1rem)] gap-2 p-3"
+    <div className="flex flex-col gap-3 text-xs leading-4 font-light">
+      <div
+        data-slot="resources-popover-header"
+        className="flex items-center gap-1.5"
       >
-        {model.notice ? (
-          <span className="text-xs text-muted-foreground">{model.notice}</span>
-        ) : (
+        <span
+          aria-hidden="true"
+          className="size-3 shrink-0"
+          style={{
+            mask,
+            WebkitMask: mask,
+            backgroundColor: connected
+              ? 'var(--paper-green)'
+              : 'var(--paper-red)',
+          }}
+        />
+        <span className="text-foreground">
+          {connected ? 'Connected' : 'Disconnected'}
+        </span>
+        {freshness && (
           <>
-            <Gauge
-              icon={<MemoryStickIcon />}
-              label="Memory"
-              ratio={model.memoryRatio}
-              value={model.memory}
-              warning={model.memoryWarning}
-            />
-            <Gauge
-              icon={<CpuIcon />}
-              label="CPU"
-              ratio={model.cpuRatio}
-              value={model.cpu}
-              warning={model.cpuWarning}
-            />
+            <span className="sr-only"> · </span>
+            <span className="ml-auto text-muted-foreground">{freshness}</span>
           </>
         )}
-        {model.freshness && (
-          <span className="text-xs text-muted-foreground">
-            {model.freshness}
-          </span>
-        )}
-      </PopoverContent>
-    </Popover>
+      </div>
+      <div className="h-px w-full bg-foreground/10" />
+      <ResourceSection model={snapshot.sandbox} dimmed={!connected} />
+      <ResourceSection model={snapshot.machine} dimmed={!connected} />
+    </div>
+  );
+}
+
+/** One titled section: its notice, or its Memory and CPU gauges. */
+function ResourceSection({
+  model,
+  dimmed,
+}: {
+  readonly model: ResourceSectionModel;
+  readonly dimmed: boolean;
+}) {
+  return (
+    <div className={cn('flex flex-col gap-2', dimmed && 'opacity-50')}>
+      <span className="text-foreground">{model.title}</span>
+      {model.notice ? (
+        <span className="text-muted-foreground">{model.notice}</span>
+      ) : (
+        <>
+          <Gauge
+            icon={<MemoryStickIcon />}
+            label="Memory"
+            ratio={model.memoryRatio}
+            value={model.memory}
+            warning={model.memoryWarning}
+          />
+          <Gauge
+            icon={<CpuIcon />}
+            label="CPU"
+            ratio={model.cpuRatio}
+            value={model.cpu}
+            warning={model.cpuWarning}
+          />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -239,7 +261,7 @@ function Gauge({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-1.5 text-xs">
+      <div className="flex items-center gap-1.5">
         <span className="text-muted-foreground [&_svg]:size-3">{icon}</span>
         <span className="text-muted-foreground">{label}</span>
         <span

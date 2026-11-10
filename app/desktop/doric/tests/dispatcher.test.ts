@@ -10,6 +10,7 @@ import { type ProviderRecord, ServiceDirectory } from 'bundle/runtime';
 
 import { ConnectionRelay } from '../src/connection/relay';
 import type { ConnectionListener } from '../src/connection/status';
+import type { ThemeSource } from '../src/platform/appearance';
 import {
   type GenerationView,
   generationView,
@@ -216,6 +217,15 @@ let window: ReturnType<typeof fakeContents>;
 let hostConnected: boolean;
 let relay: ConnectionRelay;
 let opened: string[];
+let splashId: number | undefined;
+/** Every action the `splashAct` dependency received. */
+let splashActs: unknown[];
+/** The theme the `appearanceGet` dependency answers. */
+let heldTheme: ThemeSource;
+/** Every theme the `appearanceSet` dependency was called with. */
+let savedThemes: ThemeSource[];
+/** What the `appearanceSet` dependency does with a theme. */
+let saveTheme: (theme: ThemeSource) => Promise<void>;
 
 /** The `/status` monitor's surface: a status and its change listeners. */
 const statusSource = (initial: 'connected' | 'disconnected') => {
@@ -257,6 +267,11 @@ beforeEach(() => {
   hostConnected = false;
   relay = new ConnectionRelay();
   opened = [];
+  splashId = undefined;
+  splashActs = [];
+  heldTheme = 'dark';
+  savedThemes = [];
+  saveTheme = async () => undefined;
 
   const resolution = resolveDistribution(catalog, 1);
 
@@ -332,9 +347,11 @@ beforeEach(() => {
     validators: createSchemaValidators(),
     host,
     log: silentLog,
-    splashContents: () => undefined,
+    splashContents: () => splashId,
     splashStates: new SplashStates(),
-    splashAct: async () => undefined,
+    splashAct: async (action) => {
+      splashActs.push(action);
+    },
     view: (generation) => (generation === 1 ? view : undefined),
     process: (generation) =>
       generation === 1
@@ -355,6 +372,7 @@ beforeEach(() => {
       safeArea: { top: 0, left: 80, right: 0 },
     }),
     tokens: () => ({}),
+    appVersion: '0.0.1',
     answerClose: () => undefined,
     windowReady: () => undefined,
     windowFailure: () => undefined,
@@ -364,6 +382,12 @@ beforeEach(() => {
     connection: relay,
     openExternal: async (url) => {
       opened.push(url);
+    },
+    appearanceGet: () => heldTheme,
+    appearanceSet: (theme) => {
+      savedThemes.push(theme);
+
+      return saveTheme(theme);
     },
   });
 });
@@ -404,8 +428,72 @@ describe('desktop IPC dispatcher', () => {
       },
       mode: 'connected',
       tokens: {},
+      app: { version: '0.0.1' },
     });
     assert.equal(workspace.pinnedGeneration, 1);
+  });
+
+  test('describes the splash as a technical surface carrying the app version', async () => {
+    const splash = fakeContents(21, 'doric://app/splash@0.0.0/index.html');
+    splashId = splash.contents.id;
+
+    const description = (await dispatcher.handle(event(splash.contents), {
+      op: 'describeWindow',
+    })) as { kind?: unknown; app?: unknown };
+
+    assert.equal(description.kind, 'technical');
+    assert.deepEqual(description.app, { version: '0.0.1' });
+  });
+
+  test('the splash GitHub link opens the repository through openExternal, never splashAct', async () => {
+    const splash = fakeContents(21, 'doric://app/splash@0.0.0/index.html');
+
+    splashId = splash.contents.id;
+
+    const result = await dispatcher.handle(event(splash.contents), {
+      op: 'call',
+      envelope: envelope({
+        contract: 'doric.splash/v1',
+        method: 'act',
+        input: { action: 'open-link', link: 'github' },
+        bundleId: null,
+      }),
+    });
+
+    assert.deepEqual(result, { ok: true, output: undefined });
+    assert.deepEqual(opened, ['https://github.com/joaoscheuermann/doric']);
+    assert.deepEqual(splashActs, []);
+  });
+
+  test('a splash open-link with another link or a url fails invalid_input', async () => {
+    const splash = fakeContents(21, 'doric://app/splash@0.0.0/index.html');
+
+    splashId = splash.contents.id;
+
+    for (const input of [
+      { action: 'open-link', link: 'discord' },
+      { action: 'open-link', link: 'github', url: 'https://example.com' },
+      { action: 'open-link', url: 'https://example.com' },
+    ]) {
+      const result = await dispatcher.handle(event(splash.contents), {
+        op: 'call',
+        envelope: envelope({
+          contract: 'doric.splash/v1',
+          method: 'act',
+          input,
+          bundleId: null,
+        }),
+      });
+
+      assert.equal(
+        (result as { error?: { code: string } }).error?.code,
+        'invalid_input',
+        JSON.stringify(input),
+      );
+    }
+
+    assert.deepEqual(opened, []);
+    assert.deepEqual(splashActs, []);
   });
 
   test('a shell of a generation main no longer retains is reloaded', async () => {
@@ -644,6 +732,65 @@ describe('desktop IPC dispatcher', () => {
     assert.deepEqual(opened, [
       'https://claude.com/cai/oauth/authorize?state=s',
     ]);
+  });
+
+  const appearanceCall = (id: string, method: string, input: unknown) =>
+    dispatcher.handle(event(window.contents), {
+      op: 'call',
+      envelope: envelope({
+        id,
+        bundleId: null,
+        contract: 'doric.shell/v1',
+        method,
+        input,
+      }),
+    });
+
+  test('a window reads the theme preference main holds (T-4.1.6)', async () => {
+    await describeWindow();
+    heldTheme = 'system';
+
+    assert.deepEqual(await appearanceCall('w-get', 'appearanceGet', {}), {
+      ok: true,
+      output: { theme: 'system' },
+    });
+  });
+
+  test('a window saves a theme main checks first, and nothing else reaches the store (T-4.1.6)', async () => {
+    await describeWindow();
+
+    const saved = await appearanceCall('w-set', 'appearanceSet', {
+      theme: 'light',
+    });
+    const refused = await Promise.all(
+      [{ theme: 'blue' }, { theme: 'light', extra: true }, {}, 'light'].map(
+        (input, index) =>
+          appearanceCall(`w-refused-${index}`, 'appearanceSet', input),
+      ),
+    );
+
+    assert.deepEqual(saved, { ok: true, output: undefined });
+    for (const result of refused) {
+      assert.equal(
+        (result as { error?: { code: string } }).error?.code,
+        'invalid_input',
+      );
+    }
+    assert.deepEqual(savedThemes, ['light']);
+  });
+
+  test('a theme main cannot save fails unavailable (T-4.1.8)', async () => {
+    await describeWindow();
+    saveTheme = () => Promise.reject(new Error('EACCES: read-only'));
+
+    const result = await appearanceCall('w-fail', 'appearanceSet', {
+      theme: 'light',
+    });
+
+    assert.deepEqual(
+      (result as { error?: { code: string; message: string } }).error,
+      { code: 'unavailable', message: 'Could not save the appearance.' },
+    );
   });
 
   test('a window can no longer show a native notification itself (WP-10N)', async () => {

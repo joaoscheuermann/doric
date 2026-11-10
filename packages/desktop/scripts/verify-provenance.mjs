@@ -147,6 +147,12 @@ const rendererPatches = {
   ],
 };
 
+/** The footer patch: a dialog's footer draws no rule above it. */
+const footerRule = [
+  "'-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl bg-muted/50 p-4",
+  "'-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4",
+];
+
 /** The local patches of the `registry` files, each undone exactly. */
 const registryPatches = {
   'components/alert-dialog.tsx': [
@@ -155,8 +161,12 @@ const registryPatches = {
       spread: wrapped('AlertDialogPrimitive', 'alert-dialog-portal'),
     }),
     regular("'text-base font-medium sm:"),
+    footerRule,
   ],
   'components/badge.tsx': [regular('text-xs font-medium whitespace-nowrap')],
+  'components/button-group.tsx': [
+    regular('rounded-lg border bg-muted px-2.5 text-sm font-medium'),
+  ],
   'components/combobox.tsx': [
     ...portalContainer({
       primitive: 'ComboboxPrimitive',
@@ -179,6 +189,7 @@ const registryPatches = {
       spread: oneLine('DialogPrimitive', 'dialog-portal'),
     }),
     regular("'text-base leading-none font-medium'"),
+    footerRule,
   ],
   'components/dropdown-menu.tsx': [
     ...portalContainer({
@@ -220,9 +231,10 @@ const registryPatches = {
     inline: true,
   }),
   'components/button.tsx': [
-    // Commit `5fac0ee`: the default variant hovers by mixing in the foreground.
+    // Commit `5fac0ee`, then S4 (UR20): the default variant hovers by mixing in
+    // the foreground (light) or the primary foreground (dark).
     [
-      "        default:\n          'bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)]',\n",
+      "        default:\n          'bg-primary text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_60%)] dark:hover:bg-[color-mix(in_oklch,var(--primary),var(--primary-foreground)_8%)]',\n",
       "        default: 'bg-primary text-primary-foreground hover:bg-primary/80',\n",
     ],
     solidButton,

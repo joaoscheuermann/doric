@@ -38,6 +38,77 @@ export const linearRgb = ({ c, h, l }: Oklch): LinearRgb => {
 };
 
 /**
+ * The inverse of `linearRgb`: linear sRGB to oklch, from Oklab's own
+ * definition (Björn Ottosson, https://bottosson.github.io/posts/oklab/).
+ * Linear sRGB goes through his M1 matrix to cone responses. Then the cube
+ * root, then M2 to Lab, then `c = hypot(a, b)` and `h = atan2(b, a)` in
+ * degrees.
+ *
+ * Accepts: any unit-linear sRGB, including values outside `0..1`.
+ * Returns: `l` and `c` unclamped, and `h` in `[0, 360)`. When `c` is about 0,
+ * `h` is whatever `atan2` gives, normalised, and has no meaning.
+ * Fails: never.
+ * Invariant: `linearRgb(oklch(rgb))` equals `rgb` within 1e-6 per channel.
+ */
+export const oklch = ([red, green, blue]: LinearRgb): Oklch => {
+  const long = Math.cbrt(
+    0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue,
+  );
+  const medium = Math.cbrt(
+    0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue,
+  );
+  const short = Math.cbrt(
+    0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue,
+  );
+  const l = 0.2104542553 * long + 0.793617785 * medium - 0.0040720468 * short;
+  const a = 1.9779984951 * long - 2.428592205 * medium + 0.4505937099 * short;
+  const b = 0.0259040371 * long + 0.7827717662 * medium - 0.808675766 * short;
+  const degrees = (Math.atan2(b, a) * 180) / Math.PI;
+
+  return { l, c: Math.hypot(a, b), h: (degrees + 360) % 360 };
+};
+
+/** Below this chroma a colour has no hue worth mixing. */
+const achromatic = 1e-6;
+
+/**
+ * What CSS `color-mix(in oklch, from, to amount)` paints. `amount` is the
+ * share of `to` as a fraction from `0` to `1`, so `60%` is `0.6`. Note the
+ * order: this is the reverse of `blend`, whose alpha weights the first
+ * argument.
+ * `l` and `c` mix linearly. `h` mixes along the shorter arc. A colour with
+ * `c < 1e-6` has no hue and takes the other colour's hue; when both have no
+ * hue, `h = 0`.
+ *
+ * Returns: the mix converted back to linear sRGB through `linearRgb`,
+ * unclamped.
+ * Fails: never. An `amount` outside `0..1` extrapolates and is not
+ * validated.
+ * Invariant: `amount = 0` gives `from` and `amount = 1` gives `to`, each
+ * within 1e-6.
+ */
+export const mixOklch = (
+  from: LinearRgb,
+  to: LinearRgb,
+  amount: number,
+): LinearRgb => {
+  const start = oklch(from);
+  const end = oklch(to);
+  const startHue = start.c < achromatic ? end.h : start.h;
+  const endHue = end.c < achromatic ? startHue : end.h;
+  const both = start.c < achromatic && end.c < achromatic;
+  const turn = ((((endHue - startHue) % 360) + 540) % 360) - 180;
+  const mix = (left: number, right: number): number =>
+    left + (right - left) * amount;
+
+  return linearRgb({
+    l: mix(start.l, end.l),
+    c: mix(start.c, end.c),
+    h: both ? 0 : startHue + turn * amount,
+  });
+};
+
+/**
  * What a screen shows where one colour is drawn over another at an alpha: the
  * two mixed channel by channel, which is what a `/10` in a class name means.
  */

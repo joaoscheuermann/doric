@@ -1,14 +1,28 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 
+import { AccountStatus } from '../../../src/client/components/organisms/account-status.js';
 import { Dashboard } from '../../../src/client/components/organisms/dashboard.js';
+import { ProjectTabBar } from '../../../src/client/components/organisms/project-tabs.js';
+import { SidebarHeader } from '../../../src/client/components/organisms/sidebar-header.js';
 import type { Project } from '../../../src/client/domain/workspace.js';
 import type { Workspace } from '../../../src/client/hooks/use-workspace.js';
 import { createQueryClient } from '../../../src/client/queries/client.js';
-import { checkout, minutesAgo, projects, threads } from '../../support/data.js';
+import {
+  billing,
+  checkout,
+  docs,
+  minutesAgo,
+  projects,
+  threads,
+} from '../../support/data.js';
 import { type LayoutFixture, LayoutHost } from '../../support/layout-host.js';
 import { windowDecorator } from '../../support/window-frame.js';
-import { workspaceOf } from '../../support/workspace.js';
+import {
+  projectTabsOf,
+  workspaceActions,
+  workspaceOf,
+} from '../../support/workspace.js';
 
 const navigate = (path: string) => console.info('Story navigate', path);
 
@@ -54,6 +68,27 @@ function Board({
             navigate={navigate}
             createRequest={createRequest}
             onOpenSettings={() => undefined}
+            sidebarHeader={
+              <SidebarHeader active onDashboard={() => navigate('/projects')} />
+            }
+            header={
+              <ProjectTabBar
+                actions={<AccountStatus onOpenSettings={() => undefined} />}
+                state={projectTabsOf([checkout, docs, billing])}
+                path={all ? '/projects' : '/'}
+                projects={[checkout, docs, billing]}
+                navigate={navigate}
+                close={(id) => console.info('Story close tab', id)}
+                closeMany={(ids) => console.info('Story close tabs', ids)}
+                move={(from, to) => console.info('Story move tab', from, to)}
+                onNewProject={workspaceActions.beginProject}
+                onNewThread={(project) =>
+                  workspaceActions.beginThread(project.id)
+                }
+                setColor={workspaceActions.setProjectColor}
+                rename={async () => undefined}
+              />
+            }
           />
         </Frame>
       </QueryClientProvider>
@@ -76,7 +111,10 @@ export const AllProjects = {
   render: () => <Board />,
 };
 
-/** The new-tab page: actions, search and the ten most recent Projects. */
+/**
+ * The new-tab page (`85:7726`): the Dashboard sidebar with no row selected,
+ * then actions, search and the ten most recent Projects in the inset card.
+ */
 export const Recent = {
   render: () => <Board all={false} />,
 };

@@ -19,6 +19,7 @@ import { TooltipProvider } from 'desktop/ui/tooltip';
 import {
   type CSSProperties,
   createElement,
+  type ReactNode,
   StrictMode,
   useEffect,
   useLayoutEffect,
@@ -28,6 +29,7 @@ import {
 } from 'react';
 
 import { DeleteDialog } from '../components/molecules/delete-dialog.js';
+import { AccountStatus } from '../components/organisms/account-status.js';
 import { Dashboard } from '../components/organisms/dashboard.js';
 import {
   ProjectPanel,
@@ -39,12 +41,13 @@ import {
   type SidebarModel,
 } from '../components/organisms/project-sidebar.js';
 import { ProjectTabBar } from '../components/organisms/project-tabs.js';
-import { WorkspaceGlobalFooter } from '../components/organisms/workspace-footer.js';
+import { SidebarHeader } from '../components/organisms/sidebar-header.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
 } from '../components/organisms/workspace-tabs.js';
 import { ConversationTerminals } from '../components/templates/conversation-terminals.js';
+import { INSET_CARD } from '../components/templates/inset-card.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
 import { useProjectTabs } from '../hooks/use-project-tabs.js';
@@ -54,6 +57,7 @@ import { useWorkspaceTabs } from '../hooks/use-workspace-tabs.js';
 import { layoutQueryClient } from '../queries/client.js';
 import { layoutServices } from '../services/layout-services.js';
 import { bottomStore } from '../stores/bottom.js';
+import { newTabStore } from '../stores/new-tab.js';
 import { panelStore } from '../stores/panel.js';
 import { workspaceTabsStore } from '../stores/workspace-tabs.js';
 
@@ -69,9 +73,15 @@ const OPEN_SETTINGS = 'core.open-settings/v1';
 const Region = ({ name }: { readonly name: string }) =>
   createElement('core-region', { name });
 
+/** Marks `/` as opened through "New project", or clears that mark. */
+const setNewTab = (open: boolean) => newTabStore.getState().set(open);
+
 function Workspace() {
   const workspace = useWorkspace();
-  const [newTab, setNewTab] = useState(false);
+  const newTab = useSyncExternalStore(
+    newTabStore.subscribe,
+    () => newTabStore.getState().open,
+  );
   const frame = useRef<HTMLDivElement>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   useLayoutEffect(() => {
@@ -98,12 +108,6 @@ function Workspace() {
       : undefined);
   const tabs = useWorkspaceTabs(tabOwner);
   const { actions } = workspace;
-  // The sandbox panel starts open and keeps the reader's choice
-  // (`layout.panel/v1`).
-  const filesOpen = useSyncExternalStore(
-    panelStore.subscribe,
-    () => panelStore.getState().open,
-  );
   const panelView = useSyncExternalStore(
     panelStore.subscribe,
     () => panelStore.getState().active,
@@ -153,23 +157,29 @@ function Workspace() {
       });
   };
 
-  const tabBar = (
+  const openPath = (path: string) => {
+    setNewTab(false);
+    projectTabs.navigate(path);
+    setFocusRequest((count) => count + 1);
+  };
+  const tabBar = ({ end }: { readonly end?: ReactNode }) => (
     <ProjectTabBar
-      trailing={projectTabs.path === '/' || projectTabs.path === '/projects'}
+      actions={end}
       state={projectTabs.state}
       path={projectTabs.path}
       projects={workspace.projects}
-      navigate={(path) => {
-        setNewTab(false);
-        projectTabs.navigate(path);
-        setFocusRequest((count) => count + 1);
-      }}
+      navigate={openPath}
       close={projectTabs.close}
       closeMany={projectTabs.closeMany}
       move={projectTabs.move}
       rename={(project, name) =>
         actions.rename({ kind: 'project', value: project }, name)
       }
+      onNewThread={(project) => {
+        setNewTab(false);
+        actions.beginThread(project.id);
+      }}
+      setColor={actions.setProjectColor}
       onNewProject={() => {
         projectTabs.navigate('/');
         setNewTab(true);
@@ -177,22 +187,41 @@ function Workspace() {
     />
   );
   if (projectTabs.path === '/' || projectTabs.path === '/projects') {
+    // Every Dashboard form, the home body included (`85:7726`, UR1), has the
+    // Dashboard sidebar before the tab bar, so none keeps the macOS inset.
+    const home = newTab && projectTabs.path === '/';
     return (
       <div
         ref={frame}
         className="flex h-svh min-h-0 flex-col bg-background text-foreground"
       >
-        {tabBar}
         <Dashboard
           workspace={workspace}
           onOpenSettings={openSettings}
-          all={!newTab || projectTabs.path !== '/'}
+          all={!home}
           navigate={(path) => {
             setNewTab(false);
             projectTabs.navigate(path);
           }}
+          header={tabBar({
+            end: <AccountStatus onOpenSettings={openSettings} />,
+          })}
+          sidebarHeader={
+            <SidebarHeader
+              active
+              onDashboard={() => openPath('/projects')}
+              onSearch={() => {
+                // As the Dashboard's ⌘F does on the list (plan-4 G3): the
+                // sidebar's "Search projects", the first in the frame.
+                const input = frame.current?.querySelector<HTMLInputElement>(
+                  'input[aria-label="Search projects"]',
+                );
+                input?.focus();
+                input?.select();
+              }}
+            />
+          }
         />
-        <WorkspaceGlobalFooter onOpenSettings={openSettings} />
         <DeleteDialog
           entity={workspace.deleting}
           pending={workspace.deletingPending}
@@ -208,7 +237,7 @@ function Workspace() {
   return (
     <div
       ref={frame}
-      className="flex h-svh min-h-0 flex-col bg-background text-foreground"
+      className="flex h-svh min-h-0 flex-col bg-sidebar text-foreground"
     >
       <SidebarProvider
         style={panelWidth}
@@ -222,33 +251,48 @@ function Workspace() {
           className="min-h-0 flex-1 gap-0"
         >
           <WorkspaceLayout
-            header={tabBar}
+            header={tabBar({
+              end: <Region name="layout.header" />,
+            })}
             viewerTabs={
               tabs.items.length > 0 && tabOwner ? (
                 <WorkspaceTabBar state={tabs} threadId={tabOwner} />
               ) : undefined
             }
-            headerActions={
+            files={<ProjectPanel active={panelView} items={panelItems} />}
+            filesHeader={
               <>
-                <Region name="layout.header" />
                 <ProjectPanelTabs
                   active={panelView}
-                  onActiveChange={panel.show}
+                  onActiveChange={panel.select}
                   items={panelItems}
                 />
+                <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+                  <AccountStatus onOpenSettings={openSettings} />
+                </div>
               </>
             }
-            files={<ProjectPanel active={panelView} items={panelItems} />}
-            filesOpen={filesOpen}
+            filesFooter={
+              <div className="flex h-7 min-w-0 flex-1 items-center gap-1">
+                <Region name="layout.panel.footer" />
+              </div>
+            }
             fileViewer={
               tabs.items.length === 0 || !tabOwner ? undefined : (
                 <WorkspaceTabs state={tabs} />
               )
             }
-            onFilesOpenChange={panel.setOpen}
-            sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
+            sidebar={
+              <ProjectSidebar
+                header={
+                  <SidebarHeader onDashboard={() => openPath('/projects')} />
+                }
+                actions={sidebarActions}
+                model={model}
+              />
+            }
           >
-            <SidebarInset className="min-h-0">
+            <SidebarInset className={INSET_CARD}>
               <ConversationTerminals
                 bottom={bottomVisible && <Region name="layout.main.bottom" />}
               >
@@ -282,7 +326,7 @@ function Workspace() {
               </ConversationTerminals>
               <footer
                 data-slot="workspace-footer"
-                className="flex chrome-bar shrink-0 items-center justify-end gap-1 px-2 text-[11px] font-light text-muted-foreground"
+                className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal"
               >
                 <Region name="layout.footer" />
               </footer>
@@ -309,7 +353,6 @@ function Workspace() {
           }}
         />
       </SidebarProvider>
-      <WorkspaceGlobalFooter onOpenSettings={openSettings} />
     </div>
   );
 }

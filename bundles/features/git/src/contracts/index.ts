@@ -1,7 +1,8 @@
 // Public contracts of the `git` bundle (stage 10, §3.8).
 //
 // - `git.commands/v1` (host): a Thread's Git summary and local branches, the
-//   branch switch, and the Project's changes, diff and one file's comparison.
+//   branch switch, Discard (1.1.0), and the Project's changes, diff and one
+//   file's comparison.
 //   Thread reads run on the live Thread through `runtime.workspace/v1`, the
 //   Project reads on the Project's current lease through `runtime.lease/v1`;
 //   none acquires a lease.
@@ -64,6 +65,20 @@ export type BranchSwitch =
   | ThreadOutcome<Branches>
   | { readonly status: 'refused'; readonly message: string };
 
+/**
+ * A Discard: the targets a read after it no longer lists, the refusal's
+ * sentence (nothing was written), or the first failure's sentence with the
+ * targets discarded before it.
+ */
+export type Discard =
+  | ThreadOutcome<{ readonly discarded: readonly string[] }>
+  | { readonly status: 'refused'; readonly message: string }
+  | {
+      readonly status: 'failed';
+      readonly message: string;
+      readonly discarded: readonly string[];
+    };
+
 /** The changed paths of the repositories a path reaches (`GET /projects/:id/changes`). */
 export type ChangesRead =
   | {
@@ -105,6 +120,24 @@ export interface Git {
     },
     call?: CallArg,
   ): Promise<BranchSwitch>;
+  /**
+   * Discards changes of one repository the Thread's working directory reads,
+   * under the Project lock; not recoverable. `cwd` is the working directory the
+   * Changes view read with; `repository` (sandbox-relative, `''` for the root)
+   * and `paths` (repository-relative) are as the Changes read returns them.
+   * Without `paths`, every listed change but nested repositories. A stale
+   * `cwd`, an unlisted repository, running work in or around it, a path with
+   * no change, a nested repository and a conflict are `refused`.
+   */
+  discard(
+    input: {
+      readonly threadId: string;
+      readonly cwd: string;
+      readonly repository: string;
+      readonly paths?: readonly string[];
+    },
+    call?: CallArg,
+  ): Promise<Discard>;
   /** The Project is `call.scope.projectId`; the Project reads never acquire. */
   changes(
     input: { readonly path?: string },
@@ -277,6 +310,27 @@ export const gitMethods = {
       z.looseObject({ status: z.literal('refused'), message: z.string() }),
       threadStates,
     ]) as z.ZodType<BranchSwitch, BranchSwitch>,
+  },
+  discard: {
+    input: z
+      .object({
+        threadId: z.string(),
+        cwd: z.string(),
+        repository: z.string(),
+        // Discard all sends no `paths`; an empty list is a caller's mistake.
+        paths: z.array(z.string()).min(1).optional(),
+      })
+      .strict(),
+    output: z.union([
+      ready(z.object({ discarded: z.array(z.string()) }).strict()),
+      z.looseObject({ status: z.literal('refused'), message: z.string() }),
+      z.looseObject({
+        status: z.literal('failed'),
+        message: z.string(),
+        discarded: z.array(z.string()),
+      }),
+      threadStates,
+    ]) as z.ZodType<Discard, Discard>,
   },
   changes: {
     input: optionalPath,

@@ -18,34 +18,17 @@ import {
   useTabStrip,
 } from 'desktop/ui/panels';
 import { cn } from 'desktop/ui/utils';
-import { HouseIcon } from 'lucide-react';
+import { PencilIcon, PlusIcon, XIcon } from 'lucide-react';
 import { type ReactNode, useLayoutEffect, useState } from 'react';
 
 import type { ProjectTabs } from '../../domain/project-tabs.js';
 import { projectIdFromPath } from '../../domain/project-tabs.js';
-import type { Project } from '../../domain/workspace.js';
+import type { Project, ProjectColor } from '../../domain/workspace.js';
 import { EditableName } from '../molecules/editable-name.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
+import { ProjectColorMenu } from '../molecules/project-color-menu.js';
 
 const tab = cn('group', compactTabClassName);
-
-/**
- * The Dashboard tab's mark: lucide's house, drawn as lucide draws it.
- *
- * Its color is solid on purpose: the paper grays are translucent, and this
- * glyph's strokes overlap at the door, so a translucent color doubles up into
- * patches instead of a clean line. `--muted-foreground` and `--foreground` are
- * the solid pair of the tab's idle and active grays.
- */
-function HomeTabIcon() {
-  return (
-    <HouseIcon
-      aria-hidden="true"
-      className="-ml-[1px] shrink-0 text-muted-foreground group-data-[active=true]:text-foreground"
-      size={15}
-    />
-  );
-}
 
 function CloseTabIcon() {
   return (
@@ -93,6 +76,8 @@ function ProjectTab({
   closeMany,
   events,
   rename,
+  newThread,
+  setColor,
 }: {
   readonly project: Project;
   readonly active: boolean;
@@ -104,6 +89,8 @@ function ProjectTab({
   readonly closeMany: (ids: readonly string[]) => void;
   readonly events: ReturnType<typeof useTabStrip>;
   readonly rename: (project: Project, name: string) => Promise<void>;
+  readonly newThread: (project: Project) => void;
+  readonly setColor: (project: Project, color?: ProjectColor) => void;
 }) {
   const [editing, setEditing] = useState(false);
   // "Rename" opens the name only once the menu has closed, so the focus the
@@ -133,7 +120,10 @@ function ProjectTab({
             data-tab-id={project.id}
             className={cn(
               tab,
-              'min-w-[100px] max-w-[280px] shrink-0 motion-reduce:!transition-none',
+              // 172 px wide, as every `ProjectTab` in the prototype
+              // (`99:8035`, `85:7520`); they shrink to 100 px before the
+              // strip scrolls.
+              'w-[172px] min-w-[100px] shrink motion-reduce:!transition-none',
             )}
             style={sortable.style}
             data-active={active ? 'true' : undefined}
@@ -211,34 +201,47 @@ function ProjectTab({
             : undefined
         }
       >
+        {/* Figma `layout/ContextMenu` ProjectTab (363:230, note 364:23948):
+            no "Open project" (the tab is the Project); the close entries
+            without an icon are inset; one that would close nothing is
+            hidden, not disabled. */}
         <ContextMenuGroup>
-          <ContextMenuItem
-            onClick={() =>
-              navigate(`/projects/${encodeURIComponent(project.id)}`)
-            }
-          >
-            Open project
+          <ContextMenuItem onClick={() => newThread(project)}>
+            <PlusIcon />
+            New thread
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setRenameFromMenu(true)}>
+            <PencilIcon />
             Rename
           </ContextMenuItem>
+          <ProjectColorMenu
+            value={project.color}
+            onSelect={(color) => setColor(project, color)}
+          />
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
-          <ContextMenuItem onClick={closeThis}>Close tab</ContextMenuItem>
-          <ContextMenuItem
-            disabled={order.length < 2}
-            onClick={() => closeMany(order.filter((id) => id !== project.id))}
-          >
-            Close other tabs
+          <ContextMenuItem onClick={closeThis}>
+            <XIcon />
+            Close tab
           </ContextMenuItem>
-          <ContextMenuItem
-            disabled={index === order.length - 1}
-            onClick={() => closeMany(order.slice(index + 1))}
-          >
-            Close tabs to the right
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => closeMany(order)}>
+          {order.length > 1 && (
+            <ContextMenuItem
+              inset
+              onClick={() => closeMany(order.filter((id) => id !== project.id))}
+            >
+              Close other tabs
+            </ContextMenuItem>
+          )}
+          {index < order.length - 1 && (
+            <ContextMenuItem
+              inset
+              onClick={() => closeMany(order.slice(index + 1))}
+            >
+              Close tabs to the right
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem inset onClick={() => closeMany(order)}>
             Close all tabs
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -247,9 +250,16 @@ function ProjectTab({
   );
 }
 
+/**
+ * The Project tab bar (§2.3): one tab per open Project, the "New project"
+ * button, and `actions` at the right end. It is 40 px high and a window drag
+ * region, apart from its controls. It is transparent on the canvas and has no
+ * bottom border. It draws no Dashboard tab: the sidebar header's Dashboard
+ * button replaces it (§2.2). It keeps no right-edge reserve (G2).
+ */
 export function ProjectTabBar({
   actions,
-  trailing = true,
+  inset = false,
   state,
   path,
   projects,
@@ -259,19 +269,39 @@ export function ProjectTabBar({
   move,
   onNewProject,
   rename,
+  onNewThread,
+  setColor,
 }: {
+  /**
+   * What the bar draws at its right end, after "New project", outside the drag
+   * region, in `div[data-slot="project-tab-actions"]`. The workspace view
+   * passes the `layout.header` region alone: the Files column, which is always
+   * shown, holds the account status (S36). On the Dashboard it passes the
+   * account status alone (G13). Absent: nothing is drawn.
+   */
   readonly actions?: ReactNode;
-  /** Whether this strip reaches the window's trailing native controls. */
-  readonly trailing?: boolean;
+  /**
+   * Whether the bar starts at the window's left edge, where macOS draws its
+   * window controls. When true, it keeps the `--doric-safe-left` padding so the
+   * first tab clears those controls (G3). When false (the default), it starts
+   * at the edge of the column before it.
+   */
+  readonly inset?: boolean;
   readonly state: ProjectTabs;
+  /** The window path. The tab whose Project it names is selected; `/` and `/projects` select none. */
   readonly path: string;
   readonly projects: readonly Project[];
+  /** Opens a Project tab's remembered path. */
   readonly navigate: (path: string) => void;
   readonly close: (id: string) => void;
   readonly closeMany: (ids: readonly string[]) => void;
   readonly move: (from: string, to: string) => void;
   readonly onNewProject: () => void;
   readonly rename: (project: Project, name: string) => Promise<void>;
+  /** A3 (§4.4): selects the Project and starts a Thread draft in it. */
+  readonly onNewThread: (project: Project) => void;
+  /** A4 (§4.4): the Project's color, as the Dashboard row's menu sets it. */
+  readonly setColor: (project: Project, color?: ProjectColor) => void;
 }) {
   const selected = projectIdFromPath(path);
   const mac = navigator.userAgent.includes('Mac');
@@ -279,24 +309,8 @@ export function ProjectTabBar({
   return (
     <nav
       aria-label="Workspace tabs"
-      className={`flex h-[40px] min-h-[40px] min-w-0 items-center gap-[4px] border-b border-[var(--paper-separator)] bg-[var(--paper-panel)] pr-[8px] [-webkit-app-region:drag] ${mac ? 'pl-[var(--doric-safe-left,80px)]' : trailing ? 'pl-[8px] pr-[140px]' : 'pl-[8px]'}`}
+      className={`flex h-[40px] min-h-[40px] min-w-0 items-center gap-[4px] pr-[8px] [-webkit-app-region:drag] ${inset ? (mac ? 'pl-[var(--doric-safe-left,80px)]' : 'pl-[8px]') : 'pl-0'}`}
     >
-      <button
-        type="button"
-        className={`${tab} shrink-0 focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-[var(--paper-focus)]`}
-        data-active={selected === undefined ? 'true' : undefined}
-        // The tab draws its icon alone; the name it lost stays its label.
-        aria-label="Dashboard"
-        title="Dashboard"
-        aria-current={selected === undefined ? 'page' : undefined}
-        onClick={() => navigate('/projects')}
-      >
-        <HomeTabIcon />
-      </button>
-      <div
-        aria-hidden="true"
-        className="h-[18px] w-px shrink-0 border-r border-[var(--paper-separator)]"
-      />
       {state.order.length > 0 && (
         <DndContext
           sensors={events.sensors}
@@ -335,6 +349,8 @@ export function ProjectTabBar({
                     closeMany={closeMany}
                     events={events}
                     rename={rename}
+                    newThread={onNewThread}
+                    setColor={setColor}
                   />
                 );
               })}
@@ -352,7 +368,10 @@ export function ProjectTabBar({
         <NewTabIcon />
       </button>
       {actions && (
-        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 pl-3 [-webkit-app-region:no-drag]">
+        <div
+          data-slot="project-tab-actions"
+          className="ml-auto flex min-w-0 shrink-0 items-center gap-2 pl-3 [-webkit-app-region:no-drag]"
+        >
           {actions}
         </div>
       )}

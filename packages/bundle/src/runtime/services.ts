@@ -41,7 +41,10 @@ const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** D-12: a basic contract provider must match the platform method spec. */
+/**
+ * D-12: a basic contract provider must match the platform method spec: every
+ * method of the list but those in `optional`, any of those, and nothing else.
+ */
 const assertBasicShape = (definition: AnyServiceDefinition): void => {
   const spec = basicContractSpec(definition.id);
 
@@ -49,18 +52,23 @@ const assertBasicShape = (definition: AnyServiceDefinition): void => {
     return;
   }
 
-  const expected = Object.keys(spec.methods).sort();
+  const listed = Object.keys(spec.methods).sort();
+  const mandatory = listed.filter((name) => !spec.optional.includes(name));
+  const optional = listed.filter((name) => spec.optional.includes(name));
   const actual = Object.keys(definition.methods).sort();
 
-  if (expected.join(',') !== actual.join(',')) {
+  if (
+    mandatory.some((name) => !actual.includes(name)) ||
+    actual.some((name) => !listed.includes(name))
+  ) {
     throw new ContractError(
       'contract_mismatch',
-      `Provider of "${definition.id}" must implement exactly: ${expected.join(', ')}; got: ${actual.join(', ')}.`,
+      `Provider of "${definition.id}" must implement: ${mandatory.join(', ')}; may implement: ${optional.length === 0 ? 'none' : optional.join(', ')}; got: ${actual.join(', ')}.`,
       { contract: definition.id },
     );
   }
 
-  for (const name of expected) {
+  for (const name of actual) {
     const required = spec.methods[name];
     const provided = definition.methods[name];
 

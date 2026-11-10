@@ -24,11 +24,7 @@ import { toast } from 'desktop/ui/sonner';
 import { TerminalServiceV1 } from '../contracts/index.js';
 import { createTerminalApi } from './api.js';
 import type { Terminal } from './domain/terminals.js';
-import {
-  defineTerminalElements,
-  TERMINAL_VIEW_TAG,
-  type TerminalClient,
-} from './elements.js';
+import { defineTerminalElements, type TerminalClient } from './elements.js';
 import { createTerminalWatches } from './output-watch.js';
 import {
   FilesRefreshV1,
@@ -39,6 +35,7 @@ import {
   LayoutWorkspaceV1,
 } from './peers.js';
 import { createTerminalStore, type TerminalStore } from './store.js';
+import { TERMINAL_VIEW_TAG, terminalTab } from './tab.js';
 
 /** The region item of the header's new-terminal button. */
 export const terminalRegions: readonly {
@@ -87,27 +84,26 @@ export const registerTerminalSurfaces = (
 const threadRoute = (projectId: string, threadId: string): string =>
   `/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}`;
 
-/** A row's click: select the owning Thread, then show or open the terminal. */
-const opener = (services: Services) => async (terminal: Terminal) => {
-  let workspace: LayoutWorkspace | undefined;
-  try {
-    workspace = services.use(LayoutWorkspaceV1);
-  } catch {
-    workspace = undefined;
-  }
-  const thread = workspace?.thread(terminal.threadId);
-  if (thread !== undefined)
-    services
-      .use(NavigationV1)
-      .navigate(threadRoute(thread.projectId, thread.id));
-  await services.use(LayoutTabsV1).open({
-    id: `terminal:${terminal.id}`,
-    title: terminal.command || 'Terminal',
-    tag: TERMINAL_VIEW_TAG,
-    props: { terminalId: terminal.id, showHeader: terminal.origin !== 'user' },
-    icon: 'terminal',
-  });
-};
+/**
+ * A row's click: select the owning Thread, then show or open the terminal;
+ * its tab's Kill terminal (A7) runs `kill`.
+ */
+const opener =
+  (services: Services, kill: (terminalId: string) => void) =>
+  async (terminal: Terminal) => {
+    let workspace: LayoutWorkspace | undefined;
+    try {
+      workspace = services.use(LayoutWorkspaceV1);
+    } catch {
+      workspace = undefined;
+    }
+    const thread = workspace?.thread(terminal.threadId);
+    if (thread !== undefined)
+      services
+        .use(NavigationV1)
+        .navigate(threadRoute(thread.projectId, thread.id));
+    await services.use(LayoutTabsV1).open(terminalTab(terminal, kill));
+  };
 
 export function activate({ services }: ClientContext): Cleanup {
   const terminals = () => services.use(TerminalServiceV1);
@@ -119,9 +115,11 @@ export function activate({ services }: ClientContext): Cleanup {
     snapshot: (id) => api.snapshot(id),
     connection: services.use(DoricConnectionV1),
   });
+  // A7: the tab's Kill terminal stops it as the row's does (A15).
+  const open = opener(services, (terminalId) => store.stop(terminalId));
   const store = createTerminalStore({
     api,
-    openTerminal: opener(services),
+    openTerminal: open,
     watchProject: watches.watchProject,
     toastError: (message) => toast.error(message),
     closeTab: (input) => {
@@ -129,6 +127,16 @@ export function activate({ services }: ClientContext): Cleanup {
         .use(LayoutTabsV1)
         .close(input)
         .catch(() => undefined);
+    },
+    retitleTab: (input) => {
+      try {
+        void services
+          .use(LayoutTabsV1)
+          .retitle(input)
+          .catch(() => undefined);
+      } catch {
+        // Without the layout there is no tab to retitle.
+      }
     },
     refreshFiles: (projectId) => {
       try {
@@ -143,7 +151,7 @@ export function activate({ services }: ClientContext): Cleanup {
     watches,
     store,
     open: (terminal) => {
-      void opener(services)(terminal).catch((error: unknown) =>
+      void open(terminal).catch((error: unknown) =>
         toast.error(
           error instanceof Error ? error.message : 'Could not open terminal.',
         ),

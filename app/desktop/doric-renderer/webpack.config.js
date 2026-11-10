@@ -6,7 +6,8 @@ const { showsInOverlay } = require('./overlay-errors');
 /**
  * Every window loads one shell page from `doric://app`, and main serves this
  * build's files under `/platform/shell@<version>/`. The version is the
- * platform's (`PLATFORM_VERSION`), so the shell's URLs are fixed per release.
+ * platform assets' (`PLATFORM_ASSETS_VERSION`), so the shell's URLs are fixed
+ * per release.
  */
 const shellPath = '/platform/shell@1.0.0/';
 

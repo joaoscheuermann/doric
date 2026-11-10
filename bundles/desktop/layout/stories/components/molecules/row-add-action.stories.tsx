@@ -39,7 +39,7 @@ export default {
   ],
 };
 
-/** Idle: the plus appears on hover or focus of the row. */
+/** Idle: nothing at rest; the plus on hover or focus. */
 export const Idle = {
   render: () => (
     <TreeRow name="Plan the checkout flow">
@@ -51,7 +51,10 @@ export const Idle = {
   ),
 };
 
-/** An agent running for two minutes: the elapsed badge, hidden on hover. */
+/**
+ * An agent running for two minutes: the elapsed time at the right edge, the
+ * plus on hover.
+ */
 export const Running = {
   render: () => (
     <TreeRow name="Build the payment form">

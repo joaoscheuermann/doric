@@ -6,6 +6,9 @@ import type { ChangesObservation } from '../../src/client/api/peers.js';
 import { rootOf } from '../../src/client/sandbox-store.js';
 import { FilesTreeView } from '../../src/client/tree/files-tree.js';
 import type {
+  CreateInput,
+  CreateOutcome,
+  LeaseOutcome,
   ProjectTreeNode,
   TreeObservation,
 } from '../../src/contracts/index.js';
@@ -27,6 +30,20 @@ type Selection = {
   readonly thread?: typeof thread;
 };
 
+/**
+ * `files/v1`'s writes as the stories answer them (§4.4 A9, A10): a name that
+ * starts with `taken` exists already; any other is created.
+ */
+const storyCreate = async ({
+  directory,
+  name,
+}: CreateInput): Promise<LeaseOutcome<CreateOutcome>> => ({
+  status: 'ready',
+  value: name.startsWith('taken')
+    ? { status: 'refused', reason: 'exists' }
+    : { status: 'created', path: `${directory}/${name}` },
+});
+
 const ready = (entries: readonly ProjectTreeNode[]): TreeObservation => ({
   read: { status: 'ready', value: entries },
   fetching: false,
@@ -35,7 +52,9 @@ const ready = (entries: readonly ProjectTreeNode[]): TreeObservation => ({
 /**
  * The Files view of the Project panel over seeded reads: the layout's
  * selection and current tab, git's changes read (when `changes` is given),
- * and the files client's tree read.
+ * and the files client's tree read. A row's context menu works: Copy relative
+ * path on a file row, New file and New folder on a folder row, over
+ * `storyCreate` (the tree itself does not change).
  */
 function TreeStory({
   tree,
@@ -80,11 +99,17 @@ function TreeStory({
               },
             }),
       },
+      scoped: {
+        'files/v1': () => ({
+          createFile: storyCreate,
+          createDirectory: storyCreate,
+        }),
+      },
     });
   });
   return (
     <div
-      className="flex flex-col overflow-hidden rounded-md border bg-sidebar text-sidebar-foreground"
+      className="flex flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
       style={{ width: 320, height: 560 }}
     >
       <SidebarScope>

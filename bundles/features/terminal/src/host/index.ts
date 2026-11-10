@@ -29,7 +29,7 @@ export interface TerminalHostOptions {
 }
 
 export interface TerminalHost {
-  /** terminal/v1 1.1.0 over the process-local registry. */
+  /** terminal/v1 1.2.0 over the process-local registry. */
   readonly definition: ReturnType<typeof terminalService>;
   /**
    * The runtime.hooks/v1 onThreadsClosingHook handler: closes the sessions of
@@ -76,7 +76,7 @@ export const createTerminalHost = ({
 
 /**
  * The `terminal` bundle's host part (stage 10, §3.10): provides terminal/v1
- * 1.1.0 over the process-local registry, registers the `terminal` tool at its
+ * 1.2.0 over the process-local registry, registers the `terminal` tool at its
  * model-visible position (D10-5) and closes the sessions of closing Threads.
  */
 export const activate = ({ services }: HostContext) => {

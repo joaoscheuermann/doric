@@ -1,7 +1,8 @@
 // Public contracts of the `files` bundle (stage 10, §3.6).
 //
 // - `files/v1` (host): the Project sandbox reads the file panel and the file
-//   tab make, each run on the Project's current lease without acquiring one.
+//   tab make, and (1.2.0) the New file / New folder writes, each run on the
+//   Project's current lease without acquiring one.
 // - `files.sandbox/v1` (client, local): the window's one tree read per
 //   Project and root, shared with the bundles that gate on it.
 // - `files.refresh/v1` (client, local): the Project refresh coordinator.
@@ -64,6 +65,29 @@ export interface ContentInput {
 }
 
 /**
+ * What New file / New folder asks (1.2.0): a single-segment `name` in
+ * `directory`, a path as the reads take it (workspace-relative, or absolute
+ * under the sandbox root).
+ */
+export interface CreateInput {
+  readonly directory: string;
+  readonly name: string;
+}
+
+/**
+ * What New file / New folder answers (1.2.0). `created` names the new entry
+ * workspace-relative; `refused` writes nothing; `failed` carries the command's
+ * first stderr line. An existing name is never overwritten.
+ */
+export type CreateOutcome =
+  | { readonly status: 'created'; readonly path: string }
+  | {
+      readonly status: 'refused';
+      readonly reason: 'exists' | 'invalid-name' | 'outside' | 'no-directory';
+    }
+  | { readonly status: 'failed'; readonly message: string };
+
+/**
  * The Project is `call.scope.projectId` (`services.use(FilesV1, { projectId })`).
  * No method acquires a lease: a Project without one answers its lease state.
  */
@@ -80,6 +104,16 @@ export interface Files {
     input: ContentInput,
     call?: CallArg,
   ): Promise<LeaseOutcome<ContentRead>>;
+  /** Creates an empty file (1.2.0). */
+  createFile(
+    input: CreateInput,
+    call?: CallArg,
+  ): Promise<LeaseOutcome<CreateOutcome>>;
+  /** Creates an empty directory (1.2.0). */
+  createDirectory(
+    input: CreateInput,
+    call?: CallArg,
+  ): Promise<LeaseOutcome<CreateOutcome>>;
 }
 
 const sandboxEntrySchema: z.ZodType<SandboxEntry, SandboxEntry> = z.looseObject(
@@ -144,6 +178,26 @@ const contentReadSchema = z.union([
 
 const optionalPath = z.object({ path: z.string().optional() }).strict();
 
+export const createInputSchema = z
+  .object({ directory: z.string(), name: z.string() })
+  .strict();
+
+export const createOutcomeSchema = z.union([
+  z.object({ status: z.literal('created'), path: z.string() }).strict(),
+  z
+    .object({
+      status: z.literal('refused'),
+      reason: z.enum(['exists', 'invalid-name', 'outside', 'no-directory']),
+    })
+    .strict(),
+  z.object({ status: z.literal('failed'), message: z.string() }).strict(),
+]);
+
+const createOutput = z.union([
+  ready(createOutcomeSchema),
+  leaseStates,
+]) as z.ZodType<LeaseOutcome<CreateOutcome>, LeaseOutcome<CreateOutcome>>;
+
 export const filesMethods = {
   directory: {
     input: optionalPath,
@@ -171,6 +225,8 @@ export const filesMethods = {
       LeaseOutcome<ContentRead>
     >,
   },
+  createFile: { input: createInputSchema, output: createOutput },
+  createDirectory: { input: createInputSchema, output: createOutput },
 } as const;
 
 export const FilesV1 = ref<Files>('files/v1');

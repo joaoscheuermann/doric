@@ -126,6 +126,7 @@ export {
   enabledAlternatives,
   manifestV0Schema,
   manifestV1Schema,
+  PLATFORM_ASSETS_VERSION,
   PLATFORM_VERSION,
   requiredSchema,
   resolveEnvironment,

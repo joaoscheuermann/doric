@@ -10,6 +10,7 @@ import type { ComponentType } from 'react';
 import { ChatView } from '../../src/client/views/chat-view.js';
 import { ChatHost, storyServices } from '../support/chat-host.js';
 import { projectId, threadIds } from '../support/fixtures.js';
+import { InsetCard } from '../support/inset-card.js';
 
 const services = storyServices();
 
@@ -19,9 +20,9 @@ export default {
   decorators: [
     (Story: ComponentType) => (
       <ChatHost>
-        <div className="flex h-[720px] min-h-0 overflow-hidden rounded-lg border">
+        <InsetCard className="h-[720px]">
           <Story />
-        </div>
+        </InsetCard>
       </ChatHost>
     ),
   ],

@@ -1,4 +1,2 @@
+/** The main process's Socket.IO connection, as the layout's connection store holds it. */
 export type ConnectionStatus = 'connected' | 'disconnected';
-
-export const connectionLabel = (status: ConnectionStatus): string =>
-  status === 'connected' ? 'Connected' : 'Disconnected';

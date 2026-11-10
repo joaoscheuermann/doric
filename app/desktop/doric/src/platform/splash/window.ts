@@ -1,7 +1,7 @@
-// The splash and recovery window (P3): today's frameless 420x260 window on
-// the dark window background, now with the same preload as every window so
-// the page reaches `doric.splash/v1`. It is a technical window: no key, never
-// seen by bundles.
+// The splash and recovery window (P3): a frameless 610x487 window with rounded
+// corners (§4.5, `302:22437`) on the window background, with the same preload
+// as every window so the page reaches `doric.splash/v1`. It is a technical
+// window: no key, never seen by bundles.
 
 import { BrowserWindow } from 'electron';
 
@@ -11,10 +11,11 @@ export const splashWindowOptions = (input: {
   readonly backgroundColor: string;
   readonly preload: string;
 }): Electron.BrowserWindowConstructorOptions => ({
-  width: 420,
-  height: 260,
+  width: 610,
+  height: 487,
   frame: false,
-  roundedCorners: false,
+  // macOS draws its native corner radius (Figma: 10, S12).
+  roundedCorners: true,
   resizable: false,
   backgroundColor: input.backgroundColor,
   webPreferences: {
@@ -25,17 +26,34 @@ export const splashWindowOptions = (input: {
   },
 });
 
+/**
+ * The development override of the splash art (S32): `'shaded'` only in an
+ * unpackaged build whose environment sets `DORIC_SPLASH_ART=shaded`.
+ */
+export const splashArtOverride = (input: {
+  readonly packaged: boolean;
+  readonly env: NodeJS.ProcessEnv;
+}): 'shaded' | undefined =>
+  !input.packaged && input.env.DORIC_SPLASH_ART === 'shaded'
+    ? 'shaded'
+    : undefined;
+
 export interface SplashWindow {
   readonly window: BrowserWindow;
   readonly contentsId: number;
   close(): void;
 }
 
-/** Opens the splash at `doric://app/platform/splash@<v>/index.html`. */
+/**
+ * Opens the splash at `doric://app/platform/splash@<v>/index.html`, with
+ * `?art=shaded` when `art` asks for the shaded image (the protocol handler
+ * routes on the pathname only).
+ */
 export const openSplashWindow = (input: {
   readonly backgroundColor: string;
   readonly preload: string;
   readonly path: string;
+  readonly art?: 'shaded';
   readonly closed: () => void;
 }): SplashWindow => {
   const window = new BrowserWindow(splashWindowOptions(input));
@@ -48,7 +66,13 @@ export const openSplashWindow = (input: {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.once('closed', input.closed);
-  void window.loadURL(doricUrl(input.path)).catch(() => undefined);
+  void window
+    .loadURL(
+      doricUrl(
+        input.art === 'shaded' ? `${input.path}?art=shaded` : input.path,
+      ),
+    )
+    .catch(() => undefined);
 
   return {
     window,

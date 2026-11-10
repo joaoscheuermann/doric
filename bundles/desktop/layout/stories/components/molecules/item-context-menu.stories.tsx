@@ -22,18 +22,39 @@ export default {
   ],
 };
 
-/** A Thread row's menu, open: add a child, copy the ID, delete. */
+/**
+ * A main Thread row's menu, open: open in a new tab and add a sub-thread, then
+ * copy the ID, then delete (Figma `29:5385`).
+ */
 export const ThreadMenu = {
   render: () => (
     <OpenContextMenu>
       <ItemContextMenu
-        addLabel="New child thread"
+        addLabel="New sub-thread in Build the payment form"
         deleteLabel="Delete thread"
         onAdd={ignore}
         onCopyId={ignore}
         onDelete={ignore}
+        onOpenInTab={ignore}
       >
         <div className={row}>Build the payment form</div>
+      </ItemContextMenu>
+    </OpenContextMenu>
+  ),
+};
+
+/** A sub-thread row's menu, open: "Open in viewer" leads it (Figma `29:5448`). */
+export const SubThreadMenu = {
+  render: () => (
+    <OpenContextMenu>
+      <ItemContextMenu
+        deleteLabel="Delete thread"
+        onCopyId={ignore}
+        onDelete={ignore}
+        onOpenInTab={ignore}
+        openIn="viewer"
+      >
+        <div className={row}>Validate the card number</div>
       </ItemContextMenu>
     </OpenContextMenu>
   ),

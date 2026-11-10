@@ -36,7 +36,8 @@
         "commands": [
           "rm -rf bundles/desktop/layout/dist-tests",
           "tsc -p bundles/desktop/layout/tsconfig.spec.json",
-          "node --test bundles/desktop/layout/dist-tests/tests/*.test.js"
+          "tsc -p bundles/desktop/layout/tsconfig.client-spec.json",
+          "node --test --test-force-exit bundles/desktop/layout/dist-tests/tests/*.test.js bundles/desktop/layout/dist-tests/tests/client/*.test.js"
         ],
         "parallel": false
       }

@@ -14,6 +14,7 @@ import {
   type CatalogCandidate,
   type Descriptor,
   type ManifestV1,
+  PLATFORM_VERSION,
   resolveEnvironment,
 } from 'bundle/runtime';
 import {
@@ -364,7 +365,7 @@ export const openSettingsWindow = async (input: {
         ],
         providers: {},
       },
-      platformVersion: '1.0.0',
+      platformVersion: PLATFORM_VERSION,
       generation: 3,
     },
     'client',
@@ -434,6 +435,7 @@ export const openSettingsWindow = async (input: {
       },
       mode: 'connected',
       tokens: {},
+      app: { version: '0.0.1' },
     }),
     ready: async () => undefined,
     reportFailure: async () => undefined,
@@ -449,7 +451,13 @@ export const openSettingsWindow = async (input: {
     call: async (envelope) => {
       calls.push(envelope);
 
-      if (envelope.contract === 'doric.shell/v1') {
+      // Main answers the window's own `doric.shell/v1` calls; a test answers
+      // the ones it names (the app's `doric.appearance/v1` behind
+      // `appearanceGet` and `appearanceSet`), and every other one succeeds.
+      if (
+        envelope.contract === 'doric.shell/v1' &&
+        input.host[`doric.shell/v1.${envelope.method}`] === undefined
+      ) {
         return { ok: true, output: undefined };
       }
 

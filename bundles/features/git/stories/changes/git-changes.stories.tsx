@@ -33,6 +33,26 @@ export const Changes = {
   ),
 };
 
+/**
+ * Right-click a changed file or the repository row for Discard (A11, A12);
+ * this host refuses every Discard, so the dialog shows its sentence.
+ */
+export const DiscardRefused = {
+  render: () => (
+    <GitHarness
+      api={fakeGitApi({
+        discard: async () => ({
+          status: 'refused',
+          message:
+            'Wait for active prompts and terminal commands in this repository to finish before discarding changes.',
+        }),
+      })}
+    >
+      <GitChangesView services={workspace} />
+    </GitHarness>
+  ),
+};
+
 const comparing = windowServices({
   tree: readyTree,
   comparing: { repository: '', path: 'src/lib/pricing.ts' },

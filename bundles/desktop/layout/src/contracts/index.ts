@@ -9,6 +9,7 @@ import {
   noInput,
   ref,
 } from 'bundle/contracts';
+import { isValidElement, type ReactElement } from 'react';
 import type { Project, Thread } from 'runtime/contracts';
 import { z } from 'zod';
 
@@ -26,6 +27,30 @@ export interface TabRequest {
   readonly ariaLabel?: string;
   /** 1.1.0: the trigger's tooltip (`title` attribute); defaults to `title`. */
   readonly tooltip?: string;
+  /**
+   * 1.2.0: the entries the tab's context menu shows besides "Close tab". The
+   * non-destructive ones come first, in order, then a separator and "Close
+   * tab"; the destructive ones come last, in order, behind a separator. The
+   * tab keeps them for its life: they are fixed when it opens.
+   */
+  readonly menu?: readonly TabMenuItem[];
+}
+
+/** One entry of a viewer tab's context menu (1.2.0). */
+export interface TabMenuItem {
+  readonly id: string;
+  readonly label: string;
+  /**
+   * The entry's leading 16 px icon: a React element, such as
+   * `createElement(FolderOpenIcon)` from lucide-react, drawn before the label.
+   * Anything but a valid React element fails `invalid_input`. Absent, the
+   * label aligns with the labels of the entries that have one.
+   */
+  readonly icon?: ReactElement;
+  /** Drawn with the destructive item variant. */
+  readonly destructive?: boolean;
+  /** Runs when the reader picks the entry; the menu closes. */
+  readonly run: () => void;
 }
 
 /** The icons a tab trigger may carry (1.1.0). */
@@ -58,6 +83,20 @@ export interface LayoutTabs {
     call?: CallArg,
   ): Promise<void>;
   focus(input: { readonly id: string }, call?: CallArg): Promise<void>;
+  /**
+   * 1.2.0: sets the title of the tab with that id among the tabs of the owner
+   * `threadId` names, else the active owner (as `close` resolves it). Without
+   * such a tab it does nothing. `open` with an open id only selects the tab, so
+   * this is how a tab's title follows its content.
+   */
+  retitle(
+    input: {
+      readonly id: string;
+      readonly title: string;
+      readonly threadId?: string;
+    },
+    call?: CallArg,
+  ): Promise<void>;
   /** 1.1.0: the selected tab of the active owner, if any (local). */
   current(call?: CallArg): CurrentTab | undefined;
   /** 1.1.0: called after every change of the tabs or of the owner (local). */
@@ -73,6 +112,31 @@ export const tabRequestSchema = z
     icon: z.enum(['file', 'file-diff', 'terminal', 'thread']).optional(),
     ariaLabel: z.string().optional(),
     tooltip: z.string().optional(),
+    menu: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            label: z.string(),
+            icon: z
+              .custom<ReactElement>((value) => isValidElement(value), {
+                message: 'Expected a React element.',
+              })
+              .optional(),
+            destructive: z.boolean().optional(),
+            run: functionSchema<() => void>(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+
+const tabRetitleSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string(),
+    threadId: z.string().optional(),
   })
   .strict();
 
@@ -94,6 +158,7 @@ export const layoutTabsMethods = {
   open: { input: tabRequestSchema, output: z.void() },
   close: { input: tabCloseSchema, output: z.void() },
   focus: { input: tabIdSchema, output: z.void() },
+  retitle: { input: tabRetitleSchema, output: z.void() },
   current: { input: noInput, output: currentTabSchema },
   subscribe: { input: listenerSchema, output: disposableSchema },
 } as const;
@@ -166,21 +231,20 @@ export const layoutWorkspaceMethods = {
 export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
 
 /**
- * The Project panel beside the conversation (1.0.0, WP-10P). Its views are
- * the `layout.panel` region items `{ id, tag, order, props: { label, icon,
- * badgeTag? } }`, drawn as the icon-only "Project views" tab strip; an item's
- * element mounts only while the panel is open and the item is selected.
+ * The Project panel beside the conversation (2.0.0, ui-redesign S36). Its
+ * views are the `layout.panel` region items `{ id, tag, order, props: { label,
+ * icon, badgeTag? } }`, drawn as the icon-only "Project views" tab strip; the
+ * selected item's element is mounted. The panel is always shown: it has no
+ * open state, and nothing about it is persisted.
  */
 export interface LayoutPanel {
-  isOpen(call?: CallArg): boolean;
-  /** The selected view's id. */
-  active(call?: CallArg): string;
-  /** Opens the panel and selects the view. */
-  show(id: string, call?: CallArg): void;
-  /** Opens or closes the panel. */
-  toggle(call?: CallArg): void;
-  /** Called after every change of the open state or of the selected view. */
-  subscribe(listener: () => void, call?: CallArg): Disposable;
+  /**
+   * Selects the view whose `layout.panel` item id is `id`. An id no item has
+   * is kept: the panel draws no view until an item with that id registers.
+   * Selecting the selected view changes nothing; an empty id is refused
+   * (`invalid_input`).
+   */
+  select(id: string, call?: CallArg): void;
 }
 
 /** The props of a `layout.panel` region item. */
@@ -193,14 +257,10 @@ export interface PanelItemProps {
 }
 
 export const layoutPanelMethods = {
-  isOpen: { input: noInput, output: z.boolean() },
-  active: { input: noInput, output: z.string() },
-  show: { input: z.string().min(1), output: z.void() },
-  toggle: { input: noInput, output: z.void() },
-  subscribe: { input: listenerSchema, output: disposableSchema },
+  select: { input: z.string().min(1), output: z.void() },
 } as const;
 
-export const LayoutPanelV1 = ref<LayoutPanel>('layout.panel/v1');
+export const LayoutPanelV2 = ref<LayoutPanel>('layout.panel/v2');
 
 /**
  * The dashboard's shown page (1.0.0). Two regions extend the dashboard:

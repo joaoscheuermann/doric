@@ -23,6 +23,10 @@
       "origin": "registry",
       "sha256": "1c2adac6f66ee0f9e52efe292f57044a9a07a1598523286e7bb036f7562a9ba8"
     },
+    "components/button-group.tsx": {
+      "origin": "registry",
+      "sha256": "0ae18956c302c20a62fba486b78f50ef9bbb2abff4e621aa5ca64d04383e6ce5"
+    },
     "components/button.tsx": {
       "origin": "registry",
       "sha256": "4be386b6fa62073e6ce11ff07dc078ae7dcb5255eef51989e2afb30e2c35c21c"

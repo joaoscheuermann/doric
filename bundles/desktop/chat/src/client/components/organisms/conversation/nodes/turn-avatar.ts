@@ -6,21 +6,17 @@
  * from the attributes and custom properties this module writes into the
  * block's element, so the text column and the footer's place never move.
  *
- * The initials and the tone are stated once, in `utility/identity-mark`, and
+ * The initials and the tone are stated once, in `desktop/ui/identity`, and
  * shared with the composer's stack.
  */
 
+import { identityRing, identityTone, initials } from 'desktop/ui/identity';
 import { svgMask } from 'desktop/ui/svg-mask';
 
 import {
   type AnsweredBy,
   READER_NAME,
 } from '../../../../domain/conversation-authors.js';
-import {
-  identityRing,
-  identityTone,
-  initials,
-} from '../../../../utility/identity-mark.js';
 
 /**
  * The bot glyph: what an agent mark draws when its answering model is known to

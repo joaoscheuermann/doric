@@ -3,6 +3,7 @@ import {
   KeyRoundIcon,
   type LucideIcon,
   ServerIcon,
+  SunMoonIcon,
   UserRoundIcon,
   WrenchIcon,
   ZapIcon,
@@ -10,6 +11,7 @@ import {
 
 const icons: Readonly<Record<string, LucideIcon>> = {
   user: UserRoundIcon,
+  'sun-moon': SunMoonIcon,
   server: ServerIcon,
   zap: ZapIcon,
   wrench: WrenchIcon,

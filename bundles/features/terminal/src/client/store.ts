@@ -1,13 +1,19 @@
 // The window's terminal state (moved from the layout's provisional
 // `useTerminals`): each followed Project's terminal list, kept by
 // `terminal/v1.watchProject`. A terminal that leaves its Project's list closes its
-// workspace tab; a change of a Project's terminal activity
+// workspace tab, and each update retitles it (its name, else its command); a
+// change of a Project's terminal activity
 // (id, state, command, cwd) asks the files bundle to refresh that Project.
 
 import type { Disposable } from 'bundle/contracts';
 
 import type { TerminalApi } from './api.js';
-import type { Terminal, TerminalUpdate } from './domain/terminals.js';
+import {
+  type Terminal,
+  type TerminalUpdate,
+  terminalTitle,
+} from './domain/terminals.js';
+import { terminalTabId } from './tab.js';
 
 /** The message of a failure, as the renderer's `messageFrom` read it. */
 export const messageFrom = (error: unknown): string =>
@@ -30,6 +36,15 @@ export interface TerminalStoreOptions {
     readonly id: string;
     readonly threadId: string;
   }) => void;
+  /**
+   * `layout.tabs/v1.retitle` of the tab `terminal:<id>` of the terminal's
+   * Thread (1.2.0); nothing happens without such a tab.
+   */
+  readonly retitleTab: (input: {
+    readonly id: string;
+    readonly title: string;
+    readonly threadId: string;
+  }) => void;
   /** `files.refresh/v1.request`, while the files bundle serves it. */
   readonly refreshFiles: (projectId: string) => void;
 }
@@ -47,6 +62,11 @@ export interface TerminalStore {
   create(threadId: string): Promise<void>;
   /** Stops or discards a terminal; failures are toasts. */
   stop(id: string): void;
+  /**
+   * Names a terminal (A13), or clears its name for `null`; the stream's
+   * update shows it. A failure is a toast; it resolves either way.
+   */
+  rename(id: string, name: string | null): Promise<void>;
   subscribe(listener: () => void): Disposable;
   dispose(): void;
 }
@@ -82,7 +102,7 @@ export const createTerminalStore = (
 
   const removed = (terminal: Pick<Terminal, 'id' | 'threadId'>) => {
     options.closeTab({
-      id: `terminal:${terminal.id}`,
+      id: terminalTabId(terminal.id),
       threadId: terminal.threadId,
     });
   };
@@ -118,6 +138,12 @@ export const createTerminalStore = (
       return;
     }
     setList(projectId, upsertLast(previous, update.terminal));
+    // The tab follows the name, or the command once it is cleared (A13).
+    options.retitleTab({
+      id: terminalTabId(update.terminal.id),
+      title: terminalTitle(update.terminal),
+      threadId: update.terminal.threadId,
+    });
   };
 
   return {
@@ -152,6 +178,13 @@ export const createTerminalStore = (
       void options.api
         .stop(id)
         .catch((error: unknown) => options.toastError(messageFrom(error)));
+    },
+    rename: async (id, name) => {
+      try {
+        await options.api.rename(id, name);
+      } catch (error) {
+        options.toastError(messageFrom(error));
+      }
     },
     subscribe: (listener) => {
       const entry = () => listener();

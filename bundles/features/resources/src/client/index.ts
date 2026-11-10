@@ -1,8 +1,9 @@
 // The resources bundle's client part (§3.12): the `<resources-monitor>`
-// element, bound to the activation services (D9-17).
+// element, bound to the activation services (D9-17). It draws the connection
+// badge (UR24) and the resources popover it opens.
 //
-// Its `layout.global-footer` item (`resourcesRegion`) is registered by the
-// activation since WP-10N removed the layout's provisional monitor.
+// The activation registers its `layout.account.status` item (`resourcesRegion`,
+// S8), the 14×14 slot over the account avatar.
 
 import { QueryClient } from '@tanstack/react-query';
 import {
@@ -19,16 +20,25 @@ import { defineResourcesElements } from './elements.js';
 
 export const RESOURCES_MONITOR_TAG = 'resources-monitor';
 
-/** Where the monitor sits today: the window's global footer [D10-13]. */
+/**
+ * Where the connection badge sits: the layout's account status slot
+ * (`layout.account.status`, S8), first among its items (`order: 10`). The id
+ * stays `resources` and the tag stays `RESOURCES_MONITOR_TAG`. Nothing is
+ * registered into `layout.global-footer`, which phase 2 removes (S10).
+ */
 export const resourcesRegion: {
   readonly region: string;
   readonly item: RegionItem;
 } = {
-  region: 'layout.global-footer',
-  item: { id: 'resources', tag: RESOURCES_MONITOR_TAG, order: 100 },
+  region: 'layout.account.status',
+  item: { id: 'resources', tag: RESOURCES_MONITOR_TAG, order: 10 },
 };
 
-/** Adds the monitor to the layout's global footer (WP-10N). */
+/**
+ * Adds `resourcesRegion.item` to `resourcesRegion.region` through `regions.add`
+ * and returns its handle. Disposing the handle removes the item. It throws only
+ * what `regions.add` throws.
+ */
 export const registerResourcesRegion = (
   regions: Pick<Regions, 'add'>,
 ): Disposable => regions.add(resourcesRegion.region, resourcesRegion.item);

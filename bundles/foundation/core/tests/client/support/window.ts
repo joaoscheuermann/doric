@@ -20,6 +20,7 @@ import {
   type Descriptor,
   type ManifestV1,
   manifestV1Schema,
+  PLATFORM_VERSION,
   resolveEnvironment,
 } from 'bundle/runtime';
 import {
@@ -35,6 +36,21 @@ import {
   type WindowFailure,
 } from 'desktop/client';
 import { Window } from 'happy-dom';
+import HistoryItemList from 'happy-dom/lib/history/HistoryItemList.js';
+
+// happy-dom drops the forward entries on `replaceState`; a browser (Chromium,
+// so Electron) keeps them: replacing an entry leaves the list as it was. The
+// core rewrites the landed entry on `popstate` (S11), so Forward needs them.
+HistoryItemList.prototype.replace = function replace(item) {
+  const index = this.items.indexOf(this.currentItem);
+
+  if (index === -1) {
+    throw new Error('Current history item not found');
+  }
+
+  this.currentItem = item;
+  this.items[index] = item;
+};
 
 const DIST = 'bundles/foundation/core/dist';
 
@@ -301,7 +317,7 @@ export const openWindow = async (
         enabled: ['core', 'memory', ...probes.map(({ id }) => id)],
         providers: {},
       },
-      platformVersion: '1.0.0',
+      platformVersion: PLATFORM_VERSION,
       generation: 3,
     },
     'client',
@@ -343,6 +359,7 @@ export const openWindow = async (
       },
       mode: 'connected',
       tokens: {},
+      app: { version: '0.0.1' },
     }),
     ready: async () => {
       steps.push('ready');

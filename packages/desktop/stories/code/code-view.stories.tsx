@@ -20,7 +20,7 @@ const Tab = ({
   readonly children: ReactNode;
 }) => (
   <div className="flex h-[28rem] flex-col overflow-hidden rounded-lg border">
-    <div className="border-b px-3 py-1.5 font-mono text-xs text-muted-foreground">
+    <div className="px-3 py-1.5 font-mono text-xs text-muted-foreground">
       {path}
     </div>
     {children}

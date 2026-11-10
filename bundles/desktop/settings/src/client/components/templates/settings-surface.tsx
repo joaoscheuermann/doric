@@ -6,7 +6,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from 'desktop/ui/breadcrumb';
-import { Separator } from 'desktop/ui/separator';
 import {
   Sidebar,
   SidebarContent,
@@ -109,9 +108,16 @@ export function SettingsBreadcrumb({
  * being edited, a footer under each of them, and a search field over the nav.
  * Nothing here knows which sections exist, what they configure, or what the
  * footers carry, so a frame can add its own header without this knowing what
- * went into it. A frame owns that header, the divider above this, and the
- * sidebar provider both columns are drawn at, because naming the active section
- * and the width of the window's grid are the frame's business.
+ * went into it. A frame owns that header, the canvas both columns sit on, and
+ * the sidebar provider both columns are drawn at, because naming the active
+ * section and the width of the window's grid are the frame's business.
+ *
+ * Nothing is divided by a rule (ui-redesign, Figma `36:22049`): the nav sits
+ * on the frame's `--sidebar` canvas with no fill of its own, and the section
+ * with its footer is an inset card on that canvas — the `--background` fill,
+ * a 10px radius and the small shadow. The row both stand in keeps 8px of
+ * canvas on its right and bottom (and on its left while the nav is hidden), so
+ * the nav's footer and the card's footer end on the same line.
  */
 export function SettingsSurface({
   children,
@@ -124,12 +130,11 @@ export function SettingsSurface({
 }: SettingsSurfaceProps) {
   return (
     /*
-      The two columns and the separator between them are drawn at the width the
-      frame's sidebar provider sets, so a header above this can put its own
-      divider on the same boundary.
+      The two columns are drawn at the width the frame's sidebar provider sets,
+      so a header above this can line its own cells up with them.
     */
-    <div className="flex h-full min-h-0 items-start">
-      <Sidebar collapsible="none" className="hidden md:flex">
+    <div className="flex h-full min-h-0 items-start pr-2 pb-2 pl-2 md:pl-0">
+      <Sidebar collapsible="none" className="hidden bg-transparent md:flex">
         <SidebarContent>
           <SidebarGroup>
             <SidebarGroupLabel>Settings</SidebarGroupLabel>
@@ -155,21 +160,17 @@ export function SettingsSurface({
           The bottom of the nav column, at the height of the content's own footer
           band, so the two read as one strip across the window.
         */}
-        <SidebarFooter className="chrome-bar shrink-0 justify-center border-t">
+        <SidebarFooter className="chrome-bar shrink-0 justify-center">
           {sidebarFooter}
         </SidebarFooter>
       </Sidebar>
       {/*
-        The nav is a fixed-position container, so it draws no border of its own
-        where it meets the section; a vertical separator in the flex row is what
-        divides the two, stretching to the full height of the surface. It is
-        drawn only while the nav column is, so a window too narrow for a nav
-        does not wear a line down its own edge.
+        The card is what sets the section off from the nav: no line is drawn
+        where the two meet.
       */}
-      <Separator orientation="vertical" className="hidden md:block" />
-      <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-background shadow-sm">
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-        <footer className="flex chrome-bar shrink-0 items-center border-t px-4">
+        <footer className="flex chrome-bar shrink-0 items-center px-4">
           {footer}
         </footer>
       </main>

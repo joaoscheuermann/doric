@@ -72,7 +72,7 @@ export default {
 
 export const Changes = {
   render: () => (
-    <div className="flex h-[32rem] w-80 flex-col overflow-hidden rounded-md border bg-sidebar text-sidebar-foreground">
+    <div className="flex h-[32rem] w-80 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
       <Element name="changes" />
     </div>
   ),
@@ -89,15 +89,17 @@ export const Badge = {
 
 export const FileDiff = {
   render: () => (
-    <div className="flex h-[36rem] max-w-5xl flex-col overflow-hidden rounded-md border">
-      <Element
-        name="fileDiff"
-        props={{
-          projectId: project.id,
-          repository: checkoutDiff.repository,
-          path: checkoutDiff.path,
-        }}
-      />
+    <div className="flex h-[36rem] max-w-5xl flex-col bg-sidebar p-2">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-background p-2 shadow-sm">
+        <Element
+          name="fileDiff"
+          props={{
+            projectId: project.id,
+            repository: checkoutDiff.repository,
+            path: checkoutDiff.path,
+          }}
+        />
+      </div>
     </div>
   ),
 };

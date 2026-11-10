@@ -30,7 +30,7 @@ export const TreePanel = memo(function TreePanel({
 }) {
   return (
     <aside
-      className="papercraft-tree absolute top-(--doric-titlebar-height) bottom-24 left-0 z-10 w-56 overflow-auto border-r border-border bg-background/80 backdrop-blur"
+      className="papercraft-tree absolute top-(--doric-titlebar-height) bottom-24 left-0 z-10 w-56 overflow-auto rounded-lg bg-background/80 backdrop-blur-[4px]"
       aria-label="estrutura"
     >
       <div className="px-2 py-1.5 text-[10px] font-normal tracking-wide text-muted-foreground uppercase">

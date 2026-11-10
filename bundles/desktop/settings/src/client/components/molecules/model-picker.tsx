@@ -78,7 +78,7 @@ export function ModelPicker({
             variant="ghost"
             size="sm"
             aria-label={ariaLabel}
-            className="max-w-72 min-w-0"
+            className="max-w-72 min-w-0 gap-2"
           />
         }
       >

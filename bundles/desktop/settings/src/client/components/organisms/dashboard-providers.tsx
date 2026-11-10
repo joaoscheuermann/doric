@@ -26,6 +26,14 @@ import { useModelIcons } from '../../hooks/use-model-icons.js';
 import { ProviderIcon } from '../molecules/provider-icon.js';
 
 /**
+ * A provider row, at the metrics of the Projects group's rows drawn right above
+ * it (the prototype `85:7520`): 28 px tall, 6 px side inset, 6 px from the mark
+ * to a 13 px regular name.
+ */
+const row =
+  'h-7 gap-1.5 px-1.5 py-0 text-[13px] font-normal data-active:font-normal [&_svg]:size-3.5';
+
+/**
  * The dashboard sidebar's Providers group: one row per configured provider,
  * drawn by its mark and name, which opens that provider's page; the row of the
  * open page is the active one. The group folds from its label, and its "+"
@@ -55,15 +63,18 @@ export function DashboardProvidersGroup({
 
   return (
     <Collapsible defaultOpen className="group/collapsible">
-      <SidebarGroup>
+      {/* The Projects group's own metrics (`85:7520`): no inset, a 20 px
+          label 4 px above the rows, the "+" at its top right. */}
+      <SidebarGroup className="gap-1 p-0">
         <SidebarGroupLabel
           render={<CollapsibleTrigger />}
-          className="gap-1 pl-1.5 font-normal"
+          className="h-5 gap-1 pl-1.5 font-normal"
         >
           <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
           Providers
         </SidebarGroupLabel>
         <SidebarGroupAction
+          className="top-0 right-1"
           title="Add provider"
           aria-label="Add provider"
           disabled={kinds.length === 0}
@@ -76,7 +87,10 @@ export function DashboardProvidersGroup({
             <SidebarMenu>
               {draft === undefined ? (
                 <SidebarMenuItem>
-                  <SidebarMenuSkeleton showIcon />
+                  <SidebarMenuSkeleton
+                    showIcon
+                    className="h-7 gap-1.5 px-1.5"
+                  />
                 </SidebarMenuItem>
               ) : (
                 draft.providers.map((provider, index) => (
@@ -84,7 +98,7 @@ export function DashboardProvidersGroup({
                     <SidebarMenuButton
                       isActive={index === activeIndex}
                       onClick={() => onOpen(index)}
-                      className="data-active:font-normal [&_svg]:size-3.5"
+                      className={row}
                     >
                       <ProviderIcon
                         svg={
@@ -94,9 +108,7 @@ export function DashboardProvidersGroup({
                         }
                         className="size-3.5"
                       />
-                      <span className="font-light">
-                        {providerLabel(provider, index)}
-                      </span>
+                      <span>{providerLabel(provider, index)}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))

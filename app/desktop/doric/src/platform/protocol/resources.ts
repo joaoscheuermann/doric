@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { PLATFORM_VERSION } from 'bundle/runtime';
+import { PLATFORM_ASSETS_VERSION } from 'bundle/runtime';
 
 /** Where the files served under `doric://app` live on disk. */
 export interface Resources {
@@ -10,7 +10,7 @@ export interface Resources {
   readonly schemasRoot: string;
   /** `/platform/shell@<v>/…` when packaged (the renderer build). */
   readonly shellRoot: string;
-  /** `PLATFORM_VERSION`: the shell's URL prefix is `/platform/shell@<v>/`. */
+  /** `PLATFORM_ASSETS_VERSION`: the shell's URL prefix is `/platform/shell@<v>/`. */
   readonly shellVersion: string;
 }
 
@@ -23,7 +23,7 @@ export const resourcesFor = (mainDir: string): Resources => ({
   platformRoot: join(mainDir, 'assets', 'platform'),
   schemasRoot: join(mainDir, 'assets', 'schemas'),
   shellRoot: join(mainDir, '..', 'doric-renderer'),
-  shellVersion: PLATFORM_VERSION,
+  shellVersion: PLATFORM_ASSETS_VERSION,
 });
 
 export const shellPrefix = (resources: Resources): string =>

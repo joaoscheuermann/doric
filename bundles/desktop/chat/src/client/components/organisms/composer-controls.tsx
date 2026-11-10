@@ -7,7 +7,6 @@ import type { Thread } from '../../domain/workspace.js';
 import { useThreadQueue } from '../../hooks/use-thread-queue.js';
 import { queueEditStore } from '../../stores/queue-edit.js';
 import { ComposerButton } from '../molecules/composer-button.js';
-import { ToolbarDivider } from '../molecules/toolbar-divider.js';
 
 type ComposerControlsProps = {
   readonly thread?: Thread;
@@ -23,8 +22,10 @@ type ComposerControlsProps = {
 
 /**
  * The composer's part of the conversation footer (`workspace-footer.tsx`
- * 62-88): the divider, "Stop execution" while a queued edit is open and the
- * Thread runs, and the send/stop/resume/save button.
+ * 62-88): "Stop execution" while a queued edit is open and the Thread runs,
+ * and the send/stop/resume/save button. The row stands 8 px after what
+ * precedes it, with no rule between (Figma `32:49010`), and its buttons are
+ * the footer's small ones, 24 px (`99:8035`, `99:8508`).
  */
 export function ComposerControls({
   canSend,
@@ -40,11 +41,10 @@ export function ComposerControls({
   );
   const action = edit ? 'save' : composerAction(running, queue.data);
   return (
-    <>
-      <ToolbarDivider />
+    <div className="flex items-center gap-2 pl-2">
       {edit && running && (
         <Button
-          size="icon-sm"
+          size="icon-xs"
           variant="default"
           aria-label="Stop execution"
           onClick={onStop}
@@ -66,6 +66,6 @@ export function ComposerControls({
         action={action}
         onResume={queue.resume}
       />
-    </>
+    </div>
   );
 }

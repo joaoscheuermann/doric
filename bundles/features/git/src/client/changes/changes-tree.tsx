@@ -1,8 +1,15 @@
 import { Badge } from 'desktop/ui/badge';
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from 'desktop/ui/context-menu';
+import {
   FileTree,
   indentation,
   rowInteraction,
+  type TreeNode,
   treeClassName,
 } from 'desktop/ui/panels';
 import {
@@ -12,8 +19,8 @@ import {
   SidebarMenuSub,
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
-import { ChevronRightIcon, GitBranchIcon } from 'lucide-react';
-import { memo, useMemo } from 'react';
+import { ChevronRightIcon, GitBranchIcon, RotateCcwIcon } from 'lucide-react';
+import { memo, type ReactNode, useMemo } from 'react';
 
 import type { ProjectChange } from '../../contracts/index.js';
 import {
@@ -22,6 +29,7 @@ import {
   changesTreeView,
 } from '../reads/change-tree.js';
 import { ChangeCounts } from './change-counts.js';
+import type { DiscardTarget } from './discard-dialog.js';
 
 type ChangesTreeProps = {
   readonly repository: ChangeRepository & {
@@ -32,6 +40,11 @@ type ChangesTreeProps = {
   readonly selectedPath?: string;
   readonly onToggle: (key: string) => void;
   readonly onOpen: (repository: string, change: ProjectChange) => void;
+  /**
+   * Asks to discard a target (A11, A12): the file rows' and the repository
+   * row's context menus offer it. Absent, the rows have no context menu.
+   */
+  readonly onDiscard?: (target: DiscardTarget) => void;
 };
 
 /**
@@ -41,6 +54,10 @@ type ChangesTreeProps = {
  * and the repository's line totals are that row's own content, not a second
  * header shape. A refresh that answers the same repository leaves the row, and
  * the tree it derives, as they were.
+ *
+ * With `onDiscard`, a changed file's row has a context menu with "Discard
+ * changes" (A11; directory rows have none) and the repository row one with
+ * "Discard all changes" (A12).
  */
 export const ChangesTree = memo(function ChangesTree({
   repository,
@@ -48,6 +65,7 @@ export const ChangesTree = memo(function ChangesTree({
   selectedPath,
   onToggle,
   onOpen,
+  onDiscard,
 }: ChangesTreeProps) {
   const { entries, key, open, expanded, decorations, changes } = useMemo(
     () => changesTreeView(repository, '', collapsed),
@@ -55,49 +73,91 @@ export const ChangesTree = memo(function ChangesTree({
   );
   if (entries.length === 0) return null;
   const label = repository.path || 'workspace';
+  const discard = (target: DiscardTarget, text: string): ReactNode => (
+    <ContextMenuItem variant="destructive" onClick={() => onDiscard?.(target)}>
+      <RotateCcwIcon />
+      {text}
+    </ContextMenuItem>
+  );
+  const rowMenu =
+    onDiscard === undefined
+      ? undefined
+      : (node: TreeNode) => {
+          const change =
+            node.type === 'file' ? changes.get(node.path) : undefined;
+          return change === undefined
+            ? null
+            : discard(
+                {
+                  name: node.name,
+                  repository: repository.path,
+                  paths: [change.path],
+                },
+                'Discard changes',
+              );
+        };
+  const repositoryButton = (
+    <SidebarMenuButton
+      size="sm"
+      className={cn(
+        'h-7 w-full min-w-0 gap-1.5 rounded-[4px] pr-8',
+        rowInteraction(false),
+      )}
+      style={{ paddingLeft: indentation(0) }}
+      render={
+        <div
+          role="treeitem"
+          tabIndex={0}
+          aria-expanded={open}
+          aria-label={`${label}, ${repository.added} lines added, ${repository.removed} lines removed`}
+          title={repository.path || 'Workspace repository'}
+          onClick={() => onToggle(key)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onToggle(key);
+            } else if (event.key === 'ArrowRight' && !open) {
+              event.preventDefault();
+              onToggle(key);
+            } else if (event.key === 'ArrowLeft' && open) {
+              event.preventDefault();
+              onToggle(key);
+            }
+          }}
+        />
+      }
+    >
+      <span
+        aria-hidden
+        className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
+      >
+        <GitBranchIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
+        <ChevronRightIcon
+          className={cn(
+            'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
+            open && 'rotate-90',
+          )}
+        />
+      </span>
+      <span className="min-w-0 flex-1 truncate font-normal">{label}</span>
+    </SidebarMenuButton>
+  );
   return (
     <SidebarMenuItem role="presentation" className="w-full min-w-0">
       <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
-        <SidebarMenuButton
-          size="sm"
-          className={cn(
-            'h-7 w-full min-w-0 rounded-none pr-8',
-            rowInteraction(false),
-          )}
-          style={{ paddingLeft: indentation(0) }}
-          render={
-            <div
-              role="treeitem"
-              tabIndex={0}
-              aria-expanded={open}
-              aria-label={`${label}, ${repository.added} lines added, ${repository.removed} lines removed`}
-              title={repository.path || 'Workspace repository'}
-              onClick={() => onToggle(key)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onToggle(key);
-                } else if (event.key === 'ArrowRight' && !open) {
-                  event.preventDefault();
-                  onToggle(key);
-                } else if (event.key === 'ArrowLeft' && open) {
-                  event.preventDefault();
-                  onToggle(key);
-                }
-              }}
-            />
-          }
-        >
-          <ChevronRightIcon
-            aria-hidden
-            className={cn(
-              'transition-transform duration-[50ms] ease-out',
-              open ? 'rotate-90' : 'rotate-0',
-            )}
-          />
-          <GitBranchIcon />
-          <span className="min-w-0 flex-1 truncate font-light">{label}</span>
-        </SidebarMenuButton>
+        {onDiscard === undefined ? (
+          repositoryButton
+        ) : (
+          <ContextMenu>
+            <ContextMenuTrigger render={repositoryButton} />
+            <ContextMenuContent>
+              {discard(
+                { name: label, repository: repository.path },
+                'Discard all changes',
+              )}
+            </ContextMenuContent>
+          </ContextMenu>
+        )}
         <SidebarMenuBadge className="z-10 bg-sidebar/90">
           <Badge variant="ghost" className="px-1" aria-hidden>
             <ChangeCounts
@@ -115,6 +175,7 @@ export const ChangesTree = memo(function ChangesTree({
             expanded={expanded}
             decorations={decorations}
             selectedPath={selectedPath}
+            rowMenu={rowMenu}
             actions={{
               toggle: (path) =>
                 onToggle(changeDirectoryKey(repository.path, path)),

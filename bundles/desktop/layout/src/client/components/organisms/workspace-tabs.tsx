@@ -2,12 +2,17 @@
 // element (`layout.tabs/v1`) since WP-10N moved the file, diff and terminal
 // tabs to the files, git and terminal bundles.
 
+import {
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from 'desktop/ui/context-menu';
 import { TabStrip } from 'desktop/ui/panels';
 import { TabsContent } from 'desktop/ui/tabs';
-import { FileDiffIcon, FileIcon, TerminalIcon } from 'lucide-react';
+import { FileDiffIcon, FileIcon, TerminalIcon, XIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
-import { LayoutTabsV1 } from '../../../contracts/index.js';
+import { LayoutTabsV1, type TabMenuItem } from '../../../contracts/index.js';
 import { type ThreadKind, threadKind } from '../../domain/thread-kind.js';
 import type {
   WorkspaceTabs as TabsState,
@@ -26,18 +31,25 @@ export function WorkspaceTabBar({
   readonly threadId: string;
 }) {
   const actions = workspaceTabsStore.getState();
+  const close = (id: string) => {
+    void layoutServices()
+      .use(LayoutTabsV1)
+      .close({ id, threadId })
+      .catch((reason: unknown) => workspaceStore.getState().fail(reason));
+  };
   return (
     <TabStrip
       variant="project"
       label="Files, changes, terminals and threads"
       selected={state.selected}
       onMove={(from, to) => actions.move(threadId, from, to)}
-      onClose={(id) => {
-        void layoutServices()
-          .use(LayoutTabsV1)
-          .close({ id, threadId })
-          .catch((reason: unknown) => workspaceStore.getState().fail(reason));
-      }}
+      onClose={close}
+      tabMenu={(id) => (
+        <TabMenu
+          items={tabMenuOf(state.items.find((tab) => tab.id === id))}
+          onClose={() => close(id)}
+        />
+      )}
       items={state.items.flatMap((tab) =>
         tab.kind === 'element'
           ? [
@@ -57,11 +69,78 @@ export function WorkspaceTabBar({
   );
 }
 
+const tabMenuOf = (tab: WorkspaceTab | undefined) =>
+  tab?.kind === 'element' ? (tab.menu ?? []) : [];
+
+/**
+ * One entry the opener stated, its icon leading; without one it is inset.
+ * `inset` is left out rather than false: the item writes it to `data-inset`,
+ * whose presence alone insets it.
+ */
+const OpenerEntry = ({ item }: { readonly item: TabMenuItem }) => (
+  <ContextMenuItem
+    inset={item.icon === undefined ? true : undefined}
+    variant={item.destructive ? 'destructive' : 'default'}
+    onClick={item.run}
+  >
+    {item.icon}
+    {item.label}
+  </ContextMenuItem>
+);
+
+/**
+ * A viewer tab's context menu (S15, Figma `layout/ContextMenu` 29:5570): the
+ * opener's non-destructive entries (`layout.tabs/v1@1.2.0` `menu`), a
+ * separator, "Close tab" (which closes it as its close button does), then the
+ * opener's destructive entries last, behind a separator. "Close tab" carries
+ * an icon, so an entry without one is inset to align with the labels.
+ */
+function TabMenu({
+  items,
+  onClose,
+}: {
+  readonly items: readonly TabMenuItem[];
+  readonly onClose: () => void;
+}) {
+  const leading = items.filter((item) => !item.destructive);
+  const destructive = items.filter((item) => item.destructive);
+  return (
+    <>
+      {leading.length > 0 && (
+        <>
+          <ContextMenuGroup>
+            {leading.map((item) => (
+              <OpenerEntry key={item.id} item={item} />
+            ))}
+          </ContextMenuGroup>
+          <ContextMenuSeparator />
+        </>
+      )}
+      <ContextMenuGroup>
+        <ContextMenuItem onClick={onClose}>
+          <XIcon />
+          Close tab
+        </ContextMenuItem>
+      </ContextMenuGroup>
+      {destructive.length > 0 && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuGroup>
+            {destructive.map((item) => (
+              <OpenerEntry key={item.id} item={item} />
+            ))}
+          </ContextMenuGroup>
+        </>
+      )}
+    </>
+  );
+}
+
 export function WorkspaceTabs({ state }: { readonly state: TabsState }) {
   return (
     <section
       aria-label="Files, changes, terminals and threads"
-      className="flex h-full min-h-0 flex-col bg-sidebar"
+      className="flex h-full min-h-0 flex-col"
     >
       {/* Keep panels in stable DOM order when their triggers are moved. */}
       {state.items
@@ -103,7 +182,8 @@ function tabIcon(tab: Extract<WorkspaceTab, { readonly kind: 'element' }>) {
       return <TerminalIcon />;
     case 'thread': {
       const thread = threadOfTab(tab);
-      const kind: ThreadKind = thread === undefined ? 'main' : threadKind(thread);
+      const kind: ThreadKind =
+        thread === undefined ? 'main' : threadKind(thread);
       return <ThreadKindIcon kind={kind} />;
     }
     default:

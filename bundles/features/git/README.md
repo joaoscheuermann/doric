@@ -2,7 +2,8 @@
 
 `git` lets the Doric agent clone, commit, rebase, resolve conflicts and push
 inside its Project's sandbox, and lets you follow that work in the desktop
-app: the Changes view, file comparisons, the current branch in the footer and
+app: the Changes view, file comparisons, the working directory and branch in the Files
+column's footer and
 the Versioning settings for the identity the agent commits with.
 
 It is a feature bundle with a host part (the `git` tool and
@@ -15,12 +16,12 @@ platform. See the [main README](../../../README.md) for Doric as a whole and
 - **Tool:** `git`, structured and non-interactive Git commands in the sandbox.
 - **Skills:** cloning, commit preparation, conflict resolution, rebasing,
   remote synchronization and linked worktrees.
-- **Contracts:** `git.commands/v1` (host), `git.changes/v1` (client) and the
-  `git.open-comparison/v1` command.
+- **Contracts:** `git.commands/v1` (host, 1.1.0 with `discard`),
+  `git.changes/v1` (client) and the `git.open-comparison/v1` command.
 - **Credentials:** the `GIT` credential kind, a Git identity (username and
   email) registered with `secrets/v1`.
-- **UI:** the Changes view, the comparison tab, the footer's working directory
-  and branch picker, and the Versioning settings section.
+- **UI:** the Changes view, the comparison tab, the Files column footer's
+  working directory and branch picker, and the Versioning settings section.
 
 ## The `git` tool
 
@@ -63,15 +64,48 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   `runtime.lease/v1`; none acquires a lease. While some bundle provides
   `runtime.terminals/v1`, the Project's terminals feed the branch switch's busy
   check; without one, only running prompts block a switch.
+- `git.commands/v1@1.1.0` adds `discard`: it discards changes of one
+  repository the Thread's working directory reads, either the listed `paths`
+  or, without `paths`, every listed change. It cannot be undone, so it runs
+  under the Project lock and refuses, with nothing written, a working
+  directory the Changes view no longer shows, a repository the read does not
+  list, running work (a prompt or terminal) inside the repository, in a
+  repository nested in it or in a directory above it, a path with no listed
+  change (an unchanged or ignored file, a path under a symlinked directory),
+  a nested repository or submodule, and any conflicted target. Untracked
+  files go through `git clean` without `-x`, so ignored files stay; every other
+  change through `git restore --source=HEAD --staged --worktree` (a rename's
+  origin with it, a copy's origin never), or `git rm --force` for a staged new
+  file in a repository without a commit. Paths are literal, never patterns.
+  Discard all leaves nested repositories and submodules listed. A new read
+  decides `discarded`; a failing command or a target still listed answers
+  `failed` with what was discarded before it.
 - `git.changes/v1` (client) keeps the window's one changes read per Project and
   working directory, shared with the bundles that decorate from it, such as
   the files tree.
 - `git.open-comparison/v1` opens one file's comparison as a workspace tab
-  (`git-file-diff`).
+  (`git-file-diff`). The tab's context menu holds "Open file", which runs
+  `files.open-file/v1` as the diff toolbar's button does (`layout.tabs/v1@1.2.0`
+  `menu`, so the bundle requires `layout.tabs/v1@^1.2.0`). The entry is fixed
+  when the tab opens, so a deleted file's tab has it too, and the file tab then
+  says the file cannot be shown.
 - The Changes view (`git-changes`, with its `git-changes-badge`) is a
   `layout.panel` item, the working directory and branch (`git-workspace-cwd`)
-  a `layout.footer` item, and the Versioning section (`/settings/git`) chooses
+  a `layout.panel.footer` item (the change counts stay in the Changes tab's
+  badge), and the Versioning section (`/settings/git`) chooses
   which stored credentials the agent commits and pushes with.
+- In the Changes view a changed file's row has a context menu with "Discard
+  changes" and the repository row one with "Discard all changes" (directory
+  rows have none; both entries are destructive). Either opens a confirmation
+  that names the file or repository and says it cannot be undone; confirming
+  calls `discard` with the working directory the view read with. After a
+  `ready` or `failed` answer the view waits for the Project's refresh before
+  it closes the dialog or shows the message, so the tree already shows what is
+  left. A refusal, a Thread that is missing, not running or still starting,
+  and a call that fails show their sentence in the dialog, which stays open
+  until Cancel. Without a selected Thread the rows have no menu, and an app
+  whose `FileTree` predates `rowMenu` drops the file rows' menu; the
+  repository row's menu stays.
 
 ## Change the bundle
 

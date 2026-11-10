@@ -27,7 +27,7 @@ const electronNotifications: NotificationApi = {
 };
 
 void app.whenReady().then(async () => {
-  nativeTheme.themeSource = 'system';
+  // The theme is set in `platform.prepare()`, from the saved preference.
   const log = createPlatformLog();
   // The host origin the app reaches Doric on: `DORIC_HOST_URL` for a host
   // that is not on the app's own loopback, the loopback default otherwise.

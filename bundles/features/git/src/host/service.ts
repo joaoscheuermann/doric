@@ -25,6 +25,7 @@ import {
   type BranchSwitch,
   type ChangesRead,
   type DiffRead,
+  type Discard,
   type FileDiffRead,
   GitCommandsV1,
   gitMethods,
@@ -35,6 +36,7 @@ import {
   readProjectChanges,
   readProjectFileDiff,
 } from './changes.js';
+import { discardChanges } from './discard.js';
 import { threadGit } from './status.js';
 
 /** The sentence a switch from a directory the picker no longer shows answers. */
@@ -181,6 +183,36 @@ export const createGitService = (terminals: TerminalList) =>
           { exclusive: true },
           (thread) =>
             switchOn(thread, input.branch, input.cwd, terminals, call),
+          call,
+        );
+        return outcome.status === 'ready' ? outcome.value : outcome;
+      },
+    }),
+    discard: defineMethod({
+      expose: 'desktop',
+      ...gitMethods.discard,
+      execute: async (
+        input: {
+          readonly threadId: string;
+          readonly cwd: string;
+          readonly repository: string;
+          readonly paths?: readonly string[];
+        },
+        call: Call,
+        services,
+      ): Promise<Discard> => {
+        // The Project mutation lock keeps a new prompt from racing the Discard.
+        const outcome = await workspace(services, call).withThread(
+          input.threadId,
+          { exclusive: true },
+          (thread) =>
+            discardChanges(thread.sandbox, {
+              threadCwd: thread.cwd,
+              cwd: input.cwd,
+              repository: input.repository,
+              ...(input.paths === undefined ? {} : { paths: input.paths }),
+              busy: () => busyPaths(thread, terminals, call),
+            }),
           call,
         );
         return outcome.status === 'ready' ? outcome.value : outcome;

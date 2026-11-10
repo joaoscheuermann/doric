@@ -1,81 +1,78 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useEffect } from 'react';
 
-import type { ResourcesReads } from '../../src/client/api/resources.js';
-import type {
-  HostResources,
-  ProjectResourcesResult,
+import {
+  cpuLabel,
+  type HostResources,
+  memoryLabel,
+  type ProjectResourcesResult,
 } from '../../src/client/domain/resources.js';
 import { resourcesKeys } from '../../src/client/hooks/use-resources.js';
-import { ResourceMonitor } from '../../src/client/monitor/resource-monitor.js';
+import { ConnectionBadge } from '../../src/client/monitor/connection-badge.js';
+import {
+  type ResourceSectionModel,
+  ResourcesPopoverBody,
+  type ResourcesSnapshot,
+} from '../../src/client/monitor/resource-monitor.js';
 import { OpenOnMount, WithQueryClient } from '../support/query.js';
 import {
-  containerReading,
   fixtureReads,
   hostReading,
-  idleContainer,
   projectId,
   readyProject,
   saturatedContainer,
 } from '../support/resources.js';
 
-const sandboxTrigger = 'button[aria-label^="Sandbox resources"]';
-const machineTrigger = 'button[aria-label^="Machine resources"]';
+const GiB = 1024 ** 3;
+const badgeTrigger = '[data-slot="connection-badge"]';
 
 /**
- * The monitor over fixture reads, with the readings already in the cache
- * (as after the first poll) unless `seeded` is false.
+ * The badge over fixture reads, with the readings already in the cache (as
+ * after the first poll), on the sidebar surface it is cut out of.
  */
-function Monitor({
+function Badge({
   host = hostReading,
   project = () => readyProject(),
-  selectedProjectId = projectId,
-  seeded = true,
-  open,
-  reads,
+  connected = true,
+  open = false,
   children,
 }: {
   readonly host?: () => HostResources;
   readonly project?: () => ProjectResourcesResult;
-  readonly selectedProjectId?: string;
-  readonly seeded?: boolean;
-  readonly open?: string;
-  readonly reads?: ResourcesReads;
+  readonly connected?: boolean;
+  readonly open?: boolean;
   readonly children?: ReactNode;
 }) {
-  const monitor = (
-    <ResourceMonitor
-      reads={reads ?? fixtureReads({ host, project })}
-      projectId={selectedProjectId}
+  const badge = (
+    <ConnectionBadge
+      reads={fixtureReads({ host, project })}
+      projectId={projectId}
+      connected={connected}
     />
   );
   return (
     <WithQueryClient
       seed={(client) => {
-        if (!seeded) return;
         client.setQueryData(resourcesKeys.host, host());
-        if (selectedProjectId !== undefined) {
-          client.setQueryData(
-            resourcesKeys.project(selectedProjectId),
-            project(),
-          );
-        }
+        client.setQueryData(resourcesKeys.project(projectId), project());
       }}
     >
-      {open === undefined ? (
-        monitor
-      ) : (
-        <OpenOnMount selector={open}>{monitor}</OpenOnMount>
-      )}
+      <div className="inline-flex rounded-md bg-sidebar p-2">
+        {open ? (
+          <OpenOnMount selector={badgeTrigger}>{badge}</OpenOnMount>
+        ) : (
+          badge
+        )}
+      </div>
       {children}
     </WithQueryClient>
   );
 }
 
 /**
- * Two more hot readings after the seeded one, a poll apart in the cache's
- * eyes (each with its own `at`): the third in a row is what turns cpu into
- * a warning. Finite: it stops after the second write.
+ * Two more hot readings after the seeded one, each with its own `at`: the
+ * third in a row is what turns cpu into a warning. Finite: it stops after
+ * the second write.
  */
 function HotReadings() {
   const client = useQueryClient();
@@ -85,12 +82,6 @@ function HotReadings() {
         client.setQueryData(
           resourcesKeys.host,
           hostReading({ cpuPercent: 94 + step, ageSeconds: 0 }),
-        );
-        client.setQueryData(
-          resourcesKeys.project(projectId),
-          readyProject(
-            containerReading({ cpuPercent: 97 + step, ageSeconds: 0 }),
-          ),
         );
       }, step * 120),
     );
@@ -102,131 +93,185 @@ function HotReadings() {
 }
 
 export default {
-  title: 'Resources/Monitor/Resource monitor',
-  component: ResourceMonitor,
+  title: 'Resources/Monitor/Connection badge',
+  component: ConnectionBadge,
 };
 
-export const Default = {
-  render: () => <Monitor />,
+export const Connected = {
+  render: () => <Badge />,
 };
 
-export const SandboxPopoverOpen = {
-  render: () => <Monitor open={sandboxTrigger} />,
-};
-
-export const MachinePopoverOpen = {
-  render: () => <Monitor open={machineTrigger} />,
-};
-
-export const IdleSandbox = {
-  render: () => <Monitor project={() => readyProject(idleContainer())} />,
+export const Disconnected = {
+  render: () => <Badge connected={false} />,
 };
 
 export const MemoryWarning = {
-  render: () => <Monitor project={() => readyProject(saturatedContainer())} />,
-};
-
-export const MemoryWarningPopoverOpen = {
-  render: () => (
-    <Monitor
-      project={() => readyProject(saturatedContainer())}
-      open={sandboxTrigger}
-    />
-  ),
+  render: () => <Badge project={() => readyProject(saturatedContainer())} />,
 };
 
 export const SustainedCpu = {
   render: () => (
-    <Monitor
-      host={() => hostReading({ cpuPercent: 96, ageSeconds: 0 })}
-      project={() =>
-        readyProject(containerReading({ cpuPercent: 99, ageSeconds: 0 }))
-      }
-    >
+    <Badge host={() => hostReading({ cpuPercent: 96, ageSeconds: 0 })}>
       <HotReadings />
-    </Monitor>
+    </Badge>
   ),
 };
 
-export const NoProjectSelected = {
-  render: () => <Monitor selectedProjectId={undefined} />,
+export const PopoverOpen = {
+  render: () => <Badge open />,
 };
 
-export const PreparingEnvironment = {
+export const DisconnectedPopoverOpen = {
+  render: () => <Badge connected={false} open />,
+};
+
+/** A section as a poll would leave it, with the labels the model computes. */
+const section = (
+  title: ResourceSectionModel['title'],
+  input: {
+    readonly used?: number;
+    readonly limit?: number;
+    readonly cpu?: number;
+    readonly memoryWarning?: boolean;
+    readonly cpuWarning?: boolean;
+    readonly notice?: string;
+  },
+): ResourceSectionModel => ({
+  title,
+  memory: memoryLabel(input.used, input.limit),
+  cpu: cpuLabel(input.cpu),
+  memoryWarning: input.memoryWarning ?? false,
+  cpuWarning: input.cpuWarning ?? false,
+  memoryRatio:
+    input.used !== undefined && input.limit !== undefined
+      ? input.used / input.limit
+      : undefined,
+  cpuRatio: input.cpu === undefined ? undefined : input.cpu / 100,
+  notice: input.notice,
+});
+
+const ago = (seconds: number): string =>
+  new Date(Date.now() - seconds * 1000).toISOString();
+
+const sandbox = section('Sandbox', {
+  used: 1.2 * GiB,
+  limit: 4 * GiB,
+  cpu: 23,
+});
+const machine = section('Machine', {
+  used: 18.4 * GiB,
+  limit: 32 * GiB,
+  cpu: 15,
+});
+
+/** The popover's body on the popover surface, as `32:1463` draws each state. */
+function Body({
+  connected = true,
+  snapshot,
+}: {
+  readonly connected?: boolean;
+  readonly snapshot: ResourcesSnapshot;
+}) {
+  return (
+    <div className="w-64 rounded-lg bg-popover p-3 text-popover-foreground ring-1 ring-foreground/10">
+      <ResourcesPopoverBody connected={connected} snapshot={snapshot} />
+    </div>
+  );
+}
+
+export const PopoverDefault = {
+  render: () => <Body snapshot={{ sandbox, machine, at: ago(2) }} />,
+};
+
+export const PopoverMemoryWarning = {
   render: () => (
-    <Monitor project={() => ({ status: 'pending', retryAfterSeconds: 1 })} />
-  ),
-};
-
-export const PreparingEnvironmentPopoverOpen = {
-  render: () => (
-    <Monitor
-      project={() => ({ status: 'pending', retryAfterSeconds: 1 })}
-      open={sandboxTrigger}
-    />
-  ),
-};
-
-export const EnvironmentUnavailable = {
-  render: () => <Monitor project={() => ({ status: 'expired' })} />,
-};
-
-export const ProviderCannotMeasure = {
-  render: () => (
-    <Monitor
-      project={() =>
-        readyProject({
-          status: 'unavailable',
-          at: new Date(Date.now() - 1000).toISOString(),
-        })
-      }
-      open={sandboxTrigger}
-    />
-  ),
-};
-
-export const SandboxWithoutMemoryLimit = {
-  render: () => (
-    <Monitor
-      project={() =>
-        readyProject(containerReading({ memoryLimitBytes: undefined }))
-      }
-      open={sandboxTrigger}
-    />
-  ),
-};
-
-export const FirstMachineReading = {
-  render: () => (
-    <Monitor
-      host={() => hostReading({ cpuPercent: undefined })}
-      open={machineTrigger}
-    />
-  ),
-};
-
-export const StaleReading = {
-  render: () => (
-    <Monitor
-      host={() => hostReading({ ageSeconds: 95 })}
-      project={() => readyProject(containerReading({ ageSeconds: 95 }))}
-      seeded
-      reads={{
-        host: () => new Promise<HostResources>(() => undefined),
-        project: () => new Promise<ProjectResourcesResult>(() => undefined),
+    <Body
+      snapshot={{
+        sandbox: section('Sandbox', {
+          used: 3.6 * GiB,
+          limit: 4 * GiB,
+          cpu: 61,
+          memoryWarning: true,
+        }),
+        machine,
+        at: ago(2),
       }}
-      open={machineTrigger}
     />
   ),
 };
 
-export const WaitingForFirstReading = {
+export const PopoverCpuSustained = {
   render: () => (
-    <Monitor
-      seeded={false}
-      reads={{
-        host: () => new Promise<HostResources>(() => undefined),
-        project: () => new Promise<ProjectResourcesResult>(() => undefined),
+    <Body
+      snapshot={{
+        sandbox: section('Sandbox', {
+          used: 1.2 * GiB,
+          limit: 4 * GiB,
+          cpu: 99,
+          cpuWarning: true,
+        }),
+        machine: section('Machine', {
+          used: 18.4 * GiB,
+          limit: 32 * GiB,
+          cpu: 96,
+          cpuWarning: true,
+        }),
+        at: ago(2),
+      }}
+    />
+  ),
+};
+
+export const PopoverNoMemoryLimit = {
+  render: () => (
+    <Body
+      snapshot={{
+        sandbox: section('Sandbox', { used: 1.2 * GiB, cpu: 23 }),
+        machine,
+        at: ago(180),
+      }}
+    />
+  ),
+};
+
+export const PopoverPreparing = {
+  render: () => (
+    <Body
+      snapshot={{
+        sandbox: section('Sandbox', { notice: 'Preparing environment…' }),
+        machine,
+        at: ago(2),
+      }}
+    />
+  ),
+};
+
+export const PopoverUnavailable = {
+  render: () => (
+    <Body
+      snapshot={{
+        sandbox: section('Sandbox', {
+          notice: 'Resources unavailable in this provider',
+        }),
+        machine,
+        at: ago(2),
+      }}
+    />
+  ),
+};
+
+export const PopoverDisconnected = {
+  render: () => (
+    <Body connected={false} snapshot={{ sandbox, machine, at: ago(180) }} />
+  ),
+};
+
+export const PopoverWaitingForFirstReading = {
+  render: () => (
+    <Body
+      snapshot={{
+        sandbox: section('Sandbox', {}),
+        machine: section('Machine', {}),
       }}
     />
   ),

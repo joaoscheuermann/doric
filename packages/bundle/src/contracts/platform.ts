@@ -728,6 +728,20 @@ export interface DoricTokens {
   get(call?: CallArg): Promise<Readonly<Record<string, string>>>;
 }
 
+/**
+ * `doric.about/v1` (client only; platform 1.2.0): what the app says about
+ * itself. A bundle on an older app finds no provider; it detects the contract
+ * with `services.whenAvailable` and omits what needs it.
+ */
+export interface DoricAbout {
+  /**
+   * The app's version, the one main reads with `app.getVersion()` and writes
+   * into the window's description. Same answer for every call in a window;
+   * never rejects while the provider is registered.
+   */
+  get(call?: CallArg): Promise<{ readonly version: string }>;
+}
+
 /** Outcome of a one-time storage migration (`doric.migrations/v1`). */
 export type MigrationResult = (typeof migrationResults)[number];
 
@@ -807,6 +821,32 @@ export interface DoricConnection {
  */
 export interface DoricBrowser {
   open(url: string, call?: CallArg): Promise<void>;
+}
+
+/**
+ * The app's theme preference: `dark` (the default), `light`, or `system`,
+ * which follows the operating system's appearance. The source of truth for
+ * the union: bundles cannot import the app.
+ */
+export const doricThemeSchema = z.enum(['dark', 'light', 'system']);
+
+export type DoricTheme = z.output<typeof doricThemeSchema>;
+
+/**
+ * `doric.appearance/v1` (client only; platform 1.3.0): the theme preference
+ * of every window, which main keeps in `userData/doric/appearance.json`. A
+ * bundle on an older app finds no provider; it detects the contract with
+ * `services.whenAvailable` and omits what needs it.
+ */
+export interface DoricAppearance {
+  /** The saved preference (`dark` when none is saved or it is unreadable). */
+  get(call?: CallArg): Promise<{ readonly theme: DoricTheme }>;
+  /**
+   * Saves the preference and only then repaints every window in it. Rejects
+   * `invalid_input` for a value outside the three themes and `unavailable`
+   * when the file cannot be written; the saved preference is then unchanged.
+   */
+  set(input: { readonly theme: DoricTheme }, call?: CallArg): Promise<void>;
 }
 
 /**
@@ -898,6 +938,7 @@ export const DoricMenusV1 = ref<DoricMenus>('doric.menus/v1');
 export const DoricCacheV1 = ref<DoricCache>('doric.cache/v1');
 export const DoricMigrationsV1 = ref<DoricMigrations>('doric.migrations/v1');
 export const DoricTokensV1 = ref<DoricTokens>('doric.tokens/v1');
+export const DoricAboutV1 = ref<DoricAbout>('doric.about/v1');
 export const DoricNotificationsV1 = ref<DoricNotifications>(
   'doric.notifications/v1',
 );
@@ -906,6 +947,7 @@ export const DoricStartupV1 = ref<DoricStartup>('doric.startup/v1');
 export const DoricElementsV1 = ref<DoricElements>('doric.elements/v1');
 export const DoricConnectionV1 = ref<DoricConnection>('doric.connection/v1');
 export const DoricBrowserV1 = ref<DoricBrowser>('doric.browser/v1');
+export const DoricAppearanceV1 = ref<DoricAppearance>('doric.appearance/v1');
 
 const noInput = z.tuple([]);
 
@@ -1102,6 +1144,15 @@ export const platformContracts = Object.freeze({
       get: { input: noInput, output: z.record(z.string(), z.string()) },
     },
   },
+  'doric.about/v1': {
+    environments: ['client'],
+    methods: {
+      get: {
+        input: noInput,
+        output: z.object({ version: z.string() }).strict(),
+      },
+    },
+  },
   // WP-10N: desktopMain only again; the notifications bundle decides there.
   'doric.notifications/v1': {
     environments: ['desktopMain'],
@@ -1141,6 +1192,19 @@ export const platformContracts = Object.freeze({
   'doric.browser/v1': {
     environments: ['client'],
     methods: { open: { input: browserUrlSchema, output: z.void() } },
+  },
+  'doric.appearance/v1': {
+    environments: ['client'],
+    methods: {
+      get: {
+        input: noInput,
+        output: z.object({ theme: doricThemeSchema }).strict(),
+      },
+      set: {
+        input: z.object({ theme: doricThemeSchema }).strict(),
+        output: z.void(),
+      },
+    },
   },
 } satisfies Record<string, PlatformContractSpec>);
 

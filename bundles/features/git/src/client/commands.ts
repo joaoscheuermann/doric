@@ -2,21 +2,36 @@
 // comparison as a tab of the active owner, as the Changes rows did
 // (`app.tsx:126-135`): the tab id is today's diff key, its title the file's
 // name, its accessible name "<name> changes" and its tooltip the path.
-// Opening a comparison whose tab is open selects that tab.
+// Opening a comparison whose tab is open selects that tab. The tab's context
+// menu holds "Open file" (ui-redesign §4.4 A6), the diff toolbar's command.
 
-import { defineCommand } from 'bundle/contracts';
+import { CommandsV1, defineCommand } from 'bundle/contracts';
 import { baseName, joinPath } from 'desktop/reads';
 import {
   type CurrentTab,
+  type TabRequest as LayoutTabRequest,
   LayoutTabsV1,
-  type TabRequest,
 } from 'layout/contracts';
+import { FileIcon } from 'lucide-react';
+import { createElement, type ReactElement } from 'react';
 
 import {
   OPEN_COMPARISON_COMMAND,
   type OpenComparisonInput,
   openComparisonInput,
 } from '../contracts/index.js';
+import { OPEN_FILE_COMMAND } from './api/peers.js';
+
+/**
+ * A tab request whose menu items may carry `icon`, the item's 16 px leading
+ * icon (`layout.tabs/v1@1.2.0` TabMenuItem), typed here until git reads that
+ * version of the contract.
+ */
+export type TabRequest = Omit<LayoutTabRequest, 'menu'> & {
+  readonly menu?: readonly (NonNullable<LayoutTabRequest['menu']>[number] & {
+    readonly icon?: ReactElement;
+  })[];
+};
 
 /** The tag of the diff tab's element. */
 export const FILE_DIFF_TAG = 'git-file-diff';
@@ -29,8 +44,15 @@ export const comparisonTabId = ({
 }: OpenComparisonInput): string =>
   JSON.stringify(['diff', projectId, repository, path]);
 
-/** The tab a comparison opens as. */
-export const comparisonTab = (input: OpenComparisonInput): TabRequest => ({
+/**
+ * The tab a comparison opens as. `openFile` is its menu's "Open file" (A6):
+ * the entry is fixed when the tab opens, before the diff is read, so a deleted
+ * file's tab has it too.
+ */
+export const comparisonTab = (
+  input: OpenComparisonInput,
+  openFile?: () => void,
+): TabRequest => ({
   id: comparisonTabId(input),
   title: baseName(input.path),
   tag: FILE_DIFF_TAG,
@@ -42,6 +64,18 @@ export const comparisonTab = (input: OpenComparisonInput): TabRequest => ({
   icon: 'file-diff',
   ariaLabel: `${baseName(input.path)} changes`,
   tooltip: input.path,
+  ...(openFile === undefined
+    ? {}
+    : {
+        menu: [
+          {
+            id: 'open-file',
+            label: 'Open file',
+            icon: createElement(FileIcon),
+            run: openFile,
+          },
+        ],
+      }),
 });
 
 /**
@@ -72,6 +106,15 @@ export const openComparisonCommand = defineCommand({
   id: OPEN_COMPARISON_COMMAND,
   input: openComparisonInput,
   execute: async (input, call, services) => {
-    await services.use(LayoutTabsV1).open(comparisonTab(input), call);
+    const openFile = () => {
+      void services
+        .use(CommandsV1)
+        .execute(OPEN_FILE_COMMAND, {
+          projectId: input.projectId,
+          path: joinPath(input.repository, input.path),
+        })
+        .catch(() => undefined);
+    };
+    await services.use(LayoutTabsV1).open(comparisonTab(input, openFile), call);
   },
 });

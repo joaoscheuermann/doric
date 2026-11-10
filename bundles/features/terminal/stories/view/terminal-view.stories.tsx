@@ -9,19 +9,16 @@ import {
   testRun,
   userShell,
 } from '../support/fixtures.js';
+import { InsetCard } from '../support/inset-card.js';
 import {
   type StoryWatch,
   storyTerminalApi,
   storyWatches,
 } from '../support/terminal-client.js';
 
-/** A workspace tab's frame: the tab area beside the conversation. */
+/** A workspace tab's frame: the viewer's inset card beside the conversation. */
 function TabFrame({ children }: { readonly children: ReactNode }) {
-  return (
-    <div className="overflow-hidden rounded-md border" style={{ height: 420 }}>
-      {children}
-    </div>
-  );
+  return <InsetCard height={420}>{children}</InsetCard>;
 }
 
 /** One terminal's emulator over seeded output watches. */

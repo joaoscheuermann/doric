@@ -12,6 +12,11 @@ import { XIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Button } from '../components/button.js';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from '../components/context-menu.js';
 import { TabsList, TabsTrigger } from '../components/tabs.js';
 import { Toggle } from '../components/toggle.js';
 import { cn } from '../lib/utils.js';
@@ -41,6 +46,7 @@ export function TabStrip({
   onReselect,
   onSelect,
   variant = 'line',
+  tabMenu,
 }: {
   readonly items: readonly StripTab[];
   readonly selected?: string;
@@ -51,6 +57,11 @@ export function TabStrip({
   readonly onReselect?: (id: string) => void;
   readonly variant?: 'line' | 'default' | 'toggle' | 'project';
   readonly onSelect?: (id: string) => void;
+  /**
+   * The context menu of the tab `id`: the content of a `ContextMenu` whose
+   * trigger is the tab. Absent: no tab has a context menu.
+   */
+  readonly tabMenu?: (id: string) => ReactNode;
 }) {
   const events = useTabStrip(
     items.map((item) => item.id),
@@ -74,6 +85,7 @@ export function TabStrip({
           toggle={variant === 'toggle'}
           line={variant === 'line'}
           project={variant === 'project'}
+          menu={tabMenu?.(item.id)}
         />
       ))}
     </SortableContext>
@@ -145,6 +157,7 @@ function SortableTab({
   toggle,
   line,
   project,
+  menu,
 }: {
   readonly item: StripTab;
   readonly selected?: string;
@@ -155,10 +168,12 @@ function SortableTab({
   readonly toggle: boolean;
   readonly line: boolean;
   readonly project: boolean;
+  /** The tab's context menu; absent, the tab is no menu trigger. */
+  readonly menu?: ReactNode;
 }) {
   const sortable = useSortableTab(item.id, events.frozen?.get(item.id));
   const Control = toggle ? Toggle : project ? TabsPrimitive.Tab : TabsTrigger;
-  return (
+  const tab = (
     <Control
       // A tab is a `div`: the close control inside it is a button of its own.
       {...(toggle
@@ -290,5 +305,13 @@ function SortableTab({
         </span>
       )}
     </Control>
+  );
+  return menu === undefined ? (
+    tab
+  ) : (
+    <ContextMenu>
+      <ContextMenuTrigger render={tab} />
+      <ContextMenuContent>{menu}</ContextMenuContent>
+    </ContextMenu>
   );
 }

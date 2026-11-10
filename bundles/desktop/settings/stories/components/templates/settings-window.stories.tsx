@@ -1,5 +1,6 @@
 import { type ComponentType, useState } from 'react';
 
+import { SettingsAppearance } from '../../../src/client/components/organisms/settings-appearance.js';
 import { SettingsCredentials } from '../../../src/client/components/organisms/settings-credentials.js';
 import { SettingsExecution } from '../../../src/client/components/organisms/settings-execution.js';
 import { SettingsProfile } from '../../../src/client/components/organisms/settings-profile.js';
@@ -12,6 +13,7 @@ import {
   providerDraftOf,
   providerLabel,
 } from '../../../src/client/domain/config.js';
+import { storyAppearance } from '../../support/appearance.js';
 import {
   configuration,
   credentials,
@@ -46,6 +48,7 @@ function Window({
   readonly saveFailed?: boolean;
 }) {
   const nav = useNav(initial, query);
+  const [appearance] = useState(() => storyAppearance());
   const [draft, setDraft] = useState(configuration);
   const [provider, setProvider] = useState<ProviderDraft | undefined>(
     openProvider === undefined
@@ -58,6 +61,8 @@ function Window({
     switch (nav.active) {
       case 'profile':
         return <SettingsProfile draft={draft} onChange={setDraft} />;
+      case 'appearance':
+        return <SettingsAppearance appearance={appearance} />;
       case 'providers':
         return (
           <SettingsProviders
@@ -139,6 +144,10 @@ export const ProviderPage = {
 
 export const Execution = {
   render: () => <Window initial="execution" saveState="Saving…" />,
+};
+
+export const Appearance = {
+  render: () => <Window initial="appearance" />,
 };
 
 export const Tools = {

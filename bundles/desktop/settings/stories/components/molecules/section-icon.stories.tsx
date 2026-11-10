@@ -2,7 +2,15 @@ import { sectionIcon } from '../../../src/client/components/molecules/section-ic
 import { controlFrame } from '../../support/frames.js';
 
 /** Every icon name a `settings-link` may carry, then one the map lacks. */
-const names = ['server', 'zap', 'wrench', 'git-branch', 'key-round', 'globe'];
+const names = [
+  'sun-moon',
+  'server',
+  'zap',
+  'wrench',
+  'git-branch',
+  'key-round',
+  'globe',
+];
 
 /** The icon a name resolves to, beside the name, as the nav and headings draw it. */
 function SectionIcons() {

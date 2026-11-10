@@ -19,6 +19,7 @@
 
 import { Button } from 'desktop/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
+import { ReaderAvatar } from 'desktop/ui/reader-avatar';
 import { Separator } from 'desktop/ui/separator';
 import { cn } from 'desktop/ui/utils';
 import { ArrowDownIcon, ArrowUpRightIcon, BotIcon } from 'lucide-react';
@@ -35,7 +36,6 @@ import type { ThreadMarker } from '../../domain/thread-nav.js';
 import { markerEmphasis } from '../../domain/thread-nav.js';
 import { useDelegatedSource } from '../../hooks/use-delegated-source.js';
 import { useThreadNav } from '../../hooks/use-thread-nav.js';
-import { ReaderAvatar } from './reader-avatar.js';
 
 /** How long a hover's popover stays open once the pointer has left its handle. */
 const CLOSE_DELAY = 250;

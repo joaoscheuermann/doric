@@ -21,7 +21,8 @@ type EffortPickerProps = {
 };
 
 /**
- * The reasoning effort a prompt requests, worn as a ghost button: opening it
+ * The reasoning effort a prompt requests, worn as a ghost `sm` button as Figma
+ * draws the footer's triggers (`settings/ExecutionPicker` `31:15450`): opening it
  * lists the efforts the model itself accepts, each a row that commits on click.
  * A model that lists none has nothing to choose, so the button is disabled and
  * the popover is never opened.

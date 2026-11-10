@@ -141,9 +141,7 @@ export const deleteWhenTerminal = async (
     // An agent Thread is the agent's to delete: the reader may only pause,
     // continue and retry it, and the host says so instead of deleting.
     if (result === 'forbidden')
-      throw new Error(
-        'An agent opened this Thread, so it cannot be deleted.',
-      );
+      throw new Error('An agent opened this Thread, so it cannot be deleted.');
     await pause();
   }
 };

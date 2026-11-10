@@ -91,7 +91,13 @@ export function DiffEditor({
         ignoreTrimWhitespace: false,
         fontFamily: getComputedStyle(element).fontFamily,
         fontSize: 12,
+        // As the code view: no current-line box, and no overview ruler or the
+        // border it draws at the right edge (Figma `27:14162`).
+        hideCursorInOverviewRuler: true,
         minimap: { enabled: false },
+        overviewRulerBorder: false,
+        overviewRulerLanes: 0,
+        renderLineHighlight: 'none',
         scrollBeyondLastLine: false,
         stickyScroll: { enabled: false },
         theme: loaded.defineCodeViewTheme(initial.current.diffTokens),

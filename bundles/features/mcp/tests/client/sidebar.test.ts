@@ -2320,6 +2320,62 @@ test('W10 saving an invalid edit marks the field and updates nothing', async () 
 });
 
 // ---------------------------------------------------------------------------
+// W11 — the editor's look (ui-redesign §3.1 mcp row, S22, S23; Figma
+// `35:4247`, `35:4446`, `35:4810`, `36:6755`)
+
+/** The classes of `element`, split. */
+const classesOf = (element: Element): string[] =>
+  (element.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+
+test('W11 the editor draws its tables without header rule or row dividers, in a box with an edge, over a footer without a top rule', async () => {
+  const { pane } = await paneWith([linear, files]);
+
+  try {
+    await click(rowButton(pane, 'Linear'));
+    const dialog = await dialogNamed('Edit MCP server');
+    const tables = [...dialog.querySelectorAll('table')];
+    // Headers, Tools and Skills.
+    assert.equal(tables.length, 3);
+
+    for (const table of tables) {
+      const head = table.querySelector('thead');
+      assert.ok(head !== null, 'A table has no header.');
+      // The vendored header draws its rule through `[&_tr]:border-b`.
+      assert.ok(
+        !classesOf(head).includes('[&_tr]:border-b'),
+        `A table header draws its rule: "${head.getAttribute('class')}".`,
+      );
+      for (const row of table.querySelectorAll('tr')) {
+        assert.ok(
+          !classesOf(row).includes('border-b'),
+          `A table row draws a divider: "${row.getAttribute('class')}".`,
+        );
+      }
+      // The box around the table keeps its edge.
+      const box = table.closest('.rounded-lg');
+      assert.ok(
+        box !== null && classesOf(box).includes('border'),
+        'A table lost the edge of its box.',
+      );
+    }
+
+    const footer = dialog.querySelector('[data-slot="dialog-footer"]');
+    assert.ok(footer !== null, 'The editor has no footer.');
+    assert.ok(
+      !classesOf(footer).includes('border-t'),
+      'The editor footer draws a top rule.',
+    );
+    assert.equal(
+      dialog.querySelectorAll('[data-slot="separator"]').length,
+      0,
+      'The editor draws a section rule.',
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // W9
 
 test('W9 a watch lost with the host generation subscribes again', async () => {

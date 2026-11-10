@@ -12,6 +12,7 @@ import {
   type Services,
 } from 'bundle/contracts';
 
+import { createNavigation } from '../../src/client/navigation.js';
 import {
   openWindow,
   probe,
@@ -183,4 +184,189 @@ void test('a registration that changes the active match notifies; its disposal t
   registration.dispose();
   assert.equal(navigation.current(), undefined);
   assert.deepEqual(seen, ['/settings', undefined]);
+});
+
+// Back/Forward (S11): each entry the core writes holds `{ doric: { index, max } }`.
+
+const threadPath = (threadId: string) => `/projects/p1/threads/${threadId}`;
+
+void test('Back shows the previous Thread and enables Forward; Forward shows the next (T-4.2.1)', async () => {
+  const { window, navigation } = await open();
+  const seen: (string | undefined)[] = [];
+
+  navigation.subscribe((match) => seen.push(match?.params.threadId));
+  assert.deepEqual(navigation.history(), {
+    canGoBack: false,
+    canGoForward: false,
+  });
+
+  navigation.navigate(threadPath('a'));
+  navigation.navigate(threadPath('b'));
+  assert.deepEqual(navigation.history(), {
+    canGoBack: true,
+    canGoForward: false,
+  });
+
+  await popped(window, () => navigation.back());
+  assert.equal(navigation.current()?.params.threadId, 'a');
+  assert.deepEqual(navigation.history(), {
+    canGoBack: true,
+    canGoForward: true,
+  });
+
+  await popped(window, () => navigation.forward());
+  assert.equal(navigation.current()?.params.threadId, 'b');
+  assert.deepEqual(navigation.history(), {
+    canGoBack: true,
+    canGoForward: false,
+  });
+  assert.deepEqual(seen, ['a', 'b', 'a', 'b']);
+});
+
+void test('a navigation after Back disables Forward (T-4.2.2)', async () => {
+  const { window, navigation } = await open();
+
+  navigation.navigate(threadPath('a'));
+  navigation.navigate(threadPath('b'));
+  await popped(window, () => navigation.back());
+  navigation.navigate(threadPath('c'));
+
+  assert.deepEqual(navigation.history(), {
+    canGoBack: true,
+    canGoForward: false,
+  });
+});
+
+void test('a replace keeps the entry where it is in the list', async () => {
+  const { window, navigation } = await open();
+
+  navigation.navigate(threadPath('a'));
+  navigation.navigate(threadPath('b'));
+  await popped(window, () => navigation.back());
+  navigation.navigate(threadPath('c'), { replace: true });
+
+  assert.deepEqual(navigation.history(), {
+    canGoBack: true,
+    canGoForward: true,
+  });
+  assert.deepEqual(window.history.state, { doric: { index: 1, max: 2 } });
+});
+
+/** Calls a method of a navigation definition as the runtime would. */
+const invoke = (
+  definition: ReturnType<typeof createNavigation>,
+  name: string,
+): unknown => {
+  const method = (
+    definition.methods as Record<
+      string,
+      { execute(input: unknown, call: unknown, services: unknown): unknown }
+    >
+  )[name];
+
+  assert.ok(method, `navigation has no ${name}`);
+
+  return method.execute(undefined, undefined, undefined);
+};
+
+void test('after a reload, Back and Forward keep the list the entries hold (T-4.2.4)', async () => {
+  const { window, navigation } = await open();
+
+  navigation.navigate(threadPath('a'));
+  navigation.navigate(threadPath('b'));
+  navigation.navigate(threadPath('c'));
+  await popped(window, () => navigation.back());
+
+  // A reload runs a new navigation module over the same session history.
+  const reloaded = createNavigation();
+
+  assert.deepEqual(invoke(reloaded, 'history'), {
+    canGoBack: true,
+    canGoForward: true,
+  });
+
+  await popped(window, () => invoke(reloaded, 'forward'));
+  assert.equal(window.location.pathname, threadPath('c'));
+  assert.deepEqual(invoke(reloaded, 'history'), {
+    canGoBack: true,
+    canGoForward: false,
+  });
+});
+
+void test('popstate to an entry with a larger max raises the max (T-4.2.5)', async () => {
+  const { window, navigation } = await open();
+
+  navigation.navigate(threadPath('a'));
+  window.history.pushState(
+    { doric: { index: 2, max: 7 } },
+    '',
+    threadPath('z'),
+  );
+  await popped(window, () => window.history.back());
+  assert.deepEqual(navigation.history(), {
+    canGoBack: true,
+    canGoForward: false,
+  });
+
+  await popped(window, () => window.history.forward());
+  assert.deepEqual(navigation.history(), {
+    canGoBack: true,
+    canGoForward: true,
+  });
+  assert.deepEqual(window.history.state, { doric: { index: 2, max: 7 } });
+});
+
+void test('popstate to an entry without doric state counts as the first entry', async () => {
+  const { window, navigation } = await open();
+
+  navigation.navigate(threadPath('a'));
+  navigation.navigate(threadPath('b'));
+  window.history.pushState(null, '', threadPath('z'));
+  navigation.navigate(threadPath('c'));
+  await popped(window, () => window.history.back());
+
+  assert.deepEqual(navigation.history(), {
+    canGoBack: false,
+    canGoForward: true,
+  });
+  assert.equal(window.history.state, null);
+});
+
+void test('the history state lives only in the entries the core writes (T-4.2.6)', async () => {
+  const { window, navigation } = await open();
+  const states: unknown[] = [];
+
+  navigation.subscribe(() => states.push(window.history.state));
+  states.push(window.history.state);
+  navigation.navigate(threadPath('a'));
+  states.push(window.history.state);
+  navigation.navigate(threadPath('b'));
+  states.push(window.history.state);
+  navigation.navigate(threadPath('c'), { replace: true });
+  states.push(window.history.state);
+  await popped(window, () => navigation.back());
+  states.push(window.history.state);
+
+  for (const state of states) {
+    assert.ok(typeof state === 'object' && state !== null, String(state));
+    assert.deepEqual(Object.keys(state), ['doric']);
+    const { doric } = state as { doric: object };
+    assert.deepEqual(Object.keys(doric).sort(), ['index', 'max']);
+  }
+  assert.deepEqual(states.at(0), { doric: { index: 0, max: 0 } });
+  assert.equal(window.sessionStorage.length, 0);
+  assert.equal(window.localStorage.length, 0);
+});
+
+void test('the history methods follow the app: six without them, eight with them (T-4.2.11)', () => {
+  const old = ['back', 'chain', 'current', 'navigate', 'register', 'subscribe'];
+
+  assert.deepEqual(
+    Object.keys(createNavigation({ historyMethods: false }).methods).sort(),
+    old,
+  );
+  assert.deepEqual(
+    Object.keys(createNavigation().methods).sort(),
+    [...old, 'forward', 'history'].sort(),
+  );
 });

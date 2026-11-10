@@ -21,11 +21,20 @@ type RowAddActionProps = {
 
 /**
  * The trailing slot of a tree row: the repository the Thread works in, the time
- * its agent has been running, and the plus that opens a sub-thread. The plus
- * takes the mark's place on hover, so the row says where it works at rest and
- * what it can open under focus. What a row cannot open under — a sub-thread, an
- * agent Thread — keeps its mark: a Thread still works in a repository even when
- * the reader may not branch it.
+ * its agent has been running, and the plus that opens a sub-thread
+ * (Figma `27:13973`).
+ *
+ * - "Running" means `startedAt` is given. Its elapsed badge
+ *   (`role="status"`, name "Agent running") is drawn at the row's right edge
+ *   (`right-1`) whenever the repository mark is hidden, so the time stays
+ *   right-aligned. It moves to `right-6` only while the mark shows beside it.
+ * - The repository mark (`RepoMark`) is hidden at rest (`opacity-0`). It shows
+ *   while the agent runs, and on a row with no plus while the row is hovered
+ *   or holds focus (`group-hover/tree-row:opacity-100`,
+ *   `group-focus-within/tree-row:opacity-100`).
+ * - On a row with a plus (`label` and `onAdd` both given), hover or focus hides
+ *   the mark and the badge, and the plus takes their place, as before.
+ * - Nothing in the slot takes pointer events except the plus.
  */
 export function RowAddAction({
   label,
@@ -36,9 +45,17 @@ export function RowAddAction({
   const elapsed = useExecutionTime(startedAt);
   const addable = label !== undefined && onAdd !== undefined;
   const marked = repo !== undefined && repo !== 'conversation';
+  const running = startedAt !== undefined;
   const fade = addable
     ? 'group-hover/tree-row:opacity-0 group-focus-within/tree-row:opacity-0'
     : undefined;
+  // At rest the mark shows only while running; an idle row without a plus
+  // shows it on hover or focus, and one with a plus never does (§2.3 table).
+  const markVisibility = running
+    ? fade
+    : addable
+      ? 'opacity-0'
+      : 'opacity-0 group-hover/tree-row:opacity-100 group-focus-within/tree-row:opacity-100';
   return (
     <>
       {elapsed !== undefined && (
@@ -56,7 +73,7 @@ export function RowAddAction({
       )}
       {marked && (
         <RepoMark
-          className={cn('absolute top-1 right-1 size-5', fade)}
+          className={cn('absolute top-1 right-1 size-5', markVisibility)}
           repo={repo}
         />
       )}

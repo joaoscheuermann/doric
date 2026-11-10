@@ -30,7 +30,7 @@ export function DiffToolbar({
   readonly onOpen: () => void;
 }) {
   return (
-    <header className="shrink-0 border-b" data-slot="diff-toolbar">
+    <header className="shrink-0" data-slot="diff-toolbar">
       <div className="flex h-9 min-w-0 items-center gap-2 px-3">
         {change && (
           <Tooltip>

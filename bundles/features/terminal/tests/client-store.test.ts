@@ -52,6 +52,7 @@ const host = (overrides: Partial<TerminalHost> = {}): TerminalHost => ({
   input: async () => true,
   resize: async () => true,
   stop: async () => true,
+  rename: async () => true,
   ...overrides,
 });
 
@@ -179,6 +180,7 @@ const storeFixture = (
   const listeners = new Map<string, (update: TerminalUpdate) => void>();
   const toasts: string[] = [];
   const closed: { id: string; threadId: string }[] = [];
+  const retitled: { id: string; title: string; threadId: string }[] = [];
   const refreshed: string[] = [];
   const opened: Terminal[] = [];
   const store = createTerminalStore({
@@ -194,12 +196,14 @@ const storeFixture = (
     },
     toastError: (message) => toasts.push(message),
     closeTab: (input) => closed.push(input),
+    retitleTab: (input) => retitled.push(input),
     refreshFiles: (projectId) => refreshed.push(projectId),
   });
   return {
     store,
     toasts,
     closed,
+    retitled,
     refreshed,
     opened,
     emit: (projectId: string, update: TerminalUpdate) =>

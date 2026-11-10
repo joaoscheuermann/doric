@@ -18,8 +18,9 @@ shadcn/ui files edited locally. Each comes from one of two origins, which
   `collapsible`, `combobox`, `command`, `context-menu`, `dialog`,
   `dropdown-menu`, `input`, `input-group`, `kbd`, `label`, `marker`, `popover`,
   `progress`, `scroll-area`, `select`, `separator`, `sheet`, `sidebar`, `tabs`,
-  `toggle`, `toggle-group` and `tooltip`. `switch` was added later from the
-  same CLI and style.
+  `toggle`, `toggle-group` and `tooltip`. `switch` and `button-group` (the
+  Back/Forward group, UI redesign 4.2) were added later from the same CLI and
+  style.
 
 `scripts/verify-provenance.mjs` checks this. `desktop:test` runs it. For each
 file, it undoes the import rewrites and the patches below and compares the
@@ -87,12 +88,19 @@ compares:
   (`export { Toaster, toast }`). Every `toast` call in a window then reaches the
   store that the window's `Toaster` reads, whichever platform chunk loaded it
   (stage 8, S8-21).
-- `sonner.tsx`: now defaults to Sonner's `system` theme so native notifications
-  follow the operating system while the window remains open.
+- `sonner.tsx`: now defaults to Sonner's `system` theme, so toasts follow
+  `prefers-color-scheme`, which the native theme drives (Dark in the app),
+  including changes while the window remains open.
 - `button.tsx`: the default variant hovers with
-  `hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_12%)]`
-  (commit `5fac0ee`; the secondary variant's 5 % mix is now the registry's
-  own).
+  `hover:bg-[color-mix(in_oklch,var(--primary),var(--foreground)_60%)]` in
+  light and
+  `dark:hover:bg-[color-mix(in_oklch,var(--primary),var(--primary-foreground)_8%)]`
+  in dark (introduced in commit `5fac0ee` at 12 %, changed by S4 of the
+  ui-redesign spec in `2b00a1dc`; the secondary variant's 5 % mix is now the
+  registry's own).
+- `dialog.tsx` and `alert-dialog.tsx`: the footer drops the registry's
+  `border-t`, so a dialog's footer draws no rule above it (S23 of the
+  ui-redesign spec; Figma `21:787`, `21:954`).
 - `button.tsx`: also defines the `solid` variant, the composer's white control: a
   white fill with an icon that stays dark on it in either theme. Filling a
   primary button white would have meant turning the theme's `--primary` into
@@ -112,11 +120,12 @@ compares:
   overlays land in the container a `PortalContainerProvider` names (a
   Papercraft comment thread keeps its menus inside itself). The exported `*Portal` wrappers pass it
   before their spread props, so a caller's own `container` still wins.
-- `alert-dialog.tsx`, `alert.tsx`, `badge.tsx`, `button.tsx`, `combobox.tsx`,
-  `command.tsx`, `context-menu.tsx`, `dialog.tsx`, `dropdown-menu.tsx`,
-  `empty.tsx`, `field.tsx`, `input-group.tsx`, `input.tsx`, `kbd.tsx`,
-  `label.tsx`, `popover.tsx`, `progress.tsx`, `sheet.tsx`, `sidebar.tsx`,
-  `table.tsx`, `tabs.tsx` and `toggle.tsx`: labels and titles take the regular
+- `alert-dialog.tsx`, `alert.tsx`, `badge.tsx`, `button-group.tsx`,
+  `button.tsx`, `combobox.tsx`, `command.tsx`, `context-menu.tsx`,
+  `dialog.tsx`, `dropdown-menu.tsx`, `empty.tsx`, `field.tsx`,
+  `input-group.tsx`, `input.tsx`, `kbd.tsx`, `label.tsx`, `popover.tsx`,
+  `progress.tsx`, `sheet.tsx`, `sidebar.tsx`, `table.tsx`, `tabs.tsx` and
+  `toggle.tsx`: labels and titles take the regular
   weight, `font-normal` (400), where shadcn writes `font-medium`; `field.tsx`'s
   description and error take `font-light` (300), the theme's running-text
   weight.

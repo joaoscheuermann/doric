@@ -62,6 +62,7 @@ function ThreadTree({
       return Promise.resolve();
     },
     delete: report('delete'),
+    openInTab: report('openInTab'),
     rename: (thread, name) => {
       report('rename')(thread.id, name);
       setEditingId(undefined);
@@ -116,7 +117,9 @@ export default {
 
 /**
  * The Checkout tree: child Threads, a running agent, git and GitHub working
- * directories and an unnamed Thread.
+ * directories and an unnamed Thread. Open branches show their kind icon at
+ * rest and the turned-down chevron on hover or focus; marks show only on hover
+ * or while running.
  */
 export const CheckoutTree = {
   render: () => <ThreadTree />,
@@ -136,7 +139,10 @@ export const ChildSelected = {
   render: () => <ThreadTree selected={validationThread.id} />,
 };
 
-/** A branch collapsed: its chevron points right and its children hide. */
+/**
+ * A branch collapsed: its kind icon shows, and the chevron replaces it on hover
+ * or focus.
+ */
 export const Collapsed = {
   render: () => <ThreadTree initialCollapsed={[planThread.id]} />,
 };

@@ -9,7 +9,19 @@
       "dependsOn": [
         { "projects": "doric-app", "target": "build" },
         { "projects": "doric-app", "target": "typecheck" },
-        { "projects": "bundle-core", "target": "build" }
+        { "projects": "bundle-core", "target": "build" },
+        { "projects": "doric-renderer", "target": "build" },
+        { "projects": "bundle-layout", "target": "build" },
+        { "projects": "bundle-resources", "target": "build" },
+        { "projects": "bundle-runtime", "target": "build" },
+        { "projects": "bundle-git", "target": "build" },
+        { "projects": "bundle-files", "target": "build" },
+        { "projects": "bundle-chat", "target": "build" },
+        { "projects": "bundle-comments", "target": "build" },
+        { "projects": "bundle-settings", "target": "build" },
+        { "projects": "bundle-claude-login", "target": "build" },
+        { "projects": "bundle-usage", "target": "build" },
+        { "projects": "bundle-host-config", "target": "build" }
       ],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {

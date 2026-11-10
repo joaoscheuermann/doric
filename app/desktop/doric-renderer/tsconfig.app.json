@@ -26,7 +26,7 @@
     "src/**/*.spec.jsx",
     "src/**/*.test.jsx"
   ],
-  "include": ["src/bootstrap.ts"],
+  "include": ["src/bootstrap.ts", "src/scheme.ts"],
   "references": [
     {
       "path": "../../../packages/desktop/tsconfig.lib.json"

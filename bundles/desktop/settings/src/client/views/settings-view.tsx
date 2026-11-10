@@ -6,7 +6,9 @@ import { AlertCircleIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
+import { AppearanceV1 } from '../api/appearance.js';
 import { sectionIcon } from '../components/molecules/section-icon.js';
+import { SettingsAppearance } from '../components/organisms/settings-appearance.js';
 import { SettingsCredentials } from '../components/organisms/settings-credentials.js';
 import { SettingsExecution } from '../components/organisms/settings-execution.js';
 import { SettingsProfile } from '../components/organisms/settings-profile.js';
@@ -83,7 +85,9 @@ function Section({
   onAdd,
   onChange,
   onEdit,
+  services,
 }: {
+  readonly services: Services;
   readonly credentials: Credentials;
   readonly draft: Configuration;
   readonly id: SectionId;
@@ -95,6 +99,9 @@ function Section({
   switch (id) {
     case 'profile':
       return <SettingsProfile draft={draft} onChange={onChange} />;
+    case 'appearance':
+      // Its route exists only while a provider answers (S35).
+      return <SettingsAppearance appearance={services.use(AppearanceV1)} />;
     case 'providers':
       return (
         <SettingsProviders
@@ -128,11 +135,19 @@ const useRoute = (services: Services) => {
 /** The connected host of one section element, if its route is showing. */
 const useSectionHost = (id: SectionId | undefined): HTMLElement | undefined => {
   const profile = sectionHosts.profile.useHosts();
+  const appearance = sectionHosts.appearance.useHosts();
   const providers = sectionHosts.providers.useHosts();
   const execution = sectionHosts.execution.useHosts();
   const tools = sectionHosts.tools.useHosts();
   const credentials = sectionHosts.credentials.useHosts();
-  const hosts = { profile, providers, execution, tools, credentials };
+  const hosts = {
+    profile,
+    appearance,
+    providers,
+    execution,
+    tools,
+    credentials,
+  };
   return id === undefined ? undefined : hosts[id].at(-1)?.element;
 };
 
@@ -292,6 +307,7 @@ export function Settings({ services }: { readonly services: Services }) {
         onAdd={page.openNew}
         onChange={config.setDraft}
         onEdit={page.open}
+        services={services}
       />
     );
 

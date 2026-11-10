@@ -87,6 +87,29 @@ The host part provides these basic contracts from `bundle/contracts`:
   for `runtime.thread.events/{threadId}`. No shipped bundle other than the
   runtime registers an event (a test pins it).
 
+## Window navigation
+
+The client part provides `navigation/v1@1.1.0` over the window's History API.
+Routes match on the pathname only; `current()` and `chain()` keep their
+identity until the match changes, and `subscribe` fires after every navigation,
+Back and Forward.
+
+`forward()` and `history()` came in 1.1.0 and are optional methods of the
+contract: the core provides them only when the app's `navigationMethods` lists
+them (`createNavigation({ historyMethods })`), so this core also loads on an
+app before platform 1.4.0, and an older core loads on a newer app.
+
+Back/Forward state (S11): every history entry the core writes holds exactly
+`{ doric: { index, max } }` — its place in the list and the list length — and
+the core keeps the current `index` and `max` in memory. The first listen reads
+the current entry (an entry without state is written as `index 0, max 0`); a
+push gets `index + 1` and `max = index + 1`; a replace keeps both; a `popstate`
+takes the landed entry's `index`, raises `max` to the largest of the two and
+writes it back, and an entry without state counts as `index 0`. `history()`
+answers `canGoBack = index > 0` and `canGoForward = index < max`. Nothing goes
+to `sessionStorage`, `localStorage` or a file: a reload keeps the list, closing
+the window ends it.
+
 ## Guarantees
 
 - `settings.set` and the secrets writes share one queue, which keeps a

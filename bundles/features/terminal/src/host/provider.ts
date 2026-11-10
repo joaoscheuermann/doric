@@ -31,7 +31,7 @@ export const backgroundResultText = (
   `# Background terminal result\n\nTerminal: ${result.terminalId}\nOriginating prompt: ${promptId}\nCommand: ${command}\nExit code: ${result.exitCode}\nReason: ${result.reason}\nDuration: ${result.durationMs} ms\n\n## Standard output (last 12000 characters)\n\n${result.stdout.slice(-12000)}\n\n## Standard error (last 12000 characters)\n\n${result.stderr.slice(-12000)}`;
 
 /**
- * terminal/v1 1.1.0. `run` is the runner's prompt terminal control: it runs
+ * terminal/v1 1.2.0. `run` is the runner's prompt terminal control: it runs
  * on the calling prompt's own Thread (call.scope) while neither the Thread
  * nor its Project is closing, and delivers a background command's result to
  * that Thread as a terminal-sourced prompt. `create` is the manual shell of
@@ -155,6 +155,11 @@ export const terminalService = ({
       expose: 'desktop',
       ...methods.stop,
       execute: (terminalId) => registry.stop(terminalId),
+    }),
+    rename: defineMethod({
+      expose: 'desktop',
+      ...methods.rename,
+      execute: async ([terminalId, name]) => registry.rename(terminalId, name),
     }),
     watchProject: defineMethod({
       expose: 'desktop',

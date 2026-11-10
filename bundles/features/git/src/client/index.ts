@@ -55,7 +55,8 @@ export const gitRegions: readonly {
     },
   },
   {
-    region: 'layout.footer',
+    // The working directory and branch, in the Files column footer (§2.6, S9).
+    region: 'layout.panel.footer',
     item: { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10 },
   },
   {

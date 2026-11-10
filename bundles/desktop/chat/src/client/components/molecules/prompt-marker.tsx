@@ -28,7 +28,12 @@ export function PromptMarker({
   const marker = lifecycleMarker(event);
 
   return (
-    <Marker variant="separator" className="gap-1.5 text-xs">
+    // The separator variant's flex spacers keep the label centred; their rules
+    // are hidden, since the transcript draws no dividers (Figma `29:568`).
+    <Marker
+      variant="separator"
+      className="gap-1.5 text-xs before:bg-transparent after:bg-transparent"
+    >
       <MarkerContent
         title={marker.tooltip}
         className="group-data-[variant=separator]/marker:flex-initial"

@@ -359,6 +359,13 @@ describe('content security policy', () => {
     );
   });
 
+  test('the splash art changes nothing in the splash policy: images from the app, no connections', () => {
+    const directives = splashCsp().split('; ');
+
+    assert.ok(directives.includes("img-src 'self' data:"), splashCsp());
+    assert.ok(directives.includes("connect-src 'none'"), splashCsp());
+  });
+
   test('the splash is today plus worker-src, and frames nothing', () => {
     assert.equal(
       splashCsp(),

@@ -429,7 +429,7 @@ function CredentialTable({
       </div>
       <div className="overflow-hidden rounded-lg border">
         <Table>
-          <TableHeader>
+          <TableHeader className="[&_tr]:border-b-0">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
@@ -460,7 +460,7 @@ function CredentialTable({
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="cursor-pointer"
+                  className="cursor-pointer border-b-0"
                   onClick={() => onEdit(row.original.credential)}
                 >
                   {row.getVisibleCells().map((cell) => (

@@ -8,6 +8,7 @@ export {
   type ImportPart,
   WindowDirectory,
 } from './activate.js';
+export { provideAppearance } from './appearance.js';
 export { type BootstrapOptions, bootstrapWindow } from './bootstrap.js';
 export {
   bridgeError,

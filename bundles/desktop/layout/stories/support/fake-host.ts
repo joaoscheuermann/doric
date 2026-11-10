@@ -5,6 +5,7 @@
 // services the layout itself provides (`layout.tabs/v1` and the rest) are
 // kept and answered in process, so a child Thread still opens its tab.
 
+import type { DoricAbout, Navigation, ProviderInfo } from 'bundle/contracts';
 import { type ComponentProps, createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -50,6 +51,14 @@ export interface HostOptions {
   readonly failing?: readonly HostOperation[];
   /** How many terminal rows each Thread has in the sidebar tree. */
   readonly terminalRows?: Readonly<Record<string, number>>;
+  /**
+   * Contract ids the host does not provide, as an older app lacks a platform
+   * contract. For an id listed here:
+   * - `services.use` throws, as it does for any id the host does not know;
+   * - `services.whenAvailable` never calls back.
+   * Wins over the host's own answers and over what the layout provides.
+   */
+  readonly absent?: readonly string[];
 }
 
 const terminalCommands = ['npm run dev', 'npm test -- --watch', 'tsc --watch'];
@@ -133,14 +142,16 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
     },
   ],
   'layout.footer': [
-    { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10, owner: 'git' },
     { id: 'usage', tag: 'usage-summary', order: 30, owner: 'usage' },
   ],
-  'layout.global-footer': [
+  'layout.panel.footer': [
+    { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10, owner: 'git' },
+  ],
+  'layout.account.status': [
     {
       id: 'resources',
       tag: 'resources-monitor',
-      order: 100,
+      order: 10,
       owner: 'resources',
     },
   ],
@@ -214,16 +225,50 @@ type Definition = {
 };
 
 export interface FakeHost {
+  /**
+   * The services `activate` binds the layout to.
+   *
+   * `use(ref)` answers an id the layout provided, then the host's own
+   * answers: `runtime/v1`, `runtime.threads/v1`, `doric.connection/v1`,
+   * `doric.about/v1` (`get()` resolves `{ version: '0.0.1' }`), `ui/v1`,
+   * `navigation/v1`, `regions/v1` and `commands/v1`. It throws for an id in
+   * `absent` or unknown.
+   *
+   * `whenAvailable(ref, callback)` behaves as follows:
+   * - for an id `use` would answer, it calls `callback(api, provider)` once,
+   *   synchronously, with the same api `use` returns;
+   * - for an absent or unknown id it never calls back;
+   * - it does not call back for providers added later;
+   * - disposing the returned disposable runs the callback's cleanup, if the
+   *   callback returned one, at most once.
+   */
   readonly services: Services;
   /** The items of a region, the same array until the story ends. */
   regionItems(region: string): readonly RegionEntry[];
+  /**
+   * The ids of the commands executed through `commands/v1` so far, in order.
+   * A ref is recorded by its `id`. Each call returns a new array, and later
+   * executions do not change an array already returned.
+   */
+  executed(): readonly string[];
 }
+
+/** The provider a story host's `whenAvailable` callback is bound to. */
+const storyProvider: ProviderInfo = { bundleId: 'story', version: '0.0.0' };
+
+/** The id `commands/v1.execute` was given: a contract id, or a ref's `id`. */
+const commandId = (command: unknown): string =>
+  typeof command === 'string'
+    ? command
+    : String((command as { readonly id?: unknown } | undefined)?.id);
 
 export const createFakeHost = (options: HostOptions = {}): FakeHost => {
   let projects = [...(options.projects ?? [])];
   let threads = [...(options.threads ?? [])];
   const pending = new Set(options.pending ?? []);
   const failing = new Set(options.failing ?? []);
+  const absent = new Set(options.absent ?? []);
+  const commandsExecuted: string[] = [];
 
   /** Answers a read, holds it, or fails it as the story asked. */
   const read = <Value>(
@@ -359,13 +404,15 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       for (const listener of [...routeListeners]) listener(match);
     },
     back: () => undefined,
+    forward: () => undefined,
+    history: () => ({ canGoBack: false, canGoForward: false }),
     current: () => matchPath(path),
     chain: () => [],
     subscribe: (listener: (match: RouteMatch | undefined) => void) => {
       routeListeners.add(listener);
       return { dispose: () => routeListeners.delete(listener) };
     },
-  };
+  } satisfies Navigation;
 
   const regions = new Map<string, readonly RegionEntry[]>();
   const regionItems = (region: string): readonly RegionEntry[] => {
@@ -391,6 +438,9 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       status: () => status,
       subscribe: () => disposable,
     },
+    'doric.about/v1': {
+      get: () => Promise.resolve({ version: '0.0.1' }),
+    } satisfies DoricAbout,
     'ui/v1': {
       define: () => disposable,
       create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
@@ -413,6 +463,7 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
     'commands/v1': {
       register: () => disposable,
       execute: (command: unknown) => {
+        commandsExecuted.push(commandId(command));
         console.info('Story host: command executed', command);
         return Promise.resolve();
       },
@@ -434,6 +485,14 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       ]),
     );
 
+  /** What `use` answers for `id`, or `undefined` where it throws. */
+  const answer = (id: string): unknown => {
+    if (absent.has(id)) return undefined;
+    const own = provided.get(id);
+    if (own !== undefined) return stub(own);
+    return apis[id];
+  };
+
   const services = {
     provide: (definition: Definition) => {
       provided.set(definition.id, definition);
@@ -445,16 +504,34 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       };
     },
     use: (contract: { readonly id: string }) => {
-      const own = provided.get(contract.id);
-      if (own !== undefined) return stub(own);
-      const api = apis[contract.id];
+      const api = answer(contract.id);
       if (api === undefined) {
         throw new Error(`The story host does not provide "${contract.id}".`);
       }
       return api;
     },
-    whenAvailable: () => disposable,
+    whenAvailable: (
+      contract: { readonly id: string },
+      callback: (
+        api: unknown,
+        provider: ProviderInfo,
+      ) => undefined | (() => unknown),
+    ) => {
+      const api = answer(contract.id);
+      if (api === undefined) return disposable;
+      const cleanup = callback(api, storyProvider);
+      let disposed = false;
+      return {
+        dispose: () => {
+          if (disposed) return;
+          disposed = true;
+          if (typeof cleanup === 'function') void cleanup();
+        },
+      };
+    },
   } as unknown as Services;
 
-  return { services, regionItems };
+  const executed = (): readonly string[] => [...commandsExecuted];
+
+  return { services, regionItems, executed };
 };

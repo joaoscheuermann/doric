@@ -4,9 +4,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from 'desktop/ui/collapsible';
-import { ToolbarDivider } from 'desktop/ui/panels';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
-import { Separator } from 'desktop/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from 'desktop/ui/tooltip';
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -191,7 +189,6 @@ function ContextPopover({
           </span>
         </div>
       </div>
-      <Separator />
       <Collapsible open={breakdown} onOpenChange={setBreakdown}>
         <CollapsibleTrigger
           render={
@@ -278,8 +275,7 @@ export function ThreadUsage({
   const partial = total !== undefined && total.unpricedCalls > 0;
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      <ToolbarDivider />
+    <div className="flex shrink-0 items-center gap-3">
       {source === undefined ? (
         <Tooltip>
           <TooltipTrigger
@@ -320,7 +316,6 @@ export function ThreadUsage({
           />
         </Popover>
       )}
-      <ToolbarDivider />
       <Popover>
         <PopoverTrigger
           render={

@@ -13,6 +13,7 @@
 import { Button } from 'desktop/ui/button';
 import { CommentPin, commentPinVariants } from 'desktop/ui/comment-pin';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
+import { ReaderAvatar } from 'desktop/ui/reader-avatar';
 import { cn } from 'desktop/ui/utils';
 import { ArrowUpLeftIcon, BotIcon } from 'lucide-react';
 import { useState } from 'react';
@@ -24,7 +25,6 @@ import type {
 import { anchorLabel } from '../../domain/composer-stack.js';
 import { AGENT_NAME, READER_NAME } from '../../domain/conversation-authors.js';
 import { openCommentThread } from '../../utility/comment-thread.js';
-import { ReaderAvatar } from './reader-avatar.js';
 
 /** The thread's state in words, for the pin's label. */
 const STATE_LABEL: Readonly<Record<CommentThreadState, string>> = {

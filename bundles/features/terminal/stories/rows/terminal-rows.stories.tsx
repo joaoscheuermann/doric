@@ -100,3 +100,36 @@ export const ManyTerminals = {
 export const NoTerminals = {
   render: () => <TerminalRows terminals={[]} depth={1} />,
 };
+
+/**
+ * A named terminal shows its name instead of its command (A13); an agent's
+ * keeps its time and limit after the name.
+ */
+export const NamedTerminals = {
+  render: () => (
+    <TerminalRows
+      terminals={[
+        { ...devServer, name: 'Web dev server' },
+        { ...userShell, name: 'Release checks' },
+      ]}
+      depth={1}
+    />
+  ),
+};
+
+/**
+ * Right-click a row for its menu: Rename (an inline name field, Enter saves,
+ * Escape cancels), Copy command and Kill terminal (A13–A15).
+ */
+export const RowMenu = {
+  render: () => (
+    <TerminalRows
+      terminals={terminals}
+      depth={1}
+      onOpen={() => undefined}
+      onStop={() => undefined}
+      onRename={async () => undefined}
+      onError={() => undefined}
+    />
+  ),
+};

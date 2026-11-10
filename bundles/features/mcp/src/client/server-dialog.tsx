@@ -144,7 +144,7 @@ function EntryRow({
           ?.name ?? 'Unknown credential');
 
   return (
-    <TableRow>
+    <TableRow className="border-b-0">
       <TableCell>
         <Input
           aria-label="Key"
@@ -252,8 +252,8 @@ function Entries({
       <FieldDescription>{words.description}</FieldDescription>
       <div className="overflow-hidden rounded-lg border">
         <Table>
-          <TableHeader>
-            <TableRow>
+          <TableHeader className="[&_tr]:border-b-0">
+            <TableRow className="border-b-0">
               <TableHead className="w-2/5">Key</TableHead>
               <TableHead>Value</TableHead>
               <TableHead className="w-10">
@@ -263,7 +263,7 @@ function Entries({
           </TableHeader>
           <TableBody>
             {entries.length === 0 ? (
-              <TableRow>
+              <TableRow className="border-b-0">
                 <TableCell
                   colSpan={3}
                   className="h-16 text-center text-muted-foreground"

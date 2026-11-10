@@ -16,6 +16,7 @@ import {
   type CatalogCandidate,
   type Descriptor,
   type ManifestV1,
+  PLATFORM_VERSION,
   resolveEnvironment,
 } from 'bundle/runtime';
 import {
@@ -369,7 +370,7 @@ export const openThreadsWindow = async (input: {
     {
       candidates,
       composition: { core: 'core', enabled, providers: {} },
-      platformVersion: '1.0.0',
+      platformVersion: PLATFORM_VERSION,
       generation: 3,
     },
     'client',
@@ -445,6 +446,7 @@ export const openThreadsWindow = async (input: {
       },
       mode: 'connected',
       tokens: {},
+      app: { version: '0.0.1' },
     }),
     ready: async () => undefined,
     reportFailure: async () => undefined,

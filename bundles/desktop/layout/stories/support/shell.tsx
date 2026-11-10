@@ -13,6 +13,7 @@ import {
   useState,
 } from 'react';
 
+import { AccountStatus } from '../../src/client/components/organisms/account-status.js';
 import {
   ProjectPanel,
   ProjectPanelTabs,
@@ -20,11 +21,12 @@ import {
 import type { SidebarModel } from '../../src/client/components/organisms/project-sidebar.js';
 import { ProjectSidebar } from '../../src/client/components/organisms/project-sidebar.js';
 import { ProjectTabBar } from '../../src/client/components/organisms/project-tabs.js';
-import { WorkspaceGlobalFooter } from '../../src/client/components/organisms/workspace-footer.js';
+import { SidebarHeader } from '../../src/client/components/organisms/sidebar-header.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
 } from '../../src/client/components/organisms/workspace-tabs.js';
+import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import { WorkspaceLayout } from '../../src/client/components/templates/workspace-layout.js';
 import { useRegionItems } from '../../src/client/hooks/use-region-items.js';
 import { useWorkspaceTabs } from '../../src/client/hooks/use-workspace-tabs.js';
@@ -46,7 +48,7 @@ export function ContentFooter() {
   return (
     <footer
       data-slot="workspace-footer"
-      className="flex chrome-bar shrink-0 items-center justify-end gap-1 px-2 text-[11px] font-light text-muted-foreground"
+      className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal"
     >
       {region('layout.footer')}
     </footer>
@@ -56,7 +58,6 @@ export function ContentFooter() {
 export function WorkspaceShell({
   children,
   panel = true,
-  panelOpen = true,
   owner = planThread.id,
   path = threadRoute(planThread),
   model = sidebarModelOf(),
@@ -65,87 +66,98 @@ export function WorkspaceShell({
   readonly children: ReactNode;
   /** Whether the Project panel exists at all. */
   readonly panel?: boolean;
-  readonly panelOpen?: boolean;
   /** The owner of the tabs drawn beside the conversation. */
   readonly owner?: string;
   /** The window path the Project tabs show. */
   readonly path?: string;
   readonly model?: SidebarModel;
 }) {
-  const [open, setOpen] = useState(panelOpen);
   const [active, setActive] = useState('files');
   const items = useRegionItems('layout.panel');
   const tabs = useWorkspaceTabs(owner);
   const viewer = tabs.items.length > 0;
+  const openSettings = () => console.info('Story open settings');
 
   return (
-    <>
-      <SidebarProvider
-        style={panelWidth}
-        className="min-h-0 flex-1 flex-col overflow-hidden"
+    <SidebarProvider
+      style={panelWidth}
+      className="min-h-0 flex-1 flex-col overflow-hidden"
+    >
+      <Tabs
+        value={tabs.selected ?? ''}
+        onValueChange={(id) => workspaceTabsStore.getState().select(owner, id)}
+        className="min-h-0 flex-1 gap-0"
       >
-        <Tabs
-          value={tabs.selected ?? ''}
-          onValueChange={(id) =>
-            workspaceTabsStore.getState().select(owner, id)
+        <WorkspaceLayout
+          header={
+            <ProjectTabBar
+              actions={region('layout.header')}
+              state={projectTabsOf([checkout, docs, billing])}
+              path={path}
+              projects={[checkout, docs, billing]}
+              navigate={(path) => console.info('Story navigate', path)}
+              close={(id) => console.info('Story close tab', id)}
+              closeMany={(ids) => console.info('Story close tabs', ids)}
+              move={(from, to) => console.info('Story move tab', from, to)}
+              onNewProject={workspaceActions.beginProject}
+              onNewThread={(project) =>
+                workspaceActions.beginThread(project.id)
+              }
+              setColor={workspaceActions.setProjectColor}
+              rename={(project, name) =>
+                workspaceActions.rename(
+                  { kind: 'project', value: project },
+                  name,
+                )
+              }
+            />
           }
-          className="min-h-0 flex-1 gap-0"
-        >
-          <WorkspaceLayout
-            header={
-              <ProjectTabBar
-                state={projectTabsOf([checkout, docs, billing])}
-                path={path}
-                projects={[checkout, docs, billing]}
-                navigate={(path) => console.info('Story navigate', path)}
-                close={(id) => console.info('Story close tab', id)}
-                closeMany={(ids) => console.info('Story close tabs', ids)}
-                move={(from, to) => console.info('Story move tab', from, to)}
-                onNewProject={workspaceActions.beginProject}
-                rename={(project, name) =>
-                  workspaceActions.rename(
-                    { kind: 'project', value: project },
-                    name,
-                  )
-                }
+          viewerTabs={
+            viewer ? (
+              <WorkspaceTabBar state={tabs} threadId={owner} />
+            ) : undefined
+          }
+          files={
+            panel ? <ProjectPanel active={active} items={items} /> : undefined
+          }
+          filesHeader={
+            <>
+              <ProjectPanelTabs
+                active={active}
+                onActiveChange={setActive}
+                items={items}
               />
-            }
-            viewerTabs={
-              viewer ? (
-                <WorkspaceTabBar state={tabs} threadId={owner} />
-              ) : undefined
-            }
-            headerActions={
-              <>
-                {region('layout.header')}
-                <ProjectPanelTabs
-                  active={active}
-                  onActiveChange={(id) => {
-                    setActive(id);
-                    setOpen(true);
-                  }}
-                  items={items}
+              <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+                <AccountStatus onOpenSettings={openSettings} />
+              </div>
+            </>
+          }
+          filesFooter={
+            <div className="flex h-7 min-w-0 flex-1 items-center gap-1">
+              {region('layout.panel.footer')}
+            </div>
+          }
+          fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
+          sidebar={
+            <ProjectSidebar
+              header={
+                <SidebarHeader
+                  onDashboard={() =>
+                    console.info('Story navigate', '/projects')
+                  }
                 />
-              </>
-            }
-            files={
-              panel ? <ProjectPanel active={active} items={items} /> : undefined
-            }
-            filesOpen={panel && open}
-            fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
-            onFilesOpenChange={setOpen}
-            sidebar={<ProjectSidebar actions={sidebarActions} model={model} />}
-          >
-            <SidebarInset className="min-h-0">
-              {children}
-              <ContentFooter />
-            </SidebarInset>
-          </WorkspaceLayout>
-        </Tabs>
-      </SidebarProvider>
-      <WorkspaceGlobalFooter
-        onOpenSettings={() => console.info('Story: open settings')}
-      />
-    </>
+              }
+              actions={sidebarActions}
+              model={model}
+            />
+          }
+        >
+          <SidebarInset className={INSET_CARD}>
+            {children}
+            <ContentFooter />
+          </SidebarInset>
+        </WorkspaceLayout>
+      </Tabs>
+    </SidebarProvider>
   );
 }

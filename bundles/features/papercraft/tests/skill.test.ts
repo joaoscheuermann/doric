@@ -76,10 +76,16 @@ describe('PC36: the patch rule', () => {
     const text = await readFile(SKILL_FILE, 'utf8');
 
     const at = text.indexOf(`\n${paragraph}\n`);
-    assert.ok(at >= 0, 'the paragraph is present, word for word, on its own line');
+    assert.ok(
+      at >= 0,
+      'the paragraph is present, word for word, on its own line',
+    );
     const patchExample = text.indexOf('A later change to its form:');
     assert.ok(patchExample >= 0, 'the patch example is present');
-    const patchEnd = text.indexOf('\n```\n', text.indexOf('```papercraft', patchExample));
+    const patchEnd = text.indexOf(
+      '\n```\n',
+      text.indexOf('```papercraft', patchExample),
+    );
     assert.ok(patchEnd >= 0 && at > patchEnd, 'after the patch example');
     const exportAt = text.indexOf('\n## Export\n');
     assert.ok(exportAt >= 0 && at < exportAt, 'before ## Export');

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { definePlatformService } from '../src/contracts/define.js';
 import {
   AppHooksV1,
+  basicContracts,
   bindRegistrant,
   type Call,
   type Disposable,
@@ -17,6 +18,7 @@ import {
   HooksV1,
   isContractError,
   LogV1,
+  navigationMethods,
   ref,
   type Services,
 } from '../src/contracts/index.js';
@@ -213,6 +215,117 @@ void test('a basic provider must match the platform method specification', () =>
     () => principal('b').services.provide(wrongSchema),
     codeOf('contract_mismatch'),
   );
+});
+
+/** A navigation/v1 provider with `names`, each method the platform's schema. */
+const navigationProvider = (names: readonly string[]) =>
+  defineService(
+    'navigation/v1',
+    Object.fromEntries(
+      names.map((name) => {
+        const method =
+          navigationMethods[name as keyof typeof navigationMethods] ??
+          navigationMethods.back;
+
+        return [
+          name,
+          defineMethod({
+            input: method.input,
+            output: method.output,
+            execute: () => undefined,
+          }),
+        ];
+      }),
+    ),
+  );
+
+const navigationRequired = [
+  'back',
+  'chain',
+  'current',
+  'navigate',
+  'register',
+  'subscribe',
+] as const;
+
+void test('a navigation/v1 provider of 1.0.0, without forward and history, registers', () => {
+  const { principal, runtime } = setup();
+
+  principal('core').services.provide(navigationProvider(navigationRequired));
+
+  assert.equal(runtime.directory.active('navigation/v1')?.bundleId, 'core');
+});
+
+void test('a navigation/v1 provider of 1.1.0, with forward and history, registers', () => {
+  const { principal, runtime } = setup();
+
+  principal('core').services.provide(
+    navigationProvider([...navigationRequired, 'forward', 'history']),
+  );
+
+  assert.equal(runtime.directory.active('navigation/v1')?.bundleId, 'core');
+});
+
+void test('a navigation/v1 provider without a required method names what it must and may implement', () => {
+  const { principal } = setup();
+
+  assert.throws(
+    () =>
+      principal('core').services.provide(
+        navigationProvider(
+          navigationRequired.filter((name) => name !== 'back'),
+        ),
+      ),
+    (error: unknown) =>
+      isContractError(error) &&
+      error.code === 'contract_mismatch' &&
+      error.message ===
+        'Provider of "navigation/v1" must implement: back, chain, current, navigate, register, subscribe; may implement: forward, history; got: chain, current, navigate, register, subscribe.',
+  );
+});
+
+void test('a navigation/v1 provider with a method outside the list is refused', () => {
+  const { principal } = setup();
+
+  assert.throws(
+    () =>
+      principal('core').services.provide(
+        navigationProvider([...navigationRequired, 'jump']),
+      ),
+    codeOf('contract_mismatch'),
+  );
+});
+
+void test('a basic contract with no optional methods says "may implement: none"', () => {
+  const { principal } = setup();
+  const partial = defineService('log/v1', {
+    info: defineMethod({
+      input: z.tuple([
+        z.string(),
+        z.record(z.string(), z.unknown()).optional(),
+      ]),
+      output: z.void(),
+      execute: () => undefined,
+    }),
+  });
+
+  assert.throws(
+    () => principal('a').services.provide(partial),
+    (error: unknown) =>
+      isContractError(error) &&
+      error.message ===
+        'Provider of "log/v1" must implement: debug, error, info, warn; may implement: none; got: info.',
+  );
+});
+
+void test('only navigation/v1 lists optional methods: forward and history', () => {
+  for (const [id, spec] of Object.entries(basicContracts)) {
+    assert.deepEqual(
+      spec.optional,
+      id === 'navigation/v1' ? ['forward', 'history'] : [],
+      id,
+    );
+  }
 });
 
 void test('a one contract the composition chose elsewhere is provided inertly', () => {

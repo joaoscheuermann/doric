@@ -1,7 +1,8 @@
 // The settings window as the user meets it: opened at `/settings`, the nav
-// of its own five sections (Versioning is the git bundle's, WP-10N), each
-// section a route, the search, and the save the
-// window's close waits for.
+// of its own six sections (Versioning is the git bundle's, WP-10N; Appearance
+// shows while the app answers `doric.appearance/v1`, as this window's app
+// does), each section a route, the search, and the save the window's close
+// waits for.
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
@@ -156,6 +157,7 @@ test('a window opened at /settings shows the Providers section and names itself'
   assert.equal(heading(opened), 'Providers');
   assert.deepEqual(navRows(opened), [
     'Profile',
+    'Appearance',
     'Providers',
     'Execution',
     'Tools',
@@ -345,6 +347,7 @@ test('a section another bundle adds is headed by its link and saves through the 
   assert.equal(heading(opened), 'Git');
   assert.deepEqual(navRows(opened), [
     'Profile',
+    'Appearance',
     'Providers',
     'Execution',
     'Tools',
@@ -425,4 +428,349 @@ test('a malformed credential of a managed kind still fails the list', async () =
     await opened?.close();
     opened = undefined;
   }
+});
+
+// The inset-card look (ui-redesign phase 3, Figma `36:22049`): the window is
+// the `--sidebar` canvas; the title bar and the nav sit on it with no fill and
+// no rule; the section and its footer are an inset card. The tables separate
+// their header from the rows by spacing alone (S22, `27:14990`); the Providers
+// and Credentials tables also draw no row dividers (G10, `27:15154`,
+// `27:15667`), while the two model tables keep both rules (`29:8582`,
+// `32:45370`).
+
+const classesOf = (element: Element | null | undefined): string[] => [
+  ...(element?.classList ?? []),
+];
+
+const openSection = async (window: SettingsWindow, label: string) => {
+  const row = [
+    ...window.document.querySelectorAll('[data-sidebar="menu-button"]'),
+  ].find((entry) => entry.textContent === label) as HTMLElement;
+  row.click();
+  await settle(20);
+};
+
+/** Every table header on screen, as the classes it carries. */
+const tableHeaders = (window: SettingsWindow): string[][] =>
+  [...window.document.querySelectorAll('[data-slot="table-header"]')].map(
+    classesOf,
+  );
+
+/** Every table body row on screen, as the classes it carries. */
+const bodyRows = (window: SettingsWindow): string[][] =>
+  [
+    ...window.document.querySelectorAll(
+      '[data-slot="table-body"] [data-slot="table-row"]',
+    ),
+  ].map(classesOf);
+
+test('the window is one canvas: the title bar and the nav carry no fill and no rule', async () => {
+  opened = await openSettingsWindow({ host: host() });
+  await settle(20);
+
+  const canvas = opened.document.querySelector('[data-slot="sidebar-wrapper"]');
+  assert.ok(
+    classesOf(canvas).includes('bg-sidebar'),
+    'the canvas is --sidebar',
+  );
+
+  const bar = opened.document.querySelector('[data-slot="settings-title-bar"]');
+  assert.ok(bar !== null, 'the window draws its title bar');
+  assert.ok(
+    !classesOf(bar).includes('bg-sidebar'),
+    'the title bar is transparent',
+  );
+
+  const nav = opened.document.querySelector('[data-slot="sidebar"]');
+  assert.ok(
+    classesOf(nav).includes('bg-transparent'),
+    'the nav is transparent',
+  );
+  assert.ok(!classesOf(nav).includes('bg-sidebar'), 'the nav has no fill');
+
+  assert.equal(
+    opened.document.querySelectorAll('[data-slot="separator"]').length,
+    0,
+    'no separator in the window',
+  );
+  const footers = [
+    opened.document.querySelector('[data-slot="sidebar-footer"]'),
+    opened.document.querySelector('main > footer'),
+  ];
+  for (const footer of footers) {
+    assert.ok(footer !== null, 'the window draws both footers');
+    assert.ok(
+      !classesOf(footer).includes('border-t'),
+      `no rule over ${classesOf(footer).join(' ')}`,
+    );
+  }
+});
+
+test('the section and its footer sit on an inset card', async () => {
+  opened = await openSettingsWindow({ host: host() });
+  await settle(20);
+
+  const card = opened.document.querySelector('main');
+  assert.ok(card !== null, 'the window draws its content');
+  // The card: --background, radius 10, shadow-sm, no stroke.
+  const classes = classesOf(card);
+  for (const name of ['bg-background', 'rounded-xl', 'shadow-sm'])
+    assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+  assert.ok(!classes.some((name) => name.startsWith('border')));
+  assert.ok(card.querySelector('footer') !== null, 'the footer is on the card');
+  // The row it stands in (Figma's Body): 8 px of canvas right and bottom, 0
+  // left beside the nav and 8 px when the nav is hidden.
+  const row = classesOf(card.parentElement);
+  for (const name of ['pr-2', 'pb-2', 'pl-2', 'md:pl-0'])
+    assert.ok(row.includes(name), `${name} in ${row.join(' ')}`);
+});
+
+test('the Providers and Credentials tables draw no header rule and no row dividers', async () => {
+  opened = await openSettingsWindow({
+    host: {
+      ...host(),
+      'secrets/v1.list': () => [
+        { id: token, kind: 'API_TOKEN', name: 'OpenRouter', hasSecret: true },
+      ],
+    },
+  });
+  await settle(20);
+
+  const providers = tableHeaders(opened);
+  assert.equal(providers.length, 1, 'the Providers table');
+  assert.ok(providers[0]?.includes('[&_tr]:border-b-0'));
+  const providerRows = bodyRows(opened);
+  assert.ok(providerRows.length > 0, 'the provider rows');
+  for (const row of providerRows)
+    assert.ok(row.includes('border-b-0'), `a divider in ${row.join(' ')}`);
+
+  await openSection(opened, 'Credentials');
+  const credentials = tableHeaders(opened);
+  assert.equal(credentials.length, 1, 'the Credentials table');
+  assert.ok(credentials[0]?.includes('[&_tr]:border-b-0'));
+  const credentialRows = bodyRows(opened);
+  assert.ok(credentialRows.length > 0, 'the credential rows');
+  for (const row of credentialRows)
+    assert.ok(row.includes('border-b-0'), `a divider in ${row.join(' ')}`);
+});
+
+test('the Providers table fixes its columns at 170, 130, fill, 110 and 79 px', async () => {
+  opened = await openSettingsWindow({ host: host() });
+  await settle(20);
+
+  const table = opened.document.querySelector('[data-slot="table"]');
+  assert.ok(classesOf(table).includes('table-fixed'), 'a fixed table layout');
+  const heads = [
+    ...opened.document.querySelectorAll(
+      '[data-slot="table-header"] [data-slot="table-head"]',
+    ),
+  ].map((head) => classesOf(head).filter((name) => /^w-/.test(name)));
+  // Figma `27:15154`: Name 170, Kind 130, Address fills, Models 110, actions 79.
+  assert.deepEqual(heads, [
+    ['w-[170px]'],
+    ['w-[130px]'],
+    [],
+    ['w-[110px]'],
+    ['w-[79px]'],
+  ]);
+});
+
+test("a provider's catalog picker draws its table with a header rule and row dividers", async () => {
+  const picked = {
+    ...openrouter,
+    fields: [
+      ...openrouter.fields,
+      { key: 'modelsUrl', label: 'Models URL', kind: 'url', required: false },
+    ],
+  };
+  opened = await openSettingsWindow({
+    host: {
+      ...host(),
+      'models/v1.kinds': () => [picked],
+      'models/v1.kind': () => picked,
+      'models/v1.catalog': () => ({ status: 'read', models: [] }),
+    },
+  });
+  await settle(20);
+
+  const row = opened.document.querySelector(
+    '[data-slot="table-body"] [data-slot="table-row"]',
+  ) as HTMLElement | null;
+  assert.ok(row !== null, 'the provider row');
+  row.click();
+  await settle(20);
+  const trigger = [...opened.document.querySelectorAll('button')].find(
+    (button) => button.textContent?.includes('1 offered'),
+  );
+  assert.ok(trigger !== undefined, 'the models picker');
+  trigger.click();
+  await settle(20);
+
+  // Figma `32:45370` (in `33:4823`) draws the header rule and the dividers.
+  const headers = tableHeaders(opened);
+  assert.equal(headers.length, 1, 'the catalog table');
+  assert.ok(!headers[0]?.includes('[&_tr]:border-b-0'));
+  for (const row of bodyRows(opened))
+    assert.ok(!row.includes('border-b-0'), `no divider in ${row.join(' ')}`);
+});
+
+// T-4.1.9: the Appearance section reads the theme each time it mounts and
+// saves a choice through `doric.appearance/v1`, which the window answers
+// through `doric.shell/v1` (`appearanceGet`, `appearanceSet`).
+
+/** A promise the test settles. */
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+};
+
+/** The app's answers to the window's appearance calls. */
+const appearanceHost = (answers: {
+  readonly get: () => unknown;
+  readonly set?: (input: unknown) => unknown;
+}) => ({
+  ...host(),
+  'doric.shell/v1.appearanceGet': answers.get,
+  'doric.shell/v1.appearanceSet': answers.set ?? (() => undefined),
+});
+
+const refused = (message: string) => () => {
+  throw { code: 'unavailable', message };
+};
+
+const openAppearance = async (
+  answers: Parameters<typeof appearanceHost>[0],
+): Promise<SettingsWindow> => {
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/appearance',
+    host: appearanceHost(answers),
+  });
+  await settle(20);
+  return opened;
+};
+
+/** The Theme field's tiles: name, whether checked, whether disabled. */
+const tiles = (window: SettingsWindow) => {
+  const group = window.document.querySelector('[role="radiogroup"]');
+  return [
+    ...(group?.querySelectorAll<HTMLElement>('[role="radio"]') ?? []),
+  ].map((tile) => ({
+    element: tile,
+    name: tile.querySelector('[data-slot="theme-title"]')?.textContent ?? '',
+    checked: tile.getAttribute('aria-checked') === 'true',
+    disabled: tile.getAttribute('aria-disabled') === 'true',
+  }));
+};
+
+const checkedTile = (window: SettingsWindow): string[] =>
+  tiles(window)
+    .filter((tile) => tile.checked)
+    .map((tile) => tile.name);
+
+const tile = (window: SettingsWindow, name: string): HTMLElement => {
+  const found = tiles(window).find((entry) => entry.name === name);
+  assert.ok(found, `no tile ${name}`);
+  return found.element;
+};
+
+const text = (window: SettingsWindow): string =>
+  window.document.body.textContent ?? '';
+
+test('the Appearance section offers the three themes in a group named Theme', async () => {
+  const window = await openAppearance({ get: () => ({ theme: 'dark' }) });
+
+  assert.equal(heading(window), 'Appearance');
+  assert.equal(activeRow(window), 'Appearance');
+  const group = window.document.querySelector('[role="radiogroup"]');
+  const labelledBy = group?.getAttribute('aria-labelledby') ?? '';
+  assert.equal(
+    window.document.getElementById(labelledBy)?.textContent,
+    'Theme',
+  );
+  assert.deepEqual(
+    tiles(window).map((entry) => entry.name),
+    ['Dark (default)', 'Light', 'System'],
+  );
+  assert.match(text(window), /Earthy dark surfaces with a cream accent/);
+  assert.match(text(window), /Warm light surfaces/);
+  assert.match(text(window), /Follow the macOS appearance/);
+  assert.deepEqual(checkedTile(window), ['Dark (default)']);
+});
+
+test('while the theme is read the tiles are disabled and none is selected', async () => {
+  const window = await openAppearance({
+    get: () => deferred<unknown>().promise,
+  });
+
+  assert.equal(tiles(window).length, 3);
+  assert.ok(tiles(window).every((entry) => entry.disabled));
+  assert.deepEqual(checkedTile(window), []);
+});
+
+test("the read theme's tile is selected and every tile is enabled", async () => {
+  const window = await openAppearance({ get: () => ({ theme: 'light' }) });
+
+  assert.deepEqual(checkedTile(window), ['Light']);
+  assert.ok(tiles(window).every((entry) => !entry.disabled));
+});
+
+test('a failed read says so with the tiles enabled and none selected, and a saved choice selects its tile', async () => {
+  const saved: unknown[] = [];
+  const window = await openAppearance({
+    get: refused('The appearance store is not open.'),
+    set: (input) => {
+      saved.push(input);
+      return undefined;
+    },
+  });
+
+  assert.match(text(window), /Could not read the appearance\./);
+  assert.ok(tiles(window).every((entry) => !entry.disabled));
+  assert.deepEqual(checkedTile(window), []);
+
+  tile(window, 'System').click();
+  await settle(20);
+
+  assert.deepEqual(saved, [{ theme: 'system' }]);
+  assert.deepEqual(checkedTile(window), ['System']);
+  assert.doesNotMatch(text(window), /Could not read the appearance\./);
+});
+
+test('a failed save says so and keeps the selected tile', async () => {
+  const window = await openAppearance({
+    get: () => ({ theme: 'dark' }),
+    set: refused('Could not save the appearance.'),
+  });
+
+  tile(window, 'Light').click();
+  await settle(20);
+
+  assert.match(text(window), /Could not save the appearance\. Try again\./);
+  assert.deepEqual(checkedTile(window), ['Dark (default)']);
+  assert.ok(tiles(window).every((entry) => !entry.disabled));
+});
+
+test('while a save is pending the tiles are disabled and the selection moves only when it resolves', async () => {
+  const save = deferred<undefined>();
+  const window = await openAppearance({
+    get: () => ({ theme: 'dark' }),
+    set: () => save.promise,
+  });
+
+  tile(window, 'Light').click();
+  await settle(20);
+
+  assert.ok(tiles(window).every((entry) => entry.disabled));
+  assert.deepEqual(checkedTile(window), ['Dark (default)']);
+
+  save.resolve(undefined);
+  await settle(20);
+
+  assert.deepEqual(checkedTile(window), ['Light']);
+  assert.ok(tiles(window).every((entry) => !entry.disabled));
 });

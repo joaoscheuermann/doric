@@ -1,5 +1,5 @@
 // The Project panel's content and its compact controls. The controls live in
-// the workspace tab bar; the panel itself starts directly with its content.
+// the Files column header; the panel itself starts directly with its content.
 
 import type { RegionEntry } from 'bundle/contracts';
 import { TabStrip } from 'desktop/ui/panels';
@@ -51,7 +51,7 @@ type ProjectPanelProps = {
   readonly items: readonly RegionEntry[];
 };
 
-/** Compact, reorderable view controls for the workspace's top tab bar. */
+/** Compact, reorderable view controls for the Files column header. */
 export function ProjectPanelTabs({
   active,
   onActiveChange,
@@ -67,7 +67,10 @@ export function ProjectPanelTabs({
   const [held, setOrder] = useState<readonly string[]>(available);
   const order = panelOrder(held, available);
   return (
-    <div className="min-w-0 max-w-[40vw] [-webkit-app-region:no-drag]">
+    // One joined segmented group (Figma `266:21741` "Panel tabs"): no gap,
+    // 28 px tabs with 6 px side padding, the 6 px radius on the group's outer
+    // corners only, and `--accent` behind the selected view.
+    <div className="min-w-0 flex-1 [-webkit-app-region:no-drag] [&_[data-tab-id]]:h-7 [&_[data-tab-id]]:px-1.5 [&_[data-tab-id]:not(:first-child)]:rounded-l-none [&_[data-tab-id]:not(:last-child)]:rounded-r-none [&_[data-tab-id][aria-pressed=true]]:bg-accent [&_[role=group]]:gap-0">
       <TabStrip
         variant="toggle"
         label="Project views"
@@ -119,7 +122,7 @@ export function ProjectPanel({
   const builtIn = builtIns.some((view) => view.id === active);
 
   return (
-    <Sidebar collapsible="none" className="overflow-hidden">
+    <Sidebar collapsible="none" className="overflow-hidden bg-transparent">
       <SidebarContent className="overflow-hidden p-0">
         <SidebarGroup className="h-full min-h-0 p-0">
           <SidebarGroupContent className="flex min-h-0 w-full flex-1 flex-col">

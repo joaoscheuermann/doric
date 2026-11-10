@@ -15,7 +15,7 @@ import { parseArgs } from 'node:util';
 
 import { compile } from '@tailwindcss/node';
 import { Scanner } from '@tailwindcss/oxide';
-import { PLATFORM_VERSION } from 'bundle/runtime';
+import { PLATFORM_ASSETS_VERSION } from 'bundle/runtime';
 import * as esbuild from 'esbuild';
 
 import {
@@ -160,7 +160,7 @@ for (const name of esmPackages) groups.push(esmGroup(name));
 groups.push({
   kind: 'contracts',
   package: bundleContracts.package,
-  dir: folder(bundleContracts.package, PLATFORM_VERSION),
+  dir: folder(bundleContracts.package, PLATFORM_ASSETS_VERSION),
   entries: [
     {
       specifier: bundleContracts.specifier,
@@ -204,7 +204,7 @@ for (const [key, value] of Object.entries(desktopUiManifest.exports)) {
 groups.push({
   kind: 'ui',
   package: desktopUi.package,
-  dir: folder(desktopUi.package, PLATFORM_VERSION),
+  dir: folder(desktopUi.package, PLATFORM_ASSETS_VERSION),
   entries: desktopUiEntries,
 });
 
@@ -580,7 +580,10 @@ const buildTheme = async () => {
     desktopUiImportedCss === ''
       ? tailwind
       : `${tailwind.replace(/\n*$/, '\n')}${desktopUiImportedCss}`;
-  const target = join(platformOut, folder(desktopUi.package, PLATFORM_VERSION));
+  const target = join(
+    platformOut,
+    folder(desktopUi.package, PLATFORM_ASSETS_VERSION),
+  );
   await writeFile(join(target, 'theme.css'), css);
   await cp(join(workspace, desktopUi.fonts), join(target, 'fonts'), {
     recursive: true,

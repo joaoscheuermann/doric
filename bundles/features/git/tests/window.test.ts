@@ -130,6 +130,35 @@ describe('the window over git.commands/v1', () => {
     );
   });
 
+  test('answers a Discard with the host outcome unchanged', async (t) => {
+    const repo = await dirty(t);
+    const runtime = fakeRuntime({ cwd: repo.root });
+    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    t.after(dispose);
+    const api = createGitApi(git);
+    const discard = (cwd = repo.root) =>
+      api.discard({
+        threadId: 'thread-1',
+        cwd,
+        repository: '',
+        paths: ['a.ts'],
+      });
+
+    assert.deepEqual(await discard(`${repo.root}/elsewhere`), {
+      status: 'refused',
+      message:
+        'The working directory changed. Reopen the Changes view and try again.',
+    });
+    assert.deepEqual(await discard(), {
+      status: 'ready',
+      value: { discarded: ['a.ts'] },
+    });
+    runtime.thread = 'inactive';
+    assert.deepEqual(await discard(), { status: 'inactive' });
+    runtime.thread = 'missing';
+    assert.deepEqual(await discard(), { status: 'missing' });
+  });
+
   test('refuses what the main process refused, before calling the host', async () => {
     const api = createGitApi(() => {
       throw new Error('the host must not be called');

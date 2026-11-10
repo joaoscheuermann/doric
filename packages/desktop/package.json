@@ -101,6 +101,18 @@
       "import": "./dist/panels/index.js",
       "default": "./dist/panels/index.js"
     },
+    "./ui/identity": {
+      "@org/source": "./src/identity/index.ts",
+      "types": "./dist/identity/index.d.ts",
+      "import": "./dist/identity/index.js",
+      "default": "./dist/identity/index.js"
+    },
+    "./ui/reader-avatar": {
+      "@org/source": "./src/identity/reader-avatar.tsx",
+      "types": "./dist/identity/reader-avatar.d.ts",
+      "import": "./dist/identity/reader-avatar.js",
+      "default": "./dist/identity/reader-avatar.js"
+    },
     "./ui/code": {
       "@org/source": "./src/code/index.ts",
       "types": "./dist/code/index.d.ts",

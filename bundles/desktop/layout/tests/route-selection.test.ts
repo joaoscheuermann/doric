@@ -658,6 +658,33 @@ describe('navigations the layout did not make', () => {
     );
   });
 
+  test('a popstate route to a deleted Thread selects its Project, as a direct route does (T-4.2.3, S12)', () => {
+    const window = new FakeWindow(threadPath('p1', 't1'));
+    routeSelectionStore.setState({
+      selection: { projectId: 'p1', threadId: 't1' },
+    });
+    routeSelectionStore.getState().settleLoad('none');
+    window.writes.length = 0;
+
+    // Back lands on the entry of Thread `gone`, which the tree no longer has.
+    window.current = threadPath('p1', 'gone');
+    const intent = routeIntent(
+      threadRoute('p1', 'gone'),
+      tree({ projectId: 'p1', threadId: 't1' }),
+    );
+
+    assert.deepEqual(intent, {
+      kind: 'restore',
+      projectId: 'p1',
+      threadId: 'gone',
+    });
+
+    // The lookup finds no Thread: the layout selects its Project in place.
+    rewriteRoute({ projectId: 'p1' });
+
+    assert.deepEqual(window.writes, [{ path: '/projects/p1', replace: true }]);
+  });
+
   test('/ with a selected Thread returns Home', () => {
     assert.deepEqual(
       routeIntent(workspaceRoute, tree({ projectId: 'p1', threadId: 't1' })),

@@ -1,32 +1,23 @@
 import { createStore } from 'zustand/vanilla';
 
 /**
- * The Project panel beside the conversation (`layout.panel/v1`): whether it
- * is open and which view it shows. It starts open on the Files view and keeps
- * the reader's choice, as the panel always did.
+ * The Project panel beside the conversation (`layout.panel/v2`): which view
+ * it shows. The panel is always shown, so there is no open state. It starts on
+ * the Files view, and nothing is persisted: every window starts on Files.
  */
 export type PanelState = {
-  readonly open: boolean;
+  /** The selected `layout.panel` item id; it may name no registered item. */
   readonly active: string;
-  setOpen(open: boolean): void;
+  /** Selects the view; selecting the selected view notifies no one. */
   select(id: string): void;
-  /** Opens the panel and selects the view. */
-  show(id: string): void;
-  toggle(): void;
 };
 
-export const initialPanel = { open: true, active: 'files' } as const;
+export const initialPanel = { active: 'files' } as const;
 
 export const panelStore = createStore<PanelState>()((set) => ({
   ...initialPanel,
-  setOpen: (open) => set((state) => (state.open === open ? state : { open })),
   select: (active) =>
     set((state) => (state.active === active ? state : { active })),
-  show: (active) =>
-    set((state) =>
-      state.open && state.active === active ? state : { open: true, active },
-    ),
-  toggle: () => set((state) => ({ open: !state.open })),
 }));
 
 export const resetPanel = (): void => {

@@ -28,6 +28,10 @@ Um bundle que substitui o provedor padrão de um contrato de cardinalidade `one`
 
 Os contratos `doric.*` (`doric.app.hooks/v1`, `doric.window.hooks/v1`, `doric.windows/v1`, `doric.menus/v1`, `doric.catalog/v1`, `doric.diagnostics/v1`, `doric.bundle/v1`, `doric.cache/v1`, `doric.tokens/v1`) são versionados junto com a plataforma e não aceitam outro provedor. Eles sempre existem e nunca entram em `requires`; a compatibilidade com eles é declarada só por `engines.doric`. Por isso um bundle da fundação, que só pode declarar `requires` de contratos `doric.*`, na prática depende apenas de `engines.doric`.
 
+A versão da plataforma (`PLATFORM_VERSION`, em `packages/bundle/src/runtime/version.ts`) sobe uma minor a cada fase que acrescenta algo à plataforma; a 1.1.0 trouxe `desktop/ui/identity` e `desktop/ui/reader-avatar`. O segmento das pastas e URLs da plataforma (`desktop@<v>`, `bundle@<v>`, `splash@<v>`, `shell@<v>`) é outra constante, `PLATFORM_ASSETS_VERSION`, que continua `1.0.0`: uma minor da plataforma não move pastas nem URLs.
+
+O app e os bundles não são lançados juntos: os bundles vêm do host e podem ser mais novos ou mais velhos que o app. Por isso os bundles se adaptam (UR25, da [feature do redesign](../../features/ui-redesign.md)): detectam contratos da plataforma com `whenAvailable`, carregam por import dinâmico um módulo de `desktop/ui` sem o qual funcionam, e sobem `engines.doric` só para um import estático. O registro da decisão está em [decisões de implementação](./implementation-decisions.md#redesign-da-ui-versões-da-plataforma-e-descompasso-appbundles-fase-1-2026-11-08).
+
 ## Major no ID e faixas em `requires`
 
 O sufixo `/vN` do ID de um contrato é a sua major; a versão depois do `@` em `provides` precisa ter a mesma major. Um consumidor pede uma faixa em `requires` (`git.commands/v1@^1.2.0` significa “1.2.0 ou mais nova, ainda major 1”). Assim, majors diferentes são contratos diferentes e podem ser fornecidos ao mesmo tempo, enquanto minors e patches da mesma major são intercambiáveis.

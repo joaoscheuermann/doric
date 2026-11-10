@@ -12,6 +12,7 @@ import {
 } from 'bundle/contracts';
 import {
   type ProviderRecord,
+  platformContracts,
   restoreCall,
   type SchemaValidators,
   type WireCall,
@@ -35,12 +36,15 @@ import {
 import { z } from 'zod';
 
 import type { ConnectionSource } from '../../connection/relay';
+import type { ThemeSource } from '../appearance';
 import type { GenerationProcess } from '../generation/process';
 import type { PlatformLog } from '../log';
 import {
   recoveryActionSchema,
   SPLASH_CONTRACT,
+  SPLASH_LINKS,
   type SplashState,
+  type StartupAction,
 } from '../splash/state';
 import { type PushTarget, push } from '../windows/push';
 import type { WindowEntry, WindowRegistry } from '../windows/registry';
@@ -77,9 +81,8 @@ export interface DispatcherDeps {
   readonly splashStates: {
     subscribe(listener: (state: SplashState) => void): () => void;
   };
-  readonly splashAct: (
-    action: z.output<typeof recoveryActionSchema>,
-  ) => Promise<void>;
+  /** Every splash action but `open-link`, which the dispatcher handles. */
+  readonly splashAct: (action: StartupAction) => Promise<void>;
   /** The generation's view while main retains it. */
   readonly view: (generation: number) => GenerationView | undefined;
   readonly process: (generation: number) => GenerationProcess | undefined;
@@ -87,6 +90,12 @@ export interface DispatcherDeps {
   readonly pinWindow: (entry: WindowEntry, generation: number) => boolean;
   readonly chrome: (entry: WindowEntry | undefined) => WindowChrome;
   readonly tokens: () => Readonly<Record<string, string>>;
+  /**
+   * The app's version (`app.getVersion()`; the dispatcher imports no
+   * Electron). Written unchanged as `app.version` into every description it
+   * answers, the splash's included.
+   */
+  readonly appVersion: string;
   readonly answerClose: (id: string, answer: CloseAnswer) => void;
   readonly windowReady: (entry: WindowEntry) => void;
   readonly windowFailure: (entry: WindowEntry, failure: WindowFailure) => void;
@@ -101,6 +110,13 @@ export interface DispatcherDeps {
   readonly connection: ConnectionSource;
   /** `doric.browser/v1`: hands an already checked https URL to the OS browser. */
   readonly openExternal: (url: string) => Promise<void>;
+  /** `doric.appearance/v1` get: the preference main holds (no Electron here). */
+  readonly appearanceGet: () => ThemeSource;
+  /**
+   * `doric.appearance/v1` set: saves the preference, then shows it in every
+   * window; rejects when it cannot be saved, which leaves both unchanged.
+   */
+  readonly appearanceSet: (theme: ThemeSource) => Promise<void>;
   readonly now?: () => number;
 }
 
@@ -258,6 +274,7 @@ export class Dispatcher {
           chrome: this.#deps.chrome(undefined),
           mode: 'connected',
           tokens: { ...this.#deps.tokens() },
+          app: { version: this.#deps.appVersion },
         } satisfies WindowDescription;
       case 'ready':
       case 'reportFailure':
@@ -294,6 +311,13 @@ export class Dispatcher {
         }
 
         try {
+          // The GitHub link is main's to open (S20); the page never names a URL.
+          if (action.data.action === 'open-link') {
+            await this.#deps.openExternal(SPLASH_LINKS[action.data.link]);
+
+            return ok(undefined);
+          }
+
           await this.#deps.splashAct(action.data);
 
           return ok(undefined);
@@ -396,6 +420,7 @@ export class Dispatcher {
           chrome: this.#deps.chrome(entry),
           mode: view.mode,
           tokens: { ...this.#deps.tokens() },
+          app: { version: this.#deps.appVersion },
         } satisfies WindowDescription;
       }
       case 'catalog':
@@ -850,6 +875,26 @@ export class Dispatcher {
             .parse(envelope.input);
 
           await this.#deps.openExternal(url);
+
+          return ok(undefined);
+        }
+        case 'appearanceGet':
+          return ok({ theme: this.#deps.appearanceGet() });
+        case 'appearanceSet': {
+          // Checked here with the contract's strict schema: main decides.
+          const { theme } = platformContracts[
+            'doric.appearance/v1'
+          ].methods.set.input.parse(envelope.input);
+
+          try {
+            await this.#deps.appearanceSet(theme);
+          } catch (error) {
+            this.#deps.log.error({ error }, 'Saving the appearance failed');
+            throw new ContractError(
+              'unavailable',
+              'Could not save the appearance.',
+            );
+          }
 
           return ok(undefined);
         }

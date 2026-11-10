@@ -111,10 +111,14 @@ test('the reader’s gutter mark leaves the prompt’s ::before to its placehold
   );
 });
 
-/** The body of the sheet's `@container (max-width: 54rem)` block. */
+/**
+ * The body of the sheet's narrow-pane block: `@container (max-width: 48rem)`,
+ * the column's own `max-w-3xl`, so the rule applies exactly when the pane is
+ * narrower than the column (Figma `99:8508`'s 432 px viewer).
+ */
 const narrowBlock = (sheet: string): string => {
   const text = uncommented(sheet);
-  const start = text.indexOf('@container (max-width: 54rem)');
+  const start = text.indexOf('@container (max-width: 48rem)');
   assert.ok(start >= 0, 'the sheet has a narrow-pane block');
   const open = text.indexOf('{', start);
   let depth = 0;
@@ -271,6 +275,8 @@ test('a narrow pane widens the column’s left padding to hold the whole mark', 
   // ends before the first character.
   assert.ok(reach > size, 'a gap between the mark and the text');
   assert.ok(padding > reach, 'the padding holds the mark whole');
+  // The viewer's first line sits 16 px under its top (`99:8508`, `36:21281`).
+  assert.equal(column.get('padding-top'), '1rem');
 });
 
 test('the stack that opens the prompt wears its mark, and the prompt’s words below it none', async () => {

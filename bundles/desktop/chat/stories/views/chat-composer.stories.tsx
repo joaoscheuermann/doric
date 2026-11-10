@@ -10,14 +10,17 @@ import {
 } from '../../src/client/views/chat-composer.js';
 import { ChatHost } from '../support/chat-host.js';
 import { threadIds, threads } from '../support/fixtures.js';
+import { FooterBand, InsetCard } from '../support/inset-card.js';
 
-/** The content footer the item sits at the end of. */
+/** The content footer the item sits at the end of, on the inset card. */
 function Footer({ children }: { readonly children: ReactNode }) {
   return (
-    <footer className="flex chrome-bar items-center justify-end gap-2 border-t bg-sidebar px-2 text-xs text-muted-foreground">
-      <span className="mr-auto">storefront · main</span>
-      {children}
-    </footer>
+    <InsetCard>
+      <FooterBand>
+        <span className="mr-auto">storefront · main</span>
+        {children}
+      </FooterBand>
+    </InsetCard>
   );
 }
 

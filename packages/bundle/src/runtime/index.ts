@@ -185,4 +185,4 @@ export {
   type ElementScope,
 } from './services.js';
 export { childTrace, newTrace, traceIdOf } from './trace.js';
-export { PLATFORM_VERSION } from './version.js';
+export { PLATFORM_ASSETS_VERSION, PLATFORM_VERSION } from './version.js';

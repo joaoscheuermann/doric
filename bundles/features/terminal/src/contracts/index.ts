@@ -13,6 +13,8 @@ import { z } from 'zod';
  * (call.scope), derived one to one from the runtime's tool-host TerminalControl, and
  * (1.1.0, stage 10) the terminal sessions of every Project: the manual shells
  * a user opens and the commands the agent runs, with their output stream.
+ * 1.2.0 (UI redesign §4.4, A13): a session's reader-given `name` and
+ * `rename`.
  * The `terminal` bundle provides it; until stage 10's host switch the
  * runtime's provisional provider serves `run` only (`TerminalV1`).
  */
@@ -93,7 +95,15 @@ export interface TerminalSession {
   readonly timeoutMs: number | null;
   readonly state: 'starting' | 'running' | 'exited';
   readonly pty: boolean;
+  /**
+   * 1.2.0: the name the reader gave the session (`rename`), trimmed and never
+   * empty; absent while it has none, when its command names it.
+   */
+  readonly name?: string;
 }
+
+/** The longest name `rename` takes (1.2.0). */
+export const terminalNameLimit = 80;
 
 /** One chunk of a terminal's live output. */
 export interface TerminalOutput {
@@ -153,6 +163,7 @@ export const terminalSessionSchema: z.ZodType<
   timeoutMs: z.number().nullable(),
   state: z.enum(['starting', 'running', 'exited']),
   pty: z.boolean(),
+  name: z.string().optional(),
 });
 
 export const terminalOutputSchema: z.ZodType<TerminalOutput, TerminalOutput> =
@@ -201,7 +212,7 @@ export const terminalWatchItemSchema: z.ZodType<
     .strict(),
 ]);
 
-/** terminal/v1 1.1.0: `run` plus the sessions of every Project. */
+/** terminal/v1 1.2.0: `run` plus the sessions of every Project. */
 export interface TerminalService extends Terminal {
   /** The Project's sessions, in start order. */
   list(projectId: string, call?: CallArg): Promise<readonly TerminalSession[]>;
@@ -233,6 +244,16 @@ export interface TerminalService extends Terminal {
   /** Stops and removes the session; `false` when none existed. Idempotent. */
   stop(terminalId: string, call?: CallArg): Promise<boolean>;
   /**
+   * 1.2.0: names the session. The name is trimmed; `null`, an empty or a
+   * whitespace-only name clears it. The session's `updated` notice carries
+   * the result. `false` is `terminal_missing`.
+   */
+  rename(
+    terminalId: string,
+    name: string | null,
+    call?: CallArg,
+  ): Promise<boolean>;
+  /**
    * The Project's terminal stream: one snapshot on subscribe, then its
    * updates and removals, and live output only after the snapshot.
    */
@@ -255,7 +276,7 @@ export const terminalMethods = {
   },
 } as const;
 
-/** Every 1.1.0 method. */
+/** Every 1.2.0 method. */
 export const terminalServiceMethods = {
   ...terminalMethods,
   list: { input: z.string(), output: z.array(terminalSessionSchema) },
@@ -273,6 +294,13 @@ export const terminalServiceMethods = {
     output: z.boolean(),
   },
   stop: { input: z.string(), output: z.boolean() },
+  rename: {
+    input: z.tuple([
+      z.string().min(1),
+      z.string().max(terminalNameLimit).nullable(),
+    ]),
+    output: z.boolean(),
+  },
   watchProject: {
     input: z.tuple([z.string(), streamListener(terminalWatchItemSchema)]),
     output: disposableSchema,
@@ -282,5 +310,5 @@ export const terminalServiceMethods = {
 /** terminal/v1 as its 1.0.0 consumers and providers see it: `run` only. */
 export const TerminalV1 = ref<Terminal>('terminal/v1');
 
-/** terminal/v1 1.1.0, as the `terminal` bundle provides it. */
+/** terminal/v1 1.2.0, as the `terminal` bundle provides it. */
 export const TerminalServiceV1 = ref<TerminalService>('terminal/v1');

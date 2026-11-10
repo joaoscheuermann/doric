@@ -86,6 +86,7 @@
 
 - **Preload.** Um único namespace `window.doric.desktop`: `describeWindow()`, `ready()`, `reportFailure(info)`, `onCloseRequested(cb)` com canal de resposta, `onChromeChanged(cb)`, `catalog()`, `call(envelope)`, `cancel(id)` e assinatura de streams. Os canais semânticos atuais saem quando a UI em bundles assume.
 - **Import map.** React, ReactDOM, Lexical e `@lexical/*`, Base UI (`@base-ui/react` e suas subpaths, desde 2026-10-17), `desktop/ui`, `zod`, `bundle/contracts` e os `<id>/contracts` da geração. O handler do protocolo renderiza a shell por requisição com o import map da geração e calcula o hash da CSP na mesma resposta.
+- **Versões da plataforma.** `PLATFORM_VERSION` (`packages/bundle/src/runtime/version.ts`, `1.1.0`) é a versão contra a qual o catálogo confere `engines.doric` e que todo provedor `doric.*` carrega; sobe um minor por fase que acrescenta à plataforma (1.1.0: `desktop/ui/identity` e `desktop/ui/reader-avatar`). `PLATFORM_ASSETS_VERSION` (`1.0.0`), ao lado dela, é o segmento de versão das pastas e URLs da plataforma (`desktop@<v>`, `bundle@<v>`, `splash@<v>`, `shell@<v>`) e não acompanha um minor da plataforma (S35 de `docs/designs/ui-redesign.md`).
 - **Dev.** Em desenvolvimento as janelas também abrem por `doric://app`; o handler encaminha a shell e os assets ao servidor de desenvolvimento.
 - **Privilégios do esquema.** `standard`, `secure`, `supportFetchAPI`, `corsEnabled` e `codeCache`, confirmados no primeiro teste da etapa 8.
 - **Janelas.** `open({ key, path })` sempre respeita `path`. O main guarda o último path e os limites de cada chave. No `onAppReadyHook`, o core reabre `workspace` no último path guardado (ou `/`), o que preserva a seleção de Thread entre reinícios; a seleção antiga em `localStorage` (`doric.selection`) é convertida em path uma vez.
@@ -542,8 +543,8 @@ As seções 4-WP4-\* acima detalham a implementação; esta lista registra as de
 
 - **Um esbuild por pacote, com `splitting`.** Cada pasta (`react@<v>`, `@lexical/<nome>@<v>`, `zod@<v>`, …) sai de um único build com todas as subpaths como entradas, então módulos internos compartilhados (ex.: `zod/v4/core` entre `zod` e `zod/mini`) viram `chunk-*.js` e têm uma só instância. Todo especificador do import map é externo a todos os builds, inclusive ao próprio pacote: `react-dom/client.js` importa `react-dom`, e o `scheduler` fica embutido no `react-dom`. Condições `[<modo>, 'module']`, `process.env.NODE_ENV` definido, `minify` só em produção.
 - **Lexical transitivo.** Partindo dos 11 pacotes do renderer mais `lexical`, o build segue as dependências `@lexical/*` (24 pacotes, incluindo `@lexical/yjs`, que embute `yjs`). `@lexical/react` não exporta raiz, então não há chave `@lexical/react`, só as subpaths. As subpaths duplicadas `./X.js` apontam para o mesmo arquivo de `./X`. Curingas de `exports` (`zod/v4/locales/*`) são expandidos nos arquivos `.js` existentes.
-- **`PLATFORM_VERSION` vem de `bundle/runtime`** (dist), e as pastas `bundle@`/`desktop@` usam esse valor.
-- **Licenças.** `LICENSE` do próprio pacote quando existe (os pacotes da plataforma não têm, o repositório não tem licença). Em `licenses/<pkg>@<v>.txt`, cada pacote embutido, lido do `metafile` do esbuild. Pacotes sem arquivo de licença (vários `@radix-ui/*`) ganham um texto com o campo `license` do manifesto, em vez de falhar o build.
+- **`PLATFORM_VERSION` vem de `bundle/runtime`** (dist), e as pastas `bundle@`/`desktop@` usam esse valor. Desde a fase 1 do redesign, as pastas usam `PLATFORM_ASSETS_VERSION` (`1.0.0`), que não sobe com `PLATFORM_VERSION`.
+- **Licenças.** `LICENSE` do próprio pacote quando existe (os pacotes da plataforma não têm; desde `b0a32f2b` o repositório tem um `LICENSE` MIT na raiz). Em `licenses/<pkg>@<v>.txt`, cada pacote embutido, lido do `metafile` do esbuild. Pacotes sem arquivo de licença (vários `@radix-ui/*`) ganham um texto com o campo `license` do manifesto, em vez de falhar o build.
 - **`theme.css`** é compilado com `@tailwindcss/node` + `Scanner` do oxide, como `build/parts.ts`, e a 8C reescreve `../../assets/fonts/` para `fonts/`. As fontes e as duas OFL vão para `desktop@1.0.0/fonts/`, e `tokens.json` é copiado de `packages/desktop/dist`.
 - **Saídas do Nx listadas por pasta**, não `assets/platform` inteiro, porque `splash@<v>/` (8F) mora na mesma pasta e uma restauração de cache não pode apagá-la. Pelo mesmo motivo, o build só limpa as pastas que ele mesmo emite. `inputs` inclui `^default` (fontes de `bundle` e `desktop/ui`) e `NODE_ENV`.
 - **Valores do import map absolutos `doric://app/platform/…`**, como no design. O rebase para `file://` no `utilityProcess` fica com a 8F.
@@ -627,7 +628,7 @@ Complementam a seção "Desktop e UI". Ficam numa seção própria, como as D4-1
 
 - **S8-1** As verificações de origem comparam `protocol === 'doric:'` e `host === 'app'`, nunca `origin`, que é `'null'` para `doric:`.
 - **S8-2** A shell não conhece rotas nem títulos; cada página define `document.title`.
-- **S8-3** Caminhos da plataforma usam `PLATFORM_VERSION` (`1.0.0`); caminhos de terceiros usam a versão npm.
+- **S8-3** Caminhos da plataforma usam `PLATFORM_VERSION` (`1.0.0`; desde a fase 1 do redesign, `PLATFORM_ASSETS_VERSION`); caminhos de terceiros usam a versão npm.
 - **S8-4** `reservedWidth = 80` (o `pl-20` de hoje), nos tokens.
 - **S8-5** A área segura é constante (esquerda 80) em toda plataforma e em tela cheia, preservando o layout de hoje. `titleBar: 'none'` tem área zero.
 - **S8-6** `doric.windows/v1.lastPath(key)` (API mínima); o core reabre `workspace` nele. Só o caminho é guardado, sem bounds (Q1).
@@ -1358,3 +1359,39 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 - **Área quadrada com teto (UD14, UD15).** A área dos quatro tipos de diagrama é `aspect-square w-full`, com altura limitada pela janela: `max-h-[calc(100svh-40px-var(--doric-titlebar-height,40px)-32px)]`. A altura segue a largura até o teto, sem altura medida nem estilo inline; o ajuste e o reajuste continuam os de `useDiagramViewport`. Spec: [openui-diagrams-square-area.md](../../designs/openui-diagrams-square-area.md); feature: [openui-diagrams.md](../../features/openui-diagrams.md).
 - **Sem prop `height` (UD16).** `height` sai de `Flowchart`, `SequenceDiagram`, `EntityDiagram` e `MindMap`: esquemas, modelos, views e assinaturas da skill. Um `height` que o modelo ainda escreva é descartado pelo lang-core e reportado como `excess-args`.
 - **Versão.** `openui` continua 2.2.0, ainda não lançada.
+
+## Redesign da UI: versões da plataforma e descompasso app/bundles (fase 1, 2026-11-08)
+
+Spec: [ui-redesign.md](../../designs/ui-redesign.md) (S35); feature: [ui-redesign.md](../../features/ui-redesign.md), onde a UR25 é definida. Commits `a66fd980`, `2b00a1dc`, `b0a32f2b`.
+
+- **Duas versões.** `PLATFORM_VERSION` sobe para `1.1.0` com os módulos `desktop/ui/identity` (strings: `initials`, `identityTone`, `identityRing`, `READER_NAME`) e `desktop/ui/reader-avatar` (o `ReaderAvatar` em React), que saem do `chat` para `packages/desktop/src/identity/`. `PLATFORM_ASSETS_VERSION` (`1.0.0`) separa o segmento das pastas e URLs, que não muda.
+- **Política de descompasso (UR25): os bundles se adaptam.** O app traz a plataforma; os bundles vêm do host e podem ser mais novos ou mais velhos que ele. Um bundle detecta contratos da plataforma com `whenAvailable`, declara refs da plataforma com `ref` (em vez de importar nomes novos de `bundle/contracts`), carrega por import dinâmico um módulo novo de `desktop/ui` sem o qual consegue funcionar, e sobe `engines.doric` só para um import estático. Num app mais velho, o recurso que falta some ou fica desabilitado, sem falhar o bundle.
+- **Contratos básicos.** Métodos novos de um contrato básico entrarão em `optional` (S35), para que um provedor mais velho continue satisfazendo o contrato. O campo ainda não existe: `BasicContractSpec` (`packages/bundle/src/contracts/basic/index.ts`) só tem `cardinality`, `environments` e `methods`, e o spec o traz na fase 4.2.
+- **Chat.** `chat` 1.6.1 importa estaticamente `desktop/ui/identity` e `desktop/ui/reader-avatar` (este em cinco componentes do client, como `comment-line.tsx`) e por isso declara `engines.doric` `^1.1.0`; num app anterior a 1.1.0 o catálogo o recusa (`engines_unsatisfied`).
+
+## Redesign da UI: shell sidebar-08 (fase 2, 2026-11-09)
+
+Spec: [ui-redesign.md](../../designs/ui-redesign.md) (versões 9–11); feature: [ui-redesign.md](../../features/ui-redesign.md). Commits `10e737d1` a `6ff47eda`.
+
+- **`<files-toggle>` nasce por `ui/v1`.** O layout monta o elemento do bundle `files` com `ElementHost` (na view do workspace e no shell das stories), nunca com `createElement` do React: este pula o `create` de `ui/v1`, o elemento fica sem o escopo de serviços e não desenha nada (correção `f1ecaa19`). O stand-in de `<files-toggle>` das stories e testes só desenha com os serviços que o `create` falso anexou, para que o atalho volte a falhar nos testes.
+- **Flag de nova aba num store de módulo.** A ida de `/projects` para `/` monta um novo `layout-workspace` (outro padrão de rota no outlet do core); a flag de nova aba, antes estado do componente, se perdia e `/` desenhava All projects. Ela vive em `stores/new-tab.ts`, zerada na desativação do layout para não passar a um início limpo (`20ef3582`).
+- **Harness doric-e2e com o shell real.** `bootPlatform({ shell: 'renderer' })` sobe o shell real do renderer com os bundles construídos (`builtBundle(dist)`: core, layout, resources, files, git, chat); runtime e comments entram como cortes só-host (`hostOnlyBundle`) que servem seus contratos com as versões e esquemas reais (`3938c3d8`, `7f3acc5b`). As capturas de tela (PNG e JSON de estilos computados, 1920×1080, escuro e claro) só rodam com `DORIC_SHELL_CAPTURES`. `run.ts` passa `disable-dev-shm-usage`, pois o `/dev/shm` de 64 MB derrubava o processo de GPU nas capturas da janela inteira.
+
+## Redesign da UI: restyle dos bundles (fase 3, 2026-11-09)
+
+Spec: [ui-redesign.md](../../designs/ui-redesign.md) (versão 12, decisões G1–G10 e R3); feature: [ui-redesign.md](../../features/ui-redesign.md). Commits `e1c3f723` a `9d92dbed`.
+
+- **Harness.** A distribuição do doric-e2e carrega o bundle `settings` real e um corte só-contratos de `claude-login`; o host falso responde `models/v1`, `host-config/v1`, `secrets/v1` e `tools/v1` (`e1c3f723`).
+- **Uma versão por bundle no branch (G6).** Cada bundle sobe a versão uma vez neste branch: chat 1.6.1, files 1.5.1 e git 1.2.0 ficam; usage, settings, terminal, papercraft e mcp sobem o patch uma vez na fase 3. Correções posteriores no mesmo branch não sobem de novo.
+- **Faixas de rodapé sem cor; seletor de execução à esquerda (R3).** As faixas de rodapé (conversa, viewer, stories) não definem cor: os itens desenham em `--foreground` e só os separadores são atenuados. A raiz do `ExecutionPicker` tem `mr-auto` e ancora a esquerda do rodapé. Causa: a fase 2 (`49e4bc1e`) pôs `justify-end` na faixa quando saiu o item cwd, que levava o `mr-auto`, e o seletor foi para a direita (`9d92dbed`).
+- **Escala de raio em `@theme static` (versão 13 da spec).** `packages/desktop/src/styles/tailwind.css` move `--radius-sm/md/lg/xl` de `@theme inline` para `@theme static`, para que sejam sempre emitidas: os componentes leem `--radius-md` por `var()` em valores arbitrários, e uma folha cujo build não viu essas classes desenhava os cantos retos.
+- **Tabelas (S22, G10).** O `table.tsx` vendorizado não é alterado; cada uso tira as regras por classe (`[&_tr]:border-b-0` no `TableHeader`, `border-b-0` em cada `TableRow`). Sem regra de cabeçalho nem divisórias: Providers, Credentials e as tabelas do mcp. As duas tabelas de modelos (ProviderModelsTable, ProviderCatalogModels) mantêm as duas regras.
+
+## Redesign da UI: coluna Files sempre visível (parte 2i, 2026-11-10)
+
+Spec: [ui-redesign.md](../../designs/ui-redesign.md) (versão 14, S36, UR26–UR28); feature: [ui-redesign.md](../../features/ui-redesign.md). Um commit só (layout, `files`, `git` e testes juntos).
+
+- **Sem FilesToggle nem colapso (UR26, S36).** O elemento `<files-toggle>` (`bundles/features/files/src/client/toggle/files-toggle.tsx`) e sua story saem, nas duas posições (ao lado do status da conta no cabeçalho de Files e na barra de abas com a coluna colapsada), e com ele toda forma de colapsar a coluna (botão e arrastar até zero). A coluna Files fica sempre visível, com 328 px por padrão, redimensionável entre 14rem e 30rem. O status da conta é desenhado uma vez só, no cabeçalho de Files. Os registros acima sobre o `<files-toggle>` ficam como histórico.
+- **`layout.panel/v2@2.0.0` com só `select(id)`.** Substitui `layout.panel/v1@1.0.0` (`isOpen`, `active`, `show`, `toggle`, `subscribe`); `PanelItemProps` fica. A v1 não é provida ao lado da v2: nenhum bundle é publicado antes do estágio 11 e o único chamador, `files`, passa à v2 na mesma mudança. O "Reveal in Files" chama `select('files')`.
+- **Versões.** `layout` 1.4.0 → 2.0.0. `files` fica em 1.6.0 e requer `layout.panel/v2@^2.0.0`; `git` fica em 1.2.0 e não requer mais nenhum contrato `layout.panel/` (seu código nunca o chamava). Um `files` ou `git` construído antes da 2i fica em quarentena ao lado do layout 2.0.0 (SR15).
+- **Vista não registrada (UR28).** Quando a vista selecionada não está registrada, o painel não desenha vista nenhuma.

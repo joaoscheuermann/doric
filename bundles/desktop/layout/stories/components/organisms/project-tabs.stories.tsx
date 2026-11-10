@@ -24,12 +24,10 @@ function Strip({
   actions,
   initialPath,
   open,
-  trailing,
 }: {
   readonly actions?: boolean;
   readonly initialPath: string;
   readonly open: readonly Project[];
-  readonly trailing?: boolean;
 }) {
   const [path, setPath] = useState(initialPath);
   const [state, setState] = useState<ProjectTabs>(() => projectTabsOf(open));
@@ -40,7 +38,6 @@ function Strip({
   return (
     <ProjectTabBar
       actions={actions ? <Placeholder tag="terminal-new-button" /> : undefined}
-      trailing={trailing}
       state={state}
       path={path}
       projects={projects}
@@ -56,6 +53,12 @@ function Strip({
         })
       }
       onNewProject={() => navigate('/')}
+      onNewThread={(project) =>
+        console.info('Story action: new thread', project.id)
+      }
+      setColor={(project, color) =>
+        console.info('Story action: color', project.id, color)
+      }
       rename={(project, name) => {
         console.info('Story action: rename', project.id, name);
         return Promise.resolve();
@@ -86,16 +89,16 @@ export const ProjectActive = {
   ),
 };
 
-/** The Dashboard tab active, as the window opens. */
+/** No Project tab selected, as on the Dashboard. */
 export const DashboardActive = {
   render: () => (
-    <Strip initialPath="/projects" open={[checkout, docs, billing]} trailing />
+    <Strip initialPath="/projects" open={[checkout, docs, billing]} />
   ),
 };
 
 /** No Project tab open yet. */
 export const NoTabs = {
-  render: () => <Strip initialPath="/projects" open={[]} trailing />,
+  render: () => <Strip initialPath="/projects" open={[]} />,
 };
 
 /** Every Project open, long names included: the strip scrolls. */

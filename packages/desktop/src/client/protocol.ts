@@ -67,6 +67,12 @@ export interface WindowDescription {
   readonly chrome: WindowChrome;
   readonly mode: WindowMode;
   readonly tokens: Readonly<Record<string, string>>;
+  /**
+   * The app itself, as main reads it: `version` is `app.getVersion()`. Always
+   * present and the same in every window and in the splash; bundles read it
+   * through `doric.about/v1`.
+   */
+  readonly app: { readonly version: string };
 }
 
 export const windowDescriptionSchema = z
@@ -79,6 +85,7 @@ export const windowDescriptionSchema = z
     chrome: windowChromeSchema,
     mode: z.enum(['connected', 'disconnected-copy', 'last-good-core']),
     tokens: z.record(z.string(), z.string()),
+    app: z.object({ version: z.string() }).strict(),
   })
   .strict();
 
@@ -493,6 +500,9 @@ export const shellMethods = {
   connection: { stream: true },
   // `doric.browser/v1`: an https URL main opens in the system browser.
   openExternal: { stream: false },
+  // `doric.appearance/v1`: the theme preference main keeps and shows.
+  appearanceGet: { stream: false },
+  appearanceSet: { stream: false },
 } as const;
 
 export type ShellMethod = keyof typeof shellMethods;

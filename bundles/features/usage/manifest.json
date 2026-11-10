@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "usage",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engines": { "doric": "^1.0.0" },
   "description": "Thread usage and cost, with the context capacity from the live model catalog.",
   "provides": ["usage/v1@1.0.0"],

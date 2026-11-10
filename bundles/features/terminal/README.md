@@ -14,12 +14,34 @@ See the [main README](../../../README.md) for Doric as a whole and
 
 - **Tool:** `terminal`, tracked shell commands in the thread's working
   directory (order 500, always available).
-- **Contract:** `terminal/v1@1.1.0`, the tracked commands of the calling
+- **Contract:** `terminal/v1@1.2.0`, the tracked commands of the calling
   prompt's Thread (`run`) and the terminal sessions of every Project (`list`,
-  `create`, `snapshot`, `input`, `resize`, `stop`, and the `watchProject`
-  stream).
+  `create`, `snapshot`, `input`, `resize`, `stop`, `rename`, and the
+  `watchProject` stream). A session may carry a `name` (1.2.0).
 - **UI:** the header's "New terminal" button, the sidebar's terminal rows and
-  the workspace terminal tab.
+  the workspace terminal tab, with their context menus.
+
+## Names and menus
+
+- `rename(terminalId, name)` names a session, up to 80 characters. The host
+  trims the name; `null`, an empty or a whitespace-only name clears it. The
+  name lives with the session in memory and reaches every window through the
+  session's `updated` notice; `false` means no such session.
+- A row and its tab show the name, else the command (a tab with neither says
+  "Terminal"). On each `updated` notice the client retitles the terminal's tab
+  through `layout.tabs/v1.retitle`, so the tab follows a rename, a cleared
+  name and the command a manual shell runs.
+- The terminal tab's context menu holds Kill terminal (destructive), above
+  the layout's "Close tab". Close tab only closes the tab; the process keeps
+  running and its row stays. Kill terminal stops it, as the row's stop button
+  does.
+- A terminal row's context menu holds Rename, Copy command and Kill terminal.
+  Rename turns the row into a name field: Enter sends the trimmed text (empty
+  clears the name), Escape or leaving the field cancels. The field closes
+  whatever the answer; a failed call keeps the old name and shows a toast.
+  Copy command puts the session's command on the clipboard.
+- The bundle requires `layout.tabs/v1@^1.2.0`, whose tabs take a `menu` and
+  `retitle`.
 
 ## The `terminal` tool
 
@@ -48,7 +70,7 @@ The tool runs a command in the current working directory; a relative
   its Project back first.
 
 `terminal/contracts` keeps `TerminalV1` (`run` only) for the 1.0.0
-consumers; `TerminalServiceV1` is the full 1.1.0 contract. The `runtime`
+consumers; `TerminalServiceV1` is the full 1.2.0 contract. The `runtime`
 bundle delegates its terminal reads to this bundle while it is active.
 
 ## Development

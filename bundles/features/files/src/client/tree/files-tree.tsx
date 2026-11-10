@@ -4,21 +4,33 @@
 // Project whose sandbox cannot be read, and the whole tree rooted at the
 // selected Thread's working directory, decorated from git's changes read when
 // git serves one. A file row opens its tab; the row of the current file tab
-// is the selected one.
+// is the selected one. A file row's context menu copies its path relative to
+// the root (A8); a folder row's makes a file or a folder in it (A9, A10)
+// through an inline name row, then refreshes the Project (§4.4).
 
 import { CommandsV1, type Services } from 'bundle/contracts';
+import { ContextMenuGroup, ContextMenuItem } from 'desktop/ui/context-menu';
 import {
   emptyDirectoryNotice,
   FileTree,
   type FileTreeActions,
   PanelState,
   ReadFeedback,
+  type TreeNode,
   TreeSkeleton,
 } from 'desktop/ui/panels';
 import { ScrollArea } from 'desktop/ui/scroll-area';
 import { SidebarMenu } from 'desktop/ui/sidebar';
 import { LayoutTabsV1, LayoutWorkspaceV1 } from 'layout/contracts';
-import { memo, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { CopyIcon, FolderIcon, PlusIcon } from 'lucide-react';
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useStore } from 'zustand/react';
 
 import {
@@ -31,9 +43,11 @@ import {
   type GitChanges,
   GitChangesV1,
 } from '../api/peers.js';
+import { type FilesWrites, filesWritesOf } from '../api/writes.js';
 import { filePathOf } from '../commands.js';
 import { useProjectReads } from '../hooks/use-project-reads.js';
 import { useService, useSubscribed } from '../hooks/use-service.js';
+import { relativeTo } from '../paths.js';
 import { rootOf } from '../sandbox-store.js';
 import { filesClient } from '../state.js';
 import {
@@ -41,6 +55,7 @@ import {
   expansionScope,
   expansionStore,
 } from '../stores/expansion.js';
+import { type EntryKind, PendingEntry } from './pending-entry.js';
 
 /** The toast id the panel's views share (Q6): one read toast per panel. */
 export const PANEL_READ_TOAST = 'layout-panel-read';
@@ -92,6 +107,7 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
   const tree = useTree(projectId, cwd);
   const changes = useChanges(git, projectId, cwd);
   useProjectReads(projectId);
+  const writes = useMemo(() => filesWritesOf(services), [services]);
   const open = useCallback(
     (path: string) => {
       if (projectId === undefined) return;
@@ -123,10 +139,13 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
         {projectId !== undefined && (
           <FilesView
             entries={tree.read.status === 'ready' ? tree.read.value : []}
+            projectId={projectId}
+            root={root}
             scope={expansionScope(projectId, root)}
             selectedPath={selectedPath}
             decorations={changes?.decorations}
             onOpen={open}
+            writes={writes}
           />
         )}
       </SandboxGate>
@@ -224,16 +243,23 @@ function SandboxGate({
  */
 const FilesView = memo(function FilesView({
   entries,
+  projectId,
+  root,
   scope,
   selectedPath,
   decorations,
   onOpen,
+  writes,
 }: {
   readonly entries: TreeEntries;
+  readonly projectId: string;
+  /** The tree's root, the Thread's working directory (workspace-relative). */
+  readonly root: string;
   readonly scope: string;
   readonly selectedPath?: string;
   readonly decorations?: ChangesObservation['decorations'];
   readonly onOpen: (path: string) => void;
+  readonly writes: FilesWrites;
 }) {
   const expanded = useStore(
     expansionStore,
@@ -243,6 +269,75 @@ const FilesView = memo(function FilesView({
     open: onOpen,
     toggle: (path) => expansionStore.getState().toggle(scope, path),
   };
+  // The folder whose inline name row shows, and what it makes (A9, A10).
+  const [creating, setCreating] = useState<{
+    readonly directory: string;
+    readonly kind: EntryKind;
+  }>();
+  // A new root or Project closes a name row of the old one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on scope change
+  useEffect(() => setCreating(undefined), [scope]);
+
+  const rowMenu = useCallback(
+    (node: TreeNode): ReactNode => {
+      if (node.type === 'file') {
+        return (
+          <ContextMenuGroup>
+            <ContextMenuItem
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(relativeTo(root, node.path))
+                  .catch(() => undefined);
+              }}
+            >
+              <CopyIcon />
+              Copy relative path
+            </ContextMenuItem>
+          </ContextMenuGroup>
+        );
+      }
+      const begin = (kind: EntryKind) => () => {
+        expansionStore.getState().expand(scope, [node.path]);
+        setCreating({ directory: node.path, kind });
+      };
+      return (
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={begin('file')}>
+            <PlusIcon />
+            New file
+          </ContextMenuItem>
+          <ContextMenuItem onClick={begin('directory')}>
+            <FolderIcon />
+            New folder
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      );
+    },
+    [root, scope],
+  );
+
+  const pending =
+    creating === undefined
+      ? undefined
+      : {
+          directory: creating.directory,
+          row: (
+            <PendingEntry
+              key={`${creating.kind}:${creating.directory}`}
+              kind={creating.kind}
+              create={(name) =>
+                creating.kind === 'file'
+                  ? writes.createFile(projectId, creating.directory, name)
+                  : writes.createDirectory(projectId, creating.directory, name)
+              }
+              onCreated={() => {
+                setCreating(undefined);
+                filesClient()?.coordinator.request(projectId);
+              }}
+              onCancel={() => setCreating(undefined)}
+            />
+          ),
+        };
 
   if (entries.length === 0) {
     return <PanelState description={emptyDirectoryNotice} title="No files" />;
@@ -250,7 +345,7 @@ const FilesView = memo(function FilesView({
 
   return (
     <ScrollArea className="min-h-0 w-full flex-1 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden!">
-      <SidebarMenu role="tree" className="w-full gap-0 py-1">
+      <SidebarMenu role="tree" className="w-full gap-0 px-1 py-1">
         <FileTree
           actions={actions}
           depth={0}
@@ -258,6 +353,8 @@ const FilesView = memo(function FilesView({
           expanded={expanded}
           selectedPath={selectedPath}
           decorations={decorations}
+          rowMenu={rowMenu}
+          pending={pending}
         />
       </SidebarMenu>
     </ScrollArea>

@@ -1,7 +1,7 @@
+import { ReaderAvatar } from 'desktop/ui/reader-avatar';
 import { BotIcon, TerminalIcon } from 'lucide-react';
 
 import { type QueueItem, queueAuthor } from '../../domain/queue.js';
-import { ReaderAvatar } from './reader-avatar.js';
 
 /** The same compact identity in a queued receipt and the live input queue. */
 export function PromptAuthor({

@@ -1,3 +1,4 @@
+import type { TabMenuItem } from '../../contracts/index.js';
 import { moveItem } from '../utility/move-item.js';
 import type { ProjectTree } from './project-tree.js';
 
@@ -34,6 +35,8 @@ export type WorkspaceTab =
       readonly icon?: 'file' | 'file-diff' | 'terminal' | 'thread';
       readonly ariaLabel?: string;
       readonly tooltip?: string;
+      /** `layout.tabs/v1@1.2.0`: the entries above "Close tab" in its menu. */
+      readonly menu?: readonly TabMenuItem[];
     };
 
 /**
@@ -120,3 +123,15 @@ export const closeTab = (state: WorkspaceTabs, id: string): WorkspaceTabs => {
     selected: state.selected === id ? items.at(-1)?.id : state.selected,
   };
 };
+
+/** Sets the title of the element tab `id`; any other tab is left as it is. */
+export const retitleTab = (
+  state: WorkspaceTabs,
+  id: string,
+  title: string,
+): WorkspaceTabs => ({
+  ...state,
+  items: state.items.map((tab) =>
+    tab.id === id && tab.kind === 'element' ? { ...tab, title } : tab,
+  ),
+});

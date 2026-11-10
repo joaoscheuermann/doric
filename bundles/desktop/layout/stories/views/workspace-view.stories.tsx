@@ -70,7 +70,6 @@ const fixtures = {
   },
   terminals: { ...workspace, bottom: true },
   changes: { ...workspace, panel: { active: 'changes' } },
-  focused: { ...workspace, tabs: {}, panel: { open: false } },
   disconnected: { ...workspace, connection: 'disconnected' },
   project: { ...workspace, path: projectRoute(empty), tabs: {} },
   dashboard: { ...workspace, path: '/projects' },
@@ -138,15 +137,6 @@ export const ChangesPanel = {
   ),
 };
 
-/** No tab open and the Project panel closed. */
-export const Focused = {
-  render: () => (
-    <LayoutHost fixture={fixtures.focused}>
-      <WorkspaceView />
-    </LayoutHost>
-  ),
-};
-
 export const Disconnected = {
   render: () => (
     <LayoutHost fixture={fixtures.disconnected}>
@@ -164,7 +154,7 @@ export const ProjectWithoutThreads = {
   ),
 };
 
-/** The Dashboard tab: every Project, with its activity. */
+/** The Dashboard: every Project, with its activity. */
 export const Dashboard = {
   render: () => (
     <LayoutHost fixture={fixtures.dashboard}>

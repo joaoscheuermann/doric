@@ -6,8 +6,10 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import type { WebContents } from 'electron';
+import { app, nativeTheme, type WebContents } from 'electron';
 
+import type { SplashState } from '../../doric/src/platform/splash/protocol';
+import { SPLASH_PHOTOS } from '../../doric/src/splash-page/art/choose-art';
 import { coreDistribution } from '../../doric/tests/support/core';
 import {
   type Booted,
@@ -16,6 +18,7 @@ import {
   startFakeHost,
   until,
 } from './support/harness';
+import { captureSplash } from './support/shell-page';
 
 const splashContents = (booted: Booted): Promise<WebContents> =>
   until(() => {
@@ -35,6 +38,215 @@ const buttons = (contents: WebContents) =>
 const text = (contents: WebContents) =>
   page<string>(contents, `document.querySelector('main').innerText`);
 
+/** The wordmark: one inline SVG named "Doric". */
+const wordmarks = (contents: WebContents) =>
+  page<number>(
+    contents,
+    `document.querySelectorAll('svg[aria-label="Doric"]').length`,
+  );
+
+/** The links by accessible name. */
+const links = (contents: WebContents) =>
+  page<string[]>(
+    contents,
+    `[...document.querySelectorAll('a')].map((a) => a.getAttribute('aria-label') ?? a.textContent.trim())`,
+  );
+
+/** What the art pane holds: each child's `data-art` (and `data-photo`). */
+const art = (contents: WebContents) =>
+  page<string[]>(
+    contents,
+    `[...(document.querySelector('[data-art-pane]')?.children ?? [])].map((node) => node.dataset.art + (node.dataset.photo ? ':' + node.dataset.photo : ''))`,
+  );
+
+/**
+ * Waits until the art pane shows its art and answers it: exactly one of the
+ * shader canvas on a bundled photograph (`shader:<id>`) or the shaded image
+ * (S32). Until one is drawn the pane is empty.
+ */
+const shownArt = async (contents: WebContents): Promise<string> => {
+  const shown = await until(async () => {
+    const children = await art(contents);
+
+    return children.length > 0 ? children : undefined;
+  }, 'the art');
+
+  assert.equal(shown.length, 1, `one art, not ${JSON.stringify(shown)}`);
+
+  const [one] = shown;
+
+  assert.ok(
+    one === 'shaded' || SPLASH_PHOTOS.some((id) => one === `shader:${id}`),
+    one,
+  );
+
+  return one;
+};
+
+/** Runs `body` with `DORIC_SPLASH_ART` set to `value` (unset when undefined). */
+const withSplashArt = async <T>(
+  value: string | undefined,
+  body: () => Promise<T>,
+): Promise<T> => {
+  const previous = process.env.DORIC_SPLASH_ART;
+
+  if (value === undefined) {
+    delete process.env.DORIC_SPLASH_ART;
+  } else {
+    process.env.DORIC_SPLASH_ART = value;
+  }
+
+  try {
+    return await body();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DORIC_SPLASH_ART;
+    } else {
+      process.env.DORIC_SPLASH_ART = previous;
+    }
+  }
+};
+
+/** The status line's text, or '' while it is hidden. */
+const statusText = (contents: WebContents) =>
+  page<string>(
+    contents,
+    `(() => { const node = document.querySelector('.splash-status'); return node && !node.hidden ? node.innerText.trim() : ''; })()`,
+  );
+
+/** The status line's icon: `spinner`, `alert`, or '' without one. */
+const statusIcon = (contents: WebContents) =>
+  page<string>(
+    contents,
+    `document.querySelector('.splash-status:not([hidden]) > svg')?.dataset.icon ?? ''`,
+  );
+
+const detailsText = (contents: WebContents) =>
+  page<string>(
+    contents,
+    `(() => { const node = document.querySelector('.splash-details'); return node && !node.hidden ? node.innerText.trim() : ''; })()`,
+  );
+
+/** Every state the page draws (§4.5, T-4.5.1), with what it must show. */
+const STATES: readonly {
+  readonly name: string;
+  readonly state: SplashState;
+  readonly status: string;
+  readonly icon: 'spinner' | 'alert' | '';
+  readonly details: string;
+  readonly buttons: readonly string[];
+}[] = [
+  {
+    name: 'connecting',
+    state: { state: 'loading', step: 'connecting' },
+    status: 'Connecting to the host',
+    icon: 'spinner',
+    details: '',
+    buttons: [],
+  },
+  {
+    name: 'catalog',
+    state: { state: 'loading', step: 'catalog' },
+    status: 'Reading the catalog',
+    icon: 'spinner',
+    details: '',
+    buttons: [],
+  },
+  {
+    name: 'download',
+    state: {
+      state: 'loading',
+      step: 'download',
+      progress: { done: 3, total: 7 },
+    },
+    status: 'Downloading bundles (3/7)',
+    icon: 'spinner',
+    details: '',
+    buttons: [],
+  },
+  {
+    name: 'verify',
+    state: { state: 'loading', step: 'verify' },
+    status: 'Verifying bundles',
+    icon: 'spinner',
+    details: '',
+    buttons: [],
+  },
+  {
+    name: 'activation',
+    state: { state: 'loading', step: 'activation' },
+    status: 'Activating',
+    icon: 'spinner',
+    details: '',
+    buttons: [],
+  },
+  {
+    name: 'host-unreachable',
+    state: {
+      state: 'host-unreachable',
+      hostUrl: 'http://127.0.0.1:3000',
+      lastError: 'connect ECONNREFUSED 127.0.0.1:3000',
+      attempts: 3,
+      hasSnapshot: true,
+    },
+    status: 'Cannot reach http://127.0.0.1:3000',
+    icon: 'alert',
+    details: 'connect ECONNREFUSED 127.0.0.1:3000 · Attempt 3',
+    buttons: ['Retry', 'Open last known composition'],
+  },
+  {
+    name: 'bundle-failure',
+    state: {
+      state: 'bundle-failure',
+      bundles: [
+        {
+          id: 'probe-new',
+          version: '1.0.0',
+          reasons: [
+            {
+              code: 'engines_unsatisfied',
+              message: 'needs doric ^2.0.0',
+            },
+          ],
+        },
+      ],
+    },
+    status: 'Some bundles cannot load',
+    icon: 'alert',
+    details: 'probe-new 1.0.0: needs doric ^2.0.0',
+    buttons: ['Retry', 'Continue without them', 'Disable probe-new'],
+  },
+  {
+    name: 'core-failure',
+    state: {
+      state: 'core-failure',
+      core: { id: 'badcore', version: '1.0.0' },
+      error: 'the core broke',
+      hasLastGoodCore: true,
+    },
+    status: 'badcore 1.0.0',
+    icon: 'alert',
+    details: 'the core broke',
+    buttons: [
+      'Retry',
+      'Use last core that worked',
+      'Return to default composition',
+    ],
+  },
+  {
+    name: 'recovery',
+    state: {
+      state: 'recovery',
+      reason: 'Recovery was requested',
+      hasLastGoodCore: false,
+    },
+    status: 'Recovery was requested',
+    icon: 'alert',
+    details: '',
+    buttons: ['Retry', 'Return to default composition'],
+  },
+];
+
 describe('splash and recovery page', () => {
   test('a host that refuses shows where it tried and how often, and Retry reaches main', async () => {
     const host = await startFakeHost(await coreDistribution());
@@ -53,7 +265,7 @@ describe('splash and recovery page', () => {
 
       const shown = await text(contents);
 
-      assert.match(shown, /^Doric/u);
+      assert.equal(await wordmarks(contents), 1);
       assert.ok(shown.includes(`Cannot reach ${host.url}`), shown);
       assert.deepEqual(await buttons(contents), ['Retry']);
       assert.equal(await page(contents, 'document.title'), 'Doric');
@@ -97,8 +309,8 @@ describe('splash and recovery page', () => {
 
       assert.ok((await text(contents)).includes('badcore 1.0.0'));
       assert.deepEqual(await buttons(contents), [
-        'Return to default composition',
         'Retry',
+        'Return to default composition',
       ]);
       assert.equal(booted.platform.registry.all().length, 0);
     } finally {
@@ -142,9 +354,9 @@ describe('splash and recovery page', () => {
 
       assert.ok((await text(contents)).includes('probe-new 1.0.0'));
       assert.deepEqual(await buttons(contents), [
+        'Retry',
         'Continue without them',
         'Disable probe-new',
-        'Retry',
       ]);
       assert.equal(reports.length, 1);
 
@@ -390,4 +602,241 @@ describe('disconnected mode', () => {
       await rm(userData, { recursive: true, force: true });
     }
   });
+});
+
+describe('splash layout (§4.5)', () => {
+  test('the splash window is 610×487 and its credits show the app version', async () => {
+    const host = await startFakeHost(await coreDistribution());
+    const booted = await bootPlatform({ host, argv: ['--recovery'] });
+
+    try {
+      const contents = await splashContents(booted);
+      const window = booted.platform.splashWindow;
+
+      assert.deepEqual(window?.getContentSize(), [610, 487]);
+      await until(
+        async () => (await text(contents)).includes('MIT License') || undefined,
+        'the credits',
+      );
+
+      const shown = await text(contents);
+
+      assert.ok(shown.includes('© 2026 João Vitor Scheuermann'), shown);
+      assert.ok(shown.includes(`MIT License · v${app.getVersion()}`), shown);
+    } finally {
+      await booted.dispose();
+      await host.close();
+    }
+  });
+
+  /** T-4.5.1 in every state of `STATES`, captured dark and light into `dir`. */
+  const everyState = async (dir: string | undefined) => {
+    const host = await startFakeHost(await coreDistribution());
+    const booted = await bootPlatform({ host, argv: ['--recovery'] });
+    const themeSource = nativeTheme.themeSource;
+
+    try {
+      const contents = await splashContents(booted);
+
+      await until(
+        async () => (await buttons(contents)).includes('Retry') || undefined,
+        'the recovery state',
+      );
+
+      for (const theme of dir === undefined
+        ? (['dark'] as const)
+        : (['dark', 'light'] as const)) {
+        nativeTheme.themeSource = theme;
+
+        for (const expected of STATES) {
+          booted.platform.splashStates.set(expected.state);
+          await until(
+            async () =>
+              (await statusText(contents)) === expected.status &&
+              (await detailsText(contents)) === expected.details &&
+              JSON.stringify(await buttons(contents)) ===
+                JSON.stringify(expected.buttons),
+            `the ${expected.name} state`,
+            5_000,
+          ).catch(() => undefined);
+
+          assert.equal(
+            await statusText(contents),
+            expected.status,
+            expected.name,
+          );
+          assert.equal(
+            await statusIcon(contents),
+            expected.icon,
+            expected.name,
+          );
+          assert.equal(
+            await detailsText(contents),
+            expected.details,
+            expected.name,
+          );
+          assert.deepEqual(
+            await buttons(contents),
+            expected.buttons,
+            expected.name,
+          );
+          assert.equal(await wordmarks(contents), 1, expected.name);
+          assert.deepEqual(await links(contents), ['GitHub'], expected.name);
+          await shownArt(contents);
+
+          if (dir !== undefined) {
+            await captureSplash({ booted, dir, name: expected.name, theme });
+          }
+        }
+      }
+    } finally {
+      nativeTheme.themeSource = themeSource;
+      await booted.dispose();
+      await host.close();
+    }
+  };
+
+  test('every state shows its status, details and buttons by accessible name, with the wordmark, the GitHub link and one art', async () => {
+    const dir = process.env.DORIC_SHELL_CAPTURES;
+
+    // The 1:1 captures show the shaded art in every state (§4.5, G15): the
+    // shader and its photograph depend on the GPU and on chance.
+    await withSplashArt(
+      dir === undefined ? process.env.DORIC_SPLASH_ART : 'shaded',
+      () => everyState(dir),
+    );
+  });
+
+  test('the GitHub link asks main to open the repository and leaves the splash where it is', async () => {
+    const host = await startFakeHost(await coreDistribution());
+    const booted = await bootPlatform({ host, argv: ['--recovery'] });
+
+    try {
+      const contents = await splashContents(booted);
+      const before = contents.getURL();
+
+      await until(
+        async () => (await links(contents)).includes('GitHub') || undefined,
+        'the GitHub link',
+      );
+      await page(
+        contents,
+        `[...document.querySelectorAll('a')].find((a) => a.textContent.trim() === 'GitHub').click(); 'clicked'`,
+      );
+      await until(() => booted.opened.length > 0 || undefined, 'openExternal');
+
+      assert.deepEqual(booted.opened, [
+        'https://github.com/joaoscheuermann/doric',
+      ]);
+      assert.equal(contents.getURL(), before);
+    } finally {
+      await booted.dispose();
+      await host.close();
+    }
+  });
+
+  test('DORIC_SPLASH_ART=shaded opens the splash at ?art=shaded with the shaded image', async () => {
+    const host = await startFakeHost(await coreDistribution());
+    const previous = process.env.DORIC_SPLASH_ART;
+
+    process.env.DORIC_SPLASH_ART = 'shaded';
+
+    const booted = await bootPlatform({ host, argv: ['--recovery'] });
+
+    try {
+      const contents = await splashContents(booted);
+
+      assert.equal(new URL(contents.getURL()).search, '?art=shaded');
+      assert.equal(await shownArt(contents), 'shaded');
+      assert.deepEqual(await art(contents), ['shaded']);
+
+      const dir = process.env.DORIC_SHELL_CAPTURES;
+
+      if (dir !== undefined) {
+        await captureSplash({
+          booted,
+          dir,
+          name: 'art-shaded-override',
+          theme: 'dark',
+        });
+      }
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DORIC_SPLASH_ART;
+      } else {
+        process.env.DORIC_SPLASH_ART = previous;
+      }
+
+      await booted.dispose();
+      await host.close();
+    }
+  });
+});
+
+describe('splash art (§4.5, T-4.5.7)', () => {
+  test('the art pane holds exactly one art: the shader on a bundled photograph or the shaded image', async (t) => {
+    await withSplashArt(undefined, async () => {
+      const host = await startFakeHost(await coreDistribution());
+      const booted = await bootPlatform({ host, argv: ['--recovery'] });
+      const themeSource = nativeTheme.themeSource;
+
+      try {
+        const contents = await splashContents(booted);
+
+        assert.equal(new URL(contents.getURL()).search, '');
+
+        const shown = await shownArt(contents);
+
+        // Without WebGPU (Xvfb here, G15) this is the shaded image.
+        t.diagnostic(`art: ${shown}`);
+
+        const dir = process.env.DORIC_SHELL_CAPTURES;
+
+        // The shader capture of the 1:1 check (G15): on the reference Mac,
+        // `splash-art-shader-M1mNrZ3t7bI-<theme>` once that photograph shows.
+        if (dir !== undefined) {
+          await until(
+            async () =>
+              (await buttons(contents)).includes('Retry') || undefined,
+            'the recovery state',
+          );
+
+          for (const theme of ['dark', 'light'] as const) {
+            nativeTheme.themeSource = theme;
+            await captureSplash({
+              booted,
+              dir,
+              name: `art-${shown.replace(':', '-')}`,
+              theme,
+            });
+          }
+        }
+      } finally {
+        nativeTheme.themeSource = themeSource;
+        await booted.dispose();
+        await host.close();
+      }
+    });
+  });
+
+  for (const value of [undefined, 'shaded'] as const) {
+    test(`the splash closes once the workspace window is open (DORIC_SPLASH_ART ${value ?? 'unset'})`, async () => {
+      await withSplashArt(value, async () => {
+        const host = await startFakeHost(await coreDistribution());
+        const booted = await bootPlatform({ host });
+
+        try {
+          await booted.window('workspace');
+          await until(
+            () => booted.platform.splashWindow === undefined || undefined,
+            'the splash to close',
+            5_000,
+          );
+        } finally {
+          await booted.dispose();
+          await host.close();
+        }
+      });
+    });
+  }
 });

@@ -53,25 +53,3 @@ export const NoOpenTabs = {
     </LayoutHost>
   ),
 };
-
-/** The Project panel closed: its controls stay in the tab bar. */
-export const PanelClosed = {
-  render: () => (
-    <LayoutHost fixture={withTabs}>
-      <WorkspaceShell panelOpen={false}>
-        <Conversation />
-      </WorkspaceShell>
-    </LayoutHost>
-  ),
-};
-
-/** Only the sidebar and the conversation: no tabs, panel closed. */
-export const Focused = {
-  render: () => (
-    <LayoutHost fixture={noTabs}>
-      <WorkspaceShell panelOpen={false}>
-        <Conversation />
-      </WorkspaceShell>
-    </LayoutHost>
-  ),
-};

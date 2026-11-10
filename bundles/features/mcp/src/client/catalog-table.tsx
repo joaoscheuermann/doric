@@ -93,15 +93,15 @@ export function CatalogTable({
       </div>
       <div className="overflow-hidden rounded-lg border">
         <Table>
-          <TableHeader>
-            <TableRow>
+          <TableHeader className="[&_tr]:border-b-0">
+            <TableRow className="border-b-0">
               <TableHead className="w-2/5">Name</TableHead>
               <TableHead>Description</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {empty !== undefined ? (
-              <TableRow>
+              <TableRow className="border-b-0">
                 <TableCell
                   colSpan={2}
                   className="h-16 text-center text-muted-foreground"
@@ -111,7 +111,10 @@ export function CatalogTable({
               </TableRow>
             ) : (
               shown.map((item) => (
-                <TableRow key={'uri' in item ? item.uri : item.name}>
+                <TableRow
+                  key={'uri' in item ? item.uri : item.name}
+                  className="border-b-0"
+                >
                   <TableCell>
                     <span className="font-mono">{item.name}</span>
                   </TableCell>

@@ -12,6 +12,8 @@
   },
   "include": [
     "src/client/api/settings-api.ts",
+    "src/client/api/appearance.ts",
+    "src/client/appearance-section.ts",
     "src/client/domain/*.ts",
     "src/client/services/*.ts",
     "tests/*.ts",

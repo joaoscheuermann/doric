@@ -22,7 +22,11 @@ const defineOnce = (
     customElements.define(tag, create());
 };
 
-/** Points the stand-ins at `host` and defines them on first use. */
+/**
+ * Points the stand-ins at `host` and defines them on first use: `<core-region>`
+ * and `<core-outlet>`. Each one is defined only where nothing has defined its
+ * tag yet.
+ */
 export const defineStoryElements = (host: FakeHost): void => {
   current = host;
 

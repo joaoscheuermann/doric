@@ -6,7 +6,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from 'desktop/ui/context-menu';
-import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import {
+  CopyIcon,
+  ExternalLinkIcon,
+  MessageSquarePlusIcon,
+  PanelRightOpenIcon,
+  Trash2Icon,
+} from 'lucide-react';
 import type { ReactElement } from 'react';
 
 import type { ProjectColor } from '../../domain/workspace.js';
@@ -25,13 +31,23 @@ type ItemContextMenuProps = {
   readonly onAdd?: () => void;
   readonly onCopyId?: () => void;
   readonly onDelete?: () => void;
+  /** A1: present on Thread rows, which open in a viewer tab (§4.4). */
+  readonly onOpenInTab?: () => void;
+  /**
+   * How A1 reads: "Open in new tab" (external-link) on a main Thread, "Open in
+   * viewer" (panel-right-open) on a sub-thread or agent Thread (Figma 29:5448,
+   * 29:5496). The action is the same.
+   */
+  readonly openIn?: 'new-tab' | 'viewer';
 };
 
 /**
- * The add/copy/color/delete menu wrapped around a project or thread row. A row
+ * The open/add/copy/color/delete menu wrapped around a project or thread row. A row
  * offers only what its kind allows — a sub-thread has no children of its own, and
  * an agent Thread is neither renamed nor deleted by the reader — so each section
- * is drawn only when its action arrives.
+ * is drawn only when its action arrives. The groups follow Figma
+ * `layout/ContextMenu` (29:5570): Open and Create, then Copy, then Color, then
+ * Delete last, each behind a separator.
  */
 export function ItemContextMenu({
   addLabel,
@@ -41,6 +57,8 @@ export function ItemContextMenu({
   onAdd,
   onCopyId,
   onDelete,
+  onOpenInTab,
+  openIn = 'new-tab',
 }: ItemContextMenuProps) {
   const adding = onAdd !== undefined && addLabel !== undefined;
   const deleting = onDelete !== undefined && deleteLabel !== undefined;
@@ -48,21 +66,41 @@ export function ItemContextMenu({
     <ContextMenu>
       <ContextMenuTrigger render={children} />
       <ContextMenuContent>
-        {(adding || onCopyId !== undefined) && (
+        {(onOpenInTab !== undefined || adding) && (
           <ContextMenuGroup>
+            {onOpenInTab && (
+              <ContextMenuItem onClick={onOpenInTab}>
+                {openIn === 'viewer' ? (
+                  <>
+                    <PanelRightOpenIcon />
+                    Open in viewer
+                  </>
+                ) : (
+                  <>
+                    <ExternalLinkIcon />
+                    Open in new tab
+                  </>
+                )}
+              </ContextMenuItem>
+            )}
             {adding && (
               <ContextMenuItem onClick={onAdd}>
-                <PlusIcon />
+                <MessageSquarePlusIcon />
                 {addLabel}
               </ContextMenuItem>
             )}
-            {onCopyId && (
+          </ContextMenuGroup>
+        )}
+        {onCopyId && (
+          <>
+            {(onOpenInTab !== undefined || adding) && <ContextMenuSeparator />}
+            <ContextMenuGroup>
               <ContextMenuItem onClick={onCopyId}>
                 <CopyIcon />
                 Copy thread ID
               </ContextMenuItem>
-            )}
-          </ContextMenuGroup>
+            </ContextMenuGroup>
+          </>
         )}
         {color && (
           <>

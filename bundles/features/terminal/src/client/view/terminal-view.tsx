@@ -11,6 +11,7 @@ import {
 } from '../domain/terminals.js';
 import type { TerminalWatchApi } from '../output-watch.js';
 import { messageFrom } from '../store.js';
+import { followColorScheme } from './color-scheme.js';
 import { loadXterm } from './xterm.js';
 
 /**
@@ -40,11 +41,25 @@ export function TerminalView({
     let teardown: (() => void) | undefined;
     void loadXterm().then(({ FitAddon, Terminal }) => {
       if (disposed || !container.current) return;
-      const palette = getComputedStyle(
-        container.current.closest('[data-slot="terminal-view"]') ??
-          container.current,
-      );
-      const typography = getComputedStyle(container.current);
+      const view = container.current;
+      // The palette is read again on each scheme change (S21): the window's
+      // `.dark` class has already followed it, so the computed colors are the
+      // new theme's.
+      const theme = () => {
+        const palette = getComputedStyle(
+          view.closest('[data-slot="terminal-view"]') ?? view,
+        );
+        const border = palette.getPropertyValue('--border').trim();
+        return {
+          background: palette.backgroundColor,
+          foreground: palette.color,
+          overviewRulerBorder: '#00000000',
+          scrollbarSliderBackground: border,
+          scrollbarSliderHoverBackground: border,
+          scrollbarSliderActiveBackground: border,
+        };
+      };
+      const typography = getComputedStyle(view);
       const terminal = new Terminal({
         fontFamily: typography.fontFamily,
         fontSize: Number.parseFloat(typography.fontSize),
@@ -59,24 +74,17 @@ export function TerminalView({
           showTopBorder: false,
           showBottomBorder: false,
         },
-        theme: {
-          background: palette.backgroundColor,
-          foreground: palette.color,
-          overviewRulerBorder: '#00000000',
-          scrollbarSliderBackground: palette
-            .getPropertyValue('--border')
-            .trim(),
-          scrollbarSliderHoverBackground: palette
-            .getPropertyValue('--border')
-            .trim(),
-          scrollbarSliderActiveBackground: palette
-            .getPropertyValue('--border')
-            .trim(),
-        },
+        theme: theme(),
       });
       const fit = new FitAddon();
       terminal.loadAddon(fit);
-      terminal.open(container.current);
+      terminal.open(view);
+      const unfollow = followColorScheme(
+        matchMedia('(prefers-color-scheme: dark)'),
+        () => {
+          terminal.options.theme = theme();
+        },
+      );
       let sequence = 0;
       const report = (reason: unknown) => {
         if (!disposed) setError(messageFrom(reason));
@@ -125,6 +133,7 @@ export function TerminalView({
       resize();
       terminal.focus();
       teardown = () => {
+        unfollow();
         observer.disconnect();
         input.dispose();
         unwatch();
@@ -143,8 +152,8 @@ export function TerminalView({
       className="flex h-full min-h-0 flex-col bg-background"
     >
       {showHeader && (
-        <header className="flex chrome-bar shrink-0 items-center gap-2 border-b bg-sidebar px-2">
-          <span className="min-w-0 flex-1 truncate font-mono text-xs">
+        <header className="flex chrome-bar shrink-0 items-center gap-2 px-2">
+          <span className="min-w-0 flex-1 truncate font-mono text-xs font-normal">
             {session.command}
             {session.state === 'exited' ? ' · exited' : ''}
           </span>

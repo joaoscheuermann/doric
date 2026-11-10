@@ -18,14 +18,19 @@ import {
 } from './resources.js';
 import { fakeServices } from './services.js';
 
-/** A workspace that shows one Project and never changes its selection. */
+/**
+ * A workspace that shows one Project and never changes its selection or its
+ * connection. `connected` defaults to `true`. `subscribe` never notifies.
+ */
 export const fixtureWorkspace = (
   selectedProjectId: string | undefined = projectId,
+  options: { readonly connected?: boolean } = {},
 ): LayoutWorkspace => ({
   selection: () =>
     selectedProjectId === undefined
       ? {}
       : { project: { id: selectedProjectId } },
+  connected: () => options.connected ?? true,
   subscribe: () => ({ dispose: () => undefined }),
 });
 

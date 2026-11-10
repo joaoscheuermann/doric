@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import { isContractError } from 'bundle/contracts';
 import type { Sandbox, SandboxExecResult, SandboxProcessInput } from 'sandbox';
 
 import type {
   TerminalResult,
   TerminalWatchItem,
 } from '../src/contracts/index.js';
+import { createTerminalHost } from '../src/host/index.js';
 import { backgroundResultText } from '../src/host/provider.js';
 import { deferred } from './support/deferred.js';
 import { activatedHost, type FakeThread } from './support/host.js';
@@ -373,6 +375,96 @@ void describe('terminal/v1', () => {
       assert.equal(items.length, 4);
     } finally {
       await host.dispose();
+    }
+  });
+});
+
+// terminal/v1 1.2.0 `rename` through the contract (T-4.4.7).
+void describe('terminal/v1 rename', () => {
+  const invalidInput = (error: unknown): boolean =>
+    isContractError(error) && error.code === 'invalid_input';
+
+  void test('names a session up to 80 characters; its watchers see the name', async () => {
+    const box = fakeSandbox();
+    const host = await activatedHost({ 'thread-1': thread(box.sandbox) });
+    try {
+      const session = await host.terminal.create('thread-1', {});
+      assert.ok(session);
+      const items: TerminalWatchItem[] = [];
+      const watch = host.terminal.watchProject('project-1', (item) => {
+        items.push(item);
+      });
+      await tick();
+      assert.equal(
+        await host.terminal.rename(session.id, ' Dev server '),
+        true,
+      );
+      await tick();
+      const updated = items.at(-1);
+      assert.ok(updated?.kind === 'updated');
+      assert.equal(updated.terminal.name, 'Dev server');
+      const longest = 'n'.repeat(80);
+      assert.equal(await host.terminal.rename(session.id, longest), true);
+      assert.equal(
+        (await host.terminal.snapshot(session.id, 0))?.terminal.name,
+        longest,
+      );
+      assert.equal(await host.terminal.rename(session.id, null), true);
+      assert.equal(
+        Object.hasOwn((await host.terminal.list('project-1'))[0] ?? {}, 'name'),
+        false,
+      );
+      assert.equal(await host.terminal.rename('missing', 'x'), false);
+      watch.dispose();
+    } finally {
+      await host.dispose();
+    }
+  });
+
+  void test('a name over 80 characters or an empty id fails invalid_input', async () => {
+    const box = fakeSandbox();
+    const host = await activatedHost({ 'thread-1': thread(box.sandbox) });
+    try {
+      const session = await host.terminal.create('thread-1', {});
+      assert.ok(session);
+      // The contract refuses the call before it reaches the host.
+      await assert.rejects(
+        async () => host.terminal.rename(session.id, 'n'.repeat(81)),
+        invalidInput,
+      );
+      await assert.rejects(
+        async () => host.terminal.rename('', 'x'),
+        invalidInput,
+      );
+      assert.equal(
+        Object.hasOwn((await host.terminal.list('project-1'))[0] ?? {}, 'name'),
+        false,
+      );
+    } finally {
+      await host.dispose();
+    }
+  });
+
+  void test('is exposed to the desktop', () => {
+    const host = createTerminalHost({
+      secrets: {
+        redactions: async () => [],
+        watchRedactions: () => ({ dispose: () => undefined }),
+      },
+      workspace: () => {
+        throw new Error('Not used.');
+      },
+      threads: () => {
+        throw new Error('Not used.');
+      },
+      log: () => {
+        throw new Error('Not used.');
+      },
+    });
+    try {
+      assert.equal(host.definition.methods.rename.expose, 'desktop');
+    } finally {
+      host.dispose();
     }
   });
 });
