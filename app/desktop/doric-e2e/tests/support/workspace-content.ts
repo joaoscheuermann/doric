@@ -98,6 +98,20 @@ export const FILE_TREE: readonly TreeNode[] = [
   file('tsconfig.json', 377),
 ];
 
+/** The directory of `FILE_TREE` at `path`, if there is one. */
+const directoryIn = (
+  nodes: readonly TreeNode[],
+  path: string,
+): TreeNode | undefined => {
+  for (const node of nodes) {
+    if (node.path === path)
+      return node.children === undefined ? undefined : node;
+    if (node.children !== undefined && path.startsWith(`${node.path}/`))
+      return directoryIn(node.children, path);
+  }
+  return undefined;
+};
+
 /** The source a file viewer reads for every path. */
 export const PAYMENT_FORM_SOURCE = `import { Button } from '@/components/ui/button';
 
@@ -241,6 +255,25 @@ export const serveSandbox = (host: FakeHost): GitCalls => {
       status: 'listed',
       path: (record(input).path as string | undefined) ?? '',
       entries: FILE_TREE.map(({ children: _, ...entry }) => entry),
+    }),
+  );
+  // The Files panel reads its tree per directory (`files/v1@1.3.0`).
+  host.serve('files/v1', 'directories', (input) =>
+    ready({
+      status: 'listed',
+      directories: ((record(input).paths as string[] | undefined) ?? []).map(
+        (path) => {
+          const children =
+            path === '' ? FILE_TREE : directoryIn(FILE_TREE, path)?.children;
+          return children === undefined
+            ? { path, status: 'not_found' }
+            : {
+                path,
+                status: 'listed',
+                entries: children.map(({ children: _, ...entry }) => entry),
+              };
+        },
+      ),
     }),
   );
   host.serve('files/v1', 'content', (input) =>

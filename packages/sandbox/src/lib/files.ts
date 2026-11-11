@@ -1,6 +1,8 @@
 import { posix as path } from 'node:path';
 
 import type {
+  SandboxDirectoriesInput,
+  SandboxDirectoryResult,
   SandboxEntry,
   SandboxListFailure,
   SandboxListInput,
@@ -36,10 +38,10 @@ const SIZE_BATCH = 256;
 /**
  * The listing scan: `$1` is `deep` or `shallow`, `$2` the listed directory, and
  * remaining arguments are literal `find` predicates for invisible directories. One
- * `find` pass prints every entry the two old passes printed, and a shell loop
- * tags each line `D`irectory or `F`ile, so one round trip reports the root kind
- * (`K`) and every entry with its type. A failed scan prints no entry lines,
- * which is the empty listing the two-pass version produced.
+ * round trip reports the root kind (`K`) and every entry tagged `D`irectory or
+ * `F`ile. `find` itself types the entries, one pass per type, and `sed` tags
+ * them: a shell loop testing each entry took seconds on a large workspace. A
+ * failed scan prints no entry lines, so the listing is empty.
  */
 const ENTRIES_SCRIPT = String.raw`mode=$1
 root=$2
@@ -47,20 +49,19 @@ shift 2
 if [ -d "$root" ]; then
   printf 'K directory\n'
   if [ "$mode" = deep ]; then
-    out=$(find "$root" \( -name .git "$@" \) -prune -o -type d -print -o -type f -print)
-    status=$?
+    dirs=$(find "$root" \( -name .git "$@" \) -prune -o -type d -print) &&
+      files=$(find "$root" \( -name .git "$@" \) -prune -o -type f -print) ||
+      exit 0
   else
-    out=$(find "$root" -maxdepth 1 -name .git -prune -o -type d -print -o -type f -print)
-    status=$?
+    dirs=$(find "$root" -maxdepth 1 -name .git -prune -o -type d -print) &&
+      files=$(find "$root" -maxdepth 1 -name .git -prune -o -type f -print) ||
+      exit 0
   fi
-  if [ "$status" = 0 ] && [ -n "$out" ]; then
-    printf '%s\n' "$out" | while IFS= read -r item; do
-      if [ -d "$item" ]; then
-        printf 'D %s\n' "$item"
-      else
-        printf 'F %s\n' "$item"
-      fi
-    done
+  if [ -n "$dirs" ]; then
+    printf '%s\n' "$dirs" | sed 's/^/D /'
+  fi
+  if [ -n "$files" ]; then
+    printf '%s\n' "$files" | sed 's/^/F /'
   fi
 elif [ -f "$root" ]; then
   printf 'K file\n'
@@ -109,6 +110,44 @@ if [ -d "$root" ]; then
     fi
   fi
 fi
+`;
+
+/**
+ * The per-directory scan: `$1` counts the rule directories that follow, whose
+ * `.gitignore` files are printed as in `IGNORES_SCRIPT` (`A <dir>`, then each
+ * line prefixed with `+`); the remaining arguments are the listed directories.
+ * Each listed directory's kind is printed next, one `K` record per directory in
+ * argument order, using only shell builtins. Last, one `find` per entry type
+ * lists the first level of every listed directory at once, tagged `D` or `F`
+ * by `sed`, so the command costs the same few processes however many
+ * directories it lists. A path that is not a directory adds nothing to `find`'s
+ * output beyond itself.
+ */
+const DIRECTORIES_SCRIPT = String.raw`count=$1
+shift
+while [ "$count" -gt 0 ]; do
+  if [ -f "$1/.gitignore" ]; then
+    printf 'A %s\n' "$1"
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '+%s\n' "$line"
+    done 2>/dev/null < "$1/.gitignore"
+  fi
+  count=$((count - 1))
+  shift
+done
+for dir do
+  if [ -d "$dir" ]; then
+    printf 'K directory\n'
+  elif [ -f "$dir" ]; then
+    printf 'K file\n'
+  elif [ -e "$dir" ]; then
+    printf 'K other\n'
+  else
+    printf 'K missing\n'
+  fi
+done
+find "$@" -maxdepth 1 -type d -print 2>/dev/null | sed 's/^/D /'
+find "$@" -maxdepth 1 -type f -print 2>/dev/null | sed 's/^/F /'
 `;
 
 interface Entry {
@@ -174,6 +213,222 @@ export const listSandboxTree = async (
     path: listing.root.relative,
     entries: tree(sandbox, listing.root.path, listing.entries),
   };
+};
+
+/**
+ * Lists several workspace directories one level each, in one sandbox command:
+ * the read a tree that loads per directory makes for its root and the
+ * directories it shows open. Each listing applies the rules `listSandboxTree`
+ * applies from `input.root` — the same rule files in the same order, the
+ * default ignores, hidden entries and ordering — so a directory listed here
+ * holds exactly the children the recursive listing nests under it. Entries
+ * carry no size. The results follow `input.paths`, one per requested path.
+ */
+export const listSandboxDirectories = async (
+  sandbox: SandboxReader,
+  input: SandboxDirectoriesInput,
+): Promise<readonly SandboxDirectoryResult[]> => {
+  const resolved = input.paths.map((value) => resolve(sandbox.root, value));
+  const targets = [
+    ...new Set(
+      resolved.flatMap((target) =>
+        typeof target === 'string' ? [] : [target.path],
+      ),
+    ),
+  ];
+
+  if (targets.length === 0) {
+    return resolved.map((target) => ({
+      status: 'escaped' as const,
+      message: typeof target === 'string' ? target : '',
+    }));
+  }
+
+  const tree = resolve(sandbox.root, input.root ?? '');
+  const treeRoot =
+    typeof tree === 'string' ? normalize(sandbox.root) : tree.path;
+  const chains = new Map(
+    targets.map((target) => [
+      target,
+      ruleChain(sandbox.root, treeRoot, target),
+    ]),
+  );
+  const ruleDirs = [...new Set([...chains.values()].flat())];
+  const result = await sandbox.exec({
+    cwd: sandbox.root,
+    cmd: [
+      'sh',
+      '-c',
+      DIRECTORIES_SCRIPT,
+      'directories',
+      String(ruleDirs.length),
+      ...ruleDirs,
+      ...targets,
+    ],
+  });
+  const scan = parseDirectoriesDump(result.stdout, ruleDirs, targets);
+
+  if (scan === undefined) {
+    throw new Error(
+      `Listing workspace directories failed: ${result.stderr.trim() || `exit ${result.exitCode}`}`,
+    );
+  }
+
+  const defaults = DEFAULT_IGNORES.map((pattern) => ({
+    base: sandbox.root,
+    pattern,
+    negated: false,
+  }));
+
+  return resolved.map((target): SandboxDirectoryResult => {
+    if (typeof target === 'string') {
+      return { status: 'escaped', message: target };
+    }
+
+    const kind = scan.kinds.get(target.path) ?? 'missing';
+
+    if (kind === 'missing') {
+      return { status: 'missing' };
+    }
+
+    if (kind !== 'directory') {
+      return { status: 'not_directory' };
+    }
+
+    const ignores = [
+      ...defaults,
+      ...(chains.get(target.path) ?? []).flatMap(
+        (dir) => scan.rules.get(dir) ?? [],
+      ),
+    ];
+
+    return {
+      status: 'listed',
+      path: target.relative,
+      entries: ordered(
+        visibleEntries(
+          target.path,
+          scan.children.get(target.path) ?? [],
+          ignores,
+          [],
+        ),
+      ).map((entry) => ({
+        name: path.basename(entry.path),
+        path: relative(sandbox.root, entry.path),
+        type: entry.isDirectory ? 'directory' : 'file',
+      })),
+    };
+  });
+};
+
+/**
+ * The directories whose `.gitignore` rules apply to `dir`'s children, in the
+ * order `listSandboxTree` from `treeRoot` reads them: the ancestors of the tree
+ * root from the workspace root down, then the rule files from the tree root to
+ * `dir` sorted by their path, as the recursive scan sorts the files it finds. A
+ * directory outside the tree root is its own tree root.
+ */
+const ruleChain = (
+  workspaceRoot: string,
+  treeRoot: string,
+  dir: string,
+): readonly string[] => {
+  const top = contains(treeRoot, dir) ? treeRoot : dir;
+  const below = path.relative(top, dir);
+  const parts = below === '' ? [] : below.split('/');
+  const inner = [
+    top,
+    ...parts.map((_, index) => path.join(top, ...parts.slice(0, index + 1))),
+  ].sort((left, right) => {
+    const a = `${left}/.gitignore`;
+    const b = `${right}/.gitignore`;
+
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+
+  return [...ancestorDirs(workspaceRoot, top), ...inner];
+};
+
+/** What one `DIRECTORIES_SCRIPT` run reported. */
+interface DirectoriesScan {
+  /** Each rule directory's `.gitignore` patterns, when it has one. */
+  readonly rules: ReadonlyMap<string, readonly IgnorePattern[]>;
+  readonly kinds: ReadonlyMap<string, WorkspacePathKind>;
+  /** Each listed directory's direct children, unfiltered. */
+  readonly children: ReadonlyMap<string, readonly Entry[]>;
+}
+
+/**
+ * Reads the per-directory stream back. Rule records and kinds come first and
+ * cannot be forged by an entry name, since `find` prints after them; an entry
+ * line counts only as a direct child of a listed directory. `undefined` when
+ * the stream lacks a kind for a listed directory: the command did not run.
+ */
+const parseDirectoriesDump = (
+  stdout: string,
+  ruleDirs: readonly string[],
+  targets: readonly string[],
+): DirectoriesScan | undefined => {
+  const known = new Set(ruleDirs);
+  const rules = new Map<string, readonly IgnorePattern[]>();
+  const kinds = new Map<string, WorkspacePathKind>();
+  const children = new Map<string, Entry[]>(
+    targets.map((target) => [target, []]),
+  );
+  const seen = new Set<string>();
+  let rule: { readonly dir: string; readonly text: string[] } | undefined;
+
+  const flush = (): void => {
+    if (rule !== undefined) {
+      rules.set(rule.dir, parseIgnores(rule.dir, rule.text.join('\n')));
+    }
+
+    rule = undefined;
+  };
+
+  for (const line of lines(stdout)) {
+    if (kinds.size < targets.length) {
+      if (line.startsWith('+') && rule !== undefined) {
+        rule.text.push(line.slice(1));
+        continue;
+      }
+
+      flush();
+
+      if (line.startsWith('A ') && known.has(line.slice(2))) {
+        rule = { dir: line.slice(2), text: [] };
+      } else if (line.startsWith('K ')) {
+        kinds.set(targets[kinds.size] as string, parsePathKind(line.slice(2)));
+      }
+
+      continue;
+    }
+
+    const isDirectory = line.startsWith('D ')
+      ? true
+      : line.startsWith('F ')
+        ? false
+        : undefined;
+
+    if (isDirectory === undefined) {
+      continue;
+    }
+
+    const entry = normalize(line.slice(2));
+    const list = children.get(path.dirname(entry));
+    const key = `${isDirectory ? 'D' : 'F'}${entry}`;
+
+    if (list === undefined || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    list.push({ path: entry, isDirectory });
+  }
+
+  flush();
+
+  return kinds.size < targets.length ? undefined : { rules, kinds, children };
 };
 
 /**
@@ -421,11 +676,10 @@ const ordered = (entries: readonly Entry[]): readonly Entry[] =>
       return left.isDirectory ? -1 : 1;
     }
 
-    const byName = path
-      .basename(left.path)
-      .localeCompare(path.basename(right.path), undefined, {
-        sensitivity: 'accent',
-      });
+    const byName = NAME_COLLATOR.compare(
+      path.basename(left.path),
+      path.basename(right.path),
+    );
 
     if (byName !== 0) {
       return byName;
@@ -433,6 +687,12 @@ const ordered = (entries: readonly Entry[]): readonly Entry[] =>
 
     return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
   });
+
+/**
+ * The accent-insensitive name order, built once: `localeCompare` with options
+ * builds a collator per comparison, which dominated sorting a large tree.
+ */
+const NAME_COLLATOR = new Intl.Collator(undefined, { sensitivity: 'accent' });
 
 /** The root kind and typed entries one listing scan reports. */
 interface Scan {
@@ -703,15 +963,21 @@ const ignoredWithin = (
 
     let ignored = false;
     let decidedBy = -1;
+    const name = path.basename(fullPath);
 
     for (let base = fullPath; ; base = path.dirname(base)) {
+      // `base` is `fullPath` or one of its ancestors, so the path relative to
+      // it is a suffix: `path.relative` here cost most of a large listing.
+      const relative =
+        base === fullPath
+          ? ''
+          : fullPath.slice(base === '/' ? 1 : base.length + 1);
+
       for (const { matcher, order } of byBase.get(base) ?? []) {
         if (order <= decidedBy || (matcher.directory && !isDirectory)) {
           continue;
         }
 
-        const relative = path.relative(matcher.base, fullPath);
-        const name = path.basename(fullPath);
         const matched =
           matcher.glob === undefined
             ? relative === matcher.source || name === matcher.source

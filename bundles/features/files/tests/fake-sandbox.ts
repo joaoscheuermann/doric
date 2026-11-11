@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { lstat, readdir, readFile, stat } from 'node:fs/promises';
 import hostPath, { posix as sandboxPath } from 'node:path';
+import { promisify } from 'node:util';
 
 import type { Host } from 'runtime/contracts';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
@@ -63,6 +65,10 @@ const exec = async (
       return result(await dump(localRoot, root, label, input.cmd));
     }
 
+    if (label === 'directories') {
+      return run(localRoot, root, input.cmd);
+    }
+
     return result(await pathKind(localRoot, root, input.cmd.at(-1) ?? root));
   }
 
@@ -71,6 +77,40 @@ const exec = async (
   }
 
   return result('', 127, `Unsupported command: ${input.cmd.join(' ')}`);
+};
+
+/**
+ * Runs a listing script for real, `sh` and `find` over the local directory,
+ * with the sandbox root rewritten in its arguments and its output: the
+ * per-directory listing (`files/v1.directories`) is checked against the real
+ * tools rather than a model of them.
+ */
+const run = async (
+  localRoot: string,
+  root: string,
+  cmd: readonly string[],
+): Promise<SandboxExecResult> => {
+  const local = (value: string): string =>
+    value === root || value.startsWith(`${root}/`)
+      ? `${localRoot}${value.slice(root.length)}`
+      : value;
+  const sandbox = (value: string): string => value.split(localRoot).join(root);
+  const [command = '', ...args] = cmd.map(local);
+  try {
+    const output = await promisify(execFile)(command, args, { cwd: localRoot });
+    return result(sandbox(output.stdout), 0, sandbox(output.stderr));
+  } catch (error) {
+    const failure = error as {
+      stdout?: string;
+      stderr?: string;
+      code?: number;
+    };
+    return result(
+      sandbox(failure.stdout ?? ''),
+      typeof failure.code === 'number' ? failure.code : 1,
+      sandbox(failure.stderr ?? ''),
+    );
+  }
 };
 
 const pathKind = async (

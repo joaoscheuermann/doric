@@ -46,14 +46,17 @@ export const readProjectFile = async (
 
   if (result.exitCode !== 0) return { status: 'missing' };
 
-  const bytes = result.stdoutBytes;
+  return { status: 'read', ...fileText(result.stdoutBytes) };
+};
+
+/** Bounded bytes as text: truncated past the cap, and empty when binary. */
+const fileText = (bytes: Uint8Array) => {
   const truncated = bytes.byteLength > CONTENT_LIMIT_BYTES;
   const binary = bytes.includes(0);
   const content = binary
     ? ''
     : Buffer.from(bytes.subarray(0, CONTENT_LIMIT_BYTES)).toString('utf8');
-
-  return { status: 'read', content, truncated, binary };
+  return { content, truncated, binary };
 };
 
 /**
@@ -224,51 +227,68 @@ const readHead = async (
   return head.stdout.trim();
 };
 
+/**
+ * HEAD's copy of `$2` in the repository `$1`, bounded to `$3` bytes, in one
+ * exec: nothing when the branch is unborn or HEAD lacks the path, otherwise
+ * the blob's size on one line followed by its bytes. HEAD resolves as
+ * `readHead` resolves it, exiting 4 where that throws; 5 is a failed tree read
+ * and 6 a path HEAD holds as something other than a file.
+ */
+const ORIGINAL_SCRIPT = [
+  'cwd=$1',
+  'path=$2',
+  'limit=$3',
+  'if ! head=$(git -C "$cwd" rev-parse --verify HEAD 2>/dev/null); then',
+  '  ref=$(git -C "$cwd" symbolic-ref -q HEAD) || exit 4',
+  '  git -C "$cwd" show-ref --verify --quiet "$ref"',
+  '  [ "$?" -eq 1 ] || exit 4',
+  '  exit 0',
+  'fi',
+  'tree=$(git --literal-pathspecs -C "$cwd" ls-tree --long "$head" -- "$path") || exit 5',
+  '[ -n "$tree" ] || exit 0',
+  // The first four fields are the mode, type, object and size; the path
+  // follows a tab, so splitting never reaches it before them.
+  'set -f',
+  'set -- $tree',
+  '[ "$2" = blob ] || exit 6',
+  'printf "%s\\n" "$4"',
+  'git -C "$cwd" cat-file blob "$3" | head -c "$limit"',
+].join('\n');
+
+/** Reads HEAD's bytes of one path, bounded; empty when HEAD has none. */
 const readOriginal = async (
   sandbox: Sandbox,
   cwd: string,
   path: string,
 ): Promise<Uint8Array> => {
-  const head = await readHead(sandbox, cwd);
-  if (head === undefined) return new Uint8Array();
-  const tree = await sandbox.exec({
-    cmd: [
-      'git',
-      '--literal-pathspecs',
-      '-C',
-      cwd,
-      'ls-tree',
-      '-z',
-      '--long',
-      head,
-      '--',
-      path,
-    ],
-  });
-  if (tree.exitCode !== 0) throw new Error('Could not read original file.');
-  if (tree.stdout === '') return new Uint8Array();
-  const blob = /^\d+ blob ([0-9a-f]+)\s+(\d+)\t/.exec(tree.stdout);
-  if (blob === null) throw new Error('The original is not a file.');
-  const size = Number(blob[2]);
   const result = await sandbox.exec({
     cmd: [
       'sh',
       '-c',
-      'git -C "$1" cat-file blob "$2" | head -c "$3"',
+      ORIGINAL_SCRIPT,
       'sh',
       cwd,
-      blob[1] ?? '',
+      path,
       String(CONTENT_LIMIT_BYTES + 1),
     ],
   });
+  if (result.exitCode === 4) throw new Error('Could not read repository HEAD.');
+  if (result.exitCode === 6) throw new Error('The original is not a file.');
+  if (result.exitCode !== 0) throw new Error('Could not read original file.');
+  const bytes = result.stdoutBytes;
+  if (bytes.byteLength === 0) return new Uint8Array();
+  const header = bytes.indexOf(0x0a);
+  const size = Number(Buffer.from(bytes.subarray(0, header)).toString('utf8'));
+  const blob = bytes.subarray(header + 1);
   // A pipeline's last exit alone cannot prove the blob was read. Check its
   // immutable tree size too, including the extra byte used to mark truncation.
   if (
-    result.exitCode !== 0 ||
-    result.stdoutBytes.byteLength !== Math.min(size, CONTENT_LIMIT_BYTES + 1)
+    header < 1 ||
+    !Number.isInteger(size) ||
+    blob.byteLength !== Math.min(size, CONTENT_LIMIT_BYTES + 1)
   )
     throw new Error('Could not read original file.');
-  return result.stdoutBytes;
+  return blob;
 };
 
 /** NUL numstat includes two extra path records for a rename. Binary counts are '-'. */
@@ -292,65 +312,115 @@ const lineTotals = (text: string, paths?: ReadonlySet<string>) => {
   return { added, removed };
 };
 
-const readLineTotals = async (
+const NUMSTAT = ['--numstat', '-z', '--no-ext-diff', '--no-textconv'];
+
+/**
+ * Git's numstat of each named path against empty, from inside the repository
+ * `$1`: one `git diff --no-index` per path, all in one exec. A path that does
+ * not exist, or a symbolic link whose target does not, adds nothing. Exit 1 is
+ * Git's "the files differ" (and its answer for a directory, which prints no
+ * count); anything above it fails the read.
+ */
+const ADDED_LINES_SCRIPT = [
+  'cd -- "$1" || exit 2',
+  'shift',
+  'for path in "$@"; do',
+  '  [ -e "$path" ] || continue',
+  `  git diff ${NUMSTAT.join(' ')} --no-index -- /dev/null "$path"`,
+  '  code=$?',
+  '  [ "$code" -le 1 ] || exit "$code"',
+  'done',
+  'exit 0',
+].join('\n');
+
+/**
+ * The argument bytes one exec carries, well under the smallest `ARG_MAX` Linux
+ * allows, so a huge untracked set splits into a few execs instead of failing.
+ */
+const ARGUMENT_BYTES = 96 * 1024;
+
+/** Paths grouped so no group's arguments exceed `ARGUMENT_BYTES`. */
+const batches = (paths: readonly string[]): readonly string[][] => {
+  const groups: string[][] = [];
+  let group: string[] = [];
+  let bytes = 0;
+  for (const path of paths) {
+    // Each argument also costs its terminator and its pointer.
+    const size = Buffer.byteLength(path) + 1 + 8;
+    if (group.length > 0 && bytes + size > ARGUMENT_BYTES) {
+      groups.push(group);
+      group = [];
+      bytes = 0;
+    }
+    group.push(path);
+    bytes += size;
+  }
+  if (group.length > 0) groups.push(group);
+  return groups;
+};
+
+/** Lines each path adds compared with empty, a constant number of execs. */
+const readAddedTotals = async (
   sandbox: Sandbox,
-  repository: string,
-  changes: readonly FileChange[],
+  cwd: string,
+  paths: readonly string[],
 ) => {
   const totals = { added: 0, removed: 0 };
-  if (changes.length === 0) return totals;
-  const cwd = repository || sandbox.root;
-  const head = await readHead(sandbox, cwd);
-  const diff = [
-    'git',
-    '-C',
-    cwd,
-    'diff',
-    '--numstat',
-    '-z',
-    '--no-ext-diff',
-    '--no-textconv',
-  ];
-  if (head !== undefined) {
+  for (const batch of batches(paths)) {
     const result = await sandbox.exec({
-      cmd: [...diff, '--find-renames', head, '--'],
+      cmd: ['sh', '-c', ADDED_LINES_SCRIPT, 'sh', cwd, ...batch],
     });
     if (result.exitCode !== 0)
-      throw new Error('Could not read changed line counts.');
-    Object.assign(
-      totals,
-      lineTotals(
-        result.stdout,
-        new Set(
-          changes.flatMap((change) => [
-            change.path,
-            ...(change.originalPath ? [change.originalPath] : []),
-          ]),
-        ),
-      ),
-    );
-  }
-  // Git's tracked diff omits untracked files. For an unborn branch all working
-  // files compare to empty, including staged additions. Return counts, not bodies.
-  for (const change of changes) {
-    if (head !== undefined && change.status !== 'untracked') continue;
-    if (
-      (await workspacePathKind(
-        sandbox,
-        posix.join(repository, change.path),
-      )) === 'missing'
-    )
-      continue;
-    const result = await sandbox.exec({
-      cmd: [...diff, '--no-index', '--', '/dev/null', change.path],
-    });
-    if (result.exitCode !== 0 && result.exitCode !== 1)
       throw new Error('Could not read added line counts.');
+    // Each path's records end in NUL, so the joined output parses as one.
     const count = lineTotals(result.stdout);
     totals.added += count.added;
     totals.removed += count.removed;
   }
   return totals;
+};
+
+const readLineTotals = async (
+  sandbox: Sandbox,
+  repository: string,
+  changes: readonly FileChange[],
+) => {
+  if (changes.length === 0) return { added: 0, removed: 0 };
+  const cwd = repository || sandbox.root;
+  const head = await readHead(sandbox, cwd);
+  const tracked = async () => {
+    if (head === undefined) return { added: 0, removed: 0 };
+    const result = await sandbox.exec({
+      cmd: ['git', '-C', cwd, 'diff', ...NUMSTAT, '--find-renames', head, '--'],
+    });
+    if (result.exitCode !== 0)
+      throw new Error('Could not read changed line counts.');
+    return lineTotals(
+      result.stdout,
+      new Set(
+        changes.flatMap((change) => [
+          change.path,
+          ...(change.originalPath ? [change.originalPath] : []),
+        ]),
+      ),
+    );
+  };
+  // Git's tracked diff omits untracked files. For an unborn branch all working
+  // files compare to empty, including staged additions. Return counts, not bodies.
+  const [changed, added] = await Promise.all([
+    tracked(),
+    readAddedTotals(
+      sandbox,
+      cwd,
+      changes
+        .filter((change) => head === undefined || change.status === 'untracked')
+        .map((change) => change.path),
+    ),
+  ]);
+  return {
+    added: changed.added + added.added,
+    removed: changed.removed + added.removed,
+  };
 };
 
 /** Reads status and line counts; no file bodies or patches cross the boundary. */
@@ -379,41 +449,177 @@ export const readProjectChanges = async (
   );
 };
 
-/** Reads HEAD against the current working file, including untracked/deleted files. */
+/**
+ * `git status` of a repository in one exec: `$1` is the workspace root, `$2`
+ * the count of the repository path's parts that follow, and the arguments
+ * after them go to `git status`. It first proves the path is a repository the
+ * workspace's discovery (`listSandboxRepos`) lists, without walking the
+ * workspace: the directory carries a `.git` entry, every directory on the way
+ * down from the root is a real directory rather than a link, and none of them
+ * carries a `.git` entry, as discovery keeps only the outermost repository.
+ * Exit 3 means the path names no such repository.
+ */
+const REPOSITORY_STATUS_SCRIPT = [
+  'marked() { [ -e "$1/.git" ] || [ -L "$1/.git" ]; }',
+  'dir=$1',
+  'parts=$2',
+  'shift 2',
+  '[ -d "$dir" ] || exit 3',
+  'while [ "$parts" -gt 0 ]; do',
+  '  marked "$dir" && exit 3',
+  '  dir=$dir/$1',
+  '  shift',
+  '  parts=$((parts - 1))',
+  '  { [ -d "$dir" ] && [ ! -L "$dir" ]; } || exit 3',
+  'done',
+  'marked "$dir" || exit 3',
+  'exec git --no-optional-locks --literal-pathspecs -C "$dir" status --porcelain=v1 -z "$@"',
+].join('\n');
+
+/** A repository path as discovery spells it: no empty, `.` or `..` part. */
+const repositoryPath = (repository: string): boolean =>
+  repository === '' ||
+  repository
+    .split('/')
+    .every((part) => part !== '' && part !== '.' && part !== '..');
+
+/** The repository's status records, or `undefined` when it is no repository. */
+const readStatus = async (
+  sandbox: Sandbox,
+  repository: string,
+  args: readonly string[],
+): Promise<readonly FileChange[] | undefined> => {
+  const result = await sandbox.exec({
+    cmd: [
+      'sh',
+      '-c',
+      REPOSITORY_STATUS_SCRIPT,
+      'sh',
+      sandbox.root,
+      ...(repository === ''
+        ? ['0']
+        : [String(repository.split('/').length), ...repository.split('/')]),
+      ...args,
+    ],
+  });
+  if (result.exitCode === 3) return undefined;
+  if (result.exitCode !== 0)
+    throw new Error('Could not read repository changes.');
+  return parseChanges(result.stdout);
+};
+
+/** Whether a record could be one side of a rename the whole status pairs. */
+const pairable = (change: FileChange): boolean =>
+  [change.indexStatus, change.worktreeStatus].some(
+    (code) => code === 'A' || code === 'D',
+  );
+
+/**
+ * The change the repository's whole status reports first for `path`, read
+ * through a status limited to that path. Tracked records come before untracked
+ * ones, so a tracked record wins. A limited status cannot pair a rename whose
+ * other side lies outside the path, so a record that could be one side of a
+ * rename (an addition or a deletion) is settled by the tracked part of the
+ * whole status, which pairs renames without walking untracked files.
+ */
+const readChange = async (
+  sandbox: Sandbox,
+  repository: string,
+  path: string,
+): Promise<FileChange | undefined> => {
+  const limited = await readStatus(sandbox, repository, [
+    '--untracked-files=all',
+    '--',
+    path,
+  ]);
+  const own = limited?.filter((change) => change.path === path) ?? [];
+  const untracked = own.find((change) => change.status === 'untracked');
+  const tracked = own.find((change) => change.status !== 'untracked');
+  if (tracked === undefined || !pairable(tracked)) return tracked ?? untracked;
+  const whole = await readStatus(sandbox, repository, ['--untracked-files=no']);
+  return whole?.find((record) => record.path === path) ?? untracked;
+};
+
+/**
+ * The working file's bytes, bounded to `$2`, in one exec. Exit 3 means nothing
+ * is there; a directory or other non-file exits 4, as the bounded read refuses
+ * it.
+ */
+const WORKING_SCRIPT = [
+  'if [ -d "$1" ]; then exit 4',
+  'elif [ -f "$1" ]; then exec head -c "$2" -- "$1"',
+  'elif [ -e "$1" ]; then exit 4',
+  'else exit 3',
+  'fi',
+].join('\n');
+
+/** The working file's bytes; `undefined` when it is missing. */
+const readWorking = async (
+  sandbox: Sandbox,
+  path: string,
+): Promise<Uint8Array | undefined> => {
+  const result = await sandbox.exec({
+    cmd: [
+      'sh',
+      '-c',
+      WORKING_SCRIPT,
+      'sh',
+      path,
+      String(CONTENT_LIMIT_BYTES + 1),
+    ],
+  });
+  if (result.exitCode === 3) return undefined;
+  if (result.exitCode !== 0) throw new Error('Could not read changed file.');
+  return result.stdoutBytes;
+};
+
+/** A settled read, so a read nobody needs never rejects unobserved. */
+const settle = <T>(read: Promise<T>) =>
+  read.then(
+    (value) => () => value,
+    (error: unknown) => (): T => {
+      throw error;
+    },
+  );
+
+/**
+ * Reads HEAD against the current working file, including untracked/deleted
+ * files. The repository is checked and its status for the path read in one
+ * exec, with no workspace-wide discovery; the working file and HEAD's copy of
+ * the path are read alongside it, since neither depends on the status, and
+ * only a rename reads HEAD again, at the path it came from.
+ */
 export const readProjectFileDiff = async (
   sandbox: Sandbox,
   repository: string,
   path: string,
 ): Promise<FileDiff | undefined> => {
-  const repos = await listSandboxRepos(sandbox);
-  if (
-    repos.status !== 'listed' ||
-    !repos.repositories.some((repo) => repo.path === repository)
-  )
-    return undefined;
-  const change = (await readChanges(sandbox, repository)).find(
-    (change) => change.path === path,
-  );
-  if (change === undefined) return undefined;
+  if (!repositoryPath(repository)) return undefined;
   const cwd = repository || sandbox.root;
+  const [change, working, head] = await Promise.all([
+    readChange(sandbox, repository, path),
+    settle(readWorking(sandbox, posix.join(repository, path))),
+    settle(readOriginal(sandbox, cwd, path)),
+  ]);
+  // No such repository, or the path is unchanged in it.
+  if (change === undefined) return undefined;
   const originalPath = change.originalPath ?? path;
-  const bytes = await readOriginal(sandbox, cwd, originalPath);
-  const fullPath = posix.join(repository, path);
-  const kind = await workspacePathKind(sandbox, fullPath);
-  const after =
-    kind === 'missing' ? undefined : await readProjectFile(sandbox, fullPath);
-  if (after !== undefined && after.status !== 'read')
-    throw new Error('Could not read changed file.');
-  const binary = bytes.includes(0) || after?.binary === true;
+  const bytes =
+    originalPath === path
+      ? head()
+      : await readOriginal(sandbox, cwd, originalPath);
+  const after = working();
+  const text = after === undefined ? undefined : fileText(after);
+  const binary = bytes.includes(0) || text?.binary === true;
   return {
     ...change,
     repository,
     original: binary
       ? ''
       : Buffer.from(bytes.subarray(0, CONTENT_LIMIT_BYTES)).toString('utf8'),
-    modified: binary ? '' : (after?.content ?? ''),
+    modified: binary ? '' : (text?.content ?? ''),
     binary,
     truncated:
-      bytes.byteLength > CONTENT_LIMIT_BYTES || after?.truncated === true,
+      bytes.byteLength > CONTENT_LIMIT_BYTES || text?.truncated === true,
   };
 };

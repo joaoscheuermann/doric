@@ -5,6 +5,7 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import {
+  listSandboxDirectories,
   listSandboxDirectory,
   listSandboxRepos,
   listSandboxTree,
@@ -370,6 +371,220 @@ void describe('workspace listing', () => {
     ]);
 
     await rm(root, { recursive: true, force: true });
+  });
+
+  void test('lists a large workspace with many .gitignore rules quickly', async (context) => {
+    const root = await workspace('listing-scale');
+    context.after(() => rm(root, { recursive: true, force: true }));
+    const rules = Array.from({ length: 3000 }, (_, index) => `rule-${index}-*`);
+
+    await write(root, '.gitignore', `${rules.join('\n')}\n`);
+
+    const files = Array.from(
+      { length: 4000 },
+      (_, index) => `a/b/c/d/e${index % 20}/file-${index}.ts`,
+    );
+
+    await Promise.all(files.map((file) => write(root, file, '')));
+
+    const started = performance.now();
+    const result = await listSandboxTree(createLocalSandbox(root));
+    const elapsed = performance.now() - started;
+
+    assert.equal(
+      visible(result.status === 'listed' ? result.entries : []).filter(
+        (entry) => entry.endsWith('.ts'),
+      ).length,
+      4000,
+    );
+
+    assert.ok(
+      elapsed < 4000,
+      `listing took ${Math.round(elapsed)} ms; .gitignore matching must not grow with files times rules times a path resolution`,
+    );
+  });
+});
+
+void describe('workspace directories listed one level each', () => {
+  /**
+   * A workspace exercising every visibility rule: nested `.gitignore` files with
+   * negations at several depths, a rule file in `.agents` that sorts before the
+   * workspace's own, default-ignored dependency installs (one reopened), hidden
+   * entries and an ignored directory whose own rules whitelist inside it.
+   */
+  const rulesWorkspace = async (name: string): Promise<string> => {
+    const root = await workspace(name);
+    await write(
+      root,
+      '.gitignore',
+      '*.log\n!keep.log\nbuild/\n!x.txt\n!vendor/node_modules/\n',
+    );
+    await write(root, 'keep.log', 'keep');
+    await write(root, 'drop.log', 'drop');
+    await write(root, 'x.txt', 'x');
+    await write(root, '.env', 'secret');
+    await write(root, '.hidden/secret.txt', 'secret');
+    await write(root, '.agents/.gitignore', 'x.txt\n');
+    await write(root, '.agents/x.txt', 'x');
+    await write(root, '.agents/skill.md', 'skill');
+    await write(root, 'build/.gitignore', '!out.js\n');
+    await write(root, 'build/out.js', 'out');
+    await write(root, 'node_modules/pkg/index.js', 'pkg');
+    await write(root, 'app/__pycache__/main.pyc', 'pyc');
+    await write(root, 'app/main.py', 'main');
+    await write(root, 'app/node_modules/pkg/index.js', 'pkg');
+    await write(root, 'vendor/node_modules/pkg/index.js', 'pkg');
+    await write(root, 'sub/.gitignore', 'keep.log\ngenerated/\n');
+    await write(root, 'sub/keep.log', 'keep');
+    await write(root, 'sub/drop.log', 'drop');
+    await write(root, 'sub/generated/out.ts', 'out');
+    await write(root, 'sub/deep/.gitignore', '!keep.log\n');
+    await write(root, 'sub/deep/keep.log', 'keep');
+    await write(root, 'sub/deep/drop.log', 'drop');
+    await write(root, 'sub/deep/inner/main.ts', 'main');
+    await write(root, 'sub/B.ts', 'b');
+    await write(root, 'sub/a.ts', 'a');
+    return root;
+  };
+
+  /** Every directory of a recursive listing with the children it nests. */
+  const nested = (
+    nodes: readonly SandboxTreeNode[],
+    path: string,
+    into = new Map<string, readonly string[]>(),
+  ): Map<string, readonly string[]> => {
+    into.set(
+      path,
+      nodes.map((node) => `${node.type}:${node.path}`),
+    );
+    for (const node of nodes) {
+      if (node.children !== undefined) nested(node.children, node.path, into);
+    }
+    return into;
+  };
+
+  for (const treeRoot of ['', 'sub']) {
+    void test(`lists each directory as the recursive listing from '${treeRoot}' nests it`, async (context) => {
+      const root = await rulesWorkspace('directories-parity');
+      context.after(() => rm(root, { recursive: true, force: true }));
+      const sandbox = createLocalSandbox(root);
+      const tree = await listSandboxTree(sandbox, { path: treeRoot });
+      assert.equal(tree.status, 'listed');
+      const expected = nested(
+        tree.status === 'listed' ? tree.entries : [],
+        treeRoot,
+      );
+
+      const paths = [...expected.keys()];
+      const listed = await listSandboxDirectories(sandbox, {
+        paths,
+        root: treeRoot,
+      });
+
+      assert.deepEqual(
+        new Map(
+          listed.map((result, index) => [
+            paths[index] as string,
+            result.status === 'listed'
+              ? result.entries.map((entry) => `${entry.type}:${entry.path}`)
+              : [result.status],
+          ]),
+        ),
+        expected,
+      );
+    });
+  }
+
+  void test('applies negations from every ancestor .gitignore, deepest rules winning', async (context) => {
+    const root = await rulesWorkspace('directories-negation');
+    context.after(() => rm(root, { recursive: true, force: true }));
+
+    const [workspaceRoot, sub, deep, agents, vendor] =
+      await listSandboxDirectories(createLocalSandbox(root), {
+        paths: ['', 'sub', 'sub/deep', '.agents', 'vendor'],
+      });
+
+    const names = (result: typeof workspaceRoot): readonly string[] =>
+      result?.status === 'listed'
+        ? result.entries.map((entry) => entry.name)
+        : [];
+    assert.deepEqual(names(workspaceRoot), [
+      '.agents',
+      'app',
+      'sub',
+      'vendor',
+      'keep.log',
+      'x.txt',
+    ]);
+    // `sub` ignores keep.log again below itself; `sub/deep` negates it back.
+    assert.deepEqual(names(sub), ['deep', 'a.ts', 'B.ts']);
+    assert.deepEqual(names(deep), ['inner', 'keep.log']);
+    // The workspace's `!x.txt` is read after `.agents/.gitignore`, as the
+    // recursive listing reads them.
+    assert.deepEqual(names(agents), ['skill.md', 'x.txt']);
+    assert.deepEqual(names(vendor), ['node_modules']);
+  });
+
+  void test('answers each requested path in order, refusing missing, file and escaping paths', async (context) => {
+    const root = await rulesWorkspace('directories-refusals');
+    context.after(() => rm(root, { recursive: true, force: true }));
+
+    const results = await listSandboxDirectories(createLocalSandbox(root), {
+      paths: ['gone', 'x.txt', '../outside', 'app', 'app', '/workspace/app'],
+    });
+
+    assert.deepEqual(
+      results.map((result) => result.status),
+      ['missing', 'not_directory', 'escaped', 'listed', 'listed', 'listed'],
+    );
+    assert.deepEqual(results[3], {
+      status: 'listed',
+      path: 'app',
+      entries: [{ name: 'main.py', path: 'app/main.py', type: 'file' }],
+    });
+    assert.deepEqual(results[5], results[3]);
+    assert.deepEqual(
+      await listSandboxDirectories(createLocalSandbox(root), {
+        paths: ['../outside'],
+      }),
+      [{ status: 'escaped', message: 'Path escapes workspace: ../outside' }],
+    );
+  });
+
+  void test('lists any number of directories in one sandbox command', async (context) => {
+    const root = await workspace('directories-one-command');
+    context.after(() => rm(root, { recursive: true, force: true }));
+    const paths = Array.from({ length: 40 }, (_, index) => `d${index}`);
+    await Promise.all(paths.map((dir) => write(root, `${dir}/file.ts`, '')));
+    const sandbox = createLocalSandbox(root);
+    let commands = 0;
+
+    const results = await listSandboxDirectories(
+      {
+        ...sandbox,
+        exec: (input) => {
+          commands += 1;
+          return sandbox.exec(input);
+        },
+      },
+      { paths: ['', ...paths] },
+    );
+
+    assert.equal(commands, 1);
+    assert.equal(
+      results[0]?.status === 'listed' ? results[0].entries.length : 0,
+      40,
+    );
+    assert.ok(
+      results
+        .slice(1)
+        .every(
+          (result) =>
+            result.status === 'listed' &&
+            result.entries.length === 1 &&
+            result.entries[0]?.size === undefined,
+        ),
+    );
   });
 });
 

@@ -381,9 +381,12 @@ be hidden or collapsed. It reads the selected
 Project's one sandbox, but roots its tree at the selected Thread's working
 directory rather than at the workspace root, so selecting another Thread
 re-roots what it shows while the sandbox it reads stays the Project's, and it
-only reads: a Files tab shows that working directory's whole directory tree,
-read in one request, with semantic Git colors and status letters on changed files
-and descendant-change counts on folders. Ancestor folders inherit their descendants'
+only reads: a Files tab shows that working directory's directory tree, read
+per directory — its root first, then each folder as it opens, showing a
+loading line until its children arrive — with semantic Git colors and status
+letters on changed files and descendant-change counts on folders, which come
+from Git's changes rather than the tree, so a folder never opened carries them
+too. Ancestor folders inherit their descendants'
 Git color; mixed statuses use modified yellow, while conflicts take priority.
 A Changes tab shows changed files as
 a directory tree grouped by repository, with individual folder expansion and no
@@ -434,8 +437,13 @@ Escape cancels it. Space starts keyboard sorting, arrows move and Space or Enter
 confirms. Each tab bar owns its sorting context.
 Long file-footer paths collapse their middle behind one trigger. File text is
 rendered read-only by the Monaco editor
-bundled with the editor worker alone. Because the whole tree arrives in one
-read, expanding a directory reads nothing and is pure view state; only a file's
+bundled with the editor worker alone. The tree is read through
+`files/v1.directories` (1.3.0), which lists several directories one level
+each in one sandbox command with no file sizes: the tree's one read holds the
+root and the open folders, and a folder opened later is read on its own (a
+Reveal in Files chain in one call) and merged in. A folder whose read fails
+closes again, its failure the panel's read toast; a folder that disappears or
+becomes a file leaves the tree with the next read of its parent. A file's
 content or comparison is read on demand. Selecting a changed file opens a read-only
 Monaco comparison of HEAD and the working file, unified by default with a single
 line-number gutter, with an optional
@@ -453,9 +461,13 @@ sandbox belongs to the Project and may not be usable at all: a queued,
 failed or terminated Project explains itself — with the host's own retry hint
 when the lease is pending — instead of erroring. One renderer coordinator
 revalidates a Project's tree, lightweight Git status, open comparisons and files, and cached Thread Git
-summaries together. It observes completed `write`, `edit`, `git`, and `terminal`
+summaries together; its tree read rereads only the root and the open folders,
+in one call. It observes completed `write`, `edit`, `git`, and `terminal`
 calls from every watched conversation, including background Threads, and follows
-the selected Project's Thread lifecycle and terminal command/lifecycle changes.
+the selected Project's Thread lifecycle and terminal command/lifecycle changes,
+except a Thread starting to run: a prompt that starts has changed nothing in the
+sandbox, and a refresh then would compete with it for the host and the sandbox,
+so only the run ending (in any state) refreshes.
 Selection, working-directory and Project-state changes,
 returning to the window, and reconnecting to the host also revalidate it.
 There is no filesystem watcher: a fifteen-second check while a sandbox surface
@@ -2195,8 +2207,11 @@ the container's writable layer. It also owns the
 one implementation of the workspace visibility rules — root confinement,
 `.gitignore` handling with negation, `node_modules` and `__pycache__` ignored as
 rules of the workspace root that a `.gitignore` negation can reopen, hidden
-entries except `.agents`, and directories-first ordering — which the `/bundles/features/files` `tree` tool and Doric's
-Project file routes both consume, so neither can drift from the other; a scoped
+entries except `.agents`, and directories-first ordering — which the `/bundles/features/files` `tree` tool, Doric's
+Project file routes and the Files panel's per-directory listing
+(`listSandboxDirectories`, applying the rule files in the order the recursive
+listing from the panel's root reads them) all consume, so none can drift from
+the others; a scoped
 diff is expressed through `SandboxDiffInput.paths` rather than by callers
 building Git argv. Every sandbox has
 explicit CPU, memory, and writable-layer disk resources; networking is disabled

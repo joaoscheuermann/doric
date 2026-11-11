@@ -2,8 +2,9 @@
 // from the provisional `ProjectFilesContent` (`project-files-sidebar.tsx`):
 // one toast surface for the tree and changes reads, the gate that explains a
 // Project whose sandbox cannot be read, and the whole tree rooted at the
-// selected Thread's working directory, decorated from git's changes read when
-// git serves one. A file row opens its tab; the row of the current file tab
+// selected Thread's working directory, read per directory (the root, then
+// each directory as it opens), decorated from git's changes read when git
+// serves one. A file row opens its tab; the row of the current file tab
 // is the selected one. A file row's context menu copies its path relative to
 // the root (A8); a folder row's makes a file or a folder in it (A9, A10)
 // through an inline name row, then refreshes the Project (§4.4).
@@ -59,6 +60,8 @@ import { type EntryKind, PendingEntry } from './pending-entry.js';
 
 /** The toast id the panel's views share (Q6): one read toast per panel. */
 export const PANEL_READ_TOAST = 'layout-panel-read';
+
+const noDirectories: ReadonlySet<string> = new Set<string>();
 
 const idleTree: TreeObservation = {
   read: { status: 'idle' },
@@ -139,6 +142,7 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
         {projectId !== undefined && (
           <FilesView
             entries={tree.read.status === 'ready' ? tree.read.value : []}
+            loading={tree.loading ?? noDirectories}
             projectId={projectId}
             root={root}
             scope={expansionScope(projectId, root)}
@@ -236,7 +240,10 @@ function SandboxGate({
 }
 
 /**
- * The directory tree, read whole. A file row opens its tab beside this panel
+ * The directory tree as read so far: a directory opened before its children
+ * were read shows a loading line until they arrive (the sandbox store reads
+ * them). Git's marks are keyed by path, so a folder that was never read still
+ * carries its descendants' changes. A file row opens its tab beside this panel
  * rather than replacing the tree, so what was opened stays reachable. Its props
  * keep their identity while the tree and its marks are unchanged, so a refresh
  * that only starts and settles a read leaves every row as it was.
@@ -248,6 +255,7 @@ const FilesView = memo(function FilesView({
   scope,
   selectedPath,
   decorations,
+  loading,
   onOpen,
   writes,
 }: {
@@ -258,6 +266,7 @@ const FilesView = memo(function FilesView({
   readonly scope: string;
   readonly selectedPath?: string;
   readonly decorations?: ChangesObservation['decorations'];
+  readonly loading: ReadonlySet<string>;
   readonly onOpen: (path: string) => void;
   readonly writes: FilesWrites;
 }) {
@@ -355,6 +364,7 @@ const FilesView = memo(function FilesView({
           decorations={decorations}
           rowMenu={rowMenu}
           pending={pending}
+          loading={loading}
         />
       </SidebarMenu>
     </ScrollArea>

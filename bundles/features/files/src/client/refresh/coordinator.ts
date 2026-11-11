@@ -7,7 +7,10 @@
 // - chat's `onSandboxActivityHook` (wired in the activation, any Project);
 // - a change of the selected Project's id or state, the selected Thread's id
 //   or cwd, the Project's Thread activity (id, state, cwd), whether something
-//   of the Project is shown, and the connection turning on — while connected;
+//   of the Project is shown, and the connection turning on — while connected.
+//   A Thread starting to run is not a change: a prompt that starts has changed
+//   nothing in the sandbox yet, and a refresh would compete with it for the
+//   host and the sandbox; the run ending (to any other state) is one;
 // - `window` focus and `visibilitychange` while the document is visible,
 //   something is shown and the connection is on;
 // - every 15 s while visible, shown and connected, as a periodic request.
@@ -67,6 +70,14 @@ export const createRefreshCoordinator = (
   let stopFocus: (() => void) | undefined;
   let interval: unknown;
   let disposed = false;
+  /**
+   * What the triggers saw of each Thread: its state, the state it had before
+   * it started running, and how many runs it finished.
+   */
+  let seen = new Map<
+    string,
+    { readonly state: string; readonly settled: string; readonly runs: number }
+  >();
 
   const request = (
     projectId: string,
@@ -122,14 +133,30 @@ export const createRefreshCoordinator = (
     const connected = workspace.connected();
     const { project, thread } = workspace.selection();
     const projectId = project?.id;
-    const activity =
-      projectId === undefined
-        ? []
-        : workspace
-            .threads(projectId)
-            .map(({ id, state, cwd }) => [id, state, cwd]);
+    const threads = projectId === undefined ? [] : workspace.threads(projectId);
+    // A running Thread keeps the state it had before it started, so a prompt
+    // starting changes nothing here; a run ending counts one more finished run,
+    // so it is a change whatever state it ends in.
+    const next = new Map<
+      string,
+      {
+        readonly state: string;
+        readonly settled: string;
+        readonly runs: number;
+      }
+    >();
+    const activity = threads.map(({ id, state, cwd }) => {
+      const before = seen.get(id);
+      const runs =
+        (before?.runs ?? 0) +
+        (before?.state === 'running' && state !== 'running' ? 1 : 0);
+      const settled = state === 'running' ? (before?.settled ?? state) : state;
+      next.set(id, { state, settled, runs });
+      return [id, settled, runs, cwd];
+    });
+    seen = next;
     const visible = projectId !== undefined && shown(projectId);
-    const next = JSON.stringify([
+    const signatureNow = JSON.stringify([
       projectId,
       project?.state,
       thread?.id,
@@ -138,8 +165,8 @@ export const createRefreshCoordinator = (
       connected,
       activity,
     ]);
-    const changed = next !== signature;
-    signature = next;
+    const changed = signatureNow !== signature;
+    signature = signatureNow;
     if (changed && projectId !== undefined && connected) request(projectId);
     // The window listeners and the poll exist only while something is shown.
     if (projectId !== undefined && visible && connected) {

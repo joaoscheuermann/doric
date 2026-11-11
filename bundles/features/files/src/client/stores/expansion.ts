@@ -11,6 +11,8 @@ type ExpansionState = {
   readonly toggle: (scope: string, path: string) => void;
   /** Opens these directories of the scope; open ones stay open (S16). */
   readonly expand: (scope: string, paths: readonly string[]) => void;
+  /** Closes these directories of the scope; closed ones stay closed. */
+  readonly collapse: (scope: string, paths: readonly string[]) => void;
 };
 
 export const emptyExpansion: ReadonlySet<string> = new Set<string>();
@@ -30,6 +32,18 @@ export const expansionStore = createStore<ExpansionState>()((set) => ({
       if (paths.every((path) => open.has(path))) return state;
       return {
         views: { ...state.views, [scope]: new Set([...open, ...paths]) },
+      };
+    }),
+  collapse: (scope, paths) =>
+    set((state) => {
+      const open = state.views[scope] ?? emptyExpansion;
+      if (!paths.some((path) => open.has(path))) return state;
+      const closed = new Set(paths);
+      return {
+        views: {
+          ...state.views,
+          [scope]: new Set([...open].filter((path) => !closed.has(path))),
+        },
       };
     }),
 }));

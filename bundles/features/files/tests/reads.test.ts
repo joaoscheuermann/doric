@@ -171,6 +171,53 @@ describe('files/v1 over the Project lease', () => {
     assert.deepEqual(lease.scopes, ['p-1', 'p-1']);
   });
 
+  test('lists several directories one level each, in the order asked, as the whole tree nests them', async (t) => {
+    const { files, lease, dispose } = setup();
+    t.after(dispose);
+    const project = files({ projectId: 'p-1' });
+
+    const read = await project.directories({
+      paths: ['', 'src', 'src/deep', 'nope', 'README.md', '../outside'],
+    });
+
+    assert.deepEqual(read, {
+      status: 'ready',
+      value: {
+        status: 'listed',
+        directories: [
+          {
+            path: '',
+            status: 'listed',
+            entries: [
+              { name: 'src', path: 'src', type: 'directory' },
+              { name: 'big.txt', path: 'big.txt', type: 'file' },
+              { name: 'exact.txt', path: 'exact.txt', type: 'file' },
+              { name: 'image.bin', path: 'image.bin', type: 'file' },
+              { name: 'README.md', path: 'README.md', type: 'file' },
+            ],
+          },
+          {
+            path: 'src',
+            status: 'listed',
+            entries: [
+              { name: 'deep', path: 'src/deep', type: 'directory' },
+              { name: 'a.ts', path: 'src/a.ts', type: 'file' },
+            ],
+          },
+          {
+            path: 'src/deep',
+            status: 'listed',
+            entries: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+          },
+          { path: 'nope', status: 'not_found' },
+          { path: 'README.md', status: 'not_directory' },
+          { path: '../outside', status: 'invalid_path' },
+        ],
+      },
+    });
+    assert.deepEqual(lease.scopes, ['p-1']);
+  });
+
   test('refuses a path that is missing, not a directory or outside the workspace', async (t) => {
     const { files, dispose } = setup();
     t.after(dispose);
@@ -314,6 +361,31 @@ describe('the window reads over files/v1', () => {
         truncated: false,
         binary: false,
       },
+    });
+  });
+
+  test('several directories arrive keyed by the path each was asked as', async (t) => {
+    const { reads, dispose } = setup();
+    t.after(dispose);
+
+    assert.deepEqual(await reads.directories('p-1', ['src/deep', 'nope']), {
+      status: 'ready',
+      directories: {
+        'src/deep': {
+          status: 'listed',
+          entries: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+        },
+        nope: { status: 'not_found' },
+      },
+    });
+    const pending = setup('pending');
+    t.after(pending.dispose);
+    assert.deepEqual(await pending.reads.directories('p-1', ['']), {
+      status: 'pending',
+      retryAfterSeconds: 1,
+    });
+    await assert.rejects(reads.directories('p-1', ['../up']), {
+      message: 'The workspace path is invalid.',
     });
   });
 

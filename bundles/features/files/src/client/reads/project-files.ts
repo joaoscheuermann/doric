@@ -38,6 +38,23 @@ export type ProjectTreeResult =
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+/** One directory of a per-directory read: its entries, or why it has none. */
+export type DirectoryListing =
+  | {
+      readonly status: 'listed';
+      readonly entries: readonly ProjectFileEntry[];
+    }
+  | { readonly status: 'not_found' | 'not_directory' | 'invalid_path' };
+
+/** Several directories read at once, each keyed by the path it was asked as. */
+export type ProjectDirectoriesResult =
+  | {
+      readonly status: 'ready';
+      readonly directories: Readonly<Record<string, DirectoryListing>>;
+    }
+  | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }
+  | { readonly status: 'invalid_path' | 'not_found' };
+
 export type ProjectFileResult =
   | { readonly status: 'ready'; readonly file: ProjectFileContent }
   | { readonly status: ProjectLeaseState; readonly retryAfterSeconds?: number }

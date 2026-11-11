@@ -54,11 +54,13 @@ const Tree = ({
   open = [],
   selected,
   decorations,
+  loading,
 }: {
   readonly entries?: readonly TreeNode[];
   readonly open?: readonly string[];
   readonly selected?: string;
   readonly decorations?: ReadonlyMap<string, TreeDecoration>;
+  readonly loading?: ReadonlySet<string>;
 }) => {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
     () => new Set(open),
@@ -77,6 +79,7 @@ const Tree = ({
         expanded={expanded}
         selectedPath={selectedPath}
         decorations={decorations}
+        loading={loading}
       />
     </PanelFrame>
   );
@@ -134,6 +137,43 @@ export const LongNames = {
       ]}
       open={['long']}
       selected="long/comment-thread-popover-with-replies-and-resolve.stories.tsx"
+    />
+  ),
+};
+
+export const Loading = {
+  render: () => (
+    <Tree
+      open={['packages', 'packages/desktop']}
+      loading={new Set(['packages/desktop'])}
+    />
+  ),
+};
+
+/** Ten directories of 5,000 files each, all open: only a screenful is drawn. */
+const thousands: readonly TreeNode[] = Array.from(
+  { length: 10 },
+  (_, folder) => {
+    const path = `folder-${folder}`;
+    return {
+      name: path,
+      path,
+      type: 'directory' as const,
+      children: Array.from({ length: 5_000 }, (_, index) => ({
+        name: `file-${String(index).padStart(4, '0')}.ts`,
+        path: `${path}/file-${String(index).padStart(4, '0')}.ts`,
+        type: 'file' as const,
+      })),
+    };
+  },
+);
+
+export const FiftyThousandRows = {
+  render: () => (
+    <Tree
+      entries={thousands}
+      open={thousands.map((entry) => entry.path)}
+      selected="folder-0/file-0002.ts"
     />
   ),
 };

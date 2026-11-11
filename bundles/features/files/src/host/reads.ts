@@ -9,6 +9,7 @@ import { Buffer } from 'node:buffer';
 import { type Call, defineMethod, defineService } from 'bundle/contracts';
 import { RuntimeLeaseV1 } from 'runtime/contracts';
 import {
+  listSandboxDirectories,
   listSandboxDirectory,
   listSandboxTree,
   type Sandbox,
@@ -19,6 +20,9 @@ import {
   type ContentInput,
   type ContentRead,
   type CreateInput,
+  type DirectoriesInput,
+  type DirectoriesRead,
+  type DirectoryListingRead,
   type DirectoryRead,
   FilesV1,
   filesMethods,
@@ -61,6 +65,34 @@ export const readTree = async (
   return {
     status:
       listing.status === 'not_directory' ? 'not_directory' : 'invalid_path',
+  };
+};
+
+/**
+ * Lists several directories one level each in one sandbox command (1.3.0), with
+ * the rules the whole tree read applies from `root`; one answer per asked path.
+ */
+export const readDirectories = async (
+  sandbox: Sandbox,
+  input: DirectoriesInput,
+): Promise<DirectoriesRead> => {
+  const listings = await listSandboxDirectories(sandbox, {
+    paths: input.paths,
+    ...(input.root === undefined ? {} : { root: input.root }),
+  });
+  return {
+    status: 'listed',
+    directories: listings.map((listing, index): DirectoryListingRead => {
+      const path = input.paths[index] as string;
+      if (listing.status === 'listed')
+        return { path, status: 'listed', entries: listing.entries };
+      if (listing.status === 'missing') return { path, status: 'not_found' };
+      return {
+        path,
+        status:
+          listing.status === 'not_directory' ? 'not_directory' : 'invalid_path',
+      };
+    }),
   };
 };
 
@@ -119,6 +151,14 @@ export const filesService = defineService(FilesV1, {
       services
         .use(RuntimeLeaseV1, call.scope)
         .withLease((sandbox) => readTree(sandbox, input.path), call),
+  }),
+  directories: defineMethod({
+    expose: 'desktop',
+    ...filesMethods.directories,
+    execute: (input: DirectoriesInput, call: Call, services) =>
+      services
+        .use(RuntimeLeaseV1, call.scope)
+        .withLease((sandbox) => readDirectories(sandbox, input), call),
   }),
   content: defineMethod({
     expose: 'desktop',

@@ -83,12 +83,23 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   `created` with the workspace-relative path; any other command failure answers
   `failed` with its first stderr line. These are the only repository writes of
   the bundle's UI (HC-007).
+- `files/v1` 1.3.0 adds `directories` (`{ paths, root? }`, desktop-exposed):
+  several directories listed one level each in one sandbox command, without
+  sizes, one answer per asked path in order (`listed` with its entries, or
+  `not_found`, `not_directory`, `invalid_path`). The rules are
+  `listSandboxDirectories`' from `sandbox`, applied as the whole-tree read from
+  `root` applies them, so a directory lists exactly the children `tree` nests.
 - `files.sandbox/v1` (client) keeps the window's one tree read per Project and
-  root, shared with the bundles that gate on it.
+  root, shared with the bundles that gate on it. It is read per directory: the
+  read holds the root and the folders open in the expansion store, and a
+  folder that opens later is read on its own (the observation's `loading`
+  names it meanwhile) and merged in; one whose read fails closes again and
+  its failure is the observation's `error`.
 - `files.refresh/v1` (client) is the Project refresh coordinator. It rereads
   when a sandbox-writing tool runs in any held conversation (chat's
-  `onSandboxActivityHook`), when the selected Project or Thread changes, on
-  window focus, and every 15 s while the window is visible and connected.
+  `onSandboxActivityHook`), when the selected Project or Thread changes, when a
+  Thread's run ends (not when it starts), on window focus, and every 15 s while
+  the window is visible and connected.
 - `files.open-file/v1` opens a file as a workspace tab (`files-file-view`).
   The tab's context menu holds "Reveal in Files" (`layout.tabs/v1@1.2.0`
   `menu`, so the bundle requires `layout.tabs/v1@^1.2.0`): it opens the

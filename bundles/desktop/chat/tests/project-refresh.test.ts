@@ -62,3 +62,19 @@ test('ignores replayed completions and read-only tools but notices later writes'
   ]).chats;
   assert.deepEqual([...changedSandboxProjects(replayed, written)], ['project']);
 });
+
+test('a Thread starting to run refreshes nothing; finishing or failing does', () => {
+  const opened = openThread(emptyThreadChats, thread('one'), null).chats;
+  const withState = (chats: typeof opened, state: Thread['state']) =>
+    openThread(chats, { ...thread('one'), state }, null).chats;
+  const running = withState(opened, 'running');
+  assert.equal(changedSandboxProjects(opened, running).size, 0);
+  assert.deepEqual(
+    [...changedSandboxProjects(running, withState(running, 'ready'))],
+    ['project'],
+  );
+  assert.deepEqual(
+    [...changedSandboxProjects(running, withState(running, 'failed'))],
+    ['project'],
+  );
+});
