@@ -36,14 +36,15 @@ import {
 import { toast } from 'desktop/ui/sonner';
 import { cn } from 'desktop/ui/utils';
 import {
+  BadgeAlertIcon,
+  BadgeCheckIcon,
+  BadgeIcon,
+  BadgeInfoIcon,
+  BadgeMinusIcon,
+  BadgeXIcon,
   CircleAlertIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
-  CircleOffIcon,
   ExternalLinkIcon,
-  HourglassIcon,
-  KeyRoundIcon,
-  Loader2Icon,
+  LoaderCircleIcon,
   PlusIcon,
   XIcon,
 } from 'lucide-react';
@@ -71,20 +72,36 @@ interface McpClient {
 /** Placeholder rows while the selected Project's watch has not answered yet. */
 const SKELETON_ROWS = ['mcp-skeleton-0', 'mcp-skeleton-1', 'mcp-skeleton-2'];
 
-/** What each status reads as in a row, and its glyph. */
+/**
+ * What each status reads as in a row, its glyph and the glyph's tone: one
+ * badge family, `badge-check` when connected, muted while the server does
+ * nothing, red when it failed (spec §9.5, chosen on 2026-11-11).
+ */
 const statusOf: Readonly<
   Record<
     McpStatus,
-    { readonly label: string; readonly Icon: typeof CircleCheckIcon }
+    {
+      readonly label: string;
+      readonly Icon: typeof BadgeCheckIcon;
+      readonly tone?: string;
+    }
   >
 > = {
-  disabled: { label: 'Disabled', Icon: CircleOffIcon },
-  idle: { label: 'Idle', Icon: CircleDashedIcon },
-  connecting: { label: 'Connecting…', Icon: Loader2Icon },
-  connected: { label: 'Connected', Icon: CircleCheckIcon },
-  'needs-sign-in': { label: 'Sign in required', Icon: KeyRoundIcon },
-  'waiting-for-sandbox': { label: 'Waiting for sandbox', Icon: HourglassIcon },
-  error: { label: 'Error', Icon: CircleAlertIcon },
+  disabled: {
+    label: 'Disabled',
+    Icon: BadgeMinusIcon,
+    tone: 'text-muted-foreground',
+  },
+  idle: { label: 'Idle', Icon: BadgeIcon, tone: 'text-muted-foreground' },
+  connecting: { label: 'Connecting…', Icon: LoaderCircleIcon },
+  connected: { label: 'Connected', Icon: BadgeCheckIcon },
+  'needs-sign-in': { label: 'Sign in required', Icon: BadgeAlertIcon },
+  'waiting-for-sandbox': {
+    label: 'Waiting for sandbox',
+    Icon: BadgeInfoIcon,
+    tone: 'text-muted-foreground',
+  },
+  error: { label: 'Error', Icon: BadgeXIcon, tone: 'text-destructive' },
 };
 
 const toolCount = (count: number): string =>
@@ -121,7 +138,7 @@ function ServerRow({
   readonly onRemove: () => void;
 }) {
   const { state, message } = server.status;
-  const { label, Icon } = statusOf[state];
+  const { label, Icon, tone } = statusOf[state];
   const signs = offersSignIn(server);
 
   return (
@@ -132,7 +149,7 @@ function ServerRow({
         title={[server.name, label, message].filter(Boolean).join(' — ')}
         onClick={onEdit}
       >
-        <Icon className={cn(state === 'connecting' && 'animate-spin')} />
+        <Icon className={cn(tone, state === 'connecting' && 'animate-spin')} />
         <span className="min-w-0 flex-1 truncate">{server.name}</span>
         {!signs && (
           <span className="shrink-0 text-xs text-muted-foreground group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0">

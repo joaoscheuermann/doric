@@ -394,6 +394,7 @@ Source: the user's decision on the papercraft preview in conversation (2026-11-1
 - MCP "Sign in" stays visible as an underlined link with an external-link icon and the title "Sign in (opens in your browser)"; while the row is hovered or holds focus it shifts left to make room for remove.
 - An open pane with no rows shows "No screens open" (only with a Project selected) or "No MCP servers" (only once the servers are loaded and without a load failure, which shows its alert instead).
 - The layout hides every pane's `headerTag` element until the header is hovered or holds focus, as a Thread row's actions are.
+- MCP status glyphs are one badge family (chosen by the user on a second papercraft preview, 2026-11-11): connected `badge-check`, connecting `loader-circle` (spinning), idle `badge`, disabled `badge-minus`, needs sign-in `badge-alert`, waiting for the sandbox `badge-info`, error `badge-x`. Idle, disabled and waiting are muted (`text-muted-foreground`); error is `text-destructive`.
 - Versions: layout 3.0.1, screen 2.0.2, mcp 1.2.3 (patch).
 
 ### 10. Files column: horizontal scrolling
