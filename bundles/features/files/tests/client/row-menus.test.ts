@@ -363,11 +363,13 @@ describe('A9 New file', () => {
 
     assert.equal(row('pricing').getAttribute('aria-expanded'), 'true');
     assert.equal(document.activeElement, input, 'the name row has focus');
-    const sub = row('pricing').closest('li')?.querySelector('[role="group"]');
-    assert.ok(
-      sub?.firstElementChild?.contains(input),
-      'first child of the folder',
-    );
+    // The tree draws its rows as flat siblings in drawing order, so the
+    // folder's first child is the next drawn line after the folder's row.
+    const lines = [
+      ...(row('pricing').closest('li')?.parentElement?.children ?? []),
+    ].filter((item) => item.getAttribute('aria-hidden') !== 'true');
+    const folder = lines.findIndex((item) => item.contains(row('pricing')));
+    assert.ok(lines[folder + 1]?.contains(input), 'first child of the folder');
 
     await type(input, '  rates.ts  ');
     await press(input, 'Enter');

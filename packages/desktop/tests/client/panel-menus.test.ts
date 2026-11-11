@@ -221,18 +221,34 @@ describe('FileTree pending', () => {
   const pendingRow = (): ReactNode =>
     createElement('input', { 'aria-label': 'New file name' });
 
-  /** The rows and items drawn inside the open directory `name`, in order. */
+  /**
+   * The rows and items drawn inside the open directory `name`, in order: the
+   * lines after its row, up to the next row at its level or above (the tree
+   * draws its rows flat, each at its `aria-level`), one level deeper.
+   */
   const childrenOf = (name: string): string[] => {
-    const group = row(name)
-      .closest('li')
-      ?.querySelector(':scope > [role="group"]');
-    assert.ok(group, `${name} is not open`);
-    return [...group.children].map(
-      (item) =>
+    const directory = row(name);
+    assert.equal(directory.getAttribute('aria-expanded'), 'true');
+    const level = Number(directory.getAttribute('aria-level'));
+    const lines = [
+      ...(directory.closest('li')?.parentElement?.children ?? []),
+    ].filter((item) => item.getAttribute('aria-hidden') !== 'true');
+    const start = lines.findIndex((item) => item.contains(directory));
+    const children: string[] = [];
+    for (const item of lines.slice(start + 1)) {
+      const treeitem = item.querySelector('[role="treeitem"]');
+      const itemLevel = Number(
+        treeitem?.getAttribute('aria-level') ?? level + 1,
+      );
+      if (itemLevel <= level) break;
+      if (itemLevel > level + 1) continue;
+      children.push(
         item.querySelector('input')?.getAttribute('aria-label') ??
-        item.querySelector('[role="treeitem"]')?.getAttribute('aria-label') ??
-        (item.textContent ?? '').trim(),
-    );
+          treeitem?.getAttribute('aria-label') ??
+          (item.textContent ?? '').trim(),
+      );
+    }
+    return children;
   };
 
   test('draws the pending row as the open directory first child', async () => {
