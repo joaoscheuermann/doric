@@ -41,7 +41,8 @@ See the [main README](../../../README.md) for Doric as a whole and
   whatever the answer; a failed call keeps the old name and shows a toast.
   Copy command puts the session's command on the clipboard.
 - The bundle requires `layout.tabs/v1@^1.2.0`, whose tabs take a `menu` and
-  `retitle`.
+  `retitle`; the terminal rows also read its `current()` and `subscribe()` to
+  mark the selected terminal row.
 
 ## The `terminal` tool
 
@@ -67,7 +68,9 @@ The tool runs a command in the current working directory; a relative
   `registerTerminalSurfaces` adds the header button (`layout.header`) and the
   sidebar's terminal rows while the layout serves `layout.sidebar/v1`; from
   `layout.sidebar/v1` 1.1.0 its `busy` answer keeps a Thread active while an
-  agent terminal under it is busy.
+  agent terminal under it is busy. `terminal-rows` reads `layout.tabs/v1`
+  `current()`/`subscribe()` and `navigation/v1` to mark the selected terminal
+  row (`aria-current="true"`), subscribing only while its Thread has terminals.
 - `create` opens a manual bash PTY in a Thread's working directory, bringing
   its Project back first.
 

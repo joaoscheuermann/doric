@@ -44,6 +44,12 @@ export interface TabRequest {
   readonly menu?: readonly TabMenuItem[];
 }
 
+/** The selected tab of the active owner (`layout.tabs/v1` 1.1.0). */
+export interface CurrentTab {
+  readonly id: string;
+  readonly props?: Readonly<Record<string, unknown>>;
+}
+
 /** `layout.tabs/v1` (1.2.0). */
 export interface LayoutTabs {
   open(input: TabRequest, call?: CallArg): Promise<void>;
@@ -63,6 +69,10 @@ export interface LayoutTabs {
     },
     call?: CallArg,
   ): Promise<void>;
+  /** 1.1.0: the selected tab of the active owner, if any (local). */
+  current(call?: CallArg): CurrentTab | undefined;
+  /** 1.1.0: called after every change of the tabs or of the owner (local). */
+  subscribe(listener: () => void, call?: CallArg): Disposable;
 }
 
 export const LayoutTabsV1 = ref<LayoutTabs>('layout.tabs/v1');

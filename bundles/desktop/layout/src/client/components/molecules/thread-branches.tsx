@@ -1,9 +1,4 @@
-import {
-  indentation,
-  rowInteraction,
-  TreeGuides,
-  treeClassName,
-} from 'desktop/ui/panels';
+import { indentation, TreeGuides, treeClassName } from 'desktop/ui/panels';
 import {
   SidebarMenuSub,
   SidebarMenuSubButton,
@@ -11,7 +6,13 @@ import {
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
 
-import { threadRowPadding } from '../../domain/sidebar.js';
+import {
+  noFillButton,
+  rowFill,
+  textboxRing,
+  threadRowPadding,
+  treeitemRing,
+} from '../../domain/sidebar.js';
 import type { ThreadFilter } from '../../domain/thread-filter.js';
 import {
   isUntitled,
@@ -148,7 +149,15 @@ export function ThreadBranches({
               onOpenInTab={() => actions.openInTab(thread)}
               openIn={kind === 'main' ? 'new-tab' : 'viewer'}
             >
-              <div className="group/tree-row relative w-full" title={title}>
+              <div
+                className={cn(
+                  'group/tree-row relative w-full',
+                  rowFill(selected),
+                  treeitemRing,
+                  textboxRing,
+                )}
+                title={title}
+              >
                 <TreeGuides depth={depth} />
                 <SidebarMenuSubButton
                   render={
@@ -170,7 +179,7 @@ export function ThreadBranches({
                   className={cn(
                     'h-7 w-full translate-x-0 rounded-md',
                     threadRowPadding(timed, marked !== undefined),
-                    rowInteraction(selected),
+                    noFillButton,
                   )}
                   style={{ paddingLeft: indentation(depth) }}
                 >

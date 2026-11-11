@@ -33,9 +33,10 @@ type RowAddActionProps = {
  *   faded.
  * - Not active: no status.
  * - The plus shows only when `label` and `onAdd` are both given. It is hidden
- *   at rest and shows while the row is hovered or holds focus. Hover or focus
- *   then hides the elapsed badge (`group-hover/tree-row:opacity-0`,
- *   `group-focus-within/tree-row:opacity-0`). On a row without the plus the
+ *   at rest and shows while the row is hovered or holds keyboard focus. Hover
+ *   or keyboard focus then hides the elapsed badge
+ *   (`group-hover/tree-row:opacity-0`,
+ *   `group-has-[:focus-visible]/tree-row:opacity-0`). On a row without the plus the
  *   badge stays.
  * - Nothing in the slot takes pointer events except the plus.
  */
@@ -56,7 +57,7 @@ export function RowAddAction({
           className={cn(
             'top-1 right-1 font-normal',
             addable &&
-              'group-hover/tree-row:opacity-0 group-focus-within/tree-row:opacity-0',
+              'group-hover/tree-row:opacity-0 group-has-[:focus-visible]/tree-row:opacity-0',
           )}
         >
           <span aria-hidden>{elapsed}</span>
@@ -68,7 +69,7 @@ export function RowAddAction({
       {addable && (
         <SidebarMenuAction
           type="button"
-          className="pointer-events-none right-1 opacity-0 after:inset-0 group-hover/tree-row:pointer-events-auto group-hover/tree-row:opacity-100 group-focus-within/tree-row:pointer-events-auto group-focus-within/tree-row:opacity-100"
+          className="pointer-events-none right-1 opacity-0 after:inset-0 group-hover/tree-row:pointer-events-auto group-hover/tree-row:opacity-100 group-has-[:focus-visible]/tree-row:pointer-events-auto group-has-[:focus-visible]/tree-row:opacity-100"
           style={{ top: '0.25rem' }}
           aria-label={label}
           onClick={onAdd}

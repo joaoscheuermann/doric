@@ -111,9 +111,21 @@ const toolCount = (count: number): string =>
 const offersSignIn = (server: McpServerView): boolean =>
   server.transport.kind === 'http' && server.status.state === 'needs-sign-in';
 
-/** The Thread row's hover reveal (`row-add-action.tsx`), on the menu item. */
+/**
+ * A pane row's states, on its menu item (docs/designs/sidebar-alignment.md
+ * §11.6): the accent mixed in at 50% under the pointer and 80% while pressed,
+ * and an inset ring while its button has keyboard focus.
+ */
+const ROW_STATES =
+  'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))] has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-inset has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-sidebar-ring';
+
+/** The row's button draws no fill and no ring: its menu item draws both. */
+const NO_FILL_BUTTON =
+  'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
+
+/** The Thread row's hover or keyboard-focus reveal (`row-add-action.tsx`), on the menu item. */
 const ON_HOVER =
-  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-focus-within/menu-item:pointer-events-auto group-focus-within/menu-item:opacity-100';
+  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-has-[:focus-visible]/menu-item:pointer-events-auto group-has-[:focus-visible]/menu-item:opacity-100';
 
 /** The open pane's notice when it has no rows, on the rows' icon column. */
 function EmptyRow({ text }: { readonly text: string }) {
@@ -142,17 +154,17 @@ function ServerRow({
   const signs = offersSignIn(server);
 
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem className={ROW_STATES}>
       <SidebarMenuButton
         size="sm"
-        className="h-7 w-full translate-x-0 rounded-[4px] pr-2.5 pl-1.5 group-focus-within/menu-item:bg-sidebar-accent group-hover/menu-item:bg-sidebar-accent group-has-data-[sidebar=menu-action]/menu-item:pr-2.5"
+        className={`h-7 w-full translate-x-0 rounded-[4px] pr-2.5 pl-1.5 group-has-data-[sidebar=menu-action]/menu-item:pr-2.5 ${NO_FILL_BUTTON}`}
         title={[server.name, label, message].filter(Boolean).join(' — ')}
         onClick={onEdit}
       >
         <Icon className={cn(tone, state === 'connecting' && 'animate-spin')} />
         <span className="min-w-0 flex-1 truncate">{server.name}</span>
         {!signs && (
-          <span className="shrink-0 text-xs text-muted-foreground group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0">
+          <span className="shrink-0 text-xs text-muted-foreground group-has-[:focus-visible]/menu-item:opacity-0 group-hover/menu-item:opacity-0">
             {state === 'connected' ? toolCount(server.tools.length) : label}
           </span>
         )}
@@ -160,10 +172,11 @@ function ServerRow({
       {signs && (
         // The status text is the action, always shown and read as a link; a
         // button cannot sit inside the row's, so it sits over the row's right
-        // edge and steps left on hover to make room for the remove action.
+        // edge and steps left on hover or keyboard focus to make room for the
+        // remove action.
         <button
           type="button"
-          className="absolute top-1 right-1.5 flex h-5 items-center gap-0.5 rounded-md px-1 text-xs text-sidebar-foreground underline decoration-sidebar-foreground/40 underline-offset-2 ring-sidebar-ring outline-hidden hover:decoration-sidebar-foreground focus-visible:ring-2 disabled:opacity-50 group-focus-within/menu-item:right-7 group-hover/menu-item:right-7 [&>svg]:size-3 [&>svg]:shrink-0"
+          className="absolute top-1 right-1.5 flex h-5 items-center gap-0.5 rounded-md px-1 text-xs text-sidebar-foreground underline decoration-sidebar-foreground/40 underline-offset-2 ring-sidebar-ring outline-hidden hover:decoration-sidebar-foreground focus-visible:ring-2 disabled:opacity-50 group-has-[:focus-visible]/menu-item:right-7 group-hover/menu-item:right-7 [&>svg]:size-3 [&>svg]:shrink-0"
           aria-label={`Sign in to ${server.name}`}
           title="Sign in (opens in your browser)"
           disabled={signingIn}

@@ -203,7 +203,10 @@ bundle's servers, each row carrying its state. A pane declares its title, its
 order and whether the reader can collapse it; it declares no size, and the
 column has no draggable dividers. The layout draws each pane's 28 px header and
 collapse control, and shows the header's action only while the header is
-hovered or focused; a row's actions likewise show only on row hover or focus,
+hovered or focused; a row's actions likewise show only on row hover or keyboard
+focus, and a row fills with the accent mixed 50 % into the sidebar colour on
+hover (80 % while pressed), with an inset ring on keyboard focus (a disabled
+Screens row takes no fill),
 and an empty open pane says `No screens open` or `No MCP servers`; an open pane is as tall as its content, at most 40 % of the
 column, and scrolls past that, and a pane never collapses past its header. The
 Screens pane starts collapsed, listing only the current Project's views. Threads
@@ -217,11 +220,17 @@ The tree uses the Papermache UI's regular font weight. An active Thread's name u
 is active while it or any descendant runs, or while an agent terminal under it is
 busy (`layout.sidebar/v1` 1.1.0 `busy`). Its add-action position shows the time
 since the Thread's own last start (`mm:ss`, `h:mm:ss`, `{d}d {h}h`, `99d+`) until
-hover or keyboard focus reveals the add button; an active row with no badge
+hover or keyboard focus reveals the add button (a mouse click alone does not
+reveal it); an active row with no badge
 start shimmers without a time and announces "Agent running" to screen readers
 only. An Untitled Thread's icon is `message-circle-dashed` on its row, the
 breadcrumb and its tab. Tree rows indent 20 px per level
-and never swap their lead icon for a chevron. Once complete, the last execution's duration is
+and never swap their lead icon for a chevron. Every tree row (Thread,
+subthread, terminal, draft, Files and Changes) fills its whole row with the accent
+mixed 50 % into the sidebar colour on hover (80 % while pressed), takes the accent while selected and draws an
+inset ring on keyboard focus; a terminal row is selected while its tab is the
+selected tab of the Thread the route names, and a row being renamed draws the
+ring while its field holds focus. Once complete, the last execution's duration is
 available in the row's hover title. Thread reads derive timing from the latest
 durable `prompt.started` event and its matching materialized result; the initial
 running-state update uses its transition timestamp until that event exists.
@@ -405,8 +414,8 @@ Counts compare HEAD with working content (or empty with new files), include
 untracked files and omit binary line counts. Git numstat supplies these totals
 without sending file contents or patches to the renderer.
 The Files and Changes trees scroll sideways; each row's mark stays pinned to
-the visible right edge, and a hovered or selected row's background ends where
-its mark begins.
+the visible right edge, and a hovered or selected row's fill runs under its
+mark, whose opaque backing follows the row's state.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the

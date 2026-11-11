@@ -1,9 +1,4 @@
-import {
-  indentation,
-  rowInteraction,
-  TreeGuides,
-  treeClassName,
-} from 'desktop/ui/panels';
+import { indentation, TreeGuides, treeClassName } from 'desktop/ui/panels';
 import { FileIcon, FolderIcon } from 'lucide-react';
 
 import { PanelFrame } from '../support/sidebar-frame.js';
@@ -31,7 +26,7 @@ export const Depths = {
         {rows.map((row) => (
           <div
             key={`${row.depth}-${row.path}`}
-            className={`relative flex h-7 items-center gap-2 pr-8 text-sm ${rowInteraction(row.path === 'tree-guides.tsx')}`}
+            className={`relative flex h-7 items-center gap-2 pr-8 text-sm ${row.path === 'tree-guides.tsx' ? 'rounded-[4px] bg-sidebar-accent' : 'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]'}`}
             style={{ paddingLeft: indentation(row.depth) }}
           >
             <TreeGuides depth={row.depth} />

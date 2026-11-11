@@ -437,3 +437,198 @@ describe('a tree row in a column that scrolls sideways', () => {
     }
   });
 });
+
+/** The class sets of the spec's §11 (docs/designs/sidebar-alignment.md). */
+const UNSELECTED_FILL = [
+  'rounded-[4px]',
+  'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
+  'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+] as const;
+const SELECTED_FILL = ['rounded-[4px]', 'bg-sidebar-accent'] as const;
+const TREEITEM_RING = [
+  'has-[[role=treeitem]:focus-visible]:ring-2',
+  'has-[[role=treeitem]:focus-visible]:ring-inset',
+  'has-[[role=treeitem]:focus-visible]:ring-sidebar-ring',
+] as const;
+const NO_FILL_BUTTON = [
+  'bg-transparent',
+  'hover:bg-transparent',
+  'active:bg-transparent',
+  'data-active:bg-transparent',
+  'focus-visible:ring-0',
+] as const;
+const NOT_ON_NO_FILL_BUTTON = [
+  'hover:bg-sidebar-accent',
+  'active:bg-sidebar-accent',
+  'data-active:bg-sidebar-accent',
+  'focus-visible:ring-2',
+  'hover:text-sidebar-foreground',
+] as const;
+const MARK_HOVER =
+  'group-hover/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]';
+const MARK_ACTIVE =
+  'group-active/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
+
+const assertHas = (
+  classes: readonly string[],
+  tokens: readonly string[],
+  what: string,
+): void => {
+  for (const token of tokens) {
+    assert.ok(
+      classes.includes(token),
+      `${what} lacks ${token}: ${classes.join(' ')}`,
+    );
+  }
+};
+
+const assertLacks = (
+  classes: readonly string[],
+  tokens: readonly string[],
+  what: string,
+): void => {
+  for (const token of tokens) {
+    assert.ok(
+      !classes.includes(token),
+      `${what} has ${token}: ${classes.join(' ')}`,
+    );
+  }
+};
+
+describe('tree row states (phase 5)', () => {
+  const decorations = new Map<string, TreeDecoration>([
+    [
+      'src',
+      { description: '2 changed files', count: 2, tone: 'tone-modified' },
+    ],
+    [
+      'src/gone.ts',
+      {
+        description: 'deleted · Unstaged',
+        count: 1,
+        tone: 'tone-deleted',
+        letter: 'D',
+        struck: true,
+      },
+    ],
+    [
+      'src/plain.ts',
+      {
+        description: 'modified · Unstaged',
+        count: 1,
+        tone: 'tone-modified',
+        letter: 'M',
+      },
+    ],
+  ]);
+  const document = parse(
+    renderToStaticMarkup(
+      createElement(
+        SidebarProvider,
+        null,
+        createElement(FileTree, {
+          actions,
+          depth: 0,
+          entries: [
+            {
+              name: 'src',
+              path: 'src',
+              type: 'directory',
+              children: [
+                { name: 'gone.ts', path: 'src/gone.ts', type: 'file' },
+                { name: 'plain.ts', path: 'src/plain.ts', type: 'file' },
+              ],
+            },
+          ],
+          expanded: new Set(['src']),
+          decorations,
+          selectedPath: 'src/gone.ts',
+        }),
+      ),
+    ),
+  );
+  const unselected = ['src', 'plain.ts'] as const;
+  const wrapperOf = (name: string): Element => {
+    const wrapper = treeItem(document, name).parentElement;
+    assert.ok(wrapper, `${name} has no row wrapper`);
+    assert.ok(
+      classesOf(wrapper).includes('group/tree-row'),
+      `${name}: not a tree-row wrapper`,
+    );
+    return wrapper;
+  };
+  const backingOf = (name: string): Element => {
+    const mark = markOf(wrapperOf(name));
+    assert.ok(mark, `${name} draws no tree-row-mark`);
+    const backing = [...mark.querySelectorAll('div')].find((div) => {
+      const list = classesOf(div);
+      return list.includes('h-5') && list.includes('min-w-5');
+    });
+    assert.ok(backing, `${name}: the mark holds no h-5 min-w-5 backing`);
+    return backing;
+  };
+
+  test('T-5.1: the selected row wrapper has the selected fill and the treeitem ring, and no hover or active mix', () => {
+    const classes = classesOf(wrapperOf('gone.ts'));
+    assertHas(classes, [...SELECTED_FILL, ...TREEITEM_RING], 'gone.ts wrapper');
+    assert.ok(
+      !classes.some((token) => /^(hover|active):bg-\[/u.test(token)),
+      classes.join(' '),
+    );
+  });
+
+  test('T-5.1: every other row wrapper has the unselected fill and the treeitem ring, and no accent', () => {
+    for (const name of unselected) {
+      const classes = classesOf(wrapperOf(name));
+      assertHas(
+        classes,
+        [...UNSELECTED_FILL, ...TREEITEM_RING],
+        `${name} wrapper`,
+      );
+      assertLacks(classes, ['bg-sidebar-accent'], `${name} wrapper`);
+    }
+  });
+
+  test('T-5.2: every treeitem is the no-fill button and keeps its shape', () => {
+    const items = [...document.querySelectorAll('[role="treeitem"]')];
+    assert.equal(items.length, 3);
+    for (const item of items) {
+      const classes = classesOf(item);
+      const what = item.getAttribute('aria-label') ?? '?';
+      assertHas(
+        classes,
+        [...NO_FILL_BUTTON, 'rounded-[4px]', 'flex-1', 'min-w-0', 'pr-1.5'],
+        what,
+      );
+      assertLacks(classes, NOT_ON_NO_FILL_BUTTON, what);
+    }
+  });
+
+  test('T-5.2: the selected treeitem keeps data-active and aria-selected', () => {
+    const item = treeItem(document, 'gone.ts');
+    assert.ok(item.hasAttribute('data-active'), 'gone.ts has no data-active');
+    assert.equal(item.getAttribute('aria-selected'), 'true');
+  });
+
+  test('T-5.3: an unselected mark backing is opaque and follows the row fill', () => {
+    for (const name of unselected) {
+      const classes = classesOf(backingOf(name));
+      assertLacks(classes, ['bg-sidebar/90'], `${name} backing`);
+      assertHas(
+        classes,
+        ['bg-sidebar', MARK_HOVER, MARK_ACTIVE],
+        `${name} backing`,
+      );
+    }
+  });
+
+  test('T-5.3: the selected mark backing takes the accent and no hover mix', () => {
+    const classes = classesOf(backingOf('gone.ts'));
+    assertLacks(classes, ['bg-sidebar/90'], 'gone.ts backing');
+    assertHas(classes, ['bg-sidebar-accent'], 'gone.ts backing');
+    assert.ok(
+      !classes.some((token) => token.startsWith('group-hover/tree-row:bg-[')),
+      classes.join(' '),
+    );
+  });
+});

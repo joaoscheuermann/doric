@@ -697,7 +697,7 @@ const missingClasses = (element: Element, classes: string): string[] =>
  * docs/designs/sidebar-alignment.md §9.5).
  */
 const ON_HOVER =
-  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-focus-within/menu-item:pointer-events-auto group-focus-within/menu-item:opacity-100';
+  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-has-[:focus-visible]/menu-item:pointer-events-auto group-has-[:focus-visible]/menu-item:opacity-100';
 
 /** The pane's rows: the top-level list items of the rows element. */
 const rowsOf = (pane: OpenPane): HTMLElement[] =>
@@ -1200,7 +1200,7 @@ test("every row's Remove is laid over its right edge on hover or focus, and its 
       assert.deepEqual(
         missingClasses(
           statusOf(pane, name, text),
-          'group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0',
+          'group-hover/menu-item:opacity-0 group-has-[:focus-visible]/menu-item:opacity-0',
         ),
         [],
         `The ${name} status does not fade out.`,
@@ -1226,12 +1226,94 @@ test('Sign in reads as a link that stays shown and steps left of Remove on hover
     assert.deepEqual(
       missingClasses(
         signIn,
-        'underline decoration-sidebar-foreground/40 underline-offset-2 right-1.5 group-hover/menu-item:right-7 group-focus-within/menu-item:right-7',
+        'underline decoration-sidebar-foreground/40 underline-offset-2 right-1.5 group-hover/menu-item:right-7 group-has-[:focus-visible]/menu-item:right-7',
       ),
       [],
     );
     assert.equal(signIn.classList.contains('opacity-0'), false);
     assert.equal(signIn.classList.contains('pointer-events-none'), false);
+  } finally {
+    await pane.close();
+  }
+});
+
+// Phase 5 (docs/designs/sidebar-alignment.md §11.6, D24; T-5.10, T-5.14): a
+// server row's item takes the unselected fill and the ring keyed on its menu
+// button; the button draws no fill or ring; reveals follow keyboard focus only.
+const tokensOf = (element: Element): string[] =>
+  (element.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+
+test('T-5.10: each server row has the unselected fill and the menu-button ring; its button draws no fill', async () => {
+  const { pane } = await paneWith([linear, files, notion]);
+
+  try {
+    for (const name of ['Linear', 'Files', 'Notion']) {
+      const row = rowNamed(pane, name);
+      assert.deepEqual(
+        missingClasses(
+          row,
+          'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))] has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-inset has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-sidebar-ring',
+        ),
+        [],
+        `The ${name} row lacks its states.`,
+      );
+      assert.equal(row.classList.contains('bg-sidebar-accent'), false);
+      const button = rowButton(pane, name);
+      assert.deepEqual(
+        missingClasses(
+          button,
+          'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0',
+        ),
+        [],
+        `The ${name} button draws a fill or ring.`,
+      );
+      assert.deepEqual(
+        tokensOf(button).filter((token) =>
+          [
+            'hover:bg-sidebar-accent',
+            'active:bg-sidebar-accent',
+            'data-active:bg-sidebar-accent',
+            'focus-visible:ring-2',
+            'hover:text-sidebar-foreground',
+            'group-hover/menu-item:bg-sidebar-accent',
+            'group-focus-within/menu-item:bg-sidebar-accent',
+          ].includes(token),
+        ),
+        [],
+        `The ${name} button keeps a fill or ring of its own.`,
+      );
+    }
+    const signIn = buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion');
+    assert.ok(
+      signIn.classList.contains('focus-visible:ring-2'),
+      'Sign in lost its ring.',
+    );
+    assert.deepEqual(
+      tokensOf(signIn).filter((token) => /^bg-/u.test(token)),
+      [],
+      'Sign in draws a fill.',
+    );
+  } finally {
+    await pane.close();
+  }
+});
+
+test('T-5.14: no server row reveals on focus-within', async () => {
+  const { pane } = await paneWith([linear, files, notion]);
+
+  try {
+    for (const name of ['Linear', 'Files', 'Notion']) {
+      const row = rowNamed(pane, name);
+      assert.deepEqual(
+        [row, ...row.querySelectorAll('*')].flatMap((node) =>
+          tokensOf(node).filter((token) =>
+            token.startsWith('group-focus-within/menu-item:'),
+          ),
+        ),
+        [],
+        `The ${name} row reveals on focus-within.`,
+      );
+    }
   } finally {
     await pane.close();
   }
@@ -2551,12 +2633,12 @@ test('W9 a watch lost with the host generation subscribes again', async () => {
 // T-3.8 (sidebar alignment §9.4): the pane is registered through
 // `layout.stack/v2`, so the manifest requires it and no longer v1.
 
-test('the MCP manifest is 1.2.3 and requires layout.stack/v2@^2.0.0, not v1', () => {
+test('the MCP manifest is 1.2.4 and requires layout.stack/v2@^2.0.0, not v1', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/features/mcp/manifest.json', 'utf8'),
   ) as { version: string; requires: string[] };
 
-  assert.equal(manifest.version, '1.2.3');
+  assert.equal(manifest.version, '1.2.4');
   assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
   assert.ok(
     !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),

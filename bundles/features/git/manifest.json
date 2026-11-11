@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "git",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "engines": {
     "doric": "^1.0.0"
   },

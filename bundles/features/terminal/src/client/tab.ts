@@ -15,6 +15,19 @@ export const terminalTabId = (terminalId: string): string =>
   `terminal:${terminalId}`;
 
 /**
+ * The terminal id a workspace tab id names: the inverse of `terminalTabId`.
+ * Undefined for another tab's id, for no id, and for `terminal:` alone.
+ */
+export const terminalIdOfTab = (
+  tabId: string | undefined,
+): string | undefined => {
+  const prefix = terminalTabId('');
+  if (tabId === undefined || !tabId.startsWith(prefix)) return undefined;
+  const id = tabId.slice(prefix.length);
+  return id === '' ? undefined : id;
+};
+
+/**
  * What `layout.tabs/v1.open` receives for a terminal: titled by its name, else
  * its command; the menu holds Kill terminal (A7), which runs `kill`.
  */

@@ -133,9 +133,17 @@ const mount = (
     readonly calls?: [string, unknown][];
     readonly views: readonly ScreenView[];
     readonly workspace: ReturnType<typeof workspaceFor>;
+    /** Serves no `screen.views/v1`, which disables every row. */
+    readonly withoutScreens?: boolean;
   },
 ) => {
-  const { added = [], calls = [], views, workspace } = options;
+  const {
+    added = [],
+    calls = [],
+    views,
+    workspace,
+    withoutScreens = false,
+  } = options;
   const store = createScreenViewsStore();
   store.set(views);
 
@@ -154,7 +162,11 @@ const mount = (
     },
   };
   const services = servicesFor((contract) =>
-    contract === LayoutWorkspaceV1 ? workspace : screens,
+    contract === LayoutWorkspaceV1
+      ? workspace
+      : withoutScreens
+        ? undefined
+        : screens,
   );
   const name = `screen-pane-${tag++}`;
   window.customElements.define(
@@ -289,7 +301,7 @@ const classesOf = (element: Element): string[] =>
 
 /** The Thread row's hover reveal, on the menu item. */
 const ON_HOVER =
-  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-focus-within/menu-item:pointer-events-auto group-focus-within/menu-item:opacity-100';
+  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-has-[:focus-visible]/menu-item:pointer-events-auto group-has-[:focus-visible]/menu-item:opacity-100';
 
 const failed: ScreenView = {
   id: 'v3',
@@ -410,10 +422,102 @@ test("a row's status fades out while its actions show", async () => {
     assert.deepEqual(
       missingClasses(
         status as unknown as Element,
-        'group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0',
+        'group-hover/menu-item:opacity-0 group-has-[:focus-visible]/menu-item:opacity-0',
       ),
       [],
     );
+  });
+});
+
+// Phase 5 (docs/designs/sidebar-alignment.md §11.6, D24; T-5.9, T-5.14): a
+// view row's item takes the unselected fill and the ring keyed on its menu
+// button; the button draws no fill or ring; reveals follow keyboard focus only.
+const UNSELECTED_FILL =
+  'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
+const MENU_BUTTON_RING =
+  'has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-inset has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-sidebar-ring';
+const NO_FILL_BUTTON =
+  'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
+
+test('T-5.9: each view row has the unselected fill and the menu-button ring; its button draws no fill', async () => {
+  await withRows([view, failed], (element) => {
+    for (const label of ['Doric', 'Inspector']) {
+      const row = rowNamed(element, label);
+      assert.deepEqual(
+        missingClasses(row, `${UNSELECTED_FILL} ${MENU_BUTTON_RING}`),
+        [],
+        `The ${label} row lacks its states.`,
+      );
+      assert.equal(row.classList.contains('bg-sidebar-accent'), false);
+      const button = rowButton(element, label);
+      assert.deepEqual(missingClasses(button, NO_FILL_BUTTON), []);
+      assert.deepEqual(
+        classesOf(button).filter((name) =>
+          [
+            'hover:bg-sidebar-accent',
+            'active:bg-sidebar-accent',
+            'data-active:bg-sidebar-accent',
+            'focus-visible:ring-2',
+            'hover:text-sidebar-foreground',
+            'group-hover/menu-item:bg-sidebar-accent',
+            'group-focus-within/menu-item:bg-sidebar-accent',
+          ].includes(name),
+        ),
+        [],
+        `The ${label} button keeps a fill or ring of its own.`,
+      );
+    }
+  });
+});
+
+test('T-5.9: a disabled row, without the screens service, takes no fill or ring', async () => {
+  const { element } = await mountIn('sidebar', {
+    views: [view, failed],
+    workspace: workspaceFor({ id: 'p1', name: 'Doric' }),
+    withoutScreens: true,
+  });
+  try {
+    const root = element as unknown as HTMLElement;
+    for (const label of ['Doric', 'Inspector']) {
+      const row = rowNamed(root, label);
+      assert.ok(
+        rowButton(root, label).hasAttribute('disabled') ||
+          rowButton(root, label).hasAttribute('data-disabled') ||
+          rowButton(root, label).getAttribute('aria-disabled') === 'true',
+        `The ${label} row is not disabled without the screens service.`,
+      );
+      assert.deepEqual(
+        classesOf(row).filter(
+          (name) =>
+            name === 'rounded-[4px]' ||
+            name.startsWith('hover:bg-[') ||
+            name.startsWith('active:bg-[') ||
+            name.startsWith('has-['),
+        ),
+        [],
+        `The disabled ${label} row takes the row states.`,
+      );
+    }
+  } finally {
+    await act(() => element.dispose());
+    window.document.body.replaceChildren();
+  }
+});
+
+test('T-5.14: no view row reveals on focus-within', async () => {
+  await withRows([view, failed], (element) => {
+    for (const label of ['Doric', 'Inspector']) {
+      const row = rowNamed(element, label);
+      assert.deepEqual(
+        [row, ...row.querySelectorAll('*')].flatMap((node) =>
+          classesOf(node).filter((name) =>
+            name.startsWith('group-focus-within/menu-item:'),
+          ),
+        ),
+        [],
+        `The ${label} row reveals on focus-within.`,
+      );
+    }
   });
 });
 
@@ -500,12 +604,12 @@ test('activating registers the Screens pane through layout.stack/v2, without siz
 
 // T-3.8 (sidebar alignment §9.4): the pane is registered through
 // `layout.stack/v2`, so the manifest requires it and no longer v1.
-test('the screen manifest is 2.0.2 and requires layout.stack/v2@^2.0.0, not v1', () => {
+test('the screen manifest is 2.0.3 and requires layout.stack/v2@^2.0.0, not v1', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/features/screen/manifest.json', 'utf8'),
   ) as { version: string; requires: string[] };
 
-  assert.equal(manifest.version, '2.0.2');
+  assert.equal(manifest.version, '2.0.3');
   assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
   assert.ok(
     !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),

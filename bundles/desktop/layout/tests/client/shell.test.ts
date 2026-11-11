@@ -1205,6 +1205,38 @@ test('pressing New Thread with a selected Project shows the new thread name fiel
   );
 });
 
+// Phase 5, T-5.11 (spec §11.6): the draft row takes the unselected fill and
+// the textbox ring on the div that holds its field and guides.
+test('T-5.11: the New Thread draft row has the unselected fill and the textbox ring', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, formThread],
+    path: `/projects/${project.id}`,
+  });
+  await click(only(rendered.root, 'button', 'New Thread'));
+  assert.equal(rendered.errors().length, 0, 'Pressing New Thread failed.');
+
+  const field = only(rendered.root, '[role="textbox"]', 'New thread name');
+  let holder: HTMLElement | null = field.parentElement;
+  while (holder !== null && holder.tagName !== 'DIV')
+    holder = holder.parentElement;
+  assert.ok(holder !== null, 'The new thread name field is not inside a div.');
+  const classes = [...holder.classList];
+  assert.deepEqual(
+    [
+      'rounded-[4px]',
+      'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
+      'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+      'has-[[role=textbox]:focus-visible]:ring-2',
+      'has-[[role=textbox]:focus-visible]:ring-inset',
+      'has-[[role=textbox]:focus-visible]:ring-sidebar-ring',
+    ].filter((name) => !classes.includes(name)),
+    [],
+    `The draft row lacks its states: ${classes.join(' ')}`,
+  );
+  assert.ok(!classes.includes('bg-sidebar-accent'), classes.join(' '));
+});
+
 // Sidebar alignment phase 3 (spec §9, D8–D14): the column is the search
 // field, then the Thread region (the tree's scroller and the New Thread
 // button), then one group per registered pane at the bottom. There is no

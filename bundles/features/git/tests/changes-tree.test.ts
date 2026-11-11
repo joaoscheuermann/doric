@@ -233,3 +233,84 @@ describe('the repository row in a column that scrolls sideways', () => {
     );
   });
 });
+
+describe('the repository row states (phase 5)', () => {
+  const unselectedFill = [
+    'rounded-[4px]',
+    'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
+    'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+  ];
+  const treeitemRing = [
+    'has-[[role=treeitem]:focus-visible]:ring-2',
+    'has-[[role=treeitem]:focus-visible]:ring-inset',
+    'has-[[role=treeitem]:focus-visible]:ring-sidebar-ring',
+  ];
+  const noFillButton = [
+    'bg-transparent',
+    'hover:bg-transparent',
+    'active:bg-transparent',
+    'data-active:bg-transparent',
+    'focus-visible:ring-0',
+  ];
+  const notOnNoFillButton = [
+    'hover:bg-sidebar-accent',
+    'active:bg-sidebar-accent',
+    'data-active:bg-sidebar-accent',
+    'focus-visible:ring-2',
+    'hover:text-sidebar-foreground',
+  ];
+  const assertTokens = (
+    classes: readonly string[],
+    has: readonly string[],
+    lacks: readonly string[],
+    what: string,
+  ): void => {
+    for (const token of has) {
+      assert.ok(
+        classes.includes(token),
+        `${what} lacks ${token}: ${classes.join(' ')}`,
+      );
+    }
+    for (const token of lacks) {
+      assert.ok(
+        !classes.includes(token),
+        `${what} has ${token}: ${classes.join(' ')}`,
+      );
+    }
+  };
+
+  test('T-5.4: the wrapper has the unselected fill and the treeitem ring; the button is the no-fill button', () => {
+    const document = parse(render(true, true));
+    const button = repositoryItem(document);
+    const wrapper = button.parentElement;
+    assert.ok(wrapper, 'the repository row has no wrapper');
+    assertTokens(
+      classesOf(wrapper),
+      [...unselectedFill, ...treeitemRing],
+      ['bg-sidebar-accent'],
+      'wrapper',
+    );
+    assertTokens(classesOf(button), noFillButton, notOnNoFillButton, 'button');
+  });
+
+  test('T-5.4: the mark backing is opaque and follows the row fill', () => {
+    const document = parse(render(true));
+    const mark = repositoryItem(document).parentElement?.lastElementChild;
+    assert.ok(mark, 'the row has no mark');
+    const backing = Array.from(mark.querySelectorAll('div')).find((div) => {
+      const list = classesOf(div);
+      return list.includes('h-5') && list.includes('min-w-5');
+    });
+    assert.ok(backing, 'the mark holds no h-5 min-w-5 backing');
+    assertTokens(
+      classesOf(backing),
+      [
+        'bg-sidebar',
+        'group-hover/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
+        'group-active/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+      ],
+      ['bg-sidebar/90'],
+      'backing',
+    );
+  });
+});

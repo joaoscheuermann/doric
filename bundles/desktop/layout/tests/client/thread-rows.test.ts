@@ -321,15 +321,26 @@ const assertActive = (
   name: string,
 ): HTMLElement => {
   const element = row(workspace, name);
-  assert.ok(shimmers(element, name), `The active row "${name}" does not shimmer.`);
+  assert.ok(
+    shimmers(element, name),
+    `The active row "${name}" does not shimmer.`,
+  );
   return status(element, name);
 };
 
 /** Asserts the row is inactive: no shimmer, no status. */
 const assertInactive = (workspace: RenderedWorkspace, name: string): void => {
   const element = row(workspace, name);
-  assert.equal(shimmers(element, name), false, `The idle row "${name}" shimmers.`);
-  assert.equal(statuses(element).length, 0, `The idle row "${name}" says an agent is running.`);
+  assert.equal(
+    shimmers(element, name),
+    false,
+    `The idle row "${name}" shimmers.`,
+  );
+  assert.equal(
+    statuses(element).length,
+    0,
+    `The idle row "${name}" says an agent is running.`,
+  );
 };
 
 /** The classes `names` that `element` lacks. */
@@ -428,7 +439,10 @@ test('T-2.8: the elapsed badge sits at the right edge and gives way to the plus 
 
   // Form: timed, no plus.
   const formBadge = assertActive(rendered, form.name);
-  assert.ok(formBadge.classList.contains('right-1'), "Form's badge is not at the right edge.");
+  assert.ok(
+    formBadge.classList.contains('right-1'),
+    "Form's badge is not at the right edge.",
+  );
   assert.deepEqual(missing(treeitem(row(rendered, form.name)), ['pr-14']), []);
 
   // Plan: timed, with the plus.
@@ -438,7 +452,7 @@ test('T-2.8: the elapsed badge sits at the right edge and gives way to the plus 
     missing(planBadge, [
       'right-1',
       'group-hover/tree-row:opacity-0',
-      'group-focus-within/tree-row:opacity-0',
+      'group-has-[:focus-visible]/tree-row:opacity-0',
     ]),
     [],
     "Plan's badge is not at the right edge or does not fade on hover or focus.",
@@ -474,6 +488,163 @@ test('T-2.8: an active row without a badge start keeps the rest padding, and no 
       ['pr-16', 'pr-8'].filter((name) => item.classList.contains(name)),
       [],
       `The row "${normalized(item.textContent)}" pads to pr-16 or pr-8 at rest.`,
+    );
+  }
+});
+
+// Phase 5 (spec §11): the row fill on the wrapper, the inset ring keyed on the
+// row's controls, the no-fill treeitem and keyboard-only reveals.
+const UNSELECTED_FILL = [
+  'rounded-[4px]',
+  'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
+  'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+] as const;
+const SELECTED_FILL = ['rounded-[4px]', 'bg-sidebar-accent'] as const;
+const TREEITEM_RING = [
+  'has-[[role=treeitem]:focus-visible]:ring-2',
+  'has-[[role=treeitem]:focus-visible]:ring-inset',
+  'has-[[role=treeitem]:focus-visible]:ring-sidebar-ring',
+] as const;
+const TEXTBOX_RING = [
+  'has-[[role=textbox]:focus-visible]:ring-2',
+  'has-[[role=textbox]:focus-visible]:ring-inset',
+  'has-[[role=textbox]:focus-visible]:ring-sidebar-ring',
+] as const;
+const NO_FILL_BUTTON = [
+  'bg-transparent',
+  'hover:bg-transparent',
+  'active:bg-transparent',
+  'data-active:bg-transparent',
+  'focus-visible:ring-0',
+] as const;
+const NOT_ON_NO_FILL_BUTTON = [
+  'hover:bg-sidebar-accent',
+  'active:bg-sidebar-accent',
+  'data-active:bg-sidebar-accent',
+  'focus-visible:ring-2',
+  'hover:text-sidebar-foreground',
+] as const;
+
+/** The names in `names` that `element` carries. */
+const present = (element: HTMLElement, names: readonly string[]): string[] =>
+  names.filter((name) => element.classList.contains(name));
+
+test('T-5.5: the selected row wrapper has the selected fill and the rings; Audit has the unselected fill', async () => {
+  rendered = await renderTree();
+
+  const planRow = row(rendered, plan.name);
+  assert.deepEqual(
+    missing(planRow, [...SELECTED_FILL, ...TREEITEM_RING, ...TEXTBOX_RING]),
+    [],
+  );
+  assert.deepEqual(
+    [...planRow.classList].filter((name) => name.startsWith('hover:bg-[')),
+    [],
+    "Plan's wrapper takes a hover mix while selected.",
+  );
+
+  const auditRow = row(rendered, audit.name);
+  assert.deepEqual(
+    missing(auditRow, [...UNSELECTED_FILL, ...TREEITEM_RING, ...TEXTBOX_RING]),
+    [],
+  );
+  assert.deepEqual(present(auditRow, ['bg-sidebar-accent']), []);
+
+  // A nested row has the same wrapper classes, with `w-full`.
+  const formRow = row(rendered, form.name);
+  assert.deepEqual(
+    missing(formRow, [
+      'w-full',
+      ...UNSELECTED_FILL,
+      ...TREEITEM_RING,
+      ...TEXTBOX_RING,
+    ]),
+    [],
+  );
+  assert.deepEqual(present(formRow, ['bg-sidebar-accent']), []);
+});
+
+test('T-5.5: every row wrapper has the textbox ring and every treeitem is the no-fill button', async () => {
+  rendered = await renderTree();
+  const all = rows(rendered);
+  assert.equal(all.length, 4);
+  for (const element of all) {
+    const item = treeitem(element);
+    const name = normalized(item.textContent);
+    assert.deepEqual(missing(element, TEXTBOX_RING), [], `${name}'s wrapper`);
+    assert.deepEqual(missing(item, NO_FILL_BUTTON), [], `${name}'s treeitem`);
+    assert.deepEqual(
+      present(item, NOT_ON_NO_FILL_BUTTON),
+      [],
+      `${name}'s treeitem`,
+    );
+  }
+});
+
+test("T-5.13: a double-click on Audit's name opens its field inside Audit's wrapper, which has the textbox ring", async () => {
+  rendered = await renderTree();
+  const name = [
+    ...treeitem(row(rendered, audit.name)).querySelectorAll<HTMLElement>(
+      'span',
+    ),
+  ].find(
+    (span) =>
+      span.getAttribute('data-slot') !== 'thread-lead' &&
+      normalized(span.textContent) === audit.name,
+  );
+  assert.ok(name !== undefined, "Audit's row has no name.");
+  name.dispatchEvent(
+    new MouseEvent('dblclick', { bubbles: true, cancelable: true }),
+  );
+  await settle();
+  assert.equal(rendered.errors().length, 0, 'Opening the rename failed.');
+
+  const field = rendered.root.querySelector<HTMLElement>(
+    '[role="textbox"][aria-label="Thread name"]',
+  );
+  assert.ok(field !== null, 'No Thread name field opened.');
+  let wrapper: HTMLElement | null = field.parentElement;
+  while (wrapper !== null && !wrapper.classList.contains('group/tree-row')) {
+    wrapper = wrapper.parentElement;
+  }
+  assert.ok(wrapper !== null, 'The field is not inside a row wrapper.');
+  assert.equal(normalized(treeitem(wrapper).textContent), audit.name);
+  assert.deepEqual(missing(wrapper, TEXTBOX_RING), []);
+});
+
+test('T-5.14: the badge and the plus reveal on keyboard focus only, and no row reveals on focus-within', async () => {
+  rendered = await renderThreads([timedPlan(), form, validate, audit]);
+  const planRow = row(rendered, plan.name);
+  assert.deepEqual(
+    missing(assertActive(rendered, plan.name), [
+      'group-has-[:focus-visible]/tree-row:opacity-0',
+    ]),
+    [],
+  );
+  const plus = planRow.querySelector<HTMLElement>(
+    `[aria-label="New sub-thread in ${plan.name}"]`,
+  );
+  assert.ok(plus !== null, 'Plan has no plus.');
+  assert.deepEqual(
+    missing(plus, [
+      'group-has-[:focus-visible]/tree-row:opacity-100',
+      'group-has-[:focus-visible]/tree-row:pointer-events-auto',
+    ]),
+    [],
+  );
+  for (const element of rows(rendered)) {
+    const focusWithin = [
+      element,
+      ...element.querySelectorAll<HTMLElement>('*'),
+    ].flatMap((node) =>
+      [...node.classList].filter((name) =>
+        name.startsWith('group-focus-within/tree-row:'),
+      ),
+    );
+    assert.deepEqual(
+      focusWithin,
+      [],
+      `The row "${normalized(treeitem(element).textContent)}" reveals on focus-within.`,
     );
   }
 });

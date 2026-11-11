@@ -9,8 +9,8 @@ import type { Draft, Entity } from './workspace.js';
  *
  * | timed | addable | classes                                                              |
  * | ----- | ------- | -------------------------------------------------------------------- |
- * | true  | either  | `'pr-14'` (56 px at rest and on hover or focus)                      |
- * | false | true    | `'pr-1.5 group-hover/tree-row:pr-8 group-focus-within/tree-row:pr-8'` |
+ * | true  | either  | `'pr-14'` (56 px at rest and on hover or keyboard focus)             |
+ * | false | true    | `'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8'` |
  * | false | false   | `'pr-1.5'`                                                           |
  *
  * A timed row keeps 56 px on hover, which already holds the 20 px plus at
@@ -19,9 +19,36 @@ import type { Draft, Entity } from './workspace.js';
 export const threadRowPadding = (timed: boolean, addable: boolean): string => {
   if (timed) return 'pr-14';
   return addable
-    ? 'pr-1.5 group-hover/tree-row:pr-8 group-focus-within/tree-row:pr-8'
+    ? 'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8'
     : 'pr-1.5';
 };
+
+/**
+ * A tree row's fill, on its `group/tree-row` wrapper
+ * (docs/designs/sidebar-alignment.md §11.1): a selected row is filled in the
+ * accent; an unselected one mixes the accent in at 50% under the pointer and
+ * 80% while pressed. Complete literals, so the sheets that scan this source
+ * emit them.
+ */
+export const rowFill = (selected: boolean): string =>
+  selected
+    ? 'rounded-[4px] bg-sidebar-accent'
+    : 'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
+
+/** The row ring, inset on the wrapper while its treeitem has keyboard focus. */
+export const treeitemRing =
+  'has-[[role=treeitem]:focus-visible]:ring-2 has-[[role=treeitem]:focus-visible]:ring-inset has-[[role=treeitem]:focus-visible]:ring-sidebar-ring';
+
+/**
+ * The row ring, inset on the wrapper while a name field in it has
+ * keyboard-visible focus.
+ */
+export const textboxRing =
+  'has-[[role=textbox]:focus-visible]:ring-2 has-[[role=textbox]:focus-visible]:ring-inset has-[[role=textbox]:focus-visible]:ring-sidebar-ring';
+
+/** A row button that draws no fill and no ring: its wrapper draws both. */
+export const noFillButton =
+  'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
 
 /**
  * The workspace sidebar's transient state: the dialog in progress and the one

@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { indentation, TreeGuides } from 'desktop/ui/panels';
+import { indentation, rowInteraction, TreeGuides } from 'desktop/ui/panels';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -53,6 +53,19 @@ describe('the depth guides of a tree row', () => {
     assert.equal(
       renderToStaticMarkup(createElement(TreeGuides, { depth: 0 })),
       '',
+    );
+  });
+});
+
+describe('the row interaction classes older bundles use', () => {
+  test('T-5.8: rowInteraction keeps its values exactly', () => {
+    assert.equal(
+      rowInteraction(true),
+      'hover:bg-sidebar-accent active:bg-sidebar-accent',
+    );
+    assert.equal(
+      rowInteraction(false),
+      'hover:bg-transparent hover:text-sidebar-foreground active:bg-transparent active:text-sidebar-foreground',
     );
   });
 });

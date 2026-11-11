@@ -10,6 +10,8 @@ import { SidebarMenuSubButton, SidebarMenuSubItem } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
 import { SquareIcon, TerminalIcon } from 'lucide-react';
 
+import { noFillButton, rowFill } from '../../src/client/domain/sidebar.js';
+
 /** One fixture terminal: an open one, or an agent's run and its elapsed time. */
 export interface FixtureTerminal {
   readonly id: string;
@@ -28,12 +30,19 @@ export function TerminalRowsFixture({
   return terminals.map((terminal) => (
     <SidebarMenuSubItem
       key={terminal.id}
-      className="group/terminal relative w-full"
+      className={cn(
+        'group/terminal relative w-full',
+        rowFill(false),
+        'has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-2 has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-inset has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-sidebar-ring',
+      )}
     >
       <TreeGuides depth={depth} />
       <SidebarMenuSubButton
         size="sm"
-        className="h-7 w-full translate-x-0 rounded-none pr-8"
+        className={cn(
+          'h-7 w-full translate-x-0 rounded-none pr-8',
+          noFillButton,
+        )}
         style={{ paddingLeft: indentation(depth) }}
         title={terminal.label}
         render={<button type="button" />}
@@ -54,7 +63,7 @@ export function TerminalRowsFixture({
       <Button
         variant="ghost"
         size="icon-xs"
-        className="absolute top-0.5 right-1 opacity-0 group-hover/terminal:opacity-100 group-focus-within/terminal:opacity-100"
+        className="absolute top-0.5 right-1 opacity-0 group-hover/terminal:opacity-100 group-has-[:focus-visible]/terminal:opacity-100"
         aria-label={
           terminal.origin === 'user' ? 'Discard terminal' : 'Stop terminal'
         }

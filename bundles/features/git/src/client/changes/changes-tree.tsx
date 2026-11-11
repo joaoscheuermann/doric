@@ -8,7 +8,6 @@ import {
 import {
   FileTree,
   indentation,
-  rowInteraction,
   type TreeNode,
   treeClassName,
 } from 'desktop/ui/panels';
@@ -29,6 +28,26 @@ import {
 } from '../reads/change-tree.js';
 import { ChangeCounts } from './change-counts.js';
 import type { DiscardTarget } from './discard-dialog.js';
+
+/**
+ * The repository row's fill, on its wrapper: the row is never selected, so it
+ * mixes the accent in at 50% under the pointer and 80% while pressed
+ * (docs/designs/sidebar-alignment.md §11.1).
+ */
+const rowFill =
+  'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
+
+/** The row ring, inset on the wrapper while its treeitem has keyboard focus. */
+const treeitemRing =
+  'has-[[role=treeitem]:focus-visible]:ring-2 has-[[role=treeitem]:focus-visible]:ring-inset has-[[role=treeitem]:focus-visible]:ring-sidebar-ring';
+
+/** A row button that draws no fill and no ring: its wrapper draws both. */
+const noFillButton =
+  'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
+
+/** The pinned mark's backing: opaque, and the row's fill in each state (§11.2). */
+const markBacking =
+  'bg-sidebar group-hover/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] group-active/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
 
 type ChangesTreeProps = {
   readonly repository: ChangeRepository & {
@@ -100,7 +119,7 @@ export const ChangesTree = memo(function ChangesTree({
       size="sm"
       className={cn(
         'h-7 w-auto min-w-0 flex-1 gap-1.5 rounded-[4px] pr-1.5',
-        rowInteraction(false),
+        noFillButton,
       )}
       style={{ paddingLeft: indentation(0) }}
       render={
@@ -137,7 +156,13 @@ export const ChangesTree = memo(function ChangesTree({
   );
   return (
     <SidebarMenuItem role="presentation" className="w-full min-w-0">
-      <div className="group/tree-row relative flex w-full min-w-0 items-center">
+      <div
+        className={cn(
+          'group/tree-row relative flex w-full min-w-0 items-center',
+          rowFill,
+          treeitemRing,
+        )}
+      >
         {onDiscard === undefined ? (
           repositoryButton
         ) : (
@@ -156,7 +181,12 @@ export const ChangesTree = memo(function ChangesTree({
           data-slot="tree-row-mark"
           className="sticky right-1 shrink-0 pr-1 text-sidebar-foreground peer-hover/menu-button:text-sidebar-accent-foreground peer-data-active/menu-button:text-sidebar-accent-foreground"
         >
-          <div className="flex h-5 min-w-5 items-center justify-center rounded-md bg-sidebar/90 px-1 text-xs tabular-nums pointer-events-none select-none">
+          <div
+            className={cn(
+              'flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs tabular-nums pointer-events-none select-none',
+              markBacking,
+            )}
+          >
             <Badge variant="ghost" className="px-1" aria-hidden>
               <ChangeCounts
                 added={repository.added}

@@ -199,7 +199,7 @@ describe('the room a Thread row keeps for its trailing slot (T-2.12)', () => {
   test('an untimed row with the plus widens only on hover or focus', () => {
     assert.equal(
       threadRowPadding(false, true),
-      'pr-1.5 group-hover/tree-row:pr-8 group-focus-within/tree-row:pr-8',
+      'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8',
     );
   });
 
