@@ -492,23 +492,23 @@ test('T-2.8: an active row without a badge start keeps the rest padding, and no 
   }
 });
 
-// Phase 5 (spec §11): the row fill on the wrapper, the inset ring keyed on the
+// Phase 5 (spec §11): the row fill on the wrapper, the inset outline keyed on the
 // row's controls, the no-fill treeitem and keyboard-only reveals.
 const UNSELECTED_FILL = [
   'rounded-[4px]',
-  'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
-  'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+  'hover:bg-[var(--paper-ghost-hover)]',
+  'active:bg-[var(--paper-ghost-pressed)]',
 ] as const;
 const SELECTED_FILL = ['rounded-[4px]', 'bg-sidebar-accent'] as const;
 const TREEITEM_RING = [
-  'has-[[role=treeitem]:focus-visible]:ring-2',
-  'has-[[role=treeitem]:focus-visible]:ring-inset',
-  'has-[[role=treeitem]:focus-visible]:ring-sidebar-ring',
+  'has-[[role=treeitem]:focus-visible]:outline-2',
+  'has-[[role=treeitem]:focus-visible]:-outline-offset-2',
+  'has-[[role=treeitem]:focus-visible]:outline-[var(--sidebar-ring)]',
 ] as const;
 const TEXTBOX_RING = [
-  'has-[[role=textbox]:focus-visible]:ring-2',
-  'has-[[role=textbox]:focus-visible]:ring-inset',
-  'has-[[role=textbox]:focus-visible]:ring-sidebar-ring',
+  'has-[[role=textbox]:focus-visible]:outline-2',
+  'has-[[role=textbox]:focus-visible]:-outline-offset-2',
+  'has-[[role=textbox]:focus-visible]:outline-[var(--sidebar-ring)]',
 ] as const;
 const NO_FILL_BUTTON = [
   'bg-transparent',
@@ -524,12 +524,18 @@ const NOT_ON_NO_FILL_BUTTON = [
   'focus-visible:ring-2',
   'hover:text-sidebar-foreground',
 ] as const;
+const ACTION_HOVER = ['hover:bg-[var(--paper-ghost-pressed)]'] as const;
+const ACTION_OUTLINE = [
+  'focus-visible:outline-solid',
+  'focus-visible:outline-2',
+  'focus-visible:outline-[var(--sidebar-ring)]',
+] as const;
 
 /** The names in `names` that `element` carries. */
 const present = (element: HTMLElement, names: readonly string[]): string[] =>
   names.filter((name) => element.classList.contains(name));
 
-test('T-5.5: the selected row wrapper has the selected fill and the rings; Audit has the unselected fill', async () => {
+test('T-5.5: the selected row wrapper has the selected fill and the outlines; Audit has the unselected fill', async () => {
   rendered = await renderTree();
 
   const planRow = row(rendered, plan.name);
@@ -550,6 +556,22 @@ test('T-5.5: the selected row wrapper has the selected fill and the rings; Audit
   );
   assert.deepEqual(present(auditRow, ['bg-sidebar-accent']), []);
 
+  // The plus takes the paper hover square and the action outline.
+  const auditPlus = auditRow.querySelector<HTMLElement>(
+    `[aria-label="New sub-thread in ${audit.name}"]`,
+  );
+  assert.ok(auditPlus !== null, 'Audit has no plus.');
+  assert.deepEqual(
+    missing(auditPlus, [
+      ...ACTION_HOVER,
+      ...ACTION_OUTLINE,
+      'focus-visible:ring-2',
+      'ring-sidebar-ring',
+    ]),
+    [],
+  );
+  assert.deepEqual(present(auditPlus, ['hover:bg-sidebar-accent']), []);
+
   // A nested row has the same wrapper classes, with `w-full`.
   const formRow = row(rendered, form.name);
   assert.deepEqual(
@@ -562,6 +584,50 @@ test('T-5.5: the selected row wrapper has the selected fill and the rings; Audit
     [],
   );
   assert.deepEqual(present(formRow, ['bg-sidebar-accent']), []);
+});
+
+test('T-5.18: the selected treeitem is aria-selected true and data-active; every other treeitem is aria-selected false', async () => {
+  rendered = await renderTree();
+  const all = rows(rendered);
+  assert.equal(all.length, 4);
+  for (const element of all) {
+    const item = treeitem(element);
+    const name = normalized(item.textContent);
+    const selected = name === plan.name;
+    assert.equal(
+      item.getAttribute('aria-selected'),
+      selected ? 'true' : 'false',
+      `${name}'s treeitem aria-selected`,
+    );
+    assert.equal(
+      item.hasAttribute('data-active'),
+      selected,
+      `${name}'s treeitem data-active`,
+    );
+  }
+});
+
+test('T-5.19: with the route on Form, its main thread Plan is the only treeitem aria-selected true and Form is false', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [plan, form, validate, audit],
+    path: `/projects/${project.id}/threads/${form.id}`,
+  });
+  const all = rows(rendered);
+  assert.equal(all.length, 4);
+  for (const element of all) {
+    const item = treeitem(element);
+    const name = normalized(item.textContent);
+    assert.equal(
+      item.getAttribute('aria-selected'),
+      name === plan.name ? 'true' : 'false',
+      `${name}'s treeitem aria-selected`,
+    );
+  }
+  assert.equal(
+    treeitem(row(rendered, form.name)).getAttribute('aria-selected'),
+    'false',
+  );
 });
 
 test('T-5.5: every row wrapper has the textbox ring and every treeitem is the no-fill button', async () => {

@@ -80,8 +80,8 @@ export function ProjectItem({
           type="button"
           className={
             isGrid
-              ? 'block w-full min-w-0 text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--paper-focus)]'
-              : 'flex w-full min-w-0 items-center gap-[16px] text-left outline-none focus-visible:rounded-[6px] focus-visible:outline-2 focus-visible:outline-[var(--paper-focus)]'
+              ? 'block w-full min-w-0 text-left outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--paper-focus)]'
+              : 'flex w-full min-w-0 items-center gap-[16px] text-left outline-none focus-visible:rounded-[6px] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-[var(--paper-focus)]'
           }
           onClick={() => onOpen(entry)}
         >

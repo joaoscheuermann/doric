@@ -441,14 +441,14 @@ describe('a tree row in a column that scrolls sideways', () => {
 /** The class sets of the spec's §11 (docs/designs/sidebar-alignment.md). */
 const UNSELECTED_FILL = [
   'rounded-[4px]',
-  'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
-  'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+  'hover:bg-[var(--paper-ghost-hover)]',
+  'active:bg-[var(--paper-ghost-pressed)]',
 ] as const;
 const SELECTED_FILL = ['rounded-[4px]', 'bg-sidebar-accent'] as const;
 const TREEITEM_RING = [
-  'has-[[role=treeitem]:focus-visible]:ring-2',
-  'has-[[role=treeitem]:focus-visible]:ring-inset',
-  'has-[[role=treeitem]:focus-visible]:ring-sidebar-ring',
+  'has-[[role=treeitem]:focus-visible]:outline-2',
+  'has-[[role=treeitem]:focus-visible]:-outline-offset-2',
+  'has-[[role=treeitem]:focus-visible]:outline-[var(--sidebar-ring)]',
 ] as const;
 const NO_FILL_BUTTON = [
   'bg-transparent',
@@ -465,9 +465,9 @@ const NOT_ON_NO_FILL_BUTTON = [
   'hover:text-sidebar-foreground',
 ] as const;
 const MARK_HOVER =
-  'group-hover/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]';
+  'group-hover/tree-row:bg-[linear-gradient(var(--paper-ghost-hover),var(--paper-ghost-hover))]';
 const MARK_ACTIVE =
-  'group-active/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
+  'group-active/tree-row:bg-[linear-gradient(var(--paper-ghost-pressed),var(--paper-ghost-pressed))]';
 
 const assertHas = (
   classes: readonly string[],

@@ -113,15 +113,29 @@ const offersSignIn = (server: McpServerView): boolean =>
 
 /**
  * A pane row's states, on its menu item (docs/designs/sidebar-alignment.md
- * §11.6): the accent mixed in at 50% under the pointer and 80% while pressed,
- * and an inset ring while its button has keyboard focus.
+ * §11.6): the ghost hover fill under the pointer and the ghost pressed fill
+ * while pressed, and 2 px of --sidebar-ring inset while its button has
+ * keyboard focus.
  */
 const ROW_STATES =
-  'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))] has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-inset has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-sidebar-ring';
+  'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)] has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:-outline-offset-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-[var(--sidebar-ring)]';
 
-/** The row's button draws no fill and no ring: its menu item draws both. */
+/**
+ * The row's button draws no fill and no ring: its menu item draws the fill
+ * and the outline.
+ */
 const NO_FILL_BUTTON =
   'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
+
+/** A row action's hover square, over the row's fill (§11.4, D29). */
+const ACTION_HOVER = 'hover:bg-[var(--paper-ghost-pressed)]';
+
+/**
+ * A row action's keyboard focus: 2 px of --sidebar-ring outside it;
+ * outline-solid because the action carries outline-hidden.
+ */
+const ACTION_OUTLINE =
+  'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-[var(--sidebar-ring)]';
 
 /** The Thread row's hover or keyboard-focus reveal (`row-add-action.tsx`), on the menu item. */
 const ON_HOVER =
@@ -176,7 +190,7 @@ function ServerRow({
         // remove action.
         <button
           type="button"
-          className="absolute top-1 right-1.5 flex h-5 items-center gap-0.5 rounded-md px-1 text-xs text-sidebar-foreground underline decoration-sidebar-foreground/40 underline-offset-2 ring-sidebar-ring outline-hidden hover:decoration-sidebar-foreground focus-visible:ring-2 disabled:opacity-50 group-has-[:focus-visible]/menu-item:right-7 group-hover/menu-item:right-7 [&>svg]:size-3 [&>svg]:shrink-0"
+          className={`absolute top-1 right-1.5 flex h-5 items-center gap-0.5 rounded-md px-1 text-xs text-sidebar-foreground underline decoration-sidebar-foreground/40 underline-offset-2 ring-sidebar-ring outline-hidden hover:decoration-sidebar-foreground focus-visible:ring-2 disabled:opacity-50 group-has-[:focus-visible]/menu-item:right-7 group-hover/menu-item:right-7 [&>svg]:size-3 [&>svg]:shrink-0 ${ACTION_OUTLINE}`}
           aria-label={`Sign in to ${server.name}`}
           title="Sign in (opens in your browser)"
           disabled={signingIn}
@@ -189,7 +203,7 @@ function ServerRow({
       {/* Laid over the status on hover or focus, like a Thread row's own. */}
       <SidebarMenuAction
         type="button"
-        className={`right-1 ${ON_HOVER}`}
+        className={`right-1 ${ON_HOVER} ${ACTION_HOVER} ${ACTION_OUTLINE}`}
         style={{ top: '0.25rem' }}
         aria-label={`Remove ${server.name}`}
         title="Remove"

@@ -150,23 +150,23 @@ test('T-1.2b: the open rename field leads with the terminal icon in a 16 px slot
 });
 
 // Phase 5 (docs/designs/sidebar-alignment.md §11.4, D23, D25, D26): a terminal
-// row takes the row fill and the inset ring on its item, its button draws no
+// row takes the row fill and the inset outline on its item, its button draws no
 // fill or ring, the selected row is the one `selectedId` names, and Stop
 // reveals on keyboard focus only.
 const UNSELECTED_FILL = [
   'rounded-[4px]',
-  'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
-  'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+  'hover:bg-[var(--paper-ghost-hover)]',
+  'active:bg-[var(--paper-ghost-pressed)]',
 ] as const;
 const SUB_BUTTON_RING = [
-  'has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-2',
-  'has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-inset',
-  'has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-sidebar-ring',
+  'has-[[data-sidebar=menu-sub-button]:focus-visible]:outline-2',
+  'has-[[data-sidebar=menu-sub-button]:focus-visible]:-outline-offset-2',
+  'has-[[data-sidebar=menu-sub-button]:focus-visible]:outline-[var(--sidebar-ring)]',
 ] as const;
 const INPUT_RING = [
-  'has-[[data-slot=input]:focus-visible]:ring-2',
-  'has-[[data-slot=input]:focus-visible]:ring-inset',
-  'has-[[data-slot=input]:focus-visible]:ring-sidebar-ring',
+  'has-[[data-slot=input]:focus-visible]:outline-2',
+  'has-[[data-slot=input]:focus-visible]:-outline-offset-2',
+  'has-[[data-slot=input]:focus-visible]:outline-[var(--sidebar-ring)]',
 ] as const;
 const NO_FILL_BUTTON = [
   'bg-transparent',
@@ -379,4 +379,38 @@ test('T-5.14: Stop reveals on hover or keyboard focus, and no row reveals on foc
       ),
   );
   assert.deepEqual(focusWithin, []);
+});
+
+test('T-5.6: Stop takes the paper hover square and the action outline, and drops its own ring', async () => {
+  rendered = await renderStatefulRows();
+  const stops = [
+    ...rendered.root.querySelectorAll<HTMLElement>(
+      'button[aria-label="Stop terminal"], button[aria-label="Discard terminal"]',
+    ),
+  ];
+  assert.equal(stops.length, 3);
+  for (const stop of stops) {
+    const label = stop.getAttribute('aria-label');
+    assert.deepEqual(
+      lacking(stop, [
+        'hover:bg-[var(--paper-ghost-pressed)]',
+        'dark:hover:bg-[var(--paper-ghost-pressed)]',
+        'focus-visible:outline-solid',
+        'focus-visible:outline-2',
+        'focus-visible:outline-[var(--sidebar-ring)]',
+        'focus-visible:ring-0',
+      ]),
+      [],
+      `${label} lacks the paper hover square or the action outline.`,
+    );
+    assert.deepEqual(
+      carrying(stop, [
+        'hover:bg-muted',
+        'dark:hover:bg-muted/50',
+        'focus-visible:ring-3',
+      ]),
+      [],
+      `${label} keeps the ghost button's own hover or ring.`,
+    );
+  }
 });

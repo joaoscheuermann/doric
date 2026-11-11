@@ -237,13 +237,13 @@ describe('the repository row in a column that scrolls sideways', () => {
 describe('the repository row states (phase 5)', () => {
   const unselectedFill = [
     'rounded-[4px]',
-    'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
-    'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+    'hover:bg-[var(--paper-ghost-hover)]',
+    'active:bg-[var(--paper-ghost-pressed)]',
   ];
   const treeitemRing = [
-    'has-[[role=treeitem]:focus-visible]:ring-2',
-    'has-[[role=treeitem]:focus-visible]:ring-inset',
-    'has-[[role=treeitem]:focus-visible]:ring-sidebar-ring',
+    'has-[[role=treeitem]:focus-visible]:outline-2',
+    'has-[[role=treeitem]:focus-visible]:-outline-offset-2',
+    'has-[[role=treeitem]:focus-visible]:outline-[var(--sidebar-ring)]',
   ];
   const noFillButton = [
     'bg-transparent',
@@ -306,8 +306,8 @@ describe('the repository row states (phase 5)', () => {
       classesOf(backing),
       [
         'bg-sidebar',
-        'group-hover/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
-        'group-active/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
+        'group-hover/tree-row:bg-[linear-gradient(var(--paper-ghost-hover),var(--paper-ghost-hover))]',
+        'group-active/tree-row:bg-[linear-gradient(var(--paper-ghost-pressed),var(--paper-ghost-pressed))]',
       ],
       ['bg-sidebar/90'],
       'backing',

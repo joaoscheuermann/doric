@@ -26,7 +26,7 @@ export const Depths = {
         {rows.map((row) => (
           <div
             key={`${row.depth}-${row.path}`}
-            className={`relative flex h-7 items-center gap-2 pr-8 text-sm ${row.path === 'tree-guides.tsx' ? 'rounded-[4px] bg-sidebar-accent' : 'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]'}`}
+            className={`relative flex h-7 items-center gap-2 pr-8 text-sm ${row.path === 'tree-guides.tsx' ? 'rounded-[4px] bg-sidebar-accent' : 'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)]'}`}
             style={{ paddingLeft: indentation(row.depth) }}
           >
             <TreeGuides depth={row.depth} />

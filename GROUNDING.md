@@ -204,9 +204,12 @@ order and whether the reader can collapse it; it declares no size, and the
 column has no draggable dividers. The layout draws each pane's 28 px header and
 collapse control, and shows the header's action only while the header is
 hovered or focused; a row's actions likewise show only on row hover or keyboard
-focus, and a row fills with the accent mixed 50 % into the sidebar colour on
-hover (80 % while pressed), with an inset ring on keyboard focus (a disabled
-Screens row takes no fill),
+focus, and a row fills with `--paper-ghost-hover` on hover
+(`--paper-ghost-pressed` while pressed), with an inset 2 px `--sidebar-ring`
+outline on keyboard focus (a disabled
+Screens row takes no fill); Remove and Retry draw a `--paper-ghost-pressed`
+square under the pointer and a 2 px `--sidebar-ring` outline outside themselves
+on keyboard focus, and Sign in draws the outline only,
 and an empty open pane says `No screens open` or `No MCP servers`; an open pane is as tall as its content, at most 40 % of the
 column, and scrolls past that, and a pane never collapses past its header. The
 Screens pane starts collapsed, listing only the current Project's views. Threads
@@ -226,11 +229,14 @@ start shimmers without a time and announces "Agent running" to screen readers
 only. An Untitled Thread's icon is `message-circle-dashed` on its row, the
 breadcrumb and its tab. Tree rows indent 20 px per level
 and never swap their lead icon for a chevron. Every tree row (Thread,
-subthread, terminal, draft, Files and Changes) fills its whole row with the accent
-mixed 50 % into the sidebar colour on hover (80 % while pressed), takes the accent while selected and draws an
-inset ring on keyboard focus; a terminal row is selected while its tab is the
+subthread, terminal, draft, Files and Changes) fills its whole row with
+`--paper-ghost-hover` on hover (`--paper-ghost-pressed` while pressed), takes the
+accent while selected and draws an inset 2 px `--sidebar-ring` outline on
+keyboard focus; row actions (the plus, Remove, Retry, Stop) draw a
+`--paper-ghost-pressed` square under the pointer, and they and Sign in draw a
+2 px `--sidebar-ring` outline outside themselves on keyboard focus; a terminal row is selected while its tab is the
 selected tab of the Thread the route names, and a row being renamed draws the
-ring while its field holds focus. Once complete, the last execution's duration is
+outline while its field holds focus. Once complete, the last execution's duration is
 available in the row's hover title. Thread reads derive timing from the latest
 durable `prompt.started` event and its matching materialized result; the initial
 running-state update uses its transition timestamp until that event exists.
@@ -313,7 +319,8 @@ the last active Project tab returns to `/projects`. `/projects` uses its Finder 
 sidebar, a fixed list view without a view selector and the same Project actions.
 Project list and recent rows place the colored avatar beside the name without
 a thumbnail preview. Color selection, clearing the color and deletion live in
-the row's context menu; there is no ellipsis action button.
+the row's context menu; there is no ellipsis action button. Keyboard focus on a
+Project button (list row or grid card) draws a 2-pixel `--paper-focus` outline.
 The Projects heading has 32 pixels of top padding and its list content has 48;
 previously saved grid preferences do not change this view. Opening a Project
 without an explicit Thread selects the first available Thread after its tree
@@ -1187,7 +1194,8 @@ same cards, the passage read from the target its `comments.added/v1` carries,
 which the `<comments>` envelope also names), and its cards draw no state (the
 state is read out to screen readers only, from visually hidden text). A reply
 row wears the comment's **pin** — the teardrop, numbered, coloured by the
-thread's state — which opens a popover with the thread and, in its header, the
+thread's state; keyboard focus draws a 2 px `outline-ring` outline
+around it — which opens a popover with the thread and, in its header, the
 button that takes the reader to the comment on the canvas. That button, and a
 card's "go to" that opens the thread, dispatch the bubbling, composed DOM event
 `doric:comment-thread-open` with `detail: { commentId, target }` (the root's

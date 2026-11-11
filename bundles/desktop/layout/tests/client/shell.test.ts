@@ -1206,7 +1206,7 @@ test('pressing New Thread with a selected Project shows the new thread name fiel
 });
 
 // Phase 5, T-5.11 (spec §11.6): the draft row takes the unselected fill and
-// the textbox ring on the div that holds its field and guides.
+// the textbox outline on the div that holds its field and guides.
 test('T-5.11: the New Thread draft row has the unselected fill and the textbox ring', async () => {
   rendered = await renderWorkspace({
     projects: [project],
@@ -1225,11 +1225,11 @@ test('T-5.11: the New Thread draft row has the unselected fill and the textbox r
   assert.deepEqual(
     [
       'rounded-[4px]',
-      'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
-      'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
-      'has-[[role=textbox]:focus-visible]:ring-2',
-      'has-[[role=textbox]:focus-visible]:ring-inset',
-      'has-[[role=textbox]:focus-visible]:ring-sidebar-ring',
+      'hover:bg-[var(--paper-ghost-hover)]',
+      'active:bg-[var(--paper-ghost-pressed)]',
+      'has-[[role=textbox]:focus-visible]:outline-2',
+      'has-[[role=textbox]:focus-visible]:-outline-offset-2',
+      'has-[[role=textbox]:focus-visible]:outline-[var(--sidebar-ring)]',
     ].filter((name) => !classes.includes(name)),
     [],
     `The draft row lacks its states: ${classes.join(' ')}`,

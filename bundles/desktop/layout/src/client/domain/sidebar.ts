@@ -26,27 +26,33 @@ export const threadRowPadding = (timed: boolean, addable: boolean): string => {
 /**
  * A tree row's fill, on its `group/tree-row` wrapper
  * (docs/designs/sidebar-alignment.md §11.1): a selected row is filled in the
- * accent; an unselected one mixes the accent in at 50% under the pointer and
- * 80% while pressed. Complete literals, so the sheets that scan this source
- * emit them.
+ * accent; an unselected one draws the ghost hover fill under the pointer and
+ * the ghost pressed fill while pressed. Complete literals, so the sheets that
+ * scan this source emit them.
  */
 export const rowFill = (selected: boolean): string =>
   selected
     ? 'rounded-[4px] bg-sidebar-accent'
-    : 'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
-
-/** The row ring, inset on the wrapper while its treeitem has keyboard focus. */
-export const treeitemRing =
-  'has-[[role=treeitem]:focus-visible]:ring-2 has-[[role=treeitem]:focus-visible]:ring-inset has-[[role=treeitem]:focus-visible]:ring-sidebar-ring';
+    : 'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)]';
 
 /**
- * The row ring, inset on the wrapper while a name field in it has
- * keyboard-visible focus.
+ * The row outline: 2 px of --sidebar-ring inset on the wrapper while its
+ * treeitem has keyboard focus (§11.3).
+ */
+export const treeitemRing =
+  'has-[[role=treeitem]:focus-visible]:outline-2 has-[[role=treeitem]:focus-visible]:-outline-offset-2 has-[[role=treeitem]:focus-visible]:outline-[var(--sidebar-ring)]';
+
+/**
+ * The row outline: 2 px of --sidebar-ring inset on the wrapper while a name
+ * field in it has keyboard-visible focus (§11.3).
  */
 export const textboxRing =
-  'has-[[role=textbox]:focus-visible]:ring-2 has-[[role=textbox]:focus-visible]:ring-inset has-[[role=textbox]:focus-visible]:ring-sidebar-ring';
+  'has-[[role=textbox]:focus-visible]:outline-2 has-[[role=textbox]:focus-visible]:-outline-offset-2 has-[[role=textbox]:focus-visible]:outline-[var(--sidebar-ring)]';
 
-/** A row button that draws no fill and no ring: its wrapper draws both. */
+/**
+ * A row button that draws no fill and no ring: its wrapper draws the fill and
+ * the outline.
+ */
 export const noFillButton =
   'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
 

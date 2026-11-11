@@ -33,7 +33,7 @@ export function TerminalRowsFixture({
       className={cn(
         'group/terminal relative w-full',
         rowFill(false),
-        'has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-2 has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-inset has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-sidebar-ring',
+        'has-[[data-sidebar=menu-sub-button]:focus-visible]:outline-2 has-[[data-sidebar=menu-sub-button]:focus-visible]:-outline-offset-2 has-[[data-sidebar=menu-sub-button]:focus-visible]:outline-[var(--sidebar-ring)]',
       )}
     >
       <TreeGuides depth={depth} />
@@ -63,7 +63,7 @@ export function TerminalRowsFixture({
       <Button
         variant="ghost"
         size="icon-xs"
-        className="absolute top-0.5 right-1 opacity-0 group-hover/terminal:opacity-100 group-has-[:focus-visible]/terminal:opacity-100"
+        className="absolute top-0.5 right-1 opacity-0 group-hover/terminal:opacity-100 group-has-[:focus-visible]/terminal:opacity-100 hover:bg-[var(--paper-ghost-pressed)] dark:hover:bg-[var(--paper-ghost-pressed)] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-[var(--sidebar-ring)] focus-visible:ring-0"
         aria-label={
           terminal.origin === 'user' ? 'Discard terminal' : 'Stop terminal'
         }

@@ -165,6 +165,7 @@ export function ThreadBranches({
                       role="treeitem"
                       tabIndex={0}
                       aria-expanded={expandable ? expanded : undefined}
+                      aria-selected={selected}
                       onClick={activate}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {

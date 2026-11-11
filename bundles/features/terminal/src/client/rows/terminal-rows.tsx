@@ -33,26 +33,32 @@ import { type Terminal, terminalLabel } from '../domain/terminals.js';
 
 /**
  * A row's fill, on its item (docs/designs/sidebar-alignment.md §11.1): the
- * selected terminal's row is filled in the accent; another mixes the accent in
- * at 50% under the pointer and 80% while pressed.
+ * selected terminal's row is filled in the accent; another draws the ghost
+ * hover fill under the pointer and the ghost pressed fill while pressed.
  */
 const rowFill = (selected: boolean): string =>
   selected
     ? 'rounded-[4px] bg-sidebar-accent'
-    : 'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
-
-/** The row ring, inset on the item while its button has keyboard focus. */
-const subButtonRing =
-  'has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-2 has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-inset has-[[data-sidebar=menu-sub-button]:focus-visible]:ring-sidebar-ring';
+    : 'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)]';
 
 /**
- * The row ring, inset on the item while its rename field has keyboard-visible
- * focus.
+ * The row outline: 2 px of --sidebar-ring inset on the item while its button
+ * has keyboard focus (§11.3).
+ */
+const subButtonRing =
+  'has-[[data-sidebar=menu-sub-button]:focus-visible]:outline-2 has-[[data-sidebar=menu-sub-button]:focus-visible]:-outline-offset-2 has-[[data-sidebar=menu-sub-button]:focus-visible]:outline-[var(--sidebar-ring)]';
+
+/**
+ * The row outline: 2 px of --sidebar-ring inset on the item while its rename
+ * field has keyboard-visible focus (§11.3).
  */
 const inputRing =
-  'has-[[data-slot=input]:focus-visible]:ring-2 has-[[data-slot=input]:focus-visible]:ring-inset has-[[data-slot=input]:focus-visible]:ring-sidebar-ring';
+  'has-[[data-slot=input]:focus-visible]:outline-2 has-[[data-slot=input]:focus-visible]:-outline-offset-2 has-[[data-slot=input]:focus-visible]:outline-[var(--sidebar-ring)]';
 
-/** A row button that draws no fill and no ring: its item draws both. */
+/**
+ * A row button that draws no fill and no ring: its item draws the fill and
+ * the outline.
+ */
 const noFillButton =
   'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
 
@@ -181,7 +187,7 @@ export function TerminalRows({
           <Button
             variant="ghost"
             size="icon-xs"
-            className="absolute top-0.5 right-1 opacity-0 group-hover/terminal:opacity-100 group-has-[:focus-visible]/terminal:opacity-100"
+            className="absolute top-0.5 right-1 opacity-0 group-hover/terminal:opacity-100 group-has-[:focus-visible]/terminal:opacity-100 hover:bg-[var(--paper-ghost-pressed)] dark:hover:bg-[var(--paper-ghost-pressed)] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-[var(--sidebar-ring)] focus-visible:ring-0"
             aria-label={
               terminal.origin === 'user' ? 'Discard terminal' : 'Stop terminal'
             }

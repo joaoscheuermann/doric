@@ -39,6 +39,19 @@ describe('CommentPin', () => {
     assert.ok(!draft.some((name) => name.includes('badge')));
   });
 
+  test('T-5.21: every state draws a solid two-pixel outline on keyboard focus', () => {
+    for (const state of ['open', 'await', 'done', 'draft'] as const) {
+      const names = commentPinVariants({ state }).split(' ');
+      assert.deepEqual(
+        ['focus-visible:outline-solid', 'focus-visible:outline-2'].filter(
+          (name) => !names.includes(name),
+        ),
+        [],
+        `The ${state} pin lacks the focus outline.`,
+      );
+    }
+  });
+
   test('renders the state and size it was given', () => {
     const markup = renderToStaticMarkup(
       createElement(CommentPin, { state: 'await', size: 'lg' }, '2'),

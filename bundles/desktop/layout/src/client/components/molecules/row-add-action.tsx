@@ -38,6 +38,8 @@ type RowAddActionProps = {
  *   (`group-hover/tree-row:opacity-0`,
  *   `group-has-[:focus-visible]/tree-row:opacity-0`). On a row without the plus the
  *   badge stays.
+ * - The plus draws the ghost pressed square on hover and a 2 px
+ *   --sidebar-ring outline outside it on keyboard focus (§11.4).
  * - Nothing in the slot takes pointer events except the plus.
  */
 export function RowAddAction({
@@ -69,7 +71,7 @@ export function RowAddAction({
       {addable && (
         <SidebarMenuAction
           type="button"
-          className="pointer-events-none right-1 opacity-0 after:inset-0 group-hover/tree-row:pointer-events-auto group-hover/tree-row:opacity-100 group-has-[:focus-visible]/tree-row:pointer-events-auto group-has-[:focus-visible]/tree-row:opacity-100"
+          className="pointer-events-none right-1 opacity-0 after:inset-0 group-hover/tree-row:pointer-events-auto group-hover/tree-row:opacity-100 group-has-[:focus-visible]/tree-row:pointer-events-auto group-has-[:focus-visible]/tree-row:opacity-100 hover:bg-[var(--paper-ghost-pressed)] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-[var(--sidebar-ring)]"
           style={{ top: '0.25rem' }}
           aria-label={label}
           onClick={onAdd}

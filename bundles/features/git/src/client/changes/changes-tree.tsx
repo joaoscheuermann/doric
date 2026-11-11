@@ -31,23 +31,33 @@ import type { DiscardTarget } from './discard-dialog.js';
 
 /**
  * The repository row's fill, on its wrapper: the row is never selected, so it
- * mixes the accent in at 50% under the pointer and 80% while pressed
- * (docs/designs/sidebar-alignment.md §11.1).
+ * draws the ghost hover fill under the pointer and the ghost pressed fill
+ * while pressed (docs/designs/sidebar-alignment.md §11.1).
  */
 const rowFill =
-  'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
+  'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)]';
 
-/** The row ring, inset on the wrapper while its treeitem has keyboard focus. */
+/**
+ * The row outline: 2 px of --sidebar-ring inset on the wrapper while its
+ * treeitem has keyboard focus (§11.3).
+ */
 const treeitemRing =
-  'has-[[role=treeitem]:focus-visible]:ring-2 has-[[role=treeitem]:focus-visible]:ring-inset has-[[role=treeitem]:focus-visible]:ring-sidebar-ring';
+  'has-[[role=treeitem]:focus-visible]:outline-2 has-[[role=treeitem]:focus-visible]:-outline-offset-2 has-[[role=treeitem]:focus-visible]:outline-[var(--sidebar-ring)]';
 
-/** A row button that draws no fill and no ring: its wrapper draws both. */
+/**
+ * A row button that draws no fill and no ring: its wrapper draws the fill and
+ * the outline.
+ */
 const noFillButton =
   'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
 
-/** The pinned mark's backing: opaque, and the row's fill in each state (§11.2). */
+/**
+ * The pinned mark's backing: opaque, and the row's fill in each state:
+ * bg-sidebar, with the ghost as an image layer over it in hover and press
+ * (§11.2).
+ */
 const markBacking =
-  'bg-sidebar group-hover/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] group-active/tree-row:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
+  'bg-sidebar group-hover/tree-row:bg-[linear-gradient(var(--paper-ghost-hover),var(--paper-ghost-hover))] group-active/tree-row:bg-[linear-gradient(var(--paper-ghost-pressed),var(--paper-ghost-pressed))]';
 
 type ChangesTreeProps = {
   readonly repository: ChangeRepository & {

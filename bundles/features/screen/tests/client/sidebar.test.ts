@@ -303,6 +303,10 @@ const classesOf = (element: Element): string[] =>
 const ON_HOVER =
   'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-has-[:focus-visible]/menu-item:pointer-events-auto group-has-[:focus-visible]/menu-item:opacity-100';
 
+/** A row action's paper hover square and outline (spec §11, T-5.9). */
+const ACTION_STATES =
+  'hover:bg-[var(--paper-ghost-pressed)] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-[var(--sidebar-ring)]';
+
 const failed: ScreenView = {
   id: 'v3',
   label: 'Inspector',
@@ -395,6 +399,14 @@ test("a ready row's Remove is laid over the right edge on hover or focus", async
     assert.deepEqual(missingClasses(remove, `right-1 ${ON_HOVER}`), []);
     assert.equal(remove.style.top, '0.25rem');
     assert.equal(remove.classList.contains('md:opacity-0'), false);
+    assert.deepEqual(
+      missingClasses(
+        remove,
+        `${ACTION_STATES} focus-visible:ring-2 ring-sidebar-ring`,
+      ),
+      [],
+    );
+    assert.equal(remove.classList.contains('hover:bg-sidebar-accent'), false);
   });
 });
 
@@ -406,6 +418,14 @@ test("a failed row's Retry sits left of Remove, revealed with it; a ready row ha
     );
     assert.deepEqual(missingClasses(retry, `right-7 ${ON_HOVER}`), []);
     assert.equal(retry.style.top, '0.25rem');
+    assert.deepEqual(
+      missingClasses(
+        retry,
+        `${ACTION_STATES} focus-visible:ring-2 ring-sidebar-ring`,
+      ),
+      [],
+    );
+    assert.equal(retry.classList.contains('hover:bg-sidebar-accent'), false);
     assert.equal(
       findButton(rowNamed(element, 'Doric'), 'Retry Doric'),
       undefined,
@@ -430,12 +450,12 @@ test("a row's status fades out while its actions show", async () => {
 });
 
 // Phase 5 (docs/designs/sidebar-alignment.md §11.6, D24; T-5.9, T-5.14): a
-// view row's item takes the unselected fill and the ring keyed on its menu
+// view row's item takes the unselected fill and the outline keyed on its menu
 // button; the button draws no fill or ring; reveals follow keyboard focus only.
 const UNSELECTED_FILL =
-  'rounded-[4px] hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))] active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]';
+  'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)]';
 const MENU_BUTTON_RING =
-  'has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-inset has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-sidebar-ring';
+  'has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:-outline-offset-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-[var(--sidebar-ring)]';
 const NO_FILL_BUTTON =
   'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
 

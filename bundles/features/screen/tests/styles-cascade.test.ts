@@ -11,16 +11,20 @@ import { test } from 'node:test';
 /** The bundle's list in §11.6, in order. */
 const TOKENS = [
   'rounded-[4px]',
-  'hover:bg-[color-mix(in_oklch,var(--sidebar-accent)_50%,var(--sidebar))]',
-  'active:bg-[color-mix(in_oklch,var(--sidebar-accent)_80%,var(--sidebar))]',
-  'has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-2',
-  'has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-inset',
-  'has-[[data-slot=sidebar-menu-button]:focus-visible]:ring-sidebar-ring',
+  'hover:bg-[var(--paper-ghost-hover)]',
+  'active:bg-[var(--paper-ghost-pressed)]',
+  'has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-2',
+  'has-[[data-slot=sidebar-menu-button]:focus-visible]:-outline-offset-2',
+  'has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-[var(--sidebar-ring)]',
   'bg-transparent',
   'hover:bg-transparent',
   'active:bg-transparent',
   'data-active:bg-transparent',
   'focus-visible:ring-0',
+  'hover:bg-[var(--paper-ghost-pressed)]',
+  'focus-visible:outline-solid',
+  'focus-visible:outline-2',
+  'focus-visible:outline-[var(--sidebar-ring)]',
   'group-has-[:focus-visible]/menu-item:pointer-events-auto',
   'group-has-[:focus-visible]/menu-item:opacity-100',
   'group-has-[:focus-visible]/menu-item:opacity-0',
@@ -51,12 +55,24 @@ test('the built sheet is small, holds the row states and none of the known confl
   assert.ok(size < 8192, `the built sheet is ${size} bytes`);
   const css = await readFile(built, 'utf8');
   assert.ok(
-    css.includes('color-mix(in oklch'),
-    'the sheet emits no color-mix fill',
+    css.includes('var(--paper-ghost-hover)'),
+    'the sheet emits no paper ghost fill',
+  );
+  assert.ok(
+    css.includes('outline-color: var(--sidebar-ring)'),
+    'the sheet emits no sidebar-ring outline color',
+  );
+  assert.ok(
+    css.includes('outline-style: solid'),
+    'the sheet emits no solid outline',
+  );
+  assert.ok(
+    !css.includes('color-mix(in oklch'),
+    'the sheet still emits a color-mix fill',
   );
   assert.ok(
     css.includes(':has(:is([data-slot=sidebar-menu-button]:focus-visible))'),
-    'the sheet emits no menu-button ring',
+    'the sheet emits no menu-button outline',
   );
   for (const conflict of [
     '.border {',
