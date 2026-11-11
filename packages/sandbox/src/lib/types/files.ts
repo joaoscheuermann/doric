@@ -36,6 +36,28 @@ export interface SandboxListInput {
 }
 
 /**
+ * Several directories listed one level each in one read (`listSandboxDirectories`),
+ * the way a tree that loads per directory asks for what it shows.
+ */
+export interface SandboxDirectoriesInput {
+  /** Workspace-relative directories; the workspace root is the empty path. */
+  readonly paths: readonly string[];
+  /**
+   * The root of the tree these directories belong to, workspace-relative: the
+   * listings apply the `.gitignore` rules in the order `listSandboxTree` from
+   * that root applies them. The workspace root when omitted.
+   */
+  readonly root?: string;
+}
+
+/** One directory of a `listSandboxDirectories` read; its entries carry no size. */
+export type SandboxDirectoryResult =
+  | ({ readonly status: 'listed' } & SandboxListing)
+  | { readonly status: 'escaped'; readonly message: string }
+  | { readonly status: 'missing' }
+  | { readonly status: 'not_directory' };
+
+/**
  * Why a listing could not be produced. Each failure is a distinct answer for the
  * caller: the `tree` tool turns them into its error lines and the host turns them
  * into status codes, so neither re-derives the rule that failed.
