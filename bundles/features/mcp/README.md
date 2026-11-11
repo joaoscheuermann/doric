@@ -41,7 +41,7 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   per-skill approval or digest checks: execution stays in the Project's
   sandbox.
 - **Window:** the client part registers the sidebar's MCP pane
-  (`layout.stack/v1`): the selected Project's servers with their status and
+  (`layout.stack/v2`): the selected Project's servers with their status and
   tool count over `mcp/v1.watch`, and the dialogs that add, edit, remove and
   sign in to them; the edit dialog lists the server's tools and skills after
   its headers or its environment. A header or variable is a typed value or a

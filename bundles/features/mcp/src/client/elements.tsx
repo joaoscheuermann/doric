@@ -1,6 +1,6 @@
 // The MCP client's elements: the sidebar's MCP pane. The layout draws the
-// group's frame — its header, the collapse control and the resizable panel
-// (`layout.stack/v1`) — so this part draws only what is inside it: one
+// group's frame — its header, the collapse control and its 40% cap
+// (`layout.stack/v2`) — so this part draws only what is inside it: one
 // one-line row per server of the selected Project, as the Screens pane draws
 // its views, with its tool count once connected and its status otherwise, and
 // the header's add control in an element of its own. A row opens the server's

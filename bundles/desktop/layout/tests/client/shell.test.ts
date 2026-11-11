@@ -7,6 +7,12 @@
 //   text) and where the window is (its path), never the shell's structure,
 //   and they stay out of what the rebuild changes: the Home tab, the global
 //   footer, and where `ProjectPanelTabs` and the account status sit.
+// - T-1.5 (sidebar alignment §5): an Untitled Thread wears the Untitled icon
+//   on its last crumb and its tab; a tab whose Thread the tree lacks keeps
+//   the main bubble.
+// - T-3.2–T-3.5 (sidebar alignment §9): the column is search, the Thread
+//   region (tree scroller, New Thread button), then the registered panes at
+//   the bottom; no Threads pane, nothing resizes in the stack.
 
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -17,7 +23,11 @@ import { NavigationV1 } from 'bundle/contracts';
 
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
-import { LayoutPanelV2, LayoutTabsV1 } from '../../src/contracts/index.js';
+import {
+  LayoutPanelV2,
+  LayoutStackV2,
+  LayoutTabsV1,
+} from '../../src/contracts/index.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
 import {
   type RenderedWorkspace,
@@ -1158,9 +1168,9 @@ test('the Files column cannot be collapsed', async () => {
   single(rendered.root, '[data-slot="workspace-files-footer"]');
 });
 
-// Phase 2e, T-2.8 (spec §2.2, contracts 2e §1): a "+ New Thread" row above
-// the sidebar's stack starts the inline root draft; the Threads pane header
-// loses its "New thread" plus.
+// Phase 2e, T-2.8 (spec §2.2, contracts 2e §1): a "+ New Thread" button
+// starts the inline root draft; nothing else in the sidebar is named "New
+// thread" (T-3.2 below).
 
 // T-2.8
 test('pressing New Thread with a selected Project shows the new thread name field in the tree', async () => {
@@ -1195,19 +1205,274 @@ test('pressing New Thread with a selected Project shows the new thread name fiel
   );
 });
 
-// T-2.8
-test('the Threads pane header has no New thread control', async () => {
+// Sidebar alignment phase 3 (spec §9, D8–D14): the column is the search
+// field, then the Thread region (the tree's scroller and the New Thread
+// button), then one group per registered pane at the bottom. There is no
+// Threads pane and nothing in the stack resizes. happy-dom lays nothing out,
+// so the caps and minimums are observable only as the classes that set them.
+
+/** The Project sidebar: the `sidebar` slot that holds "Search Threads". */
+const projectSidebar = (root: ParentNode): HTMLElement => {
+  const sidebar = root
+    .querySelector('input[aria-label="Search Threads"]')
+    ?.closest<HTMLElement>('[data-slot="sidebar"]');
+  assert.ok(sidebar, 'No sidebar holds the "Search Threads" field.');
+  return sidebar;
+};
+
+/** The stack's pane groups, in document order. */
+const paneGroups = (root: ParentNode): HTMLElement[] => [
+  ...root.querySelectorAll<HTMLElement>('[data-slot="sidebar-pane"]'),
+];
+
+/**
+ * Renders the `ProjectSidebar` story `name` alone, as the `NoProject` case
+ * below does, and calls `check` with its root; unmounts afterwards.
+ */
+const withStory = async (
+  name: 'LoadingThreads' | 'RequestFailed' | 'SearchNoMatch',
+  check: (root: HTMLElement) => void,
+): Promise<void> => {
+  // Rendering the workspace once installs happy-dom's window as the globals.
+  (await renderWorkspace()).cleanup();
+  const { createElement } = await import('react');
+  const { flushSync } = await import('react-dom');
+  const { createRoot } = await import('react-dom/client');
+  const stories = await import(
+    '../../stories/components/organisms/project-sidebar.stories.js'
+  );
+  const story = stories[name];
+  const root = document.createElement('div');
+  document.body.append(root);
+  const react = createRoot(root);
+  try {
+    flushSync(() => react.render(createElement(() => story.render())));
+    await settle();
+    await settle();
+    check(root);
+  } finally {
+    react.unmount();
+  }
+};
+
+/** The Thread tree's scroller in `root`. */
+const threadTree = (root: ParentNode): HTMLElement =>
+  single(root, '[data-slot="thread-tree"]');
+
+// T-3.2, replacing T-2.8's "the Threads pane header has no New thread control"
+test('the column reads search, the Thread tree, the New Thread button, then the panes', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, formThread],
+    path: `/projects/${project.id}`,
+  });
+  const sidebar = projectSidebar(rendered.root);
+  const search = single(sidebar, 'input[aria-label="Search Threads"]');
+  const tree = threadTree(sidebar);
+  const button = only(sidebar, 'button', 'New Thread');
+  const items = [...sidebar.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+
+  assert.ok(follows(search, tree), 'The tree is not below the search field.');
+  assert.equal(items.length, 2, 'The tree does not show both Threads.');
+  assert.ok(
+    items.every((item) => tree.contains(item)),
+    'A Thread row is outside the tree scroller.',
+  );
+  assert.ok(
+    !tree.contains(button) && follows(tree, button),
+    'The New Thread button does not follow the tree scroller.',
+  );
+  assert.ok(
+    items.every((item) => follows(item, button)),
+    'A Thread row comes after the New Thread button.',
+  );
+  assert.equal(normalized(button.textContent), '', 'New Thread has text.');
+  assert.equal(button.querySelectorAll('svg').length, 1);
+  assert.equal(button.querySelectorAll('svg.lucide-plus').length, 1);
+  assert.deepEqual(missingClasses(button, 'w-full bg-secondary'), []);
+  const panes = paneGroups(sidebar);
+  assert.equal(panes.length, 1, 'The Screens pane has no group.');
+  assert.ok(
+    panes.every((pane) => follows(button, pane)),
+    'A pane is not below the New Thread button.',
+  );
+  assert.equal(
+    named(sidebar, 'button, [aria-label]', 'New thread').length,
+    0,
+    'A control named "New thread" is still in the sidebar.',
+  );
+});
+
+// T-3.2: the error alert is inside the tree scroller, above the rows.
+test('a failed request is reported inside the tree scroller, above the rows', async () => {
+  await withStory('RequestFailed', (root) => {
+    const tree = threadTree(root);
+    const alert = single(root, '[role="alert"]');
+    const [first] = tree.querySelectorAll('[role="treeitem"]');
+    assert.ok(tree.contains(alert), 'The alert is outside the tree scroller.');
+    assert.ok(
+      first !== undefined && follows(alert, first),
+      'The alert is not above the rows.',
+    );
+    assert.ok(
+      follows(tree, only(root, 'button', 'New Thread')),
+      'The New Thread button is not below the tree scroller.',
+    );
+  });
+});
+
+// T-3.2: the skeleton rows are inside the tree scroller.
+test('while the Threads load, the skeleton rows are inside the tree scroller', async () => {
+  await withStory('LoadingThreads', (root) => {
+    const tree = threadTree(root);
+    const skeletons = root.querySelectorAll(
+      '[data-slot="sidebar-menu-skeleton"]',
+    );
+    assert.ok(skeletons.length > 0, 'No skeleton rows while loading.');
+    assert.equal(
+      tree.querySelectorAll('[data-slot="sidebar-menu-skeleton"]').length,
+      skeletons.length,
+      'A skeleton row is outside the tree scroller.',
+    );
+  });
+});
+
+// T-3.2: "No threads match" ends the tree scroller, above the button.
+test('a query that matches nothing ends the tree scroller with its notice', async () => {
+  await withStory('SearchNoMatch', (root) => {
+    const tree = threadTree(root);
+    const notice = single(root, '[data-threads-empty]');
+    assert.ok(tree.contains(notice), 'The notice is outside the scroller.');
+    assert.ok(
+      [...tree.querySelectorAll('*')].every(
+        (element) => notice.contains(element) || !follows(notice, element),
+      ),
+      'Something in the tree scroller follows the notice.',
+    );
+    assert.ok(
+      follows(tree, only(root, 'button', 'New Thread')),
+      'The New Thread button is not below the tree scroller.',
+    );
+  });
+});
+
+// T-3.3
+test('the stack has no resize handle and no resizable group', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, formThread],
+    path: `/projects/${project.id}`,
+  });
+  const sidebar = projectSidebar(rendered.root);
+
+  assert.equal(
+    sidebar.querySelectorAll('[data-slot="resizable-handle"]').length,
+    0,
+    'The sidebar has a resize handle.',
+  );
+  assert.equal(
+    sidebar.querySelectorAll('[data-slot="resizable-panel-group"]').length,
+    0,
+    'The sidebar has a resizable group.',
+  );
+});
+
+// T-3.3, T-3.5: the Screens pane sits at the bottom with its header, and
+// collapses to it.
+test('the Screens pane sits at the bottom with its header, and collapses to it', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, formThread],
+    path: `/projects/${project.id}`,
+  });
+  const sidebar = projectSidebar(rendered.root);
+  const [pane] = paneGroups(sidebar);
+  assert.ok(pane, 'The Screens pane has no group.');
+  assert.equal(pane.getAttribute('data-pane-id'), 'screen-sidebar');
+  const region = single(sidebar, '[data-slot="thread-region"]');
+  assert.ok(
+    !region.contains(pane) && follows(region, pane),
+    'The Screens pane is not below the Thread region.',
+  );
+  assert.ok(
+    [...sidebar.querySelectorAll('*')].every(
+      (element) =>
+        pane.contains(element) ||
+        element.contains(pane) ||
+        !follows(pane, element),
+    ),
+    'Something in the sidebar is below the Screens pane.',
+  );
+  assert.ok(
+    pane.textContent?.includes('Screens'),
+    'The Screens pane has no title.',
+  );
+  assert.equal(standIns(pane, 'screen-group-action').length, 1);
+
+  await click(only(pane, 'button', 'Expand Screens'));
+  assert.equal(standIns(pane, 'screen-sidebar').length, 1);
+
+  await click(only(pane, 'button', 'Collapse Screens'));
+  assert.equal(
+    standIns(rendered.root, 'screen-sidebar').length,
+    0,
+    'Collapsing Screens keeps its content.',
+  );
+  assert.ok(
+    pane.isConnected && pane.textContent?.includes('Screens'),
+    'Collapsing Screens removes its header.',
+  );
+
+  await click(only(pane, 'button', 'Expand Screens'));
+  assert.equal(standIns(pane, 'screen-sidebar').length, 1);
+});
+
+// T-3.4
+test('a pane is capped at 40% and keeps its header; the Thread region keeps 40 px and the button', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, formThread],
+    path: `/projects/${project.id}`,
+  });
+  const sidebar = projectSidebar(rendered.root);
+  const panes = paneGroups(sidebar);
+  assert.equal(panes.length, 1, 'The Screens pane has no group.');
+  for (const pane of panes)
+    assert.deepEqual(missingClasses(pane, 'max-h-[40%] min-h-7'), []);
+
+  const [pane] = panes;
+  assert.ok(pane);
+  await click(only(pane, 'button', 'Expand Screens'));
+  const content = single(pane, '[data-slot="sidebar-group-content"]');
+  assert.deepEqual(missingClasses(content, 'min-h-0 overflow-y-auto'), []);
+
+  const region = single(sidebar, '[data-slot="thread-region"]');
+  assert.deepEqual(missingClasses(region, 'flex-1 min-h-10'), []);
+  const tree = threadTree(region);
+  assert.deepEqual(missingClasses(tree, 'min-h-0 overflow-y-auto'), []);
+  const button = only(region, 'button', 'New Thread');
+  assert.deepEqual(missingClasses(button, 'shrink-0'), []);
+  assert.equal(button.hidden, false, 'New Thread is hidden.');
+  assert.ok(
+    !button.classList.contains('hidden'),
+    'New Thread is hidden by its classes.',
+  );
+});
+
+// T-3.5
+test('layout.stack/v2 lists only the registered panes, with no Threads pane', async () => {
   rendered = await renderWorkspace({
     projects: [project],
     threads: [planThread, formThread],
     path: `/projects/${project.id}`,
   });
 
-  only(rendered.root, 'button', 'New Thread');
-  assert.equal(
-    named(rendered.root, 'button, [aria-label]', 'New thread').length,
-    0,
-    'A control named "New thread" is still in the sidebar.',
+  assert.deepEqual(
+    rendered.services
+      .use(LayoutStackV2)
+      .panes()
+      .map((pane: { readonly id: string }) => pane.id),
+    ['screen-sidebar'],
   );
 });
 
@@ -1238,4 +1503,100 @@ test('New Thread is disabled while no Project is selected', async () => {
   } finally {
     react.unmount();
   }
+});
+
+// T-1.5 (spec §5, U2): an Untitled Thread wears the Untitled icon
+// (`message-circle-dashed`) on every surface that names it by its kind icon.
+const untitledThread: Thread = {
+  ...thread('8b0d2f4a-6c8e-4a0b-9d2f-4a6c8e0b2d4f', ''),
+  parentThreadId: planThread.id,
+};
+
+test("T-1.5: the breadcrumb's last crumb wears the Untitled icon for an Untitled Thread", async () => {
+  // Rendering the workspace once installs happy-dom's window as the globals.
+  (await renderWorkspace()).cleanup();
+  const { createElement } = await import('react');
+  const { flushSync } = await import('react-dom');
+  const { createRoot } = await import('react-dom/client');
+  const { ThreadBreadcrumb } = await import(
+    '../../src/client/components/molecules/thread-breadcrumb.js'
+  );
+  const root = document.createElement('div');
+  document.body.append(root);
+  const react = createRoot(root);
+  try {
+    flushSync(() =>
+      react.render(
+        createElement(ThreadBreadcrumb, {
+          project,
+          path: [planThread, untitledThread],
+          onSelectProject: () => undefined,
+          onSelectThread: () => undefined,
+        }),
+      ),
+    );
+    await settle();
+
+    const pages = root.querySelectorAll('[data-slot="breadcrumb-page"]');
+    assert.equal(pages.length, 1, 'The breadcrumb has no single last crumb.');
+    assert.equal(
+      pages[0]?.querySelectorAll('svg.lucide-message-circle-dashed').length,
+      1,
+      'The last crumb does not wear the Untitled icon.',
+    );
+  } finally {
+    react.unmount();
+  }
+});
+
+/**
+ * The workspace at Plan with a conversation tab on each of `threads`, named by
+ * the Project `projectId` (Checkout redesign unless a case says otherwise).
+ */
+const withThreadTabs = (
+  threads: readonly Thread[],
+  projectId: string = project.id,
+): LayoutFixture => ({
+  projects: [project],
+  threads: [planThread, untitledThread],
+  path: `/projects/${project.id}/threads/${planThread.id}`,
+  tabs: {
+    [planThread.id]: threads.map((tabThread) => ({
+      id: `thread:${tabThread.id}`,
+      title: tabThread.name || 'Untitled',
+      tag: 'chat-thread-panel',
+      icon: 'thread' as const,
+      props: { projectId, threadId: tabThread.id },
+    })),
+  },
+});
+
+test("T-1.5: an Untitled Thread's tab wears the Untitled icon", async () => {
+  rendered = await renderWorkspace(withThreadTabs([untitledThread]));
+
+  const tab = only(rendered.root, '[role="tab"]', 'Untitled');
+  assert.equal(
+    tab.querySelectorAll('svg.lucide-message-circle-dashed').length,
+    1,
+    'The Untitled tab does not wear the Untitled icon.',
+  );
+});
+
+test('T-1.5: the tab of a Thread missing from the tree keeps the main bubble', async () => {
+  // The tab names a Thread of Docs site, a Project whose Threads the window
+  // never loaded: the tab stays open, and the tree cannot say what it is.
+  const missing = thread('1f3b5d7f-9a1c-4e3b-8d5f-7a9c1e3b5d7f', 'Gone');
+  rendered = await renderWorkspace(withThreadTabs([missing], docs.id));
+
+  const tab = only(rendered.root, '[role="tab"]', 'Gone');
+  assert.equal(
+    tab.querySelectorAll('svg.lucide-message-circle').length,
+    1,
+    'The tab of a missing Thread does not wear the main bubble.',
+  );
+  assert.equal(
+    tab.querySelectorAll('svg.lucide-message-circle-dashed').length,
+    0,
+    'The tab of a missing Thread wears the Untitled icon.',
+  );
 });

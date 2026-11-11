@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "files",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "engines": { "doric": "^1.0.0" },
   "description": "Core capabilities available to the Doric agent.",
   "provides": [

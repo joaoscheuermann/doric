@@ -1,6 +1,7 @@
 // The git manifest (ui-redesign S15, S35; T-4.4.9 for git): the diff tab's
 // `menu` (A6) needs `layout.tabs/v1@1.2.0`, so the bundle requires it; it
-// provides `git.commands/v1@1.1.0` (`discard`) and stays at version 1.2.0 (G1).
+// provides `git.commands/v1@1.1.0` (`discard`) at version 1.2.2 (G1; the
+// sidebar alignment's patches, T-1.10 and T-4.7).
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -12,7 +13,7 @@ describe('the git manifest', () => {
       readFileSync('bundles/features/git/manifest.json', 'utf8'),
     ) as { version: string; provides: string[]; requires: string[] };
 
-    assert.equal(manifest.version, '1.2.0');
+    assert.equal(manifest.version, '1.2.2');
     assert.ok(manifest.provides.includes('git.commands/v1@1.1.0'));
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('layout.tabs/')),

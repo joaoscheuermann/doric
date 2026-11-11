@@ -73,6 +73,11 @@ export interface ThreadRows {
   readonly tag: string;
   count(threadId: string): number;
   subscribe(listener: () => void): Disposable;
+  /**
+   * `layout.sidebar/v1` 1.1.0: whether an agent terminal directly under the
+   * Thread keeps it active. A 1.0.0 layout never calls it and ignores it.
+   */
+  busy?(threadId: string): boolean;
 }
 
 /** `layout.sidebar/v1` (1.0.0). */

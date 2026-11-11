@@ -13,13 +13,12 @@ import {
   treeClassName,
 } from 'desktop/ui/panels';
 import {
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
-import { ChevronRightIcon, GitBranchIcon, RotateCcwIcon } from 'lucide-react';
+import { GitBranchIcon, RotateCcwIcon } from 'lucide-react';
 import { memo, type ReactNode, useMemo } from 'react';
 
 import type { ProjectChange } from '../../contracts/index.js';
@@ -100,7 +99,7 @@ export const ChangesTree = memo(function ChangesTree({
     <SidebarMenuButton
       size="sm"
       className={cn(
-        'h-7 w-full min-w-0 gap-1.5 rounded-[4px] pr-8',
+        'h-7 w-auto min-w-0 flex-1 gap-1.5 rounded-[4px] pr-1.5',
         rowInteraction(false),
       )}
       style={{ paddingLeft: indentation(0) }}
@@ -131,20 +130,14 @@ export const ChangesTree = memo(function ChangesTree({
         aria-hidden
         className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
       >
-        <GitBranchIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-        <ChevronRightIcon
-          className={cn(
-            'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
-            open && 'rotate-90',
-          )}
-        />
+        <GitBranchIcon />
       </span>
       <span className="min-w-0 flex-1 truncate font-normal">{label}</span>
     </SidebarMenuButton>
   );
   return (
     <SidebarMenuItem role="presentation" className="w-full min-w-0">
-      <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
+      <div className="group/tree-row relative flex w-full min-w-0 items-center">
         {onDiscard === undefined ? (
           repositoryButton
         ) : (
@@ -158,17 +151,26 @@ export const ChangesTree = memo(function ChangesTree({
             </ContextMenuContent>
           </ContextMenu>
         )}
-        <SidebarMenuBadge className="z-10 bg-sidebar/90">
-          <Badge variant="ghost" className="px-1" aria-hidden>
-            <ChangeCounts
-              added={repository.added}
-              removed={repository.removed}
-            />
-          </Badge>
-        </SidebarMenuBadge>
+        <span
+          aria-hidden
+          data-slot="tree-row-mark"
+          className="sticky right-1 shrink-0 pr-1 text-sidebar-foreground peer-hover/menu-button:text-sidebar-accent-foreground peer-data-active/menu-button:text-sidebar-accent-foreground"
+        >
+          <div className="flex h-5 min-w-5 items-center justify-center rounded-md bg-sidebar/90 px-1 text-xs tabular-nums pointer-events-none select-none">
+            <Badge variant="ghost" className="px-1" aria-hidden>
+              <ChangeCounts
+                added={repository.added}
+                removed={repository.removed}
+              />
+            </Badge>
+          </div>
+        </span>
       </div>
       {open && (
-        <SidebarMenuSub role="group" className={treeClassName}>
+        <SidebarMenuSub
+          role="group"
+          className={cn(treeClassName, 'overflow-visible')}
+        >
           <FileTree
             entries={entries}
             depth={1}

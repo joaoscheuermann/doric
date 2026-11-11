@@ -98,7 +98,17 @@ export const planThread = thread(
   '11111111-1111-4111-8111-111111111111',
   checkout.id,
   'Plan the checkout flow',
-  { cwdRepo: 'github', lastExecutionMs: 84_000 },
+  {
+    cwdRepo: 'github',
+    lastExecutionMs: 84_000,
+    // A whole latest execution, so the active parent counts from its own start.
+    result: {
+      status: 'completed',
+      text: '',
+      promptId: '0f1e2d3c-4b5a-4968-8776-655443322110',
+      at: minutesAgo(30),
+    },
+  },
 );
 export const formThread = thread(
   '22222222-2222-4222-8222-222222222222',

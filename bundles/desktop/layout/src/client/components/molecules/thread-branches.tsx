@@ -10,16 +10,20 @@ import {
   SidebarMenuSubItem,
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
-import { ChevronRightIcon } from 'lucide-react';
 
-import type { ThreadIconKind } from '../../domain/sidebar.js';
+import { threadRowPadding } from '../../domain/sidebar.js';
 import type { ThreadFilter } from '../../domain/thread-filter.js';
 import {
+  isUntitled,
   threadControl,
   threadKind,
   threadKindHint,
 } from '../../domain/thread-kind.js';
-import type { ThreadLevel } from '../../domain/thread-tree.js';
+import {
+  isThreadRunning,
+  type ThreadActivity,
+  type ThreadLevel,
+} from '../../domain/thread-tree.js';
 import type { Thread } from '../../domain/workspace.js';
 import { useThreadRows } from '../../hooks/use-thread-rows.js';
 import { hasThreadRows } from '../../stores/thread-rows.js';
@@ -47,6 +51,13 @@ export type ThreadBranchesActions = {
 
 type ThreadBranchesProps = {
   readonly actions: ThreadBranchesActions;
+  /**
+   * The active Threads of the whole Project tree (`threadActivity` over the
+   * root level), by id, passed unchanged to every level. A row with an entry
+   * shimmers and shows the "Agent running" status, and its entry's `startedAt`
+   * drives its elapsed badge and padding. A row without one is idle.
+   */
+  readonly activity: ReadonlyMap<string, ThreadActivity>;
   readonly collapsed: ReadonlySet<string>;
   readonly depth: number;
   readonly editingThreadId?: string;
@@ -58,12 +69,6 @@ type ThreadBranchesProps = {
    * the tree as it was. Absent: the whole tree, drawn from `collapsed`.
    */
   readonly filter?: ThreadFilter;
-  /**
-   * The repository each Thread's cwd sits in, decided by the caller from the
-   * Thread alone and drawn at the row's trailing edge. It defaults to no
-   * repository, so a caller that knows no better draws the rows it always drew.
-   */
-  readonly repo?: (thread: Thread) => ThreadIconKind;
   readonly level: ThreadLevel;
   readonly onExpand: (id: string) => void;
   readonly onToggle: (id: string) => void;
@@ -77,11 +82,11 @@ type ThreadBranchesProps = {
  */
 export function ThreadBranches({
   actions,
+  activity,
   collapsed,
   depth,
   editingThreadId,
   filter,
-  repo = () => 'conversation',
   level,
   onExpand,
   onToggle,
@@ -95,8 +100,8 @@ export function ThreadBranches({
         const { thread } = node;
         if (filter !== undefined && !filter.shown.has(thread.id)) return null;
         const selected = selectedThreadId === thread.id;
-        const running =
-          thread.state === 'running' && thread.activePromptId !== undefined;
+        const entry = activity.get(thread.id);
+        const running = isThreadRunning(thread);
         const expandable = node.expandable || hasThreadRows(rows, thread.id);
         const expanded =
           expandable &&
@@ -104,10 +109,10 @@ export function ThreadBranches({
             !collapsed.has(thread.id));
         const kind = threadKind(thread);
         const control = threadControl(thread);
-        const repository = repo(thread);
         const marked = control.branches
           ? `New sub-thread in ${thread.name || 'Untitled'}`
           : undefined;
+        const timed = entry?.startedAt !== undefined;
         const addChild = () => {
           onExpand(thread.id);
           actions.beginChild(thread);
@@ -150,6 +155,7 @@ export function ThreadBranches({
                     <div
                       role="treeitem"
                       tabIndex={0}
+                      aria-expanded={expandable ? expanded : undefined}
                       onClick={activate}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -163,39 +169,22 @@ export function ThreadBranches({
                   size="sm"
                   className={cn(
                     'h-7 w-full translate-x-0 rounded-md',
-                    running ? 'pr-16' : 'pr-8',
+                    threadRowPadding(timed, marked !== undefined),
                     rowInteraction(selected),
                   )}
                   style={{ paddingLeft: indentation(depth) }}
                 >
                   {/* One 16 px lead slot (Figma `112:22161`, `99:8035`): the
-                      kind icon at rest; on an expandable row, open or closed,
-                      the chevron replaces it while the row is hovered or
-                      holds focus (CSS only), turned down while open. */}
+                      kind icon, or the Untitled icon for an empty name. */}
                   <span
                     aria-hidden
                     data-slot="thread-lead"
                     className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
                   >
-                    {expandable ? (
-                      <>
-                        <ThreadKindIcon
-                          kind={kind}
-                          className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden"
-                        />
-                        <ChevronRightIcon
-                          className={cn(
-                            'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
-                            expanded && 'rotate-90',
-                          )}
-                        />
-                      </>
-                    ) : (
-                      <ThreadKindIcon kind={kind} />
-                    )}
+                    <ThreadKindIcon kind={kind} untitled={isUntitled(thread)} />
                   </span>
                   <EditableName
-                    className={cn(running && 'shimmer')}
+                    className={cn(entry !== undefined && 'shimmer')}
                     editing={editingThreadId === thread.id}
                     label="Thread name"
                     placeholder="Untitled"
@@ -209,13 +198,13 @@ export function ThreadBranches({
                     onSubmit={(name) => actions.rename(thread, name)}
                   />
                 </SidebarMenuSubButton>
-                {/* Drawn on every row; its marks show only while the row is
-                    hovered or running (`27:13973`). */}
+                {/* Drawn on every row: the elapsed badge while active, the
+                    plus on hover or focus (`27:13973`). */}
                 <RowAddAction
+                  active={entry !== undefined}
                   label={marked}
                   onAdd={marked === undefined ? undefined : addChild}
-                  repo={repository}
-                  startedAt={running ? thread.executionStartedAt : undefined}
+                  startedAt={entry?.startedAt}
                 />
               </div>
             </ItemContextMenu>
@@ -232,11 +221,11 @@ export function ThreadBranches({
                 ))}
                 <ThreadBranches
                   actions={actions}
+                  activity={activity}
                   collapsed={collapsed}
                   depth={depth + 1}
                   editingThreadId={editingThreadId}
                   {...(filter === undefined ? {} : { filter })}
-                  repo={repo}
                   level={node.children}
                   onExpand={onExpand}
                   onToggle={onToggle}

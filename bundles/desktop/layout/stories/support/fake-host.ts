@@ -52,6 +52,12 @@ export interface HostOptions {
   /** How many terminal rows each Thread has in the sidebar tree. */
   readonly terminalRows?: Readonly<Record<string, number>>;
   /**
+   * Thread ids with a busy agent terminal: the stories' `layout.sidebar/v1`
+   * registration answers `busy` true for them, so each one and its ancestors
+   * are active. Absent: no Thread is busy.
+   */
+  readonly terminalBusy?: readonly string[];
+  /**
    * Contract ids the host does not provide, as an older app lacks a platform
    * contract. For an id listed here:
    * - `services.use` throws, as it does for any id the host does not know;
@@ -160,7 +166,7 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
   ],
 };
 
-/** The Screens group the screen bundle adds below the Threads tree. */
+/** The Screens group the screen bundle adds below the Threads list. */
 export const screenPane: StackPane = {
   id: 'screen-sidebar',
   order: 10,
@@ -169,8 +175,6 @@ export const screenPane: StackPane = {
   headerTag: 'screen-group-action',
   collapsible: true,
   initiallyOpen: false,
-  minSize: '20%',
-  maxSize: '80%',
 };
 
 type RouteMatch = {

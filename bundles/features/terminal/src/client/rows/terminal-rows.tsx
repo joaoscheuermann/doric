@@ -94,7 +94,7 @@ export function TerminalRows({
                 title={terminalLabel(terminal, now)}
                 render={<button type="button" />}
               >
-                <TerminalIcon />
+                <TerminalLead />
                 <span className="truncate">{terminalLabel(terminal, now)}</span>
               </SidebarMenuSubButton>
             }
@@ -184,7 +184,7 @@ function TerminalNameField({
       className="flex h-7 w-full items-center gap-2 pr-1 [&>svg]:size-4 [&>svg]:shrink-0"
       style={{ paddingLeft: indentation(depth) }}
     >
-      <TerminalIcon />
+      <TerminalLead />
       <Input
         aria-label="Terminal name"
         className="h-6 px-1.5 py-0 text-sm"
@@ -211,5 +211,21 @@ function TerminalNameField({
         }}
       />
     </div>
+  );
+}
+
+/**
+ * A terminal row's lead: the terminal icon in the same 16 px slot, at the same
+ * 14 px, as the Thread and file rows' leads, so the names line up.
+ */
+function TerminalLead() {
+  return (
+    <span
+      aria-hidden
+      data-slot="terminal-lead"
+      className="flex size-4 shrink-0 items-center justify-center text-sidebar-accent-foreground [&_svg]:size-3.5!"
+    >
+      <TerminalIcon />
+    </span>
   );
 }

@@ -3,7 +3,7 @@
 // says they changed, and a duplicate id is a registration conflict.
 
 import assert from 'node:assert/strict';
-import { beforeEach, describe, test } from 'node:test';
+import { beforeEach, describe, mock, test } from 'node:test';
 
 import { ContractError, type Disposable } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
@@ -12,9 +12,10 @@ import { createLayoutSidebar } from '../src/client/services/layout-sidebar.js';
 import {
   hasThreadRows,
   resetThreadRows,
+  threadRowsBusy,
   threadRowsStore,
 } from '../src/client/stores/thread-rows.js';
-import { LayoutSidebarV1 } from '../src/contracts/index.js';
+import { LayoutSidebarV1, type ThreadRows } from '../src/contracts/index.js';
 
 const counted = (counts: Record<string, number>) => {
   const listeners = new Set<() => void>();
@@ -114,6 +115,84 @@ describe('layout.sidebar/v1', () => {
         ],
         't1',
       ),
+      false,
+    );
+  });
+
+  test('accepts a registration with a busy answer and one without (T-2.6)', async () => {
+    const { sidebar, dispose } = setup();
+    const busy = { ...counted({}).rows, id: 'busy', busy: () => true };
+    const plain = { ...counted({}).rows, id: 'plain' };
+
+    sidebar.addThreadRows(busy);
+    sidebar.addThreadRows(plain);
+
+    assert.equal(threadRowsStore.getState().rows.length, 2);
+    await dispose();
+  });
+
+  for (const value of [1, null]) {
+    test(`refuses busy: ${String(value)} as invalid input (T-2.6)`, async () => {
+      const { sidebar, dispose } = setup();
+      const rows = {
+        ...counted({}).rows,
+        busy: value,
+      } as unknown as ThreadRows;
+
+      assert.throws(
+        () => sidebar.addThreadRows(rows),
+        (error: unknown) =>
+          error instanceof ContractError &&
+          error.code === 'invalid_input' &&
+          error.message.includes('Expected { id, tag, count, subscribe, busy? }.'),
+      );
+      await dispose();
+    });
+  }
+});
+
+describe('threadRowsBusy', () => {
+  const rows = (id: string, busy?: (threadId: string) => boolean): ThreadRows => ({
+    id,
+    tag: `x-${id}`,
+    count: () => 0,
+    subscribe: () => ({ dispose: () => undefined }),
+    ...(busy === undefined ? {} : { busy }),
+  });
+
+  test('is false when no registration answers busy (T-2.6)', () => {
+    assert.equal(threadRowsBusy([], 't1'), false);
+    assert.equal(threadRowsBusy([rows('plain')], 't1'), false);
+  });
+
+  test('reads a throwing busy as false and logs nothing (T-2.6)', () => {
+    const logged = ['error', 'warn', 'log', 'info', 'debug'].map((name) =>
+      mock.method(console, name as 'error', () => undefined),
+    );
+    try {
+      const broken = rows('broken', () => {
+        throw new Error('broken');
+      });
+      assert.equal(threadRowsBusy([broken], 't1'), false);
+      for (const spy of logged) assert.equal(spy.mock.callCount(), 0);
+    } finally {
+      for (const spy of logged) spy.mock.restore();
+    }
+  });
+
+  test('is true when any registration answers true (T-2.6)', () => {
+    const broken = rows('broken', () => {
+      throw new Error('broken');
+    });
+    assert.equal(
+      threadRowsBusy(
+        [rows('plain'), broken, rows('idle', () => false), rows('busy', (id) => id === 't1')],
+        't1',
+      ),
+      true,
+    );
+    assert.equal(
+      threadRowsBusy([rows('busy', (id) => id === 't1')], 't2'),
       false,
     );
   });

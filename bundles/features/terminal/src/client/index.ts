@@ -23,7 +23,7 @@ import { toast } from 'desktop/ui/sonner';
 
 import { TerminalServiceV1 } from '../contracts/index.js';
 import { createTerminalApi } from './api.js';
-import type { Terminal } from './domain/terminals.js';
+import { isAgentBusy, type Terminal } from './domain/terminals.js';
 import { defineTerminalElements, type TerminalClient } from './elements.js';
 import { createTerminalWatches } from './output-watch.js';
 import {
@@ -62,6 +62,24 @@ export const registerTerminalSurfaces = (
   const added = terminalRegions.map(({ region, item }) =>
     regions.add(region, item),
   );
+  // `busy` runs for every Thread on every render of the tree, so it answers
+  // from memory: each Thread's Project is resolved once (again only while the
+  // workspace does not know the Thread yet), and the busy Thread ids are
+  // rebuilt only after the store changed.
+  const projects = new Map<string, string>();
+  const projectOf = (threadId: string): string | undefined => {
+    const known = projects.get(threadId);
+    if (known !== undefined) return known;
+    const projectId = workspace()?.thread(threadId)?.projectId;
+    if (projectId !== undefined) projects.set(threadId, projectId);
+    return projectId;
+  };
+  let busyThreads: ReadonlySet<string> | undefined;
+  added.push(
+    store.subscribe(() => {
+      busyThreads = undefined;
+    }),
+  );
   added.push(
     sidebar.addThreadRows({
       id: 'terminals',
@@ -72,6 +90,17 @@ export const registerTerminalSurfaces = (
         return store.threadTerminals(threadId).length;
       },
       subscribe: (listener) => store.subscribe(listener),
+      busy: (threadId) => {
+        const projectId = projectOf(threadId);
+        if (projectId !== undefined) store.follow(projectId);
+        busyThreads ??= new Set(
+          store
+            .terminals()
+            .filter(isAgentBusy)
+            .map((terminal) => terminal.threadId),
+        );
+        return busyThreads.has(threadId);
+      },
     }),
   );
   return {

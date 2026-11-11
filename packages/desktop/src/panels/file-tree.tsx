@@ -1,9 +1,4 @@
-import {
-  ChevronRightIcon,
-  FileIcon,
-  FolderIcon,
-  FolderOpenIcon,
-} from 'lucide-react';
+import { FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react';
 import { type ReactNode, type Ref, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '../components/badge.js';
@@ -13,7 +8,6 @@ import {
   ContextMenuTrigger,
 } from '../components/context-menu.js';
 import {
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSubItem,
@@ -251,8 +245,7 @@ function TreeRow({
       isActive={selected}
       size="sm"
       className={cn(
-        'h-7 w-full min-w-0 gap-1.5 rounded-[4px]',
-        decoration === undefined ? 'pr-1.5' : 'pr-8',
+        'h-7 w-auto min-w-0 flex-1 gap-1.5 rounded-[4px] pr-1.5',
         rowInteraction(selected),
       )}
       style={{ paddingLeft: indentation(depth) }}
@@ -296,23 +289,7 @@ function TreeRow({
         aria-hidden
         className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
       >
-        {!directory ? (
-          <FileIcon />
-        ) : (
-          <>
-            {open ? (
-              <FolderOpenIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-            ) : (
-              <FolderIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-            )}
-            <ChevronRightIcon
-              className={cn(
-                'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
-                open && 'rotate-90',
-              )}
-            />
-          </>
-        )}
+        {!directory ? <FileIcon /> : open ? <FolderOpenIcon /> : <FolderIcon />}
       </span>
       <span
         className={cn(
@@ -341,7 +318,7 @@ function TreeRow({
         );
       }}
     >
-      <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
+      <div className="group/tree-row relative flex w-full min-w-0 items-center">
         <TreeGuides depth={depth} />
         {menu === null ? (
           button
@@ -352,13 +329,19 @@ function TreeRow({
           </ContextMenu>
         )}
         {decoration !== undefined && (
-          <SidebarMenuBadge className="z-10 bg-sidebar/90">
-            <Badge variant="ghost" className="px-1" aria-hidden>
-              <span className={decoration.tone}>
-                {directory ? decoration.count : (decoration.letter ?? '')}
-              </span>
-            </Badge>
-          </SidebarMenuBadge>
+          <span
+            aria-hidden
+            data-slot="tree-row-mark"
+            className="sticky right-1 shrink-0 pr-1 text-sidebar-foreground peer-hover/menu-button:text-sidebar-accent-foreground peer-data-active/menu-button:text-sidebar-accent-foreground"
+          >
+            <div className="flex h-5 min-w-5 items-center justify-center rounded-md bg-sidebar/90 px-1 text-xs tabular-nums pointer-events-none select-none">
+              <Badge variant="ghost" className="px-1" aria-hidden>
+                <span className={decoration.tone}>
+                  {directory ? decoration.count : (decoration.letter ?? '')}
+                </span>
+              </Badge>
+            </div>
+          </span>
         )}
       </div>
     </SidebarMenuItem>

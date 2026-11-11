@@ -2,7 +2,8 @@
  * Presentation for a nested tree row: the depth guides plus the shared
  * indentation, sub-list and interaction classes the tree rows use.
  */
-const treeStep = 0.75;
+/** One tree level's indent: 20 px, so a child's lead clears its parent's. */
+const treeStep = 1.25;
 
 /** The shared class for the nested `SidebarMenuSub` that holds a tree level. */
 export const treeClassName =
@@ -10,7 +11,7 @@ export const treeClassName =
 
 /**
  * Left padding for a row at `depth`, shared by tree rows and draft rows: 6 px
- * plus 12 px per level.
+ * plus 20 px per level.
  */
 export const indentation = (depth: number): string =>
   `${0.375 + depth * treeStep}rem`;

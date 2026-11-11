@@ -37,6 +37,16 @@ export const threadKind = (thread: Thread): ThreadKind => {
   return thread.origin === 'agent' ? 'sub-agent' : 'sub-thread';
 };
 
+/**
+ * Whether every surface names the Thread "Untitled": its name is empty.
+ *
+ * Accepts any Thread record. Returns `true` exactly when `thread.name` is the
+ * empty string, and `false` for every other name, including the literal
+ * "Untitled". Never throws and reads nothing but the name, so the sidebar row,
+ * the breadcrumb and the tab agree on the same Thread.
+ */
+export const isUntitled = (thread: Thread): boolean => thread.name === '';
+
 /** What each kind is called where a surface has room for words. */
 export const threadKindLabel: Record<ThreadKind, string> = {
   main: 'Main thread',

@@ -3,7 +3,7 @@
 // and the header element that opens another view.
 //
 // The layout draws the group's frame — header, collapse control and panel
-// (`layout.stack/v1`) — so these elements draw only the rows and the add
+// (`layout.stack/v2`) — so these elements draw only the rows and the add
 // control. The layout rebuilds its records on every read, so a read whose
 // snapshot identity changes on every call makes `useSyncExternalStore`
 // re-render without end — React's "Maximum update depth exceeded" (#185) — and
@@ -11,9 +11,10 @@
 // not inherit from the layout (D9-17, as `git` and `files` wrap theirs).
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 
-import type { Services } from 'bundle/contracts';
+import type { ClientContext, Services } from 'bundle/contracts';
 import type { ReactElementInstance } from 'desktop/ui';
 import { Window } from 'happy-dom';
 
@@ -259,4 +260,74 @@ test('the header element cannot open a screen without a Project', async () => {
     await act(() => element.dispose());
     window.document.body.replaceChildren();
   }
+});
+
+// T-3.7 (sidebar alignment §9.4, G-d): activating registers the Screens pane
+// in the layout's stack through `layout.stack/v2`, as a group with no size.
+test('activating registers the Screens pane through layout.stack/v2, without sizes', async () => {
+  const { activate } = await import('../../src/client/index.js');
+  const idOf = (contract: unknown): string | undefined =>
+    (contract as { readonly id?: string }).id;
+  const registered: Record<string, unknown>[] = [];
+  const stack = {
+    register: (pane: Record<string, unknown>) => {
+      registered.push(pane);
+      return {
+        dispose: () => {
+          registered.splice(registered.indexOf(pane), 1);
+        },
+      };
+    },
+  };
+  const services = {
+    provide: () => ({ dispose: () => undefined }),
+    use: (contract: unknown) =>
+      idOf(contract) === 'ui/v1'
+        ? { define: () => ({ dispose: () => undefined }) }
+        : undefined,
+    // Only the stack is available: the desktop part's views never appear.
+    whenAvailable: (
+      contract: unknown,
+      callback: (api: unknown, provider: unknown) => unknown,
+    ) => {
+      if (idOf(contract) !== 'layout.stack/v2')
+        return { dispose: () => undefined };
+      const cleanup = callback(stack, { bundleId: 'layout', version: '3.0.0' });
+      return {
+        dispose: () => {
+          if (typeof cleanup === 'function') (cleanup as () => void)();
+        },
+      };
+    },
+  } as unknown as Services;
+
+  const cleanup = activate({ services } as ClientContext);
+  try {
+    assert.deepEqual(
+      registered.map((pane) => pane.id),
+      ['screen-sidebar'],
+      'The Screens pane is not registered once through layout.stack/v2.',
+    );
+    const [pane] = registered;
+    assert.ok(pane);
+    assert.equal('minSize' in pane, false, 'The Screens pane has a minSize.');
+    assert.equal('maxSize' in pane, false, 'The Screens pane has a maxSize.');
+  } finally {
+    if (typeof cleanup === 'function') await cleanup();
+  }
+});
+
+// T-3.8 (sidebar alignment §9.4): the pane is registered through
+// `layout.stack/v2`, so the manifest requires it and no longer v1.
+test('the screen manifest is 2.0.1 and requires layout.stack/v2@^2.0.0, not v1', () => {
+  const manifest = JSON.parse(
+    readFileSync('bundles/features/screen/manifest.json', 'utf8'),
+  ) as { version: string; requires: string[] };
+
+  assert.equal(manifest.version, '2.0.1');
+  assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
+  assert.ok(
+    !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),
+    'The screen bundle still requires layout.stack/v1.',
+  );
 });

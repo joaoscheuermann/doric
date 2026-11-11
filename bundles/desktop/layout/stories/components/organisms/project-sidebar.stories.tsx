@@ -1,5 +1,5 @@
 import { SidebarScope } from 'desktop/ui/sidebar';
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 
 import {
   ProjectSidebar,
@@ -35,9 +35,11 @@ function Sidebar({
   /** Typed into "Search Threads" once mounted, as the reader would. */
   readonly query?: string;
 }) {
-  const frame = useRef<HTMLDivElement>(null);
+  // A node, not a ref: `LayoutHost` draws the frame only once it has bound the
+  // host, after this component's first effects ran.
+  const [frame, setFrame] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
-    const input = frame.current?.querySelector<HTMLInputElement>(
+    const input = frame?.querySelector<HTMLInputElement>(
       'input[aria-label="Search Threads"]',
     );
     if (query === undefined || !input) return;
@@ -46,7 +48,7 @@ function Sidebar({
       'value',
     )?.set?.call(input, query);
     input.dispatchEvent(new Event('input', { bubbles: true }));
-  }, [query]);
+  }, [frame, query]);
   const [selectedThreadId, setSelected] = useState(model.selectedThreadId);
   const [draft, setDraft] = useState<Draft | undefined>(model.draft);
   const [editing, setEditing] = useState<Entity | undefined>(model.editing);
@@ -76,7 +78,7 @@ function Sidebar({
   return (
     <LayoutHost fixture={fixture}>
       <SidebarScope>
-        <div ref={frame} className="flex h-[640px] w-60 border" style={fill}>
+        <div ref={setFrame} className="flex h-[640px] w-60 border" style={fill}>
           <ProjectSidebar
             actions={actions}
             model={{ ...model, draft, editing, selectedThreadId }}
@@ -118,7 +120,7 @@ export const SearchNoMatch = {
   render: () => <Sidebar query="zzz" />,
 };
 
-/** The Threads pane alone in the stack: no Threads header (plan-4 G5). */
+/** The stack with no pane but the Threads list. */
 export const ThreadsAlone = {
   render: () => <Sidebar fixture={threadsAlone} />,
 };

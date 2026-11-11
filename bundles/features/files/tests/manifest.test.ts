@@ -2,7 +2,7 @@
 // the file tab carries a `menu` (A5), which only `layout.tabs/v1@1.2.0`
 // accepts, so the bundle requires that minor; it provides `files/v1@1.3.0`
 // (the per-directory `directories` read the Files tree loads with) at version
-// 1.7.0 and keeps `engines.doric`.
+// 1.7.1 (the sidebar alignment's patch, T-4.7) and keeps `engines.doric`.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -36,8 +36,8 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.7.0 and keeps engines.doric', () => {
-    assert.equal(manifest.version, '1.7.0');
+  test('provides files/v1@1.3.0 at version 1.7.1 and keeps engines.doric', () => {
+    assert.equal(manifest.version, '1.7.1');
     assert.ok(manifest.provides.includes('files/v1@1.3.0'));
     assert.equal(manifest.engines.doric, '^1.0.0');
   });

@@ -13,7 +13,11 @@ import { FileDiffIcon, FileIcon, TerminalIcon, XIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 import { LayoutTabsV1, type TabMenuItem } from '../../../contracts/index.js';
-import { type ThreadKind, threadKind } from '../../domain/thread-kind.js';
+import {
+  isUntitled,
+  type ThreadKind,
+  threadKind,
+} from '../../domain/thread-kind.js';
 import type {
   WorkspaceTabs as TabsState,
   WorkspaceTab,
@@ -184,7 +188,12 @@ function tabIcon(tab: Extract<WorkspaceTab, { readonly kind: 'element' }>) {
       const thread = threadOfTab(tab);
       const kind: ThreadKind =
         thread === undefined ? 'main' : threadKind(thread);
-      return <ThreadKindIcon kind={kind} />;
+      return (
+        <ThreadKindIcon
+          kind={kind}
+          untitled={thread !== undefined && isUntitled(thread)}
+        />
+      );
     }
     default:
       return null;

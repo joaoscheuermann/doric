@@ -4,8 +4,17 @@ import { cn } from 'cn';
 function ScrollArea({
   className,
   children,
+  scrollbars = 'vertical',
   ...props
-}: ScrollAreaPrimitive.Root.Props) {
+}: ScrollAreaPrimitive.Root.Props & {
+  /**
+   * Which scrollbars the area draws. `'vertical'` (the default) draws the
+   * vertical bar only, as the registry does; `'both'` adds a horizontal bar,
+   * mounted only while the content overflows sideways. Never reaches the root
+   * element.
+   */
+  readonly scrollbars?: 'vertical' | 'both';
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -19,6 +28,7 @@ function ScrollArea({
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
+      {scrollbars === 'both' && <ScrollBar orientation="horizontal" />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   );

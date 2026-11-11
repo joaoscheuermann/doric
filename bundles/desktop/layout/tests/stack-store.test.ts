@@ -1,8 +1,7 @@
-// The sidebar stack's registry and open state (`layout.stack/v1`): bundles
+// The sidebar stack's registry and open state (`layout.stack/v2`): bundles
 // register their groups (`registerPane`), the layout draws them in order, and a
 // pane's own state decides whether its content is drawn — a pane that cannot
-// collapse never closes, and a drag that reaches the header reports the pane
-// collapsed.
+// collapse never closes.
 
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
@@ -26,7 +25,6 @@ const screens: StackPane = {
   tag: 'screen-sidebar',
   headerTag: 'screen-group-action',
   initiallyOpen: false,
-  minSize: '20%',
 };
 
 const pane = (id: string, extra: Partial<StackPane> = {}): StackPane => ({

@@ -1,13 +1,14 @@
 /**
- * The Changes tree's repository row is the tree row Files draws (S25): one lead
- * slot that shows the branch icon at rest and the chevron, turned down when the
- * repository is open, only while the row is hovered or focused. The swap is
- * CSS, so the classes are the assertion (T-3.5, as T-1.7 for `FileTree`).
+ * The Changes tree's repository row is the tree row Files draws: one lead slot
+ * that shows the branch icon alone, open or closed, with no hover or focus
+ * swap and no chevron (sidebar alignment U11, T-1.8). Hover is CSS, so the
+ * classes are the assertion; `aria-expanded` says whether the row is open.
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { SidebarProvider } from 'desktop/ui/sidebar';
+import { Window } from 'happy-dom';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -23,7 +24,7 @@ const repository = {
 
 const label = 'project, 3 lines added, 1 lines removed';
 
-const render = (open: boolean): string =>
+const render = (open: boolean, discards = false): string =>
   renderToStaticMarkup(
     createElement(
       SidebarProvider,
@@ -35,6 +36,7 @@ const render = (open: boolean): string =>
         ),
         onToggle: () => undefined,
         onOpen: () => undefined,
+        ...(discards ? { onDiscard: () => undefined } : {}),
       }),
     ),
   );
@@ -81,40 +83,42 @@ const leadSlot = (inner: string): string => {
 const iconCount = (html: string): number => (html.match(/<svg/gu) ?? []).length;
 
 describe('the repository row of the Changes tree', () => {
-  test('a closed repository swaps its branch icon for a chevron on hover or focus, in one slot', () => {
-    const markup = render(false);
-    const { inner } = row(markup);
-    const slot = leadSlot(inner);
-    assert.equal(iconCount(slot), 2, 'the slot holds the branch and chevron');
-    assert.equal(iconCount(inner), 2, 'no icon sits outside the lead slot');
+  /** The classes that show or hide an icon only on hover or focus. */
+  const hoverClasses = (html: string): string[] =>
+    [...html.matchAll(/class="([^"]*)"/gu)].flatMap((found) =>
+      (found[1] ?? '')
+        .split(/\s+/u)
+        .filter((name) =>
+          /^(hidden|group-(hover|focus-within)\/tree-row:\S+)$/u.test(name),
+        ),
+    );
 
-    const branch = iconClasses(slot, 'git-branch');
-    assert.ok(branch, 'the repository shows its branch icon');
-    assert.ok(branch.includes('group-hover/tree-row:hidden'));
-    assert.ok(branch.includes('group-focus-within/tree-row:hidden'));
-
-    const chevron = iconClasses(slot, 'chevron-right');
-    assert.ok(chevron, 'the repository carries a chevron');
-    assert.ok(chevron.includes('hidden'));
-    assert.ok(chevron.includes('group-hover/tree-row:block'));
-    assert.ok(chevron.includes('group-focus-within/tree-row:block'));
-    assert.ok(!chevron.includes('rotate-90'));
-
-    assert.match(rowTag(markup), /aria-expanded="false"/u);
-  });
-
-  test('an open repository turns its chevron down', () => {
-    const markup = render(true);
-    const { inner } = row(markup);
-    const slot = leadSlot(inner);
-    assert.ok(iconClasses(slot, 'git-branch'), 'the branch icon stays at rest');
-    const chevron = iconClasses(slot, 'chevron-right');
-    assert.ok(chevron, 'the open repository carries a chevron');
-    assert.ok(chevron.includes('group-hover/tree-row:block'));
-    assert.ok(chevron.includes('rotate-90'));
-
-    assert.match(rowTag(markup), /aria-expanded="true"/u);
-  });
+  for (const [state, open, expanded] of [
+    ['a closed', false, 'false'],
+    ['an open', true, 'true'],
+  ] as const) {
+    test(`T-1.8: ${state} repository shows only its branch icon, with no hover swap`, () => {
+      const markup = render(open);
+      const { inner } = row(markup);
+      const slot = leadSlot(inner);
+      assert.equal(iconCount(slot), 1, 'the slot holds the branch icon alone');
+      assert.equal(iconCount(inner), 1, 'no icon sits outside the lead slot');
+      assert.ok(
+        iconClasses(slot, 'git-branch'),
+        'the repository shows its branch icon',
+      );
+      assert.deepEqual(
+        hoverClasses(slot),
+        [],
+        'the slot swaps on hover or focus',
+      );
+      assert.equal(iconClasses(markup, 'chevron-right'), undefined);
+      assert.match(
+        rowTag(markup),
+        new RegExp(`aria-expanded="${expanded}"`, 'u'),
+      );
+    });
+  }
 
   test('has the tree row shape: 4 px radius and a name in the normal weight', () => {
     const markup = render(false);
@@ -129,5 +133,103 @@ describe('the repository row of the Changes tree', () => {
     assert.ok(name, 'the row names the repository');
     assert.ok(name.split(/\s+/u).includes('font-normal'));
     assert.ok(!name.split(/\s+/u).includes('font-light'));
+  });
+});
+
+/** Parses static markup into a document whose elements can be walked. */
+const parse = (markup: string): Document => {
+  const document = new Window().document;
+  document.body.innerHTML = markup;
+  return document as unknown as Document;
+};
+
+/** The repository row's `treeitem`. */
+const repositoryItem = (document: Document): Element => {
+  const found = Array.from(document.querySelectorAll('[role="treeitem"]')).find(
+    (item) => item.getAttribute('aria-label') === label,
+  );
+  assert.ok(found, 'no repository row');
+  return found;
+};
+
+const classesOf = (element: Element): readonly string[] =>
+  Array.from(element.classList);
+
+describe('the repository row in a column that scrolls sideways', () => {
+  for (const [state, discards] of [
+    ['without', false],
+    ['with', true],
+  ] as const) {
+    test(`T-4.4: ${state} a context menu, it is a flex row ending in a pinned mark with the line totals`, () => {
+      const document = parse(render(true, discards));
+      const button = repositoryItem(document);
+      const wrapper = button.parentElement;
+      assert.ok(wrapper, 'the repository row has no wrapper');
+      const outer = classesOf(wrapper);
+      assert.ok(outer.includes('group/tree-row'), outer.join(' '));
+      assert.ok(outer.includes('flex'), outer.join(' '));
+      assert.ok(!outer.includes('overflow-hidden'), outer.join(' '));
+
+      const inner = classesOf(button);
+      for (const token of ['peer/menu-button', 'min-w-0', 'flex-1', 'pr-1.5']) {
+        assert.ok(inner.includes(token), `lacks ${token}: ${inner.join(' ')}`);
+      }
+      for (const token of ['w-full', 'pr-8']) {
+        assert.ok(!inner.includes(token), `has ${token}: ${inner.join(' ')}`);
+      }
+
+      const mark = wrapper.lastElementChild;
+      assert.ok(mark, 'the row is empty');
+      assert.equal(
+        mark.getAttribute('data-slot'),
+        'tree-row-mark',
+        'the row does not end in its mark',
+      );
+      assert.ok(
+        button.compareDocumentPosition(mark) & 4,
+        'the mark does not follow the button',
+      );
+      const classes = classesOf(mark);
+      for (const token of [
+        'sticky',
+        'right-1',
+        'shrink-0',
+        'peer-hover/menu-button:text-sidebar-accent-foreground',
+        'peer-data-active/menu-button:text-sidebar-accent-foreground',
+      ]) {
+        assert.ok(
+          classes.includes(token),
+          `mark lacks ${token}: ${classes.join(' ')}`,
+        );
+      }
+      for (const token of ['absolute', 'w-0']) {
+        assert.ok(!classes.includes(token), classes.join(' '));
+      }
+      assert.ok(
+        !classes.some((token) => /^top-/u.test(token)),
+        classes.join(' '),
+      );
+
+      const badge = Array.from(mark.querySelectorAll('div')).find((div) => {
+        const list = classesOf(div);
+        return list.includes('h-5') && list.includes('min-w-5');
+      });
+      assert.ok(badge, 'the mark holds no h-5 min-w-5 badge');
+      const totals = badge.textContent ?? '';
+      assert.ok(totals.includes('+3'), totals);
+      assert.ok(totals.includes('−1'), totals);
+    });
+  }
+
+  test("T-4.4: the open repository's changes do not clip the marks", () => {
+    const document = parse(render(true));
+    const group = repositoryItem(document)
+      .closest('[role="presentation"]')
+      ?.querySelector('[role="group"]');
+    assert.ok(group, 'the open repository draws no group');
+    assert.ok(
+      classesOf(group).includes('overflow-visible'),
+      classesOf(group).join(' '),
+    );
   });
 });

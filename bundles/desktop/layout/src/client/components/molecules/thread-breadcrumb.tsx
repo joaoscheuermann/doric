@@ -8,7 +8,7 @@ import {
 } from 'desktop/ui/breadcrumb';
 import { Fragment, type ReactNode } from 'react';
 
-import { threadKind } from '../../domain/thread-kind.js';
+import { isUntitled, threadKind } from '../../domain/thread-kind.js';
 import type { Project, Thread } from '../../domain/workspace.js';
 import { ProjectAvatar } from './project-avatar.js';
 import { ThreadKindIcon } from './thread-mark.js';
@@ -47,7 +47,9 @@ function CrumbLabel({
  * may do here.
  */
 function ThreadMark({ thread }: { readonly thread: Thread }) {
-  return <ThreadKindIcon kind={threadKind(thread)} />;
+  return (
+    <ThreadKindIcon kind={threadKind(thread)} untitled={isUntitled(thread)} />
+  );
 }
 
 /**

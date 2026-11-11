@@ -1,24 +1,26 @@
 import { messageFrom } from './errors.js';
-import type { Draft, Entity, Thread } from './workspace.js';
+import type { Draft, Entity } from './workspace.js';
 
 /**
- * The icon a Thread row leads with. It is a semantic kind rather than a glyph:
- * the component layer chooses which icon paints each one, so the rule can be
- * stated and tested without React.
+ * The Thread row button's right padding, as Tailwind classes, so the name
+ * truncates before the trailing slot (§4 table). `timed`: the row is active
+ * with a badge start, so its elapsed badge shows. `addable`: the row has the
+ * plus.
+ *
+ * | timed | addable | classes                                                              |
+ * | ----- | ------- | -------------------------------------------------------------------- |
+ * | true  | either  | `'pr-14'` (56 px at rest and on hover or focus)                      |
+ * | false | true    | `'pr-1.5 group-hover/tree-row:pr-8 group-focus-within/tree-row:pr-8'` |
+ * | false | false   | `'pr-1.5'`                                                           |
+ *
+ * A timed row keeps 56 px on hover, which already holds the 20 px plus at
+ * `right-1`, so its name does not truncate again.
  */
-export type ThreadIconKind = 'conversation' | 'git' | 'github';
-
-/**
- * The icon kind a Thread leads with, decided from the host's hint alone: a
- * working directory whose root holds a repository is `git`, a GitHub `origin`
- * makes it `github`, and everything else — including a Thread the host has not
- * yet described — stays a conversation. Nothing is inferred from the parent
- * Thread or from another tool.
- */
-export const threadIconKind = (thread: Thread): ThreadIconKind => {
-  if (thread.cwdRepo === 'github') return 'github';
-  if (thread.cwdRepo === 'git') return 'git';
-  return 'conversation';
+export const threadRowPadding = (timed: boolean, addable: boolean): string => {
+  if (timed) return 'pr-14';
+  return addable
+    ? 'pr-1.5 group-hover/tree-row:pr-8 group-focus-within/tree-row:pr-8'
+    : 'pr-1.5';
 };
 
 /**

@@ -14,6 +14,7 @@ import {
   toggleExpanded,
 } from 'desktop/ui/panels';
 import { SidebarProvider } from 'desktop/ui/sidebar';
+import { Window } from 'happy-dom';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -176,54 +177,65 @@ describe('the lead slot of a tree row', () => {
     );
   const markup = tree(new Set(['open']));
 
-  test('a closed directory swaps its folder for a chevron on hover or focus, in one slot', () => {
+  /** The classes that show or hide an icon only on hover or focus. */
+  const hoverClasses = (html: string): string[] =>
+    [...html.matchAll(/class="([^"]*)"/gu)].flatMap((found) =>
+      (found[1] ?? '')
+        .split(/\s+/u)
+        .filter((name) =>
+          /^(hidden|group-(hover|focus-within)\/tree-row:\S+)$/u.test(name),
+        ),
+    );
+
+  /** The `aria-expanded` of the tree row labelled `name`, if it has one. */
+  const expandedOf = (html: string, name: string): string | undefined =>
+    new RegExp(
+      `<div(?=[^>]*role="treeitem")(?=[^>]*aria-label="${name}")[^>]*>`,
+      'u',
+    )
+      .exec(html)?.[0]
+      .match(/aria-expanded="([^"]*)"/u)?.[1];
+
+  test('T-1.7: a closed directory shows only its folder, with no hover swap', () => {
     const inner = row(markup, 'closed');
     const slot = leadSlot(inner);
-    assert.equal(
-      iconCount(slot),
-      2,
-      'the slot holds the folder and the chevron',
+    assert.equal(iconCount(slot), 1, 'the slot holds the folder alone');
+    assert.equal(iconCount(inner), 1, 'no icon sits outside the lead slot');
+    assert.ok(
+      iconClasses(slot, 'folder'),
+      'the closed directory shows a folder',
     );
-    assert.equal(iconCount(inner), 2, 'no icon sits outside the lead slot');
-
-    const folder = iconClasses(slot, 'folder');
-    assert.ok(folder, 'the closed directory shows a folder');
-    assert.ok(folder.includes('group-hover/tree-row:hidden'));
-    assert.ok(folder.includes('group-focus-within/tree-row:hidden'));
-
-    const chevron = iconClasses(slot, 'chevron-right');
-    assert.ok(chevron, 'the closed directory carries a chevron');
-    assert.ok(chevron.includes('hidden'));
-    assert.ok(chevron.includes('group-hover/tree-row:block'));
-    assert.ok(chevron.includes('group-focus-within/tree-row:block'));
-    assert.ok(!chevron.includes('rotate-90'));
+    assert.deepEqual(
+      hoverClasses(slot),
+      [],
+      'the slot swaps on hover or focus',
+    );
+    assert.equal(expandedOf(markup, 'closed'), 'false');
   });
 
-  test('an open directory swaps its open folder for a turned chevron on hover or focus, in one slot', () => {
+  test('T-1.7: an open directory shows only its open folder, with no hover swap', () => {
     const inner = row(markup, 'open');
     const slot = leadSlot(inner);
-    assert.equal(
-      iconCount(slot),
-      2,
-      'the slot holds the open folder and the chevron',
+    assert.equal(iconCount(slot), 1, 'the slot holds the open folder alone');
+    assert.equal(iconCount(inner), 1, 'no icon sits outside the lead slot');
+    assert.ok(
+      iconClasses(slot, 'folder-open'),
+      'the open directory shows an open folder',
     );
-    assert.equal(iconCount(inner), 2, 'no icon sits outside the lead slot');
     assert.ok(
       !/\blucide-folder[\s"]/u.test(inner),
       'the open directory shows no closed folder',
     );
+    assert.deepEqual(
+      hoverClasses(slot),
+      [],
+      'the slot swaps on hover or focus',
+    );
+    assert.equal(expandedOf(markup, 'open'), 'true');
+  });
 
-    const folder = iconClasses(slot, 'folder-open');
-    assert.ok(folder, 'the open directory shows an open folder');
-    assert.ok(folder.includes('group-hover/tree-row:hidden'));
-    assert.ok(folder.includes('group-focus-within/tree-row:hidden'));
-
-    const chevron = iconClasses(slot, 'chevron-right');
-    assert.ok(chevron, 'the open directory carries a chevron');
-    assert.ok(chevron.includes('hidden'));
-    assert.ok(chevron.includes('group-hover/tree-row:block'));
-    assert.ok(chevron.includes('group-focus-within/tree-row:block'));
-    assert.ok(chevron.includes('rotate-90'));
+  test('T-1.7: the tree draws no chevron', () => {
+    assert.equal(iconClasses(markup, 'chevron-right'), undefined);
   });
 
   test('a file shows only its file icon', () => {
@@ -242,5 +254,186 @@ describe('the lead slot of a tree row', () => {
     assert.ok(classes, 'the name sits in its own span');
     assert.ok(classes.includes('font-normal'), classes.join(' '));
     assert.ok(!classes.includes('font-light'), classes.join(' '));
+  });
+});
+
+/** Parses static markup into a document whose elements can be walked. */
+const parse = (markup: string): Document => {
+  const document = new Window().document;
+  document.body.innerHTML = markup;
+  return document as unknown as Document;
+};
+
+/** The tree row (the `treeitem`) whose label is `name` or starts `name, `. */
+const treeItem = (document: Document, name: string): Element => {
+  const found = [...document.querySelectorAll('[role="treeitem"]')].find(
+    (item) => {
+      const label = item.getAttribute('aria-label') ?? '';
+      return label === name || label.startsWith(`${name}, `);
+    },
+  );
+  assert.ok(found, `no tree row labelled ${name}`);
+  return found;
+};
+
+const classesOf = (element: Element): readonly string[] => [
+  ...element.classList,
+];
+
+/** The mark a row draws beside its button, if it draws one. */
+const markOf = (wrapper: Element): Element | undefined =>
+  [...wrapper.children].find(
+    (child) => child.getAttribute('data-slot') === 'tree-row-mark',
+  );
+
+describe('a tree row in a column that scrolls sideways', () => {
+  const deleted: TreeDecoration = {
+    description: 'deleted · Unstaged',
+    count: 1,
+    tone: 'tone-deleted',
+    letter: 'D',
+    struck: true,
+  };
+  const decorations = new Map<string, TreeDecoration>([
+    [
+      'src',
+      { description: '2 changed files', count: 2, tone: 'tone-modified' },
+    ],
+    ['src/gone.ts', deleted],
+  ]);
+  const document = parse(render(decorations));
+
+  test('T-4.1: every row is a flex row that does not clip, its button growing to fill it', () => {
+    for (const name of ['src', 'gone.ts', 'plain.ts']) {
+      const button = treeItem(document, name);
+      const wrapper = button.parentElement;
+      assert.ok(wrapper, `${name} has no row wrapper`);
+      const outer = classesOf(wrapper);
+      assert.ok(outer.includes('group/tree-row'), outer.join(' '));
+      assert.ok(outer.includes('flex'), `${name}: ${outer.join(' ')}`);
+      assert.ok(
+        !outer.includes('overflow-hidden'),
+        `${name}: ${outer.join(' ')}`,
+      );
+
+      const inner = classesOf(button);
+      for (const token of ['peer/menu-button', 'min-w-0', 'flex-1', 'pr-1.5']) {
+        assert.ok(
+          inner.includes(token),
+          `${name} lacks ${token}: ${inner.join(' ')}`,
+        );
+      }
+      for (const token of ['w-full', 'pr-8']) {
+        assert.ok(
+          !inner.includes(token),
+          `${name} has ${token}: ${inner.join(' ')}`,
+        );
+      }
+    }
+  });
+
+  test('T-4.2: a decorated row ends in a mark pinned to the right edge, after its button', () => {
+    for (const [name, text] of [
+      ['src', '2'],
+      ['gone.ts', 'D'],
+    ] as const) {
+      const button = treeItem(document, name);
+      const wrapper = button.parentElement;
+      assert.ok(wrapper, `${name} has no row wrapper`);
+      const mark = markOf(wrapper);
+      assert.ok(mark, `${name} draws no tree-row-mark`);
+      assert.equal(
+        wrapper.lastElementChild,
+        mark,
+        `${name}: the mark is not last`,
+      );
+      assert.ok(
+        button.compareDocumentPosition(mark) & 4,
+        `${name}: the mark does not follow the button`,
+      );
+      assert.equal(mark.getAttribute('aria-hidden'), 'true');
+
+      const classes = classesOf(mark);
+      for (const token of [
+        'sticky',
+        'right-1',
+        'shrink-0',
+        'peer-hover/menu-button:text-sidebar-accent-foreground',
+        'peer-data-active/menu-button:text-sidebar-accent-foreground',
+      ]) {
+        assert.ok(
+          classes.includes(token),
+          `${name} mark lacks ${token}: ${classes.join(' ')}`,
+        );
+      }
+      assert.ok(!classes.includes('absolute'), classes.join(' '));
+      assert.ok(!classes.includes('w-0'), classes.join(' '));
+      assert.ok(
+        !classes.some((token) => /^top-/u.test(token)),
+        classes.join(' '),
+      );
+
+      const badge = [...mark.querySelectorAll('div')].find((div) => {
+        const list = classesOf(div);
+        return list.includes('h-5') && list.includes('min-w-5');
+      });
+      assert.ok(badge, `${name}: the mark holds no h-5 min-w-5 badge`);
+      assert.equal(badge.textContent?.trim(), text);
+    }
+  });
+
+  test('T-4.2: an undecorated row draws no mark', () => {
+    const wrapper = treeItem(document, 'plain.ts').parentElement;
+    assert.ok(wrapper);
+    assert.equal(markOf(wrapper), undefined);
+    assert.equal(
+      parse(render(undefined)).querySelector('[data-slot="tree-row-mark"]'),
+      null,
+      'a tree with no decorations draws marks',
+    );
+  });
+
+  test('T-4.2: the mark stays the last child when the row has a context menu', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        SidebarProvider,
+        null,
+        createElement(FileTree, {
+          actions,
+          depth: 0,
+          entries: [{ name: 'gone.ts', path: 'gone.ts', type: 'file' }],
+          expanded: new Set<string>(),
+          decorations: new Map([['gone.ts', deleted]]),
+          rowMenu: () => 'Discard changes',
+        }),
+      ),
+    );
+    const button = treeItem(parse(markup), 'gone.ts');
+    const wrapper = button.parentElement;
+    assert.ok(wrapper);
+    const mark = markOf(wrapper);
+    assert.ok(mark, 'the row draws no tree-row-mark');
+    assert.equal(wrapper.lastElementChild, mark);
+    assert.ok(button.compareDocumentPosition(mark) & 4);
+  });
+
+  test("T-4.2: an open directory's children do not clip the marks", () => {
+    // The tree draws its lines flat (one row per line, windowed), so a nested
+    // row's mark has no group of its own between it and the tree: nothing
+    // above any mark may clip it.
+    const marks = document.querySelectorAll('[data-slot="tree-row-mark"]');
+    assert.ok(marks.length > 1, 'the tree draws fewer than two marks');
+    for (const mark of Array.from(marks)) {
+      for (
+        let node = mark.parentElement;
+        node !== null && node !== document.body;
+        node = node.parentElement
+      ) {
+        assert.ok(
+          !classesOf(node).includes('overflow-hidden'),
+          classesOf(node).join(' '),
+        );
+      }
+    }
   });
 });

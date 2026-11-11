@@ -22,7 +22,7 @@ import {
   selectThread,
   settleDelete,
   startRename,
-  threadIconKind,
+  threadRowPadding,
 } from '../src/client/domain/sidebar.js';
 import type {
   Draft,
@@ -190,16 +190,20 @@ describe('the one error a failed request surfaces', () => {
   });
 });
 
-describe('the icon a thread row leads with', () => {
-  test('is an ordinary conversation without the host hint', () => {
-    assert.equal(threadIconKind(thread), 'conversation');
+describe('the room a Thread row keeps for its trailing slot (T-2.12)', () => {
+  test('a timed row keeps the badge room, with or without the plus', () => {
+    assert.equal(threadRowPadding(true, true), 'pr-14');
+    assert.equal(threadRowPadding(true, false), 'pr-14');
   });
 
-  test('is git when the cwd root is a repository', () => {
-    assert.equal(threadIconKind({ ...thread, cwdRepo: 'git' }), 'git');
+  test('an untimed row with the plus widens only on hover or focus', () => {
+    assert.equal(
+      threadRowPadding(false, true),
+      'pr-1.5 group-hover/tree-row:pr-8 group-focus-within/tree-row:pr-8',
+    );
   });
 
-  test('is github only for the GitHub hint', () => {
-    assert.equal(threadIconKind({ ...thread, cwdRepo: 'github' }), 'github');
+  test('an untimed row without the plus keeps the rest padding', () => {
+    assert.equal(threadRowPadding(false, false), 'pr-1.5');
   });
 });

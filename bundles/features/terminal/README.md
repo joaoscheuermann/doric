@@ -65,7 +65,9 @@ The tool runs a command in the current working directory; a relative
 - **Client part** (`src/client`): the window's terminal store and the
   elements `terminal-new-button`, `terminal-rows` and `terminal-view`.
   `registerTerminalSurfaces` adds the header button (`layout.header`) and the
-  sidebar's terminal rows while the layout serves `layout.sidebar/v1`.
+  sidebar's terminal rows while the layout serves `layout.sidebar/v1`; from
+  `layout.sidebar/v1` 1.1.0 its `busy` answer keeps a Thread active while an
+  agent terminal under it is busy.
 - `create` opens a manual bash PTY in a Thread's working directory, bringing
   its Project back first.
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { duration } from '../utility/duration.js';
+import { elapsedBadge } from '../utility/duration.js';
 
 export const useExecutionTime = (startedAt?: string): string | undefined => {
   const [now, setNow] = useState(Date.now);
@@ -12,5 +12,5 @@ export const useExecutionTime = (startedAt?: string): string | undefined => {
   }, [startedAt]);
   if (startedAt === undefined) return undefined;
   const started = Date.parse(startedAt);
-  return Number.isFinite(started) ? duration(now - started) : undefined;
+  return Number.isFinite(started) ? elapsedBadge(now - started) : undefined;
 };

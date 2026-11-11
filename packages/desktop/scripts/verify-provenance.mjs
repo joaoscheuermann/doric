@@ -243,6 +243,16 @@ const registryPatches = {
   'components/scroll-area.tsx': [
     // The registry file imports React and never reads it (`noUnusedLocals`).
     ['', "import * as React from 'react';\n"],
+    // `scrollbars`: `'both'` adds a horizontal bar after the vertical one; the
+    // prop never reaches the root.
+    [
+      "  children,\n  scrollbars = 'vertical',\n  ...props\n}: ScrollAreaPrimitive.Root.Props & {\n  /**\n   * Which scrollbars the area draws. `'vertical'` (the default) draws the\n   * vertical bar only, as the registry does; `'both'` adds a horizontal bar,\n   * mounted only while the content overflows sideways. Never reaches the root\n   * element.\n   */\n  readonly scrollbars?: 'vertical' | 'both';\n}) {\n",
+      '  children,\n  ...props\n}: ScrollAreaPrimitive.Root.Props) {\n',
+    ],
+    [
+      '      <ScrollBar />\n      {scrollbars === \'both\' && <ScrollBar orientation="horizontal" />}\n',
+      '      <ScrollBar />\n',
+    ],
   ],
   'components/sidebar.tsx': [
     // The menu action also shows on hover and focus inside a sub-item.

@@ -100,7 +100,7 @@ Espelha `bundles/features/screen-relay` linha a linha, com as diferenças que a 
 
 A UI se divide como a das telas: a parte **client** é a única que tem ponte com o host e faz as chamadas de `ports.sessions/v1`; a parte **desktopMain** não chama contrato de host algum, e é ela que possui a janela.
 
-- Um grupo na sidebar, por um pane de `layout.stack/v1` (`stack.register({ id: 'ports-sidebar', tag: PORTS_SIDEBAR_TAG, order: …, title: 'Ports', minSize: … })`, como `bundles/features/screen/src/client/index.ts:35-45`), abaixo da árvore de Threads — o mesmo stack, e portanto o mesmo desenho de painéis, em que as telas registram o seu (`GROUNDING.md:498-500`) —, com uma linha por sessão e o estado dela, alimentado pelo mesmo desenho de dial das telas (`bundles/features/screen/src/client/index.ts:56-91`).
+- Um grupo na sidebar, por um pane de `layout.stack/v2` (`stack.register({ id: 'ports-sidebar', tag: PORTS_SIDEBAR_TAG, order: …, title: 'Ports' })`, sem tamanhos — a v2 não os aceita —, como o pane de telas em `bundles/features/screen/src/client/index.ts`), abaixo da árvore de Threads — o mesmo stack, e portanto o mesmo desenho de painéis, em que as telas registram o seu (`GROUNDING.md:498-500`) —, com uma linha por sessão e o estado dela, alimentado pelo mesmo desenho de dial das telas (`bundles/features/screen/src/client/index.ts:56-91`).
 - Cada linha abre (ou foca) uma janela própria, por `doric.windows/v1`, com o path `/ports/<token>/`, partição própria e barra de título nativa, sem preload — o pedido exato que o `screen` monta em `bundles/features/screen/src/desktop/windows.ts:14-46`.
 - A janela carrega o path sob a origem do host e nada mais; a ação "copiar URL" monta a mesma URL a partir de `DORIC_HOST_URL`/origem conhecida. "Abrir no browser da máquina" **não** é possível hoje: não existe `shell.openExternal`, nenhuma superfície carrega origem fora da origem do host — a janela de view está presa a ela — e a CSP do esquema `doric://` não permite frames nem conexões a outra origem. Fica como pedido explícito de nova superfície da plataforma, listado nas decisões abertas.
 - A janela é reaberta e re-apontada quando a sessão muda de token, como o heal loop das telas faz com `focus`/`navigate`.
@@ -169,7 +169,7 @@ O manifesto do `ports` segue `bundles/features/screen/manifest.json`:
     "ui/v1@^1.0.0",
     "regions/v1@^1.0.0",
     "navigation/v1@^1.0.0",
-    "layout.stack/v1@^1.0.0",
+    "layout.stack/v2@^2.0.0",
     "ports.relay/v1@^1.0.0"
   ],
   "desktopScope": {

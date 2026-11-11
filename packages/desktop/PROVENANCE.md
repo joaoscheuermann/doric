@@ -113,6 +113,11 @@ compares:
   WP-10N).
 - `scroll-area.tsx`: drops the registry's `import * as React from 'react'`,
   which the file never reads (`noUnusedLocals`).
+- `scroll-area.tsx`: `ScrollArea` takes `scrollbars?: 'vertical' | 'both'`
+  (default `'vertical'`, the registry's output). `'both'` also renders a
+  horizontal `ScrollBar` after the vertical one, which Base UI mounts only
+  while the content overflows sideways; the prop is not passed to the root
+  (sidebar-alignment spec, D15).
 - `alert-dialog.tsx`, `combobox.tsx`, `context-menu.tsx`, `dialog.tsx`,
   `dropdown-menu.tsx`, `popover.tsx`, `select.tsx`, `sheet.tsx` and
   `tooltip.tsx`: each portal passes `container={usePortalContainer()}` (read

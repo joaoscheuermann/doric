@@ -1,6 +1,6 @@
 // The screen client's elements: the sidebar's Screens pane. The layout draws the
-// group's frame — its header, the collapse control and the resizable panel
-// (`layout.stack/v1`) — so this part draws only what is inside it: one row per
+// group's frame — its header, the collapse control and its 40% cap
+// (`layout.stack/v2`) — so this part draws only what is inside it: one row per
 // view of the current Project, and the header's add control in an element of its
 // own. Clicking a row opens (or focuses) that view's window.
 //

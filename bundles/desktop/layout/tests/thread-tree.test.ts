@@ -5,6 +5,8 @@ import {
   canExpand,
   childThreads,
   isExpanded,
+  isThreadRunning,
+  threadActivity,
   type ThreadNode,
   threadLevel,
   threadPath,
@@ -221,5 +223,123 @@ describe('isExpanded', () => {
 
   test('is false for an expandable node in the collapsed set', () => {
     assert.equal(isExpanded(branch, new Set(['a'])), false);
+  });
+});
+
+describe('threadActivity', () => {
+  const never = (): boolean => false;
+  const start = '2026-11-10T12:00:00.000Z';
+  const finished = '2026-11-10T12:10:00.000Z';
+
+  const running = (value: Thread, startedAt = start): Thread => ({
+    ...value,
+    state: 'running',
+    activePromptId: 'prompt-run',
+    executionStartedAt: startedAt,
+  });
+
+  const finishedAfter = (
+    value: Thread,
+    lastExecutionMs?: number,
+  ): Thread => ({
+    ...value,
+    result: { status: 'completed', text: '', promptId: 'prompt-done', at: finished },
+    ...(lastExecutionMs === undefined ? {} : { lastExecutionMs }),
+  });
+
+  const level = (threads: readonly Thread[]) =>
+    threadLevel(threads, undefined, 'p');
+
+  test('an idle tree with nothing busy has no active Thread (T-2.1)', () => {
+    const activity = threadActivity(
+      level([thread('r', 'p'), thread('c', 'p', 'r'), thread('s', 'p')]),
+      never,
+    );
+    assert.equal(activity.size, 0);
+  });
+
+  test('a running grandchild makes its ancestors active, each with its own start (T-2.2)', () => {
+    const activity = threadActivity(
+      level([
+        thread('r', 'p'),
+        finishedAfter(thread('c', 'p', 'r'), 90_000),
+        running(thread('g', 'p', 'c')),
+        thread('s', 'p'),
+      ]),
+      never,
+    );
+
+    assert.deepEqual([...activity.keys()].sort(), ['c', 'g', 'r']);
+    assert.equal(activity.has('s'), false);
+    assert.equal(activity.get('g')?.startedAt, start);
+    assert.equal(
+      activity.get('c')?.startedAt,
+      new Date(Date.parse(finished) - 90_000).toISOString(),
+    );
+    assert.equal(activity.get('r')?.startedAt, undefined);
+  });
+
+  test('a busy idle leaf makes itself and every ancestor active (T-2.3)', () => {
+    const activity = threadActivity(
+      level([thread('r', 'p'), thread('c', 'p', 'r'), thread('l', 'p', 'c')]),
+      (id) => id === 'l',
+    );
+    assert.deepEqual([...activity.keys()].sort(), ['c', 'l', 'r']);
+  });
+
+  test('a running state without an active prompt is idle (T-2.3)', () => {
+    const halfRunning: Thread = { ...thread('a', 'p'), state: 'running' };
+    const promptOnly: Thread = { ...thread('b', 'p'), activePromptId: 'x' };
+
+    assert.equal(isThreadRunning(halfRunning), false);
+    assert.equal(isThreadRunning(promptOnly), false);
+    assert.equal(isThreadRunning(running(thread('c', 'p'))), true);
+    assert.equal(threadActivity(level([halfRunning, promptOnly]), never).size, 0);
+  });
+
+  test('an active idle Thread without a whole latest execution has no start (T-2.4)', () => {
+    const activity = threadActivity(
+      level([
+        thread('never', 'p'),
+        running(thread('a', 'p', 'never')),
+        finishedAfter(thread('paused', 'p')),
+        running(thread('b', 'p', 'paused')),
+      ]),
+      never,
+    );
+
+    assert.ok(activity.has('never'));
+    assert.equal(activity.get('never')?.startedAt, undefined);
+    assert.ok(activity.has('paused'));
+    assert.equal(activity.get('paused')?.startedAt, undefined);
+  });
+
+  test('a running Thread whose start does not parse is active without a start', () => {
+    const activity = threadActivity(
+      level([running(thread('a', 'p'), 'not a date')]),
+      never,
+    );
+    assert.ok(activity.has('a'));
+    assert.equal(activity.get('a')?.startedAt, undefined);
+  });
+
+  test('asks busy exactly once per Thread, whatever is collapsed (T-2.5)', () => {
+    const asked: string[] = [];
+    const tree = level([
+      thread('r', 'p'),
+      thread('c', 'p', 'r'),
+      thread('g', 'p', 'c'),
+      thread('s', 'p'),
+    ]);
+    // The caller draws `r` collapsed; the level still holds every Thread.
+    assert.equal(isExpanded(tree.nodes[0] as ThreadNode, new Set(['r'])), false);
+
+    const activity = threadActivity(tree, (id) => {
+      asked.push(id);
+      return id === 'g';
+    });
+
+    assert.deepEqual([...asked].sort(), ['c', 'g', 'r', 's']);
+    assert.ok(activity.has('r'));
   });
 });

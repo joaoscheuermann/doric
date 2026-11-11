@@ -38,9 +38,17 @@ export function TerminalRowsFixture({
         title={terminal.label}
         render={<button type="button" />}
       >
-        <TerminalIcon
-          className={cn(terminal.origin === 'agent' && 'text-muted-foreground')}
-        />
+        <span
+          aria-hidden
+          data-slot="terminal-lead"
+          className="flex size-4 shrink-0 items-center justify-center text-sidebar-accent-foreground [&_svg]:size-3.5!"
+        >
+          <TerminalIcon
+            className={cn(
+              terminal.origin === 'agent' && 'text-muted-foreground',
+            )}
+          />
+        </span>
         <span className="truncate">{terminal.label}</span>
       </SidebarMenuSubButton>
       <Button

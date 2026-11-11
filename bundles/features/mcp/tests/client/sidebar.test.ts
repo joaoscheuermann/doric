@@ -1,5 +1,5 @@
 // The MCP pane as the Project view's sidebar mounts it: the group the client
-// part registers in the layout's stack (`layout.stack/v1`), the rows of the
+// part registers in the layout's stack (`layout.stack/v2`), the rows of the
 // current Project's servers over `mcp/v1.watch`, and the dialogs the reader
 // adds, edits, removes and signs in to a server through.
 //
@@ -11,6 +11,7 @@
 // contract calls the window makes, with the scope it makes them in.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 
 import {
@@ -355,7 +356,7 @@ const createHost = (options: HostOptions = {}) => {
     switch (id) {
       case 'layout.workspace/v1':
         return workspace;
-      case 'layout.stack/v1':
+      case 'layout.stack/v2':
         return stack;
       case 'ui/v1':
         return ui;
@@ -974,8 +975,6 @@ test('W1 activating with a stack registers the MCP pane once', async () => {
         headerTag: 'mcp-group-action',
         collapsible: true,
         initiallyOpen: false,
-        minSize: '20%',
-        maxSize: '80%',
       },
     ]);
     assert.deepEqual(host.panes[0], mcpPane);
@@ -2411,4 +2410,21 @@ test('W9 a watch lost with the host generation subscribes again', async () => {
   } finally {
     await pane.close();
   }
+});
+
+// ---------------------------------------------------------------------------
+// T-3.8 (sidebar alignment §9.4): the pane is registered through
+// `layout.stack/v2`, so the manifest requires it and no longer v1.
+
+test('the MCP manifest is 1.2.2 and requires layout.stack/v2@^2.0.0, not v1', () => {
+  const manifest = JSON.parse(
+    readFileSync('bundles/features/mcp/manifest.json', 'utf8'),
+  ) as { version: string; requires: string[] };
+
+  assert.equal(manifest.version, '1.2.2');
+  assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
+  assert.ok(
+    !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),
+    'The MCP bundle still requires layout.stack/v1.',
+  );
 });

@@ -71,6 +71,13 @@ export const threadTerminals = (
 ): readonly Terminal[] =>
   terminals.filter((terminal) => terminal.threadId === threadId);
 
+/**
+ * Whether the terminal keeps its Thread active: an agent's terminal that has
+ * not exited (`starting` or `running`). The reader's own terminals never do.
+ */
+export const isAgentBusy = (terminal: Terminal): boolean =>
+  terminal.origin === 'agent' && terminal.state !== 'exited';
+
 /** Only the unseen suffix of a replayed UTF-16 output chunk reaches the emulator. */
 export const unseenOutput = (
   data: string,

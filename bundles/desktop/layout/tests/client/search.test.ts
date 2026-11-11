@@ -412,25 +412,27 @@ test('a collapsed ancestor is drawn expanded during a query and collapsed after 
   );
 });
 
-// G5
-test('with only the Threads pane there is no Threads header; with a second pane there is one', async () => {
+// G5, T-3.1
+test('the Threads have no pane header, with or without a registered pane', async () => {
+  const threadsToggles = ({ root }: RenderedWorkspace): number =>
+    named(root, 'button', 'Collapse Threads').length +
+    named(root, 'button', 'Expand Threads').length;
+
   rendered = await renderProject({ panes: [] });
-  assert.equal(
-    named(rendered.root, 'button', 'Collapse Threads').length,
-    0,
-    'The Threads pane alone draws its header.',
-  );
-  assert.equal(
-    treeNames(rendered).length,
-    6,
-    'The Threads pane alone is empty.',
-  );
+  assert.equal(threadsToggles(rendered), 0, 'The Threads draw a pane header.');
+  assert.equal(treeNames(rendered).length, 6, 'The Thread tree is empty.');
   rendered.cleanup();
 
   // Loaded after the window is installed, as React DOM must be.
   const { screenPane } = await import('../../stories/support/fake-host.js');
   rendered = await renderProject({ panes: [screenPane] });
-  only(rendered.root, 'button', 'Collapse Threads');
+  assert.equal(
+    threadsToggles(rendered),
+    0,
+    'A second pane brings back the Threads pane header.',
+  );
+  only(rendered.root, 'button', 'Expand Screens');
+  assert.equal(treeNames(rendered).length, 6, 'The Thread tree is empty.');
 });
 
 // G7
