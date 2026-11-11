@@ -1,7 +1,13 @@
 import { sandboxWrites } from './projector.js';
 import type { ThreadChats } from './thread-chats.js';
 
-/** Projects changed by newly observed tool completions or Thread lifecycle changes. */
+/**
+ * Projects changed by newly observed tool completions or Thread lifecycle
+ * changes. A Thread that starts running (a prompt starting) changes nothing in
+ * the sandbox yet, and a refresh then would compete with the prompt for the
+ * host and the sandbox, so only its other state changes count: the prompt
+ * finishing, or failing, still refreshes the Project.
+ */
 export function changedSandboxProjects(
   previous: ThreadChats,
   next: ThreadChats,
@@ -12,7 +18,8 @@ export function changedSandboxProjects(
     if (
       !before ||
       before.thread.cwd !== chat.thread.cwd ||
-      before.thread.state !== chat.thread.state
+      (before.thread.state !== chat.thread.state &&
+        chat.thread.state !== 'running')
     ) {
       projects.add(chat.thread.projectId);
       continue;

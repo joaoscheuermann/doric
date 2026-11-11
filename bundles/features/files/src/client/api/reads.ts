@@ -12,12 +12,16 @@ import { isContractError, type Services } from 'bundle/contracts';
 
 import {
   type ContentRead,
+  DIRECTORIES_LIMIT,
+  type DirectoriesRead,
   type Files,
   FilesV1,
   type LeaseOutcome,
   type TreeRead,
 } from '../../contracts/index.js';
 import type {
+  DirectoryListing,
+  ProjectDirectoriesResult,
   ProjectFileContent,
   ProjectFileEntry,
   ProjectFileResult,
@@ -157,9 +161,40 @@ const call = async <Value>(operation: () => Promise<Value>): Promise<Value> => {
 const pathOf = (path: string): { readonly path?: string } =>
   path === '' ? {} : { path };
 
+/** One directory of a `directories` answer, as the window reads it. */
+const directoryListingFrom = (
+  value: unknown,
+): { readonly path: string; readonly listing: DirectoryListing } => {
+  if (!isRecord(value) || typeof value.path !== 'string')
+    return invalidResponse();
+  if (value.status === 'listed') {
+    if (!Array.isArray(value.entries)) return invalidResponse();
+    return {
+      path: value.path,
+      listing: { status: 'listed', entries: value.entries.map(fileEntryFrom) },
+    };
+  }
+  if (
+    value.status === 'not_found' ||
+    value.status === 'not_directory' ||
+    value.status === 'invalid_path'
+  )
+    return { path: value.path, listing: { status: value.status } };
+  return invalidResponse();
+};
+
 export interface FilesReads {
   /** The whole tree below `path` (the root when undefined). */
   tree(projectId: string, path?: string): Promise<ProjectTreeResult>;
+  /**
+   * Several directories one level each, in one call: each keyed by its path,
+   * with the rules the tree rooted at `root` applies.
+   */
+  directories(
+    projectId: string,
+    paths: readonly string[],
+    root?: string,
+  ): Promise<ProjectDirectoriesResult>;
   /** One file as bounded text. */
   file(projectId: string, path: string): Promise<ProjectFileResult>;
 }
@@ -185,6 +220,28 @@ export const createFilesReads = (
       path: read.path,
       entries: read.entries.map(treeNodeFrom),
     };
+  },
+  directories: async (projectId, paths, root) => {
+    const id = identifier(projectId);
+    const asked = [...new Set(paths.map(relativePath))];
+    const at = relativePath(root);
+    if (asked.length === 0 || asked.length > DIRECTORIES_LIMIT)
+      throw new Error(readMessages.invalidPath);
+    const outcome: LeaseOutcome<DirectoriesRead> = await call(() =>
+      files(id).directories({
+        paths: asked,
+        ...(at === '' ? {} : { root: at }),
+      }),
+    );
+    if (outcome.status !== 'ready') return leaseState(outcome.status);
+    const read = outcome.value as unknown;
+    if (!isRecord(read)) return invalidResponse();
+    if (read.status !== 'listed') return refusal(String(read.status));
+    if (!Array.isArray(read.directories)) return invalidResponse();
+    const directories: Record<string, DirectoryListing> = {};
+    for (const { path, listing } of read.directories.map(directoryListingFrom))
+      directories[path] = listing;
+    return { status: 'ready', directories };
   },
   file: async (projectId, path) => {
     const id = identifier(projectId);

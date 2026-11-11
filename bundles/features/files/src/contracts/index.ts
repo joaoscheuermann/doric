@@ -1,10 +1,12 @@
 // Public contracts of the `files` bundle (stage 10, §3.6).
 //
 // - `files/v1` (host): the Project sandbox reads the file panel and the file
-//   tab make, and (1.2.0) the New file / New folder writes, each run on the
-//   Project's current lease without acquiring one.
+//   tab make, (1.2.0) the New file / New folder writes and (1.3.0) the
+//   per-directory listing the Files panel loads its tree with, each run on
+//   the Project's current lease without acquiring one.
 // - `files.sandbox/v1` (client, local): the window's one tree read per
-//   Project and root, shared with the bundles that gate on it.
+//   Project and root — its root and the directories open in it — shared with
+//   the bundles that gate on it.
 // - `files.refresh/v1` (client, local): the Project refresh coordinator.
 // - `files.open-file/v1` (client command): opens a file tab.
 
@@ -40,6 +42,42 @@ export type TreeRead =
       readonly entries: readonly SandboxTreeNode[];
     }
   | { readonly status: 'not_found' | 'not_directory' | 'invalid_path' };
+
+/**
+ * One directory of a `directories` read (1.3.0): `path` is the path as it was
+ * asked, and a listed directory's entries carry no size.
+ */
+export type DirectoryListingRead =
+  | {
+      readonly path: string;
+      readonly status: 'listed';
+      readonly entries: readonly SandboxEntry[];
+    }
+  | {
+      readonly path: string;
+      readonly status: 'not_found' | 'not_directory' | 'invalid_path';
+    };
+
+/**
+ * Several directories listed one level each in one read (1.3.0), one result
+ * per asked path in the order asked, each with the visibility rules the whole
+ * tree read applies from `root`.
+ */
+export type DirectoriesRead = {
+  readonly status: 'listed';
+  readonly directories: readonly DirectoryListingRead[];
+};
+
+/** What a `directories` read asks (1.3.0). */
+export interface DirectoriesInput {
+  /** Workspace-relative directories (or absolute under the sandbox root). */
+  readonly paths: readonly string[];
+  /** The tree these directories belong to; the workspace root when omitted. */
+  readonly root?: string;
+}
+
+/** The most directories one `directories` read lists. */
+export const DIRECTORIES_LIMIT = 1000;
 
 /**
  * One file as bounded text (`GET /projects/:id/file`), or, asked with
@@ -100,6 +138,14 @@ export interface Files {
     input: { readonly path?: string },
     call?: CallArg,
   ): Promise<LeaseOutcome<TreeRead>>;
+  /**
+   * Lists several directories one level each, in one sandbox command (1.3.0):
+   * the Files panel's read of its root and the directories open in it.
+   */
+  directories(
+    input: DirectoriesInput,
+    call?: CallArg,
+  ): Promise<LeaseOutcome<DirectoriesRead>>;
   content(
     input: ContentInput,
     call?: CallArg,
@@ -165,6 +211,23 @@ const treeReadSchema = z.union([
   listingRefusal,
 ]);
 
+const directoriesReadSchema = z.looseObject({
+  status: z.literal('listed'),
+  directories: z.array(
+    z.union([
+      z.looseObject({
+        path: z.string(),
+        status: z.literal('listed'),
+        entries: z.array(sandboxEntrySchema),
+      }),
+      z.looseObject({
+        path: z.string(),
+        status: z.enum(['not_found', 'not_directory', 'invalid_path']),
+      }),
+    ]),
+  ),
+});
+
 const contentReadSchema = z.union([
   z.looseObject({
     status: z.literal('read'),
@@ -213,6 +276,18 @@ export const filesMethods = {
       LeaseOutcome<TreeRead>
     >,
   },
+  directories: {
+    input: z
+      .object({
+        paths: z.array(z.string()).min(1).max(DIRECTORIES_LIMIT),
+        root: z.string().optional(),
+      })
+      .strict(),
+    output: z.union([ready(directoriesReadSchema), leaseStates]) as z.ZodType<
+      LeaseOutcome<DirectoriesRead>,
+      LeaseOutcome<DirectoriesRead>
+    >,
+  },
   content: {
     input: z
       .object({
@@ -259,10 +334,16 @@ export type ReadState<Value> =
     };
 
 export interface TreeObservation {
+  /**
+   * The root's entries; a directory carries `children` once it was read. The
+   * tree is read per directory: the root, and each directory once it is open.
+   */
   readonly read: ReadState<readonly ProjectTreeNode[]>;
   /** The failed read's message, as the toast shows it. */
   readonly error?: string;
   readonly fetching: boolean;
+  /** The open directories whose children are being read; none when absent. */
+  readonly loading?: ReadonlySet<string>;
 }
 
 /** The tree of one Project, rooted at a workspace-relative directory. */

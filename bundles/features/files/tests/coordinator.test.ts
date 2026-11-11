@@ -182,6 +182,40 @@ describe('files.refresh/v1', () => {
     assert.equal(mine.refreshes.length, 4);
   });
 
+  test('a Thread starting a prompt rereads nothing; the prompt ending does', () => {
+    const coordinator = setup();
+    const mine = registrant('p-1');
+    coordinator.register(mine.reads);
+    mine.refreshes.length = 0;
+
+    workspace.change((state) => {
+      state.threads = [{ id: 't-1', state: 'running', cwd: '/workspace' }];
+    });
+    assert.deepEqual(mine.refreshes, [], 'a prompt starting changes no file');
+
+    workspace.change((state) => {
+      state.threads = [{ id: 't-1', state: 'ready', cwd: '/workspace' }];
+    });
+    assert.deepEqual(mine.refreshes, [false], 'the prompt finished');
+
+    workspace.change((state) => {
+      state.threads = [{ id: 't-1', state: 'running', cwd: '/workspace' }];
+    });
+    workspace.change((state) => {
+      state.threads = [{ id: 't-1', state: 'failed', cwd: '/workspace' }];
+    });
+    assert.deepEqual(mine.refreshes, [false, false], 'the prompt failed');
+
+    // A running Thread that moves its working directory is still a change.
+    workspace.change((state) => {
+      state.threads = [{ id: 't-1', state: 'running', cwd: '/workspace' }];
+    });
+    workspace.change((state) => {
+      state.threads = [{ id: 't-1', state: 'running', cwd: '/workspace/src' }];
+    });
+    assert.deepEqual(mine.refreshes, [false, false, false]);
+  });
+
   test('offline, nothing rereads; the connection coming back does', () => {
     const coordinator = setup();
     const mine = registrant('p-1');
