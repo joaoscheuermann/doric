@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "screen",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "engines": { "doric": "^1.0.0" },
   "description": "The xpra HTML5 screen of a Project's sandbox.",
   "provides": ["screen.sessions/v2@2.0.0", "screen.views/v1@1.0.0"],

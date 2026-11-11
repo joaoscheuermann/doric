@@ -42,7 +42,9 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   sandbox.
 - **Window:** the client part registers the sidebar's MCP pane
   (`layout.stack/v2`): the selected Project's servers with their status and
-  tool count over `mcp/v1.watch`, and the dialogs that add, edit, remove and
+  tool count over `mcp/v1.watch` (`No MCP servers` once loaded with none), a
+  "Sign in" link that stays visible on a row needing it and opens the browser,
+  remove on row hover or focus, and the dialogs that add, edit, remove and
   sign in to them; the edit dialog lists the server's tools and skills after
   its headers or its environment. A header or variable is a typed value or a
   credential picked with the key button, from `secrets/v1` or stored there as

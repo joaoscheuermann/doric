@@ -1459,6 +1459,51 @@ test('a pane is capped at 40% and keeps its header; the Thread region keeps 40 p
   );
 });
 
+// Sidebar alignment (spec: docs/designs/sidebar-alignment.md §9.5,
+// pane headers): the pane header's action is revealed
+// only while the header is hovered or holds focus, as a Thread row's are.
+test('a pane header reveals its action only while it is hovered or holds focus', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, formThread],
+    path: `/projects/${project.id}`,
+  });
+  const [pane] = paneGroups(projectSidebar(rendered.root));
+  assert.ok(pane, 'The Screens pane has no group.');
+  const label = single(pane, '[data-slot="sidebar-group-label"]');
+  const header = label.parentElement;
+  assert.ok(header !== null, 'The pane label has no header wrapper.');
+  assert.deepEqual(
+    missingClasses(header, 'group/pane-header relative shrink-0'),
+    [],
+  );
+
+  const [action] = standIns(pane, 'screen-group-action');
+  assert.ok(action, 'The Screens pane has no header action.');
+  // The reveal sits on the action's own wrapper, a child of the header; the
+  // element host (`ElementHost`, `display: contents`) may sit between them.
+  let wrapper: HTMLElement | null = action.parentElement;
+  while (
+    wrapper !== null &&
+    wrapper !== header &&
+    wrapper.parentElement !== header
+  )
+    wrapper = wrapper.parentElement;
+  assert.ok(
+    wrapper !== null && wrapper !== header,
+    'The header action is not inside the pane header.',
+  );
+  assert.deepEqual(
+    missingClasses(
+      wrapper,
+      'pointer-events-none opacity-0 group-hover/pane-header:opacity-100 group-hover/pane-header:pointer-events-auto group-focus-within/pane-header:opacity-100 group-focus-within/pane-header:pointer-events-auto',
+    ),
+    [],
+    'The header action is not revealed on the header hover or focus.',
+  );
+  assert.equal(wrapper.parentElement, header);
+});
+
 // T-3.5
 test('layout.stack/v2 lists only the registered panes, with no Threads pane', async () => {
   rendered = await renderWorkspace({

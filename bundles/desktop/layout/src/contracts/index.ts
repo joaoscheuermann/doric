@@ -344,7 +344,8 @@ export const LayoutSidebarV1 = ref<LayoutSidebar>('layout.sidebar/v1');
  * layout draws one group per pane, in `order`, under the Thread region and
  * pinned to the column's bottom; nothing is resizable. Each group is the
  * pane's 28 px header — its title, the collapse control and the element
- * `headerTag` names for the group's own action (its add or hide control) — and,
+ * `headerTag` names for the group's own action (its add or hide control), which
+ * the layout hides until the header is hovered or holds focus — and,
  * while the pane is open, the pane's own element (`tag`), which draws only
  * what is inside the group. An open pane takes its content's height, up to
  * 40% of the column, and its content scrolls vertically past that; when the

@@ -2,7 +2,8 @@
 // group's frame — its header, the collapse control and its 40% cap
 // (`layout.stack/v2`) — so this part draws only what is inside it: one row per
 // view of the current Project, and the header's add control in an element of its
-// own. Clicking a row opens (or focuses) that view's window.
+// own. Clicking a row opens (or focuses) that view's window. With a Project
+// selected and no view, the pane shows "No screens open".
 //
 // Built inside a factory the activation calls, so importing this module touches
 // no DOM global [D10-7], in light DOM and with no element-local state (D9-17):
@@ -18,7 +19,6 @@ import {
   SidebarMenuItem,
   SidebarScope,
 } from 'desktop/ui/sidebar';
-import { cn } from 'desktop/ui/utils';
 import {
   CircleAlertIcon,
   Loader2Icon,
@@ -133,6 +133,19 @@ const presentationOf = (
 
 type Screens = ScreenViews | undefined;
 
+/** The Thread row's hover reveal (`row-add-action.tsx`), on the menu item. */
+const ON_HOVER =
+  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-focus-within/menu-item:pointer-events-auto group-focus-within/menu-item:opacity-100';
+
+/** The open pane's notice when it has no rows, on the rows' icon column. */
+function EmptyRow({ text }: { readonly text: string }) {
+  return (
+    <p className="flex h-7 items-center px-1.5 text-xs text-muted-foreground">
+      {text}
+    </p>
+  );
+}
+
 function ScreenRow({
   view,
   screens,
@@ -148,10 +161,7 @@ function ScreenRow({
     <SidebarMenuItem>
       <SidebarMenuButton
         size="sm"
-        className={cn(
-          'h-7 w-full translate-x-0 rounded-none pl-3',
-          state.retry ? 'pr-14' : 'pr-8',
-        )}
+        className="h-7 w-full translate-x-0 rounded-[4px] pr-2.5 pl-1.5 group-focus-within/menu-item:bg-sidebar-accent group-hover/menu-item:bg-sidebar-accent group-has-data-[sidebar=menu-action]/menu-item:pr-2.5"
         disabled={absent}
         title={`${view.label} — ${state.text}`}
         onClick={() => {
@@ -160,13 +170,15 @@ function ScreenRow({
       >
         <Icon className={state.spin === true ? 'animate-spin' : undefined} />
         <span className="min-w-0 flex-1 truncate">{view.label}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className="shrink-0 text-xs text-muted-foreground group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0">
           {state.text}
         </span>
       </SidebarMenuButton>
       {state.retry && (
         <SidebarMenuAction
-          className="right-7"
+          type="button"
+          className={`right-7 ${ON_HOVER}`}
+          style={{ top: '0.25rem' }}
           aria-label={`Retry ${view.label}`}
           title="Retry"
           disabled={absent}
@@ -177,9 +189,12 @@ function ScreenRow({
           <RotateCcwIcon />
         </SidebarMenuAction>
       )}
-      {/* The row's own action, revealed on hover or focus like a Thread's own. */}
+      {/* The row's own actions, laid over the status on hover or focus like a
+          Thread's own. */}
       <SidebarMenuAction
-        showOnHover
+        type="button"
+        className={`right-1 ${ON_HOVER}`}
+        style={{ top: '0.25rem' }}
         aria-label={`Remove ${view.label}`}
         title="Remove view"
         disabled={absent}
@@ -211,13 +226,19 @@ export const defineScreenElements = (client: ScreenClient) => {
 
     return (
       // The element's root is its own: the sidebar's scope does not reach it
-      // from the layout, so the pane brings one (as `git` and `files` do).
+      // from the layout, so the pane brings one (as `git` and `files` do). A
+      // selected Project with no views says so; with no Project there is
+      // nothing to list and nothing to say.
       <SidebarScope>
-        <SidebarMenu className="w-full gap-0">
-          {shown.map((view) => (
-            <ScreenRow key={view.id} view={view} screens={screens} />
-          ))}
-        </SidebarMenu>
+        {shown.length > 0 ? (
+          <SidebarMenu className="w-full gap-0">
+            {shown.map((view) => (
+              <ScreenRow key={view.id} view={view} screens={screens} />
+            ))}
+          </SidebarMenu>
+        ) : projectId !== undefined ? (
+          <EmptyRow text="No screens open" />
+        ) : null}
       </SidebarScope>
     );
   }

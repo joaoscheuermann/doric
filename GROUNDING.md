@@ -202,7 +202,9 @@ layout's `layout.stack/v2` — today the `screen` bundle's views and the `mcp`
 bundle's servers, each row carrying its state. A pane declares its title, its
 order and whether the reader can collapse it; it declares no size, and the
 column has no draggable dividers. The layout draws each pane's 28 px header and
-collapse control; an open pane is as tall as its content, at most 40 % of the
+collapse control, and shows the header's action only while the header is
+hovered or focused; a row's actions likewise show only on row hover or focus,
+and an empty open pane says `No screens open` or `No MCP servers`; an open pane is as tall as its content, at most 40 % of the
 column, and scrolls past that, and a pane never collapses past its header. The
 Screens pane starts collapsed, listing only the current Project's views. Threads
 start open over their children and retain their

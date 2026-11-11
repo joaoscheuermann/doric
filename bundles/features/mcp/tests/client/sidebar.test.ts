@@ -686,6 +686,19 @@ const precedes = (first: Element, second: Element): boolean =>
 const hasClass = (element: Element | null, name: string): boolean =>
   (element?.getAttribute('class') ?? '').split(/\s+/).includes(name);
 
+/** The classes of `classes` that `element` does not carry. */
+const missingClasses = (element: Element, classes: string): string[] =>
+  classes
+    .split(/\s+/)
+    .filter((name) => name !== '' && !element.classList.contains(name));
+
+/**
+ * The Thread row's hover reveal, on the menu item (design:
+ * docs/designs/sidebar-alignment.md §9.5).
+ */
+const ON_HOVER =
+  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-focus-within/menu-item:pointer-events-auto group-focus-within/menu-item:opacity-100';
+
 /** The pane's rows: the top-level list items of the rows element. */
 const rowsOf = (pane: OpenPane): HTMLElement[] =>
   (
@@ -1059,30 +1072,28 @@ test('W2 every status reads as its label', async () => {
         true,
         `${name} shows a sign-in icon.`,
       );
-      // A row that offers Sign in keeps its name clear of the wider action.
-      const buttonClasses = (
-        rowButton(pane, name).getAttribute('class') ?? ''
-      ).split(/\s+/);
-      if (state === 'needs-sign-in') {
-        assert.deepEqual(
-          [
-            buttonClasses.includes(
-              'group-has-data-[sidebar=menu-action]/menu-item:pr-22',
-            ),
-            buttonClasses.includes(
-              'group-has-data-[sidebar=menu-action]/menu-item:pr-8',
-            ),
-          ],
-          [true, false],
-          `${name} does not clear its Sign in action.`,
-        );
-      } else {
-        assert.equal(
-          buttonClasses.some((className) => className.endsWith('pr-22')),
-          false,
-          `${name} clears a Sign in action it does not have.`,
-        );
-      }
+      // Every row puts its icon on the header chevron's column and runs to
+      // the right edge: no room is kept for its actions, Sign in included.
+      const button = rowButton(pane, name);
+      const buttonClasses = (button.getAttribute('class') ?? '').split(/\s+/);
+      assert.deepEqual(
+        missingClasses(
+          button,
+          'pl-1.5 pr-2.5 rounded-[4px] group-has-data-[sidebar=menu-action]/menu-item:pr-2.5',
+        ),
+        [],
+        `${name} is not aligned.`,
+      );
+      assert.equal(
+        buttonClasses.includes('pl-3'),
+        false,
+        `${name} keeps its 12 px inset.`,
+      );
+      assert.equal(
+        buttonClasses.some((className) => className.endsWith('pr-22')),
+        false,
+        `${name} keeps room for a Sign in action.`,
+      );
       if (state === 'needs-sign-in') {
         // The status text itself is the action: a "Sign in" text button.
         const signIn = buttonNamed(rowElement, `Sign in to ${name}`);
@@ -1129,10 +1140,19 @@ test("W3 until the Project's watch answers the pane is loading, not empty", asyn
     const p1 = await watchOf(host, 'p1');
     assert.equal(busy(), true, 'The pane does not say it is loading.');
 
-    // Answered empty, the pane draws nothing: no rows and no placeholders.
+    // Loading is not empty: no notice while the placeholders show.
+    assert.doesNotMatch(normalized(pane.rows.textContent), /No MCP servers/);
+
+    // Answered empty, the pane says so: no rows and no placeholders.
     await emit(p1, []);
     assert.equal(busy(), false);
+    assert.equal(
+      pane.rows.querySelector('[aria-busy]'),
+      null,
+      'The answered pane still carries aria-busy.',
+    );
     assert.equal(rowsOf(pane).length, 0);
+    assert.equal(normalized(pane.rows.textContent), 'No MCP servers');
 
     // Another Project's servers are unknown again until its watch answers.
     await host.select({ id: 'p2', name: 'Elsewhere' });
@@ -1141,6 +1161,121 @@ test("W3 until the Project's watch answers the pane is loading, not empty", asyn
     await emit(p2, [sentry]);
     assert.equal(busy(), false);
     assert.equal(rowsOf(pane).length, 1);
+  } finally {
+    await pane.close();
+  }
+});
+
+// Sidebar alignment, rows (spec: docs/designs/sidebar-alignment.md §9.5,
+// pane rows). happy-dom computes no layout, so the look is
+// observable only as the classes that draw it.
+
+/** The `span` of the row's menu button that reads `text`. */
+const statusOf = (pane: OpenPane, name: string, text: string): Element => {
+  const status = [...rowButton(pane, name).querySelectorAll('span')].find(
+    (span) => normalized(span.textContent) === text,
+  );
+  assert.ok(status !== undefined, `The ${name} row does not read "${text}".`);
+  return status as unknown as Element;
+};
+
+test("every row's Remove is laid over its right edge on hover or focus, and its status fades out", async () => {
+  const { pane } = await paneWith([linear, files, notion]);
+
+  try {
+    for (const name of ['Linear', 'Files', 'Notion']) {
+      const remove = buttonNamed(rowNamed(pane, name), `Remove ${name}`);
+      assert.deepEqual(
+        missingClasses(remove, `right-1 ${ON_HOVER}`),
+        [],
+        `Remove ${name} is not the hover reveal.`,
+      );
+      assert.equal(remove.style.top, '0.25rem');
+      assert.equal(remove.classList.contains('md:opacity-0'), false);
+    }
+    for (const [name, text] of [
+      ['Linear', '3 tools'],
+      ['Files', 'Idle'],
+    ] as const) {
+      assert.deepEqual(
+        missingClasses(
+          statusOf(pane, name, text),
+          'group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0',
+        ),
+        [],
+        `The ${name} status does not fade out.`,
+      );
+    }
+  } finally {
+    await pane.close();
+  }
+});
+
+test('Sign in reads as a link that stays shown and steps left of Remove on hover', async () => {
+  const { pane } = await paneWith([notion]);
+
+  try {
+    const signIn = buttonNamed(rowNamed(pane, 'Notion'), 'Sign in to Notion');
+    assert.equal(normalized(signIn.textContent), 'Sign in');
+    assert.notEqual(
+      signIn.querySelector('svg.lucide-external-link'),
+      null,
+      'Sign in has no opens-elsewhere glyph.',
+    );
+    assert.equal(signIn.title, 'Sign in (opens in your browser)');
+    assert.deepEqual(
+      missingClasses(
+        signIn,
+        'underline decoration-sidebar-foreground/40 underline-offset-2 right-1.5 group-hover/menu-item:right-7 group-focus-within/menu-item:right-7',
+      ),
+      [],
+    );
+    assert.equal(signIn.classList.contains('opacity-0'), false);
+    assert.equal(signIn.classList.contains('pointer-events-none'), false);
+  } finally {
+    await pane.close();
+  }
+});
+
+test('a watch that failed with no servers shows its alert, not the empty notice', async () => {
+  const host = createHost({ project: { id: 'p1', name: 'Doric' } });
+  const pane = await openPane(host);
+
+  try {
+    const p1 = await watchOf(host, 'p1');
+    const observer = p1.listener as {
+      readonly end?: (error?: ContractError) => void;
+    };
+    await act(() =>
+      observer.end?.(new ContractError('internal', 'The host broke.')),
+    );
+    await settle();
+
+    const alert = pane.rows.querySelector('[role="alert"]');
+    assert.ok(alert !== null, 'The failed watch shows no alert.');
+    assert.match(normalized(alert.textContent), /Unable to load MCP servers/);
+    assert.equal(rowsOf(pane).length, 0);
+    assert.doesNotMatch(normalized(pane.rows.textContent), /No MCP servers/);
+  } finally {
+    await pane.close();
+  }
+});
+
+test("the loading placeholders sit on the rows' icon column", async () => {
+  const host = createHost({ project: { id: 'p1', name: 'Doric' } });
+  const pane = await openPane(host);
+
+  try {
+    await watchOf(host, 'p1');
+    const skeletons = [
+      ...pane.rows.querySelectorAll('[data-slot="sidebar-menu-skeleton"]'),
+    ] as unknown as HTMLElement[];
+    assert.ok(skeletons.length > 0, 'The loading pane shows no placeholders.');
+    for (const skeleton of skeletons) {
+      assert.deepEqual(missingClasses(skeleton, 'pl-1.5'), []);
+      assert.equal(skeleton.classList.contains('pl-3'), false);
+      assert.equal(skeleton.classList.contains('pr-8'), false);
+    }
   } finally {
     await pane.close();
   }
@@ -2416,12 +2551,12 @@ test('W9 a watch lost with the host generation subscribes again', async () => {
 // T-3.8 (sidebar alignment §9.4): the pane is registered through
 // `layout.stack/v2`, so the manifest requires it and no longer v1.
 
-test('the MCP manifest is 1.2.2 and requires layout.stack/v2@^2.0.0, not v1', () => {
+test('the MCP manifest is 1.2.3 and requires layout.stack/v2@^2.0.0, not v1', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/features/mcp/manifest.json', 'utf8'),
   ) as { version: string; requires: string[] };
 
-  assert.equal(manifest.version, '1.2.2');
+  assert.equal(manifest.version, '1.2.3');
   assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
   assert.ok(
     !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),

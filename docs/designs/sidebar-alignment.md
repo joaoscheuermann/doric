@@ -1,12 +1,12 @@
 # Spec: sidebar alignment
 
 - Ticket: none given.
-- Status: `accepted`, version 6 (2026-11-10), approved by the user on 2026-11-10. Phases 1–4 are implemented, uncommitted (2026-11-10). Version 6 answers the Major findings of the stage 4 Readiness and Codebase review of version 5; its Nits are listed in [Deferred to the plan](#deferred-to-the-plan) ([Revisions](#revisions)).
+- Status: `accepted`, version 7 (2026-11-11), approved by the user on 2026-11-10. Phases 1–4 are implemented (2026-11-10, PR #57); the follow-up of [§9.5](#95-follow-up-pane-rows-and-headers), decided by the user on 2026-11-11, is implemented (2026-11-11, PR #57). Version 6 answers the Major findings of the stage 4 Readiness and Codebase review of version 5; its Nits are listed in [Deferred to the plan](#deferred-to-the-plan) ([Revisions](#revisions)).
 - Builds on: commit `bb4c2453` (`main`). Every line reference names the file as it is at that commit, except the captures under `docs/designs/sidebar-alignment/`, added for this spec. Every path is written from the repository root.
-- Requirements: U1–U11, set by the user (jao.scheuermann). They are not reopened here.
+- Requirements: U1–U12, set by the user (jao.scheuermann). They are not reopened here. U12 is the follow-up the user decided on 2026-11-11 from the papercraft preview in conversation.
 - Visual target: the text of [Visual target](#visual-target) and the three committed captures it describes. Figma and the papercraft preview are informative.
 - Feature docs: [docs/features/ui-redesign.md](../features/ui-redesign.md), whose sidebar column and Files column this change revises. No new feature doc.
-- Identifiers: U1–U11 requirements; D1–D17 design decisions; T-1.1 … T-4.8 tests (with T-2.12 in phase 2); SR1–SR15 risks; SQ1–SQ2 questions, both closed.
+- Identifiers: U1–U12 requirements; D1–D18 design decisions; T-1.1 … T-4.8 and T-F.1 … T-F.4 tests (with T-2.12 in phase 2); SR1–SR15 risks; SQ1–SQ2 questions, both closed.
 
 ## Contents
 
@@ -78,7 +78,7 @@ Sidebar column, top to bottom:
 - 12 px, then the Thread tree. Rows are 28 px tall with a 16 px lead slot holding a 14 px icon. Each level indents 20 px; a vertical guide marks each ancestor level. Root rows wear their kind icon; an Untitled Thread wears the Untitled icon. Terminal rows ("npm run dev") wear the terminal icon in the same lead slot. No row shows a repository mark.
 - An active row's name shimmers and its elapsed badge ("05:12") sits at the row's right edge. Its active child shows its own badge ("02:00").
 - 12 px under the last row, the New Thread button: 268×28, secondary background, a 14 px plus icon and no text.
-- Empty space down to the stack panes, which sit at the bottom with no dividers. Each pane header holds a chevron, the title (Screens, MCP) and the pane's plus action. Under the last header, 14 px.
+- Empty space down to the stack panes, which sit at the bottom with no dividers. Each pane header holds a chevron, the title (Screens, MCP) and the pane's plus action, which shows only while the header is hovered or focused. The capture `sidebar-column.png` draws it always shown; this spec departs from it by the user's decision on the papercraft preview (2026-11-11, U12, [§9.5](#95-follow-up-pane-rows-and-headers)), as SQ1 does for the header height. Under the last header, 14 px.
 - The captures draw the pane headers 20 px tall. This spec keeps them 28 px (`h-7`), as decided in SQ1.
 
 Files column trees (both captures): rows 28 px tall, 20 px per level with guides, folder and open-folder icons for directories, a file icon for files, the git letter or change count 8 px from the right edge in its status color, and a selected row's background spanning the row. The captures draw that background under the mark; this spec ends it where the mark begins, a trade-off the user accepted ([§10.2](#102-rows)). The captures do not show horizontal scrolling; [§10](#10-files-column-horizontal-scrolling) specifies it.
@@ -130,6 +130,7 @@ The Files column trees cannot scroll sideways: both hosts force `overflow-x-hidd
 - **U9** — A Thread row shows the elapsed badge and the shimmer while the Thread runs or any descendant, at any depth, works: a running descendant Thread, or a busy agent terminal under the Thread or a descendant. User shells do not count. Agent background terminals that never end (dev servers, watchers, `timeout_ms: 0`) keep counting while they run (decision D-A, 2026-11-10). The time counts from the start of the Thread's own last execution.
 - **U10** — The Files column trees scroll horizontally. The trailing marks stay pinned to the visible right edge with `position: sticky` while the tree scrolls, and a decorated row's hover and selected background ends where its mark begins, while an undecorated row's spans the row (D16). It stays in this spec by the user's decision.
 - **U11** — Remove the Hover swap: on hover or focus an expandable row keeps its lead icon. Rows open and close as today, by click and keyboard. No chevron in these trees. Thread rows with children gain `aria-expanded` (SQ2); the rest of accessibility stays as it is.
+- **U12** — Follow-up (user decision on the papercraft preview, 2026-11-11): Screens and MCP rows align their icons with the pane header chevrons; row actions show only on row hover or focus, over the row's right edge, without reserved space; MCP "Sign in" stays visible as a link; an empty open pane says so; a pane header's action shows only on header hover or focus ([§9.5](#95-follow-up-pane-rows-and-headers)).
 
 Which surfaces each requirement changes:
 
@@ -166,6 +167,7 @@ Each decision is detailed in the section it names; they are numbered in section 
 | D15 | `ScrollArea` gains `scrollbars?: 'vertical' \| 'both'`; only the two Files column hosts pass `'both'`, and their trees are as wide as their widest row.                                     | [§10.1](#101-the-scroll-container)             |
 | D16 | Files column rows stop clipping and span the tree's full width; a row's background ends where its mark begins.                                                                              | [§10.2](#102-rows)                             |
 | D17 | A trailing mark is the row's last flex child after the button, `sticky` at the right edge, reserving its own width and taking the hover and selected colors as the button's `peer` sibling. | [§10.3](#103-pinned-trailing-marks)            |
+| D18 | Pane rows align with the header chevrons and reveal their actions on hover or focus; empty panes say so; the layout reveals a pane's `headerTag` on header hover or focus (U12).            | [§9.5](#95-follow-up-pane-rows-and-headers)    |
 
 ## Design
 
@@ -355,7 +357,7 @@ A `Button` from `desktop/ui/button`, `variant="secondary"`, `size="sm"` (`h-7`, 
 
 Each registered pane is a `SidebarGroup` (`data-slot="sidebar-pane"`, `data-pane-id`) under the Thread region:
 
-- Its header is today's: 28 px (`h-7`), the title, the toggle button with `aria-expanded` and the name "Collapse {title}" / "Expand {title}", and the pane's `headerTag` action. A pane that cannot collapse draws no toggle and is always open.
+- Its header is today's: 28 px (`h-7`), the title, the toggle button with `aria-expanded` and the name "Collapse {title}" / "Expand {title}", and the pane's `headerTag` action, which the layout hides until the header is hovered or holds focus ([§9.5](#95-follow-up-pane-rows-and-headers)). A pane that cannot collapse draws no toggle and is always open.
 - The group itself carries the cap: `max-h-[40%]`, `min-h-7`, a column of the header (never shrinking) and, while open, the content (the pane's `tag` element), which shrinks with the group and scrolls vertically (`min-h-0 overflow-y-auto`). A closed pane is its header.
 - Height order when the column is short: the Thread region gives up its free height first (it has no basis, only its 40 px minimum); then the open panes shrink toward their headers.
 - The 40% resolves against the column's height, which is definite all the way up:
@@ -382,6 +384,17 @@ Ignoring `defaultSize`, `minSize` and `maxSize` changes what `layout.stack/v1` d
   - The planned Ports pane is written against v1 (`docs/architecture/bundles/port-forwarding.md:103`, `:172`); that document moves to v2 ([Docs to update](#docs-to-update)).
   - A new Screens or MCP on a layout older than 3.0.0 is quarantined for the same reason, the other way round.
   - `versioning.md:33` covers bundles and the app shipping apart, and bundles adapting to the app's platform version; it does not cover two bundles at different versions, which is the `requires` check above.
+
+#### 9.5 Follow-up: pane rows and headers
+
+Source: the user's decision on the papercraft preview in conversation (2026-11-11), U12 and D18. It changes no contract.
+
+- Screens and MCP rows align their icons with the pane header chevrons (row `pl-1.5` inside the content's `px-1.5`); the label and status run to the right edge.
+- Row actions (remove; Screens' retry, left of remove on a failed row) show only while the row is hovered or holds focus, laid over the row's right edge with no space reserved; the row's status fades out while they show.
+- MCP "Sign in" stays visible as an underlined link with an external-link icon and the title "Sign in (opens in your browser)"; while the row is hovered or holds focus it shifts left to make room for remove.
+- An open pane with no rows shows "No screens open" (only with a Project selected) or "No MCP servers" (only once the servers are loaded and without a load failure, which shows its alert instead).
+- The layout hides every pane's `headerTag` element until the header is hovered or holds focus, as a Thread row's actions are.
+- Versions: layout 3.0.1, screen 2.0.2, mcp 1.2.3 (patch).
 
 ### 10. Files column: horizontal scrolling
 
@@ -435,7 +448,7 @@ Keyboard focus. Tab moves focus between rows and the browser scrolls the focused
 
 ## Contracts and versions
 
-Versions below assume the phases land in order 1–4. A phase that lands out of order bumps each bundle it touches from the version on `main` by the level stated in the "Why" column.
+Versions below assume the phases land in order 1–4, then the follow-up of [§9.5](#95-follow-up-pane-rows-and-headers), written §9.5 in the Phase column. A phase that lands out of order bumps each bundle it touches from the version on `main` by the level stated in the "Why" column.
 
 | Contract or bundle  | Phase | Before | After   | Why                                                                                                                                                                                                                                                                                                      |
 | ------------------- | ----- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -453,6 +466,9 @@ Versions below assume the phases land in order 1–4. A phase that lands out of 
 | `PLATFORM_VERSION`  | 4     | 1.5.0  | 1.6.0   | `ScrollArea` gains a prop; the platform moves a minor per addition (`versioning.md:31`, `packages/bundle/src/runtime/version.ts:1-10`). `PLATFORM_ASSETS_VERSION` stays 1.0.0. Bundles keep `engines.doric` at `^1.0.0`: they adapt to an older or newer app (`docs/features/ui-redesign.md:151`, UR25). |
 | `files` bundle      | 4     | 1.7.0  | 1.7.1   | Host classes only.                                                                                                                                                                                                                                                                                       |
 | `git` bundle        | 4     | 1.2.1  | 1.2.2   | Row markup and host classes only.                                                                                                                                                                                                                                                                        |
+| `layout` bundle     | §9.5  | 3.0.0  | 3.0.1   | Pane header plus on hover or focus only; no contract change (patch).                                                                                                                                                                                                                                     |
+| `screen` bundle     | §9.5  | 2.0.1  | 2.0.2   | Row alignment and hover actions; no contract change (patch).                                                                                                                                                                                                                                             |
+| `mcp` bundle        | §9.5  | 1.2.2  | 1.2.3   | The same.                                                                                                                                                                                                                                                                                                |
 
 The runtime and its contracts do not change.
 
@@ -510,6 +526,8 @@ Each phase leaves `nx run-many -t lint typecheck test` green for the projects it
 2. **Activity and rows.** [§1](#1-the-badge-start)–[§4](#4-thread-rows): badge start, activity rule, `layout.sidebar/v1` 1.1.0 and the terminal's `busy`, elapsed text, repository marks removed.
 3. **Column.** [§9](#9-the-sidebar-column): Threads pane removed, New Thread under the tree, panes pinned without resizing, `layout.stack/v2`, Screens and MCP migrated.
 4. **Files column scrolling.** [§10](#10-files-column-horizontal-scrolling): `ScrollArea` prop and `PLATFORM_VERSION` 1.6.0, `FileTree` rows and their sticky marks, the two hosts and the repository row. It depends on no other phase.
+
+Follow-up ([§9.5](#95-follow-up-pane-rows-and-headers)): pane rows, empty notices and the header reveal, after phase 3.
 
 ## Files to change
 
@@ -570,6 +588,14 @@ Each phase leaves `nx run-many -t lint typecheck test` green for the projects it
 - `bundles/features/mcp/src/client/peers.ts` (`:42-44` size fields, `:47-52` reference), `bundles/features/mcp/src/client/index.ts` (`:2` comment, `:40-41`, `:55`), `bundles/features/mcp/src/client/elements.tsx:1-5` (comment), `bundles/features/mcp/manifest.json`
 - Tests: `bundles/desktop/layout/tests/sidebar-stack.test.ts` (the Threads pane and `paneExpanded` cases go), `bundles/desktop/layout/tests/stack-store.test.ts` (`:29` loses `minSize`), new `bundles/desktop/layout/tests/stack-service.test.ts`, `bundles/desktop/layout/tests/client/search.test.ts`, `bundles/desktop/layout/tests/client/shell.test.ts`, `bundles/desktop/layout/tests/tabs-menus.test.ts`, `bundles/features/screen/tests/client/sidebar.test.ts` (comment `:6`), `bundles/features/mcp/tests/client/sidebar.test.ts` (`:358` fake contract id, `:975-978`).
 
+### Follow-up (§9.5)
+
+- `bundles/desktop/layout/src/client/components/organisms/project-sidebar.tsx` (header action revealed on hover or focus)
+- `bundles/desktop/layout/src/contracts/index.ts` (comment only), `bundles/desktop/layout/manifest.json` (3.0.1)
+- `bundles/features/screen/src/client/elements.tsx`, `bundles/features/screen/manifest.json` (2.0.2)
+- `bundles/features/mcp/src/client/elements.tsx`, `bundles/features/mcp/manifest.json` (1.2.3)
+- Tests: `bundles/desktop/layout/tests/client/shell.test.ts`, `bundles/desktop/layout/tests/tabs-menus.test.ts`, `bundles/features/screen/tests/client/sidebar.test.ts`, `bundles/features/mcp/tests/client/sidebar.test.ts`.
+
 ### Phase 4
 
 - `packages/desktop/src/components/scroll-area.tsx`
@@ -624,8 +650,15 @@ Tests go through public exports and rendered markup, as the existing suites do. 
 - **T-3.5** (`bundles/desktop/layout/tests/client/shell.test.ts`) — "Collapse Screens" removes the Screens content and keeps its header; "Expand Screens" brings it back. After activation, `layout.stack/v2.panes()` lists only the fixture's panes, with no `threads` id.
 - **T-3.6** (new `bundles/desktop/layout/tests/stack-service.test.ts`) — Through `createTestServices({ bundle: { id: 'screen' }, provide: [createLayoutStack()] })` and `services.use(LayoutStackV2)`, as `bundles/desktop/layout/tests/sidebar-service.test.ts:39-48` does for the sidebar: `register` with `minSize`, with `maxSize` and with `defaultSize` each throws a `ContractError` with code `invalid_input`, because the strict `stackPaneSchema` (`contracts/index.ts:387-401`) runs at dispatch (`packages/bundle/src/runtime/dispatch.ts:177`); the store itself checks no schema (`stores/stack.ts:30-43`). `register` without them succeeds, and `setOpen` and `toggle` change `isOpen`.
 - **T-3.7** (`bundles/features/screen/tests/client/sidebar.test.ts`, `bundles/features/mcp/tests/client/sidebar.test.ts:975-978`) — Each bundle registers its pane through `layout.stack/v2`, without `minSize` or `maxSize`.
-- **T-3.8** (versions) — `bundles/desktop/layout/tests/tabs-menus.test.ts` asserts layout 3.0.0 providing `layout.stack/v2@2.0.0` and no `layout.stack/v1`; the Screens and MCP sidebar tests read their manifests and assert screen 2.0.1 and mcp 1.2.2, each requiring `layout.stack/v2@^2.0.0` and not `layout.stack/v1`.
+- **T-3.8** (versions) — `bundles/desktop/layout/tests/tabs-menus.test.ts` asserts layout 3.0.1 (3.0.0 at phase 3) providing `layout.stack/v2@2.0.0` and no `layout.stack/v1`; the Screens and MCP sidebar tests read their manifests and assert screen 2.0.2 and mcp 1.2.3 (2.0.1 and 1.2.2 at phase 3), each requiring `layout.stack/v2@^2.0.0` and not `layout.stack/v1`.
 - **T-3.9** (unchanged, still passing) — `bundles/desktop/layout/tests/client/shell.test.ts`: New Thread opens the draft row at the end of the tree, stays disabled without a Project and clears a query; Screens sits below the tree. `bundles/desktop/layout/tests/stack-store.test.ts`: the existing cases.
+
+### Follow-up tests (§9.5)
+
+- **T-F.1** (`bundles/desktop/layout/tests/client/shell.test.ts`) — A pane header reveals its action only while it is hovered or holds focus.
+- **T-F.2** (`bundles/features/screen/tests/client/sidebar.test.ts`) — A view row's icon sits on the chevron column and its label runs to the right edge; a ready row's Remove is laid over the right edge on hover or focus; a failed row's Retry sits left of Remove, revealed with it; the status fades out while the actions show; Remove and Retry act on the row's view; an open pane with no views for the Project says "No screens open", and not once one is open.
+- **T-F.3** (`bundles/features/mcp/tests/client/sidebar.test.ts`) — Every row's Remove is laid over its right edge on hover or focus and its status fades out; Sign in reads as a link that stays shown and steps left of Remove on hover; the pane is loading, not empty, until the watch answers, then says "No MCP servers"; a failed watch shows its alert, not the notice; the loading placeholders sit on the rows' icon column.
+- **T-F.4** (versions) — covered by T-3.8.
 
 ### Phase 4 tests
 
@@ -667,7 +700,10 @@ In the running app, against the [Visual target](#visual-target):
 - `docs/architecture/bundles/layout.md:18`, `:59`: panes of `layout.stack/v2` pinned under the tree with no resizing, and `layout.stack/v1` no longer provided; `layout.sidebar/v1`'s `busy`.
 - `bundles/desktop/layout/README.md:21`, `:91-92`: `addThreadRows` with `count` and `busy`; `layout.stack/v2` without size limits, replacing `layout.stack/v1`.
 - `bundles/features/terminal/README.md:67-68`: the rows answer `busy` for agent terminals.
-- `bundles/features/mcp/README.md:44`: `layout.stack/v2`.
+- `bundles/features/mcp/README.md:44`: `layout.stack/v2`; the always-visible "Sign in" row link and "No MCP servers" (§9.5).
+- `bundles/features/screen/README.md`: hover- or focus-only row actions and header "+", and "No screens open" (§9.5).
+- `bundles/desktop/layout/src/contracts/index.ts` (`layout.stack/v2` comment): the `headerTag` reveal (§9.5).
+- `docs/features/ui-redesign.md` and `GROUNDING.md`: the follow-up of §9.5.
 - `docs/architecture/bundles/port-forwarding.md:103`, `:172`: the planned Ports pane registers through `layout.stack/v2` without `minSize`.
 - `GROUNDING.md`: the sidebar's panes and handle, the activity rule and the Untitled icon, the Files column's sideways scrolling, and the contract history.
 - `packages/desktop/PROVENANCE.md` and `packages/desktop/scripts/verify-provenance.mjs`: the recorded patches of the vendored files this change edits.
@@ -745,5 +781,7 @@ None. Closed:
   - R6: [§3](#3-the-busy-answer-layoutsidebarv1-110) defines the window as one registration's life, keeps a Thread's resolved Project for that life (a Thread cannot move between Projects), keeps the follow on every call, and notes that `store.threadTerminals` scans all terminals. T-2.10 asserts the fake `workspace().thread` call count.
   - R7 and B2: T-3.6 moves to a new service test through `createTestServices`, where the strict schema runs at dispatch.
   - R8: [§10.2](#102-rows) adds `overflow-visible` to the Changes view's repository group (`changes-tree.tsx:171`); T-4.4 asserts it, and SR11 names the tests that cover each element.
-- **Accepted** (2026-11-10): the user approved version 6; the status moves from `proposed` to `accepted`. The content is unchanged.
+- **Accepted** (2026-11-10): the user approved version 6; the status moves from `proposed` to `accepted`. The content of version 6 is unchanged.
 - **Implemented** (2026-11-10): phases 1–4 built; the version stays 6. U10's background wording follows D16 and SR6 names `layout.sidebar/v1` 1.0.0. Tree row buttons add `w-auto` to override `SidebarMenuButton`'s base `w-full`, so a row's button stops where its pinned mark begins. Rebased onto main's windowed `FileTree` (#56), which draws its lines flat with no nested directory group: the directory level's `overflow-visible` has no element to sit on there, so T-4.2 checks that no ancestor of a mark clips it; files moves 1.7.0 → 1.7.1.
+- **Follow-up** (2026-11-11): Screens and MCP pane rows align their icons with the pane header chevrons (row `pl-1.5` inside the content's `px-1.5`). Row actions (remove; Screens' retry) show only on row hover or focus, over the row's right edge, fading the status out, with no space reserved. MCP "Sign in" stays visible as an underlined link with an external-link icon and the title "Sign in (opens in your browser)"; it shifts left on row hover or focus to make room for remove. An open pane with no rows shows "No screens open" (only with a Project selected) or "No MCP servers" (only once loaded and without a load failure). The layout's pane header plus shows only on header hover or focus. Versions: layout 3.0.1, screen 2.0.2, mcp 1.2.3 (patch; no contract change).
+- **Version 7** (2026-11-11): the follow-up above is written into the body as U12, D18 and [§9.5](#95-follow-up-pane-rows-and-headers), with its files, tests T-F.1–T-F.4 and docs; the `headerTag` reveal is added to [§9.3](#93-stack-panes); T-3.8 asserts the follow-up versions. The status notes the follow-up as implemented.

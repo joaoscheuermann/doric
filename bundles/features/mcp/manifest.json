@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "mcp",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "engines": { "doric": "^1.0.0" },
   "description": "MCP servers per Project: their tools for the Project's prompts, with OAuth sign-in for remote servers.",
   "provides": ["mcp/v1@1.2.0", "mcp.server/v1@1.1.0"],

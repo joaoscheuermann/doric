@@ -5,7 +5,7 @@
 // its views, with its tool count once connected and its status otherwise, and
 // the header's add control in an element of its own. A row opens the server's
 // dialog; its actions sign in to it and remove it. A watch that failed says so
-// in an alert; an empty pane says nothing.
+// in an alert; a loaded pane with no servers says so.
 //
 // Built inside a factory the activation calls, so importing this module touches
 // no DOM global [D10-7]. What the rows show lives in the activation's store
@@ -40,6 +40,7 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   CircleOffIcon,
+  ExternalLinkIcon,
   HourglassIcon,
   KeyRoundIcon,
   Loader2Icon,
@@ -93,6 +94,19 @@ const toolCount = (count: number): string =>
 const offersSignIn = (server: McpServerView): boolean =>
   server.transport.kind === 'http' && server.status.state === 'needs-sign-in';
 
+/** The Thread row's hover reveal (`row-add-action.tsx`), on the menu item. */
+const ON_HOVER =
+  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-focus-within/menu-item:pointer-events-auto group-focus-within/menu-item:opacity-100';
+
+/** The open pane's notice when it has no rows, on the rows' icon column. */
+function EmptyRow({ text }: { readonly text: string }) {
+  return (
+    <p className="flex h-7 items-center px-1.5 text-xs text-muted-foreground">
+      {text}
+    </p>
+  );
+}
+
 function ServerRow({
   server,
   signingIn,
@@ -114,37 +128,39 @@ function ServerRow({
     <SidebarMenuItem>
       <SidebarMenuButton
         size="sm"
-        className={cn(
-          'h-7 w-full translate-x-0 rounded-none pl-3',
-          signs && 'group-has-data-[sidebar=menu-action]/menu-item:pr-22',
-        )}
+        className="h-7 w-full translate-x-0 rounded-[4px] pr-2.5 pl-1.5 group-focus-within/menu-item:bg-sidebar-accent group-hover/menu-item:bg-sidebar-accent group-has-data-[sidebar=menu-action]/menu-item:pr-2.5"
         title={[server.name, label, message].filter(Boolean).join(' — ')}
         onClick={onEdit}
       >
         <Icon className={cn(state === 'connecting' && 'animate-spin')} />
         <span className="min-w-0 flex-1 truncate">{server.name}</span>
         {!signs && (
-          <span className="shrink-0 text-xs text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0">
             {state === 'connected' ? toolCount(server.tools.length) : label}
           </span>
         )}
       </SidebarMenuButton>
       {signs && (
-        // The status text is the action; a button cannot sit inside the row's,
-        // so it sits over the row's right padding, left of the remove action.
+        // The status text is the action, always shown and read as a link; a
+        // button cannot sit inside the row's, so it sits over the row's right
+        // edge and steps left on hover to make room for the remove action.
         <button
           type="button"
-          className="absolute top-1 right-7 flex h-5 items-center rounded-md px-1 text-xs text-muted-foreground ring-sidebar-ring outline-hidden hover:text-sidebar-foreground hover:underline focus-visible:ring-2 disabled:opacity-50"
+          className="absolute top-1 right-1.5 flex h-5 items-center gap-0.5 rounded-md px-1 text-xs text-sidebar-foreground underline decoration-sidebar-foreground/40 underline-offset-2 ring-sidebar-ring outline-hidden hover:decoration-sidebar-foreground focus-visible:ring-2 disabled:opacity-50 group-focus-within/menu-item:right-7 group-hover/menu-item:right-7 [&>svg]:size-3 [&>svg]:shrink-0"
           aria-label={`Sign in to ${server.name}`}
-          title="Sign in"
+          title="Sign in (opens in your browser)"
           disabled={signingIn}
           onClick={onSignIn}
         >
           Sign in
+          <ExternalLinkIcon aria-hidden />
         </button>
       )}
+      {/* Laid over the status on hover or focus, like a Thread row's own. */}
       <SidebarMenuAction
-        showOnHover
+        type="button"
+        className={`right-1 ${ON_HOVER}`}
+        style={{ top: '0.25rem' }}
         aria-label={`Remove ${server.name}`}
         title="Remove"
         onClick={onRemove}
@@ -232,7 +248,7 @@ export const defineMcpElements = ({ store, api, signIns }: McpClient) => {
               <SidebarMenuItem key={row}>
                 <SidebarMenuSkeleton
                   showIcon
-                  className="h-7 rounded-none pl-3 pr-8"
+                  className="h-7 rounded-[4px] pl-1.5 pr-2.5"
                 />
               </SidebarMenuItem>
             ))}
@@ -247,6 +263,9 @@ export const defineMcpElements = ({ store, api, signIns }: McpClient) => {
             />
           ))}
         </SidebarMenu>
+        {loaded && failure === undefined && servers.length === 0 && (
+          <EmptyRow text="No MCP servers" />
+        )}
         {editing !== undefined && (
           <ServerDialog
             api={api}

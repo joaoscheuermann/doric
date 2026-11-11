@@ -129,11 +129,13 @@ const mount = (
   render: ElementName,
   options: {
     readonly added?: unknown[];
+    /** Records `remove` and `retry` calls as `[method, id]`. */
+    readonly calls?: [string, unknown][];
     readonly views: readonly ScreenView[];
     readonly workspace: ReturnType<typeof workspaceFor>;
   },
 ) => {
-  const { added = [], views, workspace } = options;
+  const { added = [], calls = [], views, workspace } = options;
   const store = createScreenViewsStore();
   store.set(views);
 
@@ -144,8 +146,12 @@ const mount = (
       return view;
     },
     open: async () => undefined,
-    remove: async () => undefined,
-    retry: async () => undefined,
+    remove: async (id: unknown) => {
+      calls.push(['remove', id]);
+    },
+    retry: async (id: unknown) => {
+      calls.push(['retry', id]);
+    },
   };
   const services = servicesFor((contract) =>
     contract === LayoutWorkspaceV1 ? workspace : screens,
@@ -210,6 +216,10 @@ test('the rows element shows nothing without a selected Project', async () => {
 
   try {
     assert.doesNotMatch(element.textContent ?? '', /Doric|Elsewhere/);
+    // No Project, no notice: the pane is empty, as the MCP pane's is.
+    assert.doesNotMatch(element.textContent ?? '', /No screens open/);
+    assert.equal((element.textContent ?? '').trim(), '');
+    assert.equal(element.querySelectorAll('li').length, 0);
   } finally {
     await act(() => element.dispose());
     window.document.body.replaceChildren();
@@ -260,6 +270,177 @@ test('the header element cannot open a screen without a Project', async () => {
     await act(() => element.dispose());
     window.document.body.replaceChildren();
   }
+});
+
+// Sidebar alignment, rows (spec: docs/designs/sidebar-alignment.md §9.5,
+// pane rows): the row's icon on the header chevron's
+// column, its label and status to the right edge, and its actions laid over
+// that edge on hover or focus, in place of the status. happy-dom computes no
+// layout, so the look is observable only as the classes that draw it.
+
+/** The classes of `classes` that `element` does not carry. */
+const missingClasses = (element: Element, classes: string): string[] =>
+  classes
+    .split(/\s+/)
+    .filter((name) => name !== '' && !element.classList.contains(name));
+
+const classesOf = (element: Element): string[] =>
+  (element.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+
+/** The Thread row's hover reveal, on the menu item. */
+const ON_HOVER =
+  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-focus-within/menu-item:pointer-events-auto group-focus-within/menu-item:opacity-100';
+
+const failed: ScreenView = {
+  id: 'v3',
+  label: 'Inspector',
+  projectId: 'p1',
+  status: { kind: 'failed' },
+};
+
+/** The row (`li`) whose text holds `label`. */
+const rowNamed = (root: Element, label: string): HTMLElement => {
+  const row = [...root.querySelectorAll('li')].find((item) =>
+    (item.textContent ?? '').includes(label),
+  );
+  assert.ok(row !== undefined, `No row for "${label}".`);
+  return row as unknown as HTMLElement;
+};
+
+/** The row's own menu button. */
+const rowButton = (root: Element, label: string): HTMLElement => {
+  const button = rowNamed(root, label).querySelector(
+    '[data-slot="sidebar-menu-button"]',
+  );
+  assert.ok(button !== null, `The row for "${label}" has no menu button.`);
+  return button as unknown as HTMLElement;
+};
+
+/** The button under `root` labelled `name`, if any. */
+const findButton = (root: Element, name: string): HTMLElement | undefined =>
+  [...root.querySelectorAll('button')].find(
+    (button) => button.getAttribute('aria-label') === name,
+  ) as unknown as HTMLElement | undefined;
+
+const buttonNamed = (root: Element, name: string): HTMLElement => {
+  const button = findButton(root, name);
+  assert.ok(button !== undefined, `No button named "${name}".`);
+  return button;
+};
+
+const withRows = async (
+  views: readonly ScreenView[],
+  check: (
+    element: HTMLElement,
+    calls: [string, unknown][],
+  ) => Promise<void> | void,
+  project: { readonly id: string; readonly name: string } | undefined = {
+    id: 'p1',
+    name: 'Doric',
+  },
+): Promise<void> => {
+  const calls: [string, unknown][] = [];
+  const { element } = await mountIn('sidebar', {
+    calls,
+    views,
+    workspace: workspaceFor(project),
+  });
+
+  try {
+    await check(element as unknown as HTMLElement, calls);
+  } finally {
+    await act(() => element.dispose());
+    window.document.body.replaceChildren();
+  }
+};
+
+test("a view row's icon sits on the chevron column and its label runs to the right edge", async () => {
+  await withRows([view, failed], (element) => {
+    for (const label of ['Doric', 'Inspector']) {
+      const button = rowButton(element, label);
+      assert.deepEqual(
+        missingClasses(
+          button,
+          'pl-1.5 pr-2.5 rounded-[4px] group-has-data-[sidebar=menu-action]/menu-item:pr-2.5',
+        ),
+        [],
+        `The ${label} row is not aligned.`,
+      );
+      assert.deepEqual(
+        classesOf(button).filter((name) =>
+          ['pl-3', 'pr-8', 'pr-14'].includes(name),
+        ),
+        [],
+        `The ${label} row keeps room for its actions.`,
+      );
+    }
+  });
+});
+
+test("a ready row's Remove is laid over the right edge on hover or focus", async () => {
+  await withRows([view], (element) => {
+    const remove = buttonNamed(rowNamed(element, 'Doric'), 'Remove Doric');
+    assert.deepEqual(missingClasses(remove, `right-1 ${ON_HOVER}`), []);
+    assert.equal(remove.style.top, '0.25rem');
+    assert.equal(remove.classList.contains('md:opacity-0'), false);
+  });
+});
+
+test("a failed row's Retry sits left of Remove, revealed with it; a ready row has none", async () => {
+  await withRows([view, failed], (element) => {
+    const retry = buttonNamed(
+      rowNamed(element, 'Inspector'),
+      'Retry Inspector',
+    );
+    assert.deepEqual(missingClasses(retry, `right-7 ${ON_HOVER}`), []);
+    assert.equal(retry.style.top, '0.25rem');
+    assert.equal(
+      findButton(rowNamed(element, 'Doric'), 'Retry Doric'),
+      undefined,
+    );
+  });
+});
+
+test("a row's status fades out while its actions show", async () => {
+  await withRows([view], (element) => {
+    const status = [
+      ...rowButton(element, 'Doric').querySelectorAll('span'),
+    ].find((span) => span.textContent === ':1');
+    assert.ok(status !== undefined, 'The Doric row shows no status.');
+    assert.deepEqual(
+      missingClasses(
+        status as unknown as Element,
+        'group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0',
+      ),
+      [],
+    );
+  });
+});
+
+test("a row's Remove and Retry act on its view", async () => {
+  await withRows([view, failed], async (element, calls) => {
+    await act(() => {
+      buttonNamed(rowNamed(element, 'Doric'), 'Remove Doric').click();
+    });
+    await act(() => {
+      buttonNamed(rowNamed(element, 'Inspector'), 'Retry Inspector').click();
+    });
+    assert.deepEqual(calls, [
+      ['remove', 'v1'],
+      ['retry', 'v3'],
+    ]);
+  });
+});
+
+test('an open pane with no views for the Project says so, and not once one is open', async () => {
+  await withRows([other], (element) => {
+    assert.equal((element.textContent ?? '').trim(), 'No screens open');
+    assert.equal(element.querySelectorAll('li').length, 0);
+  });
+  await withRows([view, other], (element) => {
+    assert.doesNotMatch(element.textContent ?? '', /No screens open/);
+    assert.equal(element.querySelectorAll('li').length, 1);
+  });
 });
 
 // T-3.7 (sidebar alignment §9.4, G-d): activating registers the Screens pane
@@ -319,12 +500,12 @@ test('activating registers the Screens pane through layout.stack/v2, without siz
 
 // T-3.8 (sidebar alignment §9.4): the pane is registered through
 // `layout.stack/v2`, so the manifest requires it and no longer v1.
-test('the screen manifest is 2.0.1 and requires layout.stack/v2@^2.0.0, not v1', () => {
+test('the screen manifest is 2.0.2 and requires layout.stack/v2@^2.0.0, not v1', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/features/screen/manifest.json', 'utf8'),
   ) as { version: string; requires: string[] };
 
-  assert.equal(manifest.version, '2.0.1');
+  assert.equal(manifest.version, '2.0.2');
   assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
   assert.ok(
     !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),

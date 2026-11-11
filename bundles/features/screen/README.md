@@ -27,16 +27,17 @@ The bundle provides no tool and no skill.
 
 ## Using it
 
-1. Select a Project and press **+** in the **Screens** header. It adds a view
+1. Select a Project and press **+** in the **Screens** header (it shows while the header is hovered or
+   focused). It adds a view
    for that Project; a Project has at most one view, and adding it again opens
    the existing one.
 2. Click the row to open or focus the view's window. A view that is not ready
    yet remembers the request and opens its window once it is.
-3. Use the row's retry control when it offers one, or the remove control on
-   hover to drop the view.
+3. Hover or focus the row to show its actions over its right edge, where the
+   status fades out: retry when the row offers it, and remove to drop the view.
 
-The pane lists only the views of the selected Project. Each row shows one
-state:
+The pane lists only the views of the selected Project; with a Project selected
+and no view, the open pane shows `No screens open`. Each row shows one state:
 
 | Row text                 | Meaning                                    | Retry |
 | ------------------------ | ------------------------------------------ | ----- |

@@ -107,9 +107,10 @@ type ProjectSidebarProps = {
 /**
  * One group of the sidebar's stack (`layout.stack/v2`): the pane's 28 px
  * header the layout draws — its title, its collapse control and its own action
- * element — and, while open, the pane's element. The group is as tall as its
- * content, at most 40% of the column, and never shorter than its header, so it
- * cannot vanish; past the cap its content scrolls.
+ * element, shown while the header is hovered or holds focus — and, while open,
+ * the pane's element. The group is as tall as its content, at most 40% of the
+ * column, and never shorter than its header, so it cannot vanish; past the cap
+ * its content scrolls.
  */
 function StackPaneGroup({
   action,
@@ -127,7 +128,7 @@ function StackPaneGroup({
       data-pane-id={pane.id}
       className="flex max-h-[40%] min-h-7 flex-col p-0"
     >
-      <div className="relative shrink-0">
+      <div className="group/pane-header relative shrink-0">
         <SidebarGroupLabel className="h-7 gap-1 rounded-none pl-3 pr-8 text-xs font-normal [&_svg]:size-4 [&_svg]:shrink-0">
           {collapsible ? (
             <button
@@ -150,7 +151,11 @@ function StackPaneGroup({
             <span className="min-w-0 flex-1 truncate">{pane.title}</span>
           )}
         </SidebarGroupLabel>
-        {action}
+        {action !== undefined && (
+          <div className="pointer-events-none opacity-0 group-hover/pane-header:pointer-events-auto group-hover/pane-header:opacity-100 group-focus-within/pane-header:pointer-events-auto group-focus-within/pane-header:opacity-100">
+            {action}
+          </div>
+        )}
       </div>
       {/* The rows sit 6 px in from the column edges (Figma `269:31402`:
           ProjectSidebar at x 6, 268 wide), so their 4 px rounded selection
