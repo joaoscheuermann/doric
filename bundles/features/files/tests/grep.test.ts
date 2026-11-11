@@ -119,6 +119,29 @@ void describe('grep tool', () => {
 
     await rm(root, { recursive: true, force: true });
   });
+
+  void test('skips files under a directory a gitignore rule hides', async () => {
+    const root = await workspace('grep-ignore-directory');
+
+    await write(root, '.gitignore', 'build/\n');
+
+    await write(root, 'build/nested/out.js', 'Target\n');
+
+    await write(root, 'src/main.js', 'Target\n');
+
+    const result = await bindTool(
+      factory,
+      createFakeSandbox(root),
+      fakeHost(),
+    ).execute({ pattern: 'Target' });
+
+    assert.deepEqual(
+      result.matches.map((match) => match.file),
+      ['src/main.js'],
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
 });
 
 const workspace = (name: string): Promise<string> =>

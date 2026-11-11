@@ -88,6 +88,76 @@ void describe('find tool', () => {
 
     await rm(root, { recursive: true, force: true });
   });
+
+  void test('hides files under ignored directories and scopes nested gitignore files', async () => {
+    const root = await workspace('find-ignore-nested');
+
+    await write(root, '.gitignore', 'dist/\nout\n');
+
+    await write(root, 'dist/deep/a.ts', 'a');
+
+    await write(root, 'out/b.ts', 'b');
+
+    await write(root, 'src/dist', 'a file named like a directory rule');
+
+    await write(root, 'src/app/.gitignore', '*.gen.ts\n!keep.gen.ts\n');
+
+    await write(root, 'src/app/main.ts', 'main');
+
+    await write(root, 'src/app/drop.gen.ts', 'drop');
+
+    await write(root, 'src/app/keep.gen.ts', 'keep');
+
+    await write(root, 'src/other.gen.ts', 'outside the nested rule');
+
+    const result = await bindTool(
+      factory,
+      createFakeSandbox(root),
+      fakeHost(),
+    ).execute({ pattern: '**' });
+
+    assert.deepEqual(result.results, [
+      '.gitignore',
+      'src/app/.gitignore',
+      'src/app/keep.gen.ts',
+      'src/app/main.ts',
+      'src/dist',
+      'src/other.gen.ts',
+    ]);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  void test('filters a large workspace with many gitignore rules quickly', async () => {
+    const root = await workspace('find-ignore-scale');
+    const rules = Array.from({ length: 1000 }, (_, index) => `rule-${index}-*`);
+
+    await write(root, '.gitignore', `${rules.join('\n')}\n`);
+
+    const files = Array.from(
+      { length: 2000 },
+      (_, index) => `a/b/c/d/e${index % 20}/file-${index}.ts`,
+    );
+
+    await Promise.all(files.map((file) => write(root, file, '')));
+
+    const started = performance.now();
+
+    const result = await bindTool(
+      factory,
+      createFakeSandbox(root),
+      fakeHost(),
+    ).execute({ pattern: '*.ts', limit: 5000 });
+
+    assert.equal(result.total, 2000);
+
+    assert.ok(
+      performance.now() - started < 5000,
+      'gitignore filtering must not grow with files times depth times rules',
+    );
+
+    await rm(root, { recursive: true, force: true });
+  });
 });
 
 const workspace = (name: string): Promise<string> =>
