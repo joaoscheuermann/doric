@@ -115,10 +115,7 @@ const setup = (
     () => ({
       thread: (threadId: string) => {
         lookups.push(threadId);
-        return answer(
-          threadId,
-          lookups.filter((id) => id === threadId).length,
-        );
+        return answer(threadId, lookups.filter((id) => id === threadId).length);
       },
     }),
   );
@@ -137,7 +134,10 @@ const setup = (
     /** Delivers an update on the Project's stream; fails unless followed. */
     report: (update: TerminalUpdate, projectId = PROJECT): void => {
       const stream = streams.get(projectId);
-      assert.ok(stream !== undefined, `The Project ${projectId} is not followed.`);
+      assert.ok(
+        stream !== undefined,
+        `The Project ${projectId} is not followed.`,
+      );
       stream(update);
     },
     dispose: () => {
@@ -204,7 +204,11 @@ describe('the terminal registration answers busy (T-2.10)', () => {
         kind: 'updated',
         terminal: terminal('b', 't2', { state: 'starting' }),
       });
-      assert.equal(fixture.busy('t2'), true, 'A starting agent leaves t2 idle.');
+      assert.equal(
+        fixture.busy('t2'),
+        true,
+        'A starting agent leaves t2 idle.',
+      );
       assert.equal(fixture.busy('t1'), false);
     } finally {
       fixture.dispose();
@@ -223,7 +227,10 @@ describe('the terminal registration answers busy (T-2.10)', () => {
 
       fixture.report({
         kind: 'snapshot',
-        terminals: [terminal('a', 't2'), terminal('b', 't4', { origin: 'user' })],
+        terminals: [
+          terminal('a', 't2'),
+          terminal('b', 't4', { origin: 'user' }),
+        ],
       });
       const first = fixture.lookups.length;
       assert.deepEqual(

@@ -144,7 +144,9 @@ describe('layout.sidebar/v1', () => {
         (error: unknown) =>
           error instanceof ContractError &&
           error.code === 'invalid_input' &&
-          error.message.includes('Expected { id, tag, count, subscribe, busy? }.'),
+          error.message.includes(
+            'Expected { id, tag, count, subscribe, busy? }.',
+          ),
       );
       await dispose();
     });
@@ -152,7 +154,10 @@ describe('layout.sidebar/v1', () => {
 });
 
 describe('threadRowsBusy', () => {
-  const rows = (id: string, busy?: (threadId: string) => boolean): ThreadRows => ({
+  const rows = (
+    id: string,
+    busy?: (threadId: string) => boolean,
+  ): ThreadRows => ({
     id,
     tag: `x-${id}`,
     count: () => 0,
@@ -186,7 +191,12 @@ describe('threadRowsBusy', () => {
     });
     assert.equal(
       threadRowsBusy(
-        [rows('plain'), broken, rows('idle', () => false), rows('busy', (id) => id === 't1')],
+        [
+          rows('plain'),
+          broken,
+          rows('idle', () => false),
+          rows('busy', (id) => id === 't1'),
+        ],
         't1',
       ),
       true,

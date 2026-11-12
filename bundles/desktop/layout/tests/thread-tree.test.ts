@@ -6,8 +6,8 @@ import {
   childThreads,
   isExpanded,
   isThreadRunning,
-  threadActivity,
   type ThreadNode,
+  threadActivity,
   threadLevel,
   threadPath,
 } from '../src/client/domain/thread-tree.js';
@@ -238,12 +238,14 @@ describe('threadActivity', () => {
     executionStartedAt: startedAt,
   });
 
-  const finishedAfter = (
-    value: Thread,
-    lastExecutionMs?: number,
-  ): Thread => ({
+  const finishedAfter = (value: Thread, lastExecutionMs?: number): Thread => ({
     ...value,
-    result: { status: 'completed', text: '', promptId: 'prompt-done', at: finished },
+    result: {
+      status: 'completed',
+      text: '',
+      promptId: 'prompt-done',
+      at: finished,
+    },
     ...(lastExecutionMs === undefined ? {} : { lastExecutionMs }),
   });
 
@@ -294,7 +296,10 @@ describe('threadActivity', () => {
     assert.equal(isThreadRunning(halfRunning), false);
     assert.equal(isThreadRunning(promptOnly), false);
     assert.equal(isThreadRunning(running(thread('c', 'p'))), true);
-    assert.equal(threadActivity(level([halfRunning, promptOnly]), never).size, 0);
+    assert.equal(
+      threadActivity(level([halfRunning, promptOnly]), never).size,
+      0,
+    );
   });
 
   test('an active idle Thread without a whole latest execution has no start (T-2.4)', () => {
@@ -332,7 +337,10 @@ describe('threadActivity', () => {
       thread('s', 'p'),
     ]);
     // The caller draws `r` collapsed; the level still holds every Thread.
-    assert.equal(isExpanded(tree.nodes[0] as ThreadNode, new Set(['r'])), false);
+    assert.equal(
+      isExpanded(tree.nodes[0] as ThreadNode, new Set(['r'])),
+      false,
+    );
 
     const activity = threadActivity(tree, (id) => {
       asked.push(id);
