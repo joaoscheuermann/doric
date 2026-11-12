@@ -1,11 +1,11 @@
 // The MCP client's elements: the sidebar's MCP pane. The layout draws the
-// group's frame — its header, the collapse control and the resizable panel
-// (`layout.stack/v1`) — so this part draws only what is inside it: one
+// group's frame — its header, the collapse control and its 40% cap
+// (`layout.stack/v2`) — so this part draws only what is inside it: one
 // one-line row per server of the selected Project, as the Screens pane draws
 // its views, with its tool count once connected and its status otherwise, and
 // the header's add control in an element of its own. A row opens the server's
 // dialog; its actions sign in to it and remove it. A watch that failed says so
-// in an alert; an empty pane says nothing.
+// in an alert; a loaded pane with no servers says so.
 //
 // Built inside a factory the activation calls, so importing this module touches
 // no DOM global [D10-7]. What the rows show lives in the activation's store
@@ -36,13 +36,15 @@ import {
 import { toast } from 'desktop/ui/sonner';
 import { cn } from 'desktop/ui/utils';
 import {
+  BadgeAlertIcon,
+  BadgeCheckIcon,
+  BadgeIcon,
+  BadgeInfoIcon,
+  BadgeMinusIcon,
+  BadgeXIcon,
   CircleAlertIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
-  CircleOffIcon,
-  HourglassIcon,
-  KeyRoundIcon,
-  Loader2Icon,
+  ExternalLinkIcon,
+  LoaderCircleIcon,
   PlusIcon,
   XIcon,
 } from 'lucide-react';
@@ -70,20 +72,36 @@ interface McpClient {
 /** Placeholder rows while the selected Project's watch has not answered yet. */
 const SKELETON_ROWS = ['mcp-skeleton-0', 'mcp-skeleton-1', 'mcp-skeleton-2'];
 
-/** What each status reads as in a row, and its glyph. */
+/**
+ * What each status reads as in a row, its glyph and the glyph's tone: one
+ * badge family, `badge-check` when connected, muted while the server does
+ * nothing, red when it failed (spec §9.5, chosen on 2026-11-11).
+ */
 const statusOf: Readonly<
   Record<
     McpStatus,
-    { readonly label: string; readonly Icon: typeof CircleCheckIcon }
+    {
+      readonly label: string;
+      readonly Icon: typeof BadgeCheckIcon;
+      readonly tone?: string;
+    }
   >
 > = {
-  disabled: { label: 'Disabled', Icon: CircleOffIcon },
-  idle: { label: 'Idle', Icon: CircleDashedIcon },
-  connecting: { label: 'Connecting…', Icon: Loader2Icon },
-  connected: { label: 'Connected', Icon: CircleCheckIcon },
-  'needs-sign-in': { label: 'Sign in required', Icon: KeyRoundIcon },
-  'waiting-for-sandbox': { label: 'Waiting for sandbox', Icon: HourglassIcon },
-  error: { label: 'Error', Icon: CircleAlertIcon },
+  disabled: {
+    label: 'Disabled',
+    Icon: BadgeMinusIcon,
+    tone: 'text-muted-foreground',
+  },
+  idle: { label: 'Idle', Icon: BadgeIcon, tone: 'text-muted-foreground' },
+  connecting: { label: 'Connecting…', Icon: LoaderCircleIcon },
+  connected: { label: 'Connected', Icon: BadgeCheckIcon },
+  'needs-sign-in': { label: 'Sign in required', Icon: BadgeAlertIcon },
+  'waiting-for-sandbox': {
+    label: 'Waiting for sandbox',
+    Icon: BadgeInfoIcon,
+    tone: 'text-muted-foreground',
+  },
+  error: { label: 'Error', Icon: BadgeXIcon, tone: 'text-destructive' },
 };
 
 const toolCount = (count: number): string =>
@@ -92,6 +110,45 @@ const toolCount = (count: number): string =>
 /** Only an http server the host asked to sign in offers it. */
 const offersSignIn = (server: McpServerView): boolean =>
   server.transport.kind === 'http' && server.status.state === 'needs-sign-in';
+
+/**
+ * A pane row's states, on its menu item (docs/designs/sidebar-alignment.md
+ * §11.6): the ghost hover fill under the pointer and the ghost pressed fill
+ * while pressed, and 2 px of --sidebar-ring inset while its button has
+ * keyboard focus.
+ */
+const ROW_STATES =
+  'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)] has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:-outline-offset-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-[var(--sidebar-ring)]';
+
+/**
+ * The row's button draws no fill and no ring: its menu item draws the fill
+ * and the outline.
+ */
+const NO_FILL_BUTTON =
+  'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
+
+/** A row action's hover square, over the row's fill (§11.4, D29). */
+const ACTION_HOVER = 'hover:bg-[var(--paper-ghost-pressed)]';
+
+/**
+ * A row action's keyboard focus: 2 px of --sidebar-ring outside it;
+ * outline-solid because the action carries outline-hidden.
+ */
+const ACTION_OUTLINE =
+  'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-[var(--sidebar-ring)]';
+
+/** The Thread row's hover or keyboard-focus reveal (`row-add-action.tsx`), on the menu item. */
+const ON_HOVER =
+  'pointer-events-none opacity-0 after:inset-0 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100 group-has-[:focus-visible]/menu-item:pointer-events-auto group-has-[:focus-visible]/menu-item:opacity-100';
+
+/** The open pane's notice when it has no rows, on the rows' icon column. */
+function EmptyRow({ text }: { readonly text: string }) {
+  return (
+    <p className="flex h-7 items-center px-1.5 text-xs text-muted-foreground">
+      {text}
+    </p>
+  );
+}
 
 function ServerRow({
   server,
@@ -107,44 +164,47 @@ function ServerRow({
   readonly onRemove: () => void;
 }) {
   const { state, message } = server.status;
-  const { label, Icon } = statusOf[state];
+  const { label, Icon, tone } = statusOf[state];
   const signs = offersSignIn(server);
 
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem className={ROW_STATES}>
       <SidebarMenuButton
         size="sm"
-        className={cn(
-          'h-7 w-full translate-x-0 rounded-none pl-3',
-          signs && 'group-has-data-[sidebar=menu-action]/menu-item:pr-22',
-        )}
+        className={`h-7 w-full translate-x-0 rounded-[4px] pr-2.5 pl-1.5 group-has-data-[sidebar=menu-action]/menu-item:pr-2.5 ${NO_FILL_BUTTON}`}
         title={[server.name, label, message].filter(Boolean).join(' — ')}
         onClick={onEdit}
       >
-        <Icon className={cn(state === 'connecting' && 'animate-spin')} />
+        <Icon className={cn(tone, state === 'connecting' && 'animate-spin')} />
         <span className="min-w-0 flex-1 truncate">{server.name}</span>
         {!signs && (
-          <span className="shrink-0 text-xs text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground group-has-[:focus-visible]/menu-item:opacity-0 group-hover/menu-item:opacity-0">
             {state === 'connected' ? toolCount(server.tools.length) : label}
           </span>
         )}
       </SidebarMenuButton>
       {signs && (
-        // The status text is the action; a button cannot sit inside the row's,
-        // so it sits over the row's right padding, left of the remove action.
+        // The status text is the action, always shown and read as a link; a
+        // button cannot sit inside the row's, so it sits over the row's right
+        // edge and steps left on hover or keyboard focus to make room for the
+        // remove action.
         <button
           type="button"
-          className="absolute top-1 right-7 flex h-5 items-center rounded-md px-1 text-xs text-muted-foreground ring-sidebar-ring outline-hidden hover:text-sidebar-foreground hover:underline focus-visible:ring-2 disabled:opacity-50"
+          className={`absolute top-1 right-1.5 flex h-5 items-center gap-0.5 rounded-md px-1 text-xs text-sidebar-foreground underline decoration-sidebar-foreground/40 underline-offset-2 ring-sidebar-ring outline-hidden hover:decoration-sidebar-foreground focus-visible:ring-2 disabled:opacity-50 group-has-[:focus-visible]/menu-item:right-7 group-hover/menu-item:right-7 [&>svg]:size-3 [&>svg]:shrink-0 ${ACTION_OUTLINE}`}
           aria-label={`Sign in to ${server.name}`}
-          title="Sign in"
+          title="Sign in (opens in your browser)"
           disabled={signingIn}
           onClick={onSignIn}
         >
           Sign in
+          <ExternalLinkIcon aria-hidden />
         </button>
       )}
+      {/* Laid over the status on hover or focus, like a Thread row's own. */}
       <SidebarMenuAction
-        showOnHover
+        type="button"
+        className={`right-1 ${ON_HOVER} ${ACTION_HOVER} ${ACTION_OUTLINE}`}
+        style={{ top: '0.25rem' }}
         aria-label={`Remove ${server.name}`}
         title="Remove"
         onClick={onRemove}
@@ -232,7 +292,7 @@ export const defineMcpElements = ({ store, api, signIns }: McpClient) => {
               <SidebarMenuItem key={row}>
                 <SidebarMenuSkeleton
                   showIcon
-                  className="h-7 rounded-none pl-3 pr-8"
+                  className="h-7 rounded-[4px] pl-1.5 pr-2.5"
                 />
               </SidebarMenuItem>
             ))}
@@ -247,6 +307,9 @@ export const defineMcpElements = ({ store, api, signIns }: McpClient) => {
             />
           ))}
         </SidebarMenu>
+        {loaded && failure === undefined && servers.length === 0 && (
+          <EmptyRow text="No MCP servers" />
+        )}
         {editing !== undefined && (
           <ServerDialog
             api={api}

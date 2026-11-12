@@ -8,18 +8,16 @@ import {
 import {
   FileTree,
   indentation,
-  rowInteraction,
   type TreeNode,
   treeClassName,
 } from 'desktop/ui/panels';
 import {
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
-import { ChevronRightIcon, GitBranchIcon, RotateCcwIcon } from 'lucide-react';
+import { GitBranchIcon, RotateCcwIcon } from 'lucide-react';
 import { memo, type ReactNode, useMemo } from 'react';
 
 import type { ProjectChange } from '../../contracts/index.js';
@@ -30,6 +28,36 @@ import {
 } from '../reads/change-tree.js';
 import { ChangeCounts } from './change-counts.js';
 import type { DiscardTarget } from './discard-dialog.js';
+
+/**
+ * The repository row's fill, on its wrapper: the row is never selected, so it
+ * draws the ghost hover fill under the pointer and the ghost pressed fill
+ * while pressed (docs/designs/sidebar-alignment.md §11.1).
+ */
+const rowFill =
+  'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)]';
+
+/**
+ * The row outline: 2 px of --sidebar-ring inset on the wrapper while its
+ * treeitem has keyboard focus (§11.3).
+ */
+const treeitemRing =
+  'has-[[role=treeitem]:focus-visible]:outline-2 has-[[role=treeitem]:focus-visible]:-outline-offset-2 has-[[role=treeitem]:focus-visible]:outline-[var(--sidebar-ring)]';
+
+/**
+ * A row button that draws no fill and no ring: its wrapper draws the fill and
+ * the outline.
+ */
+const noFillButton =
+  'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
+
+/**
+ * The pinned mark's backing: opaque, and the row's fill in each state:
+ * bg-sidebar, with the ghost as an image layer over it in hover and press
+ * (§11.2).
+ */
+const markBacking =
+  'bg-sidebar group-hover/tree-row:bg-[linear-gradient(var(--paper-ghost-hover),var(--paper-ghost-hover))] group-active/tree-row:bg-[linear-gradient(var(--paper-ghost-pressed),var(--paper-ghost-pressed))]';
 
 type ChangesTreeProps = {
   readonly repository: ChangeRepository & {
@@ -100,8 +128,8 @@ export const ChangesTree = memo(function ChangesTree({
     <SidebarMenuButton
       size="sm"
       className={cn(
-        'h-7 w-full min-w-0 gap-1.5 rounded-[4px] pr-8',
-        rowInteraction(false),
+        'h-7 w-auto min-w-0 flex-1 gap-1.5 rounded-[4px] pr-1.5',
+        noFillButton,
       )}
       style={{ paddingLeft: indentation(0) }}
       render={
@@ -131,20 +159,20 @@ export const ChangesTree = memo(function ChangesTree({
         aria-hidden
         className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
       >
-        <GitBranchIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-        <ChevronRightIcon
-          className={cn(
-            'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
-            open && 'rotate-90',
-          )}
-        />
+        <GitBranchIcon />
       </span>
       <span className="min-w-0 flex-1 truncate font-normal">{label}</span>
     </SidebarMenuButton>
   );
   return (
     <SidebarMenuItem role="presentation" className="w-full min-w-0">
-      <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
+      <div
+        className={cn(
+          'group/tree-row relative flex w-full min-w-0 items-center',
+          rowFill,
+          treeitemRing,
+        )}
+      >
         {onDiscard === undefined ? (
           repositoryButton
         ) : (
@@ -158,17 +186,31 @@ export const ChangesTree = memo(function ChangesTree({
             </ContextMenuContent>
           </ContextMenu>
         )}
-        <SidebarMenuBadge className="z-10 bg-sidebar/90">
-          <Badge variant="ghost" className="px-1" aria-hidden>
-            <ChangeCounts
-              added={repository.added}
-              removed={repository.removed}
-            />
-          </Badge>
-        </SidebarMenuBadge>
+        <span
+          aria-hidden
+          data-slot="tree-row-mark"
+          className="sticky right-1 shrink-0 pr-1 text-sidebar-foreground peer-hover/menu-button:text-sidebar-accent-foreground peer-data-active/menu-button:text-sidebar-accent-foreground"
+        >
+          <div
+            className={cn(
+              'flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs tabular-nums pointer-events-none select-none',
+              markBacking,
+            )}
+          >
+            <Badge variant="ghost" className="px-1" aria-hidden>
+              <ChangeCounts
+                added={repository.added}
+                removed={repository.removed}
+              />
+            </Badge>
+          </div>
+        </span>
       </div>
       {open && (
-        <SidebarMenuSub role="group" className={treeClassName}>
+        <SidebarMenuSub
+          role="group"
+          className={cn(treeClassName, 'overflow-visible')}
+        >
           <FileTree
             entries={entries}
             depth={1}

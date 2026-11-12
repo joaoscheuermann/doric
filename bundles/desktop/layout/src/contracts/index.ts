@@ -288,7 +288,7 @@ export const layoutDashboardMethods = {
 } as const;
 export const LayoutDashboardV1 = ref<LayoutDashboard>('layout.dashboard/v1');
 
-/** Rows a bundle adds under each Thread of the sidebar tree (1.0.0). */
+/** Rows a bundle adds under each Thread of the sidebar tree (1.0.0; busy 1.1.0). */
 export interface ThreadRows {
   readonly id: string;
   /** Mounted as `<tag thread-id="…">` before the Thread's child Threads. */
@@ -297,6 +297,16 @@ export interface ThreadRows {
   count(threadId: string): number;
   /** Called by the owner after every change of any count. */
   subscribe(listener: () => void): Disposable;
+  /**
+   * 1.1.0: whether work this bundle tracks directly under the Thread, not under
+   * its descendants, keeps the Thread active. The layout makes the Thread and
+   * every ancestor active (shimmer and elapsed badge) while it answers true.
+   * The layout calls it once per Thread of the selected Project on every render
+   * of the tree, drawn or not (under a collapsed row, outside a search), so it
+   * must answer from memory. A throw reads as false. The owner calls the
+   * `subscribe` listener after every change of any answer. Absent: never busy.
+   */
+  busy?(threadId: string): boolean;
 }
 
 export interface LayoutSidebar {
@@ -313,14 +323,15 @@ const isThreadRows = (value: unknown): value is ThreadRows => {
     typeof rows.tag === 'string' &&
     rows.tag.length > 0 &&
     typeof rows.count === 'function' &&
-    typeof rows.subscribe === 'function'
+    typeof rows.subscribe === 'function' &&
+    (rows.busy === undefined || typeof rows.busy === 'function')
   );
 };
 
 export const layoutSidebarMethods = {
   addThreadRows: {
     input: z.custom<ThreadRows>(isThreadRows, {
-      message: 'Expected { id, tag, count, subscribe }.',
+      message: 'Expected { id, tag, count, subscribe, busy? }.',
     }),
     output: disposableSchema,
   },
@@ -329,11 +340,18 @@ export const layoutSidebarMethods = {
 export const LayoutSidebarV1 = ref<LayoutSidebar>('layout.sidebar/v1');
 
 /**
- * A group of the sidebar's vertical stack (1.0.0). The layout draws one
- * resizable panel per pane, in `order`, plus the pane's header: its title, the
- * collapse control and the element `headerTag` names for the group's own action
- * (its add or hide control). The pane's own element (`tag`) draws only what is
- * inside the group.
+ * A group of the sidebar's vertical stack (`layout.stack/v2`, 2.0.0). The
+ * layout draws one group per pane, in `order`, under the Thread region and
+ * pinned to the column's bottom; nothing is resizable. Each group is the
+ * pane's 28 px header — its title, the collapse control and the element
+ * `headerTag` names for the group's own action (its add or hide control), which
+ * the layout hides until the header is hovered or holds focus — and,
+ * while the pane is open, the pane's own element (`tag`), which draws only
+ * what is inside the group. An open pane takes its content's height, up to
+ * 40% of the column, and its content scrolls vertically past that; when the
+ * column is short, the Thread region gives up its free height first, then
+ * open panes shrink toward their headers. A pane never shrinks past its
+ * header, so the group cannot vanish.
  */
 export interface StackPane {
   /** Unique in the stack; a duplicate fails with `registration_conflict`. */
@@ -355,23 +373,25 @@ export interface StackPane {
   readonly collapsible?: boolean;
   /**
    * Whether the pane starts expanded (default `true`). A collapsed pane starts
-   * at its header and expands to `minSize`.
+   * at its header.
    */
   readonly initiallyOpen?: boolean;
-  /** Size when expanded; absent, the pane takes what the others leave. */
-  readonly defaultSize?: number | string;
-  /** Smallest size while expanded (for example `'20%'`). */
-  readonly minSize?: string;
-  /** Largest size (for example `'80%'`). */
-  readonly maxSize?: string;
 }
 
 /**
- * The sidebar's stack of panes other bundles own. A pane never collapses past
- * its header, so resizing the sidebar cannot make a group vanish.
+ * The sidebar's stack of panes other bundles own (`layout.stack/v2`): only the
+ * registered panes — the layout's Thread region is not one of them. The panes
+ * sit under the Thread region, pinned to the column's bottom, one group each,
+ * with no dividers and no sizes: an open pane is as tall as its content, at
+ * most 40% of the column, and a collapsed one is its 28 px header. A pane never
+ * collapses past its header, so no change of the column's height makes a group
+ * vanish.
  */
 export interface LayoutStack {
-  /** A duplicate id fails with `registration_conflict`. */
+  /**
+   * A duplicate id fails with `registration_conflict`; disposing removes the
+   * pane.
+   */
   register(pane: StackPane, call?: CallArg): Disposable;
   /** The panes top to bottom; the same array until the stack changes. */
   panes(call?: CallArg): readonly StackPane[];
@@ -379,11 +399,16 @@ export interface LayoutStack {
   isOpen(paneId: string, call?: CallArg): boolean;
   /** Opens or collapses the pane, as its header control does. */
   setOpen(paneId: string, open: boolean, call?: CallArg): void;
+  /** Flips the pane between open and collapsed, as its header control does. */
   toggle(paneId: string, call?: CallArg): void;
   /** Called after every change of the panes or of one pane's state. */
   subscribe(listener: () => void, call?: CallArg): Disposable;
 }
 
+/**
+ * A pane as `register` accepts it. Strict: an unknown key — including v1's
+ * `defaultSize`, `minSize` and `maxSize` — fails validation.
+ */
 export const stackPaneSchema = z
   .object({
     id: z.string().min(1),
@@ -394,9 +419,6 @@ export const stackPaneSchema = z
     headerTag: z.string().min(1).optional(),
     collapsible: z.boolean().optional(),
     initiallyOpen: z.boolean().optional(),
-    defaultSize: z.union([z.number(), z.string()]).optional(),
-    minSize: z.string().optional(),
-    maxSize: z.string().optional(),
   })
   .strict();
 
@@ -417,4 +439,5 @@ export const layoutStackMethods = {
   subscribe: { input: listenerSchema, output: disposableSchema },
 } as const;
 
-export const LayoutStackV1 = ref<LayoutStack>('layout.stack/v1');
+/** `layout.stack/v2` (2.0.0); replaces `layout.stack/v1`, which is no longer provided. */
+export const LayoutStackV2 = ref<LayoutStack>('layout.stack/v2');

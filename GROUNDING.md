@@ -194,27 +194,51 @@ to dark before the splash opens, whatever the system preference, and splash,
 renderer, Monaco and the Sonner toasts follow the native theme; native OS
 notifications are drawn by the operating system. An unpackaged
 development run may set `DORIC_THEME` to `light`, `dark` or `system`; a
-packaged build ignores it. The compact, resizable shadcn sidebar stacks its
-groups behind draggable dividers: each is a pane a bundle registers through the
-layout's `layout.stack/v1` — today the `screen` bundle's views, each row
-carrying that view's state — above the selected Project's recursive Threads,
-which the layout draws itself under a Threads label and an add action that is
-always visible. A pane declares its title, its order, its minimum size and
-whether the reader can collapse it; the layout draws the header, the collapse
-control and one resizable panel per pane, and collapses a pane to its header and
-never past it, so resizing the sidebar cannot make a group vanish. A pane that
-declares no default size takes what the others leave, as the Threads pane does,
-and a pane that cannot collapse draws no control and stays open. The Screens
-pane starts collapsed and opens at its minimum size, listing only the current
-Project's views. Threads start open over their children and retain their
+packaged build ignores it. The compact, resizable shadcn sidebar draws the
+selected Project's recursive Threads, which the layout draws itself with no
+Threads label or pane, and an icon-only New Thread button under the tree, drawn
+with the rows' ghost tokens (`--paper-ghost-hover` at rest, `--paper-ghost-pressed`
+under the pointer). Below
+them, pinned to the column's bottom, sit the panes bundles register through the
+layout's `layout.stack/v2` — today the `screen` bundle's views and the `mcp`
+bundle's servers, each row carrying its state. A pane declares its title, its
+order and whether the reader can collapse it; it declares no size, and the
+column has no draggable dividers. The layout draws each pane's 28 px header and
+collapse control, and shows the header's action only while the header is
+hovered or focused; a row's actions likewise show only on row hover or keyboard
+focus, and a row fills with `--paper-ghost-hover` on hover
+(`--paper-ghost-pressed` while pressed), with an inset 2 px `--sidebar-ring`
+outline on keyboard focus (a disabled
+Screens row takes no fill); Remove and Retry draw a `--paper-ghost-pressed`
+square under the pointer and a 2 px `--sidebar-ring` outline outside themselves
+on keyboard focus, and Sign in draws the outline only,
+and an empty open pane says `No screens open` or `No MCP servers`; an open pane is as tall as its content, at most 40 % of the
+column, and scrolls past that, and a pane never collapses past its header. The
+Screens pane starts collapsed, listing only the current Project's views. Threads
+start open over their children and retain their
 independent expansion state. The sidebar supports
 inline create and rename and context actions for child creation,
 lifecycle-aware delete, and copying Thread IDs. Projects retain the color the
 host assigns from a fixed palette; their navigation and actions live in the
 Project tabs and Dashboard.
-The tree uses the Papermache UI's regular font weight. A running Thread's name uses shadcn's shimmer,
-and its add-action position shows elapsed execution time until hover or keyboard
-focus reveals the add button. Once complete, the last execution's duration is
+The tree uses the Papermache UI's regular font weight. An active Thread's name uses shadcn's shimmer: a Thread
+is active while it or any descendant runs, or while an agent terminal under it is
+busy (`layout.sidebar/v1` 1.1.0 `busy`). Its add-action position shows the time
+since the Thread's own last start (`mm:ss`, `h:mm:ss`, `{d}d {h}h`, `99d+`) until
+hover or keyboard focus reveals the add button (a mouse click alone does not
+reveal it); an active row with no badge
+start shimmers without a time and announces "Agent running" to screen readers
+only. An Untitled Thread's icon is `message-circle-dashed` on its row, the
+breadcrumb and its tab. Tree rows indent 20 px per level
+and never swap their lead icon for a chevron. Every tree row (Thread,
+subthread, terminal, draft, Files and Changes) fills its whole row with
+`--paper-ghost-hover` on hover (`--paper-ghost-pressed` while pressed), takes the
+accent while selected and draws an inset 2 px `--sidebar-ring` outline on
+keyboard focus; row actions (the plus, Remove, Retry, Stop) draw a
+`--paper-ghost-pressed` square under the pointer, and they and Sign in draw a
+2 px `--sidebar-ring` outline outside themselves on keyboard focus; a terminal row is selected while its tab is the
+selected tab of the Thread the route names, and a row being renamed draws the
+outline while its field holds focus. Once complete, the last execution's duration is
 available in the row's hover title. Thread reads derive timing from the latest
 durable `prompt.started` event and its matching materialized result; the initial
 running-state update uses its transition timestamp until that event exists.
@@ -297,7 +321,8 @@ the last active Project tab returns to `/projects`. `/projects` uses its Finder 
 sidebar, a fixed list view without a view selector and the same Project actions.
 Project list and recent rows place the colored avatar beside the name without
 a thumbnail preview. Color selection, clearing the color and deletion live in
-the row's context menu; there is no ellipsis action button.
+the row's context menu; there is no ellipsis action button. Keyboard focus on a
+Project button (list row or grid card) draws a 2-pixel `--paper-focus` outline.
 The Projects heading has 32 pixels of top padding and its list content has 48;
 previously saved grid preferences do not change this view. Opening a Project
 without an explicit Thread selects the first available Thread after its tree
@@ -306,9 +331,9 @@ a Project in the desktop also creates an initial unnamed Thread and opens it
 selected. Its stored name is empty and the tree displays Untitled until rename.
 If that Thread creation fails after the Project was saved, the desktop opens the
 saved Project and reports the failure without resubmitting Project creation. One
-full-height resize handle owns the sidebar boundary, and a second vertical one
-divides the sidebar's own groups inside it; the sidebar stays expanded and
-neither handle draws a grip of its own. A segmented
+full-height resize handle owns the sidebar boundary, with no divider inside
+the sidebar; the sidebar stays expanded and the handle draws no grip of its
+own. A segmented
 footer shares that geometry: the sidebar side shows the Electron main process's
 Socket.IO connection status, while the content side carries the execution picker
 — the model a prompt is sent to and its reasoning effort — beside the
@@ -397,6 +422,9 @@ row's own badge, with its changed paths nested under it as the same file rows.
 Counts compare HEAD with working content (or empty with new files), include
 untracked files and omit binary line counts. Git numstat supplies these totals
 without sending file contents or patches to the renderer.
+The Files and Changes trees scroll sideways; each row's mark stays pinned to
+the visible right edge, and a hovered or selected row's fill runs under its
+mark, whose opaque backing follows the row's state.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the
@@ -1168,7 +1196,8 @@ same cards, the passage read from the target its `comments.added/v1` carries,
 which the `<comments>` envelope also names), and its cards draw no state (the
 state is read out to screen readers only, from visually hidden text). A reply
 row wears the comment's **pin** — the teardrop, numbered, coloured by the
-thread's state — which opens a popover with the thread and, in its header, the
+thread's state; keyboard focus draws a 2 px `outline-ring` outline
+around it — which opens a popover with the thread and, in its header, the
 button that takes the reader to the comment on the canvas. That button, and a
 card's "go to" that opens the thread, dispatch the bubbling, composed DOM event
 `doric:comment-thread-open` with `detail: { commentId, target }` (the root's
@@ -1814,6 +1843,10 @@ imports the shared widgets from `desktop/ui/workspace` and `desktop/ui/code`.
 Part 2i of the UI redesign replaces `layout.panel/v1` with
 `layout.panel/v2@2.0.0`, whose one method is `select(id)`, and the layout is
 2.0.0.
+The sidebar alignment replaces `layout.stack/v1` with `layout.stack/v2@2.0.0`
+(panes pinned under the Thread region, no sizes), adds
+`layout.sidebar/v1@1.1.0` (`busy`), and moves layout to 3.0.0 and the
+platform to 1.6.0 (`ScrollArea.scrollbars`).
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and, for tools, never consulted: every registered
 tool is bound on every prompt. For skills it decides where the default agent

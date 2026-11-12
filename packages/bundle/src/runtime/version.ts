@@ -5,9 +5,9 @@
  * `doric.about/v1`; 1.3.0: `doric.appearance/v1`; 1.4.0: `navigation/v1@1.1.0`
  * and the basic contracts' `optional` methods; 1.5.0: the `desktop/ui/panels`
  * row and tab menus, `FileTree.rowMenu`, `FileTree.pending` and
- * `TabStrip.tabMenu`).
+ * `TabStrip.tabMenu`; 1.6.0: `ScrollArea.scrollbars`).
  */
-export const PLATFORM_VERSION = '1.5.0';
+export const PLATFORM_VERSION = '1.6.0';
 
 /**
  * The version segment of the platform folders and URLs (`desktop@<v>`,

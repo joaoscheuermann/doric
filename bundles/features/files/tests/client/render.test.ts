@@ -97,3 +97,25 @@ test('the Files view lists the opened directories and opens a file on click', as
     },
   ]);
 });
+
+test('T-4.5: the Files tree scrolls sideways: no clipped viewport and a list as wide as its rows', async () => {
+  const { view } = await renderTree();
+
+  const tree = view.root.querySelector<HTMLElement>('[role="tree"]');
+  assert.ok(tree, 'the view draws no tree');
+  assert.ok(tree.classList.contains('w-max'), tree.className);
+  assert.ok(tree.classList.contains('min-w-full'), tree.className);
+
+  const area = tree.closest<HTMLElement>('[data-slot="scroll-area"]');
+  assert.ok(area, 'the tree is not in a scroll area');
+  const viewport = area.querySelector<HTMLElement>(
+    '[data-slot="scroll-area-viewport"]',
+  );
+  assert.ok(viewport, 'the scroll area has no viewport');
+  for (const element of [area, viewport]) {
+    assert.ok(
+      !element.className.includes('overflow-x-hidden'),
+      `the viewport clips sideways: ${element.className}`,
+    );
+  }
+});

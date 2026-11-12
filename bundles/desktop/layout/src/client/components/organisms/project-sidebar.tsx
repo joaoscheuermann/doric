@@ -1,4 +1,5 @@
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
+import { Button } from 'desktop/ui/button';
 import {
   InputGroup,
   InputGroupAddon,
@@ -6,18 +7,12 @@ import {
 } from 'desktop/ui/input-group';
 import { Kbd, KbdGroup } from 'desktop/ui/kbd';
 import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from 'desktop/ui/resizable';
-import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from 'desktop/ui/sidebar';
@@ -29,7 +24,6 @@ import {
   SearchIcon,
 } from 'lucide-react';
 import {
-  Fragment,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -37,18 +31,15 @@ import {
   useRef,
   useState,
 } from 'react';
-import { usePanelRef } from 'react-resizable-panels';
 
 import type { StackPane } from '../../../contracts/index.js';
 import { searchShortcutKeys } from '../../domain/dashboard.js';
-import { threadIconKind } from '../../domain/sidebar.js';
-import {
-  PANE_HEADER,
-  paneExpanded,
-  THREADS_PANE_ID,
-} from '../../domain/sidebar-stack.js';
 import { filterThreadTree } from '../../domain/thread-filter.js';
-import { threadLevel } from '../../domain/thread-tree.js';
+import {
+  type ThreadActivity,
+  threadActivity,
+  threadLevel,
+} from '../../domain/thread-tree.js';
 import type {
   Draft,
   Entity,
@@ -58,7 +49,9 @@ import type {
 } from '../../domain/workspace.js';
 import { openThreadTab } from '../../hooks/thread-navigation.js';
 import { usePaneOpen, useStackPanes } from '../../hooks/use-stack-panes.js';
-import { setPaneOpen, togglePane } from '../../stores/stack.js';
+import { useThreadRows } from '../../hooks/use-thread-rows.js';
+import { togglePane } from '../../stores/stack.js';
+import { threadRowsBusy } from '../../stores/thread-rows.js';
 import { ElementHost } from '../molecules/element-host.js';
 import { SEARCH_FIELD } from '../molecules/search-field.js';
 import {
@@ -103,160 +96,81 @@ export type SidebarActions = {
 type ProjectSidebarProps = {
   readonly actions: SidebarActions;
   /**
-   * The column's 40 px header (`SidebarHeader`), drawn above the panes as the
-   * first child of the `<Sidebar collapsible="none">` (`:291`), outside the
-   * panes' vertical resizable group. Absent: the panes start at the top.
+   * The column's 40 px header (`SidebarHeader`), drawn as the first child of
+   * the `<Sidebar collapsible="none">`, above the search field, the Thread
+   * region and the panes. Absent: the search field starts at the top.
    */
   readonly header?: ReactNode;
   readonly model: SidebarModel;
 };
 
 /**
- * One group of the sidebar's stack (`layout.stack/v1`): the panel, the divider
- * after it, and the header the layout draws — the pane's title, its collapse
- * control and its own action element. A collapsed pane keeps its header, so no
- * resize of the stack can make the group vanish; the panel's open state is the
- * stack's, and a drag that reaches the header reports it collapsed.
- *
- * `headless`: the pane is the stack's only one (plan-4 G5, Figma `99:8035`
- * draws no Threads header), so it draws no header, cannot collapse and always
- * shows its content.
+ * One group of the sidebar's stack (`layout.stack/v2`): the pane's 28 px
+ * header the layout draws — its title, its collapse control and its own action
+ * element, shown while the header is hovered or holds focus — and, while open,
+ * the pane's element. The group is as tall as its content, at most 40% of the
+ * column, and never shorter than its header, so it cannot vanish; past the cap
+ * its content scrolls.
  */
-function PanePanel({
+function StackPaneGroup({
   action,
-  children,
-  headless = false,
   pane,
 }: {
   readonly action?: ReactNode;
-  readonly children?: ReactNode;
-  readonly headless?: boolean;
   readonly pane: StackPane;
 }) {
-  const open = usePaneOpen(pane.id) || headless;
-  const panel = usePanelRef();
-  const header = useRef<HTMLDivElement>(null);
-  const collapsible = pane.collapsible !== false && !headless;
-
-  const mounted = useRef(false);
-
-  useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
-      return;
-    }
-    const target = panel.current;
-    if (target === null || !collapsible) return;
-
-    try {
-      if (open) target.expand();
-      else target.collapse();
-    } catch {
-      // The group or panel may be unmounting or not registered yet.
-    }
-  }, [collapsible, open, panel]);
+  const open = usePaneOpen(pane.id);
+  const collapsible = pane.collapsible !== false;
 
   return (
-    <ResizablePanel
-      panelRef={panel}
-      className="no-scrollbar"
-      collapsible={collapsible}
-      collapsedSize={PANE_HEADER}
-      defaultSize={open ? pane.defaultSize : PANE_HEADER}
-      maxSize={pane.maxSize ?? '100%'}
-      minSize={pane.minSize ?? '20%'}
-      onResize={
-        collapsible
-          ? (size) => {
-              const headerPixels = header.current?.offsetHeight ?? 0;
-              if (headerPixels === 0) return;
-
-              setPaneOpen(pane.id, paneExpanded(size.inPixels, headerPixels));
-            }
-          : undefined
-      }
+    <SidebarGroup
+      data-slot="sidebar-pane"
+      data-pane-id={pane.id}
+      className="flex max-h-[40%] min-h-7 flex-col p-0"
     >
-      <SidebarGroup className="flex h-full min-h-0 flex-col p-0">
-        {!headless && (
-          <div ref={header} className="relative">
-            <SidebarGroupLabel className="h-7 gap-1 rounded-none pl-3 pr-8 text-xs font-normal [&_svg]:size-4 [&_svg]:shrink-0">
-              {collapsible ? (
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  aria-label={`${open ? 'Collapse' : 'Expand'} ${pane.title}`}
-                  className="flex min-w-0 flex-1 items-center gap-1 text-left outline-hidden focus-visible:ring-2"
-                  onClick={() => togglePane(pane.id)}
-                >
-                  <ChevronRightIcon
-                    aria-hidden
-                    className={cn(
-                      'size-4 shrink-0 transition-transform duration-[50ms] ease-out',
-                      open ? 'rotate-90' : 'rotate-0',
-                    )}
-                  />
-                  <span className="truncate">{pane.title}</span>
-                </button>
-              ) : (
-                <span className="min-w-0 flex-1 truncate">{pane.title}</span>
-              )}
-            </SidebarGroupLabel>
+      <div className="group/pane-header relative shrink-0">
+        <SidebarGroupLabel className="h-7 gap-1 rounded-none pl-3 pr-8 text-xs font-normal [&_svg]:size-4 [&_svg]:shrink-0">
+          {collapsible ? (
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={`${open ? 'Collapse' : 'Expand'} ${pane.title}`}
+              className="flex min-w-0 flex-1 items-center gap-1 text-left outline-hidden focus-visible:ring-2"
+              onClick={() => togglePane(pane.id)}
+            >
+              <ChevronRightIcon
+                aria-hidden
+                className={cn(
+                  'size-4 shrink-0 transition-transform duration-[50ms] ease-out',
+                  open ? 'rotate-90' : 'rotate-0',
+                )}
+              />
+              <span className="truncate">{pane.title}</span>
+            </button>
+          ) : (
+            <span className="min-w-0 flex-1 truncate">{pane.title}</span>
+          )}
+        </SidebarGroupLabel>
+        {action !== undefined && (
+          <div className="pointer-events-none opacity-0 group-hover/pane-header:pointer-events-auto group-hover/pane-header:opacity-100 group-focus-within/pane-header:pointer-events-auto group-focus-within/pane-header:opacity-100">
             {action}
           </div>
         )}
-        {/* The rows sit 6 px in from the column edges (Figma `269:31402`:
-            ProjectSidebar at x 6, 268 wide), so their 4 px rounded
-            selection fill does not touch them. */}
-        {open && (
-          <SidebarGroupContent className="min-h-0 w-full flex-1 overflow-y-auto px-1.5">
-            {pane.tag === undefined ? (
-              (children ?? null)
-            ) : (
-              <ElementHost
-                tag={pane.tag}
-                {...(pane.props === undefined ? {} : { props: pane.props })}
-              />
-            )}
-          </SidebarGroupContent>
-        )}
-      </SidebarGroup>
-    </ResizablePanel>
-  );
-}
-
-/**
- * The "+ New Thread" row (§2.2; drawn as the prototype's `Button · New thread`
- * in `269:31402`, a 28 px small button with a 14 px plus, which wins over the
- * component frame `110:23119`, UR1): a full-width sidebar menu button with
- * lucide `PlusIcon` and the text "New Thread", 12 px under the search field
- * and 12 px above the tree (plan-4 G4).
- * Pressing it calls `actions.beginThread(projectId)` once. That is the inline
- * root draft the Threads pane's "+" started before, and it shows as the "New
- * thread name" field at the end of the tree.
- *
- * - Accessible name: "New Thread" (its text). It is a `button`
- *   (`SidebarMenuButton`, `data-slot="sidebar-menu-button"`) inside
- *   `ul[data-slot="sidebar-menu"]`, outside the panes' resizable group, so it
- *   neither collapses nor scrolls with the tree.
- * - With no selected Project (`model.selectedProjectId === undefined`), it
- *   stays visible, carries the `disabled` attribute and does nothing when
- *   pressed. It never calls `beginThread` without a Project id.
- * - It is drawn once, whatever panes the stack holds.
- */
-function NewThreadRow({ onBegin }: { readonly onBegin?: () => void }) {
-  return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          className="h-7 gap-1.5 rounded-md px-2.5 text-[0.8rem] font-normal [&_svg]:size-3.5"
-          disabled={onBegin === undefined}
-          onClick={onBegin}
-        >
-          <PlusIcon />
-          <span>New Thread</span>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </SidebarMenu>
+      </div>
+      {/* The rows sit 6 px in from the column edges (Figma `269:31402`:
+          ProjectSidebar at x 6, 268 wide), so their 4 px rounded selection
+          fill does not touch them. */}
+      {open && (
+        <SidebarGroupContent className="min-h-0 w-full flex-1 overflow-y-auto px-1.5">
+          {pane.tag !== undefined && (
+            <ElementHost
+              tag={pane.tag}
+              {...(pane.props === undefined ? {} : { props: pane.props })}
+            />
+          )}
+        </SidebarGroupContent>
+      )}
+    </SidebarGroup>
   );
 }
 
@@ -368,10 +282,17 @@ export function ProjectSidebar({
       rows?.querySelector<HTMLElement>('[role="treeitem"]');
     row?.focus();
   }, [treeFocus]);
+  const threadRows = useThreadRows();
   const level =
     projectId === undefined
       ? undefined
       : threadLevel(threads, model.draft, projectId);
+  // Every Thread of the Project, drawn or not, so a hidden busy descendant
+  // still makes its ancestors active (§2).
+  const activity =
+    level === undefined
+      ? new Map<string, ThreadActivity>()
+      : threadActivity(level, (id) => threadRowsBusy(threadRows, id));
   const filter =
     query === '' || level === undefined
       ? undefined
@@ -423,12 +344,15 @@ export function ProjectSidebar({
       actions.startRename({ kind: 'thread', value: thread }),
   };
 
-  // The Threads pane is the layout's own: its rows are this tree, and the New
-  // Thread row above the stack creates a Thread of the selected Project. Every
-  // other pane names the element that draws its content and the one that draws
-  // its header action.
-  const threadsContent = (
-    <>
+  // The Thread region's scroller: the alert, the skeleton rows, the tree and
+  // the empty notice. It carries `-mx-1.5 px-1.5` so it reaches the column
+  // edges (the rows' focus ring is not clipped) while the button keeps x 6.
+  const threadTree = (
+    <div
+      ref={tree}
+      data-slot="thread-tree"
+      className="-mx-1.5 min-h-0 overflow-y-auto px-1.5"
+    >
       {model.error && (
         <Alert variant="destructive" className="mx-2 mb-2 w-auto">
           <AlertCircleIcon />
@@ -436,87 +360,91 @@ export function ProjectSidebar({
           <AlertDescription>{model.error}</AlertDescription>
         </Alert>
       )}
-      <div ref={tree} className="contents">
-        <SidebarMenu className="w-full gap-0">
-          {loading &&
-            THREAD_SKELETON_ROWS.map((row) => (
-              <SidebarMenuItem key={row}>
-                <SidebarMenuSkeleton
-                  showIcon
-                  className="h-7 rounded-none pl-3 pr-8"
-                />
-              </SidebarMenuItem>
-            ))}
-          {projectId !== undefined && (
-            <ThreadBranches
-              actions={threadActions}
-              collapsed={collapsedThreads}
-              depth={0}
-              editingThreadId={
-                model.editing?.kind === 'thread'
-                  ? model.editing.value.id
-                  : undefined
-              }
-              {...(filter === undefined ? {} : { filter })}
-              repo={threadIconKind}
-              level={level ?? threadLevel(threads, model.draft, projectId)}
-              onExpand={expandThread}
-              onToggle={toggleThread}
-              selectedThreadId={model.selectedThreadId}
-            />
-          )}
-          {filter !== undefined && filter.shown.size === 0 && !loading && (
-            <SidebarMenuItem
-              data-threads-empty=""
-              className="px-2.5 py-1 text-[13px] leading-[19.5px] text-muted-foreground"
-            >
-              No threads match
+      <SidebarMenu className="w-full gap-0">
+        {loading &&
+          THREAD_SKELETON_ROWS.map((row) => (
+            <SidebarMenuItem key={row}>
+              <SidebarMenuSkeleton
+                showIcon
+                className="h-7 rounded-none pl-3 pr-8"
+              />
             </SidebarMenuItem>
-          )}
-        </SidebarMenu>
-      </div>
-    </>
+          ))}
+        {projectId !== undefined && (
+          <ThreadBranches
+            actions={threadActions}
+            activity={activity}
+            collapsed={collapsedThreads}
+            depth={0}
+            editingThreadId={
+              model.editing?.kind === 'thread'
+                ? model.editing.value.id
+                : undefined
+            }
+            {...(filter === undefined ? {} : { filter })}
+            level={level ?? threadLevel(threads, model.draft, projectId)}
+            onExpand={expandThread}
+            onToggle={toggleThread}
+            selectedThreadId={model.selectedThreadId}
+          />
+        )}
+        {filter !== undefined && filter.shown.size === 0 && !loading && (
+          <SidebarMenuItem
+            data-threads-empty=""
+            className="px-2.5 py-1 text-[13px] leading-[19.5px] text-muted-foreground"
+          >
+            No threads match
+          </SidebarMenuItem>
+        )}
+      </SidebarMenu>
+    </div>
   );
 
   const paneAction = (pane: StackPane): ReactNode =>
-    pane.id === THREADS_PANE_ID || pane.headerTag === undefined ? null : (
-      <ElementHost tag={pane.headerTag} />
-    );
+    pane.headerTag === undefined ? null : <ElementHost tag={pane.headerTag} />;
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden font-normal">
       {header}
       {/* Not clipped: the search field's focus ring (3 px) reaches above the
-          content's top edge, into the header's last 3 px. The panes below
-          bound their own overflow. */}
-      <SidebarContent className="overflow-visible p-0">
-        {/* Figma `269:31402`: the field 268×36 at y 40, New Thread at y 88,
-            the tree at y 128 (px 6, 12 px gaps; plan-4 G4). */}
-        <div className="flex shrink-0 flex-col gap-3 px-1.5 pb-3">
+          content's top edge, into the header's last 3 px. The Thread tree and
+          the panes below bound their own overflow; 14 px below the last
+          pane. */}
+      <SidebarContent className="overflow-visible p-0 pb-3.5">
+        {/* Figma `269:31402`: the field 268×36 at y 40, then the tree, the New
+            Thread button under it, and the panes pinned to the bottom (px 6,
+            12 px gaps). */}
+        <div className="shrink-0 px-1.5 pb-3">
           <ThreadSearch
             input={searchInput}
             value={query}
             onChange={setQuery}
             onKeyDown={onSearchKeyDown}
           />
-          <NewThreadRow
-            onBegin={projectId === undefined ? undefined : () => beginThread()}
-          />
         </div>
-        <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-          {panes.map((pane, index) => (
-            <Fragment key={pane.id}>
-              {index > 0 && <ResizableHandle />}
-              <PanePanel
-                action={paneAction(pane)}
-                headless={panes.length === 1}
-                pane={pane}
-              >
-                {pane.id === THREADS_PANE_ID ? threadsContent : undefined}
-              </PanePanel>
-            </Fragment>
-          ))}
-        </ResizablePanelGroup>
+        {/* The Thread region gives up its free height first; it keeps 40 px,
+            so the button never leaves the column. */}
+        <div
+          data-slot="thread-region"
+          className="flex min-h-10 flex-1 flex-col gap-3 px-1.5"
+        >
+          {threadTree}
+          {/* The rows' ghost tokens instead of the secondary colours: the row
+              hover fill at rest, the row pressed fill under the pointer. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label="New Thread"
+            className="w-full shrink-0 bg-[var(--paper-ghost-hover)] hover:bg-[var(--paper-ghost-pressed)]"
+            disabled={projectId === undefined}
+            onClick={() => beginThread()}
+          >
+            <PlusIcon />
+          </Button>
+        </div>
+        {panes.map((pane) => (
+          <StackPaneGroup key={pane.id} action={paneAction(pane)} pane={pane} />
+        ))}
       </SidebarContent>
     </Sidebar>
   );

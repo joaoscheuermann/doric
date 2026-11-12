@@ -51,7 +51,7 @@ export interface LayoutFixture extends HostOptions {
   readonly panel?: { readonly active?: string };
   /** Whether an item asked for the `layout.main.bottom` split. */
   readonly bottom?: boolean;
-  /** Sidebar groups other bundles add below the Threads tree. */
+  /** Sidebar groups other bundles add below the Threads list. */
   readonly panes?: readonly StackPane[];
   /** The Project tabs a reader left open, in order. */
   readonly projectTabs?: readonly Project[];
@@ -160,10 +160,12 @@ export const bindLayout = (
   const deactivate = activate({ services: created.services });
   const panes = (fixture.panes ?? [screenPane]).map(registerPane);
   const counts = fixture.terminalRows ?? {};
+  const busySet = new Set(fixture.terminalBusy);
   const rows = addThreadRows({
     id: 'terminals',
     tag: 'terminal-rows',
     count: (threadId) => counts[threadId] ?? 0,
+    busy: (threadId) => busySet.has(threadId),
     subscribe: () => ({ dispose: () => undefined }),
   });
   panelStore.setState({ active: fixture.panel?.active ?? 'files' });

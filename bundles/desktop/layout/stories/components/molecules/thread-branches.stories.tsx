@@ -5,8 +5,10 @@ import {
   ThreadBranches,
   type ThreadBranchesActions,
 } from '../../../src/client/components/molecules/thread-branches.js';
-import { threadIconKind } from '../../../src/client/domain/sidebar.js';
-import { threadLevel } from '../../../src/client/domain/thread-tree.js';
+import {
+  threadActivity,
+  threadLevel,
+} from '../../../src/client/domain/thread-tree.js';
 import type { Draft, Thread } from '../../../src/client/domain/workspace.js';
 import {
   checkout,
@@ -72,16 +74,19 @@ function ThreadTree({
     startRename: (thread) => setEditingId(thread.id),
   };
 
+  const level = threadLevel(threads, draft, checkout.id);
+  const busy = new Set(fixture?.terminalBusy);
+
   return (
     <LayoutHost fixture={fixture}>
       <SidebarMenu className="w-full gap-0">
         <ThreadBranches
           actions={actions}
+          activity={threadActivity(level, (id) => busy.has(id))}
           collapsed={collapsed}
           depth={0}
           editingThreadId={editingId}
-          repo={threadIconKind}
-          level={threadLevel(threads, draft, checkout.id)}
+          level={level}
           onExpand={(id) =>
             setCollapsed((current) => {
               const next = new Set(current);
@@ -117,9 +122,7 @@ export default {
 
 /**
  * The Checkout tree: child Threads, a running agent, git and GitHub working
- * directories and an unnamed Thread. Open branches show their kind icon at
- * rest and the turned-down chevron on hover or focus; marks show only on hover
- * or while running.
+ * directories and an unnamed Thread, each row with its kind icon.
  */
 export const CheckoutTree = {
   render: () => <ThreadTree />,
@@ -139,10 +142,7 @@ export const ChildSelected = {
   render: () => <ThreadTree selected={validationThread.id} />,
 };
 
-/**
- * A branch collapsed: its kind icon shows, and the chevron replaces it on hover
- * or focus.
- */
+/** A branch collapsed: its children are hidden. */
 export const Collapsed = {
   render: () => <ThreadTree initialCollapsed={[planThread.id]} />,
 };

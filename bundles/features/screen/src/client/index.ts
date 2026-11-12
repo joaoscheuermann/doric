@@ -1,5 +1,5 @@
 // The screen bundle's client part: the sidebar's Screens pane, over
-// `screen.views/v1`. Registering the pane in the layout's stack (`layout.stack/v1`)
+// `screen.views/v1`. Registering the pane in the layout's stack (`layout.stack/v2`)
 // is what makes the group appear; the rows it draws come from the desktop part's
 // mirrored views, and the group's own add control is an element of its own.
 //
@@ -23,13 +23,13 @@ import {
   SCREEN_GROUP_ACTION_TAG,
   SCREEN_SIDEBAR_TAG,
 } from './elements.js';
-import { LayoutStackV1, type StackPane } from './peers.js';
+import { LayoutStackV2, type StackPane } from './peers.js';
 import { createScreenViewsStore } from './store.js';
 
 /**
- * The sidebar's Screens group: the views of the current Project, below the
- * Threads tree. It starts collapsed, so the sidebar opens with the tree alone,
- * and expands to its minimum size — the layout owns the panel, the header and
+ * The sidebar's Screens group: the views of the current Project, under the
+ * Thread region. It starts collapsed at its header and expands to its rows'
+ * height, up to 40% of the column — the layout owns the group, the header and
  * the collapse control, and never collapses a pane past its header.
  */
 export const screenPane: StackPane = {
@@ -40,8 +40,6 @@ export const screenPane: StackPane = {
   headerTag: SCREEN_GROUP_ACTION_TAG,
   collapsible: true,
   initiallyOpen: false,
-  minSize: '20%',
-  maxSize: '80%',
 };
 
 export function activate({ services }: ClientContext): Cleanup {
@@ -56,7 +54,7 @@ export function activate({ services }: ClientContext): Cleanup {
 
   // The layout may not be active yet (or at all, in a composition without it),
   // so the pane is registered whenever the stack appears.
-  const pane: Disposable = services.whenAvailable(LayoutStackV1, (stack) => {
+  const pane: Disposable = services.whenAvailable(LayoutStackV2, (stack) => {
     const registration = stack.register(screenPane);
 
     return () => registration.dispose();

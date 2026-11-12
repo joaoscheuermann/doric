@@ -1,13 +1,10 @@
-import { cn } from 'desktop/ui/utils';
 import {
   BotMessageSquareIcon,
-  GitBranchIcon,
-  GithubIcon,
+  MessageCircleDashedIcon,
   MessageCircleIcon,
   MessageCirclePlusIcon,
 } from 'lucide-react';
 
-import type { ThreadIconKind } from '../../domain/sidebar.js';
 import {
   type ThreadKind,
   type ThreadKindIconName,
@@ -24,60 +21,28 @@ const glyph: Record<ThreadKindIconName, typeof MessageCircleIcon> = {
 /**
  * A Thread's mark, the same on its sidebar row, its breadcrumb and its tab: a
  * bubble for the reader's own Thread, a bubble with a plus for the sub-thread
- * the reader opened, and the bot that owns an agent Thread. Every Thread is a
- * conversation, so the bubble does not vary with the working directory. The
- * wrapper sets the size, so a surface that forces a size on its own icons (the
- * sidebar button, the tab strip) cannot make the mark heavier than the text
- * beside it.
+ * the reader opened, and the bot that owns an agent Thread. An Untitled Thread
+ * (`untitled`) wears the dashed bubble instead, whatever its kind. Every Thread
+ * is a conversation, so the bubble does not vary with the working directory.
+ * The wrapper sets the size, so a surface that forces a size on its own icons
+ * (the sidebar button, the tab strip) cannot make the mark heavier than the
+ * text beside it.
  *
- * `className` is merged after the wrapper's own classes (`cn`). The tree row
- * passes the S25 hover-swap classes through it. Absent: the mark draws as
- * before. It is always `aria-hidden`.
+ * Draws exactly one icon, always `aria-hidden`.
  */
 export function ThreadKindIcon({
-  className,
   kind,
+  untitled = false,
 }: {
-  readonly className?: string;
   readonly kind: ThreadKind;
+  /** Draws the Untitled icon (`message-circle-dashed`) instead of the kind's. Default false. */
+  readonly untitled?: boolean;
 }) {
-  const Icon = glyph[threadKindIcon[kind]];
+  const Icon = untitled ? MessageCircleDashedIcon : glyph[threadKindIcon[kind]];
   return (
     <span
       aria-hidden
-      className={cn(
-        'flex shrink-0 items-center justify-center [&>svg]:size-3.5',
-        className,
-      )}
-    >
-      <Icon />
-    </span>
-  );
-}
-
-/**
- * The repository a Thread's cwd sits in, drawn where the plus appears: a branch
- * for a local repository, the GitHub mark for one whose origin is on GitHub.
- * Every Thread carries it, whatever its kind, and it steps aside for the plus
- * on hover.
- */
-export function RepoMark({
-  className,
-  repo,
-}: {
-  readonly className?: string;
-  readonly repo: ThreadIconKind;
-}) {
-  if (repo === 'conversation') return null;
-  const Icon = repo === 'github' ? GithubIcon : GitBranchIcon;
-  return (
-    <span
-      aria-hidden
-      title={repo === 'github' ? 'GitHub repository' : 'Git repository'}
-      className={cn(
-        'pointer-events-none flex items-center justify-center text-muted-foreground/70 [&>svg]:size-3',
-        className,
-      )}
+      className="flex shrink-0 items-center justify-center [&>svg]:size-3.5"
     >
       <Icon />
     </span>

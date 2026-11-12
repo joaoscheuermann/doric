@@ -44,6 +44,7 @@ export const Idle = {
   render: () => (
     <TreeRow name="Plan the checkout flow">
       <RowAddAction
+        active={false}
         label="New child thread in Plan the checkout flow"
         onAdd={ignore}
       />
@@ -59,6 +60,7 @@ export const Running = {
   render: () => (
     <TreeRow name="Build the payment form">
       <RowAddAction
+        active
         label="New child thread in Build the payment form"
         onAdd={ignore}
         startedAt={minutesAgo(2)}
@@ -72,6 +74,7 @@ export const LongRun = {
   render: () => (
     <TreeRow name="Accessibility audit">
       <RowAddAction
+        active
         label="New child thread in Accessibility audit"
         onAdd={ignore}
         startedAt={minutesAgo(75)}

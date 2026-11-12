@@ -1,5 +1,5 @@
 // The mcp bundle's client part: the sidebar's MCP pane over `mcp/v1`.
-// Registering the pane in the layout's stack (`layout.stack/v1`) is what makes
+// Registering the pane in the layout's stack (`layout.stack/v2`) is what makes
 // the group appear; its rows are the servers of the Project the workspace
 // selects, and the group's add control is an element of its own.
 //
@@ -20,14 +20,14 @@ import {
   MCP_GROUP_ACTION_TAG,
   MCP_SIDEBAR_TAG,
 } from './elements.js';
-import { LayoutStackV1, LayoutWorkspaceV1, type StackPane } from './peers.js';
+import { LayoutStackV2, LayoutWorkspaceV1, type StackPane } from './peers.js';
 import { createMcpSignIns } from './sign-in.js';
 import { createMcpServersStore } from './store.js';
 
 /**
  * The sidebar's MCP group: the servers of the current Project, below the
- * Screens group. It starts collapsed, so the sidebar opens with the tree
- * alone, and expands to its minimum size.
+ * Screens group. It starts collapsed at its header and expands to its rows'
+ * height, up to 40% of the column.
  */
 export const mcpPane: StackPane = {
   id: 'mcp-sidebar',
@@ -37,8 +37,6 @@ export const mcpPane: StackPane = {
   headerTag: MCP_GROUP_ACTION_TAG,
   collapsible: true,
   initiallyOpen: false,
-  minSize: '20%',
-  maxSize: '80%',
 };
 
 export function activate({ services }: ClientContext): Cleanup {
@@ -52,7 +50,7 @@ export function activate({ services }: ClientContext): Cleanup {
 
   // The layout may not be active yet (or at all, in a composition without it),
   // so the pane is registered whenever the stack appears.
-  const pane: Disposable = services.whenAvailable(LayoutStackV1, (stack) => {
+  const pane: Disposable = services.whenAvailable(LayoutStackV2, (stack) => {
     const registration = stack.register(mcpPane);
     return () => registration.dispose();
   });

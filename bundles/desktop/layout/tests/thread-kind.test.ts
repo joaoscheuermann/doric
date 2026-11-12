@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import {
   canHoldChild,
   childThreadKind,
+  isUntitled,
   threadControl,
   threadKind,
   threadKindHint,
@@ -138,5 +139,16 @@ describe('canHoldChild', () => {
     assert.equal(canHoldChild('sub-thread', 'sub-thread'), false);
     assert.equal(canHoldChild('sub-agent', 'sub-agent'), true);
     assert.equal(canHoldChild('sub-agent', 'sub-thread'), false);
+  });
+});
+
+describe('isUntitled', () => {
+  test('T-1.3: a Thread with an empty name is Untitled', () => {
+    assert.equal(isUntitled(thread({ name: '' })), true);
+  });
+
+  test('T-1.3: a named Thread is not Untitled, even one named "Untitled"', () => {
+    assert.equal(isUntitled(thread({ name: 'Plan' })), false);
+    assert.equal(isUntitled(thread({ name: 'Untitled' })), false);
   });
 });

@@ -211,13 +211,20 @@ describe('layout.tabs/v1@1.2.0 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v1@1.2.0 and layout.panel/v2@2.0.0, not v1, at version 2.0.0', () => {
+  test('provides layout.tabs/v1@1.2.0, layout.panel/v2@2.0.0 (not v1), layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.0.2 (T-1.10, T-2.11, T-3.8, T-5.7)', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
     ) as { version: string; provides: string[] };
 
-    assert.equal(manifest.version, '2.0.0');
+    assert.equal(manifest.version, '3.0.2');
+    assert.ok(manifest.provides.includes('layout.stack/v2@2.0.0'));
+    assert.ok(
+      !manifest.provides.some((entry) => entry.startsWith('layout.stack/v1@')),
+      'The layout still provides layout.stack/v1.',
+    );
     assert.ok(manifest.provides.includes('layout.tabs/v1@1.2.0'));
+    assert.ok(manifest.provides.includes('layout.sidebar/v1@1.1.0'));
+    assert.ok(!manifest.provides.includes('layout.sidebar/v1@1.0.0'));
     assert.ok(manifest.provides.includes('layout.panel/v2@2.0.0'));
     assert.ok(!manifest.provides.includes('layout.panel/v1@1.0.0'));
   });

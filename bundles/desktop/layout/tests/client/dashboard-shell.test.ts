@@ -392,6 +392,25 @@ test('on /projects the four table columns are equal and the table aligns with th
   }
 });
 
+// Follow-up to phase 5 (2026-11-11): a project row's button draws a solid paper-focus outline on keyboard focus
+test('T-5.20: on /projects a project row button has the solid keyboard focus outline', async () => {
+  rendered = await renderDashboard('/projects');
+
+  const content = single(rendered.root, 'div[data-slot="dashboard-content"]');
+  const button = single(single(content, '[data-project-id]'), 'button');
+  const expected = [
+    'outline-none',
+    'focus-visible:outline-solid',
+    'focus-visible:outline-2',
+    'focus-visible:outline-[var(--paper-focus)]',
+  ];
+  assert.deepEqual(
+    expected.filter((name) => !button.classList.contains(name)),
+    [],
+    `The project row button lacks focus outline classes: ${button.className}`,
+  );
+});
+
 // Contracts 2e §0.1: `/` reached without "New project" draws All projects.
 test('a fresh start on / without New project still shows All projects with the Dashboard sidebar', async () => {
   rendered = await renderDashboard('/ at startup');

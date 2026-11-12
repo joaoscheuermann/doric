@@ -41,8 +41,10 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   per-skill approval or digest checks: execution stays in the Project's
   sandbox.
 - **Window:** the client part registers the sidebar's MCP pane
-  (`layout.stack/v1`): the selected Project's servers with their status and
-  tool count over `mcp/v1.watch`, and the dialogs that add, edit, remove and
+  (`layout.stack/v2`): the selected Project's servers with their status and
+  tool count over `mcp/v1.watch` (`No MCP servers` once loaded with none), a
+  "Sign in" link that stays visible on a row needing it and opens the browser,
+  remove on row hover or keyboard focus, and the dialogs that add, edit, remove and
   sign in to them; the edit dialog lists the server's tools and skills after
   its headers or its environment. A header or variable is a typed value or a
   credential picked with the key button, from `secrets/v1` or stored there as
@@ -50,6 +52,12 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   alone: the MCP client name and version of either transport, the OAuth
   client name and scopes of an `http` server, and a `stdio` server's working
   directory.
+
+The client sheet `src/client/styles.css` is a fixed list of the phase 5 classes
+(`source(none)` and one `@source inline('…')`, [spec §11.6](../../../docs/designs/sidebar-alignment.md#116-pane-rows-and-the-draft-row)),
+not the whole sorted set the repository's other utility sheets emit. A class
+added later to `src/client/elements.tsx` must pass §11.6's cascade check and be added
+to the list, or it will not reach an older app; T-5.12 does not detect it.
 
 ## Servers
 

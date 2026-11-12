@@ -1,0 +1,8 @@
+/*
+ * The mcp bundle's phase 5 utilities only, a subset of the window's sorted
+ * set (docs/designs/sidebar-alignment.md §11.6). Run that section's cascade
+ * check before adding a class.
+ */
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@reference 'desktop/ui/tailwind.css';
+@source inline('rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)] has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:-outline-offset-2 has-[[data-slot=sidebar-menu-button]:focus-visible]:outline-[var(--sidebar-ring)] bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0 hover:bg-[var(--paper-ghost-pressed)] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-[var(--sidebar-ring)] group-has-[:focus-visible]/menu-item:pointer-events-auto group-has-[:focus-visible]/menu-item:opacity-100 group-has-[:focus-visible]/menu-item:opacity-0 group-has-[:focus-visible]/menu-item:right-7');

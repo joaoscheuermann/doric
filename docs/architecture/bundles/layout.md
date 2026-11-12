@@ -8,16 +8,19 @@ O `layout` é o bundle client que desenha o workspace: a moldura que hoje é `ap
 
 ## O que o layout fornece
 
-| Funcionalidade           | Como os outros bundles usam                                                                                   |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Rota `/`                 | Registram rotas filhas com `parent: '/'`, que aparecem na área principal.                                     |
-| Sidebar                  | Mostra Projects e Threads; clicar numa Thread navega para `/projects/:projectId/threads/:threadId`.           |
-| Header                   | Mostra o Project e a Thread da rota ativa; ações de outros bundles entram na região `layout.header`.          |
-| Painel lateral           | Mostra um item da região `layout.panel` por vez, com um seletor entre eles (como Files e Changes hoje).       |
-| Rodapé                   | Mostra os itens da região `layout.footer`, como uso e recursos.                                               |
-| Grupos extras da sidebar | Panes registrados em `layout.stack/v1`, abaixo da árvore; o layout desenha o painel e o cabeçalho de cada um. |
-| Abas                     | `layout.tabs/v1`: `open`, `close` e `focus` de abas, num painel ao lado da área principal.                    |
-| Abrir settings           | O botão do rodapé da sidebar despacha o comando `core.open-settings/v1`.                                      |
+| Funcionalidade           | Como os outros bundles usam                                                                                                                               |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rota `/`                 | Registram rotas filhas com `parent: '/'`, que aparecem na área principal.                                                                                 |
+| Sidebar                  | Mostra Projects e Threads; clicar numa Thread navega para `/projects/:projectId/threads/:threadId`.                                                       |
+| Header                   | Mostra o Project e a Thread da rota ativa; ações de outros bundles entram na região `layout.header`.                                                      |
+| Painel lateral           | Mostra um item da região `layout.panel` por vez, com um seletor entre eles (como Files e Changes hoje).                                                   |
+| Rodapé                   | Mostra os itens da região `layout.footer`, como uso e recursos.                                                                                           |
+| Grupos extras da sidebar | Panes registrados em `layout.stack/v2`, presos ao fim da coluna, sem divisórias nem tamanhos; o layout desenha o grupo e o cabeçalho de 28 px de cada um. |
+| Linhas da sidebar        | `layout.sidebar/v1` 1.1.0: linhas sob cada Thread; `busy` opcional deixa a linha ativa enquanto responde verdadeiro.                                      |
+| Abas                     | `layout.tabs/v1`: `open`, `close` e `focus` de abas, num painel ao lado da área principal.                                                                |
+| Abrir settings           | O botão do rodapé da sidebar despacha o comando `core.open-settings/v1`.                                                                                  |
+
+O layout não fornece mais `layout.stack/v1`: `layout.stack/v2` o substitui, e um bundle que ainda exige a v1 fica em quarentena.
 
 ## Como funciona
 
@@ -56,8 +59,9 @@ export function activate({ services }: ClientContext) {
 <layout-workspace>
   <aside>                                   sidebar
     árvore de Projects e Threads            (do layout, dados de runtime.threads/v1)
-    painéis dos grupos                     panes de `layout.stack/v1`
-    (Threads, telas, …)                    o Threads é do próprio layout
+    botão New Thread                        (do próprio layout, sob a árvore)
+    painéis dos grupos                     panes de `layout.stack/v2`
+    (telas, MCP, …)                        presos ao fim da coluna
     botão Settings                          (despacha core.open-settings/v1)
   <header>
     Project / Thread da rota ativa

@@ -44,6 +44,12 @@ export interface TabRequest {
   readonly menu?: readonly TabMenuItem[];
 }
 
+/** The selected tab of the active owner (`layout.tabs/v1` 1.1.0). */
+export interface CurrentTab {
+  readonly id: string;
+  readonly props?: Readonly<Record<string, unknown>>;
+}
+
 /** `layout.tabs/v1` (1.2.0). */
 export interface LayoutTabs {
   open(input: TabRequest, call?: CallArg): Promise<void>;
@@ -63,6 +69,10 @@ export interface LayoutTabs {
     },
     call?: CallArg,
   ): Promise<void>;
+  /** 1.1.0: the selected tab of the active owner, if any (local). */
+  current(call?: CallArg): CurrentTab | undefined;
+  /** 1.1.0: called after every change of the tabs or of the owner (local). */
+  subscribe(listener: () => void, call?: CallArg): Disposable;
 }
 
 export const LayoutTabsV1 = ref<LayoutTabs>('layout.tabs/v1');
@@ -73,6 +83,11 @@ export interface ThreadRows {
   readonly tag: string;
   count(threadId: string): number;
   subscribe(listener: () => void): Disposable;
+  /**
+   * `layout.sidebar/v1` 1.1.0: whether an agent terminal directly under the
+   * Thread keeps it active. A 1.0.0 layout never calls it and ignores it.
+   */
+  busy?(threadId: string): boolean;
 }
 
 /** `layout.sidebar/v1` (1.0.0). */

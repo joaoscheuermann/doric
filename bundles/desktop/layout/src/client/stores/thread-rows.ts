@@ -61,6 +61,25 @@ export const hasThreadRows = (
     }
   });
 
+/**
+ * Whether any registration's `busy` answers `true` for the Thread
+ * (`layout.sidebar/v1` 1.1.0). A registration without `busy`, or whose `busy`
+ * throws, counts as not busy, and nothing is logged, as `hasThreadRows` treats
+ * a throwing `count`. Registrations are asked in order and asking stops at the
+ * first `true`. It never throws.
+ */
+export const threadRowsBusy = (
+  rows: readonly ThreadRows[],
+  threadId: string,
+): boolean =>
+  rows.some((entry) => {
+    try {
+      return entry.busy?.(threadId) === true;
+    } catch {
+      return false;
+    }
+  });
+
 export const resetThreadRows = (): void => {
   threadRowsStore.setState({ rows: [], revision: 0 });
 };

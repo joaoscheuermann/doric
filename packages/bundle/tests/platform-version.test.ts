@@ -42,8 +42,8 @@ const manifests = (): Map<string, { engines?: { doric?: string } }> => {
 };
 
 describe('the platform version', () => {
-  test('is 1.5.0 once the row and tab menus of the panels join the platform', () => {
-    assert.equal(PLATFORM_VERSION, '1.5.0');
+  test('T-4.7: is 1.6.0 once ScrollArea draws a horizontal scrollbar on request', () => {
+    assert.equal(PLATFORM_VERSION, '1.6.0');
   });
 
   test('leaves the folders and URLs at 1.0.0', () => {

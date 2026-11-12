@@ -1,8 +1,8 @@
-// The sidebar stack's registry and open state (`layout.stack/v1`): the panes
-// bundles register plus the layout's own, and which of them is expanded. The
-// panels' geometry belongs to the view (`organisms/project-sidebar.tsx`); this
-// holds only what is drawn and what is collapsed, so another bundle can read and
-// drive its own group without knowing how the stack is built.
+// The sidebar stack's registry and open state (`layout.stack/v2`): the panes
+// bundles register and which of them is expanded. The groups' geometry belongs
+// to the view (`organisms/project-sidebar.tsx`); this holds only what is drawn
+// and what is collapsed, so another bundle can read and drive its own group
+// without knowing how the stack is built.
 
 import { ContractError, type Disposable } from 'bundle/contracts';
 import { createStore } from 'zustand/vanilla';

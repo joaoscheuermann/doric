@@ -19,9 +19,11 @@ export interface LayoutWorkspace {
 export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
 
 /**
- * The group this part puts in the sidebar's stack (1.0.0): the layout draws one
- * resizable panel per pane, its header (the title and the collapse control)
- * and, when the pane is open, the element `tag` names.
+ * The group this part puts in the sidebar's stack (`layout.stack/v2`): the
+ * layout draws one group per pane under the Thread region, pinned to the
+ * column's bottom — its header (the title and the collapse control) and, while
+ * the pane is open, the element `tag` names, as tall as its content up to 40%
+ * of the column and scrolling past that.
  */
 export interface StackPane {
   /** Unique in the stack; a duplicate fails with `registration_conflict`. */
@@ -36,17 +38,13 @@ export interface StackPane {
   readonly headerTag?: string;
   /** Whether the reader can collapse the pane (default `true`). */
   readonly collapsible?: boolean;
-  /** Whether the pane starts expanded (default `true`). */
+  /** Whether the pane starts expanded (default `true`); collapsed, it starts at its header. */
   readonly initiallyOpen?: boolean;
-  /** Smallest size while expanded (for example `'20%'`). */
-  readonly minSize?: string;
-  /** Largest size (for example `'80%'`). */
-  readonly maxSize?: string;
 }
 
-/** `layout.stack/v1` (1.0.0), for the MCP pane. */
+/** `layout.stack/v2` (2.0.0), for the MCP pane. */
 export interface LayoutStack {
   register(pane: StackPane, call?: CallArg): Disposable;
 }
 
-export const LayoutStackV1 = ref<LayoutStack>('layout.stack/v1');
+export const LayoutStackV2 = ref<LayoutStack>('layout.stack/v2');

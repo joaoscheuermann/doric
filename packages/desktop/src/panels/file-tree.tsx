@@ -1,9 +1,4 @@
-import {
-  ChevronRightIcon,
-  FileIcon,
-  FolderIcon,
-  FolderOpenIcon,
-} from 'lucide-react';
+import { FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react';
 import { type ReactNode, type Ref, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '../components/badge.js';
@@ -13,19 +8,53 @@ import {
   ContextMenuTrigger,
 } from '../components/context-menu.js';
 import {
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSubItem,
 } from '../components/sidebar.js';
 import { cn } from '../lib/utils.js';
-import { indentation, rowInteraction, TreeGuides } from './tree-guides.js';
+import { indentation, TreeGuides } from './tree-guides.js';
 import {
   flattenTree,
   lineOffsets,
   type TreeLine,
   useLineRange,
 } from './tree-window.js';
+
+/**
+ * A row's fill, on its wrapper: a selected row is filled in the accent; an
+ * unselected one draws the ghost hover fill under the pointer and the ghost
+ * pressed fill while pressed (docs/designs/sidebar-alignment.md §11.1).
+ * Complete literals, so the window's sheet emits them.
+ */
+const rowFill = (selected: boolean): string =>
+  selected
+    ? 'rounded-[4px] bg-sidebar-accent'
+    : 'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)]';
+
+/**
+ * The row outline: 2 px of --sidebar-ring inset on the wrapper while its
+ * treeitem has keyboard focus (§11.3).
+ */
+const treeitemRing =
+  'has-[[role=treeitem]:focus-visible]:outline-2 has-[[role=treeitem]:focus-visible]:-outline-offset-2 has-[[role=treeitem]:focus-visible]:outline-[var(--sidebar-ring)]';
+
+/**
+ * A row button that draws no fill and no ring: its wrapper draws the fill and
+ * the outline.
+ */
+const noFillButton =
+  'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
+
+/**
+ * A pinned mark's backing: opaque, and the row's fill in each state, so a name
+ * scrolled under the mark does not show through: bg-sidebar, with the ghost as
+ * an image layer over it in hover and press (§11.2).
+ */
+const markBacking = (selected: boolean): string =>
+  selected
+    ? 'bg-sidebar-accent'
+    : 'bg-sidebar group-hover/tree-row:bg-[linear-gradient(var(--paper-ghost-hover),var(--paper-ghost-hover))] group-active/tree-row:bg-[linear-gradient(var(--paper-ghost-pressed),var(--paper-ghost-pressed))]';
 
 /** One tree node: a file, or a directory that carries its own children. */
 export type TreeNode = {
@@ -251,9 +280,8 @@ function TreeRow({
       isActive={selected}
       size="sm"
       className={cn(
-        'h-7 w-full min-w-0 gap-1.5 rounded-[4px]',
-        decoration === undefined ? 'pr-1.5' : 'pr-8',
-        rowInteraction(selected),
+        'h-7 w-auto min-w-0 flex-1 gap-1.5 rounded-[4px] pr-1.5',
+        noFillButton,
       )}
       style={{ paddingLeft: indentation(depth) }}
       render={
@@ -296,23 +324,7 @@ function TreeRow({
         aria-hidden
         className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-3.5!"
       >
-        {!directory ? (
-          <FileIcon />
-        ) : (
-          <>
-            {open ? (
-              <FolderOpenIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-            ) : (
-              <FolderIcon className="group-hover/tree-row:hidden group-focus-within/tree-row:hidden" />
-            )}
-            <ChevronRightIcon
-              className={cn(
-                'hidden group-hover/tree-row:block group-focus-within/tree-row:block',
-                open && 'rotate-90',
-              )}
-            />
-          </>
-        )}
+        {!directory ? <FileIcon /> : open ? <FolderOpenIcon /> : <FolderIcon />}
       </span>
       <span
         className={cn(
@@ -341,7 +353,13 @@ function TreeRow({
         );
       }}
     >
-      <div className="group/tree-row relative w-full min-w-0 overflow-hidden">
+      <div
+        className={cn(
+          'group/tree-row relative flex w-full min-w-0 items-center',
+          rowFill(selected),
+          treeitemRing,
+        )}
+      >
         <TreeGuides depth={depth} />
         {menu === null ? (
           button
@@ -352,13 +370,24 @@ function TreeRow({
           </ContextMenu>
         )}
         {decoration !== undefined && (
-          <SidebarMenuBadge className="z-10 bg-sidebar/90">
-            <Badge variant="ghost" className="px-1" aria-hidden>
-              <span className={decoration.tone}>
-                {directory ? decoration.count : (decoration.letter ?? '')}
-              </span>
-            </Badge>
-          </SidebarMenuBadge>
+          <span
+            aria-hidden
+            data-slot="tree-row-mark"
+            className="sticky right-1 shrink-0 pr-1 text-sidebar-foreground peer-hover/menu-button:text-sidebar-accent-foreground peer-data-active/menu-button:text-sidebar-accent-foreground"
+          >
+            <div
+              className={cn(
+                'flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs tabular-nums pointer-events-none select-none',
+                markBacking(selected),
+              )}
+            >
+              <Badge variant="ghost" className="px-1" aria-hidden>
+                <span className={decoration.tone}>
+                  {directory ? decoration.count : (decoration.letter ?? '')}
+                </span>
+              </Badge>
+            </div>
+          </span>
         )}
       </div>
     </SidebarMenuItem>

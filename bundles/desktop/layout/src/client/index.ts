@@ -17,7 +17,6 @@ import { disposeProjectWatch, initProjectWatch } from './api/project-watch.js';
 import { disposeWorkspaceApi, initWorkspaceApi } from './api/workspace-api.js';
 import { followAbout } from './domain/about.js';
 import { tabOwnerOf } from './domain/route-selection.js';
-import { threadsPane } from './domain/sidebar-stack.js';
 import { LayoutWorkspaceElement } from './elements/workspace-element.js';
 import { resetLayoutQueryClient } from './queries/client.js';
 import { createLayoutDashboard } from './services/layout-dashboard.js';
@@ -34,7 +33,7 @@ import { resetDashboard } from './stores/dashboard.js';
 import { resetNewTab } from './stores/new-tab.js';
 import { resetPanel } from './stores/panel.js';
 import { resetRouteSelection } from './stores/route-selection.js';
-import { registerPane, resetStack } from './stores/stack.js';
+import { resetStack } from './stores/stack.js';
 import { resetThreadRows } from './stores/thread-rows.js';
 import { workspaceStore } from './stores/workspace.js';
 
@@ -81,14 +80,13 @@ export function activate({ services }: ClientContext): Cleanup {
     }),
   );
   // WP-10P: the Project panel and the sidebar's Thread rows. The stack carries
-  // the sidebar's groups: the layout's own Threads pane and whatever a bundle
-  // registers (the `screen` views today).
+  // the groups bundles register under the sidebar's Thread region (the
+  // Screens and MCP panes today).
   services.provide(createLayoutWorkspace());
   services.provide(createLayoutPanel());
   services.provide(createLayoutDashboard());
   services.provide(createLayoutSidebar());
   services.provide(createLayoutStack());
-  const threadsRegistration = registerPane(threadsPane);
 
   return () => {
     stopThreadTabs();
@@ -101,7 +99,6 @@ export function activate({ services }: ClientContext): Cleanup {
     resetDashboard();
     resetNewTab();
     resetBottom();
-    threadsRegistration.dispose();
     resetStack();
     resetThreadRows();
     resetLayoutQueryClient();

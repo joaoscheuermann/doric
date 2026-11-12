@@ -3,7 +3,7 @@
 // [D10-7]. Each renders in light DOM with `display: contents` and reads the
 // activation's store, never an element's own state (D9-17).
 
-import type { Services } from 'bundle/contracts';
+import { NavigationV1, type Services } from 'bundle/contracts';
 import { Button } from 'desktop/ui/button';
 import { defineReactElement } from 'desktop/ui/react-element';
 import { toast } from 'desktop/ui/sonner';
@@ -14,12 +14,14 @@ import type { Terminal } from './domain/terminals.js';
 import { useService, useSubscribed } from './hooks.js';
 import type { TerminalWatchApi } from './output-watch.js';
 import {
+  LayoutTabsV1,
   type LayoutWorkspace,
   LayoutWorkspaceV1,
   type ThreadRecord,
 } from './peers.js';
 import { TerminalRows } from './rows/terminal-rows.js';
 import type { TerminalStore } from './store.js';
+import { terminalIdOfTab } from './tab.js';
 import { TerminalView } from './view/terminal-view.js';
 
 export { TERMINAL_VIEW_TAG } from './tab.js';
@@ -89,12 +91,27 @@ export const defineTerminalElements = (client: TerminalClient) => {
     readonly 'thread-id'?: string;
   }) {
     const workspace = useService(services, LayoutWorkspaceV1);
+    const tabs = useService(services, LayoutTabsV1);
+    const navigation = useService(services, NavigationV1);
     const terminals = useTerminals();
+    const own = terminals.filter((item) => item.threadId === threadId);
+    // The selected tab is a terminal's only on this Thread's route; the rows
+    // listen to the tabs only while the Thread has terminals.
+    const selectedId = useSubscribed(
+      own.length > 0 ? tabs : undefined,
+      () =>
+        navigation === undefined ||
+        navigation.current()?.params.threadId !== threadId
+          ? undefined
+          : terminalIdOfTab(tabs?.current()?.id),
+      undefined,
+    );
     if (threadId === undefined || workspace === undefined) return null;
     return (
       <TerminalRows
-        terminals={terminals.filter((item) => item.threadId === threadId)}
+        terminals={own}
         depth={rowsDepth(workspace, threadId)}
+        selectedId={selectedId}
         onOpen={client.open}
         onStop={store.stop}
         onRename={store.rename}

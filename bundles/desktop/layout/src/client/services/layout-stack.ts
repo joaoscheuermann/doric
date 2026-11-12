@@ -1,12 +1,13 @@
-// layout.stack/v1 (1.0.0, R-9.5): the sidebar's vertical stack — the panes
-// bundles register, their order, and which of them is expanded. The layout draws
-// one resizable panel and one header per pane, so the frame stays blind to what
-// a pane shows: `screen`'s views today, whatever else a composition adds.
+// layout.stack/v2 (2.0.0): the sidebar's vertical stack — the panes bundles
+// register, their order, and which of them is expanded. The layout draws one
+// group per pane under the Thread region — its header and, while open, its
+// content — so the frame stays blind to what a pane shows: `screen`'s views
+// today, whatever else a composition adds.
 
 import { defineMethod, defineService } from 'bundle/contracts';
 
 import {
-  LayoutStackV1,
+  LayoutStackV2,
   layoutStackMethods,
   type StackPane,
 } from '../../contracts/index.js';
@@ -20,7 +21,7 @@ import {
 import { watchAll } from './subscription.js';
 
 export const createLayoutStack = () =>
-  defineService(LayoutStackV1, {
+  defineService(LayoutStackV2, {
     register: defineMethod({
       ...layoutStackMethods.register,
       execute: (pane: StackPane) => registerPane(pane),

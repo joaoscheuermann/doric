@@ -18,7 +18,7 @@ for how bundles work.
   conversation inside it as the child route
   `/projects/:projectId/threads/:threadId`.
 - **Contracts:** `layout.tabs/v1`, `layout.workspace/v1`, `layout.panel/v2`,
-  `layout.dashboard/v1`, `layout.sidebar/v1` and `layout.stack/v1`, all client
+  `layout.dashboard/v1`, `layout.sidebar/v1` and `layout.stack/v2`, all client
   contracts in the workspace window.
 - **Regions:** named slots where other bundles add elements.
 
@@ -40,8 +40,9 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   button opens the Dashboard and shows as current while it is open.
 - **Sidebar.** The selected Project's recursive Thread tree. Rows can be
   renamed, and a context menu opens a Thread in a new tab (a sub-thread or an
-  agent Thread "in viewer"), adds, copies and deletes. The sidebar is a stack of resizable, collapsible panes, so other
-  bundles can add groups above or below the Threads.
+  agent Thread "in viewer"), adds, copies and deletes. Other bundles add
+  panes only under the Thread region, pinned to the column's bottom; each
+  pane collapses but does not resize (`project-sidebar.tsx`).
 - **Conversation.** The selected Thread fills the main area; a child Thread
   opens as a tab beside its root Thread instead of replacing it. Each of these
   viewer tabs has a context menu: the entries the bundle that opened it
@@ -73,9 +74,12 @@ written by the runner's `spawn`); a Thread without it reads as the reader's, so
 an older workspace keeps every Thread it had. The sidebar draws the kind as the
 row's leading mark — a bubble for a main Thread, a bubble with a plus for the
 sub-thread that opened it, the bot that owns an agent Thread (`threadKindIcon`) —
-and offers `+` only where the reader may open a sub-thread, revealing it on hover
-in the same trailing slot that shows the repository the Thread's cwd sits in (a
-branch, or the GitHub mark). Rename/delete stay hidden where the kind forbids
+and offers `+` only where the reader may open a sub-thread. The trailing slot
+shows only the elapsed badge and that `+`, which hover or keyboard focus
+reveals. An Untitled Thread wears `message-circle-dashed` on its row, the
+breadcrumb and its tab. A row is active while its Thread or any descendant runs,
+or while a `busy` registration (`layout.sidebar/v1` 1.1.0) answers true; the
+badge times from the Thread's own last start. Rename/delete stay hidden where the kind forbids
 them, and the row's tooltip names the kind. The breadcrumb and a conversation tab
 wear the same mark. The reader's three levers on an agent Thread live in `chat`'s
 footer, where the composer would be.
@@ -88,8 +92,8 @@ footer, where the composer would be.
 | `layout.workspace/v1` | read the tree, the selection, a Project's Threads and the connection; subscribe; show or hide the `layout.main.bottom` split                                                                                                                            | `chat`, `files`, `git`, `resources`, `screen`, `terminal`, `threads`, `usage` |
 | `layout.panel/v2`     | select the Project panel's view                                                                                                                                                                                                                         | `files`                                                                       |
 | `layout.dashboard/v1` | read, show or close the `layout.dashboard.page` item the `/projects` dashboard draws instead of its project list; subscribe                                                                                                                             | `settings`                                                                    |
-| `layout.sidebar/v1`   | add rows under each Thread of the sidebar tree (`addThreadRows`)                                                                                                                                                                                        | `terminal`                                                                    |
-| `layout.stack/v1`     | register a sidebar pane with title, order, header action and size limits                                                                                                                                                                                | `screen`                                                                      |
+| `layout.sidebar/v1`   | add rows under each Thread of the sidebar tree (`addThreadRows`); since 1.1.0 a registration may answer `busy(threadId)`, which keeps the Thread and its ancestors active                                                                               | `terminal`                                                                    |
+| `layout.stack/v2`     | register a sidebar pane with title, order, header action and collapse state; panes are pinned to the column's bottom, with no sizes                                                                                                                     | `screen`, `mcp`                                                               |
 
 A duplicate pane or row id fails with `registration_conflict`, and opening a
 tab with no Thread or Project selected fails with `unavailable`.

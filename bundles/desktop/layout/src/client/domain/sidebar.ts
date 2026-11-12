@@ -1,25 +1,60 @@
 import { messageFrom } from './errors.js';
-import type { Draft, Entity, Thread } from './workspace.js';
+import type { Draft, Entity } from './workspace.js';
 
 /**
- * The icon a Thread row leads with. It is a semantic kind rather than a glyph:
- * the component layer chooses which icon paints each one, so the rule can be
- * stated and tested without React.
+ * The Thread row button's right padding, as Tailwind classes, so the name
+ * truncates before the trailing slot (§4 table). `timed`: the row is active
+ * with a badge start, so its elapsed badge shows. `addable`: the row has the
+ * plus.
+ *
+ * | timed | addable | classes                                                              |
+ * | ----- | ------- | -------------------------------------------------------------------- |
+ * | true  | either  | `'pr-14'` (56 px at rest and on hover or keyboard focus)             |
+ * | false | true    | `'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8'` |
+ * | false | false   | `'pr-1.5'`                                                           |
+ *
+ * A timed row keeps 56 px on hover, which already holds the 20 px plus at
+ * `right-1`, so its name does not truncate again.
  */
-export type ThreadIconKind = 'conversation' | 'git' | 'github';
-
-/**
- * The icon kind a Thread leads with, decided from the host's hint alone: a
- * working directory whose root holds a repository is `git`, a GitHub `origin`
- * makes it `github`, and everything else — including a Thread the host has not
- * yet described — stays a conversation. Nothing is inferred from the parent
- * Thread or from another tool.
- */
-export const threadIconKind = (thread: Thread): ThreadIconKind => {
-  if (thread.cwdRepo === 'github') return 'github';
-  if (thread.cwdRepo === 'git') return 'git';
-  return 'conversation';
+export const threadRowPadding = (timed: boolean, addable: boolean): string => {
+  if (timed) return 'pr-14';
+  return addable
+    ? 'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8'
+    : 'pr-1.5';
 };
+
+/**
+ * A tree row's fill, on its `group/tree-row` wrapper
+ * (docs/designs/sidebar-alignment.md §11.1): a selected row is filled in the
+ * accent; an unselected one draws the ghost hover fill under the pointer and
+ * the ghost pressed fill while pressed. Complete literals, so the sheets that
+ * scan this source emit them.
+ */
+export const rowFill = (selected: boolean): string =>
+  selected
+    ? 'rounded-[4px] bg-sidebar-accent'
+    : 'rounded-[4px] hover:bg-[var(--paper-ghost-hover)] active:bg-[var(--paper-ghost-pressed)]';
+
+/**
+ * The row outline: 2 px of --sidebar-ring inset on the wrapper while its
+ * treeitem has keyboard focus (§11.3).
+ */
+export const treeitemRing =
+  'has-[[role=treeitem]:focus-visible]:outline-2 has-[[role=treeitem]:focus-visible]:-outline-offset-2 has-[[role=treeitem]:focus-visible]:outline-[var(--sidebar-ring)]';
+
+/**
+ * The row outline: 2 px of --sidebar-ring inset on the wrapper while a name
+ * field in it has keyboard-visible focus (§11.3).
+ */
+export const textboxRing =
+  'has-[[role=textbox]:focus-visible]:outline-2 has-[[role=textbox]:focus-visible]:-outline-offset-2 has-[[role=textbox]:focus-visible]:outline-[var(--sidebar-ring)]';
+
+/**
+ * A row button that draws no fill and no ring: its wrapper draws the fill and
+ * the outline.
+ */
+export const noFillButton =
+  'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
 
 /**
  * The workspace sidebar's transient state: the dialog in progress and the one

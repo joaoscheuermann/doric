@@ -27,16 +27,17 @@ The bundle provides no tool and no skill.
 
 ## Using it
 
-1. Select a Project and press **+** in the **Screens** header. It adds a view
+1. Select a Project and press **+** in the **Screens** header (it shows while the header is hovered or
+   focused). It adds a view
    for that Project; a Project has at most one view, and adding it again opens
    the existing one.
 2. Click the row to open or focus the view's window. A view that is not ready
    yet remembers the request and opens its window once it is.
-3. Use the row's retry control when it offers one, or the remove control on
-   hover to drop the view.
+3. Hover the row or focus it from the keyboard to show its actions over its right edge, where the
+   status fades out: retry when the row offers it, and remove to drop the view.
 
-The pane lists only the views of the selected Project. Each row shows one
-state:
+The pane lists only the views of the selected Project; with a Project selected
+and no view, the open pane shows `No screens open`. Each row shows one state:
 
 | Row text                 | Meaning                                    | Retry |
 | ------------------------ | ------------------------------------------ | ----- |
@@ -97,6 +98,12 @@ opens one window per view through `doric.windows/v1`:
 A desktop part cannot call host contracts, so it lists the attaches it wants in
 the `watch` stream; the client part calls `screen.sessions/v2.attach` scoped to
 that Project and hands the answer back through `deliver`.
+
+The client sheet `src/client/styles.css` is a fixed list of the phase 5 classes
+(`source(none)` and one `@source inline('…')`, [spec §11.6](../../../docs/designs/sidebar-alignment.md#116-pane-rows-and-the-draft-row)),
+not the whole sorted set the repository's other utility sheets emit. A class
+added later to `src/client/elements.tsx` must pass §11.6's cascade check and be added
+to the list, or it will not reach an older app; T-5.12 does not detect it.
 
 ## Requirements
 
