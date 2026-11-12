@@ -1321,7 +1321,25 @@ test('the column reads search, the Thread tree, the New Thread button, then the 
   assert.equal(normalized(button.textContent), '', 'New Thread has text.');
   assert.equal(button.querySelectorAll('svg').length, 1);
   assert.equal(button.querySelectorAll('svg.lucide-plus').length, 1);
-  assert.deepEqual(missingClasses(button, 'w-full bg-secondary'), []);
+  // The button takes the rows' ghost tokens: the row hover fill at rest and
+  // the row pressed fill under the pointer, not the secondary colours.
+  assert.deepEqual(
+    missingClasses(
+      button,
+      'w-full bg-[var(--paper-ghost-hover)] hover:bg-[var(--paper-ghost-pressed)]',
+    ),
+    [],
+  );
+  for (const dropped of [
+    'bg-secondary',
+    'hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]',
+  ]) {
+    assert.equal(
+      button.classList.contains(dropped),
+      false,
+      `New Thread keeps ${dropped}.`,
+    );
+  }
   const panes = paneGroups(sidebar);
   assert.equal(panes.length, 1, 'The Screens pane has no group.');
   assert.ok(

@@ -196,7 +196,9 @@ notifications are drawn by the operating system. An unpackaged
 development run may set `DORIC_THEME` to `light`, `dark` or `system`; a
 packaged build ignores it. The compact, resizable shadcn sidebar draws the
 selected Project's recursive Threads, which the layout draws itself with no
-Threads label or pane, and an icon-only New Thread button under the tree. Below
+Threads label or pane, and an icon-only New Thread button under the tree, drawn
+with the rows' ghost tokens (`--paper-ghost-hover` at rest, `--paper-ghost-pressed`
+under the pointer). Below
 them, pinned to the column's bottom, sit the panes bundles register through the
 layout's `layout.stack/v2` — today the `screen` bundle's views and the `mcp`
 bundle's servers, each row carrying its state. A pane declares its title, its

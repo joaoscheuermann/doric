@@ -429,11 +429,13 @@ export function ProjectSidebar({
           className="flex min-h-10 flex-1 flex-col gap-3 px-1.5"
         >
           {threadTree}
+          {/* The rows' ghost tokens instead of the secondary colours: the row
+              hover fill at rest, the row pressed fill under the pointer. */}
           <Button
             variant="secondary"
             size="sm"
             aria-label="New Thread"
-            className="w-full shrink-0"
+            className="w-full shrink-0 bg-[var(--paper-ghost-hover)] hover:bg-[var(--paper-ghost-pressed)]"
             disabled={projectId === undefined}
             onClick={() => beginThread()}
           >
