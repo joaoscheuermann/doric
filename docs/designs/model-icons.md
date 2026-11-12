@@ -104,7 +104,7 @@ These were made with the user and are not reopened. U8-U13 are the user's answer
 
 ## Non-goals
 
-- The lucide `BotIcon` sites outside the gutter stay as they are: `bundles/desktop/chat/src/client/components/molecules/prompt-author.tsx:1,15`, `bundles/desktop/chat/src/client/components/molecules/thread-nav-rail.tsx:252`, `bundles/desktop/chat/src/client/components/molecules/comment-thread-pin.tsx:122-123`, `bundles/desktop/chat/src/client/components/organisms/conversation/nodes/delegated-turn-node.tsx:76`, `bundles/desktop/chat/src/client/components/organisms/agent-thread-controls.tsx:85`.
+- The lucide `BotIcon` sites outside the gutter stay as they are: `bundles/desktop/chat/src/client/components/molecules/prompt-author.tsx:1,15`, `bundles/desktop/chat/src/client/components/molecules/thread-nav-rail.tsx:252` (removed since: the trail shows only the reader's prompts and no longer imports `BotIcon`), `bundles/desktop/chat/src/client/components/molecules/comment-thread-pin.tsx:122-123`, `bundles/desktop/chat/src/client/components/organisms/conversation/nodes/delegated-turn-node.tsx:76`, `bundles/desktop/chat/src/client/components/organisms/agent-thread-controls.tsx:85`.
 - An agent's comment reply keeps drawing `ReaderAvatar` with the initials of `agent` (`bundles/desktop/chat/src/client/components/molecules/comment-line.tsx:124,136`); it becomes a square only because `ReaderAvatar` does (U5).
 - No brand color variant: every icon is mono.
 - No model icon anywhere else in the chat (trail previews, thread rail, footers, the author line).
@@ -752,7 +752,7 @@ In `bundles/desktop/chat/src/client/styles.css`:
 ### 11. The reader's marks as squares
 
 - Gutter: the user `::after` rule's `border-radius: 25%` (§10) covers sent turns, the prompt and the composer's stack, which all wear `data-turn-avatar="user"`.
-- `ReaderAvatar` (`bundles/desktop/chat/src/client/components/molecules/reader-avatar.tsx:14-15`): `rounded-full` becomes `rounded-[25%]`. Its five call sites (`comment-line.tsx:136`, `comment-thread-pin.tsx:125`, `prompt-author.tsx:19`, `thread-nav-rail.tsx:254`, `organisms/comment-entry.tsx:453`) do not change.
+- `ReaderAvatar` (`bundles/desktop/chat/src/client/components/molecules/reader-avatar.tsx:14-15`): `rounded-full` becomes `rounded-[25%]`. Its five call sites (`comment-line.tsx:136`, `comment-thread-pin.tsx:125`, `prompt-author.tsx:19`, `thread-nav-rail.tsx:254` (now `:149`), `organisms/comment-entry.tsx:453`) do not change.
 
 ## Flows
 

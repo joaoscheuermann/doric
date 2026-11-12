@@ -428,8 +428,8 @@ export const Conversation = memo(function Conversation({
     () => <ContentEditable className="min-w-0 flex-1 outline-none" />,
     [],
   );
-  // The scroll area whose viewport holds the transcript, for the nav rail beside it.
-  const scrollRoot = useRef<HTMLDivElement>(null);
+  // The wrapper holding the transcript's scroll area and the nav rail's column.
+  const trailRoot = useRef<HTMLDivElement>(null);
   const navigating = useRef(false);
   const following = useRef(true);
   // What the editor draws: the log's turns, and the two things the surface is
@@ -512,17 +512,14 @@ export const Conversation = memo(function Conversation({
   useEffect(() => () => fenceElements?.dispose(), [fenceElements]);
 
   return (
-    <div className="flex min-h-0 min-w-0 w-full flex-1">
-      <ScrollArea
-        ref={scrollRoot}
-        className="conversation-scroll min-h-0 min-w-0 w-full flex-1"
-      >
+    <div ref={trailRoot} className="flex min-h-0 min-w-0 w-full flex-1">
+      <ScrollArea className="conversation-scroll min-h-0 min-w-0 w-full flex-1">
         {/* The column holds the gutter mark inside its own left padding (the
-          mark's 1.875rem), so the text is 722 px wide in the 768 px column,
+          mark's 1.875rem), so the text is 730 px wide in the 768 px column,
           and its first line sits 2 px under the top (Figma `99:8035`
           `171:52891`). A pane narrower than the column widens both
           (`styles.css`). */}
-        <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col pl-[1.875rem] pr-4 pt-0.5 pb-80 text-sm font-light">
+        <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col pl-[1.875rem] pr-2 pt-0.5 pb-80 text-sm font-light">
           <ConversationThreadContext.Provider value={threadInfo}>
             <CommentThreadsContext.Provider value={threads}>
               <ChatBlocksContext.Provider value={blocksSource}>
@@ -581,16 +578,16 @@ export const Conversation = memo(function Conversation({
             </CommentThreadsContext.Provider>
           </ConversationThreadContext.Provider>
         </div>
-        {/* Inside the scroll view, pinned to it: the rail is absolutely
-          positioned against the scroll area's root, so the transcript scrolls
-          beneath it and the rail holds the viewport's right edge. */}
-        <ThreadNavRail
-          scrollRoot={scrollRoot}
-          turns={turns}
-          navigating={navigating}
-          following={following}
-        />
       </ScrollArea>
+      {/* The rail has its own column beside the scroll area, so the
+        transcript never scrolls beneath it; it measures and scrolls the
+        viewport through the wrapper both share. */}
+      <ThreadNavRail
+        root={trailRoot}
+        turns={turns}
+        navigating={navigating}
+        following={following}
+      />
     </div>
   );
 });

@@ -71,8 +71,10 @@ for how bundles work.
   its paragraph with an arrow that goes to it, and go out with the next send
   as a `<comments>` block before your `<message>`. The agent's `comment_reply`
   answers show as rows of its turn, with a pin coloured by the thread's state.
-- **Find your place.** A rail on the right edge has one handle per prompt,
-  queued receipt and subthread result; hovering one previews its words.
+- **Find your place.** A rail in its own column beside the conversation has
+  one handle per prompt of yours the host accepted (queued or unaccepted
+  prompts have none), then a "Go to the end" bar; hovering a handle previews
+  its words, and the bar's popover shows its own label.
 
 History is durable on the host and replayed, never invented locally: chat
 watches each opened Thread through `runtime.threads/v1` and treats its copy as

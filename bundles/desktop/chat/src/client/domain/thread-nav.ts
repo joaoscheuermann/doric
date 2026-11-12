@@ -1,69 +1,55 @@
 import type { Turn } from './projector.js';
 
 /**
- * The thread navigation rail's vocabulary: prompts, queued receipts and child
- * results become handles inside the conversation's scroll view. The
- * rules that choose the handles and name the one the reader is looking at are
- * pure functions of their arguments; the surface around them only measures the
- * DOM and hands the numbers over.
+ * The thread navigation rail's vocabulary: the reader's accepted prompts
+ * become handles beside the conversation's scroll view. The rules that choose
+ * the handles and name the one the reader is looking at are pure functions of
+ * their arguments; the surface around them only measures the DOM and hands the
+ * numbers over.
  */
 
-/** One handle on the rail and the block it jumps to. */
-type MarkerBase = {
-  /** The id carried by the corresponding transcript block. */
+/**
+ * One handle on the rail and the prompt block it jumps to: one per accepted
+ * reader prompt that no other Thread delegated. Queued receipts, parent
+ * instructions, subthread results and unaccepted drafts have none.
+ */
+export type ThreadMarker = {
+  /** The id the prompt's transcript block carries as `data-prompt-id`. */
   readonly promptId: string;
-  /** The words its hover's popover shows. */
+  /**
+   * The words its hover's popover shows: the prompt's trimmed text, or its
+   * comments' trimmed notes joined by newlines when the prompt has no words.
+   */
   readonly text: string;
 };
 
-export type ThreadMarker = MarkerBase &
-  (
-    | { readonly kind: 'prompt' | 'queued' }
-    | { readonly kind: 'result'; readonly threadId: string }
-  );
-
 /**
- * One marker per visible destination, in transcript order. A grouped queued
- * receipt is one block and gets one marker; its later execution is a separate
- * prompt block. Parent instructions and unaccepted drafts have no marker.
+ * One marker per accepted, non-delegated user prompt, in transcript order.
+ *
+ * Accepts the turns the surface draws and returns a new array; it never fails
+ * and never mutates `turns`. Queued turns, unaccepted drafts and prompts
+ * carrying `delegated` (a parent's instruction or a subthread's result) give no
+ * marker, so each returned `promptId` names a block a reader wrote.
  */
 export const threadMarkers = (
   turns: readonly Turn[],
 ): readonly ThreadMarker[] =>
   turns.flatMap((turn): readonly ThreadMarker[] => {
-    if (turn.type === 'queued')
-      return turn.items.length === 0
-        ? []
-        : [
-            {
-              kind: 'queued',
-              promptId: turn.promptId,
-              text: turn.items.map((item) => item.text.trim()).join('\n\n'),
-            },
-          ];
-    if (turn.type !== 'user' || !turn.accepted) return [];
-    if (turn.delegated?.kind === 'result')
-      return [
-        {
-          kind: 'result',
-          promptId: turn.promptId,
-          threadId: turn.delegated.threadId,
-          text: turn.delegated.text.trim(),
-        },
-      ];
+    if (turn.type !== 'user' || !turn.accepted || turn.delegated !== undefined)
+      return [];
     // A prompt of comments alone has no words; its notes stand for it.
     const words =
       turn.text.trim() ||
       turn.comments.map((comment) => comment.text.trim()).join('\n');
-    return turn.delegated === undefined
-      ? [{ kind: 'prompt', promptId: turn.promptId, text: words }]
-      : [];
+    return [{ promptId: turn.promptId, text: words }];
   });
 
 /**
- * Whether two readings of the rail are the same handles: the same kinds,
- * blocks, words and child Threads in the same order. A flush of deltas
- * changes no handle, and a rail that is told so keeps the handles it drew.
+ * Whether two readings of the rail are the same handles: the same blocks and
+ * words in the same order. True for the same array, or for arrays of equal
+ * length whose markers match on `promptId` and `text` index by index. A flush
+ * of deltas changes no handle, and a rail that is told so keeps the handles it
+ * drew. Never fails.
  */
 export const sameMarkers = (
   previous: readonly ThreadMarker[],
@@ -75,11 +61,8 @@ export const sameMarkers = (
       const other = next[index];
       return (
         other !== undefined &&
-        marker.kind === other.kind &&
         marker.promptId === other.promptId &&
-        marker.text === other.text &&
-        (marker.kind === 'result' ? marker.threadId : undefined) ===
-          (other.kind === 'result' ? other.threadId : undefined)
+        marker.text === other.text
       );
     }));
 
@@ -95,29 +78,29 @@ export const markerScrollTop = (
   Math.max(0, Math.min(blockTop - viewportHeight * READING_LINE, maxScroll));
 
 /**
- * The marker a scroll position speaks for: the block at or nearest above the
- * reading line, or a subthread result already visible below it. Results can
- * be too short to ever reach the reading line near the end of a thread.
- * `-1` when there is nothing to highlight.
+ * The marker a scroll position speaks for.
+ *
+ * Accepts each marker's block top in scroll-content pixels, in marker order
+ * (`null` when its block is not mounted or measured), with the viewport's
+ * scroll offset and height. Returns the index of the last measured block whose
+ * top is at or above the reading line (40% down the viewport). If no measured
+ * block has reached it, returns the first measured index. Returns `-1` when no
+ * block is measured. Never fails; the result is always `-1` or the index of a
+ * marker whose `top` is not `null`.
  */
 export const activeMarkerIndex = (
-  markers: readonly {
-    readonly kind: ThreadMarker['kind'];
-    readonly top: number | null;
-  }[],
+  markers: readonly { readonly top: number | null }[],
   viewportTop: number,
   viewportHeight: number,
 ): number => {
   const readingTop = viewportTop + viewportHeight * READING_LINE;
-  const viewportBottom = viewportTop + viewportHeight;
   let active = -1;
   let first = -1;
   for (let index = 0; index < markers.length; index += 1) {
-    const { kind, top } = markers[index];
+    const { top } = markers[index];
     if (top === null) continue;
     if (first === -1) first = index;
-    if (top <= readingTop || (kind === 'result' && top < viewportBottom))
-      active = index;
+    if (top <= readingTop) active = index;
   }
   return active === -1 ? first : active;
 };

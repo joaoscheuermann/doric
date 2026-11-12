@@ -109,36 +109,9 @@
     overflow-anchor: none;
   }
 
-  /*
-   * The trail's arrow is drawn in ink, not in a bar's translucent fill: where
-   * the chevron crosses its own stem, an alpha stroke composites twice and the
-   * joins read darker than the rest of the glyph. These are the same muted
-   * foreground laid over the conversation's background once — `in srgb`, the
-   * space alpha composites in — so each step is the colour an alpha bar shows
-   * there, opaque, with nothing to overlap.
-   */
-  .conversation-trail {
-    --trail-ink-60: color-mix(
-      in srgb,
-      var(--muted-foreground) 60%,
-      var(--background)
-    );
-    --trail-ink-45: color-mix(
-      in srgb,
-      var(--muted-foreground) 45%,
-      var(--background)
-    );
-    --trail-ink-30: color-mix(
-      in srgb,
-      var(--muted-foreground) 30%,
-      var(--background)
-    );
-  }
-
   /* A trail click briefly uses the same neutral surface as a hovered button.
      The solid shadow gives the tint breathing room without shifting scroll positions. */
-  .conversation-scroll
-  :is([data-prompt-id], [data-queued-prompt-id], [data-prompt-input]) {
+  .conversation-scroll :is([data-prompt-id], [data-prompt-input]) {
     border-radius: var(--radius-sm);
     background-color: transparent;
     box-shadow: 0 0 0 0.5rem transparent;
@@ -160,8 +133,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .conversation-scroll
-      :is([data-prompt-id], [data-queued-prompt-id], [data-prompt-input]) {
+    .conversation-scroll :is([data-prompt-id], [data-prompt-input]) {
       transition-duration: 0ms;
     }
   }
@@ -291,7 +263,8 @@
 }
 
 /* The column's own left padding holds the mark (1.875rem, `index.tsx`). A
-   pane narrower than the column's 48rem — a viewer beside the conversation —
+   scroll area narrower than the column's 48rem — a pane narrower than 48rem
+   plus the trail's 26 px column, as with a viewer beside the conversation —
    gives the text more room from the pane's edge and the first line more room
    from the top: 40 px and 16 px, as Figma's 432 px viewer draws them
    (`99:8508`, `36:21281`). The mark still stands whole inside the padding,

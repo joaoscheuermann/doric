@@ -353,10 +353,12 @@ the host still rejects unsafe switches.
 Conversation streaming preserves focus and selection in external controls; transcript
 updates do not restore the editor's DOM selection while a popover or another input
 owns focus.
-The Conversation Trail uses base widths of 10 pixels for accepted user prompts and
-grouped queued receipts, and 12 pixels for subthread results. Inactive queued
-handles use a subtle primary tint distinct from ordinary prompts; every active
-handle uses the full primary color, including during hover. Block handles
+The Conversation Trail sits in its own 26-pixel column beside the conversation's
+scroll area, not inside it; wheel and touch over that column scroll the
+conversation. It has one handle per accepted prompt the reader wrote, then a
+final "Go to the end" bar; queued receipts, delegated parent instructions and
+subthread results, and unsent drafts have no handle. Handles have a base width of 10
+pixels; every active handle uses the full primary color, including during hover. Block handles
 follow transcript order and jump instantly to place their block's top at 40%
 of the conversation viewport where scroll range permits; the first and last
 blocks stop at the available scroll edges. A clicked block handle stays
@@ -364,21 +366,15 @@ active until the reader scrolls manually, even when an edge prevents
 exact alignment. Clicking a trail handle briefly fills its destination with a
 neutral hover-like background, which fades by CSS transition to a subtle tint;
 manual scrolling or hovering the highlighted block clears that tint. Passive
-visibility changes never trigger this effect. Parent instructions and unsent
-drafts have no handle. Trail
-previews identify user prompts with the
-reader's avatar and subthread results with the agent's bot icon and name. A
-result preview also names its child Thread and links to it when that Thread is
-still in the loaded tree, with an open-tab icon; otherwise it shows the short ID.
-Hovering a handle makes it 17 pixels wide regardless of type, while its two
+visibility changes never trigger this effect. Trail previews identify user
+prompts with the reader's avatar.
+Hovering a handle makes it 17 pixels wide, while its two
 nearest neighbors step up in width and brightness. The cascade changes only the
 handles and ends when the pointer leaves the handle. The visible block's
-primary-color highlight remains independent. A subthread result takes the
-highlight as soon as it enters the visible conversation, even when it is too
-short to reach the viewport's top.
+primary-color highlight remains independent.
 Conversation scrolling rests at the end of the scrollable content: the surface
 opens with the caret in the prompt and the view at the end, and the trail's
-Prompt Input handle goes to the end. Opening or choosing that handle keeps the
+last handle, a bar labelled "Go to the end", goes to the end. Opening or choosing that handle keeps the
 view at the end while the transcript loads and grows, including late layout
 changes, until the reader scrolls away. A reader who scrolled away keeps the
 same visible content while later turns arrive; scrolling back within 32 pixels

@@ -289,6 +289,128 @@ test("a trail handle previews its prompt while hovered, keeps the preview throug
   assert.equal(document.activeElement, focused, 'closing it moves no focus');
 });
 
+const trail = (window: ChatWindow): HTMLElement | null =>
+  window.document.querySelector<HTMLElement>(
+    'nav[aria-label="Conversation trail"]',
+  );
+
+const trailHandle = (
+  window: ChatWindow,
+  label: string,
+): HTMLButtonElement | null =>
+  trail(window)?.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"]`,
+  ) ?? null;
+
+/** Jumps to the reader's first prompt, which then wears the trail's highlight. */
+const jumpToFirstPrompt = async (window: ChatWindow): Promise<Element> => {
+  const handle = trailHandle(window, 'User prompt 1');
+  assert.ok(handle, 'the prompt has a handle on the trail');
+  handle.click();
+  await settle();
+  const block = window.document.querySelector(
+    `[data-prompt-id="${promptId}"][data-trail-highlight]`,
+  );
+  assert.ok(block, 'the jump highlights the prompt it went to');
+  return block;
+};
+
+test('the trail stands in its own column beside the conversation, outside its scroll view', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+
+  const nav = trail(opened);
+  assert.ok(nav, 'the conversation has its trail');
+  assert.equal(
+    nav.closest('.conversation-scroll') === null,
+    true,
+    'the trail is not inside the scroll view',
+  );
+  const scroll = opened.document.querySelector('.conversation-scroll');
+  assert.ok(scroll, 'the conversation has its scroll view');
+  assert.equal(
+    [...scroll.querySelectorAll('button')].some((button) =>
+      nav.contains(button),
+    ),
+    false,
+    'no trail handle sits in the scroll view',
+  );
+});
+
+test("the trail's last handle goes to the end, says so in its preview without naming the reader, and highlights the prompt input", async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+  const { document } = opened;
+
+  const handles = [...(trail(opened)?.querySelectorAll('button') ?? [])];
+  const last = handles.at(-1);
+  assert.ok(last, 'the trail has handles');
+  assert.equal(last.getAttribute('aria-label'), 'Go to the end');
+
+  last.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  await settle();
+  const preview = [
+    ...document.querySelectorAll('[data-slot="popover-content"]'),
+  ].find((popup) => popup.textContent?.includes('Go to the end'));
+  assert.ok(preview, 'hovering the last handle previews where it goes');
+  assert.equal(
+    preview.textContent?.includes(READER_NAME),
+    false,
+    'the preview names no author',
+  );
+
+  last.click();
+  await settle();
+  assert.equal(
+    document
+      .querySelector('[data-prompt-input]')
+      ?.hasAttribute('data-trail-highlight'),
+    true,
+    'the prompt input wears the highlight',
+  );
+  // Closed before teardown: an open popover's portal outlives the window.
+  last.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+  await settle(300);
+});
+
+test('a wheel over the trail scrolls the conversation away from the prompt it jumped to', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+  const block = await jumpToFirstPrompt(opened);
+
+  trail(opened)?.dispatchEvent(
+    new WheelEvent('wheel', { bubbles: true, deltaY: -120 }),
+  );
+  await settle();
+  assert.equal(
+    block.hasAttribute('data-trail-highlight'),
+    false,
+    'the wheel releases the highlight',
+  );
+});
+
+test('a Page Up pressed on a trail handle leaves the prompt it jumped to', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+  const block = await jumpToFirstPrompt(opened);
+
+  const handle = trailHandle(opened, 'User prompt 1');
+  assert.ok(handle);
+  handle.focus();
+  handle.dispatchEvent(
+    new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp' }),
+  );
+  await settle();
+  assert.equal(
+    block.hasAttribute('data-trail-highlight'),
+    false,
+    'the key releases the highlight',
+  );
+  // Focus opened the handle's preview; let it close before the window does.
+  handle.blur();
+  await settle(300);
+});
+
 test("a reader's turn wears its mark in the gutter and trails a time-only footer", async () => {
   opened = await openChatWindow({ url, host: host(thread()) });
   // Dated now, so the footer's relative time is a word the test can name.
@@ -1090,7 +1212,7 @@ test("the column's own left padding holds the gutter mark, and the first line si
   // The mark hangs 1.875rem left of the text (styles.css), so the column's
   // left padding must be at least that for the mark to stay inside it.
   const classes = classSet(column);
-  for (const name of ['pl-[1.875rem]', 'pr-4', 'pt-0.5'])
+  for (const name of ['pl-[1.875rem]', 'pr-2', 'pt-0.5'])
     assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
 });
 

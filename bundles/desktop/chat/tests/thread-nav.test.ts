@@ -120,49 +120,32 @@ describe('threadMarkers', () => {
     );
   });
 
-  test('adds a result handle at the delegated turn but skips a parent instruction', () => {
+  test('takes no marker for a parent instruction or a delegated result', () => {
     const turns: readonly Turn[] = [
       user('a', 1),
-      delegated('d', 2),
       {
-        ...delegated('parent', 3),
+        ...delegated('parent', 2),
         delegated: { kind: 'parent', threadId: 'parent', text: 'task' },
       },
-      user('b', 4),
+      delegated('d', 3),
     ];
 
     assert.deepEqual(
-      threadMarkers(turns).map((marker) => [marker.kind, marker.promptId]),
-      [
-        ['prompt', 'a'],
-        ['result', 'd'],
-        ['prompt', 'b'],
-      ],
+      threadMarkers(turns).map((marker) => [marker.promptId, marker.text]),
+      [['a', 'question']],
     );
-    assert.equal(threadMarkers(turns)[1]?.text, 'done');
-    const result = threadMarkers(turns).find(
-      (marker) => marker.kind === 'result',
-    );
-    assert.equal(result?.threadId, 'child');
   });
 
-  test('adds one queued handle for a grouped receipt before its later prompt', () => {
+  test('takes no marker for a grouped queued receipt, only for its later prompt', () => {
     const markers = threadMarkers([
       queued('a', 1),
-      user('a', 2),
+      user('a', 2, 'First queued prompt'),
       agent('a', 3),
     ]);
 
     assert.deepEqual(
-      markers.map((marker) => [marker.kind, marker.promptId]),
-      [
-        ['queued', 'a'],
-        ['prompt', 'a'],
-      ],
-    );
-    assert.equal(
-      markers[0]?.text,
-      'First queued prompt\n\nSecond queued prompt',
+      markers.map((marker) => [marker.promptId, marker.text]),
+      [['a', 'First queued prompt']],
     );
   });
 
@@ -190,7 +173,6 @@ describe('sameMarkers', () => {
     user('a', 1),
     agent('a', 2),
     delegated('d', 3),
-    queued('q', 4),
   ];
 
   test('reads two readings of the same transcript as the same handles', () => {
@@ -198,14 +180,14 @@ describe('sameMarkers', () => {
   });
 
   test('reads a streamed answer as changing no handle', () => {
-    const streamed = [...turns, { ...agent('q', 5), text: 'more' }];
+    const streamed = [...turns, { ...agent('d', 5), text: 'more' }];
     assert.equal(
       sameMarkers(threadMarkers(turns), threadMarkers(streamed)),
       true,
     );
   });
 
-  test('reads a new prompt, other words or another child as new handles', () => {
+  test('reads a new prompt or other words as new handles', () => {
     const before = threadMarkers(turns);
     assert.equal(
       sameMarkers(before, threadMarkers([...turns, user('b', 6)])),
@@ -215,21 +197,6 @@ describe('sameMarkers', () => {
       sameMarkers(
         before,
         threadMarkers([user('a', 1, 'other words'), ...turns.slice(1)]),
-      ),
-      false,
-    );
-    assert.equal(
-      sameMarkers(
-        before,
-        threadMarkers([
-          turns[0] as Turn,
-          turns[1] as Turn,
-          {
-            ...delegated('d', 3),
-            delegated: { ...delegatedInput, threadId: 'other' },
-          },
-          turns[3] as Turn,
-        ]),
       ),
       false,
     );
@@ -249,7 +216,7 @@ describe('markerScrollTop', () => {
 
 describe('activeMarkerIndex', () => {
   const prompts = (tops: readonly (number | null)[]) =>
-    tops.map((top) => ({ kind: 'prompt' as const, top }));
+    tops.map((top) => ({ top }));
 
   test('names the prompt the viewport top is at', () => {
     assert.equal(activeMarkerIndex(prompts([100, 500]), 500, 300), 1);
@@ -279,16 +246,6 @@ describe('activeMarkerIndex', () => {
   test('highlights nothing when no marker is drawn', () => {
     assert.equal(activeMarkerIndex([], 300, 300), -1);
     assert.equal(activeMarkerIndex(prompts([null, null]), 300, 300), -1);
-  });
-
-  test('highlights a subthread result when it appears below the viewport top', () => {
-    const markers = [
-      { kind: 'prompt' as const, top: 100 },
-      { kind: 'result' as const, top: 550 },
-    ];
-
-    assert.equal(activeMarkerIndex(markers, 300, 300), 1);
-    assert.equal(activeMarkerIndex(markers, 300, 250), 0);
   });
 });
 

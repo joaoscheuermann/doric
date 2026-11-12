@@ -1,111 +1,39 @@
 /**
- * The thin rail inside the conversation's scroll view: one handle per prompt,
- * queued receipt and subthread result, stacked down the right edge and pinned to
- * the viewport's vertical centre. A handle under the reader's hover widens with
- * an animated transition and opens a popover to its left with the prompt's
- * words; the block the reader is looking at wears the app's primary colour.
- * The last handle is the way to the end of the conversation: a down arrow, the
- * one glyph that says "down there", that throws the scroll to the end and
- * follows new content until the reader scrolls again. It grows in place under
- * the pointer — a scale on its own centre, the way a canvas comment pin grows —
- * instead of the bars' widening, so it never looks like a prompt's handle. The
- * column is a pixel wider than the bars need, which is what lets the arrow be
- * bigger than they are; the bars keep their own look and right inset. The
- * arrow's row gives up two of the four pixels the bars inset by, because the
- * glyph sits inset in its own box (lucide draws it 4:24 in from each side):
- * four minus that inset is the bars' edge on screen, and the two end up on one
- * line.
+ * The thin rail beside the conversation's scroll view: one handle per prompt
+ * the reader wrote, stacked down its own column and pinned to the viewport's
+ * vertical centre. A handle under the reader's hover widens with an animated
+ * transition and opens a popover to its left with the prompt's words; the
+ * block the reader is looking at wears the app's primary colour. The last
+ * handle is a bar like the others, labelled "Go to the end": it throws the
+ * scroll to the end and follows new content until the reader scrolls again.
+ * The column is 26px wide, a 10px bar box between 8px of padding on each side,
+ * and the surface lays it out as a sibling of the ScrollArea, not inside it.
  */
 
-import { Button } from 'desktop/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
 import { ReaderAvatar } from 'desktop/ui/reader-avatar';
 import { Separator } from 'desktop/ui/separator';
 import { cn } from 'desktop/ui/utils';
-import { ArrowDownIcon, ArrowUpRightIcon, BotIcon } from 'lucide-react';
 import type { RefObject } from 'react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
-import {
-  AGENT_NAME,
-  type AuthorRole,
-  READER_NAME,
-} from '../../domain/conversation-authors.js';
+import { READER_NAME } from '../../domain/conversation-authors.js';
 import type { Turn } from '../../domain/projector.js';
 import type { ThreadMarker } from '../../domain/thread-nav.js';
 import { markerEmphasis } from '../../domain/thread-nav.js';
-import { useDelegatedSource } from '../../hooks/use-delegated-source.js';
 import { useThreadNav } from '../../hooks/use-thread-nav.js';
 
 /** How long a hover's popover stays open once the pointer has left its handle. */
 const CLOSE_DELAY = 250;
 
-const HANDLE_WIDTHS = {
-  prompt: ['w-[13px]', 'w-3', 'w-[11px]', 'w-2.5'],
-  result: ['w-[15px]', 'w-3.5', 'w-[13px]', 'w-3'],
-} as const;
+const HANDLE_WIDTHS = ['w-[13px]', 'w-3', 'w-[11px]', 'w-2.5'] as const;
 
-const HANDLE_COLORS = {
-  ordinary: [
-    'bg-foreground',
-    'bg-muted-foreground/60',
-    'bg-muted-foreground/45',
-    'bg-muted-foreground/30',
-  ],
-  queued: ['bg-primary/50', 'bg-primary/35', 'bg-primary/25', 'bg-primary/20'],
-} as const;
-
-/**
- * The arrow is ink, not a bar's translucent fill: where the chevron crosses its
- * own stem an alpha stroke would composite twice and the joins would read
- * darker than the rest. `--trail-ink-*` (the bundle's sheet) is the muted
- * foreground laid over the conversation's background once, so the arrow takes
- * one even colour at each step — the colour a bar's alpha shows there.
- */
-const ARROW_COLORS = [
-  'text-foreground',
-  'text-[color:var(--trail-ink-60)]',
-  'text-[color:var(--trail-ink-45)]',
-  'text-[color:var(--trail-ink-30)]',
+const HANDLE_COLORS = [
+  'bg-foreground',
+  'bg-muted-foreground/60',
+  'bg-muted-foreground/45',
+  'bg-muted-foreground/30',
 ] as const;
-
-/**
- * Lucide draws every icon at a stroke of 2 on a 24 box, which at the arrow's
- * 14px is a hair over a pixel. Half a unit more gives the glyph the weight the
- * bars carry there without turning it heavy.
- */
-const ARROW_STROKE_WIDTH = 2.5;
-
-/** The child Thread that produced a result, using the same navigation as its transcript block. */
-function ResultThreadLink({ threadId }: { readonly threadId: string }) {
-  const source = useDelegatedSource(threadId);
-  if (source.open === undefined)
-    return (
-      <span
-        className={cn('min-w-0 truncate', source.label.mono && 'font-mono')}
-        title={threadId}
-      >
-        {source.label.value}
-      </span>
-    );
-  return (
-    <span className="min-w-0 flex-1">
-      <Button
-        variant="link"
-        size="xs"
-        className="h-auto max-w-full min-w-0 justify-start gap-1 overflow-hidden px-0 py-0 text-xs font-normal"
-        aria-label={`Open subagent tab: ${source.label.value}`}
-        title={threadId}
-        onClick={source.open}
-      >
-        <span className="min-w-0 truncate border-b border-transparent text-left group-hover/button:border-current group-focus-visible/button:border-current">
-          {source.label.value}
-        </span>
-        <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden="true" />
-      </Button>
-    </span>
-  );
-}
 
 /**
  * One handle on the rail: the pill that widens, and the popover it opens.
@@ -117,24 +45,18 @@ function ResultThreadLink({ threadId }: { readonly threadId: string }) {
  */
 const RailHandle = memo(function RailHandle({
   active = false,
-  author,
   emphasis = 3,
   hover,
   id,
-  input = false,
   label,
-  kind = 'prompt',
   marker,
   onHandleHover,
   onJump,
   open,
   text,
-  threadId,
 }: {
   /** Whether the reader is looking at this handle's prompt, and it takes the highlight. */
   readonly active?: boolean;
-  /** The identity shown beneath this handle's preview, when it has one. */
-  readonly author?: AuthorRole;
   readonly emphasis?: ReturnType<typeof markerEmphasis>;
   /** Opens this handle's popover while the pointer or caret rests on it. */
   readonly hover: (id: string | null) => void;
@@ -142,21 +64,16 @@ const RailHandle = memo(function RailHandle({
   readonly id: string;
   /** The handle's own name, the only thing a screen reader says. */
   readonly label: string;
-  readonly kind?: ThreadMarker['kind'];
-  /** The block this handle jumps to; the input handle, the last, names none. */
+  /** The prompt this handle jumps to; the last handle, to the end, names none. */
   readonly marker?: ThreadMarker;
   /** Tracks pointer hover on the handle, separately from the popover. */
   readonly onHandleHover: (id: string | null) => void;
-  /** Jumps to the handle's block, or to the input when it names none. */
+  /** Jumps to the handle's block, or to the end when it names none. */
   readonly onJump: (marker: ThreadMarker | undefined) => void;
-  /** This is the way to the input: a down arrow, aligned with the bars' edge. */
-  readonly input?: boolean;
   /** The handle's popover is open. */
   readonly open: boolean;
   /** The popover's content; a handle with no words shows no popover. */
   readonly text: string;
-  /** The child Thread that produced this result. */
-  readonly threadId?: string;
 }) {
   return (
     <Popover
@@ -179,11 +96,7 @@ const RailHandle = memo(function RailHandle({
             type="button"
             aria-current={active ? 'location' : undefined}
             aria-label={label}
-            className={
-              input
-                ? 'group flex h-4 w-7 cursor-pointer items-center justify-end pr-0.5'
-                : 'group flex h-2.5 w-7 cursor-pointer justify-end p-1'
-            }
+            className="group flex h-2.5 w-full cursor-pointer justify-end px-2 py-1"
             onBlur={() => hover(null)}
             onClick={() => onJump(marker)}
             onFocus={() => hover(id)}
@@ -198,28 +111,13 @@ const RailHandle = memo(function RailHandle({
           />
         }
       >
-        {input ? (
-          <ArrowDownIcon
-            aria-hidden="true"
-            strokeWidth={ARROW_STROKE_WIDTH}
-            className={cn(
-              'size-3.5 shrink-0 origin-center transition-transform duration-120 ease-out group-hover:scale-110 group-focus-visible:scale-110 motion-reduce:transition-none',
-              ARROW_COLORS[emphasis],
-            )}
-          />
-        ) : (
-          <span
-            className={cn(
-              'h-full shrink-0 transition-[width,background-color] duration-150 ease-out group-hover:w-[17px] motion-reduce:transition-none',
-              HANDLE_WIDTHS[kind === 'result' ? 'result' : 'prompt'][emphasis],
-              active
-                ? 'bg-primary'
-                : HANDLE_COLORS[kind === 'queued' ? 'queued' : 'ordinary'][
-                    emphasis
-                  ],
-            )}
-          />
-        )}
+        <span
+          className={cn(
+            'h-full shrink-0 transition-[width,background-color] duration-150 ease-out group-hover:w-[17px] motion-reduce:transition-none',
+            HANDLE_WIDTHS[emphasis],
+            active ? 'bg-primary' : HANDLE_COLORS[emphasis],
+          )}
+        />
       </PopoverTrigger>
       {/* The popover never moves the focus on its own — both ends are cut
         deliberately. By default it focuses its popup on open and refocuses
@@ -244,26 +142,12 @@ const RailHandle = memo(function RailHandle({
             {text}
           </span>
         </div>
-        {author !== undefined && (
+        {marker !== undefined && (
           <>
             <Separator />
             <footer className="flex min-w-0 items-center gap-1.5 bg-sidebar px-4 py-3 text-xs text-muted-foreground">
-              {author === 'agent' ? (
-                <BotIcon className="size-4.5 shrink-0" aria-hidden="true" />
-              ) : (
-                <ReaderAvatar name={READER_NAME} />
-              )}
-              <span className="shrink-0">
-                {author === 'agent' ? AGENT_NAME : READER_NAME}
-              </span>
-              {threadId !== undefined && (
-                <>
-                  <span className="shrink-0" aria-hidden="true">
-                    ·
-                  </span>
-                  <ResultThreadLink threadId={threadId} />
-                </>
-              )}
+              <ReaderAvatar name={READER_NAME} />
+              <span className="shrink-0">{READER_NAME}</span>
             </footer>
           </>
         )}
@@ -272,28 +156,36 @@ const RailHandle = memo(function RailHandle({
   );
 });
 
+/**
+ * Renders the rail's own 26px column: 8px padding, a 10px bar box, 8px
+ * padding. Place it beside the conversation's ScrollArea, inside the element
+ * `root` points to. It holds one handle per `ThreadMarker`, then a final bar
+ * labelled "Go to the end". With no markers, only that last bar shows. While
+ * `root` is unset or holds no scroll viewport, nothing is active and clicking a
+ * handle does nothing.
+ */
 export function ThreadNavRail({
   turns,
-  scrollRoot,
+  root,
   navigating,
   following,
 }: {
   /** The conversation's turns, as the surface draws them. */
   readonly turns: readonly Turn[];
-  /** The conversation's scroll area root; the rail measures its viewport. */
-  readonly scrollRoot: RefObject<HTMLElement | null>;
+  /** The element holding the conversation's scroll area and this rail's column. */
+  readonly root: RefObject<HTMLElement | null>;
+  /** Set while a jump scrolls, so the surface's scroll handlers leave it alone. */
   readonly navigating: RefObject<boolean>;
+  /** Whether the conversation follows its end; the last handle turns it on. */
   readonly following: RefObject<boolean>;
 }) {
-  const nav = useThreadNav({ turns, scrollRoot, navigating, following });
+  const nav = useThreadNav({ turns, root, navigating, following });
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
   const hoveredIndex =
     hoveredHandle === 'prompt-input'
       ? nav.markers.length
-      : nav.markers.findIndex(
-          (marker) => `${marker.kind}:${marker.promptId}` === hoveredHandle,
-        );
-  // The one handle whose popover is open, keyed by its label. Hovering a
+      : nav.markers.findIndex((marker) => marker.promptId === hoveredHandle);
+  // The one handle whose popover is open, keyed by its `id`. Hovering a
   // popover away closes it after a short delay, so the reader can cross the gap
   // to the popover without it vanishing under the pointer.
   const [open, setOpen] = useState<string | null>(null);
@@ -325,54 +217,37 @@ export function ThreadNavRail({
   );
 
   return (
-    <nav
-      aria-label="Conversation trail"
-      className="conversation-trail absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col items-end"
-    >
-      {nav.markers.map((marker, index) => {
-        const id = `${marker.kind}:${marker.promptId}`;
-        const label =
-          marker.kind === 'result'
-            ? 'Subthread result'
-            : marker.kind === 'queued'
-              ? 'Queued entry'
-              : 'User prompt';
-        return (
+    <div className="relative w-[26px] shrink-0">
+      <nav
+        aria-label="Conversation trail"
+        className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 flex-col"
+      >
+        {nav.markers.map((marker, index) => (
           <RailHandle
-            key={id}
+            key={marker.promptId}
             active={index === nav.active}
             emphasis={markerEmphasis(index, hoveredIndex)}
-            author={
-              marker.kind === 'prompt'
-                ? 'user'
-                : marker.kind === 'result'
-                  ? 'agent'
-                  : undefined
-            }
             hover={hover}
-            id={id}
-            kind={marker.kind}
-            label={`${label} ${index + 1}`}
+            id={marker.promptId}
+            label={`User prompt ${index + 1}`}
             marker={marker}
             onHandleHover={setHoveredHandle}
             onJump={jump}
-            open={open === id}
+            open={open === marker.promptId}
             text={marker.text}
-            threadId={marker.kind === 'result' ? marker.threadId : undefined}
           />
-        );
-      })}
-      <RailHandle
-        emphasis={markerEmphasis(nav.markers.length, hoveredIndex)}
-        hover={hover}
-        id="prompt-input"
-        input
-        label="Prompt input"
-        onHandleHover={setHoveredHandle}
-        onJump={jump}
-        open={open === 'prompt-input'}
-        text="Prompt input"
-      />
-    </nav>
+        ))}
+        <RailHandle
+          emphasis={markerEmphasis(nav.markers.length, hoveredIndex)}
+          hover={hover}
+          id="prompt-input"
+          label="Go to the end"
+          onHandleHover={setHoveredHandle}
+          onJump={jump}
+          open={open === 'prompt-input'}
+          text="Go to the end"
+        />
+      </nav>
+    </div>
   );
 }

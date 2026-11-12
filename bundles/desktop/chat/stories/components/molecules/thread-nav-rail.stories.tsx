@@ -2,7 +2,8 @@
 // `conversation-scroll` area whose blocks carry the transcript's own data
 // attributes (`data-prompt-id`, `data-result-prompt-id`,
 // `data-queued-prompt-id`, `data-prompt-input`), each with the words its turn
-// holds, and the rail inside it over the projected turns of a fixture Thread.
+// holds, and the rail in its own column beside it, both in the wrapper the
+// rail's `root` points to, over the projected turns of a fixture Thread.
 
 import { ScrollArea } from 'desktop/ui/scroll-area';
 import { useEffect, useMemo, useRef } from 'react';
@@ -57,22 +58,22 @@ function Rail({
   readonly previewIndex?: number;
 }) {
   installChatHost();
-  const scrollRoot = useRef<HTMLDivElement | null>(null);
+  const root = useRef<HTMLDivElement | null>(null);
   const navigating = useRef(false);
   const following = useRef(false);
   useEffect(() => {
     if (previewIndex === undefined) return;
-    scrollRoot.current
+    root.current
       ?.querySelectorAll<HTMLButtonElement>('nav button')
       [previewIndex]?.focus();
   }, [previewIndex]);
   return (
-    <div className="flex h-[480px] min-h-0 overflow-hidden rounded-lg border bg-background">
-      <ScrollArea
-        ref={scrollRoot}
-        className="conversation-scroll min-h-0 w-full flex-1"
-      >
-        <div className="mx-auto flex max-w-2xl flex-col gap-6 px-4 pt-6 pb-40 font-conversation text-sm font-light">
+    <div
+      ref={root}
+      className="flex h-[480px] min-h-0 overflow-hidden rounded-lg border bg-background"
+    >
+      <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
+        <div className="mx-auto flex max-w-2xl flex-col gap-6 pl-4 pr-2 pt-6 pb-40 font-conversation text-sm font-light">
           {turns.map((turn, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: fixture turns are static
             <Block key={index} turn={turn} />
@@ -81,13 +82,13 @@ function Rail({
             Ask the agent to search, edit or build in this project…
           </div>
         </div>
-        <ThreadNavRail
-          turns={turns}
-          scrollRoot={scrollRoot}
-          navigating={navigating}
-          following={following}
-        />
       </ScrollArea>
+      <ThreadNavRail
+        turns={turns}
+        root={root}
+        navigating={navigating}
+        following={following}
+      />
     </div>
   );
 }
@@ -112,20 +113,8 @@ export const Prompts = {
   render: () => <Fixture threads={[threadIds.conversation]} />,
 };
 
-export const QueuedReceipts = {
-  render: () => <Fixture threads={[threadIds.queued]} />,
-};
-
-export const SubthreadResult = {
-  render: () => <Fixture threads={[threadIds.delegated]} />,
-};
-
 export const PreviewOpen = {
   render: () => <Fixture threads={[threadIds.conversation]} previewIndex={0} />,
-};
-
-export const ResultPreviewOpen = {
-  render: () => <Fixture threads={[threadIds.delegated]} previewIndex={1} />,
 };
 
 export const ManyHandles = {
