@@ -353,8 +353,9 @@ the host still rejects unsafe switches.
 Conversation streaming preserves focus and selection in external controls; transcript
 updates do not restore the editor's DOM selection while a popover or another input
 owns focus.
-The Conversation Trail sits in its own 26-pixel column beside the conversation's
-scroll area, not inside it; wheel and touch over that column scroll the
+The Conversation Trail sits in its own 26-pixel column to the left of the
+conversation's scroll area, not inside it, so the scrollbar stays at the pane's
+right edge; its hover popover opens to the right of the handle; wheel and touch over that column scroll the
 conversation. It has one handle per accepted prompt the reader wrote, then a
 final "Go to the end" bar; queued receipts, delegated parent instructions and
 subthread results, and unsent drafts have no handle. Handles have a base width of 10

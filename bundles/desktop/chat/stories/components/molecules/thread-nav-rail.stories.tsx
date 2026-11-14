@@ -72,8 +72,14 @@ function Rail({
       ref={root}
       className="flex h-[480px] min-h-0 overflow-hidden rounded-lg border bg-background"
     >
+      <ThreadNavRail
+        turns={turns}
+        root={root}
+        navigating={navigating}
+        following={following}
+      />
       <ScrollArea className="conversation-scroll min-h-0 w-full flex-1">
-        <div className="mx-auto flex max-w-2xl flex-col gap-6 pl-4 pr-2 pt-6 pb-40 font-conversation text-sm font-light">
+        <div className="mx-auto flex max-w-2xl flex-col gap-6 px-4 pt-6 pb-40 font-conversation text-sm font-light">
           {turns.map((turn, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: fixture turns are static
             <Block key={index} turn={turn} />
@@ -83,12 +89,6 @@ function Rail({
           </div>
         </div>
       </ScrollArea>
-      <ThreadNavRail
-        turns={turns}
-        root={root}
-        navigating={navigating}
-        following={following}
-      />
     </div>
   );
 }

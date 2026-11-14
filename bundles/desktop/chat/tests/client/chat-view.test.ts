@@ -276,6 +276,11 @@ test("a trail handle previews its prompt while hovered, keeps the preview throug
   handle.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
   await settle();
   assert.ok(preview(), 'hovering the handle previews its prompt');
+  assert.equal(
+    preview()?.getAttribute('data-side'),
+    'right',
+    'the preview opens to the right of the trail',
+  );
   assert.equal(document.activeElement, focused, 'the preview takes no focus');
 
   handle.click();
@@ -315,7 +320,7 @@ const jumpToFirstPrompt = async (window: ChatWindow): Promise<Element> => {
   return block;
 };
 
-test('the trail stands in its own column beside the conversation, outside its scroll view', async () => {
+test('the trail stands in its own column left of the conversation, outside its scroll view', async () => {
   opened = await openChatWindow({ url, host: host(thread()) });
   await deliver(opened, exchange);
 
@@ -334,6 +339,15 @@ test('the trail stands in its own column beside the conversation, outside its sc
     ),
     false,
     'no trail handle sits in the scroll view',
+  );
+  const parent = scroll.parentElement;
+  assert.ok(parent, 'the scroll view has a parent');
+  const column = [...parent.children].find((child) => child.contains(nav));
+  assert.ok(column, 'the trail column shares a parent with the scroll view');
+  assert.ok(
+    column.compareDocumentPosition(scroll) &
+      opened.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'the trail column comes before the scroll view',
   );
 });
 
@@ -1212,8 +1226,9 @@ test("the column's own left padding holds the gutter mark, and the first line si
   // The mark hangs 1.875rem left of the text (styles.css), so the column's
   // left padding must be at least that for the mark to stay inside it.
   const classes = classSet(column);
-  for (const name of ['pl-[1.875rem]', 'pr-2', 'pt-0.5'])
+  for (const name of ['pl-[1.875rem]', 'pr-4', 'pt-0.5'])
     assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+  assert.ok(!classes.includes('pr-2'), `no pr-2 in ${classes.join(' ')}`);
 });
 
 // R-9.7 and R-9.9: another Thread's input. Chat draws it itself until a

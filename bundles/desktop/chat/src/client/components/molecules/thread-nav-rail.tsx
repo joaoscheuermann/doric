@@ -1,13 +1,14 @@
 /**
- * The thin rail beside the conversation's scroll view: one handle per prompt
+ * The thin rail left of the conversation's scroll view: one handle per prompt
  * the reader wrote, stacked down its own column and pinned to the viewport's
  * vertical centre. A handle under the reader's hover widens with an animated
- * transition and opens a popover to its left with the prompt's words; the
+ * transition and opens a popover to its right with the prompt's words; the
  * block the reader is looking at wears the app's primary colour. The last
  * handle is a bar like the others, labelled "Go to the end": it throws the
  * scroll to the end and follows new content until the reader scrolls again.
  * The column is 26px wide, a 10px bar box between 8px of padding on each side,
- * and the surface lays it out as a sibling of the ScrollArea, not inside it.
+ * and the surface lays it out as a sibling before the ScrollArea, not inside
+ * it, so the rail sits to the conversation's left.
  */
 
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
@@ -96,7 +97,7 @@ const RailHandle = memo(function RailHandle({
             type="button"
             aria-current={active ? 'location' : undefined}
             aria-label={label}
-            className="group flex h-2.5 w-full cursor-pointer justify-end px-2 py-1"
+            className="group flex h-2.5 w-full cursor-pointer justify-start px-2 py-1"
             onBlur={() => hover(null)}
             onClick={() => onJump(marker)}
             onFocus={() => hover(id)}
@@ -126,7 +127,7 @@ const RailHandle = memo(function RailHandle({
         the reader moves it, so `onFocus`/`onBlur` stay honest. */}
       <PopoverContent
         align="center"
-        side="left"
+        side="right"
         className="w-96 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden border border-border bg-background p-0 font-conversation text-foreground ring-0 duration-0"
         initialFocus={false}
         finalFocus={false}
@@ -158,7 +159,7 @@ const RailHandle = memo(function RailHandle({
 
 /**
  * Renders the rail's own 26px column: 8px padding, a 10px bar box, 8px
- * padding. Place it beside the conversation's ScrollArea, inside the element
+ * padding. Place it before the conversation's ScrollArea, inside the element
  * `root` points to. It holds one handle per `ThreadMarker`, then a final bar
  * labelled "Go to the end". With no markers, only that last bar shows. While
  * `root` is unset or holds no scroll viewport, nothing is active and clicking a

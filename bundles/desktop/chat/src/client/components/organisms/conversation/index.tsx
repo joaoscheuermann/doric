@@ -513,13 +513,23 @@ export const Conversation = memo(function Conversation({
 
   return (
     <div ref={trailRoot} className="flex min-h-0 min-w-0 w-full flex-1">
+      {/* The rail has its own column left of the scroll area, so the
+        transcript never scrolls beneath it and the scrollbar stays at the
+        pane's right edge; it measures and scrolls the viewport through the
+        wrapper both share. */}
+      <ThreadNavRail
+        root={trailRoot}
+        turns={turns}
+        navigating={navigating}
+        following={following}
+      />
       <ScrollArea className="conversation-scroll min-h-0 min-w-0 w-full flex-1">
         {/* The column holds the gutter mark inside its own left padding (the
-          mark's 1.875rem), so the text is 730 px wide in the 768 px column,
+          mark's 1.875rem), so the text is 722 px wide in the 768 px column,
           and its first line sits 2 px under the top (Figma `99:8035`
           `171:52891`). A pane narrower than the column widens both
           (`styles.css`). */}
-        <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col pl-[1.875rem] pr-2 pt-0.5 pb-80 text-sm font-light">
+        <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col pl-[1.875rem] pr-4 pt-0.5 pb-80 text-sm font-light">
           <ConversationThreadContext.Provider value={threadInfo}>
             <CommentThreadsContext.Provider value={threads}>
               <ChatBlocksContext.Provider value={blocksSource}>
@@ -579,15 +589,6 @@ export const Conversation = memo(function Conversation({
           </ConversationThreadContext.Provider>
         </div>
       </ScrollArea>
-      {/* The rail has its own column beside the scroll area, so the
-        transcript never scrolls beneath it; it measures and scrolls the
-        viewport through the wrapper both share. */}
-      <ThreadNavRail
-        root={trailRoot}
-        turns={turns}
-        navigating={navigating}
-        following={following}
-      />
     </div>
   );
 });
