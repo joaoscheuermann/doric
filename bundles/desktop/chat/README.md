@@ -17,14 +17,24 @@ for how bundles work.
 - **UI:**
   - `<chat-view>`, the conversation, at
     `/projects/:projectId/threads/:threadId`, a child route of the
-    [`layout`](../layout/README.md) bundle's `/`;
+    [`layout`](../layout/README.md) bundle's `/`. `<chat-view>` reads
+    `--chat-footer-height`, the height of a footer floating over its
+    conversation's bottom, set by its host on an ancestor; its scrollbar ends
+    and its scroll padding stops that far above the bottom; unset, 0. Its
+    scroll area is isolated (`isolation: isolate`), so a footer that follows
+    it paints over the transcript's layers with no `z-index`. Known
+    limitations: the caret of a prompt being typed can stop under a floating
+    footer (a follow-up is planned), and a wheel over the footer's band does
+    not scroll the conversation;
   - `<chat-composer>`, the send, stop, resume and save controls, a
     `layout.footer` item (order 40) present with or without a Thread. On an
     agent Thread — one an agent spawned — it draws the reader's three levers
     instead: pause the run, continue the prompt it left unfinished, or retry
     the last one (`domain/agent-control.ts`);
   - `<chat-thread-panel>`, a conversation with its own footer, which the layout
-    uses for a child Thread's tab;
+    uses for a child Thread's tab. `<chat-thread-panel>`'s own footer floats
+    over its conversation's bottom 36 px and sets `--chat-footer-height` to
+    that height itself;
   - `<chat-readonly-markdown text>`, the conversation's read-only Markdown for
     another bundle's block element;
   - `<chat-block>`, the fallback for a block no renderer claims: its type, id,

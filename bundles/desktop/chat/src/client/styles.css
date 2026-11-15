@@ -2,8 +2,15 @@
  * The chat bundle's styles (design §9.4): the utilities its components use,
  * over the platform theme the window loads once, and the conversation's own
  * rules moved from the renderer's sheet with their layering unchanged: the
- * Lexical placeholder and the conversation scroll and trail rules in the base
- * layer, the queue-edit surface and the markdown theme unlayered.
+ * Lexical placeholder and the scroll viewport and trail rules in the base
+ * layer; the column's rules, the `.conversation-scroll` pane rule, the
+ * queue-edit surface and the markdown theme unlayered. The pane rule also
+ * isolates the scroll area (`isolation: isolate`, conversation-footer spec, D7,
+ * §6), so the layers inside the transcript stack within it and a footer floating
+ * over it paints on top with no `z-index`; layout 3.0.3 relies on it. The rules
+ * a floating footer needs are unlayered too (§3, §4): the conversation's vertical
+ * bar and scroll padding, read from `--chat-footer-height`, and the viewer
+ * footer's fill and blur.
  *
  * The layer order is stated here, not only in the platform theme: a preview (or
  * a page) that loads this sheet before `theme.css` would otherwise create the
@@ -260,6 +267,31 @@
 .conversation-scroll {
   container-type: inline-size;
   font-weight: 300;
+  isolation: isolate;
+}
+
+/* `--chat-footer-height` is the height of a footer floating over the bottom of
+   the conversation: the footer's owner sets it to 2.25rem on the footer's
+   positioned parent (`<chat-thread-panel>`'s own footer, and from layout 3.0.3
+   the layout's conversation footer); unset, it is 0. The
+   vertical bar ends where that footer begins (only its height changes, so it
+   keeps its right edge), and a block the browser scrolls into view stops above
+   it. */
+.conversation-scroll
+> [data-slot='scroll-area-scrollbar'][data-orientation='vertical'] {
+  height: calc(100% - var(--chat-footer-height, 0px));
+}
+
+.conversation-scroll > [data-slot='scroll-area-viewport'] {
+  scroll-padding-bottom: var(--chat-footer-height, 0px);
+}
+
+/* The viewer footer (`<chat-thread-panel>`'s own footer) floats over the
+   conversation (conversation-footer spec, D2): the card's background at 70 %
+   with a 2 px backdrop blur, so the transcript shows through it. */
+[data-slot='chat-thread-footer'] {
+  background-color: color-mix(in oklab, var(--background) 70%, transparent);
+  backdrop-filter: blur(2px);
 }
 
 /* The column's own left padding holds the mark (1.875rem, `index.tsx`). A

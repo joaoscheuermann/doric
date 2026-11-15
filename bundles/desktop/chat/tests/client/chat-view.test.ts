@@ -1147,11 +1147,32 @@ test('a child conversation footer stops its Thread while the main Thread stays s
 // The inset-card look (ui-redesign phase 3, Figma `99:8035`, `99:8508`): the
 // footer's composer stands 8 px after what precedes it with no rule between,
 // its button is the prototype's small one, and a sub-thread viewer's footer
-// is the band the conversation footer is.
+// is a 36 px band floating over its conversation (conversation-footer spec).
 
-/** The classes of the conversation footer band (`workspace-view.tsx`). */
+/**
+ * The classes of the floating viewer footer band (conversation-footer
+ * spec, D2): 36 px over the conversation's bottom, `pt-2` over the 28 px row.
+ */
 const FOOTER_BAND =
-  'flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal';
+  'absolute inset-x-0 bottom-0 flex h-9 items-center justify-end gap-1 pt-2 pl-2 text-[11px] font-normal';
+
+/**
+ * The band's height as `<chat-view>` reads it (`--chat-footer-height`), set
+ * inline by the band's owner: the band's `h-9`.
+ */
+const FOOTER_HEIGHT = '2.25rem';
+
+/** The `--chat-footer-height` an element sets in its own inline style. */
+const ownFooterHeight = (element: Element | null | undefined): string => {
+  const style = (element as HTMLElement | null | undefined)?.style;
+  const value = style?.getPropertyValue('--chat-footer-height').trim();
+  if (value) return value;
+  return (
+    /(?:^|;)\s*--chat-footer-height\s*:\s*([^;]+)/
+      .exec(element?.getAttribute('style') ?? '')?.[1]
+      ?.trim() ?? ''
+  );
+};
 
 const classSet = (element: Element | null): string[] =>
   [...(element?.classList ?? [])].sort();
@@ -1176,7 +1197,7 @@ test('the footer composer stands after an 8 px gap with no rule, and its button 
   assert.ok(row?.classList.contains('gap-2'), '8 px between the controls');
 });
 
-test('a sub-thread viewer draws its composer in the conversation footer band', async () => {
+test('a sub-thread viewer draws its composer in its floating footer band', async () => {
   const childId = '44444444-4444-4444-8444-444444444444';
   let create:
     | ((tag: string, props: Record<string, string>) => HTMLElement)
@@ -1213,6 +1234,50 @@ test('a sub-thread viewer draws its composer in the conversation footer band', a
     true,
     'no rule before the composer',
   );
+
+  // The band floats over the bottom of its own conversation: its positioned
+  // parent is the Thread's root, which tells the conversation the band's height.
+  const parent = band?.parentElement;
+  assert.equal(
+    parent?.matches('[data-chat-thread]'),
+    true,
+    'the band is a child of the Thread root',
+  );
+  assert.ok(
+    parent?.classList.contains('relative'),
+    `the Thread root is positioned: ${classSet(parent ?? null).join(' ')}`,
+  );
+  assert.equal(ownFooterHeight(parent), FOOTER_HEIGHT);
+  assert.equal(
+    parent?.lastElementChild === band,
+    true,
+    'the band is the Thread root’s last child',
+  );
+  const before = band?.previousElementSibling;
+  assert.equal(
+    before?.querySelector('.conversation-scroll') != null,
+    true,
+    'the band follows the conversation',
+  );
+});
+
+test('a routed conversation sets no footer height of its own', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+
+  const root = opened.document.querySelector('div[data-chat-thread]');
+  assert.equal(root !== null, true, 'the Thread root');
+  assert.ok(
+    root?.classList.contains('relative'),
+    `the Thread root is positioned: ${classSet(root).join(' ')}`,
+  );
+  // Unset, it inherits the height its host sets on an ancestor.
+  assert.equal(ownFooterHeight(root), '');
+  assert.equal(
+    root?.querySelector('[data-slot="chat-thread-footer"]') === null,
+    true,
+    'no viewer band',
+  );
 });
 
 test("the column's own left padding holds the gutter mark, and the first line sits 2 px under the top", async () => {
@@ -1226,7 +1291,7 @@ test("the column's own left padding holds the gutter mark, and the first line si
   // The mark hangs 1.875rem left of the text (styles.css), so the column's
   // left padding must be at least that for the mark to stay inside it.
   const classes = classSet(column);
-  for (const name of ['pl-[1.875rem]', 'pr-4', 'pt-0.5'])
+  for (const name of ['pl-[1.875rem]', 'pr-4', 'pt-0.5', 'pb-80'])
     assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
   assert.ok(!classes.includes('pr-2'), `no pr-2 in ${classes.join(' ')}`);
 });

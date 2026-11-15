@@ -2,8 +2,10 @@
 // `99:8042`): the `--sidebar` canvas, and on it the content card — 10 px
 // radius, 8 px padding, `shadow-sm`, the `--background` fill, no border — as
 // the layout draws the conversation and the viewer. The footer band is the
-// conversation footer's (`workspace-view.tsx`; Figma `32:51299`): 28 px tall,
-// 8 px from the left, 4 px between items, no rule and no fill of its own.
+// viewer footer's (`chat-view.tsx`; Figma `32:51299`): 36 px tall, 8 px above
+// its 28 px row, 8 px from the left, 4 px between items, no rule; drawn in flow
+// here, since these stories have no conversation to float over. The
+// conversation card's footer is still a 28 px row in flow in the app.
 
 import type { ReactNode } from 'react';
 
@@ -36,7 +38,7 @@ export function FooterBand({
 }) {
   return (
     <footer
-      className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal"
+      className="flex h-9 shrink-0 items-center justify-end gap-1 pt-2 pl-2 text-[11px] font-normal"
       {...props}
     >
       {children}

@@ -124,6 +124,11 @@ Base UI across the app. Where this section says "the renderer", it means those
 bundles in the window.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
+A child Thread's footer in the viewer floats over the bottom 36 px of its
+conversation, 8 px over a 28 px row, on the background at 70 % with a 2 px
+backdrop blur; the transcript scrolls on under it, the conversation's scrollbar
+ends 36 px above the bottom and its scroll padding is 36 px. The conversation
+footer is still in flow.
 The conversation footer shows OpenRouter context usage without a text
 prefix or progress bar and an approximate dollar total. Spacing alone separates
 the execution picker, context text and cost. Context uses the selected Thread's last

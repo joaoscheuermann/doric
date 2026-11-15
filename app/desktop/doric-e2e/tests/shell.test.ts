@@ -32,7 +32,11 @@ import {
   startFakeHost,
   until,
 } from './support/harness';
-import { capturePrototypeStates } from './support/prototype-states';
+import {
+  capturePrototypeStates,
+  closeViewer,
+  SIDEBAR_ROWS,
+} from './support/prototype-states';
 import {
   click,
   clickOn,
@@ -48,7 +52,12 @@ import {
   waitForSelector,
 } from './support/shell-page';
 import { BRANCH, CWD, type GitCalls } from './support/workspace-content';
-import { PLAN, serveWorkspace, THREAD_PATH } from './support/workspace-host';
+import {
+  PAYMENT_FORM,
+  PLAN,
+  serveWorkspace,
+  THREAD_PATH,
+} from './support/workspace-host';
 
 describe('the shell in an app window', () => {
   let host: FakeHost;
@@ -365,6 +374,98 @@ describe('the real shell over the workspace bundles', () => {
     const width = await columnWidth();
     assert.ok(width >= 224, `The Files column is ${width} px wide.`);
     await waitFor(contents, 'Account', 'button', 20_000, filesHeader);
+  });
+
+  test('the viewer footer floats over its conversation, and the bar and the scroll padding stop at it (conversation-footer T-10)', async () => {
+    const viewer = 'section[aria-label="Viewer"]';
+    const V2 = `${viewer} .conversation-scroll > [data-slot="scroll-area-viewport"]`;
+    const B2 = `${viewer} .conversation-scroll > [data-slot="scroll-area-scrollbar"][data-orientation="vertical"]`;
+    const F2 = `${viewer} [data-slot="chat-thread-footer"]`;
+    const find = (selector: string): string =>
+      `deepAll(${JSON.stringify(selector)}).find(visible)`;
+    const resize = async (width: number, height: number): Promise<void> => {
+      window.setContentSize(width, height);
+      await until(() => {
+        const [now, tall] = window.getContentSize();
+
+        return now === width && tall === height ? true : undefined;
+      }, `the ${width}×${height} content size`);
+    };
+
+    const [width, height] = window.getContentSize() as [number, number];
+    await go(contents, THREAD_PATH);
+    try {
+      // 1920 wide, as the capture shows 99:8508; 640 tall, the workspace
+      // window's minimum height, so the viewer's transcript overflows its
+      // viewport and Base UI draws the bar.
+      await resize(1920, 640);
+      await clickOn(contents, SIDEBAR_ROWS, PAYMENT_FORM.name);
+      await waitForSelector(contents, F2);
+
+      // Precondition, not a result: the transcript overflows and the bar is drawn.
+      await until(
+        () =>
+          inPage<boolean>(
+            contents,
+            `(() => {
+              const viewport = ${find(V2)};
+              return (
+                viewport !== undefined &&
+                viewport.scrollHeight > viewport.clientHeight &&
+                ${find(B2)} !== undefined
+              );
+            })()`,
+          ),
+        'the viewer’s transcript to overflow with its vertical bar drawn',
+      );
+
+      const measured = await inPage<{
+        barBottom: number;
+        footerTop: number;
+        inThread: boolean;
+        position: string;
+        height: string;
+        background: string;
+        backdrop: string;
+        scrollPadding: string;
+      }>(
+        contents,
+        `(() => {
+          const viewport = ${find(V2)};
+          const bar = ${find(B2)};
+          const footer = ${find(F2)};
+          const style = getComputedStyle(footer);
+          return {
+            barBottom: bar.getBoundingClientRect().bottom,
+            footerTop: footer.getBoundingClientRect().top,
+            inThread: footer.parentElement?.matches('[data-chat-thread]') === true,
+            position: style.position,
+            height: style.height,
+            background: style.backgroundColor,
+            backdrop: style.backdropFilter,
+            scrollPadding: getComputedStyle(viewport).scrollPaddingBottom,
+          };
+        })()`,
+      );
+
+      assert.ok(
+        Math.abs(measured.barBottom - measured.footerTop) <= 0.5,
+        `The bar ends at ${measured.barBottom}, the band begins at ${measured.footerTop}.`,
+      );
+      assert.equal(
+        measured.inThread,
+        true,
+        'The band is a child of the Thread root.',
+      );
+      assert.equal(measured.position, 'absolute');
+      assert.equal(measured.height, '36px');
+      assert.notEqual(measured.background, 'rgba(0, 0, 0, 0)');
+      assert.equal(measured.backdrop, 'blur(2px)');
+      assert.equal(measured.scrollPadding, '36px');
+    } finally {
+      await closeViewer(contents);
+      await resize(width, height);
+    }
   });
 
   const dir = process.env.DORIC_SHELL_CAPTURES;

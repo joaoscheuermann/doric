@@ -50,7 +50,14 @@ src/client/
 
 `src/client/styles.css` holds the conversation's own rules (the Lexical
 placeholder, the conversation scroll and trail, the queue-edit surface and the
-`editor-*` markdown theme) with the layering they had in the renderer. The
+`editor-*` markdown theme) with the layering they had in the renderer, and the
+unlayered rules a floating footer needs: the conversation's vertical bar and
+scroll padding, read from `--chat-footer-height`, and the viewer footer's fill
+and blur (conversation-footer spec, §3, §4). `.conversation-scroll` sets
+`isolation: isolate`, so the transcript's z-indexed layers (papercraft's pins
+and inputs) paint inside the scroll root and a floating footer, later in tree
+order, paints over them with no `z-index` (spec §6, D7); keep it, and add no
+`z-index` to a footer band. The
 utilities this bundle uses are also emitted by the shell's sorted sheet; do not
 add a second theme. All footer text, including nested controls, uses
 `font-weight: 400` through the shell's footer rule: use a semantic `footer` or a
