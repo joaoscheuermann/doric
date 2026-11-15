@@ -468,6 +468,84 @@ describe('the real shell over the workspace bundles', () => {
     }
   });
 
+  test('the conversation footer floats over the main conversation, and the bar and the scroll padding stop at it (conversation-footer T-8)', async () => {
+    const conversation = 'section[aria-label="Thread conversation"]';
+    const V = `${conversation} .conversation-scroll > [data-slot="scroll-area-viewport"]`;
+    const B = `${conversation} .conversation-scroll > [data-slot="scroll-area-scrollbar"][data-orientation="vertical"]`;
+    const F = '[data-slot="workspace-footer"]';
+    const find = (selector: string): string =>
+      `deepAll(${JSON.stringify(selector)}).find(visible)`;
+    const resize = async (width: number, height: number): Promise<void> => {
+      window.setContentSize(width, height);
+      await until(() => {
+        const [now, tall] = window.getContentSize();
+
+        return now === width && tall === height ? true : undefined;
+      }, `the ${width}×${height} content size`);
+    };
+
+    const [width, height] = window.getContentSize() as [number, number];
+    await go(contents, THREAD_PATH);
+    try {
+      // 640 tall, the workspace window's minimum height, so the open
+      // Thread's transcript overflows its viewport and Base UI draws the bar.
+      await resize(1280, 640);
+
+      // Precondition, not a result: the transcript overflows and the bar is drawn.
+      await until(
+        () =>
+          inPage<boolean>(
+            contents,
+            `(() => {
+              const viewport = ${find(V)};
+              return (
+                viewport !== undefined &&
+                viewport.scrollHeight > viewport.clientHeight &&
+                ${find(B)} !== undefined
+              );
+            })()`,
+          ),
+        'the main transcript to overflow with its vertical bar drawn',
+      );
+
+      const measured = await inPage<{
+        barBottom: number;
+        footerTop: number;
+        height: string;
+        background: string;
+        backdrop: string;
+        scrollPadding: string;
+      }>(
+        contents,
+        `(() => {
+          const viewport = ${find(V)};
+          const bar = ${find(B)};
+          const footer = ${find(F)};
+          const style = getComputedStyle(footer);
+          return {
+            barBottom: bar.getBoundingClientRect().bottom,
+            footerTop: footer.getBoundingClientRect().top,
+            height: style.height,
+            background: style.backgroundColor,
+            backdrop: style.backdropFilter,
+            scrollPadding: getComputedStyle(viewport).scrollPaddingBottom,
+          };
+        })()`,
+      );
+
+      assert.ok(
+        Math.abs(measured.barBottom - measured.footerTop) <= 0.5,
+        `The bar ends at ${measured.barBottom}, the band begins at ${measured.footerTop}.`,
+      );
+      assert.equal(measured.height, '36px');
+      assert.notEqual(measured.background, 'rgba(0, 0, 0, 0)');
+      assert.equal(measured.backdrop, 'blur(2px)');
+      assert.equal(measured.scrollPadding, '36px');
+    } finally {
+      await resize(width, height);
+    }
+  });
+
   const dir = process.env.DORIC_SHELL_CAPTURES;
 
   test('captures the prototype states at 1920×1080 in dark and light (§2.9)', {

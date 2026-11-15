@@ -1,6 +1,7 @@
 /*
- * The layout bundle's own rules (design §9.4), moved from the renderer's sheet:
- * the Monaco and xterm scrollbar sliders, unlayered as before. The build
+ * The layout bundle's own rules (design §9.4): the Monaco and xterm scrollbar
+ * sliders, moved from the renderer's sheet and unlayered as before, and the
+ * conversation footer's fill and blur (conversation-footer spec, D2). The build
  * appends the CSS the client part imports (xterm's) after them; Monaco's CSS
  * ships once per window in `desktop/ui/theme.css` (WP-10P).
  *
@@ -42,4 +43,14 @@
   border: 1px solid transparent;
   border-left-width: 2px;
   border-radius: 9999px;
+}
+
+/* The conversation footer floats over the conversation (conversation-footer
+   spec, D2): the card's background at 70 % with a 2 px backdrop blur, so the
+   transcript shows through it. A rule, not utilities, because this sheet
+   ships with the layout bundle whatever app runs it; the band's geometry
+   classes are in every app's sheet already. */
+[data-slot='workspace-footer'] {
+  background-color: color-mix(in oklab, var(--background) 70%, transparent);
+  backdrop-filter: blur(2px);
 }

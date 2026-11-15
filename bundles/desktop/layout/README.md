@@ -50,9 +50,14 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   last.
 - **Project panel.** An icon tab strip of views beside the conversation, always
   shown; it resizes but cannot be hidden or collapsed.
-- **Footers.** The conversation footer, and one window-wide footer with the
-  host connection status and the settings button, which runs `core`'s
-  `core.open-settings/v1`.
+- **Footers.** Two footers. The conversation footer (`layout.footer`) floats
+  over the conversation's bottom 36 px; its fill and blur are this bundle's
+  sheet rule, and the conversation frame sets `--chat-footer-height: 2.25rem`
+  for `<chat-view>` (see [chat's README](../chat/README.md)). The Files column
+  footer (`layout.panel.footer`) is one 28 px row under the Project panel.
+  Settings open from the account avatar, which runs `core`'s
+  `core.open-settings/v1`. Layout 3.0.3 needs
+  chat 1.6.2 or later in the same bundle set.
 
 The selection is the window path (`/`, `/projects/<projectId>` or
 `/projects/<projectId>/threads/<threadId>`); a saved selection is validated
@@ -104,7 +109,7 @@ tab with no Thread or Project selected fails with `unavailable`.
 | ----------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `layout.header`         | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
 | `layout.panel`          | the Project panel's views                                                              | `files`, `git`                                                 |
-| `layout.footer`         | the conversation footer                                                                | `settings`' execution picker, `chat`'s composer, `usage`       |
+| `layout.footer`         | the conversation footer, a 36 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
 | `layout.panel.footer`   | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
 | `layout.account.status` | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
 | `layout.main.bottom`    | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
@@ -126,7 +131,8 @@ npx nx test bundle-layout
 ```
 
 Most tests are DOM-free; `tests/client/shell.test.ts` renders the shell in a
-DOM. They cover the tree, the selection route, tabs, the
+DOM, and `tests/client/footer-styles.test.ts` reads the bundle's stylesheet
+from disk. They cover the tree, the selection route, tabs, the
 sidebar stack, Thread navigation and the contract services. Stories under
 `stories/` are CSF3, and `.storybook/preview.tsx` is the harness that wraps
 them. The build writes `bundles/desktop/layout/dist`, which

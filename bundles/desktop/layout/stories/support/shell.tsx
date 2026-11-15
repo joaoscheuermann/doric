@@ -26,6 +26,7 @@ import {
   WorkspaceTabBar,
   WorkspaceTabs,
 } from '../../src/client/components/organisms/workspace-tabs.js';
+import { ConversationFrame } from '../../src/client/components/templates/conversation-frame.js';
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import { WorkspaceLayout } from '../../src/client/components/templates/workspace-layout.js';
 import { useRegionItems } from '../../src/client/hooks/use-region-items.js';
@@ -43,15 +44,15 @@ const panelWidth = { '--sidebar-width': '100%' } as CSSProperties;
 
 const region = (name: string) => createElement('core-region', { name });
 
-/** The bar under the conversation: the `layout.footer` region. */
-export function ContentFooter() {
+/**
+ * The conversation frame with the `layout.footer` region floating over its
+ * bottom, as the workspace view draws it inside the split's top panel.
+ */
+export function ContentFrame({ children }: { readonly children: ReactNode }) {
   return (
-    <footer
-      data-slot="workspace-footer"
-      className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal"
-    >
-      {region('layout.footer')}
-    </footer>
+    <ConversationFrame footer={region('layout.footer')}>
+      {children}
+    </ConversationFrame>
   );
 }
 
@@ -152,10 +153,7 @@ export function WorkspaceShell({
             />
           }
         >
-          <SidebarInset className={INSET_CARD}>
-            {children}
-            <ContentFooter />
-          </SidebarInset>
+          <SidebarInset className={INSET_CARD}>{children}</SidebarInset>
         </WorkspaceLayout>
       </Tabs>
     </SidebarProvider>

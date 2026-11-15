@@ -696,7 +696,45 @@ test('the tab bar keeps New project and ends with the header items; Account is i
   );
 });
 
-// G12, T-2.9.9 (band) and the layout half of T-2.5
+/**
+ * The band's geometry (conversation-footer spec, D2): the class set both
+ * footers carry, the main band here and the viewer band in chat.
+ */
+const FOOTER_BAND = [
+  'absolute',
+  'inset-x-0',
+  'bottom-0',
+  'flex',
+  'h-9',
+  'items-center',
+  'justify-end',
+  'gap-1',
+  'pt-2',
+  'pl-2',
+  'text-[11px]',
+  'font-normal',
+].sort();
+
+/** The band's `h-9`, as `--chat-footer-height` states it (D5). */
+const FOOTER_HEIGHT = '2.25rem';
+
+/**
+ * The `--chat-footer-height` an element sets on itself. happy-dom does not
+ * always expose a custom property React sets in an inline `style` object
+ * through `getPropertyValue`, though it writes it to the attribute.
+ */
+const ownFooterHeight = (element: Element | null | undefined): string => {
+  const style = (element as HTMLElement | null | undefined)?.style;
+  const value = style?.getPropertyValue('--chat-footer-height').trim();
+  if (value) return value;
+  return (
+    /(?:^|;)\s*--chat-footer-height\s*:\s*([^;]+)/
+      .exec(element?.getAttribute('style') ?? '')?.[1]
+      ?.trim() ?? ''
+  );
+};
+
+// G12, T-2.9.9 (band), the layout half of T-2.5, and conversation-footer T-1
 test('the conversation footer band is regular weight, borderless and draws layout.footer', async () => {
   rendered = await renderWorkspace({
     projects: [project],
@@ -726,6 +764,55 @@ test('the conversation footer band is regular weight, borderless and draws layou
     standIns(footer, 'footer-probe').length,
     1,
     'The layout.footer item is not in the footer band.',
+  );
+
+  // conversation-footer T-1: the band floats over the bottom of its frame,
+  // which tells chat the band's height.
+  assert.deepEqual(
+    [...footer.classList].sort(),
+    FOOTER_BAND,
+    'The footer band does not carry the band class set of D2.',
+  );
+  const frame = footer.parentElement;
+  assert.ok(
+    frame?.matches('[data-slot="conversation-frame"]') === true,
+    `The footer band's parent is not the conversation frame: ${frame?.outerHTML.slice(0, 120)}`,
+  );
+  assert.ok(
+    frame.classList.contains('relative'),
+    `The conversation frame is not positioned: ${frame.className}`,
+  );
+  assert.equal(ownFooterHeight(frame), FOOTER_HEIGHT);
+  const conversation = frame.querySelector(
+    'section[aria-label="Thread conversation"]',
+  );
+  assert.ok(
+    conversation !== null,
+    'The conversation frame does not contain the conversation.',
+  );
+  assert.ok(
+    follows(conversation, footer),
+    'The footer band does not follow the conversation.',
+  );
+  assert.equal(
+    frame.lastElementChild === footer,
+    true,
+    'The footer band is not the conversation frame’s last child.',
+  );
+});
+
+// conversation-footer T-2: the routed conversation inherits the band's height.
+test('the routed conversation stands inside the conversation frame', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread, untitledThread],
+    path: `/projects/${project.id}/threads/${planThread.id}`,
+  });
+
+  const outlet = single(rendered.root, 'core-outlet');
+  assert.ok(
+    outlet.closest('[data-slot="conversation-frame"]') !== null,
+    'The routed conversation is not inside the conversation frame.',
   );
 });
 

@@ -5,7 +5,7 @@
 // viewer footer's (`chat-view.tsx`; Figma `32:51299`): 36 px tall, 8 px above
 // its 28 px row, 8 px from the left, 4 px between items, no rule; drawn in flow
 // here, since these stories have no conversation to float over. The
-// conversation card's footer is still a 28 px row in flow in the app.
+// conversation card's footer is the same band, floating, from layout 3.0.3.
 
 import type { ReactNode } from 'react';
 

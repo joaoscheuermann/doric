@@ -41,9 +41,11 @@ src/client/
   built from their IDs in `api/host.ts`.
 - Persistent work (watches, the selection route, timers) is bound to the
   activation services, never to an element's services (D9-17).
-- `src/client/styles.css` holds only the Monaco and xterm slider rules; the
-  utilities this bundle uses are emitted by the shell's sorted sheet, so do not
-  add Tailwind directives here (WP6 decision on the cascade).
+- `src/client/styles.css` holds only the Monaco and xterm slider rules and the
+  conversation footer's fill and blur (one rule keyed on
+  `[data-slot='workspace-footer']`); the utilities this bundle uses are emitted
+  by the shell's sorted sheet, so do not add Tailwind directives here (WP6
+  decision on the cascade).
 - Every host failure shows the message the REST path showed (R-ERR); the
   adapter in `api/workspace-api.ts` owns those messages.
 

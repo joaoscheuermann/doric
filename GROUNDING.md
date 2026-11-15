@@ -124,11 +124,11 @@ Base UI across the app. Where this section says "the renderer", it means those
 bundles in the window.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
-A child Thread's footer in the viewer floats over the bottom 36 px of its
-conversation, 8 px over a 28 px row, on the background at 70 % with a 2 px
-backdrop blur; the transcript scrolls on under it, the conversation's scrollbar
-ends 36 px above the bottom and its scroll padding is 36 px. The conversation
-footer is still in flow.
+The conversation footer and a child Thread's footer in the viewer float over the
+bottom 36 px of their conversation, 8 px over a 28 px row, on the background at
+70 % with a 2 px backdrop blur; the transcript scrolls on under them, the
+conversation's scrollbar ends 36 px above the bottom and its scroll padding is
+36 px.
 The conversation footer shows OpenRouter context usage without a text
 prefix or progress bar and an approximate dollar total. Spacing alone separates
 the execution picker, context text and cost. Context uses the selected Thread's last
@@ -338,12 +338,12 @@ If that Thread creation fails after the Project was saved, the desktop opens the
 saved Project and reports the failure without resubmitting Project creation. One
 full-height resize handle owns the sidebar boundary, with no divider inside
 the sidebar; the sidebar stays expanded and the handle draws no grip of its
-own. A segmented
-footer shares that geometry: the sidebar side shows the Electron main process's
-Socket.IO connection status, while the content side carries the execution picker
-— the model a prompt is sent to and its reasoning effort — beside the
-settings trigger. The conversation footer combines the selected Thread's working
-directory and branch in one popover trigger, without a Git icon. An adjacent
+own. The conversation footer, a 36 px band floating over the conversation's
+bottom, carries the execution picker — the model a prompt is sent to and its
+reasoning effort — first, with the composer and usage items after it. Settings
+open from the account avatar in the Files column header. The Files column
+footer combines the selected Thread's working directory and branch in one
+popover trigger, without a Git icon. An adjacent
 added/removed line-count button opens the right panel's Changes tab for the current
 directory; counts share its lightweight status query.
 The footer shows the full CWD, a middle dot and the branch, truncating the path
@@ -430,8 +430,9 @@ mark, whose opaque backing follows the row's state.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the
-Project tab bar's right side. The panel's footer carries the hardware
-monitor and shares the conversation footer's height. The monitor reports the
+Project tab bar's right side. The panel's footer is one 28 px row holding the
+working directory and branch. The hardware monitor sits in a slot over the
+account avatar's bottom-right corner, in the Files column header. The monitor reports the
 selected Project's sandbox — the container's own CPU against the cores it was
 given and its memory against its cgroup limit — beside the machine Doric runs
 on, which the host process reads from its own kernel. It polls every three
@@ -442,7 +443,7 @@ threshold wears the theme's warning tone: memory at 85 percent of its limit, or
 CPU sustained at 90 percent. The sandbox half answers the lease states every
 Project subresource answers — still being acquired, unavailable in this provider,
 or unknown — while the machine half depends on no lease. Working-directory,
-branch and changes controls appear only in the conversation footer.
+branch and changes controls appear only in the Files column footer.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
 mixing files, individual Git comparisons, both agent and manual terminals, and

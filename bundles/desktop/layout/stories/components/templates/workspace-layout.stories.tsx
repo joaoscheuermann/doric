@@ -4,18 +4,20 @@ import { WorkspaceLayout } from '../../../src/client/components/templates/worksp
 import { checkoutTabs, planThread } from '../../support/data.js';
 import { type LayoutFixture, LayoutHost } from '../../support/layout-host.js';
 import { Placeholder } from '../../support/placeholder.js';
-import { WorkspaceShell } from '../../support/shell.js';
+import { ContentFrame, WorkspaceShell } from '../../support/shell.js';
 import { windowDecorator } from '../../support/window-frame.js';
 
 function Conversation() {
   return (
     <ConversationTerminals>
-      <ThreadPane>
-        <Placeholder
-          tag="chat-thread"
-          label={`Conversation: ${planThread.name}`}
-        />
-      </ThreadPane>
+      <ContentFrame>
+        <ThreadPane>
+          <Placeholder
+            tag="chat-thread"
+            label={`Conversation: ${planThread.name}`}
+          />
+        </ThreadPane>
+      </ContentFrame>
     </ConversationTerminals>
   );
 }

@@ -262,7 +262,7 @@ test('the picker anchors the footer at its left and draws its triggers as ghost 
   const window = await openFooter(SONNET);
 
   // Figma `99:8035`: the picker is the footer's first item and pushes the
-  // rest right (the ContentFooter rule: the first item carries `mr-auto`).
+  // rest right (the picker's own root carries `mr-auto`).
   const model = trigger(window);
   const picker = model.parentElement;
   assert.ok(picker !== null, 'the picker root');

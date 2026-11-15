@@ -19,7 +19,8 @@ for how bundles work.
     `/projects/:projectId/threads/:threadId`, a child route of the
     [`layout`](../layout/README.md) bundle's `/`. `<chat-view>` reads
     `--chat-footer-height`, the height of a footer floating over its
-    conversation's bottom, set by its host on an ancestor; its scrollbar ends
+    conversation's bottom, set by its host on an ancestor (the layout's
+    conversation frame sets 2.25rem, from layout 3.0.3); its scrollbar ends
     and its scroll padding stops that far above the bottom; unset, 0. Its
     scroll area is isolated (`isolation: isolate`), so a footer that follows
     it paints over the transcript's layers with no `z-index`. Known

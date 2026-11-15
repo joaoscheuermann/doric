@@ -11,13 +11,14 @@ import type { ComponentType } from 'react';
 
 /**
  * The conversation footer band at the end of the conversation's card, with
- * room above it for the pickers' popovers: 28px tall, no rule and no fill of
- * its own (`workspace-view.tsx`).
+ * room above it for the pickers' popovers: 36 px tall, 8 px above its 28 px
+ * row, drawn in flow, with no rule and no fill (the app's band in
+ * `conversation-frame.tsx` gets its fill from the layout sheet).
  */
 export const footerFrame = (Story: ComponentType) => (
   <div className="bg-sidebar p-2">
     <div className="flex min-h-96 flex-col justify-end overflow-hidden rounded-xl bg-background p-2 shadow-sm">
-      <footer className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal text-muted-foreground">
+      <footer className="flex h-9 shrink-0 items-center justify-end gap-1 pt-2 pl-2 text-[11px] font-normal text-muted-foreground">
         <Story />
       </footer>
     </div>
