@@ -1,3 +1,4 @@
+import { errorFrom } from 'desktop/reads';
 import type { RefObject } from 'react';
 
 import { LayoutTabsV1 } from '../../contracts/index.js';
@@ -61,7 +62,7 @@ export function createThreadNavigation({
       main = mainThreadFor(workspaceStore.getState().tree, target);
     }
     if (main === undefined) {
-      store.report('The parent thread was not found.');
+      store.report(errorFrom('not_found', 'The parent thread was not found.'));
       return undefined;
     }
     const selection = { projectId: main.projectId, threadId: main.id };

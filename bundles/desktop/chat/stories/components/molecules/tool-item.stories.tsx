@@ -1,3 +1,4 @@
+import { errorFrom } from 'desktop/reads';
 import type { ComponentProps } from 'react';
 
 import { ToolItem } from '../../../src/client/components/molecules/tool-item.js';
@@ -75,7 +76,7 @@ export const Failed = {
     <Tool
       name="read"
       args={JSON.stringify({ path: 'src/components/Payment.tsx' })}
-      error="ENOENT: src/components/Payment.tsx does not exist"
+      error={errorFrom('', 'ENOENT: src/components/Payment.tsx does not exist')}
       status="failed"
       initial
     />

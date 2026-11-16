@@ -4,9 +4,10 @@
 // (`app/desktop/doric/src/workspace/validation.ts`, same messages), then the REST
 // route's own input checks, and every host outcome becomes the exact message
 // the REST route sent (`bundles/foundation/transport/src/host/routes/threads.ts`, R-ERR).
-// Failures reject with `Error(message)`, which `messageFrom` shows.
+// Failures reject with a `ClientError` that keeps the message and names its code (§6.4).
 
 import { isContractError } from 'bundle/contracts';
+import { ClientError } from 'desktop/reads';
 import {
   type RuntimeThreads,
   RuntimeThreadsV1,
@@ -77,13 +78,16 @@ const cannotPerform = 'The thread cannot perform this operation.';
 const promptNotFound = 'The prompt was not found in this Thread.';
 const promptIdRequired = 'A promptId is required.';
 
-const fail = (message: string): never => {
-  throw new Error(message);
+const fail = (code: string, message: string): never => {
+  throw new ClientError(code, message);
 };
+
+/** The adapter refused an argument before calling the host. */
+const refuse = (message: string): never => fail('invalid_input', message);
 
 /** The REST `conflict` text: storage pause has its own sentence. */
 const conflict = (reason: string): never =>
-  fail(reason === 'storage_low' ? storageMessage : cannotPerform);
+  fail('conflict', reason === 'storage_low' ? storageMessage : cannotPerform);
 
 // Main-process guards (`validation.ts`), same order and messages.
 
@@ -94,7 +98,7 @@ const identifier = (value: unknown): string => {
     value.length > 200 ||
     value.includes('\0')
   ) {
-    return fail('The item identifier is invalid.');
+    return refuse('The item identifier is invalid.');
   }
 
   return value;
@@ -102,7 +106,7 @@ const identifier = (value: unknown): string => {
 
 const promptText = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    return fail('Enter a prompt before continuing.');
+    return refuse('Enter a prompt before continuing.');
   }
 
   return value;
@@ -116,7 +120,7 @@ const isUuid = (value: string): boolean => uuid.safeParse(value).success;
 const threadId = (value: unknown): string => {
   const id = identifier(value);
 
-  return isUuid(id) ? id : fail('The thread ID is invalid.');
+  return isUuid(id) ? id : refuse('The thread ID is invalid.');
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -139,7 +143,7 @@ const threadFrom = (value: unknown): Thread => {
     typeof value.createdAt !== 'string' ||
     typeof value.updatedAt !== 'string'
   ) {
-    return fail(invalidResponseMessage);
+    return fail('invalid_output', invalidResponseMessage);
   }
 
   return value as Thread;
@@ -148,14 +152,14 @@ const threadFrom = (value: unknown): Thread => {
 const receiptFrom = (promptId: unknown): PromptReceipt =>
   typeof promptId === 'string' && promptId.length > 0
     ? { promptId }
-    : fail(invalidResponseMessage);
+    : fail('invalid_output', invalidResponseMessage);
 
 /**
  * What a failed host call reads as. A bridge without the host is what the
  * REST client's failed fetch was; an output that failed its contract schema
  * is the REST client's shape check; anything else is the route's 500.
  */
-export const hostFailureMessage = (error: unknown): string => {
+const hostFailureMessage = (error: unknown): string => {
   if (isContractError(error)) {
     if (
       error.code === 'unavailable' ||
@@ -170,6 +174,16 @@ export const hostFailureMessage = (error: unknown): string => {
 
   return internalMessage;
 };
+
+/**
+ * A failed host call as the adapters reject with it (§6.4): a contract error
+ * whose code is not `internal` keeps its code and becomes the cause; anything
+ * else is `internal` with no cause. The message is `hostFailureMessage`'s.
+ */
+export const hostFailure = (error: unknown): ClientError =>
+  isContractError(error) && error.code !== 'internal'
+    ? new ClientError(error.code, hostFailureMessage(error), { cause: error })
+    : new ClientError('internal', hostFailureMessage(error));
 
 export interface ThreadsApiSources {
   readonly threads: () => RuntimeThreads;
@@ -187,13 +201,13 @@ export const createThreadsApi = (
     try {
       threads = sources.threads();
     } catch (error) {
-      return fail(hostFailureMessage(error));
+      throw hostFailure(error);
     }
 
     try {
       return await run(threads);
     } catch (error) {
-      return fail(hostFailureMessage(error));
+      throw hostFailure(error);
     }
   };
 
@@ -228,7 +242,7 @@ export const createThreadsApi = (
         threads.prompt({ id: checked, prompt: text }),
       );
 
-      if (result.status === 'missing') return fail(notFound);
+      if (result.status === 'missing') return fail('not_found', notFound);
       if (result.status !== 'accepted') return conflict('inactive');
 
       return receiptFrom(result.promptId);
@@ -240,7 +254,7 @@ export const createThreadsApi = (
       const text = promptText(prompt);
       const checked = threadId(id);
 
-      if (!isUuid(target)) return fail(promptIdRequired);
+      if (!isUuid(target)) return refuse(promptIdRequired);
 
       const result = await host((threads) =>
         threads.steer({
@@ -253,7 +267,7 @@ export const createThreadsApi = (
 
       if (result.status === 'steered' || result.status === 'queued')
         return { ...receiptFrom(result.promptId), status: result.status };
-      if (result.status === 'missing') return fail(notFound);
+      if (result.status === 'missing') return fail('not_found', notFound);
       return conflict('inactive');
     },
 
@@ -269,14 +283,15 @@ export const createThreadsApi = (
       const target = identifier(promptId);
       const checked = threadId(id);
 
-      if (!isUuid(target)) return fail(promptIdRequired);
+      if (!isUuid(target)) return refuse(promptIdRequired);
 
       const result = await host((threads) =>
         threads.resume({ id: checked, promptId: target }),
       );
 
-      if (result.status === 'missing') return fail(notFound);
-      if (result.status === 'unknown_prompt') return fail(promptNotFound);
+      if (result.status === 'missing') return fail('not_found', notFound);
+      if (result.status === 'unknown_prompt')
+        return fail('not_found', promptNotFound);
       if (result.status !== 'resumed') return conflict(result.status);
 
       return threadFrom(result.thread);
@@ -289,17 +304,19 @@ export const createThreadsApi = (
       const checked = threadId(id);
 
       if (!isUuid(target)) {
-        return fail('A prompt ID and a non-empty prompt are required.');
+        return refuse('A prompt ID and a non-empty prompt are required.');
       }
 
       const result = await host((threads) =>
         threads.rewind({ id: checked, promptId: target, prompt: text }),
       );
 
-      if (result.status === 'missing') return fail(notFound);
-      if (result.status === 'unknown_prompt') return fail(promptNotFound);
+      if (result.status === 'missing') return fail('not_found', notFound);
+      if (result.status === 'unknown_prompt')
+        return fail('not_found', promptNotFound);
       if (result.status === 'busy') {
         return fail(
+          'conflict',
           'The Thread is running or has queued input and cannot be rewound.',
         );
       }
@@ -313,14 +330,14 @@ export const createThreadsApi = (
       const target = identifier(promptId);
       const checked = threadId(id);
 
-      if (!isUuid(target)) return fail(promptIdRequired);
+      if (!isUuid(target)) return refuse(promptIdRequired);
 
       // The host's stop ignores `promptId`, as the REST route always did.
       const result = await host((threads) =>
         threads.pause({ id: checked, promptId: target }),
       );
 
-      if (result === 'missing') return fail(notFound);
+      if (result === 'missing') return fail('not_found', notFound);
       if (result !== 'interrupted') return conflict(result);
     },
 
@@ -328,7 +345,9 @@ export const createThreadsApi = (
       const checked = threadId(id);
       const queue = await host((threads) => threads.queue(checked));
 
-      return queue === undefined ? fail(notFound) : (queue as ThreadQueue);
+      return queue === undefined
+        ? fail('not_found', notFound)
+        : (queue as ThreadQueue);
     },
 
     queuedPrompt: async (id, promptId) => {
@@ -336,14 +355,14 @@ export const createThreadsApi = (
       const target = identifier(promptId);
       const checked = threadId(id);
 
-      if (!isUuid(target)) return fail(promptIdRequired);
+      if (!isUuid(target)) return refuse(promptIdRequired);
 
       const prompt = await host((threads) =>
         threads.queuedPrompt({ id: checked, promptId: target }),
       );
 
       return prompt === undefined
-        ? fail('This prompt is no longer queued.')
+        ? fail('not_found', 'This prompt is no longer queued.')
         : prompt;
     },
 
@@ -353,7 +372,7 @@ export const createThreadsApi = (
         !Number.isSafeInteger(revision) ||
         revision < 0
       ) {
-        return fail('Invalid prompt revision.');
+        return refuse('Invalid prompt revision.');
       }
 
       identifier(id);
@@ -362,7 +381,7 @@ export const createThreadsApi = (
       const checked = threadId(id);
 
       if (!isUuid(target)) {
-        return fail(
+        return refuse(
           'A prompt ID, non-empty text and its revision are required.',
         );
       }
@@ -379,6 +398,9 @@ export const createThreadsApi = (
       if (result.status === 'updated') return result.prompt;
 
       return fail(
+        result.status === 'conflict' || result.status === 'not_editable'
+          ? 'conflict'
+          : 'not_found',
         result.status === 'conflict'
           ? 'This prompt was edited elsewhere. Your changes have not been saved.'
           : result.status === 'not_editable'
@@ -392,13 +414,13 @@ export const createThreadsApi = (
       const target = identifier(promptId);
       const checked = threadId(id);
 
-      if (!isUuid(target)) return fail(promptIdRequired);
+      if (!isUuid(target)) return refuse(promptIdRequired);
 
       const result = await host((threads) =>
         threads.removeQueued({ id: checked, promptId: target }),
       );
 
-      if (result === 'missing') return fail(notFound);
+      if (result === 'missing') return fail('not_found', notFound);
       if (result !== 'removed') return conflict(result);
     },
 
@@ -406,7 +428,7 @@ export const createThreadsApi = (
       const checked = threadId(id);
       const result = await host((threads) => threads.resumeQueue(checked));
 
-      if (result.status === 'missing') return fail(notFound);
+      if (result.status === 'missing') return fail('not_found', notFound);
       if (result.status !== 'resumed') return conflict(result.status);
 
       return threadFrom(result.thread);

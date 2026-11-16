@@ -897,7 +897,7 @@ void test('continues a resumed prompt from the history it had already written', 
   }
 });
 
-void test('closes a prompt the host interrupted three times and still honours the reader', {
+void test('T-12 closes a prompt the host interrupted three times with the English resume_exhausted message and still honours the reader', {
   skip: connectionString === undefined,
   timeout: 10_000,
 }, async () => {
@@ -975,9 +975,9 @@ void test('closes a prompt the host interrupted three times and still honours th
             name: 'ResumeExhaustedError',
             code: 'resume_exhausted',
             message:
-              'A execução foi interrompida três vezes por reinício do host e não foi ' +
-              'retomada de novo. O trabalho pode estar incompleto; mande o prompt ' +
-              'novamente para continuar.',
+              'The run was interrupted three times by a host restart and was not ' +
+              'resumed again. The work may be incomplete; send the prompt again ' +
+              'to continue.',
           },
         },
         {

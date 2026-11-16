@@ -1,5 +1,7 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useQueryClient } from '@tanstack/react-query';
+import { type ErrorInfo, errorFrom, errorInfo } from 'desktop/reads';
+import { toastError } from 'desktop/ui/error-notice';
 import { toast } from 'desktop/ui/sonner';
 import {
   $parseSerializedNode,
@@ -14,7 +16,7 @@ import { withAttachmentPlaceholders } from 'runtime/contracts';
 
 import { threadsApi } from '../../../../api/threads-api.js';
 import { USER_PROMPT_BLOCK } from '../../../../domain/conversation-nodes.js';
-import { messageFrom } from '../../../../domain/errors.js';
+import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import {
   promptMessage,
   promptSummary,
@@ -30,6 +32,20 @@ import { $appendPromptText } from '../nodes/attachment-image-node.js';
 import { $getUserPromptNode } from '../nodes/user-prompt-node.js';
 
 /** Reuses the composer without letting saving, streaming or switching Threads consume its draft. */
+/** Shows a queued prompt that could not be opened for editing (§5.1). */
+const toastEditError = (
+  threadId: string,
+  promptId: string,
+  error: ErrorInfo,
+): void =>
+  toastError({
+    id: `queue-edit-${threadId}`,
+    error,
+    catalog: chatErrorCatalog,
+    fallbackCode: 'queue_edit_failed',
+    context: { Thread: threadId, Prompt: promptId },
+  });
+
 export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
   const [editor] = useLexicalComposerContext();
   const client = useQueryClient();
@@ -101,6 +117,7 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
             else
               toast.message(
                 'Save the current edit or press Escape before editing another prompt.',
+                { id: `queue-edit-hint-${threadId}` },
               );
             return true;
           }
@@ -110,7 +127,11 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
             .then((detail) => {
               if (!mounted || request !== generation.current) return;
               if (!detail.editable) {
-                toast.error('This prompt can no longer be edited.');
+                toastEditError(
+                  threadId,
+                  item.promptId,
+                  errorFrom('conflict', 'This prompt can no longer be edited.'),
+                );
                 return;
               }
               const draft = editor
@@ -139,7 +160,7 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
             })
             .catch((error) => {
               if (mounted && request === generation.current)
-                toast.error(messageFrom(error));
+                toastEditError(threadId, item.promptId, errorInfo(error));
             });
           return true;
         },
@@ -202,7 +223,7 @@ export function EditQueuePrompt({ threadId }: { readonly threadId: string }) {
               if (current()?.item.promptId === edit.item.promptId)
                 queueEditStore.getState().patch(threadId, {
                   saving: false,
-                  error: messageFrom(error),
+                  error: errorInfo(error),
                 });
             })
             .finally(() => {

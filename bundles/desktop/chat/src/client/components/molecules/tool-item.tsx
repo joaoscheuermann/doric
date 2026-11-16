@@ -1,6 +1,9 @@
+import type { ErrorInfo } from 'desktop/reads';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { attachmentLine } from 'runtime/contracts';
 
 import { type Chosen, toolOpenness } from '../../domain/collapsible.js';
+import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import { LOAD_SKILL_TOOL } from '../../domain/skill-load.js';
 import { humanize } from '../../utility/humanize.js';
@@ -12,7 +15,7 @@ import { TerminalToolItem } from './terminal-tool-item.js';
 
 type ToolItemProps = {
   readonly args: string;
-  readonly error?: string;
+  readonly error?: ErrorInfo;
   readonly name: string;
   readonly result?: string;
   readonly status: ToolStatus;
@@ -55,6 +58,7 @@ export function ToolItem({
     return (
       <EditToolItem
         args={args}
+        name={name}
         chosen={chosen}
         error={error}
         focused={focused}
@@ -99,9 +103,13 @@ export function ToolItem({
         ) : null}
         {result === undefined ? null : <ToolResult result={result} />}
         {error === undefined ? null : (
-          <div className="text-destructive whitespace-pre-wrap break-words">
-            {error}
-          </div>
+          <ErrorNotice
+            variant="compact"
+            error={error}
+            catalog={chatErrorCatalog}
+            fallbackCode="tool_failed"
+            context={{ Tool: name }}
+          />
         )}
       </div>
     </CollapsibleBlock>

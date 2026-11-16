@@ -143,6 +143,7 @@ function Workspace() {
     createThread: actions.createThread,
     deleteEntity: actions.requestDelete,
     rename: actions.rename,
+    retryError: actions.retryError,
     selectProject: actions.selectProject,
     selectThread: actions.selectThread,
     setProjectColor: actions.setProjectColor,

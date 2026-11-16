@@ -54,6 +54,27 @@ const rejectsWith = async (promise: Promise<unknown>, message: string) =>
     return true;
   });
 
+/**
+ * Rejects with the adapters' `ClientError` (§6.4): its `code`, its unchanged
+ * `message`, and `cause` — the contract error itself, or none.
+ */
+const rejectsWithClientError = async (
+  promise: Promise<unknown>,
+  expected: {
+    readonly code: string;
+    readonly message: string;
+    readonly cause: unknown;
+  },
+) =>
+  assert.rejects(promise, (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.name, 'ClientError');
+    assert.equal((error as Error & { code?: unknown }).code, expected.code);
+    assert.equal(error.message, expected.message);
+    assert.equal(error.cause, expected.cause);
+    return true;
+  });
+
 describe('threads adapter', () => {
   test('guards run before the host and keep their messages', async () => {
     const { api, calls } = apiOver({});
@@ -247,6 +268,99 @@ describe('threads adapter', () => {
       invalidResponseMessage,
     );
     await rejectsWith(failing(new Error('boom')).queue(ID), internalMessage);
+  });
+
+  test('T-20 a contract error keeps its code and itself as the cause; the message is unchanged', async () => {
+    const failing = (error: unknown) =>
+      apiOver({
+        queue: async () => {
+          throw error;
+        },
+      }).api;
+    for (const [code, message] of [
+      ['disconnected', unavailableMessage],
+      ['unavailable', unavailableMessage],
+      ['generation_lost', unavailableMessage],
+      ['invalid_output', invalidResponseMessage],
+      ['limit_exceeded', internalMessage],
+    ] as const) {
+      const contract = new ContractError(code, 'what the bridge said');
+      await rejectsWithClientError(failing(contract).queue(ID), {
+        code,
+        message,
+        cause: contract,
+      });
+    }
+  });
+
+  test('T-20 an internal contract error or a foreign throw gives code internal and no cause', async () => {
+    const failing = (error: unknown) =>
+      apiOver({
+        queue: async () => {
+          throw error;
+        },
+      }).api;
+    await rejectsWithClientError(
+      failing(new ContractError('internal', 'raw host text')).queue(ID),
+      { code: 'internal', message: internalMessage, cause: undefined },
+    );
+    await rejectsWithClientError(failing(new Error('boom')).queue(ID), {
+      code: 'internal',
+      message: internalMessage,
+      cause: undefined,
+    });
+  });
+
+  test('T-20 a refused argument is invalid_input, an unreadable answer invalid_output, both without a cause', async () => {
+    const { api, calls } = apiOver({});
+    await rejectsWithClientError(api.prompt('not-a-uuid', 'hi'), {
+      code: 'invalid_input',
+      message: 'The thread ID is invalid.',
+      cause: undefined,
+    });
+    await rejectsWithClientError(api.resume(ID, 'not-a-uuid'), {
+      code: 'invalid_input',
+      message: 'A promptId is required.',
+      cause: undefined,
+    });
+    assert.deepEqual(calls, []);
+    const malformed = apiOver({
+      thread: async () => ({ ...record, cwd: 3 }) as never,
+    });
+    await rejectsWithClientError(malformed.api.get(ID), {
+      code: 'invalid_output',
+      message: invalidResponseMessage,
+      cause: undefined,
+    });
+  });
+
+  test('T-20 a missing target is not_found and a refused action conflict, without a cause', async () => {
+    const missing = apiOver({ prompt: async () => ({ status: 'missing' }) });
+    await rejectsWithClientError(missing.api.prompt(ID, 'hello'), {
+      code: 'not_found',
+      message: 'The thread was not found.',
+      cause: undefined,
+    });
+    const unknown = apiOver({
+      resume: async () => ({ status: 'unknown_prompt' }),
+    });
+    await rejectsWithClientError(unknown.api.resume(ID, PROMPT), {
+      code: 'not_found',
+      message: 'The prompt was not found in this Thread.',
+      cause: undefined,
+    });
+    const inactive = apiOver({ prompt: async () => ({ status: 'inactive' }) });
+    await rejectsWithClientError(inactive.api.prompt(ID, 'hello'), {
+      code: 'conflict',
+      message: 'The thread cannot perform this operation.',
+      cause: undefined,
+    });
+    const notRunning = apiOver({ pause: async () => 'not_running' });
+    await rejectsWithClientError(notRunning.api.interrupt(ID, PROMPT), {
+      code: 'conflict',
+      message: 'The thread cannot perform this operation.',
+      cause: undefined,
+    });
   });
 
   test('without a history cache the snapshot is null', async () => {

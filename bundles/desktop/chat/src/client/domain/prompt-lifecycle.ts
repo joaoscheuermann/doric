@@ -4,15 +4,11 @@
  * An interruption leaves two events in a Thread's log — a `prompt.paused` that
  * says why the prompt was left unfinished, and the `prompt.resumed` that queued
  * its recovery. The projector only displays a resume after an `agent.started`
- * confirms a previously started prompt is executing again. A prompt the host
- * gives up on is closed as a failure carrying a
- * code. The vocabulary is the host's; this module only says how each one reads:
- * the icon and the line of the row it wears, whether that row offers the reader
- * the action to take the prompt up again, and whether a failure code is the one
- * that has to be answered rather than merely read.
+ * confirms a previously started prompt is executing again. The vocabulary is
+ * the host's; this module only says how each one reads: the icon and the line
+ * of the row it wears, and whether that row offers the reader the action to
+ * take the prompt up again.
  */
-
-import { failureText } from './errors.js';
 
 /** Why an interruption left a prompt unfinished. */
 export type PauseReason =
@@ -54,16 +50,6 @@ export type LifecycleMarker = {
   /** Whether the row offers the reader the Resume action. */
   readonly action: boolean;
 };
-
-/** The failure a prompt the host gave up on is closed with. */
-export type PromptFailure = {
-  readonly name: string;
-  readonly code: string;
-  readonly message: string;
-};
-
-/** The code a prompt the host stopped taking up again carries. */
-export const RESUME_EXHAUSTED = 'resume_exhausted';
 
 /**
  * The pause reason a `prompt.paused` carries, or `undefined` when it names none:
@@ -132,36 +118,3 @@ export const lifecycleMarker = (event: LifecycleEvent): LifecycleMarker => {
     label: reasonText(event.reason, clock(event.at)),
   };
 };
-
-/**
- * The failure an `agent.failed` carries, read into the shape a block renders;
- * its message states each cause too (`failureText`).
- */
-export const promptFailure = (value: unknown): PromptFailure => {
-  if (typeof value === 'string') return { code: '', message: value, name: '' };
-  if (typeof value !== 'object' || value === null)
-    return { code: '', message: '', name: '' };
-  const fields = value as Readonly<Record<string, unknown>>;
-  const text = (key: string): string => {
-    const field = fields[key];
-    return typeof field === 'string' ? field : '';
-  };
-  return {
-    code: text('code'),
-    message: failureText(value),
-    name: text('name'),
-  };
-};
-
-/** Whether a failure carries anything to say for itself. */
-export const statesFailure = (failure: PromptFailure): boolean =>
-  failure.code !== '' || failure.message !== '';
-
-/**
- * Whether a failure code is the exhausted-resume one. That failure is the one
- * that is not quiet — the prompt's attempts ran out and only the reader can
- * decide what happens next — so it reads as a warning rather than as an ordinary
- * failure.
- */
-export const resumeExhausted = (code: string | undefined): boolean =>
-  code === RESUME_EXHAUSTED;

@@ -39,6 +39,13 @@ import {
   READER_NAME,
 } from '../../src/contracts/index.js';
 import {
+  detailsOf,
+  explanationOf,
+  noticesIn,
+  noticesTitled,
+  retryOf,
+} from './support/notices.js';
+import {
   type ChatWindow,
   openChatWindow,
   type Probe,
@@ -142,7 +149,7 @@ test('a compaction row expands its saved Markdown summary and keeps it open acro
   await deliver(opened, events);
   assert.equal(opened.document.querySelector('[role="status"] .shimmer'), null);
   const toggle = [...opened.document.querySelectorAll('button')].find(
-    (button) => button.textContent?.includes('Contexto compactado'),
+    (button) => button.textContent?.includes('Context compacted'),
   );
   assert.ok(toggle);
   assert.equal(markerNode?.isConnected, true);
@@ -155,7 +162,7 @@ test('a compaction row expands its saved Markdown summary and keeps it open acro
   );
   assert.ok(
     [...opened.document.querySelectorAll('button')].some(
-      (button) => button.textContent === 'Copiar',
+      (button) => button.textContent === 'Copy',
     ),
   );
   await deliver(opened, [
@@ -1618,4 +1625,249 @@ test('a load_skill call stands as a block of its own between tool calls, never i
     opened.document.body.textContent ?? '',
     /Called [34] tools/,
   );
+});
+
+// T-17: the failed-prompt block (§5.1, §6.1). A block notice that is not
+// announced; Retry only on the last prompt's failure block, only while the
+// agent controls answer `failed` and `canRetry`; while the retry runs it is
+// disabled and spins, and a second press sends nothing more.
+
+const secondPromptId = '44444444-4444-4444-8444-444444444444';
+
+/** An event of `prompt`, otherwise as `event`. */
+const eventOf = (
+  sequence: number,
+  prompt: string,
+  value: Readonly<Record<string, unknown> & { readonly type: string }>,
+) => ({ ...event(sequence, value), promptId: prompt });
+
+const resumeExhaustedExplanation =
+  'The host restarted three times during this prompt, so the work may be incomplete; retry to send the prompt again.';
+
+/** Two prompts that failed: the first ran out of resumes, the second stopped. */
+const twoFailures = [
+  eventOf(1, promptId, {
+    type: 'prompt.accepted',
+    text: 'First try',
+    source: { kind: 'user' },
+  }),
+  eventOf(2, promptId, {
+    type: 'agent.failed',
+    error: {
+      name: 'ResumeExhaustedError',
+      code: 'resume_exhausted',
+      message:
+        'The run was interrupted three times by a host restart and was not resumed again. The work may be incomplete; send the prompt again to continue.',
+    },
+  }),
+  eventOf(3, promptId, {
+    type: 'prompt.finished',
+    status: 'failed',
+    text: 'The prompt failed.',
+    source: { kind: 'user' },
+  }),
+  eventOf(4, secondPromptId, {
+    type: 'prompt.accepted',
+    text: 'Second try',
+    source: { kind: 'user' },
+  }),
+  eventOf(5, secondPromptId, {
+    type: 'agent.failed',
+    error: { name: 'Error', code: 'boom', message: 'it stopped' },
+  }),
+  eventOf(6, secondPromptId, {
+    type: 'prompt.finished',
+    status: 'failed',
+    text: 'The prompt failed.',
+    source: { kind: 'user' },
+  }),
+];
+
+const viewOf = (window: ChatWindow) =>
+  window.document.querySelector('chat-view');
+
+test('T-17 a failed prompt is a block notice in its tone, not announced, and only the last one offers Retry', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, twoFailures);
+
+  const view = viewOf(opened);
+  const [stopped] = noticesTitled(view, 'Execution stopped');
+  assert.ok(stopped, 'the exhausted resume draws its notice');
+  assert.equal(stopped.getAttribute('data-variant'), 'block');
+  assert.equal(stopped.getAttribute('data-tone'), 'warning');
+  assert.equal(stopped.getAttribute('role'), 'group');
+  assert.equal(explanationOf(stopped), resumeExhaustedExplanation);
+  assert.equal(retryOf(stopped), null, 'an older failure offers no Retry');
+
+  const [last] = noticesTitled(view, 'Prompt failed');
+  assert.ok(last, 'a code no entry knows falls back to prompt_failed');
+  assert.equal(last.getAttribute('data-tone'), 'error');
+  assert.equal(last.getAttribute('role'), 'group');
+  assert.equal(explanationOf(last), 'it stopped');
+  assert.ok(retryOf(last), 'the last failure offers Retry');
+});
+
+test('T-17 Retry on the last failure sends the prompt again once, disabled and spinning while it runs', async () => {
+  let answer: (value: unknown) => void = () => undefined;
+  opened = await openChatWindow({
+    url,
+    host: host(thread(), {
+      'runtime.threads/v1.retry': () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    }),
+  });
+  await deliver(opened, twoFailures);
+
+  const [last] = noticesTitled(viewOf(opened), 'Prompt failed');
+  assert.ok(last);
+  const retry = retryOf(last);
+  assert.ok(retry, 'the last failure offers Retry');
+  retry.click();
+  await settle(50);
+
+  const pending = retryOf(
+    noticesTitled(viewOf(opened), 'Prompt failed')[0] as HTMLElement,
+  );
+  assert.ok(pending, 'Retry stays while the retry runs');
+  assert.equal(pending.disabled, true);
+  assert.equal(pending.getAttribute('aria-busy'), 'true');
+  assert.equal(
+    pending.querySelector('svg')?.classList.contains('animate-spin'),
+    true,
+  );
+  pending.click();
+  await settle(50);
+  assert.equal(opened.received('runtime.threads/v1.retry').length, 1);
+  assert.deepEqual(opened.received('runtime.threads/v1.retry')[0]?.input, {
+    id: threadId,
+  });
+
+  answer({
+    status: 'accepted',
+    promptId: '55555555-5555-4555-8555-555555555555',
+  });
+  await settle(100);
+  assert.equal(opened.received('runtime.threads/v1.retry').length, 1);
+});
+
+test('T-17 with the queue paused no failure block offers Retry', async () => {
+  opened = await openChatWindow({
+    url,
+    host: host(thread(), {
+      'runtime.threads/v1.queue': () => ({ ...emptyQueue, paused: true }),
+    }),
+  });
+  await deliver(opened, twoFailures);
+
+  const view = viewOf(opened);
+  const failures = [
+    ...noticesTitled(view, 'Execution stopped'),
+    ...noticesTitled(view, 'Prompt failed'),
+  ];
+  assert.equal(failures.length, 2, 'both failures draw their notices');
+  for (const notice of failures) assert.equal(retryOf(notice), null);
+});
+
+// T-18: the compaction rows read in English with en-US numbers (§6.3), and a
+// failed compaction is a compact notice inside its row (§5.1).
+
+const compactionPrompt = (index: number) =>
+  `6666666${index}-6666-4666-8666-666666666666`;
+
+test('T-18 a completed compaction row reads its counts in English, with en-US numbers', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    eventOf(1, compactionPrompt(1), {
+      type: 'compaction.started',
+      trigger: 'manual',
+    }),
+    eventOf(2, compactionPrompt(1), {
+      type: 'compaction.finished',
+      summaryId: 'summary-1',
+      summary: 'Keep it.',
+      condensedMessages: 3,
+      tokensFreed: 12345,
+    }),
+    eventOf(3, compactionPrompt(2), {
+      type: 'compaction.started',
+      trigger: 'automatic',
+    }),
+    eventOf(4, compactionPrompt(2), {
+      type: 'compaction.finished',
+      summaryId: 'summary-2',
+      summary: 'Keep that.',
+      condensedMessages: 1,
+      tokensFreed: 5,
+    }),
+  ]);
+
+  const labels = [...(viewOf(opened)?.querySelectorAll('button') ?? [])].map(
+    (button) => button.textContent?.trim() ?? '',
+  );
+  assert.ok(
+    labels.includes(
+      'Context compacted · 3 messages → summary (12,345 tokens freed)',
+    ),
+    `rows: ${labels.join(' | ')}`,
+  );
+  assert.ok(
+    labels.includes('Context compacted · 1 message → summary (5 tokens freed)'),
+    `rows: ${labels.join(' | ')}`,
+  );
+});
+
+test('T-18 a failed compaction row is a compact notice titled by its code, without Retry', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    eventOf(1, compactionPrompt(1), {
+      type: 'compaction.started',
+      trigger: 'manual',
+    }),
+    eventOf(2, compactionPrompt(1), {
+      type: 'compaction.failed',
+      code: 'summarizer_failed',
+      error: {
+        message: 'Rate limited',
+        data: { code: 'rate_limit_error', provider: 'openai', status: 429 },
+      },
+    }),
+    eventOf(3, compactionPrompt(2), {
+      type: 'compaction.started',
+      trigger: 'automatic',
+    }),
+    eventOf(4, compactionPrompt(2), {
+      type: 'compaction.failed',
+      code: 'unsafe_boundary',
+    }),
+  ]);
+
+  const view = viewOf(opened);
+  assert.doesNotMatch(view?.textContent ?? '', /Compactação|falhou/);
+  const [failed] = noticesTitled(view, 'Compaction failed');
+  assert.ok(failed, 'the summarizer failure draws its notice');
+  assert.equal(failed.getAttribute('data-variant'), 'compact');
+  assert.equal(failed.getAttribute('role'), 'group');
+  assert.equal(
+    explanationOf(failed),
+    'Earlier messages could not be summarized.',
+  );
+  assert.equal(retryOf(failed), null);
+  const details = await detailsOf(failed);
+  assert.match(details, /^Code: summarizer_failed$/m);
+  assert.match(
+    details,
+    /^Caused by: \[rate_limit_error\] Rate limited \(openai, 429\)$/m,
+  );
+  assert.match(details, /^Thread: /m);
+  assert.match(details, /^Prompt: /m);
+
+  const [skipped] = noticesTitled(view, 'Compaction skipped');
+  assert.ok(skipped, 'the unsafe boundary draws its notice');
+  assert.equal(
+    explanationOf(skipped),
+    'No safe point was found to summarize earlier messages.',
+  );
+  assert.equal(noticesIn(view).length, 2);
 });

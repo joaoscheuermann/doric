@@ -1,8 +1,6 @@
-import { toast } from 'desktop/ui/sonner';
 import { cn } from 'desktop/ui/utils';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { messageFrom } from '../../domain/errors.js';
 import { limitName, nameError } from '../../domain/workspace.js';
 
 type EditableNameProps = {
@@ -35,10 +33,10 @@ const selectContents = (element: HTMLElement): void => {
  * A creation has nothing to restore on cancel and nothing to leave behind on
  * blur; a rename does both, even when the existing entity has no name yet.
  *
- * A failed edit or save marks the name itself — the text wears a red underline —
- * and says why in a toast, because the reason does not deserve a row of its own in
- * a list this dense. The toast carries the name's id, so repeating the same failure
- * replaces the message instead of stacking it. Typing clears the mark.
+ * A refused or failed save marks the name itself — the text wears a red
+ * underline. A name the field refuses says why in a line under the name; a
+ * request that fails says nothing here, because the workspace notice states it
+ * (§8). Typing clears the mark.
  */
 export function EditableName({
   className,
@@ -52,16 +50,25 @@ export function EditableName({
   value,
 }: EditableNameProps) {
   const element = useRef<HTMLSpanElement>(null);
-  const [error, setError] = useState<string>();
+  /** Why the field refused the name, while the mark stands. */
+  const [invalid, setInvalid] = useState<string>();
+  /** Whether the last save failed; the workspace notice says why. */
+  const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(false);
-  const errorId = useId();
+  const marked = invalid !== undefined || failed;
+
+  const clearMark = () => {
+    setInvalid(undefined);
+    setFailed(false);
+  };
 
   useEffect(() => {
     const current = element.current;
     if (current === null) return;
     if (!editing) {
       current.textContent = value || placeholder || '';
-      setError(undefined);
+      setInvalid(undefined);
+      setFailed(false);
       setPending(false);
       return;
     }
@@ -72,9 +79,6 @@ export function EditableName({
 
   const text = (): string => element.current?.textContent ?? '';
 
-  /** The name keeps the mark; the reason is announced where interruptions are. */
-  const report = (message: string) => toast.error(message, { id: errorId });
-
   const refocus = () =>
     requestAnimationFrame(() => {
       element.current?.focus();
@@ -84,7 +88,7 @@ export function EditableName({
   const cancel = () => {
     if (element.current)
       element.current.textContent = value || placeholder || '';
-    setError(undefined);
+    clearMark();
     setPending(false);
     onCancel();
   };
@@ -97,21 +101,19 @@ export function EditableName({
       refocus();
       return;
     }
-    const invalid = nameError(next);
-    if (invalid) {
-      setError(invalid);
-      report(invalid);
+    const reason = nameError(next);
+    if (reason) {
+      setInvalid(reason);
+      setFailed(false);
       refocus();
       return;
     }
     setPending(true);
-    setError(undefined);
+    clearMark();
     try {
       await onSubmit(next.trim());
-    } catch (reason) {
-      const message = messageFrom(reason);
-      setError(message);
-      report(message);
+    } catch {
+      setFailed(true);
       setPending(false);
       refocus();
     }
@@ -136,7 +138,7 @@ export function EditableName({
         ref={element}
         role={editing ? 'textbox' : undefined}
         aria-label={editing ? label : undefined}
-        aria-invalid={editing && error !== undefined ? true : undefined}
+        aria-invalid={editing && marked ? true : undefined}
         contentEditable={editing && !pending}
         data-placeholder="..."
         suppressContentEditableWarning
@@ -146,7 +148,7 @@ export function EditableName({
           className,
           editing &&
             'cursor-text select-text text-sidebar-accent-foreground underline decoration-sidebar-ring underline-offset-4 outline-none',
-          error !== undefined && 'decoration-destructive',
+          marked && 'decoration-destructive',
           pending && 'opacity-60',
         )}
         onBlur={leave}
@@ -161,7 +163,7 @@ export function EditableName({
           const current = event.currentTarget;
           const limited = limitName(current.textContent ?? '');
           if (limited !== current.textContent) current.textContent = limited;
-          setError(undefined);
+          clearMark();
         }}
         onKeyDown={(event) => {
           event.stopPropagation();
@@ -185,6 +187,11 @@ export function EditableName({
       >
         {editing ? value : value || placeholder}
       </span>
+      {invalid !== undefined && (
+        <p role="alert" className="text-xs text-destructive">
+          {invalid}
+        </p>
+      )}
     </>
   );
 }

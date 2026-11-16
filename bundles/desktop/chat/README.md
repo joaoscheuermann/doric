@@ -62,7 +62,11 @@ for how bundles work.
   `+added / −removed` counts, and a `terminal` call shows its command and its
   live output. A `load_skill` call draws its own block naming the skill and
   where it came from. A background command's result, a paused or resumed
-  prompt, a history compaction and a failure each get their own row.
+  prompt, a history compaction and a failure each get their own row; a
+  failure row, a failed tool call and a failed compaction draw the shared
+  error notice (`desktop/ui/error-notice`) with its code, a Copy details action
+  and the cause chain in collapsed details, and the last prompt's failure offers
+  Retry while the agent control's status is `failed` and it can retry.
 - **Steer while it runs.** `Cmd/Ctrl+Enter` sends; while a prompt runs it
   steers the prompt at its next safe point. `Tab` queues the words for after
   it, `Escape` with words aborts the current step and steers, and `Escape`
@@ -128,8 +132,9 @@ batch.
 - `onThreadUpdateHook` reports every live event of a held Thread as it arrives,
   before the 100 ms flush, and every `updated` record; chat does not await it.
 - A card inside the conversation can dispatch a `chat:intent` DOM event; chat
-  runs it as `commands/v1.execute(command, input)` and shows a failure as a
-  toast.
+  runs it as `commands/v1.execute(command, input)` and shows a failure as an
+  error toast with the id `chat-intent-<command>`, so repeated failures replace
+  each other instead of stacking.
 
 ## The composer draft
 

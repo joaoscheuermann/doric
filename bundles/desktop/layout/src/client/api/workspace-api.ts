@@ -2,13 +2,15 @@
 // writes the workspace frame makes, as the desktop main process made them
 // over REST before. Each operation runs the main process's payload guard
 // first, then the REST route's own input check, then the host contract, and
-// turns every outcome the route answered with an error envelope into an
-// `Error` carrying that envelope's exact message (R-ERR). A delete is retried
+// turns every outcome the route answered with an error envelope into a
+// `ClientError` carrying that envelope's exact message (R-ERR) and a code
+// (§6.4). A delete is retried
 // every 500 ms while the lifecycle is still active (the port of
 // `retryWhileActive`), and a list reads every page, failing on a cursor
 // loop. The provisional features add their own adapters.
 
 import { isContractError, type Services } from 'bundle/contracts';
+import { ClientError } from 'desktop/reads';
 import type {
   Page,
   Project,
@@ -48,21 +50,27 @@ export const hostMessages = {
 } as const;
 
 /** The message a failed host call shows, as the REST path showed it. */
-export const hostFailure = (error: unknown): Error => {
-  if (isContractError(error)) {
-    if (
-      error.code === 'unavailable' ||
-      error.code === 'disconnected' ||
-      error.code === 'generation_lost'
-    ) {
-      return new Error(hostMessages.unavailable);
-    }
-    if (error.code === 'invalid_output') {
-      return new Error(hostMessages.invalidResponse);
-    }
+const hostMessage = (code: string): string => {
+  if (
+    code === 'unavailable' ||
+    code === 'disconnected' ||
+    code === 'generation_lost'
+  ) {
+    return hostMessages.unavailable;
   }
-  return new Error(hostMessages.failed);
+  if (code === 'invalid_output') return hostMessages.invalidResponse;
+  return hostMessages.failed;
 };
+
+/**
+ * A failed host call as the adapter rejects with it (§6.4): a contract error
+ * keeps its code and is the cause, unless it is `internal`; anything else is
+ * `internal` without a cause.
+ */
+export const hostFailure = (error: unknown): ClientError =>
+  isContractError(error) && error.code !== 'internal'
+    ? new ClientError(error.code, hostMessage(error.code), { cause: error })
+    : new ClientError('internal', hostMessages.failed);
 
 const host = async <Value>(operation: () => Promise<Value>): Promise<Value> => {
   try {
@@ -76,11 +84,11 @@ const host = async <Value>(operation: () => Promise<Value>): Promise<Value> => {
 
 const guardName = (value: unknown): string => {
   if (typeof value !== 'string' || value.includes('\0')) {
-    throw new Error(hostMessages.invalidName);
+    throw new ClientError('invalid_input', hostMessages.invalidName);
   }
   const trimmed = value.trim();
   if (trimmed.length === 0 || Array.from(trimmed).length > 80) {
-    throw new Error(hostMessages.nameLength);
+    throw new ClientError('invalid_input', hostMessages.nameLength);
   }
   return trimmed;
 };
@@ -92,7 +100,7 @@ const guardIdentifier = (value: unknown): string => {
     value.length > 200 ||
     value.includes('\0')
   ) {
-    throw new Error(hostMessages.invalidIdentifier);
+    throw new ClientError('invalid_input', hostMessages.invalidIdentifier);
   }
   return value;
 };
@@ -103,7 +111,7 @@ const guardColor = (value: unknown): ProjectColor | undefined => {
     typeof value !== 'string' ||
     !(projectColors as readonly string[]).includes(value)
   ) {
-    throw new Error(hostMessages.invalidColor);
+    throw new ClientError('invalid_input', hostMessages.invalidColor);
   }
   return value as ProjectColor;
 };
@@ -113,12 +121,14 @@ const guardColor = (value: unknown): ProjectColor | undefined => {
 const uuid = z.uuid();
 
 const routeId = (value: string, message: string): string => {
-  if (!uuid.safeParse(value).success) throw new Error(message);
+  if (!uuid.safeParse(value).success) {
+    throw new ClientError('invalid_input', message);
+  }
   return value;
 };
 
 const found = <Value>(value: Value | undefined, message: string): Value => {
-  if (value === undefined) throw new Error(message);
+  if (value === undefined) throw new ClientError('not_found', message);
   return value;
 };
 
@@ -137,11 +147,15 @@ export const deleteWhenTerminal = async (
   for (;;) {
     const result = await host(remove);
     if (result === 'deleted') return;
-    if (result === 'missing') throw new Error(missingMessage);
+    if (result === 'missing')
+      throw new ClientError('not_found', missingMessage);
     // An agent Thread is the agent's to delete: the reader may only pause,
     // continue and retry it, and the host says so instead of deleting.
     if (result === 'forbidden')
-      throw new Error('An agent opened this Thread, so it cannot be deleted.');
+      throw new ClientError(
+        'conflict',
+        'An agent opened this Thread, so it cannot be deleted.',
+      );
     await pause();
   }
 };
@@ -159,7 +173,7 @@ export const allPages = async <Value>(
     items.push(...page.items);
     cursor = page.nextCursor;
     if (cursor !== undefined && cursors.has(cursor)) {
-      throw new Error(hostMessages.invalidResponse);
+      throw new ClientError('invalid_output', hostMessages.invalidResponse);
     }
     if (cursor !== undefined) cursors.add(cursor);
   } while (cursor !== undefined);
@@ -282,7 +296,7 @@ export const createWorkspaceApi = ({
         // `parentThreadId` is sent only when non-empty, as the REST body was.
         const parent = parentThreadId ? parentThreadId : undefined;
         if (parent !== undefined && !uuid.safeParse(parent).success) {
-          throw new Error(hostMessages.invalidThread);
+          throw new ClientError('invalid_input', hostMessages.invalidThread);
         }
         const result = await host(() =>
           threads.createThread({
@@ -293,9 +307,9 @@ export const createWorkspaceApi = ({
         );
         if (result.status === 'created') return result.thread;
         if (result.status === 'missing') {
-          throw new Error(hostMessages.projectNotFound);
+          throw new ClientError('not_found', hostMessages.projectNotFound);
         }
-        throw new Error(hostMessages.threadConflict);
+        throw new ClientError('conflict', hostMessages.threadConflict);
       },
       rename: async (id, name) => {
         guardIdentifier(id);
@@ -341,7 +355,7 @@ export const disposeWorkspaceApi = (): void => {
 
 const bound = (): WorkspaceApi => {
   if (current === undefined) {
-    throw new Error(hostMessages.unavailable);
+    throw new ClientError('unavailable', hostMessages.unavailable);
   }
   return current;
 };

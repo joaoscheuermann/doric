@@ -22,6 +22,12 @@ import {
 import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'layout/contracts';
 
 import {
+  announced,
+  noticesIn,
+  retryOf,
+  titleOf,
+} from './support/notices.js';
+import {
   type HostAnswer,
   openSettingsWindow,
   type ProbeBundle,
@@ -389,12 +395,79 @@ const isDisabled = (element: HTMLElement): boolean =>
 const popoverOpen = (window: SettingsWindow): boolean =>
   window.document.querySelector('[data-slot="popover-content"]') !== null;
 
-/** The alert span's message, or `undefined` when none is shown. */
-const alertText = (window: SettingsWindow): string | undefined => {
-  const text = window.document
-    .querySelector('settings-execution-picker [role="alert"]')
-    ?.textContent?.trim();
-  return text === undefined || text === '' ? undefined : text;
+/**
+ * The failure notice the picker draws (error-messages.md §5.2): an inline,
+ * announced notice, read as its title and whether it offers
+ * Retry; `undefined` while the picker draws none.
+ */
+const alertOf = (
+  window: SettingsWindow,
+):
+  | {
+      readonly title: string | undefined;
+      readonly retry: HTMLButtonElement | null;
+      readonly variant: string | null;
+      readonly announced: boolean;
+    }
+  | undefined => {
+  const notices = noticesIn(
+    window.document.querySelector('settings-execution-picker'),
+  );
+  assert.ok(notices.length <= 1, 'The picker draws more than one notice.');
+  const notice = notices[0];
+  return notice === undefined
+    ? undefined
+    : {
+        title: titleOf(notice),
+        retry: retryOf(notice),
+        variant: notice.getAttribute('data-variant'),
+        announced: announced(notice),
+      };
+};
+
+/**
+ * The picker notice's explanation, or `undefined` when none is shown. An
+ * inline notice draws row 1 only (error-messages.md §3.3), so the explanation
+ * is read from the copy text its Copy details writes (§3.4): the title, then
+ * the explanation. The clipboard is the window's, stubbed for the read.
+ */
+const alertText = async (
+  window: SettingsWindow,
+): Promise<string | undefined> => {
+  const notices = noticesIn(
+    window.document.querySelector('settings-execution-picker'),
+  );
+  const notice = notices[0];
+  if (notice === undefined) return undefined;
+  const button = notice.querySelector<HTMLButtonElement>(
+    // "Copied" while an earlier copy still reports its outcome.
+    'button[aria-label="Copy details"], button[aria-label="Copied"]',
+  );
+  assert.ok(button, 'The picker notice offers no Copy details.');
+  const nav = globalThis.navigator as Navigator & { clipboard?: unknown };
+  const before = Object.getOwnPropertyDescriptor(nav, 'clipboard');
+  let written: string | undefined;
+  Object.defineProperty(nav, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: (text: string): Promise<void> => {
+        written = text;
+        return Promise.resolve();
+      },
+    },
+  });
+  try {
+    button.click();
+    await settle(10);
+  } finally {
+    if (before === undefined) {
+      delete (nav as { clipboard?: unknown }).clipboard;
+    } else {
+      Object.defineProperty(nav, 'clipboard', before);
+    }
+  }
+  assert.ok(written !== undefined, 'Copy details wrote nothing.');
+  return written.split('\n')[1];
 };
 
 /**
@@ -800,7 +873,7 @@ test('a Thread stored on a removed provider shows its stored model, and choosing
   ]);
 });
 
-test('while a write is pending both triggers are disabled, and refused answers show their message in the alert span (T-31)', async () => {
+test('while a write is pending both triggers are disabled, and refused answers show their message in the picker notice (T-31)', async () => {
   const answers: ReturnType<typeof deferred<unknown>>[] = [];
   const window = await openWith({
     host: {
@@ -828,7 +901,8 @@ test('while a write is pending both triggers are disabled, and refused answers s
 
   answers[0]?.resolve({ status: 'invalid', reason: 'effort' });
   await settle(20);
-  assert.equal(alertText(window), 'This model does not support that effort.');
+  assert.equal(alertOf(window)?.title, 'Model not accepted');
+  assert.equal(await alertText(window), 'This model does not support that effort.');
   assert.ok(!isDisabled(trigger(window)), 'The model trigger stays disabled.');
   assert.equal(shownModel(window), CODER);
 
@@ -838,7 +912,8 @@ test('while a write is pending both triggers are disabled, and refused answers s
     message: 'The provider could not be reached.',
   });
   await settle(20);
-  assert.equal(alertText(window), 'The provider could not be reached.');
+  assert.equal(alertOf(window)?.title, 'Model not accepted');
+  assert.equal(await alertText(window), 'The provider could not be reached.');
 });
 
 test("a record update the layout publishes re-renders the Thread's execution (T-32)", async () => {
@@ -1000,11 +1075,175 @@ test('a write in flight on one Thread never changes what another Thread shows, a
 
   answer.resolve({ status: 'invalid', reason: 'effort' });
   await settle(20);
-  assert.equal(alertText(window), undefined);
+  assert.equal(await alertText(window), undefined);
   assert.equal(shownModel(window), SONNET);
 
   workspace.select(a);
   await settle(20);
-  assert.equal(alertText(window), 'This model does not support that effort.');
+  assert.equal(await alertText(window), 'This model does not support that effort.');
   assert.equal(shownModel(window), CODER);
+});
+
+// T-23 (error-messages.md §5.2): a refused write is an inline, announced
+// notice titled from the settings catalog; Retry shows only where repeating
+// the write can succeed, and writes the same execution again.
+
+test('an invalid answer shows "Model not accepted" and a missing Thread "Thread not found", neither with Retry (T-23)', async () => {
+  const answers = [
+    { status: 'invalid', reason: 'effort' },
+    { status: 'missing' },
+  ];
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': () => answers.shift(),
+    },
+    probe: workspaceFooter(
+      thread('t-1', { providerId: 'openrouter', model: CODER }),
+    ).probe,
+  });
+
+  await chooseModel(window, SONNET);
+  const invalid = alertOf(window);
+  assert.equal(invalid?.title, 'Model not accepted');
+  assert.equal(
+    await alertText(window),
+    'This model does not support that effort.',
+  );
+  assert.equal(invalid?.retry, null, 'An invalid execution offers Retry.');
+  assert.equal(invalid?.variant, 'inline');
+  assert.equal(invalid?.announced, true);
+
+  await chooseModel(window, SONNET);
+  const missing = alertOf(window);
+  assert.equal(missing?.title, 'Thread not found');
+  assert.equal(await alertText(window), 'The thread was not found.');
+  assert.equal(missing?.retry, null, 'A missing Thread offers Retry.');
+});
+
+test('an unavailable host offers Retry, which writes the same execution again (T-23)', async () => {
+  let calls = 0;
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': (input: unknown) => {
+        calls += 1;
+        if (calls === 1) {
+          throw { code: 'unavailable', message: 'The host is restarting.' };
+        }
+        return updated(input);
+      },
+    },
+    probe: workspaceFooter(
+      thread('t-1', { providerId: 'openrouter', model: CODER }),
+    ).probe,
+  });
+
+  await chooseModel(window, SONNET);
+  const refused = alertOf(window);
+  assert.equal(refused?.title, 'Doric host unavailable');
+  assert.ok(refused?.retry, 'An unavailable host offers no Retry.');
+
+  refused.retry.click();
+  await settle(20);
+
+  // The same execution, written twice: the refused one and its Retry.
+  assert.equal(sent(window).length, 2);
+  assert.deepEqual(sent(window)[1], sent(window)[0]);
+  assert.equal((sent(window)[0] as ExecutionInput).model, SONNET);
+  assert.equal(alertOf(window), undefined);
+  assert.equal(shownModel(window), SONNET);
+});
+
+test('a failed read shows an inline notice whose Retry reads the snapshot again, busy while it reads (T-23)', async () => {
+  const second = deferred<unknown>();
+  let reads = 0;
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'host-config/v1.current': () => {
+        reads += 1;
+        if (reads === 1) throw new Error('The store is locked.');
+        return second.promise;
+      },
+    },
+    probe: workspaceFooter(thread('t-1', {})).probe,
+  });
+
+  const failed = alertOf(window);
+  assert.equal(failed?.title, 'Settings not loaded');
+  assert.equal(
+    await alertText(window),
+    'The request could not be completed.',
+  );
+  assert.equal(failed?.variant, 'inline');
+  assert.equal(failed?.announced, true);
+  assert.ok(failed?.retry, 'A failed read offers no Retry.');
+
+  failed.retry.click();
+  await settle(20);
+  assert.equal(reads, 2);
+  const busy = alertOf(window)?.retry;
+  assert.ok(busy, 'The notice left while its read runs.');
+  assert.equal(busy.getAttribute('aria-busy'), 'true');
+  assert.equal(busy.disabled, true);
+
+  second.resolve({
+    configuration: configurationOn(SONNET),
+    revision: 1,
+    updatedAt: CREATED,
+  });
+  await settle(20);
+  assert.equal(alertOf(window), undefined);
+  assert.equal(shownModel(window), SONNET);
+});
+
+test("the read notice's Retry reads the picker's snapshot only, not the draft another surface reads (T-23)", async () => {
+  let failing = true;
+  let reads = 0;
+  // The footer beside the dashboard's Providers group, which keeps the
+  // window's configuration draft (`useConfig`) on the same host read.
+  const probe: ProbeBundle = {
+    requires: ['ui/v1@^1.0.0', 'navigation/v1@^1.0.0'],
+    activate: (context) => {
+      const ui = context.services.use(UiV1);
+      const route = context.services.use(NavigationV1).register({
+        path: '/footer',
+        create: () => {
+          const root = document.createElement('div');
+          root.append(
+            ui.create('settings-dashboard-providers') as HTMLElement,
+            ui.create('settings-execution-picker') as HTMLElement,
+          );
+          return root;
+        },
+      });
+      return () => route.dispose();
+    },
+  };
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'host-config/v1.current': () => {
+        reads += 1;
+        if (failing) throw new Error('The store is locked.');
+        return {
+          configuration: configurationOn(SONNET),
+          revision: 1,
+          updatedAt: CREATED,
+        };
+      },
+    },
+    probe,
+  });
+  const retry = alertOf(window)?.retry;
+  assert.ok(retry, 'The picker shows no read notice with Retry.');
+
+  failing = false;
+  const before = reads;
+  retry.click();
+  await settle(40);
+
+  assert.equal(reads - before, 1, 'Retry read more than the snapshot.');
+  assert.equal(alertOf(window), undefined);
 });

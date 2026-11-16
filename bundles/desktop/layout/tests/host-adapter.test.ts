@@ -386,3 +386,204 @@ describe('deletes', () => {
     );
   });
 });
+
+/**
+ * Rejects with the adapters' `ClientError` (spec §6.4): its `code`, the
+ * message it had before, and `cause` — the contract error itself, or none.
+ */
+const rejectsWithClientError = (
+  promise: Promise<unknown>,
+  expected: {
+    readonly code: string;
+    readonly message: string;
+    readonly cause: unknown;
+  },
+) =>
+  assert.rejects(promise, (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.name, 'ClientError');
+    assert.equal((error as Error & { code?: unknown }).code, expected.code);
+    assert.equal(error.message, expected.message);
+    assert.equal(error.cause, expected.cause);
+    return true;
+  });
+
+describe('codes and causes (spec §6.4)', () => {
+  test('a contract error other than internal keeps its code and is the cause', async () => {
+    for (const [code, message] of [
+      ['unavailable', 'Doric backend is unavailable.'],
+      ['disconnected', 'Doric backend is unavailable.'],
+      ['generation_lost', 'Doric backend is unavailable.'],
+      ['invalid_output', 'Doric returned an invalid response.'],
+      ['limit_exceeded', 'The request could not be completed.'],
+    ] as const) {
+      const contract = new ContractError(code, 'what the bridge said');
+      await rejectsWithClientError(
+        adapter({
+          projects: async () => {
+            throw contract;
+          },
+        }).projects.list(),
+        { code, message, cause: contract },
+      );
+      await rejectsWithClientError(
+        adapter(
+          {},
+          {
+            renameThread: async () => {
+              throw contract;
+            },
+          },
+        ).threads.rename(threadId, 'Name'),
+        { code, message, cause: contract },
+      );
+    }
+  });
+
+  test('an internal contract error or a foreign throw is internal, without a cause', async () => {
+    for (const thrown of [
+      new ContractError('internal', 'Something internal and private.'),
+      new Error('boom'),
+    ]) {
+      await rejectsWithClientError(
+        adapter({
+          createProject: async () => {
+            throw thrown;
+          },
+        }).projects.create('Name'),
+        {
+          code: 'internal',
+          message: 'The request could not be completed.',
+          cause: undefined,
+        },
+      );
+    }
+  });
+
+  test('an argument the guards refuse is invalid_input, without a cause', async () => {
+    const api = adapter();
+    const refused: readonly [() => Promise<unknown>, string][] = [
+      [
+        () => api.projects.create('   '),
+        'Enter a name between 1 and 80 characters.',
+      ],
+      [
+        () => api.projects.create('a\0b'),
+        'Enter a valid name before continuing.',
+      ],
+      [() => api.projects.terminate(''), 'The item identifier is invalid.'],
+      [
+        () => api.projects.rename('not-a-uuid', 'Name'),
+        'The project ID is invalid.',
+      ],
+      [() => api.threads.get('not-a-uuid'), 'The thread ID is invalid.'],
+      [
+        () => api.projects.setColor(projectId, 'black' as never),
+        'Choose a color from the palette.',
+      ],
+      [
+        () => api.threads.create(projectId, 'Child', 'parent'),
+        'A Thread name between 1 and 80 characters and optional parentThreadId are accepted.',
+      ],
+    ];
+    for (const [call, message] of refused) {
+      await rejectsWithClientError(call(), {
+        code: 'invalid_input',
+        message,
+        cause: undefined,
+      });
+    }
+  });
+
+  test('a list whose cursor repeats is invalid_output, without a cause', async () => {
+    await rejectsWithClientError(
+      adapter({
+        projects: async () => ({ items: [project], nextCursor: 'loop' }),
+      }).projects.list(),
+      {
+        code: 'invalid_output',
+        message: 'Doric returned an invalid response.',
+        cause: undefined,
+      },
+    );
+  });
+
+  test('a target the host reports gone is not_found, without a cause', async () => {
+    const gone: readonly [() => Promise<unknown>, string][] = [
+      [
+        () =>
+          adapter({ renameProject: async () => undefined }).projects.rename(
+            projectId,
+            'Name',
+          ),
+        'The project was not found.',
+      ],
+      [
+        () =>
+          adapter(
+            {},
+            { terminateThread: async () => undefined },
+          ).threads.terminate(threadId),
+        'The thread was not found.',
+      ],
+      [
+        () =>
+          adapter({}, { threads: async () => undefined }).threads.list(
+            projectId,
+          ),
+        'The project was not found.',
+      ],
+      [
+        () =>
+          adapter(
+            {},
+            {
+              createThread: async () =>
+                ({ status: 'missing' }) as ThreadCreateResult,
+            },
+          ).threads.create(projectId, 'Child'),
+        'The project was not found.',
+      ],
+      [
+        () =>
+          adapter({ deleteProject: async () => 'missing' }).projects.delete(
+            projectId,
+          ),
+        'The project was not found.',
+      ],
+    ];
+    for (const [call, message] of gone) {
+      await rejectsWithClientError(call(), {
+        code: 'not_found',
+        message,
+        cause: undefined,
+      });
+    }
+  });
+
+  test('an action the host cannot perform now is conflict, without a cause', async () => {
+    for (const status of ['inactive', 'invalid_parent'] as const) {
+      await rejectsWithClientError(
+        adapter(
+          {},
+          { createThread: async () => ({ status }) as ThreadCreateResult },
+        ).threads.create(projectId, 'Child', parentId),
+        {
+          code: 'conflict',
+          message: 'The thread cannot perform this operation.',
+          cause: undefined,
+        },
+      );
+    }
+    await rejectsWithClientError(
+      adapter({}, { deleteThread: async () => 'forbidden' }).threads.delete(
+        threadId,
+      ),
+      {
+        code: 'conflict',
+        message: 'An agent opened this Thread, so it cannot be deleted.',
+        cause: undefined,
+      },
+    );
+  });
+});

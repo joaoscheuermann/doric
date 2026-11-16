@@ -1,3 +1,4 @@
+import type { ErrorInfo } from 'desktop/reads';
 import { useCallback, useEffect } from 'react';
 import { useStore } from 'zustand/react';
 
@@ -26,7 +27,8 @@ export type ThreadChat = {
   /** A subscription failure, which the surface is expected to show. */
   readonly error: string | undefined;
   readonly sending: boolean;
-  readonly sendError: string | undefined;
+  /** Why the last send failed, as `ThreadChat.sendError`; `undefined` once cleared. */
+  readonly sendError: ErrorInfo | undefined;
   /**
    * The words the reader has sent that the log does not hold yet, so a surface
    * can draw them at once. `undefined` when nothing is in flight.

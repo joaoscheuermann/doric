@@ -181,6 +181,38 @@ export const settingsOver = async (
   }
 };
 
+/**
+ * The settings adapter's rejection (error-messages.md §6.4): a
+ * `SettingsApiError` (name kept) carrying `code`, the unchanged `message`, and
+ * `cause` — the contract error the host answered, or none (`undefined`).
+ */
+export const settingsError =
+  (expected: {
+    readonly code: string;
+    readonly message: string;
+    readonly cause: unknown;
+  }) =>
+  (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      throw new Error(`Rejected with a non-error: ${String(error)}`);
+    }
+    const { code } = error as Error & { readonly code?: unknown };
+    if (
+      error.name !== 'SettingsApiError' ||
+      code !== expected.code ||
+      error.message !== expected.message ||
+      error.cause !== expected.cause
+    ) {
+      throw new Error(
+        `Expected SettingsApiError ${expected.code} "${expected.message}" ` +
+          `(cause ${expected.cause === undefined ? 'none' : 'the contract error'}), ` +
+          `got ${error.name} ${String(code)} "${error.message}" ` +
+          `(cause ${error.cause === undefined ? 'none' : error.cause === expected.cause ? 'the contract error' : String(error.cause)})`,
+      );
+    }
+    return true;
+  };
+
 /** Whether a rejection shows exactly `message`, the text a surface renders. */
 export const showing =
   (message: string) =>

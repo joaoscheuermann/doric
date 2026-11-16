@@ -1,3 +1,5 @@
+import type { ErrorInfo } from 'desktop/reads';
+
 import type { TurnComment } from '../../contracts/index.js';
 import type { PendingSend, SentComment } from './pending-turns.js';
 import {
@@ -34,7 +36,8 @@ export type ThreadChat = {
   readonly projection: Projection;
   readonly error: string | undefined;
   readonly sending: boolean;
-  readonly sendError: string | undefined;
+  /** Why the last send failed, until the next send clears it (§5.1). */
+  readonly sendError: ErrorInfo | undefined;
   readonly pending: PendingSend | undefined;
   /**
    * The comments sent with accepted prompts that the log does not hold yet:
@@ -433,13 +436,17 @@ export const withSending = (
   return withChat(state, id, { ...chat, sending });
 };
 
-/** The failure a Thread's send surfaced, or its clearing. */
+/**
+ * The failure a Thread's send surfaced, or its clearing with `undefined`.
+ * Returns `state` itself when the Thread has no chat; otherwise a new state
+ * whose chat holds `error` as `sendError`, every other field kept. Never throws.
+ */
 export const withSendError = (
   state: ThreadChats,
   id: string,
-  message: string | undefined,
+  error: ErrorInfo | undefined,
 ): ThreadChats => {
   const chat = state.chats.get(id);
   if (chat === undefined) return state;
-  return withChat(state, id, { ...chat, sendError: message });
+  return withChat(state, id, { ...chat, sendError: error });
 };

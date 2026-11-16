@@ -1,3 +1,5 @@
+import { type ErrorInfo, errorFrom, errorInfo } from 'desktop/reads';
+
 import {
   COMMENTS_ADDED_EVENT,
   COMMENTS_RESOLVED_EVENT,
@@ -17,16 +19,9 @@ import {
 } from './comment-threads.js';
 import type { AnsweredBy } from './conversation-authors.js';
 import type { DelegatedInput } from './delegated.js';
-import { failureText } from './errors.js';
 import { type PromptExecution, readExecution } from './projector-execution.js';
 import { type PromptInput, readInput } from './projector-input.js';
-import {
-  type LifecycleEvent,
-  type PromptFailure,
-  pauseReason,
-  promptFailure,
-  statesFailure,
-} from './prompt-lifecycle.js';
+import { type LifecycleEvent, pauseReason } from './prompt-lifecycle.js';
 import type { QueueItem } from './queue.js';
 import { LOAD_SKILL_TOOL } from './skill-load.js';
 import type { TerminalResult } from './terminal-result.js';
@@ -144,7 +139,8 @@ export type ToolTurn = TurnBase & {
   readonly status: ToolStatus;
   /** Serialized `record.output` from the finished call. */
   readonly result?: string;
-  readonly error?: string;
+  /** Why the call failed, read from its `tool.failed` event (§6.1). */
+  readonly error?: ErrorInfo;
 };
 
 /** One grouped step of a completed burst: a run of reasoning, or a tool call. */
@@ -156,7 +152,8 @@ export type ActivityItem =
       readonly args: string;
       readonly status: ToolStatus;
       readonly result?: string;
-      readonly error?: string;
+      /** As `ToolTurn.error`. */
+      readonly error?: ErrorInfo;
     };
 
 /**
@@ -186,7 +183,11 @@ export type LifecycleTurn = TurnBase & {
 /** A prompt the host closed as a failure, and what it was closed with. */
 export type FailureTurn = TurnBase & {
   readonly type: 'failure';
-  readonly failure: PromptFailure;
+  /**
+   * The failure `agent.failed` carried, read with `errorInfo` at the event's
+   * `createdAt`; its `code` or its `message` is not `''` (§6.1).
+   */
+  readonly failure: ErrorInfo;
 };
 
 /**
@@ -208,6 +209,12 @@ export type CompactionTurn = TurnBase & {
   readonly tokensFreed?: number;
   /** Why a failed compaction failed, as the log named it. */
   readonly code?: 'summarizer_failed' | 'unsafe_boundary';
+  /**
+   * The failure itself, set only when `status` is `failed`; its `code` equals
+   * `code`. Its causes are empty for a log written before `compaction.failed`
+   * carried the error (§6.1, §6.2).
+   */
+  readonly error?: ErrorInfo;
 };
 
 /** One answer the agent wrote into a comment's thread (`comment_reply`). */
@@ -340,7 +347,7 @@ export type Draft =
       args: string;
       status: ToolStatus;
       result?: string;
-      error?: string;
+      error?: ErrorInfo;
     }
   | {
       type: 'lifecycle';
@@ -352,7 +359,7 @@ export type Draft =
       type: 'failure';
       promptId: string;
       events: ThreadEvent[];
-      failure: PromptFailure;
+      failure: ErrorInfo;
     }
   | {
       type: 'replies';
@@ -374,6 +381,7 @@ export type Draft =
       condensedMessages?: number;
       tokensFreed?: number;
       code?: 'summarizer_failed' | 'unsafe_boundary';
+      error?: ErrorInfo;
     };
 
 /** The draft a completed burst groups: a run of reasoning, or a tool call. */
@@ -609,7 +617,7 @@ const lastAgent = (
 const lastFailure = (
   turns: readonly Draft[],
   promptId: string,
-): PromptFailure | undefined => {
+): ErrorInfo | undefined => {
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
     if (turn?.type === 'failure' && turn.promptId === promptId)
@@ -814,7 +822,7 @@ const readEvent = (
     const tool = findTool(turns, promptId, call?.id);
     if (tool?.type === 'tool_call') {
       tool.status = 'failed';
-      tool.error = failureText(event.error);
+      tool.error = errorInfo(event.error, { at: item.createdAt });
       tool.events.push(item);
     }
   } else if (event?.type === 'prompt.finished') {
@@ -881,8 +889,8 @@ const readEvent = (
     // The run's own failure event states why it was closed, so it is the block a
     // surface renders rather than the host's generic failed text below. A failure
     // that says nothing for itself leaves the finished text to state it.
-    const failure = promptFailure(event.error);
-    if (statesFailure(failure))
+    const failure = errorInfo(event.error, { at: item.createdAt });
+    if (failure.code !== '' || failure.message !== '')
       turns.push({ type: 'failure', promptId, events: [item], failure });
     status.set(promptId, 'failed');
   } else if (event?.type === 'agent.cancelled') {
@@ -919,10 +927,25 @@ const readEvent = (
     const opened = findOpenCompaction(turns, promptId);
     if (opened !== undefined) {
       opened.status = 'failed';
-      opened.code =
+      const code =
         event.code === 'unsafe_boundary'
           ? 'unsafe_boundary'
           : 'summarizer_failed';
+      opened.code = code;
+      const at = { at: item.createdAt };
+      const carried =
+        event.error === undefined ? undefined : errorInfo(event.error, at);
+      opened.error =
+        carried?.code === code
+          ? carried
+          : errorFrom(
+              code,
+              code === 'unsafe_boundary'
+                ? 'No safe compaction boundary was found.'
+                : 'The summarizer failed.',
+              event.error,
+              at,
+            );
       opened.events.push(item);
     }
   }

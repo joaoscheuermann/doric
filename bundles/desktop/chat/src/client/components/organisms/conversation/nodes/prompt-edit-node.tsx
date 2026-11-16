@@ -1,3 +1,4 @@
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   DecoratorNode,
   type LexicalNode,
@@ -9,6 +10,7 @@ import type { JSX } from 'react';
 import { useStore } from 'zustand/react';
 
 import { PROMPT_EDIT_BLOCK } from '../../../../domain/conversation-nodes.js';
+import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import { queueEditStore } from '../../../../stores/queue-edit.js';
 import { PromptAuthor } from '../../../molecules/prompt-author.js';
 
@@ -29,10 +31,16 @@ function Heading({ threadId }: { readonly threadId: string }) {
           “{edit.original.replace(/\s+/g, ' ')}”
         </span>
       </div>
-      {edit.error && (
-        <p role="alert" className="mt-2 text-xs text-destructive">
-          {edit.error}
-        </p>
+      {edit.error === undefined ? null : (
+        <ErrorNotice
+          className="mt-2"
+          variant="compact"
+          announce
+          error={edit.error}
+          catalog={chatErrorCatalog}
+          fallbackCode="queue_edit_failed"
+          context={{ Thread: threadId, Prompt: edit.item.promptId }}
+        />
       )}
     </div>
   );

@@ -11,6 +11,17 @@ import { afterEach, test } from 'node:test';
 import { NavigationV1, RegionsV1, ref, UiV1 } from 'bundle/contracts';
 
 import {
+  announced,
+  explanationOf,
+  noticesIn,
+  noticesTitled,
+  retryOf,
+  type Toasts,
+  timeOf,
+  titleOf,
+  windowToasts,
+} from './support/notices.js';
+import {
   openSettingsWindow,
   type SettingsWindow,
   settle,
@@ -447,9 +458,14 @@ test('a malformed credential of a managed kind still fails the list', async () =
       },
     ]);
 
-    // The section draws no list error, so the failed list shows as the
-    // valid entry beside the malformed one missing too.
+    // The failed list leaves the valid entry beside the malformed one out
+    // too, and the section says the list was not read (D16).
     assert.doesNotMatch(text, /OpenRouter/);
+    assert.equal(
+      noticesIn(opened?.document.querySelector('main')).length,
+      1,
+      'the failed list draws no notice',
+    );
     assert.match(text, /No credentials are stored yet\./);
     await opened?.close();
     opened = undefined;
@@ -800,3 +816,341 @@ test('while a save is pending the tiles are disabled and the selection moves onl
   assert.deepEqual(checkedTile(window), ['Light']);
   assert.ok(tiles(window).every((entry) => !entry.disabled));
 });
+
+// error-messages.md §5.2: the settings window's failure surfaces.
+//
+// - T-24: a failed tool catalog read is a block notice whose Retry reads the
+//   catalog again.
+// - T-25: a refused configuration save says "Not saved" in the status line
+//   and toasts once as `config-save-failed`; a refused credential save is a
+//   notice in the editor, without Retry, cleared by the next edit; a refused
+//   credential remove toasts as `credentials-write-failed`.
+// - T-26: a failed provider kinds or credentials list read is a block notice
+//   with Retry, whose details keep the time of the failed read across a
+//   remount.
+//
+// A host failure the test throws reaches the window as a contract error with
+// code `internal`, which the notices skip for their surface's fallback code.
+
+let toasts: Toasts | undefined;
+
+afterEach(() => {
+  toasts?.dismissAll();
+  toasts = undefined;
+});
+
+/** Opens the window at `path` over `answers` and reads its toasts. */
+const openAt = async (
+  path: string,
+  answers: Readonly<Record<string, (input: unknown) => unknown>>,
+): Promise<{ window: SettingsWindow; toasts: Toasts }> => {
+  opened = await openSettingsWindow({
+    url: `doric://app${path}`,
+    host: { ...host(), ...answers },
+  });
+  await settle(20);
+  toasts = await windowToasts(opened.document);
+  return { window: opened, toasts };
+};
+
+/** The one notice inside the window's section card. */
+const sectionNotice = (window: SettingsWindow): HTMLElement | undefined => {
+  const notices = noticesIn(window.document.querySelector('main'));
+  assert.ok(notices.length <= 1, 'the section draws more than one notice');
+  return notices[0];
+};
+
+/** The title of the failure toast drawn now, one toast expected. */
+const toastTitle = (toasts: Toasts): string | undefined => {
+  const surfaces = toasts.surfaces();
+  assert.equal(surfaces.length, 1, 'one failure toast is drawn');
+  const notice = noticesIn(surfaces[0])[0];
+  return notice === undefined ? undefined : titleOf(notice);
+};
+
+const hostDown = (): never => {
+  throw new Error('The host store is locked.');
+};
+
+test('a failed tool catalog read shows the block notice; Retry reads again and the tools appear (T-24)', async () => {
+  let failing = true;
+  const { window } = await openAt('/settings/tools', {
+    'tools/v1.catalog': () =>
+      failing
+        ? hostDown()
+        : [
+            {
+              name: 'web_search',
+              description: 'Searches the web.',
+              settings: [
+                {
+                  key: 'endpoint',
+                  label: 'Endpoint',
+                  kind: 'text',
+                  required: false,
+                },
+              ],
+            },
+          ],
+  });
+
+  const notice = sectionNotice(window);
+  assert.ok(notice, 'the failed read draws no notice');
+  assert.equal(titleOf(notice), 'Tools not loaded');
+  assert.equal(explanationOf(notice), 'The request could not be completed.');
+  assert.equal(notice.getAttribute('data-variant'), 'block');
+  assert.equal(announced(notice), true);
+  const retry = retryOf(notice);
+  assert.ok(retry, 'the failed read offers no Retry');
+
+  failing = false;
+  retry.click();
+  await settle(40);
+
+  assert.equal(sectionNotice(window), undefined);
+  assert.ok(
+    window.document.getElementById('tool-web_search-endpoint') !== null,
+    'the tools did not appear',
+  );
+});
+
+test('a refused save says "Not saved" and toasts once as config-save-failed, titled "Settings not saved" (T-25)', async () => {
+  const { window, toasts } = await openAt('/settings/execution', {
+    'host-config/v1.replace': () => ({ status: 'rejected' }),
+  });
+  const turns = window.document.getElementById(
+    'execution-max-turns',
+  ) as HTMLInputElement;
+
+  type(turns, '12');
+  await settle(700);
+
+  assert.ok(window.received('host-config/v1.replace').length > 0);
+  const status = window.document.querySelector('main > footer')?.textContent;
+  assert.match(status ?? '', /Not saved/);
+  assert.doesNotMatch(status ?? '', /could not be activated/);
+  assert.ok(
+    toasts.ids().includes('config-save-failed'),
+    'no config-save-failed toast',
+  );
+  assert.equal(toastTitle(toasts), 'Settings not saved');
+
+  // A second refusal replaces the toast rather than adding one.
+  type(turns, '13');
+  await settle(700);
+  assert.ok(
+    toasts.ids().includes('config-save-failed'),
+    'no config-save-failed toast',
+  );
+  assert.equal(toastTitle(toasts), 'Settings not saved');
+});
+
+/** The open credential editor. */
+const editor = (window: SettingsWindow): HTMLElement => {
+  const dialog = window.document.querySelector<HTMLElement>('[role="dialog"]');
+  assert.ok(dialog !== null, 'the credential editor is not open');
+  return dialog;
+};
+
+const editorButton = (window: SettingsWindow, label: string) =>
+  [...editor(window).querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent?.trim() === label,
+  );
+
+test('a refused credential save shows a notice in the editor without Retry, keeps Save, and clears on the next edit and on a saved write (T-25)', async () => {
+  let failing = true;
+  const { window, toasts } = await openAt('/settings/credentials', {
+    'secrets/v1.create': (input: unknown) =>
+      failing
+        ? hostDown()
+        : {
+            id: '00000000-0000-4000-8000-0000000000aa',
+            kind: 'API_TOKEN',
+            name: (input as { readonly name: string }).name,
+            hasSecret: true,
+          },
+  });
+  const add = [...window.document.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Add credential',
+  );
+  assert.ok(add, 'the section offers no Add credential');
+  add.click();
+  await settle(20);
+  type(field(window, 'credential-name'), 'Work');
+  type(field(window, 'credential-secret'), 'sk-live');
+  await settle();
+
+  editorButton(window, 'Add credential')?.click();
+  await settle(40);
+
+  const notices = noticesIn(editor(window));
+  assert.equal(notices.length, 1, 'the editor draws no notice');
+  const notice = notices[0] as HTMLElement;
+  assert.equal(titleOf(notice), 'Credential not saved');
+  assert.equal(explanationOf(notice), 'The request could not be completed.');
+  assert.equal(notice.getAttribute('data-variant'), 'block');
+  assert.equal(announced(notice), true);
+  assert.equal(retryOf(notice), null, 'a refused save offers Retry');
+  assert.ok(
+    editorButton(window, 'Add credential') !== undefined,
+    'the editor lost its Save',
+  );
+  assert.equal(toasts.surfaces().length, 0, 'the refused save toasts too');
+
+  type(field(window, 'credential-name'), 'Work 2');
+  await settle();
+  assert.deepEqual(noticesIn(editor(window)), []);
+
+  editorButton(window, 'Add credential')?.click();
+  await settle(40);
+  assert.equal(noticesIn(editor(window)).length, 1);
+  failing = false;
+  editorButton(window, 'Add credential')?.click();
+  await settle(40);
+  assert.deepEqual(
+    noticesIn(window.document.querySelector('[role="dialog"]')),
+    [],
+  );
+});
+
+test('a refused credential remove toasts as credentials-write-failed (T-25)', async () => {
+  const { window, toasts } = await openAt('/settings/credentials', {
+    'secrets/v1.list': () => [
+      { id: token, kind: 'API_TOKEN', name: 'OpenRouter', hasSecret: true },
+    ],
+    'secrets/v1.delete': () => 'referenced',
+  });
+
+  await removeCredential(window, 'OpenRouter');
+
+  assert.ok(
+    toasts.ids().includes('credentials-write-failed'),
+    'no credentials-write-failed toast',
+  );
+  assert.equal(toastTitle(toasts), 'Not possible right now');
+});
+
+test('a failed provider kinds read shows "Providers not loaded" instead of "No provider kind is available"; Retry reads again (T-26)', async () => {
+  let failing = true;
+  const { window } = await openAt('/settings/providers', {
+    'models/v1.kinds': () => (failing ? hostDown() : [openrouter]),
+  });
+
+  const notice = noticesTitled(
+    window.document.querySelector('main'),
+    'Providers not loaded',
+  )[0];
+  assert.ok(notice, 'the failed read draws no notice');
+  assert.equal(notice.getAttribute('data-variant'), 'block');
+  assert.equal(announced(notice), true);
+  assert.doesNotMatch(
+    window.document.body.textContent ?? '',
+    /No provider kind is available/,
+  );
+  const retry = retryOf(notice);
+  assert.ok(retry, 'the failed read offers no Retry');
+
+  failing = false;
+  retry.click();
+  await settle(40);
+  assert.deepEqual(
+    noticesTitled(
+      window.document.querySelector('main'),
+      'Providers not loaded',
+    ),
+    [],
+  );
+});
+
+test('a failed credentials list read shows "Credentials not loaded" at the top of the section; Retry reads again (T-26)', async () => {
+  let failing = true;
+  const { window } = await openAt('/settings/credentials', {
+    'secrets/v1.list': () =>
+      failing
+        ? hostDown()
+        : [
+            {
+              id: token,
+              kind: 'API_TOKEN',
+              name: 'OpenRouter',
+              hasSecret: true,
+            },
+          ],
+  });
+
+  const notice = sectionNotice(window);
+  assert.ok(notice, 'the failed read draws no notice');
+  assert.equal(titleOf(notice), 'Credentials not loaded');
+  assert.equal(notice.getAttribute('data-variant'), 'block');
+  assert.equal(announced(notice), true);
+  const retry = retryOf(notice);
+  assert.ok(retry, 'the failed read offers no Retry');
+
+  failing = false;
+  retry.click();
+  await settle(40);
+  assert.equal(sectionNotice(window), undefined);
+  assert.match(
+    window.document.querySelector('main')?.textContent ?? '',
+    /OpenRouter/,
+  );
+});
+
+test("each read notice's details keep the time of the failed read across a remount (T-26)", async () => {
+  // The first read fails; any later one never answers, so the failure stays.
+  const failOnce = () => {
+    let calls = 0;
+    return () => {
+      calls += 1;
+      return calls === 1 ? hostDown() : new Promise(() => undefined);
+    };
+  };
+  const { window } = await openAt('/settings/providers', {
+    'models/v1.kinds': failOnce(),
+    'secrets/v1.list': failOnce(),
+  });
+
+  for (const [section, title] of [
+    ['Providers', 'Providers not loaded'],
+    ['Credentials', 'Credentials not loaded'],
+  ] as const) {
+    await openSection(window, section);
+    const before = noticesTitled(
+      window.document.querySelector('main'),
+      title,
+    )[0];
+    assert.ok(before, `no ${title} notice`);
+    const at = await timeOf(before);
+    assert.ok(at !== undefined && at !== '', `${title} has no time`);
+
+    await settle(1_100);
+    await openSection(window, 'Tools');
+    await openSection(window, section);
+
+    const after = noticesTitled(
+      window.document.querySelector('main'),
+      title,
+    )[0];
+    assert.ok(after, `the ${title} notice left on remount`);
+    assert.equal(await timeOf(after), at);
+  }
+});
+
+/** Deletes the credential named `name` from its row's actions. */
+const removeCredential = async (
+  window: SettingsWindow,
+  name: string,
+): Promise<void> => {
+  const actions = window.document.querySelector<HTMLElement>(
+    `[aria-label="Actions for ${name}"]`,
+  );
+  assert.ok(actions !== null, `no actions for ${name}`);
+  press(actions);
+  await settle(20);
+  const remove = [
+    ...window.document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((item) => item.textContent?.trim() === 'Delete');
+  assert.ok(remove !== undefined, 'the row offers no Delete');
+  remove.click();
+  await settle(40);
+};

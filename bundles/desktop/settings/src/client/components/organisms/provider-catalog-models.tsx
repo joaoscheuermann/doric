@@ -1,4 +1,5 @@
 import { Button } from 'desktop/ui/button';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { Field, FieldDescription, FieldLabel } from 'desktop/ui/field';
 import {
   Table,
@@ -21,6 +22,7 @@ import {
   type ProviderModel,
   providerValues,
 } from '../../domain/config.js';
+import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { useProviderCatalog } from '../../hooks/use-provider-catalog.js';
 
 /**
@@ -100,9 +102,14 @@ function CatalogModelsRead({
   return (
     <>
       {catalog.error !== undefined ? (
-        <FieldDescription className="text-destructive">
-          The models could not be read: {catalog.error}
-        </FieldDescription>
+        <ErrorNotice
+          announce
+          catalog={settingsErrorCatalog}
+          error={catalog.error}
+          fallbackCode="catalog_read_failed"
+          onRetry={() => catalog.reload()}
+          variant="compact"
+        />
       ) : models.length === 0 ? (
         <FieldDescription>
           {catalog.loading

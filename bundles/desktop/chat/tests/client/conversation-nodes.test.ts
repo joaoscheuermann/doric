@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
 
 import { $isListNode, ListItemNode, ListNode } from '@lexical/list';
+import type { ErrorInfo } from 'desktop/reads';
 import {
   $getRoot,
   $isElementNode,
@@ -32,6 +33,10 @@ import {
   $isCommentSeatNode,
   CommentSeatNode,
 } from '../../src/client/components/organisms/conversation/nodes/comment-seat-node.js';
+import {
+  $createCompactionTurnNode,
+  CompactionTurnNode,
+} from '../../src/client/components/organisms/conversation/nodes/compaction-turn-node.js';
 import {
   $createTurnAuthorNode,
   TurnAuthorNode,
@@ -694,5 +699,195 @@ describe('the caption of a UI-action prompt (C4)', () => {
     assert.equal(block?.getAttribute('data-ui-action'), 'release');
     assert.equal(block?.getAttribute('data-prompt-id'), promptId);
     assert.equal(block?.textContent?.trim(), 'Tag the release');
+  });
+});
+
+// T-15: a failure's `at` is the time of its event (§6.1), so two projections of
+// the same failure may differ only in `at`; the sync compares failures with
+// `sameErrorInfo`, which ignores it, and keeps the blocks.
+describe('failed blocks keep their nodes across projections (T-15)', () => {
+  const compactPrompt = '55555555-5555-4555-8555-555555555555';
+
+  /** The log, each event's time moved by `shift` milliseconds. */
+  const failedLog = (shift: number) =>
+    [
+      threadEvent(1, {
+        type: 'prompt.accepted',
+        text: 'Preview it',
+        source: { kind: 'user' },
+      }),
+      threadEvent(2, {
+        type: 'tool.started',
+        call: { id: 'c1', name: 'papercraft_preview', index: 0, payload: {} },
+      }),
+      threadEvent(3, {
+        type: 'tool.failed',
+        call: { id: 'c1', name: 'papercraft_preview', index: 0, payload: {} },
+        error: {
+          message: 'Tool handler failed: papercraft_preview',
+          data: { code: 'handler_failed' },
+          cause: { code: 'invalid_input', message: 'a.tsx did not compile' },
+        },
+      }),
+      threadEvent(4, { type: 'text.delta', delta: 'Looking further.' }),
+      threadEvent(5, { type: 'reasoning.delta', delta: 'a' }),
+      threadEvent(6, {
+        type: 'tool.started',
+        call: { id: 'c2', name: 'read_file', index: 0, payload: {} },
+      }),
+      threadEvent(7, {
+        type: 'tool.failed',
+        call: { id: 'c2', name: 'read_file', index: 0, payload: {} },
+        error: { code: 'not_found', message: 'a.ts does not exist.' },
+      }),
+      threadEvent(8, { type: 'reasoning.delta', delta: 'b' }),
+      threadEvent(9, { type: 'text.delta', delta: 'Giving up.' }),
+      threadEvent(10, {
+        type: 'agent.failed',
+        error: {
+          message: 'The model request failed.',
+          data: { code: 'rate_limit_error', provider: 'openai' },
+        },
+      }),
+      threadEvent(11, {
+        type: 'prompt.finished',
+        status: 'failed',
+        text: 'The prompt failed.',
+        source: { kind: 'user' },
+      }),
+      threadEvent(
+        12,
+        { type: 'compaction.started', trigger: 'manual' },
+        compactPrompt,
+      ),
+      threadEvent(
+        13,
+        {
+          type: 'compaction.failed',
+          code: 'summarizer_failed',
+          error: {
+            message: 'Rate limited',
+            data: { code: 'rate_limit_error', provider: 'openai', status: 429 },
+          },
+        },
+        compactPrompt,
+      ),
+    ].map((item) => ({
+      ...item,
+      createdAt: new Date(Date.parse(item.createdAt) + shift).toISOString(),
+    }));
+
+  const watched = [
+    'tool-turn-node',
+    'activity-turn-node',
+    'failure-turn-node',
+    'compaction-turn-node',
+  ];
+
+  /** The keys of the failed blocks, by node type, in transcript order. */
+  const failedNodes = (
+    editor: NonNullable<ReturnType<typeof fenceProbe>['state']['editor']>,
+  ) =>
+    editor.getEditorState().read(() =>
+      $getRoot()
+        .getChildren()
+        .filter((node) => watched.includes(node.getType()))
+        .map((node) => `${node.getType()}:${node.getKey()}`),
+    );
+
+  test('an unchanged tool, activity, failure and compaction block keeps its node when only the time differs', async () => {
+    const { probe, state } = fenceProbe([]);
+    const window = await openWith(probe, failedLog(0));
+    const editor = state.editor;
+    assert.ok(editor, 'the probe holds the editor');
+    const before = failedNodes(editor);
+    assert.deepEqual(
+      before.map((entry) => entry.split(':')[0]),
+      watched,
+      'every failed block is drawn',
+    );
+
+    snapshot(window, failedLog(60 * 60 * 1000));
+    await settle(150);
+
+    assert.deepEqual(failedNodes(editor), before);
+  });
+
+  test('a compaction node written and read back keeps its failure', () => {
+    const error: ErrorInfo = {
+      code: 'summarizer_failed',
+      message: 'The summarizer failed.',
+      causes: [
+        {
+          code: 'rate_limit_error',
+          provider: 'openai',
+          status: 429,
+          message: 'Rate limited',
+        },
+      ],
+      at: '2026-01-01T00:00:02.000Z',
+    };
+    const compactionEditor = createEditor({
+      namespace: 'compaction',
+      nodes: [CompactionTurnNode],
+    });
+    let kept: { written: unknown; restored: unknown } | undefined;
+    let failed: unknown;
+    compactionEditor.update(
+      () => {
+        try {
+          const serialized = $createCompactionTurnNode(
+            'turn-c',
+            promptId,
+            'manual',
+            'failed',
+            undefined,
+            undefined,
+            'summarizer_failed',
+            undefined,
+            error,
+          ).exportJSON();
+          kept = {
+            written: serialized.error,
+            restored: CompactionTurnNode.importJSON(
+              reread(serialized),
+            ).exportJSON().error,
+          };
+        } catch (thrown) {
+          failed = thrown;
+        }
+      },
+      { discrete: true },
+    );
+    if (failed !== undefined) throw failed;
+
+    assert.deepEqual(kept?.written, error);
+    assert.deepEqual(kept?.restored, error);
+  });
+
+  test('a compaction node without a failure writes no error', () => {
+    const compactionEditor = createEditor({
+      namespace: 'compaction-done',
+      nodes: [CompactionTurnNode],
+    });
+    let serialized: Record<string, unknown> | undefined;
+    compactionEditor.update(
+      () => {
+        serialized = $createCompactionTurnNode(
+          'turn-d',
+          promptId,
+          'manual',
+          'completed',
+          3,
+          10,
+          undefined,
+          'Keep it.',
+        ).exportJSON() as unknown as Record<string, unknown>;
+      },
+      { discrete: true },
+    );
+
+    assert.ok(serialized);
+    assert.equal('error' in serialized, false);
   });
 });

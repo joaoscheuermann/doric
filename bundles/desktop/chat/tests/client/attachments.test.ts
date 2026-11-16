@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
-import type { ClientContext } from 'bundle/contracts';
+import { type ClientContext, ContractError } from 'bundle/contracts';
 import {
   $getRoot,
   $isElementNode,
@@ -15,7 +15,16 @@ import {
   type LexicalNode,
   PASTE_COMMAND,
 } from 'lexical';
+import {
+  ATTACHMENT_MAX_BYTES,
+  type RuntimeAttachments,
+} from 'runtime/contracts';
 
+import { createAttachmentsApi } from '../../src/client/api/attachments-api.js';
+import {
+  internalMessage,
+  unavailableMessage,
+} from '../../src/client/api/threads-api.js';
 import { ChatLexicalV1 } from '../../src/contracts/index.js';
 import {
   type ChatWindow,
@@ -209,4 +218,100 @@ test('an image pasted into the prompt is attached, then sent as its line', async
         .includes(`![shot.png](doric-attachment:${catId})`),
     );
   });
+});
+
+// T-20: an attach rejects with the adapters' `ClientError` (§6.4): the
+// contract's code with the contract error as `cause`, `internal` with none,
+// and the message it had before.
+const failingAttach = (error: unknown) =>
+  createAttachmentsApi(
+    () =>
+      ({
+        attach: async () => {
+          throw error;
+        },
+        read: async () => undefined,
+      }) as unknown as RuntimeAttachments,
+  );
+
+const rejectsWithClientError = async (
+  promise: Promise<unknown>,
+  expected: {
+    readonly code: string;
+    readonly message: string;
+    readonly cause: unknown;
+  },
+) =>
+  assert.rejects(promise, (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.name, 'ClientError');
+    assert.equal((error as Error & { code?: unknown }).code, expected.code);
+    assert.equal(error.message, expected.message);
+    assert.equal(error.cause, expected.cause);
+    return true;
+  });
+
+const image = () =>
+  new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+
+test('T-20 an attach the host refuses keeps the contract code and error, with its message', async () => {
+  const refused = new ContractError(
+    'invalid_input',
+    'Only PNG, JPEG, GIF and WebP images can be attached.',
+  );
+  await rejectsWithClientError(
+    failingAttach(refused).attach(threadId, image(), 'cat.png'),
+    {
+      code: 'invalid_input',
+      message: 'Only PNG, JPEG, GIF and WebP images can be attached.',
+      cause: refused,
+    },
+  );
+  const gone = new ContractError('disconnected', 'bridge closed');
+  await rejectsWithClientError(
+    failingAttach(gone).attach(threadId, image(), 'cat.png'),
+    { code: 'disconnected', message: unavailableMessage, cause: gone },
+  );
+});
+
+test('T-20 an internal attach failure gives code internal and no cause', async () => {
+  await rejectsWithClientError(
+    failingAttach(new ContractError('internal', 'raw host text')).attach(
+      threadId,
+      image(),
+      'cat.png',
+    ),
+    { code: 'internal', message: internalMessage, cause: undefined },
+  );
+  await rejectsWithClientError(
+    failingAttach(new Error('boom')).attach(threadId, image(), 'cat.png'),
+    { code: 'internal', message: internalMessage, cause: undefined },
+  );
+});
+
+test('T-20 an image over the size limit is refused before the host as invalid_input', async () => {
+  let asked = false;
+  const api = createAttachmentsApi(
+    () =>
+      ({
+        attach: async () => {
+          asked = true;
+          throw new Error('not reached');
+        },
+        read: async () => undefined,
+      }) as unknown as RuntimeAttachments,
+  );
+  await rejectsWithClientError(
+    api.attach(
+      threadId,
+      new Blob([new Uint8Array(ATTACHMENT_MAX_BYTES + 1)]),
+      'huge.png',
+    ),
+    {
+      code: 'invalid_input',
+      message: `The image is larger than ${ATTACHMENT_MAX_BYTES / (1024 * 1024)} MiB.`,
+      cause: undefined,
+    },
+  );
+  assert.equal(asked, false);
 });

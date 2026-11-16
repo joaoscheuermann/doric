@@ -13,6 +13,7 @@
 
 @source '../components';
 @source '../chrome-bar.tsx';
+@source '../error-notice.tsx';
 
 /*
  * Borders and outlines take the theme's colours by default, wherever a sheet

@@ -15,7 +15,7 @@ generation process next to `runtime`, which calls it. See the
 
 ## What it provides
 
-`executor/v1@1.4.0`, with:
+`executor/v1@1.5.0`, with:
 
 - `run` — run one prompt of a Thread; from 1.3.0 the Thread it receives
   carries its agent with the agent's instructions, and its model and effort;
@@ -23,7 +23,9 @@ generation process next to `runtime`, which calls it. See the
 - `checkpoint` and `rewind` — give the runtime the history patch it commits;
 - `formats` — the history formats it reads (`default.history/v1`, and
   `direct.history/v1` written before the rename);
-- `compact` — condense an idle Thread's history on demand.
+- `compact` — condense an idle Thread's history on demand; from 1.5.0 a
+  failure after the bracket opens records `compaction.failed` with
+  `{ code, error }`, `error` holding the failure behind the code.
 
 `default.hooks/v1@1.0.0`, an extension point for other bundles (the
 `default` bundle registers no handler of its own), with:

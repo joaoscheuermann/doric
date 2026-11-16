@@ -1,3 +1,4 @@
+import { errorInfo } from 'desktop/reads';
 import { createStore } from 'zustand/vanilla';
 
 import type { ThreadUpdateInput, TurnComment } from '../../contracts/index.js';
@@ -9,7 +10,6 @@ import {
   type PromptReceipt,
   threadsApi,
 } from '../api/threads-api.js';
-import { messageFrom } from '../domain/errors.js';
 import { promptMessage, sentComments } from '../domain/prompt-envelope.js';
 import { queueChanged } from '../domain/queue.js';
 import {
@@ -306,7 +306,7 @@ export const createThreadChatsStore = (
         await request(text);
         return true;
       } catch (reason) {
-        setChats(withSendError(get().chats, id, messageFrom(reason)));
+        setChats(withSendError(get().chats, id, errorInfo(reason)));
         return false;
       } finally {
         setChats(withSending(get().chats, id, false));
@@ -430,7 +430,7 @@ export const createThreadChatsStore = (
           await dependencies.threads.retry(id);
           return true;
         } catch (reason) {
-          setChats(withSendError(get().chats, id, messageFrom(reason)));
+          setChats(withSendError(get().chats, id, errorInfo(reason)));
           return false;
         } finally {
           setChats(withSending(get().chats, id, false));
@@ -450,7 +450,7 @@ export const createThreadChatsStore = (
           commit(change.effects, change.chats);
           return true;
         } catch (reason) {
-          setChats(withSendError(get().chats, id, messageFrom(reason)));
+          setChats(withSendError(get().chats, id, errorInfo(reason)));
           return false;
         } finally {
           setChats(withSending(get().chats, id, false));

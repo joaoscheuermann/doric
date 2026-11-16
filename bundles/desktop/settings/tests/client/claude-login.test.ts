@@ -10,6 +10,13 @@ import { afterEach, test } from 'node:test';
 import { ContractError } from 'bundle/contracts';
 
 import {
+  explanationOf,
+  noticesIn,
+  type Toasts,
+  titleOf,
+  windowToasts,
+} from './support/notices.js';
+import {
   type HostAnswer,
   openSettingsWindow,
   type SettingsWindow,
@@ -128,8 +135,11 @@ const openrouterOnlyHost = () => {
 };
 
 let opened: SettingsWindow | undefined;
+let toasts: Toasts | undefined;
 
 afterEach(async () => {
+  toasts?.dismissAll();
+  toasts = undefined;
   await opened?.close();
   opened = undefined;
 });
@@ -407,7 +417,7 @@ test('a finished sign-in settles the credential into the token field', async () 
   assert.equal(provider?.configuration.token, signedIn.id);
 });
 
-test('a sign-in the authorization refuses announces its own message', async () => {
+test('a sign-in the authorization refuses toasts as claude-login-failed, titled "Sign-in failed" with its own message (T-38)', async () => {
   const { host } = claudeHost(() => {
     throw new ContractError(
       'claude_login_failed',
@@ -415,14 +425,62 @@ test('a sign-in the authorization refuses announces its own message', async () =
     );
   });
   opened = await addProviderPage(host);
+  toasts = await windowToasts(opened.document);
 
   buttonOf(opened, 'Sign in with Claude')?.click();
   await settle(30);
 
   assert.match(toastsOf(opened), /The Claude sign-in failed: access_denied/);
+  assert.ok(toasts.ids().includes('claude-login-failed'));
+  const surfaces = toasts.surfaces();
+  assert.equal(surfaces.length, 1, 'one failure toast is drawn');
+  const notice = noticesIn(surfaces[0])[0];
+  assert.ok(notice, 'the toast holds no notice');
+  assert.equal(titleOf(notice), 'Sign-in failed');
+  assert.equal(
+    explanationOf(notice),
+    'The Claude sign-in failed: access_denied',
+  );
   const again = buttonOf(opened, 'Sign in with Claude');
   assert.ok(again !== undefined, 'A refused sign-in stays busy.');
   assert.equal(again.disabled, false);
+});
+
+test('a refused sign-in then a finished one leaves one toast, the plain "Claude is signed in." (T-39)', async () => {
+  let refusing = true;
+  const { host } = claudeHost(() => {
+    if (refusing) {
+      throw new ContractError(
+        'claude_login_failed',
+        'The Claude sign-in failed: access_denied',
+      );
+    }
+    return signedIn;
+  });
+  opened = await addProviderPage(host);
+  toasts = await windowToasts(opened.document);
+
+  buttonOf(opened, 'Sign in with Claude')?.click();
+  await settle(30);
+  assert.ok(toasts.ids().includes('claude-login-failed'));
+
+  refusing = false;
+  buttonOf(opened, 'Sign in with Claude')?.click();
+  await settle(30);
+  // Let a dismissed toast finish leaving.
+  await settle(500);
+
+  assert.ok(toasts.ids().includes('claude-login'), 'no claude-login toast');
+  assert.ok(
+    !toasts.ids().includes('claude-login-failed'),
+    'claude-login-failed stays',
+  );
+  assert.deepEqual(toasts.surfaces(), [], 'a failure toast stays drawn');
+  const success = toasts
+    .drawn()
+    .filter((toast) => /Claude is signed in\./.test(toast.textContent ?? ''));
+  assert.equal(success.length, 1, 'the success is not drawn once');
+  assert.deepEqual(noticesIn(success[0]), [], 'the success draws a notice');
 });
 
 test('a composition without the Claude sign-in still configures the claude kind, drawing no sign-in', async () => {

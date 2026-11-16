@@ -30,6 +30,7 @@ import {
   ToolsV1,
 } from 'bundle/contracts';
 import { ClaudeLoginV1 } from 'claude-login/contracts';
+import { ClientError } from 'desktop/reads';
 import { LayoutDashboardV1, LayoutWorkspaceV1 } from 'layout/contracts';
 import type {
   ConfigReplaceResult,
@@ -76,13 +77,34 @@ export const HostConfigurationV1 = ref<HostConfiguration>('host-config/v1');
 /** `runtime.threads/v1`, referenced by id with the runtime's type, as the layout does. */
 export const RuntimeThreadsV1 = ref<RuntimeThreads>('runtime.threads/v1');
 
-/** The failure every settings surface shows: its message is the text on screen. */
-export class SettingsApiError extends Error {
+/**
+ * The rejection of every settings adapter call: a `ClientError` whose
+ * `message` is the text the surface showed before this change, unchanged, and
+ * whose `code` names the outcome (§6.4): the host's contract error code
+ * (other than `internal`), `internal`, `invalid_input`, `invalid_output`,
+ * `not_found` or `conflict`. `cause` holds the error the host answered, when
+ * there is one and its code is not `internal` (D11); `retryable` is set only
+ * where a repeat is known to fail the same way (`api()` with no bridge).
+ *
+ * Constructed as `new SettingsApiError(code, message, options?)`, the
+ * `ClientError` constructor; it never throws. `name` is always
+ * `'SettingsApiError'`. Readers use `errorInfo`, which reads its fields, not
+ * `instanceof`.
+ */
+export class SettingsApiError extends ClientError {
   override readonly name = 'SettingsApiError';
 }
 
-const fail = (message: string): never => {
-  throw new SettingsApiError(message);
+/**
+ * Throws a `SettingsApiError` with `code` and `message` as given, and with
+ * `cause` as its `cause` when `cause` is not `undefined`. Never returns.
+ */
+const fail = (code: string, message: string, cause?: unknown): never => {
+  throw new SettingsApiError(
+    code,
+    message,
+    cause === undefined ? undefined : { cause },
+  );
 };
 
 // The REST client's messages (app/desktop/doric/src/workspace/api.ts).
@@ -91,7 +113,18 @@ const invalidResponseMessage = 'Doric returned an invalid response.';
 // The transport's final error handler.
 const internalMessage = 'The request could not be completed.';
 
-const invalidResponse = (): never => fail(invalidResponseMessage);
+const invalidResponse = (): never =>
+  fail('invalid_output', invalidResponseMessage);
+
+/**
+ * Fails with `message` and the code of a host failure (§6.4): a contract
+ * error's own code with that error as cause, unless its code is `internal`;
+ * `internal` with no cause for anything else.
+ */
+const hostFailure = (error: unknown, message: string): never =>
+  isContractError(error) && error.code !== 'internal'
+    ? fail(error.code, message, error)
+    : fail('internal', message);
 
 /** Bridge failures that mean the host was not reached. */
 const unreachable = new Set([
@@ -109,10 +142,12 @@ const unreachable = new Set([
 const unexpected = (error: unknown): never => {
   if (error instanceof SettingsApiError) throw error;
   if (isContractError(error)) {
-    if (unreachable.has(error.code)) return fail(unavailableMessage);
-    if (error.code === 'invalid_output') return invalidResponse();
+    if (unreachable.has(error.code))
+      return hostFailure(error, unavailableMessage);
+    if (error.code === 'invalid_output')
+      return hostFailure(error, invalidResponseMessage);
   }
-  return fail(internalMessage);
+  return hostFailure(error, internalMessage);
 };
 
 const reach = async <Value>(
@@ -153,9 +188,11 @@ const isReasoningEffort = (value: unknown): value is ReasoningEffort =>
 const tokenPattern = /^[\x21-\x7e]+$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const invalidConfiguration = (): never => fail('The configuration is invalid.');
+const invalidConfiguration = (): never =>
+  fail('invalid_input', 'The configuration is invalid.');
 
-const invalidCredential = (): never => fail('The credential is invalid.');
+const invalidCredential = (): never =>
+  fail('invalid_input', 'The credential is invalid.');
 
 const guardedValues = (value: unknown): Record<string, string> => {
   if (!isPlainRecord(value)) return invalidConfiguration();
@@ -348,7 +385,7 @@ const guardedIdentifier = (value: unknown): string => {
     value.length > 200 ||
     value.includes('\0')
   ) {
-    return fail('The item identifier is invalid.');
+    return fail('invalid_input', 'The item identifier is invalid.');
   }
 
   return value;
@@ -457,7 +494,7 @@ const uuidPattern =
 const routeEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
 const credentialMismatch = (): never =>
-  fail('The credential does not match its kind.');
+  fail('invalid_input', 'The credential does not match its kind.');
 
 /** `name`: trimmed, 1..128. */
 const routeName = (value: string): string => {
@@ -530,7 +567,9 @@ const routeUpdate = (input: CredentialUpdate): CredentialUpdate => {
 
 /** `/credentials/:id`: a UUID. */
 const routeCredentialId = (id: string): string =>
-  uuidPattern.test(id) ? id : fail('The credential ID is invalid.');
+  uuidPattern.test(id)
+    ? id
+    : fail('invalid_input', 'The credential ID is invalid.');
 
 const credentialNotFound = 'The credential was not found.';
 const credentialConflict = 'The credential cannot perform this operation.';
@@ -540,14 +579,18 @@ const credentialWriteFailure = (error: unknown): never => {
   if (isContractError(error)) {
     switch (error.code) {
       case 'credential_invalid':
-        return fail(error.message);
+        return fail(error.code, error.message, error);
       case 'credential_missing':
-        return fail(credentialNotFound);
+        return fail(error.code, credentialNotFound, error);
       case 'credential_kind_immutable':
       case 'credential_name_taken':
-        return fail(credentialConflict);
+        return fail(error.code, credentialConflict, error);
       case 'credential_storage_unavailable':
-        return fail('The host cannot store credential secrets.');
+        return fail(
+          error.code,
+          'The host cannot store credential secrets.',
+          error,
+        );
     }
   }
   return unexpected(error);
@@ -558,7 +601,9 @@ const credentialWriteFailure = (error: unknown): never => {
  * generic one.
  */
 const claudeLoginFailure = (error: unknown): never =>
-  isContractError(error) ? fail(error.message) : unexpected(error);
+  isContractError(error)
+    ? hostFailure(error, error.message)
+    : unexpected(error);
 
 /** Whether one declared value is one the field's kind accepts. */
 const fieldAccepts = (field: ModelField, value: string): boolean => {
@@ -595,7 +640,8 @@ const fieldsAccepted = (
   );
 };
 
-const invalidProvider = (): never => fail('The provider values are invalid.');
+const invalidProvider = (): never =>
+  fail('invalid_input', 'The provider values are invalid.');
 
 // ---------------------------------------------------------------------------
 // Response readers (api.ts), same refusals.
@@ -1148,8 +1194,8 @@ export interface SettingsApi {
 const replaced = (result: ConfigReplaceResult): DoricConfiguration => {
   if (result.status === 'replaced')
     return doricConfigurationFrom(result.config);
-  if (result.status === 'invalid') return fail(result.message);
-  return fail('The Doric configuration could not be activated.');
+  if (result.status === 'invalid') return fail('invalid_input', result.message);
+  return fail('internal', 'The Doric configuration could not be activated.');
 };
 
 /** The adapter over one bundle activation's services. */
@@ -1168,8 +1214,11 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
         // The route answered any failure of the replacement as a rejection;
         // a host out of reach never got that far.
         if (isContractError(error) && unreachable.has(error.code))
-          return fail(unavailableMessage);
-        return fail('The Doric configuration could not be activated.');
+          return fail(error.code, unavailableMessage, error);
+        return fail(
+          'internal',
+          'The Doric configuration could not be activated.',
+        );
       }
       return replaced(result);
     },
@@ -1196,7 +1245,10 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
         models.catalog({ kind: kind.id, configuration: guarded.configuration }),
       );
       if (read.status !== 'read')
-        return fail('The provider model catalog could not be read.');
+        return fail(
+          'internal',
+          'The provider model catalog could not be read.',
+        );
       return catalogFrom(read.models);
     },
     icons: async (requests) => {
@@ -1252,8 +1304,8 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
       const result = await reach(() =>
         services.use(SecretsV1).delete({ id: credentialId }),
       );
-      if (result === 'missing') return fail(credentialNotFound);
-      if (result === 'referenced') return fail(credentialConflict);
+      if (result === 'missing') return fail('not_found', credentialNotFound);
+      if (result === 'referenced') return fail('conflict', credentialConflict);
     },
   },
   claude: {
@@ -1379,7 +1431,9 @@ export const initSettingsApi = (services: Services | undefined): void => {
 /** The adapter the hooks call; the bundle is active while its UI exists. */
 export const api = (): SettingsApi => {
   if (active === undefined) {
-    throw new SettingsApiError('Doric backend is unavailable.');
+    throw new SettingsApiError('internal', 'Doric backend is unavailable.', {
+      retryable: false,
+    });
   }
   return active;
 };

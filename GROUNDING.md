@@ -743,7 +743,7 @@ model and the effort, never the instructions; the runner reads them
 from the stored document on every run and hands them to the executor as
 `thread.agent.instructions`, so a retry, a parent's send, the restart of a
 failed child and a run after a host restart use the same values. The default
-executor (`executor/v1` 1.4.0) runs the Thread as that agent, with its model
+executor (`executor/v1` 1.5.0) runs the Thread as that agent, with its model
 and effort on the Thread's stored provider; when no
 instructions are stored for an agent Thread, the runner drops the agent and the
 Thread runs as the default agent.
@@ -953,7 +953,9 @@ payload)` to the same bundle in every other live generation. The kernel names
 Client reads and UI that name a bundle's concept belong to that bundle.
 `packages/desktop/reads` and `packages/desktop/ui` hold only generic primitives
 (refresh queues, path utilities, tree and panel components, tokens, and the
-pan, zoom and wheel-gesture helpers of `desktop/ui/viewport`).
+pan, zoom and wheel-gesture helpers of `desktop/ui/viewport`, and the error
+notice of `desktop/ui/error-notice`). Bundle-specific error codes stay in each
+bundle's error catalog, which the bundle passes to the shared notice.
 
 ### Current Runtime
 
@@ -1700,7 +1702,9 @@ UUID prompt identifier compatible with event storage. The
 finished event retains the exact summary message and its `summaryId`, so each
 completed compaction node can expand to read and copy its own Markdown summary
 after a shimmering `Compacting` row appears on `compaction.started` and updates
-in place on completion or failure. The expansion icon sits immediately after
+in place on completion or failure. `compaction.failed` carries its `code` and,
+when known, the `error` behind it; a failed compaction row shows an error
+notice with that code and cause. The expansion icon sits immediately after
 the completed row's label, on its right. The saved summary remains available
 after later compactions. Legacy events without a saved summary show that it is
 unavailable. A span containing only existing summary messages is refused as
@@ -1781,12 +1785,15 @@ contract to the window, the `desktopMain` generation or the host; at stage 8 the
 legacy Project, Thread, settings and terminal IPC channels remained beside it
 and the renderer was the shell's legacy React tree (both removed by stage 9);
 the shared desktop package is `packages/desktop`: `desktop/ui` supplies tokens,
-theme, fonts, shadcn/ui components and the reader's identity
-(`desktop/ui/identity`, `desktop/ui/reader-avatar`), whose overlays portal into the
+theme, fonts, shadcn/ui components — whose overlays portal into the
 container the nearest `PortalContainerProvider` (`desktop/ui/portal-container`,
 also exported by `desktop/ui`) names, else into `document.body`, while a
-`container` passed to a `*Portal` wins; `desktop/client` runs the window;
-`desktop/reads` supplies generic read helpers; and `desktop/protocol` names the
+`container` passed to a `*Portal` wins — the reader's identity
+(`desktop/ui/identity`, `desktop/ui/reader-avatar`), and the error notice and
+`toastError` (`desktop/ui/error-notice`, which also holds the shared error
+catalog entries); `desktop/client` runs the window;
+`desktop/reads` supplies generic read helpers, the error value (`ErrorInfo`,
+`errorInfo`, `errorFrom`, `sameErrorInfo`), `ClientError` and the error catalog types; and `desktop/protocol` names the
 window-main API. `app/desktop/doric-platform` builds the platform files and
 import map (React, ReactDOM, Lexical, Base UI, zod, `desktop/ui` and
 `bundle/contracts`); Base UI (`@base-ui/react` and each exported subpath) is
@@ -1871,6 +1878,8 @@ The sidebar alignment replaces `layout.stack/v1` with `layout.stack/v2@2.0.0`
 (panes pinned under the Thread region, no sizes), adds
 `layout.sidebar/v1@1.1.0` (`busy`), and moves layout to 3.0.0 and the
 platform to 1.6.0 (`ScrollArea.scrollbars`).
+The error messages change moves the platform to 1.7.0
+(`desktop/ui/error-notice`).
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and, for tools, never consulted: every registered
 tool is bound on every prompt. For skills it decides where the default agent
@@ -3069,7 +3078,8 @@ and `prompt.resumed` carries the attempt number of a prompt the host took up
 again. An interrupted prompt is resumed from the provider history persisted as
 the run advanced, so it continues where it stopped, and an attempt budget counted
 from those events stops a prompt that keeps interrupting the host: it is closed
-as a failure carrying the `resume_exhausted` code. Closing an exhausted delegated
+as a failure carrying the `resume_exhausted` code, whose message is English and
+which the chat titles "Execution stopped". Closing an exhausted delegated
 prompt also accepts its correlated result for an active parent in the same
 transaction; the boot queues that result once. `prompt.finished` carries the
 input source, terminal status, and response text;
@@ -3233,9 +3243,11 @@ Thread's own provider (`providerId`); the runtime requires
 provider.
 
 A failed tool call's row and a prompt's failure marker read the stored error,
-not only its outermost message: its message, then each cause's on its own line
-(`Caused by: …`), starting below the tool registry's `handler_failed` wrapper,
-so the reader sees the reason the model read.
+not only its outermost message: each draws an error notice
+(`desktop/ui/error-notice`) with a title from the error's code, a muted
+explanation and, in its collapsed details, the message and then each cause on
+its own line (`Caused by: …`), starting below the tool registry's
+`handler_failed` wrapper, so the reader sees the reason the model read.
 
 The conversation states the two lifecycle events as markers between the blocks
 they sit between: a pause reads as a quiet row — the reason it

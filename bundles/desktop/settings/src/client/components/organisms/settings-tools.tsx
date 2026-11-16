@@ -1,3 +1,4 @@
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   Field,
   FieldDescription,
@@ -7,6 +8,7 @@ import {
 import { Input } from 'desktop/ui/input';
 
 import type { Configuration, ToolConfigField } from '../../domain/config.js';
+import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { useToolCatalog } from '../../hooks/use-tool-catalog.js';
 import { ChoicePicker } from '../molecules/choice-picker.js';
 
@@ -53,7 +55,16 @@ export function SettingsTools({ draft, onChange }: SettingsToolsProps) {
   const tools = catalog.list.filter((tool) => tool.settings.length > 0);
 
   if (catalog.error !== undefined) {
-    return <p className="text-destructive text-sm">{catalog.error}</p>;
+    return (
+      <ErrorNotice
+        announce
+        catalog={settingsErrorCatalog}
+        error={catalog.error}
+        fallbackCode="tools_read_failed"
+        onRetry={catalog.reload}
+        retrying={catalog.loading}
+      />
+    );
   }
 
   if (catalog.loading && catalog.list.length === 0) {

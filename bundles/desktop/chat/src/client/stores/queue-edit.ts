@@ -1,3 +1,4 @@
+import type { ErrorInfo } from 'desktop/reads';
 import type { SerializedElementNode } from 'lexical';
 import { createStore } from 'zustand/vanilla';
 
@@ -16,7 +17,8 @@ export interface QueueEdit {
   readonly saving: boolean;
   /** A successful offscreen save restores the captured draft on remount. */
   readonly restore?: boolean;
-  readonly error?: string;
+  /** Why the last save failed; cleared by the next save (§5.1). */
+  readonly error?: ErrorInfo;
 }
 
 /** Per-Thread editing state; the normal composer draft is restored when editing ends. */

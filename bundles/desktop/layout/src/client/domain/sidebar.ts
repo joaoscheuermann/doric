@@ -1,4 +1,5 @@
-import { messageFrom } from './errors.js';
+import type { ErrorInfo } from 'desktop/reads';
+
 import type { Draft, Entity } from './workspace.js';
 
 /**
@@ -57,6 +58,26 @@ export const noFillButton =
   'bg-transparent hover:bg-transparent active:bg-transparent data-active:bg-transparent focus-visible:ring-0';
 
 /**
+ * What `retryError` loads again for a failed load (§8): the Projects list,
+ * or one Project's Threads. Plain data; two targets are the same target when
+ * their `kind` and, for `threads`, their `projectId` are equal.
+ */
+export type WorkspaceRetry =
+  | { readonly kind: 'projects' }
+  | { readonly kind: 'threads'; readonly projectId: string };
+
+/**
+ * The one workspace error (§8): the failure as `ErrorInfo`, and the load to
+ * repeat for it. `retry` is set only for a failed load; a failed create,
+ * rename, color change, delete, copy or project stream has none, so no
+ * notice offers Retry for it.
+ */
+export interface WorkspaceError {
+  readonly error: ErrorInfo;
+  readonly retry?: WorkspaceRetry;
+}
+
+/**
  * The workspace sidebar's transient state: the dialog in progress and the one
  * error a failed request surfaces. Everything else the sidebar draws — the
  * Projects, the Threads, the selection — lives in the Project tree.
@@ -66,7 +87,7 @@ export type Sidebar = {
   readonly editing?: Entity;
   readonly deleting?: Entity;
   readonly deletingPending: boolean;
-  readonly error?: string;
+  readonly error?: WorkspaceError;
 };
 
 export const emptySidebar: Sidebar = { deletingPending: false };
@@ -177,19 +198,46 @@ export const clearRename = (sidebar: Sidebar, entity: Entity): Sidebar =>
     : sidebar;
 
 /**
- * The one way a failed request reaches the user. Node reports a rejected IPC
- * call as an `Error`, and anything else becomes the fallback message.
+ * The one way a failed request reaches the user: `error` replaces any error
+ * the sidebar holds, with `retry` as its target (absent: no target).
+ * Everything else in the sidebar is kept.
  */
-export const fail = (sidebar: Sidebar, reason: unknown): Sidebar => ({
+export const fail = (
+  sidebar: Sidebar,
+  error: ErrorInfo,
+  retry?: WorkspaceRetry,
+): Sidebar => ({
   ...sidebar,
-  error: messageFrom(reason),
+  error: retry === undefined ? { error } : { error, retry },
 });
 
-/** A message the host already carried, such as a live update's own error. */
-export const report = (sidebar: Sidebar, message: string): Sidebar => ({
+/**
+ * An error the host already carried, such as a live update's own error, or
+ * one the window built (a failed copy): replaces any error the sidebar holds,
+ * with no retry target. Everything else in the sidebar is kept.
+ */
+export const report = (sidebar: Sidebar, error: ErrorInfo): Sidebar => ({
   ...sidebar,
-  error: message,
+  error: { error },
 });
+
+/** Whether two retry targets name the same load. */
+const sameTarget = (left: WorkspaceRetry, right: WorkspaceRetry): boolean =>
+  left.kind === 'projects'
+    ? right.kind === 'projects'
+    : right.kind === 'threads' && left.projectId === right.projectId;
+
+/**
+ * A load of `target` succeeded: clears the error when its stored retry
+ * target is the same target (§8), and returns `sidebar` unchanged (the same
+ * object) otherwise — an error with no target, or with another target, stays.
+ */
+export const settle = (sidebar: Sidebar, target: WorkspaceRetry): Sidebar => {
+  const stored = sidebar.error?.retry;
+  return stored !== undefined && sameTarget(stored, target)
+    ? { ...sidebar, error: undefined }
+    : sidebar;
+};
 
 export const clearError = (sidebar: Sidebar): Sidebar => ({
   ...sidebar,

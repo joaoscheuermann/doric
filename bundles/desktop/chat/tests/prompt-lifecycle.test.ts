@@ -4,10 +4,7 @@ import { describe, test } from 'node:test';
 import {
   lifecycleMarker,
   pauseReason,
-  promptFailure,
   resumeAttempt,
-  resumeExhausted,
-  statesFailure,
 } from '../src/client/domain/prompt-lifecycle.js';
 
 /** A pause's own time, whose hour the row states in the reader's zone. */
@@ -137,50 +134,5 @@ describe('reading a prompt lifecycle event off the log', () => {
       }).action,
       false,
     );
-  });
-
-  test('reads a failure out of the error the host redacted or shaped', () => {
-    assert.deepEqual(
-      promptFailure({
-        code: 'resume_exhausted',
-        message: 'three times',
-        name: 'ResumeExhaustedError',
-      }),
-      {
-        code: 'resume_exhausted',
-        message: 'three times',
-        name: 'ResumeExhaustedError',
-      },
-    );
-    assert.deepEqual(promptFailure('redacted'), {
-      code: '',
-      message: 'redacted',
-      name: '',
-    });
-    assert.deepEqual(promptFailure(undefined), {
-      code: '',
-      message: '',
-      name: '',
-    });
-    assert.equal(statesFailure(promptFailure({ code: 'boom' })), true);
-    assert.equal(statesFailure(promptFailure(undefined)), false);
-  });
-
-  test("a failure states its cause's words, not only the wrapper's", () => {
-    assert.equal(
-      promptFailure({
-        name: 'AgentErrorObject',
-        message: 'Tool result could not be serialized to JSON.',
-        cause: { message: 'Converting circular structure to JSON' },
-      }).message,
-      'Tool result could not be serialized to JSON.\nCaused by: Converting circular structure to JSON',
-    );
-  });
-
-  test('recognises the resume that ran out of attempts as a warning', () => {
-    assert.equal(resumeExhausted('resume_exhausted'), true);
-    assert.equal(resumeExhausted('boom'), false);
-    assert.equal(resumeExhausted(''), false);
-    assert.equal(resumeExhausted(undefined), false);
   });
 });

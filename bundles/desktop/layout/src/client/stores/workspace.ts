@@ -1,3 +1,4 @@
+import { type ErrorInfo, errorInfo } from 'desktop/reads';
 import { createStore } from 'zustand/vanilla';
 
 import {
@@ -33,8 +34,10 @@ import {
   type Sidebar,
   selectProject as selectProjectSidebar,
   selectThread as selectThreadSidebar,
+  settle,
   settleDelete,
   startRename,
+  type WorkspaceRetry,
 } from '../domain/sidebar.js';
 import type { Draft, Entity, Project, Thread } from '../domain/workspace.js';
 
@@ -80,8 +83,19 @@ export type WorkspaceState = {
   readonly clearProjectDraft: () => void;
   readonly clearThreadDraft: (draft: Draft) => void;
   readonly clearRename: (entity: Entity) => void;
-  readonly fail: (reason: unknown) => void;
-  readonly report: (message: string) => void;
+  /**
+   * Stores `reason`, read as `errorInfo(reason)`, as the one error, with
+   * `retry` as its target (absent: no target); replaces any earlier error.
+   * Never throws, whatever `reason` is.
+   */
+  readonly fail: (reason: unknown, retry?: WorkspaceRetry) => void;
+  /** Stores `error` as the one error, with no retry target. */
+  readonly report: (error: ErrorInfo) => void;
+  /**
+   * A load of `target` succeeded: clears the error when its retry target is
+   * the same target; any other error stays.
+   */
+  readonly settle: (target: WorkspaceRetry) => void;
   readonly clearError: () => void;
 
   readonly setLoadingProjects: (loading: boolean) => void;
@@ -170,9 +184,11 @@ export const workspaceStore = createStore<WorkspaceState>()((set) => ({
     set((state) => sidebarState(clearThreadDraft(state.sidebar, draft))),
   clearRename: (entity) =>
     set((state) => sidebarState(clearRename(state.sidebar, entity))),
-  fail: (reason) => set((state) => sidebarState(fail(state.sidebar, reason))),
-  report: (message) =>
-    set((state) => sidebarState(report(state.sidebar, message))),
+  fail: (reason, retry) =>
+    set((state) => sidebarState(fail(state.sidebar, errorInfo(reason), retry))),
+  report: (error) => set((state) => sidebarState(report(state.sidebar, error))),
+  settle: (target) =>
+    set((state) => sidebarState(settle(state.sidebar, target))),
   clearError: () => set((state) => sidebarState(clearError(state.sidebar))),
 
   setLoadingProjects: (loading) => set(() => ({ loadingProjects: loading })),

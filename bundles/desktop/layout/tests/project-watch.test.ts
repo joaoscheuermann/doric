@@ -11,6 +11,7 @@ import {
   type Disposable,
   type StreamObserver,
 } from 'bundle/contracts';
+import { errorFrom, sameErrorInfo } from 'desktop/reads';
 import type {
   Project,
   ProjectWatchInput,
@@ -23,6 +24,31 @@ import {
   type ProjectWatchSource,
 } from '../src/client/api/project-watch.js';
 import type { ProjectUpdate } from '../src/client/domain/workspace.js';
+
+/**
+ * The stream ended with a failure (§8): one `error` update whose error is
+ * `project_stream_failed`, with the fixed message, over the stream's error.
+ */
+const assertStreamFailed = (
+  updates: readonly ProjectUpdate[],
+  cause: ContractError,
+): void => {
+  assert.equal(updates.length, 1);
+  const [update] = updates;
+  assert.equal(update?.kind, 'error');
+  if (update?.kind !== 'error') return;
+  assert.ok(
+    sameErrorInfo(
+      update.error,
+      errorFrom(
+        'project_stream_failed',
+        'The Project event stream failed.',
+        cause,
+      ),
+    ),
+    `unexpected error ${JSON.stringify(update.error)}`,
+  );
+};
 
 interface OpenStream {
   readonly input: ProjectWatchInput;
@@ -257,16 +283,16 @@ describe('Project watch', () => {
     watch.watch('project-id', onUpdate);
     const failed = runtime.open;
 
-    failed.observer.end?.(
-      new ContractError('internal', 'The snapshot could not be loaded.'),
+    const failure = new ContractError(
+      'internal',
+      'The snapshot could not be loaded.',
     );
+    failed.observer.end?.(failure);
     connection.report('disconnected');
     connection.report('connected');
     fireTimers();
 
-    assert.deepEqual(updates, [
-      { kind: 'error', message: 'The Project event stream failed.' },
-    ]);
+    assertStreamFailed(updates, failure);
     assert.equal(runtime.streams.length, 1);
   });
 
@@ -274,13 +300,10 @@ describe('Project watch', () => {
     const { runtime, watch, updates, onUpdate } = setup();
     watch.watch('project-id', onUpdate);
 
-    runtime.open.observer.end?.(
-      new ContractError('invalid_output', 'Invalid stream item.'),
-    );
+    const failure = new ContractError('invalid_output', 'Invalid stream item.');
+    runtime.open.observer.end?.(failure);
 
-    assert.deepEqual(updates, [
-      { kind: 'error', message: 'The Project event stream failed.' },
-    ]);
+    assertStreamFailed(updates, failure);
   });
 
   test('watching another Project replaces the previous watch', () => {

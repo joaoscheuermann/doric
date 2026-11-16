@@ -65,13 +65,15 @@ carries `profile` in the shared draft.
 - There is no Save button. A change is sent once typing settles (500 ms), at
   once on a field blur, and before the window closes through the window's
   `onFlushHook`.
-- The window confirms an accepted save with a "Settings saved." toast and shows
-  the host's reason for a refused one.
+- The window confirms an accepted save with a "Settings saved." toast (id
+  `config-save`) and shows a refused one as an error toast (id
+  `config-save-failed`) with the host's reason; a later success dismisses the
+  failure toast.
 - `domain/config.ts` mirrors the host's validation, so a draft the host would
   refuse is never sent; the host validates again.
 - The footer picker writes each choice at once through `setThreadExecution`,
   without a toast; a typed model commits on blur or Enter, and a refused write
-  shows its reason in the picker's alert span.
+  shows an inline error notice with its reason.
 - A section from another bundle edits through `settings.config/v1` (`draft`,
   `setDraft`, `subscribe`), so it shares the window's one draft, debounce and
   save.
@@ -95,8 +97,15 @@ All host calls go through one adapter, `src/client/api/settings-api.ts`:
   lists only the kinds it manages (API token, Username and password, Git
   identity) and leaves out every other kind, such as the MCP bundle's sign-in
   tokens; a malformed entry of a managed kind, or one whose kind is not a
-  string, still fails the list, and the Credentials section then shows no
-  credentials;
+  string, still fails the list, and the Credentials section then shows an
+  announced block error notice with Retry instead of the list; a refused
+  create, update or remove is an error toast (id `credentials-write-failed`),
+  and a success toast (id `credentials-write`) first dismisses it;
+- a failed read of the provider kinds shows an announced block error notice
+  with Retry in the settings window's Providers section, and a compact one in
+  the dashboard's Providers group; a failed Claude sign-in is an error toast
+  (id `claude-login-failed`, the success keeps `claude-login`), and a failure
+  to open a provider's site is an error toast (id `provider-open-site`);
 - `tools/v1` reads the tool catalog and each tool's declared fields.
 
 ## Development

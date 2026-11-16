@@ -98,7 +98,14 @@ describe('what opens each block on its own', () => {
       false,
     );
     assert.equal(
-      blockOpen(null, toolOpenness('failed', 'ls', undefined, 'denied')),
+      blockOpen(
+        null,
+        toolOpenness('failed', 'ls', undefined, {
+          code: '',
+          message: 'denied',
+          causes: [],
+        }),
+      ),
       false,
     );
   });

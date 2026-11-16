@@ -1,3 +1,5 @@
+import { type ErrorInfo, errorFrom, errorInfo } from 'desktop/reads';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { Input } from 'desktop/ui/input';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -22,7 +24,7 @@ import {
   updateModel,
   withExecution,
 } from '../../domain/config.js';
-import { messageFrom } from '../../domain/errors.js';
+import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { modelIconRequests } from '../../domain/model-icons.js';
 import { useConfigSnapshot } from '../../hooks/use-config-snapshot.js';
 import { useModelIcons } from '../../hooks/use-model-icons.js';
@@ -34,8 +36,17 @@ import { ModelPicker } from '../molecules/model-picker.js';
 const LOCKED_TITLE =
   'New threads start on the workspace default. Change it in Settings.';
 
-/** A refused write, shown only while its own Thread is selected. */
-type Alert = { readonly threadId: string; readonly message: string };
+/**
+ * A refused write, shown only while its own Thread is selected: the Thread it
+ * was for, the refusal as `ErrorInfo` (`errorFrom(code, message)` of the
+ * runtime's REST error, or `errorInfo` of a rejection), and the execution the
+ * write asked for, which the notice's Retry writes again (§5.2).
+ */
+type Alert = {
+  readonly threadId: string;
+  readonly error: ErrorInfo;
+  readonly next: ModelExecution;
+};
 
 const sameExecution = (a: ModelExecution, b: ModelExecution): boolean =>
   a.providerId === b.providerId && a.model === b.model && a.effort === b.effort;
@@ -74,7 +85,7 @@ const without = <Value,>(
  * workspace default. Without a selected Thread it shows the default, locked.
  */
 export function ExecutionPicker() {
-  const { configuration, error } = useConfigSnapshot();
+  const { configuration, error, reload, reloading } = useConfigSnapshot();
   const selected = useSelectedThread();
   /** The execution being written, per Thread id. */
   const [writes, setWrites] = useState<ReadonlyMap<string, ModelExecution>>(
@@ -144,9 +155,15 @@ export function ExecutionPicker() {
   if (configuration === undefined || view === undefined || shown === undefined)
     return error === undefined ? null : (
       <div className="mr-auto flex items-center gap-1">
-        <span className="text-destructive" role="alert">
-          {error}
-        </span>
+        <ErrorNotice
+          announce
+          catalog={settingsErrorCatalog}
+          error={error}
+          fallbackCode="config_read_failed"
+          onRetry={reload}
+          retrying={reloading}
+          variant="inline"
+        />
       </div>
     );
 
@@ -160,21 +177,26 @@ export function ExecutionPicker() {
     const id = selected.id;
     setAlert((current) => (current?.threadId === id ? undefined : current));
     setWrites((entries) => new Map(entries).set(id, next));
-    api()
-      .threads.setExecution({ id, ...next })
+    Promise.resolve()
+      .then(() => api().threads.setExecution({ id, ...next }))
       .then(
         (result) => {
           if (result.status === 'updated') {
             setAnswered((entries) => new Map(entries).set(id, result.thread));
             return;
           }
+          const rest = restErrors.setThreadExecution(result);
           setAlert({
             threadId: id,
-            message: restErrors.setThreadExecution(result)?.message ?? '',
+            error: errorFrom(
+              rest?.code ?? 'invalid_execution',
+              rest?.message ?? '',
+            ),
+            next,
           });
         },
         (reason: unknown) => {
-          setAlert({ threadId: id, message: messageFrom(reason) });
+          setAlert({ threadId: id, error: errorInfo(reason), next });
         },
       )
       .finally(() => {
@@ -220,14 +242,31 @@ export function ExecutionPicker() {
     write(setExecutionEffort(view, value as ReasoningEffort).models.execution);
   };
   const shownAlert =
-    alert !== undefined && alert.threadId === threadId ? alert.message : error;
+    alert !== undefined && alert.threadId === threadId ? alert : undefined;
 
   return (
     <div className="mr-auto flex items-center gap-1">
-      {shownAlert !== undefined && (
-        <span className="text-destructive" role="alert">
-          {shownAlert}
-        </span>
+      {shownAlert !== undefined ? (
+        <ErrorNotice
+          announce
+          catalog={settingsErrorCatalog}
+          error={shownAlert.error}
+          fallbackCode="invalid_execution"
+          onRetry={() => write(shownAlert.next)}
+          variant="inline"
+        />
+      ) : (
+        error !== undefined && (
+          <ErrorNotice
+            announce
+            catalog={settingsErrorCatalog}
+            error={error}
+            fallbackCode="config_read_failed"
+            onRetry={reload}
+            retrying={reloading}
+            variant="inline"
+          />
+        )
       )}
       {listsModels ? (
         <ModelPicker

@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "runtime",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "engines": {
     "doric": "^1.0.0"
   },

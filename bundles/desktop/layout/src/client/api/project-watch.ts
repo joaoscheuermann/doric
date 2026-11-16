@@ -5,8 +5,8 @@
 // - There is no cursor: every (re)subscribe delivers a fresh, authoritative
 //   snapshot, which the tree replaces wholesale.
 // - A notice that names another Project is dropped.
-// - A stream that ends with a failure reports
-//   'The Project event stream failed.' and stays ended, as the socket the
+// - A stream that ends with a failure reports `project_stream_failed`,
+//   'The Project event stream failed.', over its error and stays ended, as the socket the
 //   host disconnected after `workspace:error` did.
 // - A dropped connection (`disconnected`, `unavailable`) or a lost host
 //   generation (`generation_lost`) reports nothing and subscribes again, the
@@ -20,6 +20,7 @@ import {
   isContractError,
   type StreamObserver,
 } from 'bundle/contracts';
+import { errorFrom } from 'desktop/reads';
 import type { ProjectWatchInput, ProjectWatchItem } from 'runtime/contracts';
 
 import type { ProjectUpdate } from '../domain/workspace.js';
@@ -146,7 +147,14 @@ export const createProjectWatch = ({
             return;
           }
           if (error !== undefined) {
-            onUpdate({ kind: 'error', message: projectStreamFailed });
+            onUpdate({
+              kind: 'error',
+              error: errorFrom(
+                'project_stream_failed',
+                projectStreamFailed,
+                error,
+              ),
+            });
           }
         },
       };

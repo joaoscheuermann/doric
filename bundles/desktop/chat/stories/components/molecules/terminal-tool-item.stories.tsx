@@ -1,3 +1,4 @@
+import { errorFrom } from 'desktop/reads';
 import type { ComponentProps } from 'react';
 
 import { TerminalToolItem } from '../../../src/client/components/molecules/terminal-tool-item.js';
@@ -104,7 +105,10 @@ export const FailedCall = {
   render: () => (
     <Terminal
       args={terminalArgs('rm -rf node_modules/.vite')}
-      error="The command was refused: it writes outside the sandbox."
+      error={errorFrom(
+        '',
+        'The command was refused: it writes outside the sandbox.',
+      )}
       status="failed"
       initial
     />

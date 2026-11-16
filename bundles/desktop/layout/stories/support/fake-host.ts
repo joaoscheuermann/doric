@@ -5,7 +5,12 @@
 // services the layout itself provides (`layout.tabs/v1` and the rest) are
 // kept and answered in process, so a child Thread still opens its tab.
 
-import type { DoricAbout, Navigation, ProviderInfo } from 'bundle/contracts';
+import type {
+  CatalogSnapshot,
+  DoricAbout,
+  Navigation,
+  ProviderInfo,
+} from 'bundle/contracts';
 import { type ComponentProps, createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -65,6 +70,15 @@ export interface HostOptions {
    * Wins over the host's own answers and over what the layout provides.
    */
   readonly absent?: readonly string[];
+  /**
+   * The bundle catalog the window's `doric.catalog/v1` reports: with it,
+   * `services.use('doric.catalog/v1').get()` answers this snapshot (the same
+   * object on every call). Absent: the host does not provide the contract,
+   * so `use` throws for it, as it does for any id the host does not know.
+   * `LayoutFixture` extends `HostOptions`, so `bindLayout` and
+   * `renderWorkspace` pass it through unchanged.
+   */
+  readonly catalog?: CatalogSnapshot;
 }
 
 const terminalCommands = ['npm run dev', 'npm test -- --watch', 'tsc --watch'];
@@ -458,6 +472,9 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       },
       dispose: () => undefined,
     },
+    ...(options.catalog === undefined
+      ? {}
+      : { 'doric.catalog/v1': { get: () => options.catalog } }),
     'navigation/v1': navigation,
     'regions/v1': {
       add: () => disposable,

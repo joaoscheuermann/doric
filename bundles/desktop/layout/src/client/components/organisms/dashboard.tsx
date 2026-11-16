@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { type ErrorInfo, errorInfo } from 'desktop/reads';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   InputGroup,
   InputGroupAddon,
@@ -22,6 +24,7 @@ import {
   searchShortcutKeys,
   searchShortcutLabel,
 } from '../../domain/dashboard.js';
+import { layoutErrorCatalog } from '../../domain/error-catalog.js';
 import { useDashboardPage } from '../../hooks/use-dashboard-page.js';
 import { useRegionItems } from '../../hooks/use-region-items.js';
 import type { Workspace } from '../../hooks/use-workspace.js';
@@ -29,6 +32,7 @@ import { dashboardStore } from '../../stores/dashboard.js';
 import { ElementHost } from '../molecules/element-host.js';
 import { type ProjectEntry, ProjectItem } from '../molecules/project-item.js';
 import { SEARCH_FIELD } from '../molecules/search-field.js';
+import { WorkspaceErrorNotice } from '../molecules/workspace-error-notice.js';
 import { INSET_CARD } from '../templates/inset-card.js';
 import { DashboardSidebar } from './dashboard-sidebar.js';
 
@@ -148,6 +152,21 @@ export function Dashboard({
     queryKey: ['project-activity', projectVersion],
     queryFn: () => api.projects.activity(),
   });
+  // A refetch clears the query's error while it runs; the list keeps showing
+  // the last failure, with a busy Retry, until a fetch settles otherwise.
+  const activityFailure = useRef<ErrorInfo | undefined>(undefined);
+  if (activity.isError) {
+    activityFailure.current = errorInfo(activity.error, {
+      at: new Date(activity.errorUpdatedAt).toISOString(),
+    });
+  }
+  const failedLast =
+    activity.errorUpdateCount > 0 &&
+    activity.errorUpdatedAt >= activity.dataUpdatedAt;
+  const failure =
+    failedLast && (activity.isError || activity.isFetching)
+      ? activityFailure.current
+      : undefined;
   const liveProjects = new Map(
     workspace.projects.map((project) => [project.id, project]),
   );
@@ -295,7 +314,19 @@ export function Dashboard({
     </form>
   );
   const listContent =
-    activity.isPending || workspace.loadingProjects ? (
+    failure !== undefined ? (
+      <div className="flex justify-center py-[64px]">
+        <ErrorNotice
+          announce
+          error={failure}
+          catalog={layoutErrorCatalog}
+          fallbackCode="projects_load_failed"
+          onRetry={() => void activity.refetch()}
+          retrying={activity.isFetching}
+          className="w-[520px] max-w-full"
+        />
+      </div>
+    ) : activity.isPending || workspace.loadingProjects ? (
       <div
         className="flex flex-col gap-[2px] opacity-50"
         role="status"
@@ -311,20 +342,6 @@ export function Dashboard({
             <div className="h-[12px] w-[72px] animate-pulse rounded-[4px] bg-[var(--paper-ghost-hover)]" />
           </div>
         ))}
-      </div>
-    ) : activity.isError ? (
-      <div
-        className="py-[64px] text-center text-[12px] text-[var(--paper-gray-3)]"
-        role="alert"
-      >
-        Could not load projects.{' '}
-        <button
-          type="button"
-          className="text-primary"
-          onClick={() => void activity.refetch()}
-        >
-          Retry
-        </button>
       </div>
     ) : filtered.length === 0 ? (
       <div className="flex flex-col items-center gap-[16px] py-[64px] text-[12px] text-[var(--paper-gray-3)]">
@@ -403,9 +420,11 @@ export function Dashboard({
             </div>
           )}
           {workspace.error && (
-            <p className="py-[12px] text-[12px] text-destructive" role="alert">
-              {workspace.error}
-            </p>
+            <WorkspaceErrorNotice
+              className="my-[12px]"
+              error={workspace.error}
+              onRetry={workspace.actions.retryError}
+            />
           )}
         </div>
       </div>
@@ -448,12 +467,11 @@ export function Dashboard({
             )}
             {listContent}
             {workspace.error && (
-              <p
-                className="py-[12px] text-[12px] text-destructive"
-                role="alert"
-              >
-                {workspace.error}
-              </p>
+              <WorkspaceErrorNotice
+                className="my-[12px]"
+                error={workspace.error}
+                onRetry={workspace.actions.retryError}
+              />
             )}
           </div>
         </div>

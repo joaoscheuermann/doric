@@ -1,14 +1,16 @@
 import { HooksV1, type Services, WindowHooksV1 } from 'bundle/contracts';
+import { toastError } from 'desktop/ui/error-notice';
 import { toast } from 'desktop/ui/sonner';
 import { useEffect, useRef } from 'react';
 
+import { settingsErrorCatalog } from '../domain/error-catalog.js';
 import type { Config } from './use-config.js';
 
 /**
  * What a surface that autosaves the configuration owes the user: the save
  * still waiting on the debounce settles as the window closes, and each save
- * the host refused or accepted is announced once, under the toast id
- * `config-save`. The first load is recorded, not announced: it is not a save.
+ * the host refused is toasted under `config-save-failed`, and each save it
+ * accepted under `config-save`, after dismissing that failure (§4). The first load is recorded, not announced: it is not a save.
  */
 export const useConfigAutosave = (services: Services, config: Config): void => {
   const { flush } = config;
@@ -36,12 +38,17 @@ export const useConfigAutosave = (services: Services, config: Config): void => {
   }, [services, flush]);
 
   // A save the host refused is announced where the change was made, not only in
-  // the footer: the reason names a field the user is looking at. The error is the
-  // toast's id, so the same refusal replaces its own message instead of stacking
-  // on every attempt the debounce makes.
+  // the footer: the reason names a field the user is looking at. One id holds
+  // every refusal, so a refusal replaces the last one instead of stacking on
+  // every attempt the debounce makes.
   useEffect(() => {
     if (config.error !== undefined) {
-      toast.error(config.error, { id: 'config-save' });
+      toastError({
+        id: 'config-save-failed',
+        error: config.error,
+        catalog: settingsErrorCatalog,
+        fallbackCode: 'config_save_failed',
+      });
     }
   }, [config.error]);
 
@@ -53,6 +60,7 @@ export const useConfigAutosave = (services: Services, config: Config): void => {
     const revision = config.saved?.revision;
     if (revision === undefined || announced.current === revision) return;
     announced.current = revision;
+    toast.dismiss('config-save-failed');
     toast.success('Settings saved.', { id: 'config-save' });
   }, [config.saved]);
 };

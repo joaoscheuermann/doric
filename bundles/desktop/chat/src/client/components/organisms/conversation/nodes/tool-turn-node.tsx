@@ -1,3 +1,4 @@
+import { type ErrorInfo, sameErrorInfo } from 'desktop/reads';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -29,7 +30,7 @@ export type SerializedToolTurnNode = Spread<
     args: string;
     status: ToolTurn['status'];
     result?: string;
-    error?: string;
+    error?: ErrorInfo;
   },
   SerializedLexicalNode
 >;
@@ -43,7 +44,7 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
   __args: string;
   __status: ToolTurn['status'];
   __result?: string;
-  __error?: string;
+  __error?: ErrorInfo;
   /** The reader's choice of open/closed; `null` until they make one. */
   __chosen: boolean | null = null;
 
@@ -55,7 +56,7 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     args: string,
     status: ToolTurn['status'],
     result?: string,
-    error?: string,
+    error?: ErrorInfo,
     key?: NodeKey,
   ) {
     super(key);
@@ -66,7 +67,7 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     this.__args = args.trim();
     this.__status = status;
     this.__result = result?.trim();
-    this.__error = error?.trim();
+    this.__error = error;
   }
 
   static override getType(): string {
@@ -171,7 +172,7 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     const args = turn.args.trim();
     const status = turn.status;
     const result = turn.result?.trim();
-    const error = turn.error?.trim();
+    const error = turn.error;
     // A sync that says nothing new touches nothing, so the editor keeps its own
     // DOM and the reader keeps the caret where it was.
     if (
@@ -179,7 +180,7 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
       this.__args === args &&
       this.__status === status &&
       this.__result === result &&
-      this.__error === error
+      sameErrorInfo(this.__error, error)
     ) {
       return;
     }
@@ -228,7 +229,7 @@ export function $createToolTurnNode(
   args: string,
   status: ToolTurn['status'],
   result?: string,
-  error?: string,
+  error?: ErrorInfo,
 ): ToolTurnNode {
   return new ToolTurnNode(
     turnKey,

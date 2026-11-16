@@ -19,7 +19,6 @@ import type { SettingsCrumb } from '../components/templates/settings-surface.js'
 import { SettingsWindow } from '../components/templates/settings-window.js';
 import {
   type Configuration,
-  type ProviderKind,
   providerLabel,
   updatedAtLabel,
 } from '../domain/config.js';
@@ -34,7 +33,10 @@ import {
 import { type Config, useConfig } from '../hooks/use-config.js';
 import { useConfigAutosave } from '../hooks/use-config-autosave.js';
 import { type Credentials, useCredentials } from '../hooks/use-credentials.js';
-import { useProviderKinds } from '../hooks/use-provider-kinds.js';
+import {
+  type ProviderKinds,
+  useProviderKinds,
+} from '../hooks/use-provider-kinds.js';
 import { useProviderPage } from '../hooks/use-provider-page.js';
 import { configBridge } from '../services/settings-config.js';
 
@@ -60,7 +62,7 @@ function saveState(
   config: Config,
 ): { readonly destructive: boolean; readonly text: string } | undefined {
   if (config.error !== undefined) {
-    return { destructive: true, text: config.error };
+    return { destructive: true, text: 'Not saved' };
   }
   if (config.saving || (config.dirty && config.issue === undefined)) {
     return { destructive: false, text: 'Saving…' };
@@ -91,7 +93,7 @@ function Section({
   readonly credentials: Credentials;
   readonly draft: Configuration;
   readonly id: SectionId;
-  readonly kinds: readonly ProviderKind[];
+  readonly kinds: ProviderKinds;
   readonly onAdd: () => void;
   readonly onChange: (next: Configuration) => void;
   readonly onEdit: (index: number) => void;
@@ -107,7 +109,16 @@ function Section({
         <SettingsProviders
           credentials={credentials.list}
           draft={draft}
-          kinds={kinds}
+          kinds={kinds.list}
+          kindsFailure={
+            kinds.error === undefined
+              ? undefined
+              : {
+                  error: kinds.error,
+                  retry: kinds.reload,
+                  retrying: kinds.loading,
+                }
+          }
           onAdd={onAdd}
           onChange={onChange}
           onEdit={onEdit}
@@ -303,7 +314,7 @@ export function Settings({ services }: { readonly services: Services }) {
         credentials={credentials}
         draft={draft}
         id={current.id}
-        kinds={kinds.list}
+        kinds={kinds}
         onAdd={page.openNew}
         onChange={config.setDraft}
         onEdit={page.open}

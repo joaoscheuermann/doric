@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
+import { assertToolNotice } from './support/notices.js';
 import { type ChatWindow, openChatWindow, settle } from './support/window.js';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
@@ -188,4 +189,19 @@ test("an MCP server's skill names the server it came from", async () => {
   assert.match(row.textContent ?? '', /Loaded skill\s+refunds/);
   assert.match(row.textContent ?? '', /MCP · acme/);
   assert.doesNotMatch(row.textContent ?? '', /mcp\/acme/);
+});
+
+test('T-19 a skill that failed to load shows the compact tool notice naming the call', async () => {
+  const window = await deliver([
+    asked,
+    loading('cwd/missing-skill'),
+    failed('cwd/missing-skill'),
+    finished,
+  ]);
+
+  await assertToolNotice(skillRow(window) as HTMLElement | undefined, {
+    title: 'Tool failed',
+    explanation: 'No skill is named cwd/missing-skill.',
+    tool: 'load_skill',
+  });
 });

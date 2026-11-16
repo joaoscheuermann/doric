@@ -21,6 +21,7 @@ import type { SpawnAgent } from './threads.js';
  * 1.4.0: `run` and `compact` resolve the Thread's execution with
  * `resolveThreadExecution`; a run of a Thread whose stored execution is
  * unavailable rejects before any model request.
+ * 1.5.0: `compaction.failed` carries the optional `error`.
  */
 
 export interface PromptJob {

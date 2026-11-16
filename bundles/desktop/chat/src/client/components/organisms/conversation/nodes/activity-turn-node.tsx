@@ -1,3 +1,4 @@
+import { sameErrorInfo } from 'desktop/reads';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -65,7 +66,7 @@ const sameItems = (
         item.args === other.args &&
         item.status === other.status &&
         item.result === other.result &&
-        item.error === other.error
+        sameErrorInfo(item.error, other.error)
       );
     return false;
   });

@@ -1,3 +1,4 @@
+import type { ErrorInfo } from 'desktop/reads';
 import { useEffect, useRef } from 'react';
 
 import { projectWatch } from '../api/project-watch.js';
@@ -8,7 +9,8 @@ export type ProjectEventsOptions = {
   /** The Project whose live Threads the caller follows. */
   readonly projectId: string | undefined;
   readonly onUpdate: (update: TreeUpdate) => void;
-  readonly onError: (message: string) => void;
+  /** The stream ended with a failure (`project_stream_failed` over its cause). */
+  readonly onError: (error: ErrorInfo) => void;
 };
 
 /**
@@ -30,7 +32,7 @@ export const useProjectEvents = ({
     if (projectId === undefined) return;
     return projectWatch().watch(projectId, (update: ProjectUpdate) => {
       const current = latest.current;
-      if (update.kind === 'error') current.onError(update.message);
+      if (update.kind === 'error') current.onError(update.error);
       else current.onUpdate(update);
     });
   }, [projectId]);

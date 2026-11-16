@@ -16,6 +16,7 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
+import type { ErrorInfo } from 'desktop/reads';
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import { Button } from 'desktop/ui/button';
 import {
@@ -33,6 +34,7 @@ import {
   DropdownMenuGroup,
   DropdownMenuTrigger,
 } from 'desktop/ui/dropdown-menu';
+import { ErrorNotice, toastError } from 'desktop/ui/error-notice';
 import {
   Field,
   FieldDescription,
@@ -83,6 +85,7 @@ import {
   credentialUpdate,
   emptyCredentialDraft,
 } from '../../domain/config.js';
+import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { useCredentials } from '../../hooks/use-credentials.js';
 import { RowActions } from '../molecules/row-actions.js';
 
@@ -557,11 +560,14 @@ function CredentialTable({
  */
 function CredentialDialog({
   draft,
+  failure,
   onChange,
   onClose,
   onSave,
 }: {
   readonly draft: CredentialDraft;
+  /** The last refused save of this draft, shown below the validation alert. */
+  readonly failure?: ErrorInfo;
   readonly onChange: (next: CredentialDraft) => void;
   readonly onClose: () => void;
   readonly onSave: () => void;
@@ -637,6 +643,15 @@ function CredentialDialog({
               <AlertDescription>{issue}</AlertDescription>
             </Alert>
           )}
+
+          {failure !== undefined && (
+            <ErrorNotice
+              announce
+              catalog={settingsErrorCatalog}
+              error={failure}
+              fallbackCode="credential_write_failed"
+            />
+          )}
         </FieldGroup>
 
         <DialogFooter>
@@ -665,14 +680,21 @@ function CredentialDialog({
  *
  * A write is announced where it was made: the dialog says the credential was
  * saved or added before it closes, and the row's deletion is confirmed after it
- * is gone. A failure is announced too, and leaves the dialog open on what the
- * user typed, because the reason names the entry that has to be corrected and the
- * entry is in the dialog. Every message carries one id per kind of write, so
- * repeating the same outcome replaces its own toast instead of stacking.
+ * is gone. A refused save is shown in the dialog, which stays open on what the
+ * user typed, because the reason names the entry that has to be corrected and
+ * the entry is in the dialog; a refused removal toasts as
+ * `credentials-write-failed`, which each success dismisses before its own
+ * `credentials-write` toast. A failed read of the list is shown at the top.
  */
 export function SettingsCredentials() {
   const credentials = useCredentials();
   const [draft, setDraft] = useState<CredentialDraft>();
+  const [writeError, setWriteError] = useState<ErrorInfo>();
+
+  const edit = (next: CredentialDraft | undefined): void => {
+    setWriteError(undefined);
+    setDraft(next);
+  };
 
   const save = async (): Promise<void> => {
     if (draft === undefined || credentialIssue(draft) !== undefined) return;
@@ -684,10 +706,11 @@ export function SettingsCredentials() {
         ? await credentials.create(credentialCreate(draft))
         : await credentials.update(stored.id, credentialUpdate(draft, stored));
     if (result.status === 'failed') {
-      toast.error(result.message, { id: 'credentials-write' });
+      setWriteError(result.error);
       return;
     }
-    setDraft(undefined);
+    edit(undefined);
+    toast.dismiss('credentials-write-failed');
     toast.success(
       stored === undefined ? 'Credential added.' : 'Credential saved.',
       { id: 'credentials-write' },
@@ -697,18 +720,35 @@ export function SettingsCredentials() {
   const remove = async (credential: Credential): Promise<void> => {
     const result = await credentials.remove(credential.id);
     if (result.status === 'failed') {
-      toast.error(result.message, { id: 'credentials-write' });
+      toastError({
+        id: 'credentials-write-failed',
+        error: result.error,
+        catalog: settingsErrorCatalog,
+        fallbackCode: 'credential_write_failed',
+      });
       return;
     }
+    toast.dismiss('credentials-write-failed');
     toast.success(`Removed ${credential.name}.`, { id: 'credentials-write' });
   };
 
   return (
     <div className="flex flex-col gap-4">
+      {credentials.loadError !== undefined && (
+        <ErrorNotice
+          announce
+          catalog={settingsErrorCatalog}
+          error={credentials.loadError}
+          fallbackCode="credentials_read_failed"
+          onRetry={credentials.reload}
+          retrying={credentials.loading}
+        />
+      )}
+
       <CredentialTable
         credentials={credentials.list}
         loading={credentials.loading}
-        onEdit={(credential) => setDraft(credentialDraftOf(credential))}
+        onEdit={(credential) => edit(credentialDraftOf(credential))}
         onRemove={(credential) => void remove(credential)}
       />
 
@@ -716,7 +756,7 @@ export function SettingsCredentials() {
         variant="outline"
         size="sm"
         className="self-start"
-        onClick={() => setDraft(emptyCredentialDraft('API_TOKEN'))}
+        onClick={() => edit(emptyCredentialDraft('API_TOKEN'))}
       >
         <PlusIcon data-icon="inline-start" />
         Add credential
@@ -725,8 +765,9 @@ export function SettingsCredentials() {
       {draft !== undefined && (
         <CredentialDialog
           draft={draft}
-          onChange={setDraft}
-          onClose={() => setDraft(undefined)}
+          failure={writeError}
+          onChange={edit}
+          onClose={() => edit(undefined)}
           onSave={() => void save()}
         />
       )}

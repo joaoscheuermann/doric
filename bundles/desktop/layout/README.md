@@ -43,6 +43,21 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   agent Thread "in viewer"), adds, copies and deletes. Other bundles add
   panes only under the Thread region, pinned to the column's bottom; each
   pane collapses but does not resize (`project-sidebar.tsx`).
+- **Errors.** A failed workspace request is shown once, by the workspace error
+  notice (`workspace-error-notice.tsx`): in the sidebar on the workspace frame,
+  in the dashboard body on the dashboard frame. A failed Projects or Threads
+  load offers Retry, which loads it again (the dashboard keeps the last list
+  failure on screen while it reloads); a failed create, rename, color change
+  or delete offers none. The name field shows no toast; its validation reason
+  is a line under the name.
+- **Quarantined bundles.** When the window's bundle catalog
+  (`doric.catalog/v1`) lists quarantined bundles, one warning notice at the
+  bottom of the left sidebar (on the workspace frame at its bottom edge after
+  the stack panes; on the dashboard frame directly above the "All settings"
+  footer) names them all ("N
+  extension(s) couldn't start"), its details one bundle per line with its
+  reasons; the regions they would fill stay empty. An element whose creation
+  throws shows a compact notice in its place.
 - **Conversation.** The selected Thread fills the main area; a child Thread
   opens as a tab beside its root Thread instead of replacing it. Each of these
   viewer tabs has a context menu: the entries the bundle that opened it

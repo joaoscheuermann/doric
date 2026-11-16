@@ -10,6 +10,8 @@
  * state; `null` here means the reader has not chosen and the default decides.
  */
 
+import type { ErrorInfo } from 'desktop/reads';
+
 import type { CommentThreadState } from './comment-threads.js';
 import type { ToolStatus } from './projector.js';
 
@@ -59,7 +61,7 @@ export const toolOpenness = (
   status: ToolStatus,
   args: string,
   result: string | undefined,
-  error: string | undefined,
+  error: ErrorInfo | undefined,
   name?: string,
 ): Openness => ({
   active: status === 'running',

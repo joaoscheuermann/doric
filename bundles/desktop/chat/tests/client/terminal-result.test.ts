@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
+import { assertToolNotice } from './support/notices.js';
 import { type ChatWindow, openChatWindow, settle } from './support/window.js';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
@@ -163,4 +164,48 @@ test('a background terminal result that failed is open, with its stderr in the t
   assert.notEqual(stderr, null);
   assert.match(stderr?.textContent ?? '', /AssertionError/);
   assert.equal(stderr?.className.includes('text-destructive'), true);
+});
+
+test('T-19 a terminal call the tool failed shows the compact tool notice naming the call', async () => {
+  const call = {
+    id: 'call-term-failed',
+    name: 'terminal',
+    payload: { command: 'npm test', working_directory: '/workspace' },
+  };
+  opened = await openChatWindow({ url, host });
+  opened
+    .watches()
+    .at(-1)
+    ?.push({
+      kind: 'snapshot',
+      threadId,
+      projectId,
+      project: null,
+      thread,
+      events: [
+        event(1, {
+          type: 'prompt.accepted',
+          text: 'Run the tests',
+          source: { kind: 'user' },
+        }),
+        event(2, { type: 'tool.started', call }),
+        event(3, {
+          type: 'tool.failed',
+          call,
+          error: { message: 'The working directory is outside the project.' },
+        }),
+      ],
+    });
+  await settle(200);
+
+  await assertToolNotice(
+    opened.document.querySelector<HTMLElement>(
+      'chat-view [data-slot="terminal-tool"]',
+    ),
+    {
+      title: 'Tool failed',
+      explanation: 'The working directory is outside the project.',
+      tool: 'terminal',
+    },
+  );
 });

@@ -204,7 +204,9 @@ export const compactThread = async (
   } catch (error) {
     const code =
       error instanceof CompactionError ? error.code : 'summarizer_failed';
-    await session.record({ event: { type: 'compaction.failed', code } });
+    await session.record({
+      event: { type: 'compaction.failed', code, error },
+    });
     return { status: 'failed', code };
   }
 };
@@ -330,7 +332,7 @@ export const maybeCompactRun = async (options: {
     const code =
       error instanceof CompactionError ? error.code : 'summarizer_failed';
     await options.session.record({
-      event: { type: 'compaction.failed', code },
+      event: { type: 'compaction.failed', code, error },
     });
     return { status: 'failed', code };
   }
