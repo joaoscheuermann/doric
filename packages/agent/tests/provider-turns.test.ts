@@ -437,3 +437,226 @@ void test('complete: the wait before a retry honours the provider delay and the 
   assert.ok(Date.now() - started < 5_000);
   assert.equal(provider.requests.length, 1);
 });
+
+// A provider that could not be reached at all: the transport failure the
+// provider adapter turned into a `network_error`.
+const transportFailure = (): TypeError =>
+  new TypeError('fetch failed', {
+    cause: { code: 'UND_ERR_CONNECT_TIMEOUT' },
+  });
+
+const networkError = (cause: unknown): ProviderErrorObject =>
+  new ProviderErrorObject(
+    {
+      provider: 'openrouter',
+      code: 'network_error',
+      message: 'Could not connect to openrouter.',
+      retryable: true,
+    },
+    { cause },
+  );
+
+const failingProvider = (
+  fail: (index: number) => unknown,
+): ReturnType<typeof createProvider> =>
+  createProvider({
+    complete: (_, index) => {
+      const failure = fail(index);
+      if (failure !== undefined) throw failure;
+      return completeFinish('Recovered.');
+    },
+    stream: (_, index) =>
+      (async function* (): AsyncGenerator<ProviderStreamEvent<unknown>> {
+        const failure = fail(index);
+        if (failure !== undefined) throw failure;
+        yield* streamEvents(completeFinish('Recovered.'));
+      })(),
+  });
+
+// Held in a variable so the options type-check before `networkRetries` exists.
+const retryWith = (
+  networkRetries?: number,
+): { readonly baseDelayMs: number; readonly maxDelayMs: number } => {
+  const retry = {
+    baseDelayMs: 0,
+    maxDelayMs: 0,
+    ...(networkRetries === undefined ? {} : { networkRetries }),
+  };
+  return retry;
+};
+
+const networkAgent = (
+  provider: ReturnType<typeof createProvider>,
+  retry: ReturnType<typeof retryWith> = retryWith(),
+): Agent =>
+  createAgent({
+    provider: provider.provider,
+    tools: createTools().storage,
+    messages: createMessageStorage(),
+    system: '',
+    model: 'fake-model',
+    retry,
+  });
+
+for (const mode of modes) {
+  void test(`${mode}: an unreachable provider is asked up to four more times`, async () => {
+    const provider = failingProvider((index) =>
+      index < 4 ? networkError(transportFailure()) : undefined,
+    );
+
+    assert.equal(await invoke(networkAgent(provider), mode), 'Recovered.');
+    assert.equal(provider.requests.length, 5);
+  });
+
+  void test(`${mode}: a provider that stays unreachable fails saying how often it was tried`, async () => {
+    const failure = transportFailure();
+    const provider = failingProvider(() => networkError(failure));
+
+    await assert.rejects(invoke(networkAgent(provider), mode), (error) => {
+      assert.ok(error instanceof ProviderErrorObject);
+      assert.equal(
+        error.message,
+        'Could not connect to openrouter (tried 5 times).',
+      );
+      assert.equal(error.data.code, 'network_error');
+      assert.equal(error.cause, failure);
+      return true;
+    });
+    assert.equal(provider.requests.length, 5);
+  });
+
+  void test(`${mode}: an overloaded provider keeps the ordinary retry budget`, async () => {
+    const provider = failingProvider(() =>
+      providerError({ retryable: true, status: 529 }),
+    );
+
+    await assert.rejects(
+      invoke(networkAgent(provider), mode),
+      (error: unknown) =>
+        error instanceof ProviderErrorObject &&
+        error.message === 'Provider failed.',
+    );
+    assert.equal(provider.requests.length, 3);
+  });
+
+  void test(`${mode}: retry.networkRetries bounds the attempts on an unreachable provider`, async () => {
+    const provider = failingProvider(() => networkError(transportFailure()));
+
+    await assert.rejects(
+      invoke(networkAgent(provider, retryWith(1)), mode),
+      (error: unknown) =>
+        error instanceof ProviderErrorObject &&
+        error.message === 'Could not connect to openrouter (tried 2 times).',
+    );
+    assert.equal(provider.requests.length, 2);
+  });
+
+  void test(`${mode}: with no network retries the provider's own error is the run's error`, async () => {
+    const failure = networkError(transportFailure());
+    const provider = failingProvider(() => failure);
+
+    await assert.rejects(
+      invoke(networkAgent(provider, retryWith(0)), mode),
+      (error: unknown) =>
+        error === failure &&
+        (error as Error).message === 'Could not connect to openrouter.',
+    );
+    assert.equal(provider.requests.length, 1);
+  });
+
+  void test(`${mode}: an overloaded provider after network retries still gets its own retries`, async () => {
+    const provider = failingProvider((index) => {
+      if (index < 3) return networkError(transportFailure());
+      if (index < 5) return providerError({ retryable: true, status: 529 });
+      return undefined;
+    });
+
+    assert.equal(await invoke(networkAgent(provider), mode), 'Recovered.');
+    assert.equal(provider.requests.length, 6);
+  });
+
+  void test(`${mode}: an unreachable provider after overload retries still gets its own network retries`, async () => {
+    const provider = failingProvider((index) => {
+      if (index < 2) return providerError({ retryable: true, status: 529 });
+      if (index < 6) return networkError(transportFailure());
+      return undefined;
+    });
+
+    assert.equal(await invoke(networkAgent(provider), mode), 'Recovered.');
+    assert.equal(provider.requests.length, 7);
+  });
+
+  void test(`${mode}: an unreachable provider after overload retries counts every attempt of the turn`, async () => {
+    const failure = transportFailure();
+    const provider = failingProvider((index) =>
+      index < 2
+        ? providerError({ retryable: true, status: 529 })
+        : networkError(failure),
+    );
+
+    await assert.rejects(invoke(networkAgent(provider), mode), (error) => {
+      assert.ok(error instanceof ProviderErrorObject);
+      assert.equal(
+        error.message,
+        'Could not connect to openrouter (tried 7 times).',
+      );
+      assert.equal(error.data.code, 'network_error');
+      assert.equal(error.cause, failure);
+      return true;
+    });
+    assert.equal(provider.requests.length, 7);
+  });
+}
+
+void test('stream: a connection dropped before any output is asked again unseen', async () => {
+  const provider = createProvider({
+    stream: (_, index) =>
+      (async function* (): AsyncGenerator<ProviderStreamEvent<unknown>> {
+        if (index === 0) {
+          yield { type: 'response.started', provider: 'fake', model: 'm' };
+          throw networkError(transportFailure());
+        }
+        yield* streamEvents(completeFinish('Recovered.'));
+      })(),
+  });
+
+  const events = await collect(networkAgent(provider).stream('Go.'));
+  const finished = events.find((event) => event.type === 'agent.finished');
+
+  assert.equal(
+    finished?.type === 'agent.finished' ? finished.response.text : '',
+    'Recovered.',
+  );
+  assert.equal(
+    events.filter((event) => event.type === 'response.started').length,
+    1,
+  );
+  assert.equal(provider.requests.length, 2);
+});
+
+void test('stream: a connection dropped after output has flowed is never asked again', async () => {
+  const failure = networkError(transportFailure());
+  const provider = createProvider({
+    stream: () =>
+      (async function* (): AsyncGenerator<ProviderStreamEvent<unknown>> {
+        yield { type: 'response.started', provider: 'fake', model: 'm' };
+        yield { type: 'text.delta', delta: 'Partial' };
+        throw failure;
+      })(),
+  });
+
+  await assert.rejects(
+    collect(networkAgent(provider).stream('Go.')),
+    (error: unknown) => error === failure,
+  );
+  assert.equal(provider.requests.length, 1);
+});
+
+void test('a network retry count that is not a non-negative integer is refused at creation', () => {
+  for (const networkRetries of [-1, 1.5]) {
+    assert.throws(
+      () => networkAgent(createProvider({}), retryWith(networkRetries)),
+      TypeError,
+    );
+  }
+});

@@ -35,13 +35,23 @@ export interface AgentOptions {
   /**
    * How a provider turn that failed before it produced anything is asked
    * again: only a failure the provider marks `retryable` (rate limits,
-   * overload, a dropped stream), at most `retries` times (2), waiting the
-   * provider's `retryAfterMs` or `baseDelayMs` (1000) doubled per attempt,
-   * never longer than `maxDelayMs` (30000). A turn that already streamed
-   * output is never asked again.
+   * overload, a dropped connection). Each kind has its own budget: a
+   * `network_error` is asked again at most `networkRetries` times (4), any
+   * other failure at most `retries` times (2), waiting the provider's
+   * `retryAfterMs` or `baseDelayMs` (1000) doubled per attempt, never longer
+   * than `maxDelayMs` (30000). A thrown connection failure that outlasts at
+   * least one retry throws "Could not connect to <provider> (tried N times).",
+   * N counting every attempt of the turn, with the transport error as its
+   * cause; with `networkRetries: 0` the original "Could not connect to
+   * <provider>." error is thrown, and a stream `error` event is passed on
+   * unchanged. A turn that already streamed output is never asked again. A
+   * count that is not a non-negative safe integer, or a delay that is not a
+   * non-negative number, throws a `TypeError` at creation; a field set to
+   * `undefined` replaces its default and so throws too.
    */
   readonly retry?: {
     readonly retries?: number;
+    readonly networkRetries?: number;
     readonly baseDelayMs?: number;
     readonly maxDelayMs?: number;
   };

@@ -170,6 +170,28 @@ export type ProviderStructuredFinished<Output> = Omit<
 
 export interface ProviderError {
   readonly provider: ProviderId;
+  /**
+   * What failed. Known codes (adapters may add others):
+   * - `network_error`: the connection could not be made or was dropped;
+   *   retryable, its cause is the transport error. An unresolvable host
+   *   (`ENOTFOUND`) and an abort are not network errors.
+   * - `incomplete_stream`: a Claude stream ended early; retryable.
+   * - `malformed_stream_event`: an unreadable stream event.
+   * - `provider_error`: an error the provider reported in its stream.
+   * - Claude passes Anthropic error types through as codes, such as
+   *   `overloaded_error`, `api_error` and `rate_limit_error`.
+   * - `http_error`: the provider answered with a failing HTTP status.
+   * - `auth_failed`, `auth_missing`, `auth_ambiguous`: credentials.
+   * - `missing_model`, `missing_input`, `invalid_dimensions`,
+   *   `invalid_top_n`: an invalid request.
+   * - `invalid_json`, `invalid_embedding`, `invalid_rerank`,
+   *   `missing_stream_finish`: an unreadable provider response.
+   * - `invalid_structured_schema`, `invalid_structured_output`,
+   *   `unsupported_structured_tools`: structured output.
+   * - `unsupported_embeddings`, `unsupported_reranking`,
+   *   `unsupported_model_feature`, `incompatible_model_request`: a feature
+   *   the provider or model lacks.
+   */
   readonly code: string;
   readonly message: string;
   readonly status?: number;

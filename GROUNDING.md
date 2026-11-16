@@ -2669,6 +2669,11 @@ volume, not privacy. Consumers own display, persistence, and privacy policies;
 this does not change host credential handling or add payloads to operational
 logs. HTTP stream-opening failures retain structured status and diagnostic
 information and are normalized to provider errors without changing cancellation.
+A transport failure whose cause chain, followed up to 8 levels, carries
+`UND_ERR_CONNECT_TIMEOUT`, `ECONNREFUSED`, `ECONNRESET`, `UND_ERR_SOCKET` or
+`EAI_AGAIN`, including a connection dropped mid-stream, becomes a retryable
+`network_error` provider error that keeps the original error as its cause;
+`ENOTFOUND` and aborts pass through unchanged.
 Provider requests may set
 `flags.includeStructuredSchemaOnSystemPrompt: true` together with `schema` to
 append one deterministic, collision-safe Markdown system message containing
@@ -2735,10 +2740,19 @@ submission, throws `output_truncated` instead of repairing. A `content_filter`
 turn drops its calls, is stored without them, and throws `provider_refusal`. A
 stream that ends on a provider `error` event throws that provider error. A
 provider failure marked `retryable`, thrown or streamed before any output, is
-asked again up to `retry.retries` (2) times; the wait is the provider's
-`retryAfterMs` or `retry.baseDelayMs` (1000) doubled, capped by
-`retry.maxDelayMs` (30000), and the abort signal ends it. A turn that already
-streamed output is never retried.
+asked again with a separate budget per kind: up to `retry.networkRetries` (4)
+times for a `network_error` connection failure and up to `retry.retries` (2)
+times for any other; the wait is the provider's `retryAfterMs` or
+`retry.baseDelayMs` (1000) doubled, capped by `retry.maxDelayMs` (30000), and
+the abort signal ends it. A thrown connection failure that exhausts its
+retries after at least one retry fails the run with "Could not connect to
+<provider> (tried N times).", N counting every attempt of the turn, and the
+transport error as cause; with `retry.networkRetries: 0` the original "Could
+not connect to <provider>." error is thrown, and a stream `error` event is
+passed on unchanged. A turn that already streamed output is never retried.
+Retry counts must be non-negative safe integers and delays non-negative
+numbers, or agent creation throws a `TypeError`; a field set to `undefined`
+replaces its default and throws too.
 Handler failures are never retried by this protocol repair path. Structured
 runs require a terminal tool call at the runtime validation boundary and
 disable parallel tool calls. They do not force provider `tool_choice`, because
