@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "threads",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -9,11 +9,9 @@
   "provides": [],
   "requires": [
     "tools/v1@^1.2.0",
-    "runtime.threads/v1@^1.6.0",
+    "runtime.threads/v1@^1.7.0",
     "ui/v1@^1.0.0",
-    "navigation/v1@^1.0.0",
-    "models/v1@^1.0.0",
-    "host-config/v1@^1.1.0"
+    "navigation/v1@^1.0.0"
   ],
   "optional": ["default.agents/v1"]
 }

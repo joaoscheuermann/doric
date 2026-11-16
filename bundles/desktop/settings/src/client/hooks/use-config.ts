@@ -130,6 +130,12 @@ export const useConfig = (
     setError(undefined);
     try {
       const updated = await write(configurationInput(next));
+      // The footer picker reads the stored configuration without a draft; a
+      // save in this window reaches it without waiting for a focus.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.configSnapshot,
+        exact: true,
+      });
       if (intent.current !== request) return;
       setSaved(updated);
       // Keep a draft the user changed while the request was in flight.
@@ -144,7 +150,7 @@ export const useConfig = (
     } finally {
       if (intent.current === request) setSaving(false);
     }
-  }, [write]);
+  }, [queryClient, write]);
 
   const flush = useCallback(async (): Promise<void> => {
     clearTimeout(pending.current);

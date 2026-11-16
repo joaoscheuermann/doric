@@ -8,6 +8,11 @@ import type { IconRequest } from '../domain/model-icons.js';
  */
 export const queryKeys = {
   config: ['config'],
+  /**
+   * The configuration as stored, read without a draft (the footer picker).
+   * Under the `config` prefix, so `useConfig`'s refetches reach it too.
+   */
+  configSnapshot: ['config', 'snapshot'],
   credentials: ['credentials'],
   /** The tools the host's loaded bundles expose, with their declared fields. */
   toolCatalog: ['tools'],

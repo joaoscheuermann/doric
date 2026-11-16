@@ -1,10 +1,11 @@
 # Settings bundle
 
 `settings` is where you connect Doric to your models. Its settings window lets
-you add providers, pick the model that runs your prompts and its reasoning
-effort, set the turn limit and store credentials, and every change saves itself
-as you type. The conversation footer carries a quick model and effort picker,
-so you can switch models without leaving the chat.
+you add providers, pick the workspace default model and reasoning effort that
+new top-level Threads start on, set the turn limit and store credentials, and
+every change saves itself as you type. The conversation footer carries a quick
+model and effort picker for the selected Thread, so you can switch its model
+without leaving the chat.
 
 It is a desktop bundle with one client part (the settings window and the
 footer picker), loaded by the `bundle` platform. See the
@@ -15,7 +16,13 @@ footer picker), loaded by the `bundle` platform. See the
 
 - **UI:** `<settings-page>` at `/settings`, the settings window's one React
   root, and `<settings-execution-picker>`, a `layout.footer` item (order 20)
-  in the [`layout`](../layout/README.md) bundle's conversation footer.
+  in the [`layout`](../layout/README.md) bundle's conversation footer. It
+  edits the selected Thread's provider, model and effort through
+  `runtime.threads/v1.setThreadExecution`. With no Thread selected it shows
+  the workspace default read-only, titled "New threads start on the workspace
+  default. Change it in Settings." It never writes `models.execution`: the workspace default
+  changes only in Settings. The bundle requires `runtime.threads/v1` and
+  reads `layout.workspace/v1` optionally.
 - **Sections:** five child routes of `/settings`, each listed in the window's
   nav through the `settings.sections` region.
 - **Region:** `settings.sections`, where other bundles add their own sections.
@@ -28,13 +35,13 @@ section that window showed, or Providers.
 
 ## Sections
 
-| Path                    | Section     | What it edits                                                                     |
-| ----------------------- | ----------- | --------------------------------------------------------------------------------- |
-| `/settings/profile`     | Profile     | your optional name and time zone, which the agent's prompts will use              |
-| `/settings/providers`   | Providers   | every provider Doric may call, its fields, its models and the credential it uses  |
-| `/settings/execution`   | Execution   | the provider and model that run a prompt, its reasoning effort and the turn limit |
-| `/settings/tools`       | Tools       | the fields each tool of the loaded bundles declares in the `tools/v1` catalog     |
-| `/settings/credentials` | Credentials | the secrets of the kinds it manages, which the host stores and never sends back   |
+| Path                    | Section     | What it edits                                                                    |
+| ----------------------- | ----------- | -------------------------------------------------------------------------------- |
+| `/settings/profile`     | Profile     | your optional name and time zone, which the agent's prompts will use             |
+| `/settings/providers`   | Providers   | every provider Doric may call, its fields, its models and the credential it uses |
+| `/settings/execution`   | Execution   | the workspace default provider, model and reasoning effort, and the turn limit   |
+| `/settings/tools`       | Tools       | the fields each tool of the loaded bundles declares in the `tools/v1` catalog    |
+| `/settings/credentials` | Credentials | the secrets of the kinds it manages, which the host stores and never sends back  |
 
 Other bundles add sections the same way:
 
@@ -62,8 +69,9 @@ carries `profile` in the shared draft.
   the host's reason for a refused one.
 - `domain/config.ts` mirrors the host's validation, so a draft the host would
   refuse is never sent; the host validates again.
-- The footer picker saves the same way, without a flush on close and without a
-  toast.
+- The footer picker writes each choice at once through `setThreadExecution`,
+  without a toast; a typed model commits on blur or Enter, and a refused write
+  shows its reason in the picker's alert span.
 - A section from another bundle edits through `settings.config/v1` (`draft`,
   `setDraft`, `subscribe`), so it shares the window's one draft, debounce and
   save.

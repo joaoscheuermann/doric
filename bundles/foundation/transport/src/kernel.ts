@@ -76,7 +76,7 @@ const version = '0.0.0';
 export const transportRequires = [
   'hooks/v1@^1.0.0',
   'runtime/v1@^1.0.0',
-  'runtime.threads/v1@^1.0.0',
+  'runtime.threads/v1@^1.7.0',
   'runtime.lease/v1@^1.0.0',
   'sandbox/v1@^1.0.0',
   'tools/v1@^1.0.0',

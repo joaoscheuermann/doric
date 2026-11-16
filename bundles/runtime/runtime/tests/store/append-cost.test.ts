@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
 import { mergeDeltas, type StreamDelta } from '../../src/contracts/deltas.js';
+import { testExecution } from '../support/execution.js';
 import { memoryBackend, snapshot, stores } from './support.js';
 
 /*
@@ -45,7 +46,11 @@ void test('stores 10k streamed tokens coalesced with one commit and one read per
   try {
     const { projects, threads } = stores(backend.storage);
     const { project } = await projects.create('Cost', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const promptId = randomUUID();
     await threads.appendEvent(thread.id, promptId, {
       type: 'prompt.accepted',

@@ -7,6 +7,7 @@ import { createdKey, threadEventsStream } from '../../src/contracts/storage.js';
 import { onEventAppended } from '../../src/host/appends.js';
 import { createNotices } from '../../src/host/domain/notices.js';
 import type { RuntimeStores } from '../../src/host/store/index.js';
+import { testExecution } from '../support/execution.js';
 import {
   type Backend,
   backends,
@@ -68,7 +69,7 @@ storeTest(
   'keeps execution timing through rename and returns the completed duration after reopening',
   async ({ projects, threads, second }) => {
     const { project } = await projects.create('Timer', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Agent');
+    const { thread } = await threads.create(project.id, 'Agent', testExecution);
     const running = await threads.setState(thread.id, 'running', promptId);
     assert.ok(running?.executionStartedAt);
     const start = await threads.appendEvent(thread.id, promptId, {
@@ -103,7 +104,7 @@ storeTest(
   'falls back to the update time while the running prompt has not started',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Timer', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Agent');
+    const { thread } = await threads.create(project.id, 'Agent', testExecution);
     await threads.appendEvent(thread.id, promptId, { type: 'prompt.started' });
     const next = randomUUID();
     const running = await threads.setState(thread.id, 'running', next);
@@ -116,7 +117,11 @@ storeTest(
   'stores acceptance and queue receipt atomically, including their sequence cursor',
   async ({ projects, threads, second }) => {
     const { project } = await projects.create('Queue', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const accepted = {
       type: 'prompt.accepted',
       text: 'Waiting input',
@@ -161,14 +166,20 @@ storeTest(
   'sums descendant charges once and keeps costs through rewind and reconnection',
   async ({ projects, threads, second, backend }) => {
     const { project } = await projects.create('Usage', snapshot(), 'blue');
-    const root = await threads.create(project.id, 'Parent');
-    const child = await threads.create(project.id, 'Child', root.thread.id);
+    const root = await threads.create(project.id, 'Parent', testExecution);
+    const child = await threads.create(
+      project.id,
+      'Child',
+      testExecution,
+      root.thread.id,
+    );
     const grandchild = await threads.create(
       project.id,
       'Grandchild',
+      testExecution,
       child.thread.id,
     );
-    const unrelated = await threads.create(project.id, 'Other');
+    const unrelated = await threads.create(project.id, 'Other', testExecution);
     for (const [record, amount] of [
       [root, 0.25],
       [child, 0.5],
@@ -302,8 +313,11 @@ storeTest(
   'persists independent histories and exact redacted events',
   async ({ projects, threads, second }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const root = (await threads.create(project.id, 'Root')).thread;
-    const child = (await threads.create(project.id, 'Child', root.id)).thread;
+    const root = (await threads.create(project.id, 'Root', testExecution))
+      .thread;
+    const child = (
+      await threads.create(project.id, 'Child', testExecution, root.id)
+    ).thread;
     assert.equal(root.name, 'Root');
     assert.equal(
       (await threads.rename(child.id, 'Renamed child'))?.name,
@@ -343,7 +357,11 @@ storeTest(
   'stores event, history and result text PostgreSQL refuses as replacement characters',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     // A search or read over a binary file returns bytes no PostgreSQL string
     // accepts: U+0000, and surrogates no pair completes. Astral pairs are text
     // and must survive untouched.
@@ -378,7 +396,8 @@ storeTest(
   'stores a Thread working directory with its hint, and lets a child inherit both',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const root = (await threads.create(project.id, 'Root')).thread;
+    const root = (await threads.create(project.id, 'Root', testExecution))
+      .thread;
     assert.equal(root.cwd, '/workspace');
     assert.equal(root.cwdRepo, undefined);
 
@@ -388,7 +407,7 @@ storeTest(
     assert.deepEqual(await threads.record(root.id), moved);
 
     const child = (
-      await threads.create(project.id, 'Child', root.id, {
+      await threads.create(project.id, 'Child', testExecution, root.id, {
         cwd: '/workspace/doric',
         cwdRepo: 'github',
       })
@@ -409,7 +428,11 @@ storeTest(
   'reads a thread or project record alone and answers nothing when it is missing',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     assert.deepEqual(
       await threads.record(thread.id),
       (await threads.find(thread.id))?.thread,
@@ -424,6 +447,8 @@ storeTest(
       'cwd',
       'createdAt',
       'updatedAt',
+      'model',
+      'providerId',
     ]);
     assert.deepEqual(
       await projects.record(project.id),
@@ -441,7 +466,11 @@ storeTest(
   'serializes event sequences across independent clients and rolls back failed insertion',
   async ({ projects, threads, second }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const other = second.threads;
     await Promise.all(
       Array.from({ length: 12 }, (_, index) =>
@@ -508,7 +537,11 @@ storeTest(
       snapshot(),
       'blue',
     );
-    const { thread } = await threadStore.create(project.id, 'Thread');
+    const { thread } = await threadStore.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     await threadStore.appendEvent(thread.id, promptId, {
       type: 'prompt.accepted',
       text: 'hello',
@@ -588,7 +621,11 @@ storeTest(
     }).threads;
     const appended = onEventAppended(threadStore);
     const { project } = await projects.create('Idle', snapshot(), 'blue');
-    const { thread } = await threadStore.create(project.id, 'Thread');
+    const { thread } = await threadStore.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     await threadStore.appendEvent(thread.id, promptId, {
       type: 'prompt.accepted',
       text: 'hello',
@@ -654,7 +691,7 @@ storeTest(
   async ({ projects, backend }) => {
     const { project } = await projects.create('Racing', snapshot(), 'blue');
     const setup = stores(backend.storage).threads;
-    const { thread } = await setup.create(project.id, 'Thread');
+    const { thread } = await setup.create(project.id, 'Thread', testExecution);
     const stream = threadEventsStream(thread.id);
     const externalRow = (index: number) => ({
       projectId: project.id,
@@ -710,7 +747,11 @@ storeTest(
   'pages events after a sequence and says where the next page starts',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     await threads.appendEvents(
       thread.id,
       promptId,
@@ -739,7 +780,11 @@ storeTest(
   'rewinds a Thread onto an earlier turn boundary without reusing sequences',
   async ({ projects, threads, second }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const ids = [randomUUID(), randomUUID(), randomUUID()] as const;
     const messages = [
       { role: 'user' as const, content: 'first' },
@@ -814,7 +859,7 @@ storeTest(
  */
 const twoTurns = async ({ projects, threads }: Context) => {
   const { project } = await projects.create('Project', snapshot(), 'blue');
-  const { thread } = await threads.create(project.id, 'Thread');
+  const { thread } = await threads.create(project.id, 'Thread', testExecution);
   const ids = [randomUUID(), randomUUID()] as const;
   const messages = [
     { role: 'user' as const, content: 'first' },
@@ -933,7 +978,11 @@ storeTest(
   'refuses a rewind the executor has no turn boundary for',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     await threads.appendEvent(thread.id, promptId, { type: 'prompt.accepted' });
     assert.equal(await threads.rewind(thread.id, promptId), undefined);
     assert.equal((await threads.record(thread.id))?.lastSequence, 1);
@@ -944,7 +993,11 @@ storeTest(
   'records each turn boundary once, so a resumed turn keeps the one it began at',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const id = randomUUID();
     await saveCheckpoint(threads, thread.id, id);
     await saveMessages(threads, thread.id, [
@@ -965,7 +1018,11 @@ storeTest(
   'preserves terminal and cancelling states and clears the active prompt when not running',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const ready = await threads.setState(thread.id, 'ready');
     assert.ok(ready?.startedAt);
     await threads.setState(thread.id, 'running', promptId);
@@ -1008,13 +1065,15 @@ storeTest(
     const first = (await projects.create('First', snapshot(), 'blue')).project;
     const second = (await projects.create('Second', snapshot(), 'blue'))
       .project;
-    const root = (await threads.create(first.id, 'Root')).thread;
-    const sibling = (await threads.create(first.id, 'Sibling')).thread;
+    const root = (await threads.create(first.id, 'Root', testExecution)).thread;
+    const sibling = (await threads.create(first.id, 'Sibling', testExecution))
+      .thread;
     const children = await Promise.all([
-      threads.create(first.id, 'First child', root.id),
-      threads.create(first.id, 'Second child', root.id),
+      threads.create(first.id, 'First child', testExecution, root.id),
+      threads.create(first.id, 'Second child', testExecution, root.id),
     ]);
-    const foreign = (await threads.create(second.id, 'Foreign')).thread;
+    const foreign = (await threads.create(second.id, 'Foreign', testExecution))
+      .thread;
     assert.deepEqual((await threads.list(first.id, 10, foreign.id)).items, []);
     assert.deepEqual(
       (await threads.list(first.id, 10, sibling.id, root.id)).items,
@@ -1049,7 +1108,9 @@ storeTest(
     const { project } = await projects.create('Order', snapshot(), 'blue');
     const created = [];
     for (const name of ['a', 'b', 'c', 'd', 'e'])
-      created.push((await threads.create(project.id, name)).thread);
+      created.push(
+        (await threads.create(project.id, name, testExecution)).thread,
+      );
     const expected = [...created]
       .sort((a, b) =>
         a.createdAt === b.createdAt
@@ -1078,21 +1139,32 @@ storeTest(
     const first = (await projects.create('First', snapshot(), 'blue')).project;
     const second = (await projects.create('Second', snapshot(), 'blue'))
       .project;
-    const root = (await threads.create(first.id, 'Root')).thread;
-    const child = (await threads.create(first.id, 'Child', root.id)).thread;
-    await assert.rejects(threads.create(second.id, 'Invalid', root.id), {
-      message: 'Invalid parent thread.',
-    });
-    await assert.rejects(threads.create(first.id, 'Invalid', randomUUID()), {
-      message: 'Invalid parent thread.',
-    });
+    const root = (await threads.create(first.id, 'Root', testExecution)).thread;
+    const child = (
+      await threads.create(first.id, 'Child', testExecution, root.id)
+    ).thread;
+    await assert.rejects(
+      threads.create(second.id, 'Invalid', testExecution, root.id),
+      {
+        message: 'Invalid parent thread.',
+      },
+    );
+    await assert.rejects(
+      threads.create(first.id, 'Invalid', testExecution, randomUUID()),
+      {
+        message: 'Invalid parent thread.',
+      },
+    );
     await threads.setState(root.id, 'cancelling');
     // Any terminating or terminal ancestor refuses, not only the parent.
-    await assert.rejects(threads.create(first.id, 'Grandchild', child.id), {
-      message: 'Invalid parent thread.',
-    });
+    await assert.rejects(
+      threads.create(first.id, 'Grandchild', testExecution, child.id),
+      {
+        message: 'Invalid parent thread.',
+      },
+    );
     await projects.setState(second.id, 'cancelling');
-    await assert.rejects(threads.create(second.id, 'Late'), {
+    await assert.rejects(threads.create(second.id, 'Late', testExecution), {
       message: 'Inactive project.',
     });
     assert.equal(
@@ -1106,12 +1178,16 @@ storeTest(
   'deletes only fully terminal subtrees without affecting other roots',
   async ({ projects, threads, backend }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const root = (await threads.create(project.id, 'Root')).thread;
-    const child = (await threads.create(project.id, 'Child', root.id)).thread;
-    const grandchild = (
-      await threads.create(project.id, 'Grandchild', child.id)
+    const root = (await threads.create(project.id, 'Root', testExecution))
+      .thread;
+    const child = (
+      await threads.create(project.id, 'Child', testExecution, root.id)
     ).thread;
-    const sibling = (await threads.create(project.id, 'Sibling')).thread;
+    const grandchild = (
+      await threads.create(project.id, 'Grandchild', testExecution, child.id)
+    ).thread;
+    const sibling = (await threads.create(project.id, 'Sibling', testExecution))
+      .thread;
     await threads.appendEvent(grandchild.id, promptId, { type: 'saved' });
     await saveMessages(threads, grandchild.id, [{ content: 'kept' }]);
     await threads.setState(root.id, 'cancelled');
@@ -1184,7 +1260,11 @@ storeTest(
           'failed',
           'cancelled',
         ] as const) {
-          const { thread } = await threads.create(project.id, 'Thread');
+          const { thread } = await threads.create(
+            project.id,
+            'Thread',
+            testExecution,
+          );
           const messages = [
             { role: 'user', content: `Preserve ${threadState} conversation` },
             {
@@ -1312,7 +1392,11 @@ storeTest(
   'keeps a storage pause and its error through a restart',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     await threads.setState(thread.id, 'ready');
     await threads.appendEvent(thread.id, promptId, {
       type: 'queue.paused',
@@ -1340,7 +1424,11 @@ storeTest(
   'leaves an accepted prompt that never started unfinished for the boot',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const queuedPromptId = randomUUID();
     await threads.setState(thread.id, 'ready');
     const accepted = await threads.appendEvent(thread.id, queuedPromptId, {
@@ -1378,9 +1466,10 @@ storeTest(
   'lists every unfinished prompt of open Threads in the order the logs accepted them',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const a = (await threads.create(project.id, 'A')).thread;
-    const b = (await threads.create(project.id, 'B')).thread;
-    const closed = (await threads.create(project.id, 'Closed')).thread;
+    const a = (await threads.create(project.id, 'A', testExecution)).thread;
+    const b = (await threads.create(project.id, 'B', testExecution)).thread;
+    const closed = (await threads.create(project.id, 'Closed', testExecution))
+      .thread;
     const ids = Array.from({ length: 4 }, () => randomUUID());
     const accept = (thread: string, id: string) =>
       threads.appendEvent(thread, id, {
@@ -1420,8 +1509,11 @@ storeTest(
   'closes an exhausted delegated prompt and delivers its failure to the live parent once',
   async ({ projects, threads, second }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const parent = (await threads.create(project.id, 'Parent')).thread;
-    const child = (await threads.create(project.id, 'Child', parent.id)).thread;
+    const parent = (await threads.create(project.id, 'Parent', testExecution))
+      .thread;
+    const child = (
+      await threads.create(project.id, 'Child', testExecution, parent.id)
+    ).thread;
     const request = randomUUID();
     await threads.appendEvent(child.id, promptId, {
       type: 'prompt.accepted',
@@ -1497,8 +1589,11 @@ storeTest(
   'does not deliver a closed prompt to a terminating parent',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const parent = (await threads.create(project.id, 'Parent')).thread;
-    const child = (await threads.create(project.id, 'Child', parent.id)).thread;
+    const parent = (await threads.create(project.id, 'Parent', testExecution))
+      .thread;
+    const child = (
+      await threads.create(project.id, 'Child', testExecution, parent.id)
+    ).thread;
     await threads.appendEvent(child.id, promptId, {
       type: 'prompt.accepted',
       text: 'do it',
@@ -1521,8 +1616,14 @@ storeTest(
   'answers the queue snapshot with names, the current prompt and the reader pause',
   async ({ projects, threads }) => {
     const { project } = await projects.create('Project', snapshot(), 'blue');
-    const parent = (await threads.create(project.id, 'Planner')).thread;
-    const { thread } = await threads.create(project.id, 'Worker', parent.id);
+    const parent = (await threads.create(project.id, 'Planner', testExecution))
+      .thread;
+    const { thread } = await threads.create(
+      project.id,
+      'Worker',
+      testExecution,
+      parent.id,
+    );
     const [running, waiting, paused] = [
       randomUUID(),
       randomUUID(),
@@ -1572,7 +1673,7 @@ void test('refuses a Project deletion over the backend batch limit without remov
     const { project } = await projects.create('Large', snapshot(), 'blue');
     const ids = [];
     for (const name of ['a', 'b', 'c']) {
-      const { thread } = await threads.create(project.id, name);
+      const { thread } = await threads.create(project.id, name, testExecution);
       await threads.appendEvent(thread.id, promptId, { type: 'saved' });
       await threads.setState(thread.id, 'failed');
       ids.push(thread.id);
@@ -1643,6 +1744,7 @@ storeTest(
         assert.equal(thread !== undefined && 'agent' in thread, false);
         assert.equal(thread !== undefined && 'model' in thread, false);
         assert.equal(thread !== undefined && 'effort' in thread, false);
+        assert.equal(thread !== undefined && 'providerId' in thread, false);
       }
       assert.deepEqual(
         (await store.listByProject(project.id)).map((thread) => thread.id),
@@ -1653,27 +1755,29 @@ storeTest(
 );
 
 storeTest(
-  'writes a spawned agent, model and effort as given and keeps them through a reopen',
+  'writes a spawned agent and execution as given and keeps them through a reopen',
   async ({ projects, threads, second }) => {
     const { project } = await projects.create('Agents', snapshot(), 'blue');
-    const { thread: parent } = await threads.create(project.id, 'Parent');
+    const { thread: parent } = await threads.create(
+      project.id,
+      'Parent',
+      testExecution,
+    );
     const instructions = 'Review every change.';
     const created = await threads.create(
       project.id,
       'Reviewer',
+      { providerId: 'p-1', model: 'm-1', effort: 'high' },
       parent.id,
       undefined,
       'agent',
-      {
-        agent: { name: 'reviewer', source: 'workspace', instructions },
-        model: 'm-1',
-        effort: 'high',
-      },
+      { name: 'reviewer', source: 'workspace', instructions },
     );
     const id = created.thread.id;
     const expectPublic = (thread: Thread | undefined) => {
       assert.ok(thread);
       assert.deepEqual(thread.agent, { name: 'reviewer', source: 'workspace' });
+      assert.equal(thread.providerId, 'p-1');
       assert.equal(thread.model, 'm-1');
       assert.equal(thread.effort, 'high');
       assert.equal(JSON.stringify(thread).includes(instructions), false);
@@ -1693,5 +1797,75 @@ storeTest(
       assert.equal(reopened?.instructions, instructions);
       expectPublic(await store.record(id));
     }
+  },
+);
+
+storeTest(
+  'writes an execution with its effort before its provider, the provider as the last key',
+  async ({ projects, threads }) => {
+    const { project } = await projects.create('Keys', snapshot(), 'blue');
+    const { thread } = await threads.create(project.id, 'Thread', {
+      providerId: 'p-1',
+      model: 'm-1',
+      effort: 'high',
+    });
+    assert.deepEqual(Object.keys(thread).slice(-4), [
+      'updatedAt',
+      'model',
+      'effort',
+      'providerId',
+    ]);
+    assert.deepEqual(
+      Object.keys((await threads.record(thread.id)) ?? {}).slice(-3),
+      ['model', 'effort', 'providerId'],
+    );
+  },
+);
+
+storeTest(
+  'sets a Thread’s provider, model and effort together, removes an absent effort, and answers nothing for a missing Thread',
+  async ({ projects, threads, second }) => {
+    const { project } = await projects.create('Execution', snapshot(), 'blue');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
+
+    const chosen = await threads.setExecution(thread.id, {
+      providerId: 'p-2',
+      model: 'm-2',
+      effort: 'high',
+    });
+    assert.equal(chosen?.id, thread.id);
+    assert.equal(chosen?.providerId, 'p-2');
+    assert.equal(chosen?.model, 'm-2');
+    assert.equal(chosen?.effort, 'high');
+    assert.ok((chosen?.updatedAt ?? '') >= thread.updatedAt);
+    for (const store of [threads, second.threads]) {
+      const read = await store.record(thread.id);
+      assert.equal(read?.providerId, 'p-2');
+      assert.equal(read?.model, 'm-2');
+      assert.equal(read?.effort, 'high');
+    }
+
+    const cleared = await threads.setExecution(thread.id, {
+      providerId: 'p-3',
+      model: 'm-3',
+    });
+    assert.equal(cleared?.providerId, 'p-3');
+    assert.equal(cleared?.model, 'm-3');
+    assert.equal(cleared !== undefined && 'effort' in cleared, false);
+    for (const store of [threads, second.threads]) {
+      const read = (await store.find(thread.id))?.thread;
+      assert.equal(read?.providerId, 'p-3');
+      assert.equal(read?.model, 'm-3');
+      assert.equal(read !== undefined && 'effort' in read, false);
+    }
+
+    assert.equal(
+      await threads.setExecution(randomUUID(), testExecution),
+      undefined,
+    );
   },
 );

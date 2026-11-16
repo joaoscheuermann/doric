@@ -5,6 +5,7 @@
 // waits for.
 
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { afterEach, test } from 'node:test';
 
 import { NavigationV1, RegionsV1, ref, UiV1 } from 'bundle/contracts';
@@ -164,6 +165,31 @@ test('a window opened at /settings shows the Providers section and names itself'
     'Credentials',
   ]);
   assert.equal(activeRow(opened), 'Providers');
+});
+
+test('the settings window opens with the client part importing runtime/contracts and requiring runtime.threads/v1 (T-36)', async () => {
+  // The part as the build ships it: the window's import map must resolve
+  // `runtime/contracts` and the host must stage `runtime.threads/v1`, or the
+  // window opens blank.
+  const dist = new URL('../../../dist/', import.meta.url);
+  const part = await readFile(new URL('client/index.js', dist), 'utf8');
+  const manifest = JSON.parse(
+    await readFile(new URL('manifest.json', dist), 'utf8'),
+  ) as { readonly requires: readonly string[] };
+  assert.ok(
+    /from\s*["']runtime\/contracts["']/.test(part),
+    'The shipped client part does not import runtime/contracts.',
+  );
+  assert.ok(
+    manifest.requires.includes('runtime.threads/v1@^1.7.0'),
+    `requires ${manifest.requires.join(', ')}`,
+  );
+
+  opened = await openSettingsWindow({ host: host() });
+  await settle(20);
+
+  assert.equal(opened.document.title, 'Doric Settings');
+  assert.equal(heading(opened), 'Providers');
 });
 
 test('the Profile section saves a name and a time zone, and shows them when the window opens again', async () => {

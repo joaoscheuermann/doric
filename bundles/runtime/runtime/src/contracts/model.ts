@@ -134,7 +134,9 @@ export type ThreadOrigin = 'user' | 'agent';
  * (packages/llms/src/lib/types/provider.ts) because the runtime imports no
  * llms; the desktop settings mirror the same list
  * (bundles/desktop/settings/src/client/domain/config.ts). Whether a given
- * model accepts a value is the executor's concern, not this contract's.
+ * model accepts a value is the configuration's to say: its model entries list
+ * the efforts each model takes, which `checkThreadExecution` enforces when an
+ * execution is chosen (runtime.threads/v1 1.7.0).
  */
 export const reasoningEfforts = [
   'none',
@@ -185,12 +187,24 @@ export interface Thread {
    */
   readonly agent?: ThreadAgent;
   /**
-   * The model the Thread runs on (1.1.0): the one it was spawned with, else
-   * its parent's. Absent means the executor's configured default.
+   * The model the Thread runs on (1.1.0): written at creation from the parent
+   * or the workspace default (1.7.0), and by `setThreadExecution`. See
+   * `providerId`.
    */
   readonly model?: string;
-  /** The reasoning effort (1.1.0), resolved like `model`. */
+  /**
+   * The reasoning effort (1.1.0), written like `model`; absent with
+   * `providerId` present means no effort.
+   */
   readonly effort?: ReasoningEffort;
+  /**
+   * The provider the Thread runs on (runtime.threads/v1 1.7.0). Present: the
+   * Thread has a stored execution — `model` is present too, and `effort`
+   * absent means no effort; a run fails while it is not available. Absent: a
+   * Thread created before 1.7.0; it follows the workspace default, with its
+   * own `model` / `effort` over it when set. See `resolveThreadExecution`.
+   */
+  readonly providerId?: string;
 }
 
 export type InputSource =
@@ -686,6 +700,7 @@ export const threadSchema: z.ZodType<Thread, Thread> = z.looseObject({
     .optional(),
   model: z.string().optional(),
   effort: z.enum(reasoningEfforts).optional(),
+  providerId: z.string().optional(),
 });
 
 export const threadEventSchema: z.ZodType<ThreadEvent, ThreadEvent> =

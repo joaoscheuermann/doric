@@ -2,13 +2,22 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
+import type { ConfigurationValue } from '../../src/contracts/configuration.js';
 import {
   type InputSource,
   isProjectColor,
   type Project,
   type Thread,
 } from '../../src/contracts/model.js';
-import { createHarness, deferred, spawner } from './support/harness.js';
+import type { SpawnedThread } from '../../src/contracts/threads.js';
+import type { ModelCatalogSource } from '../../src/host/domain/usage-context.js';
+import {
+  createHarness,
+  defaultConfiguration,
+  deferred,
+  epoch,
+  spawner,
+} from './support/harness.js';
 
 /*
  * Ported from agents/doric tests/workspace-service.test.ts (design 57 §13.1,
@@ -640,5 +649,326 @@ void test('a Project created later stores the configuration in force at its crea
   revision = 2;
   const second = await harness.service.projects.create('Two');
   assert.deepEqual([first.configRevision, second.configRevision], [1, 2]);
+  await harness.dispose();
+});
+
+/*
+ * Per-thread model (runtime.threads/v1 1.7.0, spec §4): setThreadExecution
+ * sets a Thread's provider, model and effort together, validated against the
+ * configuration in force and models/v1, from the Thread's next run.
+ */
+
+/** models/v1 resolves these providers; any other one it refuses. */
+const catalogs = (
+  ...ids: readonly string[]
+): Readonly<Record<string, ModelCatalogSource>> =>
+  Object.fromEntries(ids.map((id) => [id, { models: async () => [] }]));
+
+const answering = (value: ConfigurationValue) => () => ({
+  configuration: value,
+  revision: 1,
+  updatedAt: epoch,
+});
+
+const [openrouter] = defaultConfiguration.providers;
+
+/**
+ * `openrouter` lists `m-1` (low) and `m-2` (low, high); `free` lists no
+ * models; `offline` is configured but models/v1 cannot resolve it.
+ */
+const executionConfiguration: ConfigurationValue = {
+  ...defaultConfiguration,
+  providers: [
+    {
+      ...(openrouter as NonNullable<typeof openrouter>),
+      models: [
+        { name: 'm-1', reasonings: ['low'] },
+        { name: 'm-2', reasonings: ['low', 'high'] },
+      ],
+    },
+    {
+      ...(openrouter as NonNullable<typeof openrouter>),
+      id: 'free',
+      models: [],
+    },
+    {
+      ...(openrouter as NonNullable<typeof openrouter>),
+      id: 'offline',
+      models: [],
+    },
+  ],
+  models: {
+    execution: { providerId: 'openrouter', model: 'm-1', effort: 'low' },
+  },
+};
+
+const threadUpdates = (harness: ReturnType<typeof createHarness>, id: string) =>
+  harness.notices.flatMap((notice) =>
+    notice.kind === 'threadUpdated' && (notice.value as Thread).id === id
+      ? [notice.value as Thread]
+      : [],
+  );
+
+/** The execution a Thread stores, an absent effort left out. */
+const executionOf = (thread: Thread | undefined) =>
+  thread === undefined
+    ? undefined
+    : {
+        providerId: thread.providerId,
+        model: thread.model,
+        ...('effort' in thread ? { effort: thread.effort } : {}),
+      };
+
+void test('T-9 setThreadExecution answers updated, publishes the Thread, and a later read has the three values', async () => {
+  const harness = createHarness({
+    configuration: answering(executionConfiguration),
+    models: catalogs('openrouter'),
+  });
+  const { service } = harness;
+  const project = await harness.readyProject();
+  const thread = await harness.createThread(project.id);
+
+  const result = await service.threads.setExecution(thread.id, {
+    providerId: 'openrouter',
+    model: 'm-2',
+    effort: 'high',
+  });
+
+  const expected = { providerId: 'openrouter', model: 'm-2', effort: 'high' };
+  assert.equal(result.status, 'updated');
+  assert.deepEqual(
+    executionOf(result.status === 'updated' ? result.thread : undefined),
+    expected,
+  );
+  assert.deepEqual(
+    executionOf(threadUpdates(harness, thread.id).at(-1)),
+    expected,
+  );
+  assert.deepEqual(
+    executionOf(await service.threads.find(thread.id)),
+    expected,
+  );
+  await harness.dispose();
+});
+
+void test('T-10 setThreadExecution without an effort removes the stored one', async () => {
+  const harness = createHarness({
+    configuration: answering(executionConfiguration),
+    models: catalogs('openrouter'),
+  });
+  const { service } = harness;
+  const project = await harness.readyProject();
+  const thread = await harness.createThread(project.id);
+  assert.equal(thread.effort, 'low');
+
+  const result = await service.threads.setExecution(thread.id, {
+    providerId: 'openrouter',
+    model: 'm-2',
+  });
+
+  const expected = { providerId: 'openrouter', model: 'm-2' };
+  assert.deepEqual(
+    executionOf(result.status === 'updated' ? result.thread : undefined),
+    expected,
+  );
+  assert.deepEqual(
+    executionOf(await service.threads.find(thread.id)),
+    expected,
+  );
+  await harness.dispose();
+});
+
+void test('T-11 setThreadExecution refuses a missing Thread, each invalid choice and an unresolvable provider, writing nothing', async () => {
+  const harness = createHarness({
+    configuration: answering(executionConfiguration),
+    models: catalogs('openrouter', 'free'),
+  });
+  const { service } = harness;
+  const project = await harness.readyProject();
+  const thread = await harness.createThread(project.id);
+  const stored = executionOf(thread);
+
+  assert.deepEqual(
+    await service.threads.setExecution(randomUUID(), {
+      providerId: 'openrouter',
+      model: 'm-1',
+    }),
+    { status: 'missing' },
+  );
+  const refusals = [
+    [
+      { providerId: 'gone', model: 'm-1' },
+      { status: 'invalid', reason: 'provider' },
+    ],
+    [
+      { providerId: 'openrouter', model: 'm-9' },
+      { status: 'invalid', reason: 'model' },
+    ],
+    [
+      { providerId: 'openrouter', model: 'm-1', effort: 'high' },
+      { status: 'invalid', reason: 'effort' },
+    ],
+    [
+      { providerId: 'offline', model: 'm-1' },
+      {
+        status: 'unresolvable',
+        message: 'Configured provider is unavailable.',
+      },
+    ],
+  ] as const;
+  for (const [execution, expected] of refusals) {
+    assert.deepEqual(
+      await service.threads.setExecution(thread.id, execution),
+      expected,
+      JSON.stringify(execution),
+    );
+    assert.deepEqual(
+      executionOf(await service.threads.find(thread.id)),
+      stored,
+      `${JSON.stringify(execution)} writes nothing`,
+    );
+  }
+  assert.equal(
+    threadUpdates(harness, thread.id).some((update) => update.model === 'm-9'),
+    false,
+  );
+
+  // A provider that lists no models takes any model name.
+  const free = await service.threads.setExecution(thread.id, {
+    providerId: 'free',
+    model: 'typed/by-hand',
+  });
+  assert.equal(free.status, 'updated');
+  assert.deepEqual(executionOf(await service.threads.find(thread.id)), {
+    providerId: 'free',
+    model: 'typed/by-hand',
+  });
+  await harness.dispose();
+});
+
+void test('T-12 setThreadExecution updates a Thread of an inactive Project', {
+  timeout: 5000,
+}, async () => {
+  const harness = createHarness({
+    configuration: answering(executionConfiguration),
+    models: catalogs('openrouter'),
+  });
+  const { service } = harness;
+  const project = await harness.readyProject();
+  const thread = await harness.createThread(project.id);
+  await service.projects.terminate(project.id);
+  await harness.projectState(project.id, 'cancelled');
+
+  const result = await service.threads.setExecution(thread.id, {
+    providerId: 'openrouter',
+    model: 'm-2',
+    effort: 'high',
+  });
+
+  const expected = { providerId: 'openrouter', model: 'm-2', effort: 'high' };
+  assert.equal(result.status, 'updated');
+  assert.deepEqual(
+    executionOf(await service.threads.find(thread.id)),
+    expected,
+  );
+  await harness.dispose();
+});
+
+void test('T-13 a Project mutation is not blocked by a setThreadExecution or a spawn waiting on models/v1.resolve', {
+  timeout: 10_000,
+}, async () => {
+  let holding = false;
+  const entered = { setExecution: deferred(), spawn: deferred() };
+  let current: keyof typeof entered = 'setExecution';
+  const release = deferred();
+  const spawned = deferred<SpawnedThread>();
+  const harness = createHarness({
+    configuration: answering(executionConfiguration),
+    models: catalogs('openrouter'),
+    resolveGate: async () => {
+      if (!holding) return;
+      entered[current].resolve();
+      await release.promise;
+    },
+    execute: async ({ job, tools }) => {
+      if (job.prompt === 'parent')
+        await Promise.resolve()
+          .then(() => tools.threads.spawn('task', undefined, { model: 'm-2' }))
+          .then(spawned.resolve, spawned.reject);
+      return 'done';
+    },
+  });
+  const { service } = harness;
+  const project = await harness.readyProject();
+  const thread = await harness.createThread(project.id);
+
+  holding = true;
+  let chosen = false;
+  const choice = service.threads
+    .setExecution(thread.id, { providerId: 'openrouter', model: 'm-2' })
+    .finally(() => {
+      chosen = true;
+    });
+  await entered.setExecution.promise;
+  const renamed = await service.threads.rename(thread.id, 'Renamed');
+  const created = await service.threads.create(project.id, 'Meanwhile');
+  assert.equal(renamed?.name, 'Renamed');
+  assert.equal(created.status, 'created');
+  assert.equal(chosen, false, 'the choice still waits on models/v1.resolve');
+
+  current = 'spawn';
+  await service.threads.prompt(thread.id, 'parent');
+  await entered.spawn.promise;
+  const createdDuringSpawn = await service.threads.create(project.id, 'Also');
+  assert.equal(createdDuringSpawn.status, 'created');
+
+  release.resolve();
+  assert.equal((await choice).status, 'updated');
+  const child = await spawned.promise;
+  assert.equal((await service.threads.find(child.threadId))?.model, 'm-2');
+  await harness.dispose();
+});
+
+void test('T-37 a running prompt keeps its execution and the next prompt runs with the one set meanwhile', {
+  timeout: 10_000,
+}, async () => {
+  const started = deferred();
+  const finish = deferred();
+  const runs: { readonly prompt: string; readonly thread: Thread }[] = [];
+  const harness = createHarness({
+    configuration: answering(executionConfiguration),
+    models: catalogs('openrouter'),
+    execute: async ({ job, thread }) => {
+      runs.push({ prompt: job.prompt, thread });
+      if (job.prompt === 'first') {
+        started.resolve();
+        await finish.promise;
+      }
+      return 'done';
+    },
+  });
+  const { service } = harness;
+  const project = await harness.readyProject();
+  const thread = await harness.createThread(project.id);
+  await service.threads.prompt(thread.id, 'first');
+  await started.promise;
+
+  const result = await service.threads.setExecution(thread.id, {
+    providerId: 'openrouter',
+    model: 'm-2',
+    effort: 'high',
+  });
+  assert.equal(result.status, 'updated');
+  await service.threads.prompt(thread.id, 'second');
+  finish.resolve();
+  await harness.waitFor(() => runs.length === 2, 'the second run');
+
+  assert.deepEqual(
+    runs.map(({ prompt, thread: ran }) => [prompt, executionOf(ran)]),
+    [
+      ['first', { providerId: 'openrouter', model: 'm-1', effort: 'low' }],
+      ['second', { providerId: 'openrouter', model: 'm-2', effort: 'high' }],
+    ],
+  );
   await harness.dispose();
 });

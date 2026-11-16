@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import type { ThreadEvent } from '../../src/contracts/model.js';
 import type { PromptProgress } from '../../src/host/store/index.js';
+import { testExecution } from '../support/execution.js';
 import { memoryBackend, snapshot, stores } from './support.js';
 
 /*
@@ -177,7 +178,11 @@ const compare = async (
   try {
     const { projects, threads } = stores(backend.storage);
     const { project } = await projects.create('Fold', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Thread');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const next = random(seed);
     // One appendEvents call commits consecutive events of one prompt.
     for (let index = 0; index < entries.length; ) {

@@ -6,6 +6,7 @@ import type { SandboxExecInput } from 'sandbox';
 
 import type { Thread, ThreadEvent } from '../../src/contracts/model.js';
 import { type Backend, memoryBackend } from '../store/support.js';
+import { testExecution } from '../support/execution.js';
 import { fakeSandbox } from '../support/sandbox.js';
 import {
   createHarness,
@@ -58,7 +59,11 @@ void test('refuses a superseded pause through the service and after restart', as
   });
   const { stores, service } = harness;
   const { project } = await stores.projects.create('Project', snapshot, 'blue');
-  const { thread } = await stores.threads.create(project.id, 'Thread');
+  const { thread } = await stores.threads.create(
+    project.id,
+    'Thread',
+    testExecution,
+  );
   const old = randomUUID();
   const newer = randomUUID();
   await stores.threads.appendEvent(thread.id, old, {
@@ -125,7 +130,11 @@ void test('queues boot resumptions without waiting for sandbox capacity', {
     snapshot,
     'blue',
   );
-  const { thread } = await stores.threads.create(project.id, 'Thread');
+  const { thread } = await stores.threads.create(
+    project.id,
+    'Thread',
+    testExecution,
+  );
   await stores.threads.appendEvent(thread.id, randomUUID(), {
     type: 'prompt.accepted',
     text: 'work',

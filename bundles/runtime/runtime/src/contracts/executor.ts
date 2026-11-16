@@ -18,6 +18,9 @@ import type { SpawnAgent } from './threads.js';
  * retry and its aggregate atomic. Cardinality `one`; `direct` provides it.
  * 1.3.0: `run` and `compact` receive an `ExecutorThread` — the Thread's agent
  * with its instructions, and its model and effort.
+ * 1.4.0: `run` and `compact` resolve the Thread's execution with
+ * `resolveThreadExecution`; a run of a Thread whose stored execution is
+ * unavailable rejects before any model request.
  */
 
 export interface PromptJob {
@@ -34,7 +37,8 @@ export type SteerInput = Pick<PromptJob, 'prompt' | 'source'>;
  * `Thread`, whose `agent`, when present, also carries the agent's
  * `instructions`. Only the runtime builds one; it is never published, stored
  * or returned as the Thread. `agent` absent: the default agent, with no agent
- * section. `model` / `effort` absent: the executor's configured default.
+ * section. Its provider, model and effort are resolved with `resolveThreadExecution`
+ * (1.4.0): a Thread without `providerId` follows the configured default.
  */
 export type ExecutorThread = Thread & { readonly agent?: SpawnAgent };
 

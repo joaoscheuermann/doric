@@ -18,6 +18,8 @@ type EffortPickerProps = {
   readonly label: string;
   readonly onSelect: (value: string) => void;
   readonly value?: string;
+  /** The trigger's tooltip, e.g. why it is disabled. */
+  readonly title?: string;
 };
 
 /**
@@ -34,6 +36,7 @@ export function EffortPicker({
   label,
   onSelect,
   value,
+  title,
 }: EffortPickerProps) {
   const [open, setOpen] = useState(false);
 
@@ -41,7 +44,14 @@ export function EffortPicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         disabled={disabled}
-        render={<Button variant="ghost" size="sm" aria-label={ariaLabel} />}
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={ariaLabel}
+            title={title}
+          />
+        }
       >
         {label}
       </PopoverTrigger>

@@ -1,4 +1,5 @@
 import type { DoricConfiguration } from '../../contracts/configuration.js';
+import type { ThreadExecution } from '../../contracts/execution.js';
 import type { HistoryPatch, HistoryReader } from '../../contracts/executor.js';
 import type {
   CwdRepo,
@@ -17,7 +18,7 @@ import type {
   ThreadUsage,
 } from '../../contracts/model.js';
 import type { RuntimeOwner } from '../../contracts/runtime.js';
-import type { SpawnOptions } from '../../contracts/threads.js';
+import type { SpawnAgent } from '../../contracts/threads.js';
 
 /*
  * The durable boundaries of the runtime domain (design 57 §3, §4.1), frozen by
@@ -148,8 +149,9 @@ export interface ThreadStore {
   usage(id: string): Promise<ThreadUsage | undefined>;
   /**
    * A child inherits its parent's working directory and hint as a snapshot.
-   * `options` are the already-resolved values: the store writes those
-   * present, as given, and never inherits or defaults any of them. The
+   * `execution` and `agent` are already resolved: the store writes
+   * `providerId`, `model`, `effort` when present, and `agent` when given,
+   * as given, and never inherits, resolves or defaults any of them. The
    * returned record's `thread` carries `agent` without instructions, and its
    * `instructions` field carries them. Rejects as before on an inactive
    * Project or an invalid parent.
@@ -157,10 +159,11 @@ export interface ThreadStore {
   create(
     projectId: string,
     name: string,
+    execution: ThreadExecution,
     parentThreadId?: string,
     inherit?: { readonly cwd: string; readonly cwdRepo?: CwdRepo },
     origin?: ThreadOrigin,
-    options?: SpawnOptions,
+    agent?: SpawnAgent,
   ): Promise<ThreadRecord>;
   find(id: string): Promise<ThreadRecord | undefined>;
   record(id: string): Promise<Thread | undefined>;
@@ -177,6 +180,14 @@ export interface ThreadStore {
     id: string,
     cwd: string,
     cwdRepo?: CwdRepo,
+  ): Promise<Thread | undefined>;
+  /**
+   * Writes provider, model and effort in one write; no effort removes the
+   * stored one. Bumps `updatedAt`. `undefined` for a missing id.
+   */
+  setExecution(
+    id: string,
+    execution: ThreadExecution,
   ): Promise<Thread | undefined>;
   setState(
     id: string,

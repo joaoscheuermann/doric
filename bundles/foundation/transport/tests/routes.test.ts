@@ -891,6 +891,143 @@ void test('moves a Thread working directory, and reports a refusal as an invalid
   );
 });
 
+/** The execution a case asks for. */
+const execution = {
+  providerId: 'openai',
+  model: 'gpt-5',
+  effort: 'high',
+} as const;
+
+// T-22 (per-thread model §7)
+void test('sets a Thread execution, alone or with a rename, and answers the updated record', async (t) => {
+  const calls: unknown[] = [];
+  const host = await serve({
+    threads: {
+      setThreadExecution: (input: {
+        id: string;
+        providerId: string;
+        model: string;
+        effort?: string;
+      }) => {
+        calls.push(input);
+        if (input.id !== threadId) return { status: 'missing' };
+        const { id: _id, ...chosen } = input;
+        return { status: 'updated', thread: { ...thread, ...chosen } };
+      },
+    },
+  });
+  t.after(host.close);
+
+  const set = await host.request(`/threads/${threadId}`, 'PATCH', execution);
+  assert.equal(set.status, 200);
+  assert.deepEqual(await set.json(), { ...thread, ...execution });
+  assert.deepEqual(calls, [{ id: threadId, ...execution }]);
+
+  const both = await host.request(`/threads/${threadId}`, 'PATCH', {
+    name: 'Renamed',
+    providerId: 'anthropic',
+    model: 'claude-sonnet',
+  });
+  assert.equal(both.status, 200);
+  // The answer is the last updated record: the execution half's.
+  const record = (await both.json()) as Thread;
+  assert.equal(record.providerId, 'anthropic');
+  assert.equal(record.model, 'claude-sonnet');
+  assert.equal(record.effort, undefined);
+  assert.deepEqual(calls.at(-1), {
+    id: threadId,
+    providerId: 'anthropic',
+    model: 'claude-sonnet',
+  });
+});
+
+// T-22 (per-thread model §7)
+void test('keeps the rename and the move when the execution is refused', async (t) => {
+  let stored: Thread = {
+    ...thread,
+    providerId: 'openai',
+    model: 'gpt-5',
+    effort: 'low',
+  };
+  const host = await serve({
+    threads: {
+      thread: (id: string) => (id === threadId ? stored : undefined),
+      renameThread: ({ id, name }: ById & { name: string }) => {
+        if (id !== threadId) return undefined;
+        stored = { ...stored, name };
+        return stored;
+      },
+      setThreadCwd: ({ id, cwd }: ById & { cwd: string }) => {
+        if (id !== threadId) return { status: 'missing' };
+        stored = { ...stored, cwd: `/workspace/${cwd}` };
+        return { status: 'updated', thread: stored };
+      },
+      setThreadExecution: () => ({ status: 'invalid', reason: 'model' }),
+    },
+  });
+  t.after(host.close);
+
+  const refused = await host.request(`/threads/${threadId}`, 'PATCH', {
+    name: 'Renamed',
+    cwd: 'alpha',
+    providerId: 'openai',
+    model: 'unknown-model',
+  });
+  assert.equal(refused.status, 422);
+  assert.deepEqual(await refused.json(), {
+    error: {
+      code: 'invalid_execution',
+      message: 'The model is not available on this provider.',
+    },
+  });
+
+  const read = await host.request(`/threads/${threadId}`);
+  assert.equal(read.status, 200);
+  const after = (await read.json()) as Thread;
+  assert.equal(after.name, 'Renamed');
+  assert.equal(after.cwd, '/workspace/alpha');
+  assert.equal(after.providerId, 'openai');
+  assert.equal(after.model, 'gpt-5');
+  assert.equal(after.effort, 'low');
+});
+
+// T-23 (per-thread model §7)
+void test('refuses an incomplete execution or an empty patch as an invalid Thread change', async (t) => {
+  let executions = 0;
+  const host = await serve({
+    threads: {
+      setThreadExecution: () => {
+        executions += 1;
+        return { status: 'updated', thread };
+      },
+    },
+  });
+  t.after(host.close);
+
+  for (const body of [
+    { model: 'gpt-5' },
+    { effort: 'high' },
+    { name: 'Renamed', model: 'gpt-5' },
+    { providerId: 'openai' },
+    {},
+  ]) {
+    const response = await host.request(`/threads/${threadId}`, 'PATCH', body);
+    assert.equal(response.status, 422, JSON.stringify(body));
+    assert.deepEqual(
+      await response.json(),
+      {
+        error: {
+          code: 'invalid_thread',
+          message:
+            'A Thread name, a working directory, an execution (providerId and model, with an optional effort), or a combination is required.',
+        },
+      },
+      JSON.stringify(body),
+    );
+  }
+  assert.equal(executions, 0);
+});
+
 void test('serves a Thread Git summary bound to the Thread and reports a missing or inactive Thread', async (t) => {
   const host = await serve({
     git: {

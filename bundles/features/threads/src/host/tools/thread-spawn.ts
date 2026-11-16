@@ -1,15 +1,9 @@
-import {
-  type Call,
-  isContractError,
-  ModelsV1,
-  type Services,
-} from 'bundle/contracts';
+import { type Call, isContractError, type Services } from 'bundle/contracts';
 import {
   type AgentDefinition,
   agentNamePattern,
   DefaultAgentsV1,
 } from 'default/contracts';
-import { ConfigurationV1 } from 'host-config/contracts';
 import { reasoningEfforts, type SpawnOptions } from 'runtime/contracts';
 import { defineTool } from 'tool';
 import { z } from 'zod';
@@ -41,50 +35,6 @@ const resolveAgent = async (
   }
 };
 
-/** Throws when model/effort are not valid on models.execution.providerId; resolves when accepted. */
-const checkModel = async (
-  services: Services,
-  call: Call,
-  requested: Pick<SpawnOptions, 'model' | 'effort'>,
-): Promise<void> => {
-  const { configuration } = await services.use(ConfigurationV1).current(call);
-  const execution = configuration.models.execution;
-  const threadId = call.scope?.threadId;
-  const parent =
-    requested.model === undefined && threadId !== undefined
-      ? await threadsOf(services, call).thread(threadId, call)
-      : undefined;
-  const model = requested.model ?? parent?.model ?? execution.model;
-  const listed = configuration.providers.find(
-    ({ id }) => id === execution.providerId,
-  )?.models;
-  const entry = listed?.find(({ name }) => name === model);
-
-  if (requested.model !== undefined && listed !== undefined && !entry) {
-    throw new Error(
-      `Model "${requested.model}" is not available on provider "${execution.providerId}". Available models: ${listed.map(({ name }) => name).join(', ')}.`,
-    );
-  }
-  if (
-    requested.effort !== undefined &&
-    entry?.reasonings !== undefined &&
-    !entry.reasonings.includes(requested.effort)
-  ) {
-    throw new Error(
-      `Effort "${requested.effort}" is not supported by model "${model}". Supported efforts: ${entry.reasonings.join(', ')}.`,
-    );
-  }
-
-  await services.use(ModelsV1).resolve(
-    {
-      providerId: execution.providerId,
-      model,
-      ...(requested.effort === undefined ? {} : { effort: requested.effort }),
-    },
-    call,
-  );
-};
-
 export const tool = defineTool({
   name: 'thread-spawn',
   description:
@@ -113,10 +63,6 @@ export const tool = defineTool({
     const model = input.model ?? agent?.model;
     const effort = input.effort ?? agent?.effort;
 
-    if (model !== undefined || effort !== undefined) {
-      await checkModel(services, call, { model, effort });
-    }
-
     const options: SpawnOptions | undefined =
       agent === undefined && model === undefined && effort === undefined
         ? undefined
@@ -132,13 +78,32 @@ export const tool = defineTool({
             ...(effort === undefined ? {} : { effort }),
           };
 
-    return JSON.stringify(
-      await threadsOf(services, call).spawn(
-        input.prompt,
-        input.title,
-        options,
-        call,
-      ),
-    );
+    try {
+      return JSON.stringify(
+        await threadsOf(services, call).spawn(
+          input.prompt,
+          input.title,
+          options,
+          call,
+        ),
+      );
+    } catch (error) {
+      // A model from the agent's definition: the reader also needs the agent.
+      if (
+        input.model === undefined &&
+        agent?.model !== undefined &&
+        isContractError(error) &&
+        error.code === 'invalid_execution' &&
+        typeof error.details === 'object' &&
+        error.details !== null &&
+        'issue' in error.details &&
+        error.details.issue === 'model'
+      ) {
+        throw new Error(
+          `Agent "${agent.name}" names model "${agent.model}", which its parent thread's provider does not list. ${error.message}`,
+        );
+      }
+      throw error;
+    }
   },
 });

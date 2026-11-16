@@ -7,6 +7,10 @@ import {
 import { z } from 'zod';
 
 import {
+  type ThreadExecutionIssue,
+  threadExecutionIssues,
+} from './execution.js';
+import {
   type CompactResult,
   type CwdResult,
   compactResultSchema,
@@ -204,11 +208,14 @@ export interface SpawnAgent extends ThreadAgent {
   readonly instructions: string;
 }
 /**
- * 1.6.0: how a child is spawned. Every field is optional, and omitting one
- * means:
- * - `agent`: none. An agent is never inherited from the parent.
- * - `model` / `effort`: the parent Thread's own value, else the executor's
- *   default.
+ * 1.6.0: how a child is spawned. Every field is optional; omitting `agent`
+ * means none — an agent is never inherited from the parent.
+ * 1.7.0: the child runs on its parent's provider; `model` and `effort`
+ * complete the parent's execution as the runtime's spawn rules say. When
+ * either is given, the runtime validates the result against the
+ * configuration and `models/v1`, and rejects the spawn, creating nothing,
+ * with a `ContractError` coded `invalid_execution` or with `models/v1`'s own
+ * rejection.
  */
 export interface SpawnOptions {
   readonly agent?: SpawnAgent;
@@ -269,6 +276,28 @@ export const restartResultSchema: z.ZodType<RestartResult, RestartResult> =
     }),
   ]);
 
+/** What `setThreadExecution` answers. */
+export type ThreadExecutionResult =
+  | { readonly status: 'updated'; readonly thread: Thread }
+  | { readonly status: 'missing' }
+  /** The configuration in force refuses the execution; `reason` says which part. */
+  | { readonly status: 'invalid'; readonly reason: ThreadExecutionIssue }
+  /** `models/v1.resolve` refused the provider; `message` is its error's. */
+  | { readonly status: 'unresolvable'; readonly message: string };
+
+export const threadExecutionResultSchema: z.ZodType<
+  ThreadExecutionResult,
+  ThreadExecutionResult
+> = z.union([
+  z.looseObject({ status: z.literal('updated'), thread: threadSchema }),
+  z.looseObject({ status: z.literal('missing') }),
+  z.looseObject({
+    status: z.literal('invalid'),
+    reason: z.enum(threadExecutionIssues),
+  }),
+  z.looseObject({ status: z.literal('unresolvable'), message: z.string() }),
+]);
+
 export const interruptResultSchema = z.enum([
   'interrupted',
   'missing',
@@ -285,12 +314,16 @@ export const interruptResultSchema = z.enum([
  */
 export interface RuntimeThreadControls {
   /**
-   * Names the child `title`, or the start of `prompt` without one.
-   * 1.6.0: `options` spawns it as an agent and/or on a model and effort (see
-   * `SpawnOptions`); without them the child runs as before, on its parent's
-   * model and effort. Returns the child and its first prompt. Rejects on an
-   * empty prompt or title, a closed binding, or a Project that cannot take a
-   * Thread, exactly as before.
+   * Names the child `title`, or the start of `prompt` without one. 1.6.0:
+   * `options` spawns it as an agent and/or on a model and effort (see
+   * `SpawnOptions`). 1.7.0: the child runs on its parent's provider, and on
+   * its parent's model and effort unless `options` names its own; a model or
+   * effort the configuration refuses rejects with a `ContractError` coded
+   * `invalid_execution` whose `details.issue` names it, and a provider
+   * `models/v1` cannot resolve rejects with that error. Returns the child and
+   * its first prompt. Rejects on an empty prompt or title, a closed binding,
+   * or a Project that cannot take a Thread, as before. No rejection creates a
+   * Thread.
    */
   spawn(
     prompt: string,
@@ -368,6 +401,23 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     input: { readonly id: string; readonly cwd: string },
     call?: CallArg,
   ): Promise<CwdResult>;
+  /**
+   * 1.7.0: sets the Thread's provider, model and effort together. Validated
+   * like a spawn's model: against the configuration in force, then
+   * `models/v1.resolve`. Written in one document write — an absent `effort`
+   * removes the stored one — and published as a Thread update. Applies from
+   * the Thread's next run. Rejects only when the configuration cannot be
+   * read; every refusal is an answer (`ThreadExecutionResult`).
+   */
+  setThreadExecution(
+    input: {
+      readonly id: string;
+      readonly providerId: string;
+      readonly model: string;
+      readonly effort?: ReasoningEffort;
+    },
+    call?: CallArg,
+  ): Promise<ThreadExecutionResult>;
   prompt(
     input: { readonly id: string; readonly prompt: string },
     call?: CallArg,
@@ -590,6 +640,17 @@ export const runtimeThreadsMethods = {
   setThreadCwd: {
     input: z.object({ id: z.string(), cwd: z.string() }).strict(),
     output: cwdResultSchema,
+  },
+  setThreadExecution: {
+    input: z
+      .object({
+        id: z.string(),
+        providerId: z.string().trim().min(1).max(128),
+        model: z.string().trim().min(1).max(512),
+        effort: z.enum(reasoningEfforts).optional(),
+      })
+      .strict(),
+    output: threadExecutionResultSchema,
   },
   prompt: {
     input: z.object({ id: z.string(), prompt: z.string() }).strict(),

@@ -1,11 +1,11 @@
 {
   "manifestVersion": 1,
   "id": "default",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "engines": { "doric": "^1.0.0" },
   "description": "The default agent: system prompt, skills, tools, model resolution and provider history.",
   "provides": [
-    "executor/v1@1.3.0",
+    "executor/v1@1.4.0",
     "default.hooks/v1@1.0.0",
     "default.agents/v1@1.0.0"
   ],

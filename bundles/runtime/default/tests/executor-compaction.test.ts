@@ -574,3 +574,106 @@ void test('EX2b a resumed run of a Thread with its own model condenses with that
   assert.equal(summary.model, 'thread-model');
   assert.equal(requests.at(-1)?.model, 'thread-model');
 });
+
+/**
+ * The compaction configuration plus a second provider, `second`, that lists
+ * one model, `second/model`.
+ */
+const secondProviderConfiguration = () => {
+  const configuration = compactionConfiguration();
+  return {
+    ...configuration,
+    providers: [
+      ...configuration.providers,
+      {
+        id: 'second',
+        kind: 'openrouter',
+        configuration: {
+          endpoint: 'https://second.example.com/api/v1',
+          token: 'credential-2',
+        },
+        models: [{ name: 'second/model' }],
+      },
+    ],
+  } as ReturnType<typeof testConfiguration>;
+};
+
+void test('T-19 the on-demand compact of a Thread stored on another provider and model summarizes with them', async () => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(12),
+      { role: 'user' as const, content: 'recent' },
+    ],
+  });
+  const services = bundleServices({
+    configuration: secondProviderConfiguration(),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: (request: ProviderRequest) => {
+        requests.push(request);
+        return summaryAnswer();
+      },
+    },
+  });
+  await services.activate();
+
+  const result = await services.executor(scope).compact({
+    thread: { ...thread(), providerId: 'second', model: 'second/model' },
+    session: state.session('compaction-second'),
+    policy: { tailMinMessages: 2, summaryMaxChars: 6000 },
+  });
+
+  assert.equal(result.status, 'compacted');
+  assert.deepEqual(
+    services.resolved.map(
+      (request) =>
+        (request as { providerId: string; model: string }).providerId,
+    ),
+    ['second'],
+  );
+  assert.deepEqual(
+    requests.map(({ model }) => model),
+    ['second/model'],
+  );
+});
+
+void test('T-20 the on-demand compact of an unavailable Thread answers summarizer_failed and calls no model', async () => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(12),
+      { role: 'user' as const, content: 'recent' },
+    ],
+  });
+  const services = bundleServices({
+    configuration: secondProviderConfiguration(),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: (request: ProviderRequest) => {
+        requests.push(request);
+        return summaryAnswer();
+      },
+    },
+  });
+  await services.activate();
+
+  const result = await services.executor(scope).compact({
+    thread: { ...thread(), providerId: 'second', model: 'retired/model' },
+    session: state.session('compaction-unavailable'),
+    policy: { tailMinMessages: 2, summaryMaxChars: 6000 },
+  });
+
+  assert.deepEqual(result, { status: 'failed', code: 'summarizer_failed' });
+  assert.equal(requests.length, 0);
+  assert.deepEqual(
+    eventTypes(state).filter((type) => type?.startsWith('compaction.')),
+    ['compaction.started', 'compaction.failed'],
+  );
+  assert.equal(
+    ((await state.reader().read('messages')) as unknown[]).length,
+    13,
+  );
+});

@@ -129,9 +129,9 @@ const answerIcons = (input: unknown) => {
 };
 
 /** A host with the configuration stored; a replace stores what it gets. */
-const host = (): Record<string, HostAnswer> => {
+const host = (initial: unknown = configuration): Record<string, HostAnswer> => {
   let revision = 1;
-  let stored: unknown = configuration;
+  let stored: unknown = initial;
 
   return {
     'host-config/v1.current': () => ({
@@ -172,7 +172,7 @@ const LayoutDashboardV1 = ref<LayoutDashboard>('layout.dashboard/v1');
  * schemas the layout declares, the dashboard route mounting the Providers
  * group, and the provider page's host mounted while that page is active.
  */
-const layoutProbe = () => {
+const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
   let active: string | undefined;
   const shown: string[] = [];
   const listeners = new Set<() => void>();
@@ -241,6 +241,10 @@ const layoutProbe = () => {
         create: () => {
           root = document.createElement('div');
           root.append(create('settings-dashboard-providers'));
+          // The conversation footer's picker, mounted in the same window.
+          if (options.picker === true) {
+            root.append(create('settings-execution-picker'));
+          }
           drawPage();
           return root;
         },
@@ -265,11 +269,13 @@ afterEach(async () => {
   opened = undefined;
 });
 
-const openDashboard = async () => {
-  const layout = layoutProbe();
+const openDashboard = async (
+  options: { readonly picker?: boolean; readonly stored?: unknown } = {},
+) => {
+  const layout = layoutProbe(options);
   opened = await openSettingsWindow({
     url: 'doric://app/projects',
-    host: host(),
+    host: host(options.stored),
     probe: layout.probe,
   });
   await settle(20);
@@ -419,6 +425,60 @@ test('a change on the provider page saves itself once typing settles', async () 
     sent?.providers.find((provider) => provider.id === 'openrouter')
       ?.configuration.endpoint,
     'https://openrouter.ai/api/v2',
+  );
+});
+
+test("a model the provider page adds reaches the footer picker's list without a window focus, with no Thread selected (T-40)", async () => {
+  // No provider lists a model, so the picker offers a typed field; the
+  // default runs on a typed model of the local server.
+  const stored = {
+    ...configuration,
+    providers: configuration.providers.map((provider) => ({
+      ...provider,
+      models: [],
+    })),
+    models: { execution: { providerId: 'lmstudio', model: 'local-1' } },
+  };
+  const { window } = await openDashboard({ picker: true, stored });
+  rowOf(window, 'openrouter').click();
+  await settle(20);
+
+  const picker = (): HTMLElement => {
+    const trigger = window.document.querySelector<HTMLElement>(
+      'settings-execution-picker [aria-label="Execution model"]',
+    );
+    assert.ok(trigger !== null, 'The footer picker is not drawn.');
+    return trigger;
+  };
+  assert.equal(picker().tagName, 'INPUT');
+
+  const add = [
+    ...window.document.querySelectorAll<HTMLElement>(
+      'settings-dashboard-provider button',
+    ),
+  ].find((button) => button.textContent?.trim() === 'Add model');
+  assert.ok(add !== undefined, 'The provider page offers no Add model.');
+  add.click();
+  await settle(20);
+  const name = window.document.querySelector<HTMLInputElement>(
+    'settings-dashboard-provider [aria-label="Model 1"]',
+  );
+  assert.ok(name !== null, 'The added model has no name field.');
+  type(name, 'deepseek/v4');
+  await settle(800);
+  assert.equal(window.received('host-config/v1.replace').length, 1);
+  await settle(20);
+
+  // The provider now lists a model: the picker draws its list's trigger, still
+  // locked on the workspace default since no Thread is selected.
+  assert.equal(picker().tagName, 'BUTTON');
+  assert.ok(
+    picker().hasAttribute('disabled') || picker().hasAttribute('data-disabled'),
+    'The picker is not locked without a selected Thread.',
+  );
+  assert.equal(
+    picker().getAttribute('title'),
+    'New threads start on the workspace default. Change it in Settings.',
   );
 });
 

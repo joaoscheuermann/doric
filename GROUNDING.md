@@ -157,7 +157,8 @@ context is reconstructed from the surviving events. Old Threads lazily derive
 their totals from retained events until the next response event materializes them.
 When old measurements lack capacity, the usage read fills it from the current
 OpenRouter catalog for the measured model, marking that source in the tooltip.
-New measurements retain the configured provider id; legacy measurements resolve
+New measurements retain the run's provider id (`response.started` carries the
+Thread's `providerId`); legacy measurements resolve
 only when exactly one OpenRouter provider lists that model. Recorded capacities
 remain authoritative. Historical `unified` events remain readable for accounting.
 The OpenRouter provider shares its model catalog between
@@ -645,6 +646,21 @@ unavailable. The model list and selector share the compact bordered popover
 styling used for conversation costs, with the selector in a shaded footer. Its
 effort menu and the footer's effort menu use compact rows, a subtle highlight
 for the selected level, and the same bordered surface.
+The execution model chosen in Settings is the workspace default; each Thread
+stores its own `providerId`, `model` and `effort`. A new top-level Thread copies
+the default at creation; a child inherits its parent's, and a spawn may override
+the model and effort on the parent's provider (a model-only override naming
+another model takes that model's start effort; naming the parent's own model
+keeps the parent's effort). A Thread stored without `providerId` runs on the
+default's provider, with its own stored model and effort over the default's
+when set, until its execution is first changed. The conversation footer's picker edits
+only the selected Thread's execution through `runtime.threads/v1`
+`setThreadExecution` (1.7.0), shows the default read-only with no Thread
+selected, applies a change from the Thread's next run, and never
+writes `models.execution`. A Thread whose stored provider or model is gone
+fails each run with `thread_execution_unavailable`, and its manual compaction
+fails as `summarizer_failed`
+([docs/features/per-thread-model.md](docs/features/per-thread-model.md)).
 A credential is named and has one of a set of kinds that fixes its fields: the
 built-in `API_TOKEN` is authentication, which a provider key and the GitHub token
 both are; `USERNAME_PASSWORD` is authentication with a name; and the kinds a
@@ -677,7 +693,8 @@ within each Thread remains serial. Threads share their Project's sandbox;
 each Thread's working directory starts at the sandbox's workspace root
 `/workspace` and is inherited by a child Thread at creation. The agent moves it
 with the `cwd` tool, and a reader moves the same Thread's with
-`PATCH /threads/:id`; both reach one rule, which refuses any path that resolves
+`PATCH /threads/:id` (which also sets the Thread's `providerId`, `model` and
+`effort`); both reach one rule, which refuses any path that resolves
 outside the workspace root. The `cwd` result also says whether the directory
 is a repository root ([docs/features/cwd-tool.md](docs/features/cwd-tool.md)). The
 existing sandbox-pool capacity governs Projects, not Threads.
@@ -713,18 +730,21 @@ optional title its parent gives it, or the start of its prompt without one.
 A spawn may also name an agent (`name`, `source` `built-in` or `workspace`,
 and instructions of at most 64 000 characters), a model and a reasoning effort
 (`runtime.threads/v1` 1.6.0); the runtime stores them in the child's
-`runtime.thread/v1` document (1.1.0) as a snapshot taken at the spawn. A child
-spawned without a model or an effort takes its parent's stored value, and an
-agent is never inherited. The runtime does not check the model or the effort;
-the `thread-spawn` tool does, before it spawns: against the models the
-configured execution provider lists (a provider without a list accepts any),
-then through `models/v1`. The public Thread record shows the agent's name and
-source, the model and the effort, never the instructions; the runner reads them
+`runtime.thread/v1` document (1.2.0) as a snapshot taken at the spawn, with the
+parent's `providerId`. A child spawned without a model or an effort takes its
+parent's stored value (a spawn naming another model alone takes that model's
+start effort; naming the parent's own model keeps the parent's effort), and an
+agent is never inherited. The runtime checks the model and the effort before
+it spawns (`runtime` 2.7.0): against the models the parent's provider lists (a
+provider without a list accepts any), then through `models/v1.resolve`; the
+`thread-spawn` tool (`threads` 2.0.1) reads no configuration or models. The
+public Thread record shows the agent's name and source, the `providerId`, the
+model and the effort, never the instructions; the runner reads them
 from the stored document on every run and hands them to the executor as
 `thread.agent.instructions`, so a retry, a parent's send, the restart of a
 failed child and a run after a host restart use the same values. The default
-executor (`executor/v1` 1.3.0) runs the Thread as that agent, with its model
-and effort in place of the configured ones on the configured provider; when no
+executor (`executor/v1` 1.4.0) runs the Thread as that agent, with its model
+and effort on the Thread's stored provider; when no
 instructions are stored for an agent Thread, the runner drops the agent and the
 Thread runs as the default agent.
 
@@ -769,9 +789,10 @@ run's prompt variables (instructions citing another name fail the run before
 its first model request), then the run's `# Agents` section, then its
 `# Skills` section, which `src/host/agents` and `src/host/skills` build once
 per prompt run and which stay the same for the whole run. Each run uses the
-Thread's own model and effort when it has them, else the configured execution
-ones, always on the configured provider; the run's automatic compaction uses
-the run's model, and a manual compaction the configured one. The agents a Thread
+Thread's stored provider, model and effort (a Thread without `providerId` runs
+on the configured default's provider, with its own stored model and effort over
+the default's when set); the run's automatic compaction uses the run's
+model, and a manual compaction the Thread's. The agents a Thread
 can be spawned as are served by `default.agents/v1` (host-only, `list` and
 `resolve`): the built-in agents shipped with the bundle (the ten
 coding-workflow steps `triage` … `docs`; an invalid one makes activation
@@ -2141,7 +2162,8 @@ provider integration.
 The `host-config` bundle receives complete singleton configuration replacements
 through `PUT /config`, which the `transport` bundle routes to it. It persists only provider IDs, the kind each provider is, the
 configuration values that kind declares, the models each provider offers, one
-`models.execution` profile, `execution.maxTurns`, and an optional `profile`
+`models.execution` profile (the default execution new top-level Threads
+store), `execution.maxTurns`, and an optional `profile`
 with the user's name and time zone. That `profile` (strict, last in the
 configuration, `host-config/v1` and `host-config.configuration/v1` 1.1.0)
 carries an optional `name`, trimmed, 1–100 characters on one line, and an
@@ -3191,7 +3213,10 @@ base64 in a bridge envelope.
 From `executor/v1` 1.3.0 the executor's `run` and `compact` receive the Thread
 as an `ExecutorThread`: the public record whose `agent`, when present, also
 carries the agent's instructions, checked at the boundary by
-`executorThreadSchema`; the runtime still requires `executor/v1@^1.0.0`.
+`executorThreadSchema`. From 1.4.0 the executor runs and compacts on the
+Thread's own provider (`providerId`); the runtime requires
+`executor/v1@^1.4.0`, since an older executor would ignore the Thread's
+provider.
 
 A failed tool call's row and a prompt's failure marker read the stored error,
 not only its outermost message: its message, then each cause's on its own line

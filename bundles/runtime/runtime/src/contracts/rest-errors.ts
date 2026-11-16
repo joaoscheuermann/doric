@@ -1,5 +1,6 @@
 import { ContractError } from 'bundle/contracts';
 
+import type { ThreadExecutionIssue } from './execution.js';
 import {
   type BranchResult,
   type CwdResult,
@@ -13,7 +14,7 @@ import {
   storageMessage,
   type ThreadCreateResult,
 } from './model.js';
-import type { InterruptResult } from './threads.js';
+import type { InterruptResult, ThreadExecutionResult } from './threads.js';
 
 /*
  * The REST error each runtime contract outcome answers (stage 9 R-ERR). The
@@ -70,6 +71,15 @@ export const cwdRefusalMessages: Readonly<
   outside: 'The working directory must stay inside the workspace.',
   missing: 'No such directory.',
   'not-directory': 'The working directory must be a directory.',
+};
+
+/** What one refused execution means, in one sentence per issue. */
+export const threadExecutionMessages: Readonly<
+  Record<ThreadExecutionIssue, string>
+> = {
+  provider: 'The provider is not configured.',
+  model: 'The model is not available on this provider.',
+  effort: 'This model does not support that effort.',
 };
 
 const terminalMissing: RestError = {
@@ -138,6 +148,25 @@ export const restErrors = {
               code: 'invalid_cwd',
               message: cwdRefusalMessages[result.change.status],
             },
+  /**
+   * The execution half of `PATCH /threads/:id`. `updated` → `undefined`;
+   * `missing` → `thread_not_found` (404); `invalid` → 422 `invalid_execution`
+   * with `threadExecutionMessages[reason]`; `unresolvable` → 422
+   * `invalid_execution` with the result's `message`.
+   */
+  setThreadExecution: (result: ThreadExecutionResult): RestError | undefined =>
+    result.status === 'updated'
+      ? undefined
+      : result.status === 'missing'
+        ? notFoundError('thread')
+        : {
+            status: 422,
+            code: 'invalid_execution',
+            message:
+              result.status === 'invalid'
+                ? threadExecutionMessages[result.reason]
+                : result.message,
+          },
   /** `DELETE /threads/:id`. */
   deleteThread: deleted('thread'),
   /** `POST /threads/:id/prompt`: any refusal but missing is `inactive`. */

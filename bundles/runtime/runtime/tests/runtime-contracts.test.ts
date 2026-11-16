@@ -180,8 +180,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
     // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0:
     // retry; 1.5.0: a bundle's instruction and restarting a failed child;
-    // 1.6.0: spawn options (agent, model, effort).
-    `${RuntimeThreadsV1.id}@1.6.0`,
+    // 1.6.0: spawn options (agent, model, effort); 1.7.0: a Thread's own
+    // provider, model and effort, and setThreadExecution.
+    `${RuntimeThreadsV1.id}@1.7.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
     // 1.2.0: location
     `${RuntimeWorkspaceV1.id}@1.2.0`,
@@ -202,8 +203,8 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // The storage types the host part defines are provided contracts too.
     // 1.1.0: the internal `owner` field (57-WP-H).
     `${projectType.type}@1.1.0`,
-    // 1.1.0: a spawned Thread's agent, model and effort.
-    `${threadType.type}@1.1.0`,
+    // 1.1.0: a spawned Thread's agent, model and effort; 1.2.0: providerId.
+    `${threadType.type}@1.2.0`,
     `${historyType.type}@1.0.0`,
     `${migrationType.type}@1.0.0`,
     `${attachmentType.type}@1.0.0`,
@@ -219,7 +220,8 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     'secrets/v1@^1.0.0',
     'models/v1@^1.0.0',
     `${ConfigurationV1.id}@^1.0.0`,
-    `${ExecutorV1.id}@^1.0.0`,
+    // 1.4.0: the executor resolves a Thread's own provider.
+    `${ExecutorV1.id}@^1.4.0`,
     `${SandboxV1.id}@^1.0.0`,
   ]);
   assert.ok(isHooksContract(RuntimeHooksV1));
@@ -452,4 +454,75 @@ void test('RC1 the executor Thread schema is no process-local member', () => {
   assert.deepEqual(markers(executorThreadSchema, 'input'), []);
   assert.deepEqual(markers(executorMethods.run.input, 'input'), ['object']);
   assert.deepEqual(markers(executorMethods.compact.input, 'input'), ['object']);
+});
+
+void test('runtime.threads/v1 1.7.0 declares setThreadExecution next to setThreadCwd with the configuration bounds', () => {
+  const methods = Object.keys(runtimeThreadsMethods);
+  assert.equal(
+    methods.indexOf('setThreadExecution'),
+    methods.indexOf('setThreadCwd') + 1,
+  );
+  const { input, output } = runtimeThreadsMethods.setThreadExecution;
+  const base = { id: 't-1', providerId: 'p-1', model: 'm-1' };
+  for (const accepted of [
+    base,
+    { ...base, effort: 'high' },
+    { ...base, providerId: 'p'.repeat(128), model: 'm'.repeat(512) },
+  ])
+    assert.equal(
+      input.safeParse(accepted).success,
+      true,
+      JSON.stringify(accepted).slice(0, 80),
+    );
+  for (const [what, refused] of [
+    ['an unknown effort', { ...base, effort: 'extreme' }],
+    ['a blank provider', { ...base, providerId: '  ' }],
+    ['a blank model', { ...base, model: '' }],
+    [
+      'a provider over 128 characters',
+      { ...base, providerId: 'p'.repeat(129) },
+    ],
+    ['a model over 512 characters', { ...base, model: 'm'.repeat(513) }],
+    ['no model', { id: 't-1', providerId: 'p-1' }],
+    ['an extra key', { ...base, name: 'Renamed' }],
+  ] as const)
+    assert.equal(input.safeParse(refused).success, false, what);
+
+  const thread = {
+    id: 't-1',
+    projectId: 'p-1',
+    name: 'Thread',
+    state: 'ready',
+    queuePaused: false,
+    lastSequence: 0,
+    cwd: '/workspace',
+    createdAt: '2026-03-01T00:00:00.000Z',
+    updatedAt: '2026-03-01T00:00:00.000Z',
+    model: 'm-1',
+    providerId: 'p-1',
+  };
+  for (const result of [
+    { status: 'updated', thread },
+    { status: 'missing' },
+    { status: 'invalid', reason: 'provider' },
+    { status: 'invalid', reason: 'model' },
+    { status: 'invalid', reason: 'effort' },
+    { status: 'unresolvable', message: 'Configured provider is unavailable.' },
+  ])
+    assert.equal(
+      output.safeParse(result).success,
+      true,
+      JSON.stringify(result),
+    );
+  const updated = output.safeParse({ status: 'updated', thread });
+  assert.equal(
+    updated.success && 'thread' in updated.data
+      ? updated.data.thread.providerId
+      : undefined,
+    'p-1',
+  );
+  assert.equal(
+    output.safeParse({ status: 'invalid', reason: 'agent' }).success,
+    false,
+  );
 });

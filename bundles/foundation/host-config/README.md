@@ -40,7 +40,7 @@ It requires `hooks/v1`, `settings/v1`, `secrets/v1`, `models/v1` and
 | Field                          | Meaning                                                                                                                 |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `providers`                    | At least one provider: a unique `id`, a `kind` from the `llms` catalog, exactly that kind's values, and its model list. |
-| `models.execution`             | The `providerId`, `model` and optional `effort` prompts run with; the provider must be one listed above.                |
+| `models.execution`             | The workspace default `providerId`, `model` and optional `effort`, copied by a new top-level Thread at its creation.    |
 | `execution.maxTurns`           | The turn limit of one prompt.                                                                                           |
 | `execution.maxToolResultChars` | Optional cap on one tool result; when absent, the consumer applies `defaultMaxToolResultChars` (50,000).                |
 | `execution.contextCompaction`  | Optional compaction policy; when absent, the consumer applies `defaultContextCompaction`.                               |

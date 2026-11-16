@@ -36,10 +36,14 @@ project, in this order:
   result arrives in the parent's chat. `agent` runs the child as one of the
   agents `default.agents/v1` defines, with that agent's instructions; `model`
   and `effort` override the agent's defaults, and without them the child runs
-  on the agent's, else on the parent's. A model or effort is checked against
-  the models the configured execution provider lists (a provider without a
-  list accepts any) and then resolved through `models/v1`, so an invalid one
-  fails the call before any child is created;
+  on the agent's, else on the parent's. The child always runs on its parent's
+  provider. The runtime, not the tool, checks a model or effort against the
+  models that provider lists (a provider without a list accepts any) and then
+  through `models/v1.resolve`, rejecting a refused one with
+  `invalid_execution` before any child is created (a provider
+  `models/v1.resolve` cannot resolve rejects with `models/v1`'s own error);
+  when the model comes from
+  an agent definition, the error names the agent and the model;
 - `thread-list`, `thread-get` — observe a direct child's state and, once a
   prompt has finished, its materialized result;
 - `thread-events` — read a bounded, digested page of a child's persisted
@@ -55,9 +59,8 @@ A child shares the Project's workspace but has its own history. Each tool
 reaches the calling prompt's children through `runtime.threads/v1`
 (`runtime/contracts`), scoped by the prompt `Call` it runs under, and returns
 the serialized result. The bundle never imports `app/backend/doric-host`
-internals: it requires `runtime.threads/v1@^1.6.0`, `models/v1@^1.0.0` and
-`host-config/v1@^1.1.0` beside `tools/v1`, `ui/v1` and `navigation/v1`, and optionally `default.agents/v1`: without a
-provider, `thread-spawn` fails a call that names an agent with "Agent types are
+internals: it requires `runtime.threads/v1@^1.7.0` beside `tools/v1`, `ui/v1`
+and `navigation/v1`, and optionally `default.agents/v1`: without a provider, `thread-spawn` fails a call that names an agent with "Agent types are
 unavailable in this runtime." and spawns every other one.
 
 ## Skills

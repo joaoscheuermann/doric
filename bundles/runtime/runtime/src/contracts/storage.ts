@@ -137,6 +137,8 @@ export const threadDocumentSchema = z
     model: z.string().optional(),
     /** The resolved effort; absent on documents written before runtime.thread/v1 1.1.0. */
     effort: z.enum(reasoningEfforts).optional(),
+    /** The Thread's provider; absent on documents written before runtime.thread/v1 1.2.0. */
+    providerId: z.string().optional(),
     createdKey: z.string(),
   })
   .strict();

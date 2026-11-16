@@ -81,6 +81,7 @@
       "retry",
       "rewind",
       "setThreadCwd",
+      "setThreadExecution",
       "steer",
       "terminateThread",
       "thread",

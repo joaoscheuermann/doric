@@ -171,6 +171,11 @@ export interface HarnessOptions {
   readonly health?: () => Promise<StorageHealth>;
   /** The llms provider models/v1 resolves for each provider id. */
   readonly models?: Readonly<Record<string, ModelCatalogSource>>;
+  /**
+   * Awaited first by the models/v1.resolve fake, before it looks up
+   * `models[providerId]`, so a test can hold a resolve in flight.
+   */
+  readonly resolveGate?: (providerId: string) => Promise<void>;
   readonly backend?: Backend;
   /**
    * This runtime process as doric.generation/v1 describes it (57-WP-H); a
@@ -290,6 +295,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
         resolve: defineMethod({
           ...modelsMethods.resolve,
           execute: async ({ providerId, model, effort }) => {
+            await options.resolveGate?.(providerId);
             const source = options.models?.[providerId];
             if (source === undefined)
               throw new Error('Configured provider is unavailable.');
@@ -482,6 +488,8 @@ export const createHarness = (options: HarnessOptions = {}) => {
         }),
       rename: (id, name) => threadsApi.renameThread({ id, name }),
       setCwd: (id, cwd) => threadsApi.setThreadCwd({ id, cwd }),
+      setExecution: (id, execution) =>
+        threadsApi.setThreadExecution({ id, ...execution }),
       git: (id) => leaseOf({ threadId: id }).git(),
       branches: (id, branch, cwd) =>
         leaseOf({ threadId: id }).branches({

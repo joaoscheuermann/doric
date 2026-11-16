@@ -43,6 +43,7 @@ import { sortActivity, summarizeActivity } from './activity.js';
 import type { Bindings } from './bindings.js';
 import { randomProjectColor } from './colors.js';
 import { workingDirectoriesInside } from './cwd.js';
+import { createExecutionValidator } from './execution.js';
 import {
   applyGitCredentials,
   type GitCredentials,
@@ -173,6 +174,7 @@ export const createWorkspaceService = ({
       log.error('Project owner release failed', { projectId: id });
     });
   };
+  const validateExecution = createExecutionValidator(ports.catalogSource);
   const runner = createThreadRunner({
     threads,
     publisher,
@@ -199,6 +201,9 @@ export const createWorkspaceService = ({
         summaryMaxChars: value?.summaryMaxChars ?? 6000,
       };
     },
+    executionConfiguration: async () =>
+      (await ports.configuration()).configuration,
+    validateExecution,
     checkStorage: ports.checkStorage,
     ...(ports.hooks.threadsClosing === undefined
       ? {}
@@ -1095,6 +1100,27 @@ export const createWorkspaceService = ({
         if (project === undefined || thread === undefined)
           return { status: 'inactive' };
         return runner.setCwd(project, thread, cwd);
+      },
+      setExecution: async (id, execution) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        const refused = await validateExecution(
+          (await ports.configuration()).configuration,
+          execution,
+          { model: true, effort: true },
+        );
+        if (refused?.kind === 'invalid')
+          return { status: 'invalid', reason: refused.issue };
+        if (refused?.kind === 'unresolvable')
+          return { status: 'unresolvable', message: refused.message };
+        return exclusive(record.projectId, async () => {
+          const value = await threads.setExecution(id, execution);
+          if (value === undefined) return { status: 'missing' as const };
+          const runtime = runtimes.get(record.projectId)?.threads.get(id);
+          if (runtime !== undefined) runtime.thread = value;
+          publisher.threadUpdated(value);
+          return { status: 'updated' as const, thread: value };
+        });
       },
       branches: async (id, branch, cwd) => {
         const record = await threads.record(id);

@@ -103,6 +103,12 @@ export const threadsService = ({
       ...methods.setThreadCwd,
       execute: ({ id, cwd }) => service.threads.setCwd(id, cwd),
     }),
+    setThreadExecution: defineMethod({
+      expose: 'desktop',
+      ...methods.setThreadExecution,
+      execute: ({ id, ...execution }) =>
+        service.threads.setExecution(id, execution),
+    }),
     prompt: defineMethod({
       expose: 'desktop',
       ...methods.prompt,

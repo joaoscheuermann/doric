@@ -1,12 +1,25 @@
 // The execution picker of the conversation footer as the reader meets it: the
 // settings bundle defines `settings-execution-picker`, a `layout.footer` item.
 // A probe bundle plays the layout's footer: it registers the route `/footer`,
-// which mounts that element the way the layout's footer region does.
+// which mounts that element the way the layout's footer region does, and,
+// unless a test says otherwise, provides `layout.workspace/v1` with a
+// selection the test sets and a change notification the test sends.
+// The picker edits the selected Thread's execution through
+// `runtime.threads/v1.setThreadExecution`; it never writes the workspace
+// default (`host-config/v1.replace`).
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
-import { NavigationV1, UiV1 } from 'bundle/contracts';
+import {
+  type AnyMethodDefinition,
+  type Disposable,
+  defineMethod,
+  defineService,
+  NavigationV1,
+  UiV1,
+} from 'bundle/contracts';
+import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'layout/contracts';
 
 import {
   type HostAnswer,
@@ -121,19 +134,170 @@ const host = (model: string): Record<string, HostAnswer> => ({
   'tools/v1.catalog': () => [],
 });
 
+/** What the disabled triggers tell the reader. */
+const DEFAULT_TITLE =
+  'New threads start on the workspace default. Change it in Settings.';
+
+const CREATED = '2026-01-01T00:00:00.000Z';
+
+/** A Thread record as `layout.workspace/v1` hands it out. */
+type ThreadRecord = {
+  readonly id: string;
+  readonly updatedAt: string;
+  readonly providerId?: string;
+  readonly model?: string;
+  readonly effort?: string;
+  readonly [key: string]: unknown;
+};
+
+/** A Thread storing `execution`; `{}` is a Thread created before 1.7.0. */
+const thread = (
+  id: string,
+  execution: {
+    readonly providerId?: string;
+    readonly model?: string;
+    readonly effort?: string;
+  },
+  updatedAt = CREATED,
+): ThreadRecord => ({
+  id,
+  projectId: 'p-1',
+  name: `Thread ${id}`,
+  state: 'ready',
+  lastSequence: 0,
+  cwd: '/workspace',
+  createdAt: CREATED,
+  updatedAt,
+  ...execution,
+});
+
 /** The layout's footer: the route `/footer` mounts the execution picker. */
+const mountFooter: ProbeBundle['activate'] = (context) => {
+  const route = context.services.use(NavigationV1).register({
+    path: '/footer',
+    create: () =>
+      context.services
+        .use(UiV1)
+        .create('settings-execution-picker') as HTMLElement,
+  });
+  return () => route.dispose();
+};
+
+/** The footer of a layout that provides no `layout.workspace/v1`. */
 const footerProbe: ProbeBundle = {
   requires: ['ui/v1@^1.0.0', 'navigation/v1@^1.0.0'],
-  activate: (context) => {
-    const route = context.services.use(NavigationV1).register({
-      path: '/footer',
-      create: () =>
-        context.services
-          .use(UiV1)
-          .create('settings-execution-picker') as HTMLElement,
-    });
-    return () => route.dispose();
-  },
+  activate: mountFooter,
+};
+
+/**
+ * The workspace window's footer: `layout.workspace/v1` at 1.1.0 with the
+ * method schemas the layout declares, over Thread records and a selection the
+ * test controls. Every read answers a fresh copy, as the layout's does.
+ */
+const workspaceFooter = (selected?: ThreadRecord) => {
+  const records = new Map<string, ThreadRecord>();
+  const listeners = new Set<() => void>();
+  let selectedId = selected?.id;
+  if (selected !== undefined) records.set(selected.id, selected);
+
+  const copy = (id: string | undefined): ThreadRecord | undefined => {
+    const record = id === undefined ? undefined : records.get(id);
+    return record === undefined ? undefined : structuredClone(record);
+  };
+  const notify = (): void => {
+    for (const listener of [...listeners]) listener();
+  };
+  const handlers: Readonly<Record<string, (input: never) => unknown>> = {
+    thread: (id: string) => copy(id),
+    selectedThread: () => copy(selectedId),
+    selection: () => {
+      const record = copy(selectedId);
+      return record === undefined ? {} : { thread: record };
+    },
+    threads: () => [...records.values()].map((record) => copy(record.id)),
+    connected: () => true,
+    setBottomVisible: () => undefined,
+    subscribe: (listener: () => void): Disposable => {
+      listeners.add(listener);
+      return { dispose: () => void listeners.delete(listener) };
+    },
+  };
+
+  const probe: ProbeBundle = {
+    requires: ['ui/v1@^1.0.0', 'navigation/v1@^1.0.0'],
+    provides: ['layout.workspace/v1@1.1.0'],
+    activate: (context) => {
+      context.services.provide(
+        defineService(
+          LayoutWorkspaceV1.id,
+          Object.fromEntries(
+            Object.entries(layoutWorkspaceMethods).map(([name, spec]) => [
+              name,
+              defineMethod({
+                input: spec.input,
+                output: spec.output,
+                execute: (input: unknown) =>
+                  (handlers[name] as (input: unknown) => never)(input),
+              }) as AnyMethodDefinition,
+            ]),
+          ),
+        ),
+      );
+      return mountFooter(context);
+    },
+  };
+
+  return {
+    probe,
+    /** The reader selects `record` (or nothing) in the workspace. */
+    select: (record: ThreadRecord | undefined): void => {
+      if (record !== undefined) records.set(record.id, record);
+      selectedId = record?.id;
+      notify();
+    },
+    /** The layout publishes a Thread update it received from the host. */
+    publish: (record: ThreadRecord): void => {
+      records.set(record.id, record);
+      notify();
+    },
+    /** A change notification that changes no record (another Thread's). */
+    notify,
+  };
+};
+
+/** A promise the test settles by hand: a host answer still in flight. */
+const deferred = <T>() => {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+};
+
+type ExecutionInput = {
+  readonly id: string;
+  readonly providerId: string;
+  readonly model: string;
+  readonly effort?: string;
+};
+
+let stamp = 0;
+
+/**
+ * `runtime.threads/v1.setThreadExecution` as the host answers an accepted
+ * execution: the Thread's record, stored as asked and touched later.
+ */
+const updated = (input: unknown) => {
+  const { id, providerId, model, effort } = input as ExecutionInput;
+  stamp += 1;
+  return {
+    status: 'updated',
+    thread: thread(
+      id,
+      { providerId, model, ...(effort === undefined ? {} : { effort }) },
+      `2026-01-02T00:00:${String(stamp % 60).padStart(2, '0')}.000Z`,
+    ),
+  };
 };
 
 let opened: SettingsWindow | undefined;
@@ -143,16 +307,31 @@ afterEach(async () => {
   opened = undefined;
 });
 
-/** Opens the footer with the execution profile on `model`, icons answered. */
-const openFooter = async (model: string): Promise<SettingsWindow> => {
+/** Opens the footer at `/footer`, as a window part mounts it. */
+const openWith = async (input: {
+  readonly host: Record<string, HostAnswer>;
+  readonly probe: ProbeBundle;
+}): Promise<SettingsWindow> => {
   opened = await openSettingsWindow({
     url: 'doric://app/footer',
-    host: host(model),
-    probe: footerProbe,
+    host: input.host,
+    probe: input.probe,
   });
   await settle(20);
   await settle(20);
   return opened;
+};
+
+/**
+ * Opens the footer with the workspace default on `model` and a selected
+ * Thread that stores that same execution, icons answered.
+ */
+const openFooter = async (model: string): Promise<SettingsWindow> => {
+  const { execution } = configurationOn(model).models;
+  return openWith({
+    host: host(model),
+    probe: workspaceFooter(thread('t-1', execution)).probe,
+  });
 };
 
 const trigger = (window: SettingsWindow): HTMLElement => {
@@ -182,6 +361,95 @@ const rowOf = (window: SettingsWindow, label: string): HTMLElement => {
 
 const iconIn = (element: HTMLElement): HTMLElement | null =>
   element.querySelector<HTMLElement>('[data-slot="model-icon"]');
+
+const effortTrigger = (window: SettingsWindow): HTMLElement => {
+  const button = window.document.querySelector<HTMLElement>(
+    'settings-execution-picker [aria-label="Reasoning effort"]',
+  );
+  assert.ok(button !== null, 'The footer draws no reasoning effort picker.');
+  return button;
+};
+
+/** What the model trigger reads: its text, or the typed field's value. */
+const shownModel = (window: SettingsWindow): string => {
+  const model = trigger(window);
+  return model.tagName === 'INPUT'
+    ? (model as HTMLInputElement).value
+    : (model.textContent?.trim() ?? '');
+};
+
+const shownEffort = (window: SettingsWindow): string =>
+  effortTrigger(window).textContent?.trim() ?? '';
+
+const isDisabled = (element: HTMLElement): boolean =>
+  element.hasAttribute('disabled') ||
+  element.getAttribute('aria-disabled') === 'true' ||
+  element.hasAttribute('data-disabled');
+
+const popoverOpen = (window: SettingsWindow): boolean =>
+  window.document.querySelector('[data-slot="popover-content"]') !== null;
+
+/** The alert span's message, or `undefined` when none is shown. */
+const alertText = (window: SettingsWindow): string | undefined => {
+  const text = window.document
+    .querySelector('settings-execution-picker [role="alert"]')
+    ?.textContent?.trim();
+  return text === undefined || text === '' ? undefined : text;
+};
+
+/**
+ * The executions the picker asked the host to set, as they crossed the
+ * bridge (an absent effort is no key at all).
+ */
+const sent = (window: SettingsWindow): unknown[] =>
+  window
+    .received('runtime.threads/v1.setThreadExecution')
+    .map((call) => JSON.parse(JSON.stringify(call.input)) as unknown);
+
+const replaced = (window: SettingsWindow): number =>
+  window.received('host-config/v1.replace').length;
+
+/** Chooses the model row named `label` from the model popover. */
+const chooseModel = async (
+  window: SettingsWindow,
+  label: string,
+): Promise<void> => {
+  await openPicker(window);
+  rowOf(window, label).click();
+  await settle(20);
+};
+
+/** Chooses the effort named `label` from the effort trigger's popover. */
+const chooseEffort = async (
+  window: SettingsWindow,
+  label: string,
+): Promise<void> => {
+  effortTrigger(window).click();
+  await settle(20);
+  const row = [
+    ...window.document.querySelectorAll<HTMLElement>(
+      '[data-slot="popover-content"][aria-label="Reasoning effort"] button',
+    ),
+  ].find((button) => button.textContent?.trim().startsWith(label));
+  assert.ok(row !== undefined, `The effort popover has no row named ${label}.`);
+  row.click();
+  await settle(20);
+};
+
+const type = (input: HTMLInputElement, value: string): void => {
+  const setter = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(input),
+    'value',
+  )?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new window.Event('input', { bubbles: true }));
+};
+
+const pressEnter = (input: HTMLInputElement): void => {
+  input.dispatchEvent(
+    new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+  );
+};
 
 test('every model row of the open picker draws an icon slot, empty for a model without an icon, and the effort rows none', async () => {
   const window = await openFooter(SONNET);
@@ -314,11 +582,10 @@ test('the picker anchors the footer at its left and draws its triggers as ghost 
 });
 
 test('a provider that lists no models gets a typed model field with the input focus ring and a muted hover', async () => {
-  // No listed models and no model chosen yet: nothing to pick, so the reader
-  // types the model id.
+  // No listed models: nothing to pick, so the reader types the model id of
+  // the selected Thread.
   const configuration = configurationOn('');
-  opened = await openSettingsWindow({
-    url: 'doric://app/footer',
+  opened = await openWith({
     host: {
       ...host(''),
       'host-config/v1.current': () => ({
@@ -333,10 +600,10 @@ test('a provider that lists no models gets a typed model field with the input fo
         updatedAt: '2026-01-01T00:00:00.000Z',
       }),
     },
-    probe: footerProbe,
+    probe: workspaceFooter(
+      thread('t-1', { providerId: 'openrouter', model: CODER }),
+    ).probe,
   });
-  await settle(20);
-  await settle(20);
 
   const field = trigger(opened);
   assert.equal(field.tagName, 'INPUT');
@@ -356,4 +623,388 @@ test('a provider that lists no models gets a typed model field with the input fo
     'focus-visible:border-transparent',
   ])
     assert.ok(!classes.includes(name), `${name} in ${classes.join(' ')}`);
+});
+
+/** The footer with nothing to edit: the default shown, both triggers locked. */
+const assertDefaultLocked = async (window: SettingsWindow): Promise<void> => {
+  assert.equal(shownModel(window), SONNET);
+  assert.equal(shownEffort(window), 'High');
+  for (const button of [trigger(window), effortTrigger(window)]) {
+    assert.ok(
+      isDisabled(button),
+      `${button.getAttribute('aria-label')} is not disabled.`,
+    );
+    assert.equal(button.getAttribute('title'), DEFAULT_TITLE);
+  }
+
+  trigger(window).click();
+  await settle(20);
+  effortTrigger(window).click();
+  await settle(20);
+  assert.equal(popoverOpen(window), false, 'A disabled trigger opened.');
+  assert.deepEqual(sent(window), []);
+  assert.equal(replaced(window), 0);
+};
+
+test('with no Thread selected the footer shows the workspace default, locked and titled, and a click asks the host nothing (T-25)', async () => {
+  const window = await openWith({
+    host: host(SONNET),
+    probe: workspaceFooter().probe,
+  });
+
+  await assertDefaultLocked(window);
+});
+
+test('without layout.workspace/v1 the footer shows the workspace default, locked and titled, and a click asks the host nothing (T-39)', async () => {
+  const window = await openWith({ host: host(SONNET), probe: footerProbe });
+
+  await assertDefaultLocked(window);
+});
+
+test("a Thread's stored execution is shown, and choosing another model sets the Thread's execution at that model's start effort, never the default (T-26)", async () => {
+  const workspace = workspaceFooter(
+    thread('t-1', { providerId: 'openrouter', model: SONNET, effort: 'low' }),
+  );
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': updated,
+    },
+    probe: workspace.probe,
+  });
+
+  // The Thread's own effort, not the default's `high`.
+  assert.equal(shownModel(window), SONNET);
+  assert.equal(shownEffort(window), 'Low');
+  assert.ok(!isDisabled(trigger(window)), 'The model trigger is disabled.');
+
+  // CODER lists no effort, so none is sent.
+  await chooseModel(window, CODER);
+  assert.deepEqual(sent(window), [
+    { id: 't-1', providerId: 'openrouter', model: CODER },
+  ]);
+  assert.equal(shownModel(window), CODER);
+
+  // SONNET names no default effort: it starts at its first, `low`.
+  await chooseModel(window, SONNET);
+  assert.deepEqual(sent(window).at(-1), {
+    id: 't-1',
+    providerId: 'openrouter',
+    model: SONNET,
+    effort: 'low',
+  });
+  assert.equal(replaced(window), 0);
+});
+
+test('choosing the model or the effort already shown asks the host nothing (T-27)', async () => {
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': updated,
+    },
+    probe: workspaceFooter(
+      thread('t-1', {
+        providerId: 'openrouter',
+        model: SONNET,
+        effort: 'high',
+      }),
+    ).probe,
+  });
+
+  await chooseModel(window, SONNET);
+  await chooseEffort(window, 'High');
+
+  assert.deepEqual(sent(window), []);
+  assert.equal(replaced(window), 0);
+});
+
+test('a Thread created before per-thread execution shows the default, and its first choice sends provider, model and effort (T-28)', async () => {
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': updated,
+    },
+    probe: workspaceFooter(thread('t-1', {})).probe,
+  });
+
+  assert.equal(shownModel(window), SONNET);
+  assert.equal(shownEffort(window), 'High');
+
+  await chooseEffort(window, 'Low');
+  assert.deepEqual(sent(window), [
+    { id: 't-1', providerId: 'openrouter', model: SONNET, effort: 'low' },
+  ]);
+});
+
+test('a default stored at effort none is never rewritten: mounting, focusing the window and selecting another Thread send no replace (T-29)', async () => {
+  const configuration = configurationOn(SONNET);
+  const stored = {
+    ...configuration,
+    providers: configuration.providers.map((provider) => ({
+      ...provider,
+      models: [
+        { name: SONNET, reasonings: ['none', 'low', 'high'] },
+        { name: CODER, reasonings: [] },
+      ],
+    })),
+    models: {
+      execution: { providerId: 'openrouter', model: SONNET, effort: 'none' },
+    },
+  };
+  const workspace = workspaceFooter();
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'host-config/v1.current': () => ({
+        configuration: stored,
+        revision: 1,
+        updatedAt: CREATED,
+      }),
+      'host-config/v1.replace': () => {
+        throw new Error('The footer wrote the workspace default.');
+      },
+    },
+    probe: workspace.probe,
+  });
+
+  window.window.dispatchEvent(new window.window.Event('focus'));
+  window.window.dispatchEvent(new window.window.Event('visibilitychange'));
+  await settle(20);
+  workspace.select(
+    thread('t-2', { providerId: 'openrouter', model: SONNET, effort: 'none' }),
+  );
+  await settle(20);
+  workspace.select(thread('t-3', {}));
+  await settle(800);
+
+  assert.equal(replaced(window), 0);
+  assert.deepEqual(sent(window), []);
+});
+
+test('a Thread stored on a removed provider shows its stored model, and choosing a listed model sends it (T-30)', async () => {
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': updated,
+    },
+    probe: workspaceFooter(
+      thread('t-1', { providerId: 'gone', model: 'old/model', effort: 'low' }),
+    ).probe,
+  });
+
+  assert.equal(shownModel(window), 'old/model');
+
+  await chooseModel(window, SONNET);
+  assert.deepEqual(sent(window), [
+    { id: 't-1', providerId: 'openrouter', model: SONNET, effort: 'low' },
+  ]);
+});
+
+test('while a write is pending both triggers are disabled, and refused answers show their message in the alert span (T-31)', async () => {
+  const answers: ReturnType<typeof deferred<unknown>>[] = [];
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': () => {
+        const answer = deferred<unknown>();
+        answers.push(answer);
+        return answer.promise;
+      },
+    },
+    probe: workspaceFooter(
+      thread('t-1', { providerId: 'openrouter', model: CODER }),
+    ).probe,
+  });
+
+  await chooseModel(window, SONNET);
+  assert.equal(sent(window).length, 1);
+  // The execution being written is shown while it is in flight.
+  assert.equal(shownModel(window), SONNET);
+  assert.ok(isDisabled(trigger(window)), 'The model trigger is enabled.');
+  assert.ok(
+    isDisabled(effortTrigger(window)),
+    'The effort trigger is enabled.',
+  );
+
+  answers[0]?.resolve({ status: 'invalid', reason: 'effort' });
+  await settle(20);
+  assert.equal(alertText(window), 'This model does not support that effort.');
+  assert.ok(!isDisabled(trigger(window)), 'The model trigger stays disabled.');
+  assert.equal(shownModel(window), CODER);
+
+  await chooseModel(window, SONNET);
+  answers[1]?.resolve({
+    status: 'unresolvable',
+    message: 'The provider could not be reached.',
+  });
+  await settle(20);
+  assert.equal(alertText(window), 'The provider could not be reached.');
+});
+
+test("a record update the layout publishes re-renders the Thread's execution (T-32)", async () => {
+  const workspace = workspaceFooter(
+    thread('t-1', { providerId: 'openrouter', model: SONNET, effort: 'high' }),
+  );
+  const window = await openWith({
+    host: host(SONNET),
+    probe: workspace.probe,
+  });
+  assert.equal(shownModel(window), SONNET);
+
+  workspace.publish(
+    thread(
+      't-1',
+      { providerId: 'openrouter', model: CODER },
+      '2026-01-03T00:00:00.000Z',
+    ),
+  );
+  await settle(20);
+
+  assert.equal(shownModel(window), CODER);
+  assert.equal(shownEffort(window), 'Unavailable');
+});
+
+/** A host whose providers list no models: the model is typed by hand. */
+const unlistedHost = (): Record<string, HostAnswer> => {
+  const configuration = configurationOn('m-1');
+  return {
+    ...host('m-1'),
+    'host-config/v1.current': () => ({
+      configuration: {
+        ...configuration,
+        providers: configuration.providers.map((provider) => ({
+          ...provider,
+          models: [],
+        })),
+      },
+      revision: 1,
+      updatedAt: CREATED,
+    }),
+    'runtime.threads/v1.setThreadExecution': updated,
+  };
+};
+
+test('a typed model is sent once on blur and once on Enter, never per keystroke, and a blank or unchanged value sends nothing (T-33)', async () => {
+  const window = await openWith({
+    host: unlistedHost(),
+    probe: workspaceFooter(
+      thread('t-1', { providerId: 'openrouter', model: 'm-1' }),
+    ).probe,
+  });
+  const field = (): HTMLInputElement => trigger(window) as HTMLInputElement;
+
+  field().focus();
+  for (const value of ['m', 'm-', 'm-2']) {
+    type(field(), value);
+    await settle();
+  }
+  assert.deepEqual(sent(window), []);
+  field().blur();
+  await settle(20);
+  assert.deepEqual(sent(window), [
+    { id: 't-1', providerId: 'openrouter', model: 'm-2' },
+  ]);
+
+  field().focus();
+  type(field(), '  m-3  ');
+  pressEnter(field());
+  await settle(20);
+  assert.deepEqual(sent(window).at(-1), {
+    id: 't-1',
+    providerId: 'openrouter',
+    model: 'm-3',
+  });
+  assert.equal(sent(window).length, 2);
+
+  type(field(), '   ');
+  field().blur();
+  await settle(20);
+  field().focus();
+  // The model the Thread now runs on.
+  type(field(), 'm-3');
+  pressEnter(field());
+  await settle(20);
+  assert.equal(sent(window).length, 2);
+  assert.equal(replaced(window), 0);
+});
+
+test("on a Thread whose provider is no longer configured, a typed model is sent on the default's provider (T-33)", async () => {
+  const window = await openWith({
+    host: unlistedHost(),
+    probe: workspaceFooter(thread('t-1', { providerId: 'gone', model: 'm-1' }))
+      .probe,
+  });
+  const field = trigger(window) as HTMLInputElement;
+
+  field.focus();
+  type(field, 'm-9');
+  field.blur();
+  await settle(20);
+
+  assert.deepEqual(sent(window), [
+    { id: 't-1', providerId: 'openrouter', model: 'm-9' },
+  ]);
+});
+
+test("an updated answer that arrives before the layout's record is shown, and the layout's older record does not replace it (T-41)", async () => {
+  const workspace = workspaceFooter(
+    thread('t-1', { providerId: 'openrouter', model: CODER }),
+  );
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': updated,
+    },
+    probe: workspace.probe,
+  });
+
+  await chooseModel(window, SONNET);
+  assert.equal(shownModel(window), SONNET);
+
+  // The layout notifies before it has the update: its record is still older.
+  workspace.notify();
+  await settle(20);
+  assert.equal(shownModel(window), SONNET);
+  assert.equal(shownEffort(window), 'Low');
+});
+
+test('a write in flight on one Thread never changes what another Thread shows, and its refusal is shown on its own Thread only (T-41)', async () => {
+  const a = thread('t-a', { providerId: 'openrouter', model: CODER });
+  const b = thread('t-b', {
+    providerId: 'openrouter',
+    model: SONNET,
+    effort: 'high',
+  });
+  const answer = deferred<unknown>();
+  const workspace = workspaceFooter(a);
+  const window = await openWith({
+    host: {
+      ...host(SONNET),
+      'runtime.threads/v1.setThreadExecution': () => answer.promise,
+    },
+    probe: workspace.probe,
+  });
+
+  await chooseModel(window, SONNET);
+  assert.ok(isDisabled(trigger(window)), 'A is not locked while written.');
+
+  workspace.select(b);
+  await settle(20);
+  assert.equal(shownModel(window), SONNET);
+  assert.equal(shownEffort(window), 'High');
+  assert.ok(!isDisabled(trigger(window)), "B's model trigger is disabled.");
+  assert.ok(
+    !isDisabled(effortTrigger(window)),
+    "B's effort trigger is disabled.",
+  );
+
+  answer.resolve({ status: 'invalid', reason: 'effort' });
+  await settle(20);
+  assert.equal(alertText(window), undefined);
+  assert.equal(shownModel(window), SONNET);
+
+  workspace.select(a);
+  await settle(20);
+  assert.equal(alertText(window), 'This model does not support that effort.');
+  assert.equal(shownModel(window), CODER);
 });

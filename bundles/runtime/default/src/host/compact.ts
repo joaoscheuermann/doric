@@ -7,9 +7,12 @@ import {
 } from 'host-config/contracts';
 import type { LlmProvider } from 'llms';
 import type { MessageStorage } from 'messages';
-import type {
-  ExecutorCompactionResult,
-  PromptSession,
+import {
+  type ExecutorCompactionInput,
+  type ExecutorCompactionResult,
+  type ExecutorThread,
+  type PromptSession,
+  resolveThreadExecution,
 } from 'runtime/contracts';
 
 import {
@@ -88,14 +91,26 @@ export const executionSummarizer = (options: {
     },
   });
 
-/** The provider call the summarizer makes: the run's own model. */
+/**
+ * The provider call the summarizer makes: the Thread's own provider and model
+ * (`resolveThreadExecution` on `configuration`, no effort). Throws when the
+ * Thread's stored execution is unavailable, or with `models/v1.resolve`'s
+ * error; `compactThread` calls it inside its `try`, so either becomes
+ * `{ status: 'failed', code: 'summarizer_failed' }`.
+ */
 const summarizerFor = async (
+  thread: ExecutorThread,
+  configuration: ConfigurationValue,
   call: Call,
   services: Services,
   summaryMaxChars: number,
 ): Promise<ReturnType<typeof executionSummarizer>> => {
-  const { configuration } = await services.use(ConfigurationV1).current(call);
-  const execution = configuration.models.execution;
+  const execution = resolveThreadExecution(thread, configuration);
+  if (execution.status === 'unavailable') {
+    throw new Error(
+      `The model "${execution.model}" on provider "${execution.providerId}" is not available for this thread.`,
+    );
+  }
   const { languageModel } = await services
     .use(ModelsV1)
     .resolve(
@@ -116,16 +131,7 @@ const summarizerFor = async (
  * and failures are results, not throws, so the caller maps them as-is.
  */
 export const compactThread = async (
-  {
-    session,
-    policy,
-  }: {
-    readonly session: PromptSession;
-    readonly policy: {
-      readonly tailMinMessages: number;
-      readonly summaryMaxChars: number;
-    };
-  },
+  { thread, session, policy }: ExecutorCompactionInput,
   call: Call,
   services: Services,
 ): Promise<ExecutorCompactionResult> => {
@@ -146,6 +152,8 @@ export const compactThread = async (
   });
   try {
     const summary = await summarizerFor(
+      thread,
+      configuration,
       call,
       services,
       policy.summaryMaxChars,

@@ -16,12 +16,12 @@
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "runtime": "0.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "core": "0.0.1",
     "happy-dom": "20.8.9",
-    "host-config": "0.0.1",
-    "runtime": "0.0.1"
+    "host-config": "0.0.1"
   }
 }
