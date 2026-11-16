@@ -74,6 +74,8 @@ describe('layout.tabs/v1@1.1.0', () => {
     });
     const tab = tabsOf('parent').items[0];
     assert.equal(tab?.kind === 'element' && tab.icon, 'thread');
+    // conversation-footer T-11.7 (D15): the tab keeps the tag it was opened with.
+    assert.equal(tab?.kind === 'element' && tab.tag, 'chat-thread-panel');
     await tabs.close({ id: 'thread:child', threadId: 'parent' });
     assert.equal(tabsOf('parent').items.length, 0);
     assert.deepEqual(ui.disposed, tab?.kind === 'element' ? [tab.element] : []);
@@ -184,6 +186,7 @@ describe('sandbox-reading tabs', () => {
     const element = {
       id: 'e',
       kind: 'element' as const,
+      tag: 'x-element',
       title: 'E',
       element: {},
     };

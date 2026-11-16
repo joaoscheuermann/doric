@@ -10,10 +10,10 @@ import { INSET_CARD } from './inset-card.js';
 
 type WorkspaceLayoutProps = {
   /**
-   * The conversation card, drawn by the caller with `INSET_CARD`. The layout
-   * places it under `header`, in the conversation column, and gives it S34's
-   * margins: `mb-2`, and `mr-2` when it is the last card in the row and no
-   * Files column is shown. The layout adds no fill or border of its own.
+   * The conversation card, drawn by the caller with `INSET_CARD` and `pb-0`.
+   * The layout places it under `header`, in the conversation column, and gives
+   * it S34's margins: `mb-2`, and `mr-2` when it is the last card in the row
+   * and no Files column is shown. The layout adds no fill or border of its own.
    */
   readonly children: ReactNode;
   /**
@@ -40,11 +40,18 @@ type WorkspaceLayoutProps = {
    * When it is present, the layout draws an invisible handle and then the viewer
    * column. The handle is full height, 8 px wide and has no line (S24, G1). The
    * column holds `viewerTabs` above a `<section aria-label="Viewer">` that
-   * carries `INSET_CARD` and the S34 margins. The column opens 448 px wide,
-   * the prototype's viewer card (`99:8508`: a 456 px column with the 8 px
-   * handle), and the conversation takes the rest.
+   * carries `INSET_CARD`, without its bottom padding while `viewerOpenBottom`,
+   * and the S34 margins. The column opens 448 px wide, the prototype's viewer
+   * card (`99:8508`: a 456 px column with the 8 px handle), and the
+   * conversation takes the rest.
    */
   readonly fileViewer?: ReactNode;
+  /**
+   * The selected viewer tab draws to the viewer card's bottom edge (a Thread,
+   * whose footer band stands on that edge): the card drops its bottom padding
+   * (conversation-footer spec, D15). Absent, the card keeps it.
+   */
+  readonly viewerOpenBottom?: boolean;
   /**
    * The Files column's panel: the selected `layout.panel` view. Absent when
    * unsupported. When it is given, the column is always shown, full height
@@ -76,6 +83,7 @@ export function WorkspaceLayout({
   filesHeader,
   filesFooter,
   fileViewer,
+  viewerOpenBottom,
   sidebar,
 }: WorkspaceLayoutProps) {
   const viewerOpen = fileViewer !== undefined;
@@ -141,6 +149,7 @@ export function WorkspaceLayout({
                     'flex-1',
                     'mb-2',
                     !filesShown && 'mr-2',
+                    viewerOpenBottom && 'pb-0',
                   )}
                 >
                   {fileViewer}

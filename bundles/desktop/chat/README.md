@@ -20,7 +20,7 @@ for how bundles work.
     [`layout`](../layout/README.md) bundle's `/`. `<chat-view>` reads
     `--chat-footer-height`, the height of a footer floating over its
     conversation's bottom, set by its host on an ancestor (the layout's
-    conversation frame sets 2.25rem, from layout 3.0.3); its scrollbar ends
+    conversation frame sets 2.75rem, from layout 3.0.3); its scrollbar ends
     and its scroll padding stops that far above the bottom; unset, 0. Its
     scroll area is isolated (`isolation: isolate`), so a footer that follows
     it paints over the transcript's layers with no `z-index`. Known
@@ -34,8 +34,11 @@ for how bundles work.
     the last one (`domain/agent-control.ts`);
   - `<chat-thread-panel>`, a conversation with its own footer, which the layout
     uses for a child Thread's tab. `<chat-thread-panel>`'s own footer floats
-    over its conversation's bottom 36 px and sets `--chat-footer-height` to
-    that height itself;
+    over its conversation's bottom 44 px, 8 px over and under its 28 px row,
+    as tall as the `--chat-footer-height` it sets itself (2.75rem). It ends on
+    the card's edge while the layout's viewer card drops its bottom padding,
+    as it does while that tab is selected; otherwise the band sits 8 px above
+    the card's edge;
   - `<chat-readonly-markdown text>`, the conversation's read-only Markdown for
     another bundle's block element;
   - `<chat-block>`, the fallback for a block no renderer claims: its type, id,

@@ -89,6 +89,7 @@ const tabsOf = (
         (seed): WorkspaceTab => ({
           kind: 'element',
           id: seed.id,
+          tag: seed.tag,
           title: seed.title,
           element: placeholderElement(seed.tag, seed.props, seed.title),
           ...(seed.props === undefined ? {} : { props: seed.props }),

@@ -70,7 +70,7 @@ export function activate({ services }: ClientContext) {
     painel superior do split
       moldura da conversa
         <core-outlet>                       rota filha; vazio em "/"
-        <footer>                            faixa flutuante de 36 px
+        <footer>                            faixa flutuante de 44 px
           <core-region name="layout.footer">  rodapé
   <section>                                 abas abertas por layout.tabs/v1
   <aside>

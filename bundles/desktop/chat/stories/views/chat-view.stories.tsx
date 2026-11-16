@@ -20,7 +20,7 @@ export default {
   decorators: [
     (Story: ComponentType) => (
       <ChatHost>
-        <InsetCard className="h-[720px]">
+        <InsetCard className="h-[720px] pb-0">
           <Story />
         </InsetCard>
       </ChatHost>

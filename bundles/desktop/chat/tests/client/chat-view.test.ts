@@ -1147,20 +1147,22 @@ test('a child conversation footer stops its Thread while the main Thread stays s
 // The inset-card look (ui-redesign phase 3, Figma `99:8035`, `99:8508`): the
 // footer's composer stands 8 px after what precedes it with no rule between,
 // its button is the prototype's small one, and a sub-thread viewer's footer
-// is a 36 px band floating over its conversation (conversation-footer spec).
+// is a 44 px band floating over its conversation (conversation-footer spec).
 
 /**
  * The classes of the floating viewer footer band (conversation-footer
- * spec, D2): 36 px over the conversation's bottom, `pt-2` over the 28 px row.
+ * spec, D2 and D13): 44 px over the conversation's bottom, `py-2` over and
+ * under the 28 px row.
  */
 const FOOTER_BAND =
-  'absolute inset-x-0 bottom-0 flex h-9 items-center justify-end gap-1 pt-2 pl-2 text-[11px] font-normal';
+  'absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 py-2 pl-2 text-[11px] font-normal';
 
 /**
  * The band's height as `<chat-view>` reads it (`--chat-footer-height`), set
- * inline by the band's owner: the band's `h-9`.
+ * inline by the band's owner: the band's 44 px, which the sheet rule reads
+ * as the band's height (D13).
  */
-const FOOTER_HEIGHT = '2.25rem';
+const FOOTER_HEIGHT = '2.75rem';
 
 /** The `--chat-footer-height` an element sets in its own inline style. */
 const ownFooterHeight = (element: Element | null | undefined): string => {

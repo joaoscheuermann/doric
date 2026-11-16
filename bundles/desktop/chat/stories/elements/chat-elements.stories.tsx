@@ -84,7 +84,7 @@ export default {
 
 export const ChatViewRoute = {
   render: () => (
-    <InsetCard className="h-[720px]">
+    <InsetCard className="h-[720px] pb-0">
       <ElementHost
         tag="story-chat-view"
         element={ChatViewElement}
@@ -97,7 +97,7 @@ export const ChatViewRoute = {
 
 export const ThreadPanel = {
   render: () => (
-    <InsetCard className="h-[720px]">
+    <InsetCard className="h-[720px] pb-0">
       <ElementHost
         tag="story-chat-thread-panel"
         element={ChatThreadPanelElement}

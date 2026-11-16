@@ -28,6 +28,8 @@ export type WorkspaceTab =
   | {
       readonly id: string;
       readonly kind: 'element';
+      /** The `ui/v1` tag the element was created from (`layout.tabs/v1` `open`). */
+      readonly tag: string;
       readonly title: string;
       readonly element: object;
       readonly props?: Readonly<Record<string, unknown>>;
@@ -38,6 +40,17 @@ export type WorkspaceTab =
       /** `layout.tabs/v1@1.2.0`: the entries above "Close tab" in its menu. */
       readonly menu?: readonly TabMenuItem[];
     };
+
+/** The element the layout opens a Thread in (`openThreadTab`). */
+export const THREAD_PANEL_TAG = 'chat-thread-panel';
+
+/**
+ * Whether a tab shows a Thread: its element is `<chat-thread-panel>`, whose
+ * footer band floats over its own bottom. The viewer card draws no bottom
+ * padding while such a tab is selected (conversation-footer spec, D15).
+ */
+export const isThreadPanelTab = (tab: WorkspaceTab): boolean =>
+  tab.kind === 'element' && tab.tag === THREAD_PANEL_TAG;
 
 /**
  * Whether a tab reads the Project's sandbox, which keeps the files and Git

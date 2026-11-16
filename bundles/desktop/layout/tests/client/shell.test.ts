@@ -23,6 +23,7 @@ import { NavigationV1 } from 'bundle/contracts';
 
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
+import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
 import {
   LayoutPanelV2,
   LayoutStackV2,
@@ -571,31 +572,113 @@ test('the workspace canvas is the sidebar fill', async () => {
   );
 });
 
-// T-2.13
-test('the conversation is drawn as an inset card', async () => {
+// T-2.13, conversation-footer T-11.1 (D14)
+test('the conversation is drawn as an inset card with no bottom padding', async () => {
   const classes = INSET_CARD;
   rendered = await renderWorkspace({
     projects: [project],
     path: `/projects/${project.id}`,
   });
 
+  const card = conversationCard(rendered);
   assert.deepEqual(
-    missingClasses(conversationCard(rendered), classes),
+    missingClasses(card, classes),
     [],
     'The conversation card lacks INSET_CARD classes.',
   );
+  assert.ok(
+    card.classList.contains('pb-0'),
+    `The conversation card keeps its bottom padding (D14): ${card.className}`,
+  );
 });
 
-// T-2.13
+const viewerCard = (workspace: RenderedWorkspace): HTMLElement =>
+  single(workspace.root, 'section[aria-label="Viewer"]');
+
+// T-2.13, conversation-footer T-11.2 (D15)
 test('an open viewer is drawn as an inset card', async () => {
   const classes = INSET_CARD;
   rendered = await renderWorkspace(withViewer);
 
-  const viewer = single(rendered.root, 'section[aria-label="Viewer"]');
+  const viewer = viewerCard(rendered);
   assert.deepEqual(
     missingClasses(viewer, classes),
     [],
     'The viewer card lacks INSET_CARD classes.',
+  );
+  assert.ok(
+    !viewer.classList.contains('pb-0'),
+    `The viewer card drops its bottom padding for a file tab (D15): ${viewer.className}`,
+  );
+});
+
+/** A Thread's tab, as the layout opens a child Thread in the viewer. */
+const threadTab = {
+  id: 'thread:child',
+  title: 'Child',
+  tag: 'chat-thread-panel',
+  props: { projectId: project.id, threadId: 'child' },
+} as const;
+
+// conversation-footer T-11.3 (D15)
+test('the viewer card draws no bottom padding while a Thread tab is selected', async () => {
+  rendered = await renderWorkspace({
+    ...withViewer,
+    tabs: { [`project:${project.id}`]: [threadTab] },
+  });
+
+  const viewer = viewerCard(rendered);
+  assert.ok(
+    viewer.classList.contains('pb-0'),
+    `The viewer card keeps its bottom padding under a Thread (D15): ${viewer.className}`,
+  );
+});
+
+// conversation-footer T-11.4 (D15): the element's tag decides, not the icon.
+test('the viewer card keeps its bottom padding for another element with the Thread icon', async () => {
+  rendered = await renderWorkspace({
+    ...withViewer,
+    tabs: {
+      [`project:${project.id}`]: [
+        {
+          id: 'file:README.md',
+          title: 'README.md',
+          tag: 'files-viewer',
+          props: { path: 'README.md' },
+          icon: 'thread',
+        },
+      ],
+    },
+  });
+
+  const viewer = viewerCard(rendered);
+  assert.ok(
+    !viewer.classList.contains('pb-0'),
+    `The viewer card drops its bottom padding for a non-Thread element (D15): ${viewer.className}`,
+  );
+});
+
+// conversation-footer T-11.5 (D15): the selected tab decides, not any open tab.
+test('the viewer card drops its bottom padding only while the Thread tab is selected', async () => {
+  const owner = `project:${project.id}`;
+  const fileTab = withViewer.tabs?.[owner]?.[0];
+  assert.ok(fileTab !== undefined, 'withViewer has no file tab.');
+  rendered = await renderWorkspace({
+    ...withViewer,
+    tabs: { [owner]: [threadTab, fileTab] },
+  });
+
+  assert.ok(
+    !viewerCard(rendered).classList.contains('pb-0'),
+    `The viewer card drops its bottom padding while a file tab is selected (D15): ${viewerCard(rendered).className}`,
+  );
+
+  workspaceTabsStore.getState().select(owner, 'thread:child');
+  await settle();
+
+  assert.ok(
+    viewerCard(rendered).classList.contains('pb-0'),
+    `The viewer card keeps its bottom padding once the Thread tab is selected (D15): ${viewerCard(rendered).className}`,
   );
 });
 
@@ -697,26 +780,26 @@ test('the tab bar keeps New project and ends with the header items; Account is i
 });
 
 /**
- * The band's geometry (conversation-footer spec, D2): the class set both
- * footers carry, the main band here and the viewer band in chat.
+ * The band's geometry (conversation-footer spec, D2 and D13): the class set
+ * both footers carry, the main band here and the viewer band in chat. `py-2`
+ * carries the 8 px over and under the row; the height comes from the sheet.
  */
 const FOOTER_BAND = [
   'absolute',
   'inset-x-0',
   'bottom-0',
   'flex',
-  'h-9',
   'items-center',
   'justify-end',
   'gap-1',
-  'pt-2',
+  'py-2',
   'pl-2',
   'text-[11px]',
   'font-normal',
 ].sort();
 
-/** The band's `h-9`, as `--chat-footer-height` states it (D5). */
-const FOOTER_HEIGHT = '2.25rem';
+/** The band's 44 px, as `--chat-footer-height` states it and the sheet rule reads it (D13). */
+const FOOTER_HEIGHT = '2.75rem';
 
 /**
  * The `--chat-footer-height` an element sets on itself. happy-dom does not
@@ -771,7 +854,7 @@ test('the conversation footer band is regular weight, borderless and draws layou
   assert.deepEqual(
     [...footer.classList].sort(),
     FOOTER_BAND,
-    'The footer band does not carry the band class set of D2.',
+    'The footer band does not carry the band class set of D13.',
   );
   const frame = footer.parentElement;
   assert.ok(

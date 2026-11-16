@@ -408,12 +408,13 @@ test('the conversation’s scroll root is its own stacking context, and keeps it
   assert.equal(root.get('font-weight'), '300');
 });
 
-test('the viewer footer band is the background at 70 % under a 2 px blur', async () => {
+test('the viewer footer band is as tall as --chat-footer-height, the background at 70 % under a 2 px blur', async () => {
   const sheet = await readFile(stylesheet, 'utf8');
 
   assert.deepEqual(
     [...declared(unlayered(sheet), "[data-slot='chat-thread-footer']")],
     [
+      ['height', 'var(--chat-footer-height)'],
       [
         'background-color',
         'color-mix(in oklab, var(--background) 70%, transparent)',

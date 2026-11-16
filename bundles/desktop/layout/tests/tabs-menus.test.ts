@@ -167,6 +167,7 @@ describe('layout.tabs/v1@1.2.0 retitle', () => {
     workspaceTabsStore.getState().open('thread-2', {
       kind: 'element',
       id: 'terminal:1',
+      tag: 'terminal-rows',
       title: 'npm test',
       element: {},
     });

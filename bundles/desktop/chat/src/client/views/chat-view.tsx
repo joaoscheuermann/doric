@@ -13,15 +13,19 @@ import { chatServices } from '../services/chat-services.js';
 import { ThreadComposer } from './chat-composer.js';
 
 /**
- * The viewer footer band's geometry (conversation-footer spec, D2): a 36 px
- * band floating over the conversation's bottom. Its fill and blur are chat's
- * sheet rule, keyed on its `data-slot`.
+ * The viewer footer band's geometry (conversation-footer spec, D2 and D13): a
+ * 44 px band floating over the conversation's bottom, 8 px over and under its
+ * 28 px row. Its height, fill and blur are chat's sheet rule, keyed on its
+ * `data-slot`; the height reads `--chat-footer-height`.
  */
 const FOOTER_BAND =
-  'absolute inset-x-0 bottom-0 flex h-9 items-center justify-end gap-1 pt-2 pl-2 text-[11px] font-normal';
+  'absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 py-2 pl-2 text-[11px] font-normal';
 
-/** `--chat-footer-height` for the band's parent: equal to the band's `h-9`. */
-const FOOTER_HEIGHT = { '--chat-footer-height': '2.25rem' } as CSSProperties;
+/**
+ * `--chat-footer-height` for the band's parent: the band's 44 px, which the
+ * sheet rule reads as its height.
+ */
+const FOOTER_HEIGHT = { '--chat-footer-height': '2.75rem' } as CSSProperties;
 
 export type ChatViewProps = {
   readonly projectId?: string;

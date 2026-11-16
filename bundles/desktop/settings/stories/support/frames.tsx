@@ -11,9 +11,11 @@ import type { ComponentType } from 'react';
 
 /**
  * The conversation footer band at the end of the conversation's card, with
- * room above it for the pickers' popovers: 36 px tall, 8 px above its 28 px
- * row, drawn in flow, with no rule and no fill (the app's band in
- * `conversation-frame.tsx` gets its fill from the layout sheet).
+ * room above it for the pickers' popovers: drawn in flow, 36 px tall, 8 px
+ * above its 28 px row, with the card's 8 px padding under it, no rule and no
+ * fill. The app's band in `conversation-frame.tsx` is 44 px and carries those
+ * 8 px itself on a card with no bottom padding, so the row stands in the same
+ * place; it gets its fill from the layout sheet.
  */
 export const footerFrame = (Story: ComponentType) => (
   <div className="bg-sidebar p-2">

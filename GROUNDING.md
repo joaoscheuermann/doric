@@ -125,10 +125,10 @@ bundles in the window.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
 The conversation footer and a child Thread's footer in the viewer float over the
-bottom 36 px of their conversation, 8 px over a 28 px row, on the background at
-70 % with a 2 px backdrop blur; the transcript scrolls on under them, the
-conversation's scrollbar ends 36 px above the bottom and its scroll padding is
-36 px.
+bottom 44 px of their conversation, 8 px over and under a 28 px row, on the
+background at 70 % with a 2 px backdrop blur; the transcript scrolls on under
+them to the card's bottom edge, the conversation's scrollbar ends 44 px above
+that edge and its scroll padding is 44 px.
 The conversation footer shows OpenRouter context usage without a text
 prefix or progress bar and an approximate dollar total. Spacing alone separates
 the execution picker, context text and cost. Context uses the selected Thread's last
@@ -338,7 +338,7 @@ If that Thread creation fails after the Project was saved, the desktop opens the
 saved Project and reports the failure without resubmitting Project creation. One
 full-height resize handle owns the sidebar boundary, with no divider inside
 the sidebar; the sidebar stays expanded and the handle draws no grip of its
-own. The conversation footer, a 36 px band floating over the conversation's
+own. The conversation footer, a 44 px band floating over the conversation's
 bottom, carries the execution picker — the model a prompt is sent to and its
 reasoning effort — first, with the composer and usage items after it. Settings
 open from the account avatar in the Files column header. The Files column

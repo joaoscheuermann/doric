@@ -6,6 +6,7 @@
 
 import { SidebarInset, SidebarProvider } from 'desktop/ui/sidebar';
 import { Tabs } from 'desktop/ui/tabs';
+import { cn } from 'desktop/ui/utils';
 import {
   type CSSProperties,
   createElement,
@@ -29,6 +30,7 @@ import {
 import { ConversationFrame } from '../../src/client/components/templates/conversation-frame.js';
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import { WorkspaceLayout } from '../../src/client/components/templates/workspace-layout.js';
+import { isThreadPanelTab } from '../../src/client/domain/workspace-tabs.js';
 import { useRegionItems } from '../../src/client/hooks/use-region-items.js';
 import { useWorkspaceTabs } from '../../src/client/hooks/use-workspace-tabs.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
@@ -139,6 +141,9 @@ export function WorkspaceShell({
             </div>
           }
           fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
+          viewerOpenBottom={tabs.items.some(
+            (tab) => tab.id === tabs.selected && isThreadPanelTab(tab),
+          )}
           sidebar={
             <ProjectSidebar
               header={
@@ -153,7 +158,12 @@ export function WorkspaceShell({
             />
           }
         >
-          <SidebarInset className={INSET_CARD}>{children}</SidebarInset>
+          {/* No bottom padding, as the app's conversation card (D14): the
+          stories put `ContentFrame`, whose band stands on the card's edge,
+          in this card. */}
+          <SidebarInset className={cn(INSET_CARD, 'pb-0')}>
+            {children}
+          </SidebarInset>
         </WorkspaceLayout>
       </Tabs>
     </SidebarProvider>

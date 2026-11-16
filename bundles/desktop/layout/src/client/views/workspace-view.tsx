@@ -17,6 +17,7 @@ import { SidebarInset, SidebarProvider } from 'desktop/ui/sidebar';
 import { Toaster } from 'desktop/ui/sonner';
 import { Tabs } from 'desktop/ui/tabs';
 import { TooltipProvider } from 'desktop/ui/tooltip';
+import { cn } from 'desktop/ui/utils';
 import {
   type CSSProperties,
   createElement,
@@ -52,6 +53,7 @@ import { ConversationTerminals } from '../components/templates/conversation-term
 import { INSET_CARD } from '../components/templates/inset-card.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
+import { isThreadPanelTab } from '../domain/workspace-tabs.js';
 import { useProjectTabs } from '../hooks/use-project-tabs.js';
 import { useRegionItems } from '../hooks/use-region-items.js';
 import { useWorkspace } from '../hooks/use-workspace.js';
@@ -284,6 +286,9 @@ function Workspace() {
                 <WorkspaceTabs state={tabs} />
               )
             }
+            viewerOpenBottom={tabs.items.some(
+              (tab) => tab.id === tabs.selected && isThreadPanelTab(tab),
+            )}
             sidebar={
               <ProjectSidebar
                 header={
@@ -294,7 +299,7 @@ function Workspace() {
               />
             }
           >
-            <SidebarInset className={INSET_CARD}>
+            <SidebarInset className={cn(INSET_CARD, 'pb-0')}>
               <ConversationTerminals
                 bottom={bottomVisible && <Region name="layout.main.bottom" />}
               >

@@ -10,7 +10,7 @@
  * over it paints on top with no `z-index`; layout 3.0.3 relies on it. The rules
  * a floating footer needs are unlayered too (§3, §4): the conversation's vertical
  * bar and scroll padding, read from `--chat-footer-height`, and the viewer
- * footer's fill and blur.
+ * footer's height, fill and blur.
  *
  * The layer order is stated here, not only in the platform theme: a preview (or
  * a page) that loads this sheet before `theme.css` would otherwise create the
@@ -271,7 +271,7 @@
 }
 
 /* `--chat-footer-height` is the height of a footer floating over the bottom of
-   the conversation: the footer's owner sets it to 2.25rem on the footer's
+   the conversation: the footer's owner sets it to 2.75rem on the footer's
    positioned parent (`<chat-thread-panel>`'s own footer, and from layout 3.0.3
    the layout's conversation footer); unset, it is 0. The
    vertical bar ends where that footer begins (only its height changes, so it
@@ -287,9 +287,12 @@
 }
 
 /* The viewer footer (`<chat-thread-panel>`'s own footer) floats over the
-   conversation (conversation-footer spec, D2): the card's background at 70 %
-   with a 2 px backdrop blur, so the transcript shows through it. */
+   conversation (conversation-footer spec, D2 and D13): as tall as
+   `--chat-footer-height`, which `<chat-thread-panel>` sets beside it (D13);
+   the card's background at 70 % with a 2 px backdrop blur, so the transcript
+   shows through it. */
 [data-slot='chat-thread-footer'] {
+  height: var(--chat-footer-height);
   background-color: color-mix(in oklab, var(--background) 70%, transparent);
   backdrop-filter: blur(2px);
 }
