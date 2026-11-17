@@ -1,13 +1,20 @@
+import type { ErrorInfo } from 'desktop/reads';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { memo, useMemo } from 'react';
 
 import { type Chosen, skillOpenness } from '../../domain/collapsible.js';
+import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
-import { parseSkillLoad, skillSourceLabel } from '../../domain/skill-load.js';
+import {
+  LOAD_SKILL_TOOL,
+  parseSkillLoad,
+  skillSourceLabel,
+} from '../../domain/skill-load.js';
 import { CollapsibleBlock } from './collapsible-block.js';
 
 type SkillToolItemProps = {
   readonly args: string;
-  readonly error?: string;
+  readonly error?: ErrorInfo;
   readonly result?: string;
   readonly status: ToolStatus;
   /** The reader's choice of open/closed, held by the block's owner. */
@@ -63,9 +70,13 @@ export const SkillToolItem = memo(function SkillToolItem({
       openness={skillOpenness(status)}
     >
       {error !== undefined ? (
-        <div className="whitespace-pre-wrap break-words text-destructive">
-          {error}
-        </div>
+        <ErrorNotice
+          variant="compact"
+          error={error}
+          catalog={chatErrorCatalog}
+          fallbackCode="tool_failed"
+          context={{ Tool: LOAD_SKILL_TOOL }}
+        />
       ) : result !== undefined ? (
         <div className="whitespace-pre-wrap break-words">{result}</div>
       ) : null}

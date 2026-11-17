@@ -4,6 +4,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from 'desktop/ui/collapsible';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { Field, FieldDescription, FieldLabel } from 'desktop/ui/field';
 import { Input } from 'desktop/ui/input';
 import { ChevronRightIcon, PlusIcon, RefreshCwIcon } from 'lucide-react';
@@ -16,6 +17,7 @@ import {
   providerValues,
   removeModel,
 } from '../../domain/config.js';
+import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { useProviderCatalog } from '../../hooks/use-provider-catalog.js';
 import { ProviderModelsTable } from '../molecules/provider-models-table.js';
 
@@ -76,19 +78,14 @@ export function ProviderModelPicker({
         </CollapsibleTrigger>
         <CollapsibleContent className="flex flex-col gap-3">
           {catalog.error !== undefined ? (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-destructive">
-                The endpoint could not be read: {catalog.error}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => catalog.reload()}
-              >
-                <RefreshCwIcon data-icon="inline-start" />
-                Reload
-              </Button>
-            </div>
+            <ErrorNotice
+              announce
+              catalog={settingsErrorCatalog}
+              error={catalog.error}
+              fallbackCode="catalog_read_failed"
+              onRetry={catalog.reload}
+              variant="compact"
+            />
           ) : (
             <ProviderModelsTable
               catalog={catalog.models}

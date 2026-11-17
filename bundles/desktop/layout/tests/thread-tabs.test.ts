@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { emptyTree, withThreads } from '../src/client/domain/project-tree.js';
 import type { Thread } from '../src/client/domain/workspace.js';
 import {
+  isThreadPanelTab,
   reconcileThreadTabs,
   type WorkspaceTab,
   type WorkspaceTabs,
@@ -26,6 +27,7 @@ const thread = (name: string): Thread => ({
 const child: WorkspaceTab = {
   kind: 'element',
   id: 'thread:child',
+  tag: 'chat-thread-panel',
   icon: 'thread',
   title: 'Old name',
   element: {},
@@ -34,11 +36,49 @@ const child: WorkspaceTab = {
 const file: WorkspaceTab = {
   kind: 'element',
   id: 'file:index',
+  tag: 'files-viewer',
   icon: 'file',
   title: 'index.ts',
   element: {},
 };
 const tabs: WorkspaceTabs = { items: [file, child], selected: child.id };
+
+// conversation-footer T-11.6 (D15): the element's tag decides, not the icon.
+test('a tab shows a Thread exactly when its element is <chat-thread-panel>', () => {
+  const panel: WorkspaceTab = {
+    kind: 'element',
+    id: 'thread:other',
+    tag: 'chat-thread-panel',
+    title: 'Other',
+    element: {},
+  };
+  assert.equal(
+    isThreadPanelTab(child),
+    true,
+    'a Thread panel with the Thread icon',
+  );
+  assert.equal(isThreadPanelTab(panel), true, 'a Thread panel with no icon');
+  assert.equal(
+    isThreadPanelTab({ ...file, icon: 'thread' }),
+    false,
+    'another element with the Thread icon',
+  );
+  assert.equal(
+    isThreadPanelTab({
+      id: 'f',
+      kind: 'file',
+      path: 'README.md',
+      projectId: 'project',
+    }),
+    false,
+    'a file tab',
+  );
+  assert.equal(
+    isThreadPanelTab({ id: 't', kind: 'terminal', terminalId: 'x' }),
+    false,
+    'a terminal tab',
+  );
+});
 
 test('renaming an open child updates its labels while preserving its mounted conversation and selection', () => {
   const renamed = reconcileThreadTabs(

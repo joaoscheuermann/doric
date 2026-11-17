@@ -67,12 +67,15 @@ export function activate({ services }: ClientContext) {
     Project / Thread da rota ativa
     <core-region name="layout.header">      ações
   <main>
-    <core-outlet>                           rota filha; vazio em "/"
+    painel superior do split
+      moldura da conversa
+        <core-outlet>                       rota filha; vazio em "/"
+        <footer>                            faixa flutuante de 44 px
+          <core-region name="layout.footer">  rodapé
   <section>                                 abas abertas por layout.tabs/v1
   <aside>
     <core-region name="layout.panel">       painel lateral
-  <footer>
-    <core-region name="layout.footer">      rodapé
+    <core-region name="layout.panel.footer">  rodapé da coluna Files
 ```
 
 Quando a rota ativa é `/`, o `<core-outlet>` de `<main>` fica vazio e o layout mostra o estado vazio atual ("No thread selected").

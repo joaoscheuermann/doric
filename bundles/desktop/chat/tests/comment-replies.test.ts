@@ -298,7 +298,7 @@ describe('reply blocks', () => {
       'comment_reply',
     );
     assert.match(
-      tool?.type === 'tool_call' ? (tool.error ?? '') : '',
+      tool?.type === 'tool_call' ? (tool.error?.message ?? '') : '',
       /unknown in this conversation/,
     );
   });

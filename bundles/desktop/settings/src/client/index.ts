@@ -10,9 +10,13 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import { ClaudeLoginV1 } from 'claude-login/contracts';
-import { LayoutDashboardV1 } from 'layout/contracts';
+import { LayoutDashboardV1, LayoutWorkspaceV1 } from 'layout/contracts';
 
-import { initSettingsApi, setDashboardAvailable } from './api/settings-api.js';
+import {
+  initSettingsApi,
+  setDashboardAvailable,
+  setWorkspaceAvailable,
+} from './api/settings-api.js';
 import { registerAppearanceSection } from './appearance-section.js';
 import { createSectionRoute, sectionPath } from './domain/section-route.js';
 import { sectionLink, sections } from './domain/sections.js';
@@ -92,6 +96,12 @@ export function activate({ services }: ClientContext): () => void {
     services.whenAvailable(LayoutDashboardV1, () => {
       setDashboardAvailable(true);
       return () => setDashboardAvailable(false);
+    }),
+    // `layout.workspace/v1` is optional: without the workspace window the
+    // footer picker has no selected Thread and shows the default, disabled.
+    services.whenAvailable(LayoutWorkspaceV1, () => {
+      setWorkspaceAvailable(true);
+      return () => setWorkspaceAvailable(false);
     }),
   ];
 

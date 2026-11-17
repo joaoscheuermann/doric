@@ -1,5 +1,6 @@
+import { errorInfo } from 'desktop/reads';
 import { Button } from 'desktop/ui/button';
-import { toast } from 'desktop/ui/sonner';
+import { toastError } from 'desktop/ui/error-notice';
 import { ExternalLinkIcon } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -10,7 +11,7 @@ import {
   type ProviderKind,
   providerLabel,
 } from '../../domain/config.js';
-import { messageFrom } from '../../domain/errors.js';
+import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { providerIconRequest } from '../../domain/model-icons.js';
 import { providerSite } from '../../domain/provider-icon.js';
 import type { ClaudeLogin } from '../../hooks/use-claude-login.js';
@@ -53,7 +54,12 @@ export function DashboardProviderPage({
     void api()
       .openBrowser(url)
       .catch((error: unknown) => {
-        toast.error(messageFrom(error));
+        toastError({
+          id: 'provider-open-site',
+          error: errorInfo(error),
+          catalog: settingsErrorCatalog,
+          fallbackCode: 'browser_failed',
+        });
       });
   };
 

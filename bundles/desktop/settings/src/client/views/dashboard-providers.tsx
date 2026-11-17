@@ -75,6 +75,23 @@ function DashboardProviders({ services }: { readonly services: Services }) {
         activeIndex={shown ? page.provider?.index : undefined}
         onOpen={open}
         onAdd={openNew}
+        failure={
+          kinds.error !== undefined
+            ? {
+                error: kinds.error,
+                fallbackCode: 'kinds_read_failed',
+                retry: kinds.reload,
+                retrying: kinds.loading,
+              }
+            : credentials.loadError !== undefined
+              ? {
+                  error: credentials.loadError,
+                  fallbackCode: 'credentials_read_failed',
+                  retry: credentials.reload,
+                  retrying: credentials.loading,
+                }
+              : undefined
+        }
       />
       {shown &&
         page.provider !== undefined &&

@@ -59,6 +59,12 @@
       "import": "./dist/chrome-bar.js",
       "default": "./dist/chrome-bar.js"
     },
+    "./ui/error-notice": {
+      "@org/source": "./src/error-notice.tsx",
+      "types": "./dist/error-notice.d.ts",
+      "import": "./dist/error-notice.js",
+      "default": "./dist/error-notice.js"
+    },
     "./ui/portal-container": {
       "@org/source": "./src/portal-container.tsx",
       "types": "./dist/portal-container.d.ts",

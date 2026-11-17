@@ -1,3 +1,4 @@
+import type { ThreadExecution } from '../../contracts/execution.js';
 import type { LeaseOutcome, LeaseTask } from '../../contracts/lease.js';
 import type {
   BranchResult,
@@ -39,6 +40,7 @@ import type {
 import type {
   InterruptResult,
   TerminalResultInput,
+  ThreadExecutionResult,
 } from '../../contracts/threads.js';
 import type {
   ThreadTask,
@@ -141,6 +143,18 @@ export interface WorkspaceService {
     rename(id: string, name: string): Promise<Thread | undefined>;
     /** Moves the Thread's working directory; see `CwdResult` for every answer. */
     setCwd(id: string, cwd: string): Promise<CwdResult>;
+    /**
+     * Validates `execution` against the configuration in force, then
+     * `models/v1.resolve`; writes it in one document write under the
+     * Project's lock and publishes the record. Answers `missing`, `invalid`
+     * (with the issue), `unresolvable` (with the resolver's message) or
+     * `updated` (with the record). Rejects only when the configuration read
+     * rejects. Validation and write are not atomic.
+     */
+    setExecution(
+      id: string,
+      execution: ThreadExecution,
+    ): Promise<ThreadExecutionResult>;
     /** The Git summary of the Thread's working directory, probed on demand. */
     git(id: string): Promise<ThreadGitResult>;
     branches(id: string, branch?: string, cwd?: string): Promise<BranchResult>;

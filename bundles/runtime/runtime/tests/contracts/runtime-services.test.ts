@@ -9,6 +9,7 @@ import {
 import { leaseScopeMessage } from '../../src/contracts/lease.js';
 import type { RuntimeNotice } from '../../src/contracts/runtime.js';
 import { createHarness, deferred } from '../domain/support/harness.js';
+import { testExecution } from '../support/execution.js';
 import { fakeSandbox } from '../support/sandbox.js';
 
 /*
@@ -60,7 +61,11 @@ void test('recover reconciles interrupted records and resumes the prompts the ho
     'blue',
   );
   await stores.projects.setState(project.id, 'ready');
-  const { thread } = await stores.threads.create(project.id, 'Thread');
+  const { thread } = await stores.threads.create(
+    project.id,
+    'Thread',
+    testExecution,
+  );
   const promptId = randomUUID();
   await stores.threads.appendEvent(thread.id, promptId, {
     type: 'prompt.accepted',

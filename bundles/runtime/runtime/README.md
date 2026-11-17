@@ -22,7 +22,11 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   a window) gives a Thread a bundle's instruction: a steer whose source is
   `{ kind: 'bundle', bundleId, reason, retain? }`, with the calling bundle's
   own id; it reaches agent Threads too. `retain` marks a standing
-  instruction, which the executor keeps through compaction. Its prompt-scoped members `spawn`,
+  instruction, which the executor keeps through compaction.
+  `setThreadExecution({ id, providerId, model, effort? })` (1.7.0) sets a
+  Thread's provider, model and effort together, validated against the
+  configuration in force and `models/v1.resolve`, and applies from the
+  Thread's next run. Its prompt-scoped members `spawn`,
   `list`, `get`, `events`, `send`, `restart`, `interrupt` and `terminate` act on the
   calling prompt's direct children, through the `ThreadControl` type in
   `contracts/tool-host`; the [`threads`](../../features/threads/README.md)
@@ -77,14 +81,21 @@ to a Thread the reader opens under anything but a main Thread, while an agent
 may spawn under any Thread it is working in, as deep as the work goes. A
 sub-thread is a branch already, so no surface offers a branch under it either.
 
-A spawned Thread keeps the `agent`, `model` and `effort` it was spawned with
-as a snapshot in its `runtime.thread/v1` document (1.1.0). A child spawned
-without a `model` or an `effort` takes its parent's stored value, and when
-the parent has none either, the executor's configured default applies. The
-`agent` is never inherited: a child spawned without one has none. The runtime
-stores the model and effort as given and does not check them against the
-model catalog. The public `Thread` shows `agent` as `{ name, source }`,
-`model` and `effort`, and never the instructions: the runner reads them from
+A spawned Thread keeps the `agent`, `providerId`, `model` and `effort` it was
+spawned with in its `runtime.thread/v1` document (1.2.0; `agent`, `model`
+and `effort` since 1.1.0). A child always runs on its parent's provider. A
+child spawned without a `model` takes the parent's model and effort, with the
+spawn's `effort` over it when given; a spawn naming the parent's own model
+keeps the parent's effort the same way. A spawn naming another model takes
+the given `effort`, or else the model's start effort. A legacy parent (no
+`providerId`) passes on what it resolves to: the default's provider with its
+own model and effort when set. The runtime validates the result against the
+configuration in force and rejects a refused spawn with a `ContractError`
+`invalid_execution` (`details.issue`: `provider`, `model` or `effort`); a
+provider `models/v1.resolve` cannot resolve rejects with that error. The
+`agent` is never inherited: a child spawned without one has none. The public
+`Thread` shows `agent` as `{ name, source }`, `providerId`, `model` and
+`effort`, and never the instructions: the runner reads them from
 the stored document on every run and compaction and passes them to the
 executor as `thread.agent.instructions`, so a retry, a parent's send, the
 restart of a failed child and a run after a host restart all use the values
@@ -94,7 +105,8 @@ this Thread (`ExecutorThread`, checked by `executorThreadSchema`): its
 `agent` with the instructions, its `model` and its `effort`. When the stored
 document holds no instructions for an agent Thread, the runner drops `agent`
 from what it passes, and the executor runs the Thread as the default agent.
-The runtime still requires `executor/v1@^1.0.0`.
+The runtime requires `executor/v1@^1.4.0`: from 1.4.0 the executor runs and
+compacts on the Thread's own provider, and an older executor would ignore it.
 
 ## How it works
 

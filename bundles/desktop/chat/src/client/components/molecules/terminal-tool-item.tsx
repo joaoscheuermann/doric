@@ -1,3 +1,5 @@
+import type { ErrorInfo } from 'desktop/reads';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { cn } from 'desktop/ui/utils';
 import { SquareIcon } from 'lucide-react';
 import { memo, type ReactNode, useMemo } from 'react';
@@ -8,6 +10,7 @@ import {
   type Openness,
   toolOpenness,
 } from '../../domain/collapsible.js';
+import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import {
   formatCommandPreview,
@@ -94,7 +97,7 @@ type TerminalBlockProps = {
   readonly liveOutput?: string;
   /** The result text, when it is not a `terminal.compact.v1` record. */
   readonly rawOutput?: string;
-  readonly error?: string;
+  readonly error?: ErrorInfo;
   /** The Stop action, which only a run still in flight offers. */
   readonly stopAction?: ReactNode;
   /** Whether the header says the command failed. */
@@ -223,14 +226,15 @@ export function TerminalBlock({
               {rawOutput}
             </pre>
           ) : null}
-          {error !== undefined && error.length > 0 ? (
-            <div
-              data-slot={`${slot}-error`}
-              className="whitespace-pre-wrap break-words text-destructive"
-            >
-              {error}
-            </div>
-          ) : null}
+          {error === undefined ? null : (
+            <ErrorNotice
+              variant="compact"
+              error={error}
+              catalog={chatErrorCatalog}
+              fallbackCode="tool_failed"
+              context={{ Tool: 'terminal' }}
+            />
+          )}
           {startedInBackground ? (
             <div className="text-muted-foreground">Started in background</div>
           ) : null}
@@ -242,7 +246,7 @@ export function TerminalBlock({
 
 type TerminalToolItemProps = {
   readonly args: string;
-  readonly error?: string;
+  readonly error?: ErrorInfo;
   readonly result?: string;
   readonly status: ToolStatus;
   readonly chosen: Chosen;

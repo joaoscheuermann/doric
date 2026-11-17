@@ -5,6 +5,7 @@ import test from 'node:test';
 import type { ThreadEvent } from '../../src/contracts/model.js';
 import type { ThreadStore } from '../../src/host/store/types.js';
 import { postgresBackend } from '../store/support.js';
+import { testExecution } from '../support/execution.js';
 import { messagesOf, testHistoryFormat } from '../support/executor.js';
 import { fakeSandbox } from '../support/sandbox.js';
 import {
@@ -35,7 +36,11 @@ void test('recovery dispatches persisted edits and never makes started or machin
   });
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread } = await host.threads.create(project.id, 'Thread');
+    const { thread } = await host.threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     await host.threads.appendEvent(thread.id, randomUUID(), {
       type: 'queue.paused',
     });
@@ -124,10 +129,15 @@ void test('removing a delegated queued input returns one cancellation result to 
   const host = await restart();
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread: parent } = await host.threads.create(project.id, 'Parent');
+    const { thread: parent } = await host.threads.create(
+      project.id,
+      'Parent',
+      testExecution,
+    );
     const { thread: child } = await host.threads.create(
       project.id,
       'Child',
+      testExecution,
       parent.id,
     );
     const promptId = randomUUID();
@@ -182,7 +192,11 @@ void test('removed queued and paused prompts stay closed when replayed after rec
   const host = await restart();
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread } = await host.threads.create(project.id, 'Thread');
+    const { thread } = await host.threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const current = randomUUID();
     const remove = randomUUID();
     const keep = randomUUID();
@@ -246,10 +260,15 @@ void test('boot queues an exhausted child result without reopening its paused pa
   const host = await restart();
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread: parent } = await host.threads.create(project.id, 'Parent');
+    const { thread: parent } = await host.threads.create(
+      project.id,
+      'Parent',
+      testExecution,
+    );
     const { thread: child } = await host.threads.create(
       project.id,
       'Child',
+      testExecution,
       parent.id,
     );
     const promptId = randomUUID();
@@ -295,7 +314,11 @@ void test('boot preserves the interrupted input before results and human prompts
   });
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread } = await host.threads.create(project.id, 'Thread');
+    const { thread } = await host.threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const interrupted = randomUUID();
     const pending = randomUUID();
     await host.threads.appendEvent(thread.id, interrupted, {
@@ -364,7 +387,11 @@ void test('durably rejects a paused prompt superseded by new user input', {
   const host = await restart();
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread } = await host.threads.create(project.id, 'Thread');
+    const { thread } = await host.threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const old = randomUUID();
     const newer = randomUUID();
     await host.threads.appendEvent(thread.id, old, {
@@ -404,10 +431,15 @@ void test('delivers an exhausted delegated prompt to its parent exactly once', {
   const host = await restart();
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread: parent } = await host.threads.create(project.id, 'Parent');
+    const { thread: parent } = await host.threads.create(
+      project.id,
+      'Parent',
+      testExecution,
+    );
     const { thread: child } = await host.threads.create(
       project.id,
       'Child',
+      testExecution,
       parent.id,
     );
     const promptId = randomUUID();
@@ -547,8 +579,16 @@ void test('boot restores idle Projects without rerunning prompts or reviving ter
   const host = await restart({ sandboxReady: ready.promise });
   try {
     const { project } = await host.projects.create('Idle', snapshot, 'blue');
-    const owner = await host.threads.create(project.id, 'Idle thread');
-    const paused = await host.threads.create(project.id, 'Manually paused');
+    const owner = await host.threads.create(
+      project.id,
+      'Idle thread',
+      testExecution,
+    );
+    const paused = await host.threads.create(
+      project.id,
+      'Manually paused',
+      testExecution,
+    );
     const finished = randomUUID();
     await host.threads.appendEvent(owner.thread.id, finished, {
       type: 'prompt.accepted',
@@ -622,14 +662,22 @@ void test('boot prioritizes owed prompts before idle Projects and leaves paused 
     // What a crashed host left behind: a Project that needs a sandbox again,
     // and Threads whose prompts were accepted against it.
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const owner = await host.threads.create(project.id, 'Thread');
-    const other = await host.threads.create(project.id, 'Other');
+    const owner = await host.threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
+    const other = await host.threads.create(project.id, 'Other', testExecution);
     const { project: idle } = await host.projects.create(
       'Idle project',
       snapshot,
       'green',
     );
-    const idleThread = await host.threads.create(idle.id, 'Thread');
+    const idleThread = await host.threads.create(
+      idle.id,
+      'Thread',
+      testExecution,
+    );
 
     // A run the restart interrupted: accepted, started, never paused.
     const interrupted = randomUUID();
@@ -790,7 +838,11 @@ void test('continues a resumed prompt from the history it had already written', 
   });
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread } = await host.threads.create(project.id, 'Thread');
+    const { thread } = await host.threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const callId = 'call-1';
     const promptId = randomUUID();
     await host.threads.appendEvent(thread.id, promptId, {
@@ -845,14 +897,18 @@ void test('continues a resumed prompt from the history it had already written', 
   }
 });
 
-void test('closes a prompt the host interrupted three times and still honours the reader', {
+void test('T-12 closes a prompt the host interrupted three times with the English resume_exhausted message and still honours the reader', {
   skip: connectionString === undefined,
   timeout: 10_000,
 }, async () => {
   const host = await restart();
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread } = await host.threads.create(project.id, 'Thread');
+    const { thread } = await host.threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
 
     // A prompt the host has already taken up twice, interrupted once more: the
     // attempt a boot would make is the third interruption, over its budget.
@@ -919,9 +975,9 @@ void test('closes a prompt the host interrupted three times and still honours th
             name: 'ResumeExhaustedError',
             code: 'resume_exhausted',
             message:
-              'A execução foi interrompida três vezes por reinício do host e não foi ' +
-              'retomada de novo. O trabalho pode estar incompleto; mande o prompt ' +
-              'novamente para continuar.',
+              'The run was interrupted three times by a host restart and was not ' +
+              'resumed again. The work may be incomplete; send the prompt again ' +
+              'to continue.',
           },
         },
         {
@@ -984,7 +1040,11 @@ void test('resumes one reader-paused prompt on demand, bringing its Project back
   });
   try {
     const { project } = await host.projects.create('Project', snapshot, 'blue');
-    const { thread } = await host.threads.create(project.id, 'Thread');
+    const { thread } = await host.threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
     const promptId = randomUUID();
     await host.threads.appendEvent(thread.id, promptId, {
       type: 'prompt.accepted',

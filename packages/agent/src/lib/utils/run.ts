@@ -1,8 +1,9 @@
-import type {
-  JsonValue,
-  ProviderError,
-  ProviderFinished,
-  ProviderMessage,
+import {
+  type JsonValue,
+  type ProviderError,
+  ProviderErrorObject,
+  type ProviderFinished,
+  type ProviderMessage,
 } from 'llms';
 
 import { AgentErrorObject } from '../classes/agent-error.js';
@@ -64,12 +65,15 @@ export const repairLimit = (value: number | undefined): number => {
 /** How often, and how patiently, a failed provider turn is asked again. */
 export interface RetryPolicy {
   readonly retries: number;
+  /** Most retries for a `network_error`: a connection that could not be made or dropped. */
+  readonly networkRetries: number;
   readonly baseDelayMs: number;
   readonly maxDelayMs: number;
 }
 
 const defaultRetry: RetryPolicy = {
   retries: 2,
+  networkRetries: 4,
   baseDelayMs: 1000,
   maxDelayMs: 30_000,
 };
@@ -81,6 +85,8 @@ export const retryPolicy = (
   if (
     !Number.isSafeInteger(policy.retries) ||
     policy.retries < 0 ||
+    !Number.isSafeInteger(policy.networkRetries) ||
+    policy.networkRetries < 0 ||
     !(policy.baseDelayMs >= 0) ||
     !(policy.maxDelayMs >= 0)
   ) {
@@ -117,6 +123,50 @@ const errorData = (
 /** Whether a provider failure says that asking again may succeed. */
 export const isRetryable = (error: unknown): boolean =>
   errorData(error)?.retryable === true;
+
+/**
+ * The most retries a failure earns: `networkRetries` for a `network_error`
+ * (a thrown error or a stream `error` event), `retries` for anything else.
+ */
+export const retryBudget = (error: unknown, policy: RetryPolicy): number =>
+  errorData(error)?.code === 'network_error'
+    ? policy.networkRetries
+    : policy.retries;
+
+/**
+ * Counts one turn's retries per failure kind: each call spends a retry of the
+ * failure's kind and says whether its budget (see {@link retryBudget}) allowed it.
+ */
+export const retryCounter = (
+  policy: RetryPolicy,
+): ((error: unknown) => boolean) => {
+  const used = { network: 0, other: 0 };
+  return (error) => {
+    const kind =
+      errorData(error)?.code === 'network_error' ? 'network' : 'other';
+    if (used[kind] >= retryBudget(error, policy)) return false;
+    used[kind] += 1;
+    return true;
+  };
+};
+
+/**
+ * The error a turn throws once its retries ran out: a `network_error` that was
+ * asked again says how often it was tried and keeps the transport failure as
+ * its cause; anything else is thrown as it is.
+ */
+export const exhaustedError = (error: unknown, attempt: number): unknown => {
+  const data = providerErrorOf(error);
+  if (attempt <= 0 || data?.code !== 'network_error') return error;
+  const cause = (error as { readonly cause?: unknown }).cause ?? error;
+  return new ProviderErrorObject(
+    {
+      ...(data as ProviderError),
+      message: `Could not connect to ${data.provider} (tried ${attempt + 1} times).`,
+    },
+    { cause },
+  );
+};
 
 /**
  * How long to wait before attempt `attempt + 1`: the provider's own

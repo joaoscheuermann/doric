@@ -1,3 +1,4 @@
+import { errorFrom } from 'desktop/reads';
 import type { ComponentProps } from 'react';
 
 import { EditToolItem } from '../../../src/client/components/molecules/edit-tool-item.js';
@@ -11,14 +12,16 @@ import {
 
 type Props = Omit<
   ComponentProps<typeof EditToolItem>,
-  'chosen' | 'onChosenChange'
->;
+  'chosen' | 'onChosenChange' | 'name'
+> &
+  Partial<Pick<ComponentProps<typeof EditToolItem>, 'name'>>;
 
 function Edit(props: Props) {
   return (
     <WithChosen>
       {(chosen, onChosenChange) => (
         <EditToolItem
+          name="edit"
           {...props}
           chosen={chosen}
           onChosenChange={onChosenChange}
@@ -42,7 +45,7 @@ export const Editing = {
 };
 
 export const WritingNewFile = {
-  render: () => <Edit args={writeArgs} status="running" />,
+  render: () => <Edit name="write" args={writeArgs} status="running" />,
 };
 
 export const LongDiff = {
@@ -59,7 +62,10 @@ export const Failed = {
   render: () => (
     <Edit
       args={editArgs}
-      error="oldText was not found in src/components/Checkout.tsx"
+      error={errorFrom(
+        '',
+        'oldText was not found in src/components/Checkout.tsx',
+      )}
       status="failed"
     />
   ),

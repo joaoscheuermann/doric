@@ -326,27 +326,27 @@ Projects and their workspace:
 
 Threads:
 
-| Method      | Path                           | Success | Purpose                                                |
-| ----------- | ------------------------------ | ------- | ------------------------------------------------------ |
-| GET         | `/threads/:id`                 | 200     | Read public Thread metadata.                           |
-| PATCH       | `/threads/:id`                 | 200     | Rename a Thread or move its working directory.         |
-| GET         | `/threads/:id/git`             | 200     | Read the Git summary of the Thread's directory.        |
-| GET / POST  | `/threads/:id/branches`        | 200     | List local branches / switch to one (`branch`, `cwd`). |
-| POST        | `/threads/:id/prompt`          | 202     | Enqueue human input; returns `promptId`.               |
-| POST        | `/threads/:id/steer`           | 202     | Steer the running prompt, or queue when it ended.      |
-| POST        | `/threads/:id/resume`          | 202     | Take up a prompt no run has finished; returns Thread.  |
-| POST        | `/threads/:id/rewind`          | 202     | Replace an earlier prompt and discard later turns.     |
-| POST        | `/threads/:id/compact`         | 200     | Compact the idle Thread's context on demand.           |
-| GET         | `/threads/:id/events`          | 200     | Replay durable events.                                 |
-| GET         | `/threads/:id/usage`           | 200     | Read the Thread's usage.                               |
-| GET         | `/threads/:id/queue`           | 200     | Read the revisioned queue snapshot.                    |
-| POST        | `/threads/:id/queue/resume`    | 200     | Reopen a stopped queue; returns Thread.                |
-| GET / PATCH | `/threads/:id/queue/:promptId` | 200     | Read / edit a queued prompt that has not started.      |
-| DELETE      | `/threads/:id/queue/:promptId` | 204     | Remove a pending input.                                |
-| POST        | `/threads/:id/interrupt`       | 200     | Stop the Thread's active prompt.                       |
-| POST        | `/threads/:id/terminals`       | 201     | Open a terminal in the Thread's sandbox.               |
-| POST        | `/threads/:id/terminate`       | 200     | Terminate a Thread subtree.                            |
-| DELETE      | `/threads/:id`                 | 204     | Delete a terminal subtree.                             |
+| Method      | Path                           | Success | Purpose                                                                             |
+| ----------- | ------------------------------ | ------- | ----------------------------------------------------------------------------------- |
+| GET         | `/threads/:id`                 | 200     | Read public Thread metadata.                                                        |
+| PATCH       | `/threads/:id`                 | 200     | Rename a Thread, move its working directory, or set its provider, model and effort. |
+| GET         | `/threads/:id/git`             | 200     | Read the Git summary of the Thread's directory.                                     |
+| GET / POST  | `/threads/:id/branches`        | 200     | List local branches / switch to one (`branch`, `cwd`).                              |
+| POST        | `/threads/:id/prompt`          | 202     | Enqueue human input; returns `promptId`.                                            |
+| POST        | `/threads/:id/steer`           | 202     | Steer the running prompt, or queue when it ended.                                   |
+| POST        | `/threads/:id/resume`          | 202     | Take up a prompt no run has finished; returns Thread.                               |
+| POST        | `/threads/:id/rewind`          | 202     | Replace an earlier prompt and discard later turns.                                  |
+| POST        | `/threads/:id/compact`         | 200     | Compact the idle Thread's context on demand.                                        |
+| GET         | `/threads/:id/events`          | 200     | Replay durable events.                                                              |
+| GET         | `/threads/:id/usage`           | 200     | Read the Thread's usage.                                                            |
+| GET         | `/threads/:id/queue`           | 200     | Read the revisioned queue snapshot.                                                 |
+| POST        | `/threads/:id/queue/resume`    | 200     | Reopen a stopped queue; returns Thread.                                             |
+| GET / PATCH | `/threads/:id/queue/:promptId` | 200     | Read / edit a queued prompt that has not started.                                   |
+| DELETE      | `/threads/:id/queue/:promptId` | 204     | Remove a pending input.                                                             |
+| POST        | `/threads/:id/interrupt`       | 200     | Stop the Thread's active prompt.                                                    |
+| POST        | `/threads/:id/terminals`       | 201     | Open a terminal in the Thread's sandbox.                                            |
+| POST        | `/threads/:id/terminate`       | 200     | Terminate a Thread subtree.                                                         |
+| DELETE      | `/threads/:id`                 | 204     | Delete a terminal subtree.                                                          |
 
 Terminals and VMs:
 
@@ -461,8 +461,25 @@ curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
   `ssh.href` pointing at `/projects/:id/ssh`.
 - **Thread creation** requires `{ "name": "..." }` and accepts an optional
   `parentThreadId`, which starts the child in its parent's working directory.
+  A top-level Thread copies the workspace default execution and a child its
+  parent's; creation fails, creating nothing, when the configuration cannot be
+  read.
 - **Project PATCH** requires the name-only body; **Thread PATCH** takes
-  `name`, `cwd`, or both.
+  `name`, `cwd`, an execution (`providerId` and `model`, optional `effort`),
+  or any combination.
+- **Thread execution.** `providerId` and `model` come together, and `effort`
+  only with them; any other pairing answers `422 { code: 'invalid_thread' }`
+  with `A Thread name, a working directory, an execution (providerId and
+model, with an optional effort), or a combination is required.` The runtime
+  checks the execution as a spawn's (`runtime.threads/v1.setThreadExecution`):
+  the configured provider and its listed models, then `models/v1.resolve`. A
+  refused execution answers `422 { code: 'invalid_execution' }` with
+  `The provider is not configured.`, `The model is not available on this
+provider.` or `This model does not support that effort.`; an unresolvable
+  one carries `models/v1`'s message; a missing Thread answers `404`. The name
+  and `cwd` are applied before the execution and kept when it is refused. A
+  valid one answers the updated Thread, whose record carries `providerId`,
+  `model` and `effort`, and applies from the Thread's next run.
 - **Prompt** accepts only a non-empty `prompt`. Public callers cannot forge
   parent/result origins or correlation.
 - **Rewind** accepts only `{ "promptId", "prompt" }` and answers

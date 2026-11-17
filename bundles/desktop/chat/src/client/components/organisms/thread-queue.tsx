@@ -1,6 +1,7 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
+import { errorFrom, errorInfo } from 'desktop/reads';
 import { Button } from 'desktop/ui/button';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
 import { Separator } from 'desktop/ui/separator';
 import { cn } from 'desktop/ui/utils';
@@ -14,6 +15,7 @@ import {
 } from 'react';
 import { useStore } from 'zustand/react';
 
+import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import {
   type QueueItem,
   queueAuthor,
@@ -171,6 +173,27 @@ export function ThreadQueue({
     [editor, queue],
   );
   const caret = useQueueCaret(nodeKey, ids, remove, edit);
+  // The pause states no time of its own, so its notice has none (§1.2).
+  const pausedCode = queue?.error?.code;
+  const pausedMessage = queue?.error?.message;
+  const paused = useMemo(
+    () =>
+      pausedCode === undefined || pausedMessage === undefined
+        ? undefined
+        : errorFrom(pausedCode, pausedMessage, undefined, { at: null }),
+    [pausedCode, pausedMessage],
+  );
+  const refreshError = query.isError ? query.error : undefined;
+  const refreshedAt = query.errorUpdatedAt;
+  const refreshFailure = useMemo(
+    () =>
+      refreshError === undefined
+        ? undefined
+        : errorInfo(refreshError, {
+            at: refreshedAt > 0 ? new Date(refreshedAt).toISOString() : null,
+          }),
+    [refreshError, refreshedAt],
+  );
   if (queue === undefined)
     return query.isError ? (
       <div
@@ -211,16 +234,26 @@ export function ThreadQueue({
       <h2 className="text-xs font-light tracking-wide text-muted-foreground">
         Queue
       </h2>
-      {queue.error && (
-        <Alert variant="destructive">
-          <AlertTitle>Execution paused</AlertTitle>
-          <AlertDescription>{queue.error.message}</AlertDescription>
-        </Alert>
+      {paused === undefined ? null : (
+        <ErrorNotice
+          announce
+          error={paused}
+          catalog={chatErrorCatalog}
+          fallbackCode="queue_paused"
+          context={{ Thread: threadId }}
+          onRetry={query.resume}
+          retrying={query.resuming}
+        />
       )}
-      {query.isError && (
-        <p role="status" className="text-xs text-muted-foreground">
-          Could not refresh queue.
-        </p>
+      {refreshFailure === undefined ? null : (
+        <ErrorNotice
+          variant="compact"
+          error={refreshFailure}
+          catalog={chatErrorCatalog}
+          fallbackCode="queue_refresh_failed"
+          context={{ Thread: threadId }}
+          onRetry={() => void query.refetch()}
+        />
       )}
       {queue.items.length > 0 && (
         <ol className="-mx-2.5 flex max-h-48 flex-col gap-0.5 overflow-y-auto">

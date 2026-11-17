@@ -9,7 +9,7 @@ import { ContractError } from 'bundle/contracts';
 import type { DoricConfiguration } from 'runtime/contracts';
 
 import type { Configuration } from '../src/client/domain/config.js';
-import { settingsOver, showing } from './support/host.js';
+import { settingsError, settingsOver, showing } from './support/host.js';
 
 const token = '00000000-0000-4000-8000-000000000001';
 
@@ -343,5 +343,162 @@ describe('reading the configuration', () => {
         );
       },
     );
+  });
+});
+
+// T-22 (error-messages.md §6.4): every rejection keeps the message the window
+// showed and gains the code of its outcome; the contract error the host
+// answered becomes its cause, unless that error is `internal`.
+describe('T-22 configuration rejections keep their code and cause', () => {
+  test('a contract error the host answered keeps its code and is the cause', async () => {
+    for (const [code, message] of [
+      ['disconnected', 'Doric backend is unavailable.'],
+      ['unavailable', 'Doric backend is unavailable.'],
+      ['invalid_output', 'Doric returned an invalid response.'],
+      ['limit_exceeded', 'The request could not be completed.'],
+    ] as const) {
+      const contract = new ContractError(code, 'what the bridge said');
+      await settingsOver(
+        {
+          current: () => {
+            throw contract;
+          },
+        },
+        async (api) => {
+          await assert.rejects(
+            api.config.get(),
+            settingsError({ code, message, cause: contract }),
+          );
+        },
+      );
+    }
+  });
+
+  test('a host out of reach on save keeps its code and is the cause', async () => {
+    const contract = new ContractError('unavailable', 'what the bridge said');
+    await settingsOver(
+      {
+        replace: () => {
+          throw contract;
+        },
+      },
+      async (api) => {
+        await assert.rejects(
+          api.config.update(configuration),
+          settingsError({
+            code: 'unavailable',
+            message: 'Doric backend is unavailable.',
+            cause: contract,
+          }),
+        );
+      },
+    );
+  });
+
+  test('an internal contract error or a foreign throw is internal with no cause', async () => {
+    for (const thrown of [
+      new ContractError('internal', 'database exploded'),
+      new Error('the bridge is gone'),
+    ]) {
+      await settingsOver(
+        {
+          current: () => {
+            throw thrown;
+          },
+        },
+        async (api) => {
+          await assert.rejects(
+            api.config.get(),
+            settingsError({
+              code: 'internal',
+              message: 'The request could not be completed.',
+              cause: undefined,
+            }),
+          );
+        },
+      );
+    }
+  });
+
+  test('a shape refused before the host is invalid_input with no cause', async () => {
+    await settingsOver({}, async (api) => {
+      await assert.rejects(
+        api.config.update({
+          ...configuration,
+          execution: { maxTurns: 0 },
+        }),
+        settingsError({
+          code: 'invalid_input',
+          message: 'The configuration is invalid.',
+          cause: undefined,
+        }),
+      );
+    });
+  });
+
+  test('an answer the adapter cannot read is invalid_output with no cause', async () => {
+    await settingsOver(
+      {
+        current: () =>
+          stored({
+            ...configuration,
+            models: {
+              execution: {
+                providerId: 'openrouter',
+                model: 'm',
+                effort: 'turbo',
+              },
+            },
+          } as unknown as Configuration),
+      },
+      async (api) => {
+        await assert.rejects(
+          api.config.get(),
+          settingsError({
+            code: 'invalid_output',
+            message: 'Doric returned an invalid response.',
+            cause: undefined,
+          }),
+        );
+      },
+    );
+  });
+
+  test('a replace answered invalid is invalid_input; any other refused replace is internal', async () => {
+    await settingsOver(
+      {
+        replace: () => ({
+          status: 'invalid',
+          message: 'The execution provider is not configured.',
+        }),
+      },
+      async (api) => {
+        await assert.rejects(
+          api.config.update(configuration),
+          settingsError({
+            code: 'invalid_input',
+            message: 'The execution provider is not configured.',
+            cause: undefined,
+          }),
+        );
+      },
+    );
+    for (const replace of [
+      () => ({ status: 'rejected' as const }),
+      () => {
+        throw new ContractError('internal', 'boom');
+      },
+    ]) {
+      await settingsOver({ replace }, async (api) => {
+        await assert.rejects(
+          api.config.update(configuration),
+          settingsError({
+            code: 'internal',
+            message: 'The Doric configuration could not be activated.',
+            cause: undefined,
+          }),
+        );
+      });
+    }
   });
 });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
+import { assertToolNotice } from './support/notices.js';
 import { type ChatWindow, openChatWindow, settle } from './support/window.js';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
@@ -194,4 +195,104 @@ test('terminal tool card renders single-line truncated command inside the card',
   );
   assert.notEqual(commandRow, null);
   assert.equal(commandRow?.className.includes('truncate'), true);
+});
+
+const editCall = {
+  id: 'call-edit-failed',
+  name: 'edit',
+  payload: {
+    path: 'src/a.ts',
+    edits: [{ oldText: 'const a = 1;', newText: 'const a = 2;' }],
+  },
+};
+
+const editTool = (window: ChatWindow): HTMLElement | null =>
+  window.document.querySelector<HTMLElement>(
+    'chat-view [data-slot="edit-tool"]',
+  );
+
+test('T-19 an edit the tool failed shows the compact tool notice naming the call', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    event(1, {
+      type: 'prompt.accepted',
+      text: 'Update src/a.ts',
+      source: { kind: 'user' },
+    }),
+    event(2, { type: 'tool.started', call: editCall }),
+    event(3, {
+      type: 'tool.failed',
+      call: editCall,
+      error: {
+        message: 'Tool handler failed: edit',
+        data: { code: 'handler_failed' },
+        cause: { message: 'The old text was not found in src/a.ts.' },
+      },
+    }),
+  ]);
+
+  await assertToolNotice(editTool(opened), {
+    title: 'Tool failed',
+    explanation: 'The old text was not found in src/a.ts.',
+    tool: 'edit',
+  });
+});
+
+test('T-19 an edit whose cause names a known code is headed by that code', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    event(1, {
+      type: 'prompt.accepted',
+      text: 'Update src/a.ts',
+      source: { kind: 'user' },
+    }),
+    event(2, { type: 'tool.started', call: editCall }),
+    event(3, {
+      type: 'tool.failed',
+      call: editCall,
+      error: {
+        message: 'Tool handler failed: edit',
+        data: { code: 'handler_failed' },
+        cause: {
+          message: 'The edit could not be applied.',
+          cause: { code: 'not_found', message: 'src/a.ts does not exist.' },
+        },
+      },
+    }),
+  ]);
+
+  // The first level with an entry is the cause (§2.3): `not_found`.
+  await assertToolNotice(editTool(opened), {
+    title: 'Not found',
+    explanation: 'src/a.ts does not exist.',
+    tool: 'edit',
+  });
+});
+
+test('T-19 an edit whose output reports the failure shows the same notice', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    event(1, {
+      type: 'prompt.accepted',
+      text: 'Update src/a.ts',
+      source: { kind: 'user' },
+    }),
+    event(2, { type: 'tool.started', call: editCall }),
+    event(3, {
+      type: 'tool.finished',
+      call: editCall,
+      record: {
+        output: JSON.stringify({
+          success: false,
+          error: 'The old text matches 2 places in src/a.ts.',
+        }),
+      },
+    }),
+  ]);
+
+  await assertToolNotice(editTool(opened), {
+    title: 'Tool failed',
+    explanation: 'The old text matches 2 places in src/a.ts.',
+    tool: 'edit',
+  });
 });

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { type ErrorInfo, errorInfo } from 'desktop/reads';
+import { useCallback } from 'react';
 
 import { api } from '../api/settings-api.js';
 import type {
@@ -7,24 +8,31 @@ import type {
   CredentialCreate,
   CredentialUpdate,
 } from '../domain/config.js';
-import { messageFrom } from '../domain/errors.js';
 import { queryKeys } from '../queries/keys.js';
+import { useReadFailure } from './use-read-failure.js';
 
 /**
- * What one credential write answered, so a section can report the host's refusa
-l
- * without knowing which route produced it.
+ * What one credential write answered, so a section can report the host's
+ * refusal without knowing which route produced it. `failed` carries the
+ * rejection as `ErrorInfo` (`errorInfo` of it, `at` set to when it failed);
+ * the write never throws.
  */
 export type CredentialWrite =
   | { readonly status: 'saved' }
-  | { readonly status: 'failed'; readonly message: string };
+  | { readonly status: 'failed'; readonly error: ErrorInfo };
 
 export type Credentials = {
   /** The stored credentials, in the order the host lists them. */
   readonly list: readonly Credential[];
+  /** True while a read of the list runs, the first one or a `reload`. */
   readonly loading: boolean;
-  /** The last failure, which the section shows above its list. */
-  readonly error?: string;
+  /**
+   * The list read's failure only (`errorInfo` of the query's error, `at` from
+   * its `errorUpdatedAt`); absent once a read succeeds. A failed write never
+   * sets it: the write's own result carries that failure. A section shows it
+   * with `credentials_read_failed` as fallback code (§5.2, D16).
+   */
+  readonly loadError?: ErrorInfo;
   readonly create: (input: CredentialCreate) => Promise<CredentialWrite>;
   readonly update: (
     id: string,
@@ -49,15 +57,11 @@ export const useCredentials = (): Credentials => {
   const list = useQuery({
     queryKey: queryKeys.credentials,
     queryFn: () => api().credentials.list(),
+    // A failed list stays failed until a read is asked for, so a section
+    // that mounts later shows the same failure rather than reading again.
+    retryOnMount: false,
   });
-  const [error, setError] = useState<string>();
-
-  // The load and the writes share one error slot: the last failure is what the
-  // section shows, and the next success clears it.
-  useEffect(() => {
-    if (list.isError) setError(messageFrom(list.error));
-    else if (list.data !== undefined) setError(undefined);
-  }, [list.data, list.error, list.isError]);
+  const loadError = useReadFailure(list);
 
   const { mutateAsync: createCredential } = useMutation({
     mutationFn: (input: CredentialCreate) => api().credentials.create(input),
@@ -77,7 +81,6 @@ export const useCredentials = (): Credentials => {
    */
   const settle = useCallback(
     (credential: Credential, replace: boolean): void => {
-      setError(undefined);
       queryClient.setQueryData(
         queryKeys.credentials,
         (current: readonly Credential[] = []) =>
@@ -91,11 +94,13 @@ export const useCredentials = (): Credentials => {
     [queryClient],
   );
 
-  const failed = useCallback((reason: unknown): CredentialWrite => {
-    const message = messageFrom(reason);
-    setError(message);
-    return { status: 'failed', message };
-  }, []);
+  const failed = useCallback(
+    (reason: unknown): CredentialWrite => ({
+      status: 'failed',
+      error: errorInfo(reason),
+    }),
+    [],
+  );
 
   const create = useCallback(
     async (input: CredentialCreate): Promise<CredentialWrite> => {
@@ -125,7 +130,6 @@ export const useCredentials = (): Credentials => {
     async (id: string): Promise<CredentialWrite> => {
       try {
         await removeCredential(id);
-        setError(undefined);
         queryClient.setQueryData(
           queryKeys.credentials,
           (current: readonly Credential[] = []) =>
@@ -147,7 +151,7 @@ export const useCredentials = (): Credentials => {
   return {
     list: list.data ?? [],
     loading: list.isPending || list.isFetching,
-    error,
+    loadError,
     create,
     update,
     remove,

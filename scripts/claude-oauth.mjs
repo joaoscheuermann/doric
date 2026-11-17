@@ -56,7 +56,11 @@ const {
   errorMessage,
   log,
   isAddressInUse,
-} = oauthEnv({ envPath: ENV_PATH, prefix: 'CLAUDE_OAUTH', tag: 'claude:oauth' });
+} = oauthEnv({
+  envPath: ENV_PATH,
+  prefix: 'CLAUDE_OAUTH',
+  tag: 'claude:oauth',
+});
 
 const prompt = async (question) => {
   const rl = createInterface({ input, output });

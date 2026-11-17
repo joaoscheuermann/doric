@@ -1,3 +1,4 @@
+import { errorFrom } from 'desktop/reads';
 import { SidebarScope } from 'desktop/ui/sidebar';
 import { type CSSProperties, useEffect, useState } from 'react';
 
@@ -160,7 +161,11 @@ export const LoadingThreads = {
 export const RequestFailed = {
   render: () => (
     <Sidebar
-      model={sidebarModelOf({ error: 'The request could not be completed.' })}
+      model={sidebarModelOf({
+        error: {
+          error: errorFrom('internal', 'The request could not be completed.'),
+        },
+      })}
     />
   ),
 };

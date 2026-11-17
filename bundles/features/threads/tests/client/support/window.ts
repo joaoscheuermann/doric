@@ -80,7 +80,7 @@ const hostCandidate: CatalogCandidate = {
     provides: [
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
-      'runtime.threads/v1@1.6.0',
+      'runtime.threads/v1@1.7.0',
       'host-config/v1@1.1.0',
       'runtime.attachments/v1@1.0.0',
       'comments/v1@1.0.0',
@@ -94,7 +94,7 @@ const hostCandidate: CatalogCandidate = {
     contracts: [
       ['storage.backend/v1', '1.0.0'],
       ['secrets.backend/v1', '1.0.0'],
-      ['runtime.threads/v1', '1.6.0'],
+      ['runtime.threads/v1', '1.7.0'],
       ['host-config/v1', '1.1.0'],
       ['runtime.attachments/v1', '1.0.0'],
       ['comments/v1', '1.0.0'],

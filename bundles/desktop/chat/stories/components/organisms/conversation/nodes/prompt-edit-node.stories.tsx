@@ -1,3 +1,5 @@
+import { errorFrom } from 'desktop/reads';
+
 import { EditQueuePrompt } from '../../../../../src/client/components/organisms/conversation/plugins/edit-queue-prompt.js';
 import type { QueueItem } from '../../../../../src/client/domain/queue.js';
 import {
@@ -58,7 +60,10 @@ export const Editing = {
 export const SaveFailed = {
   render: () =>
     editing(own, 'Document the retry options.', {
-      error: 'The prompt already started; it can no longer be edited.',
+      error: errorFrom(
+        'conflict',
+        'The prompt already started; it can no longer be edited.',
+      ),
     }),
 };
 

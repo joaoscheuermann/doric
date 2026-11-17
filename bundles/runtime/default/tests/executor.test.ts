@@ -122,6 +122,12 @@ const harnessOf = (
         signal === undefined ? {} : { signal },
       );
     },
+    /** Runs `prompt` on a Thread snapshot carrying `stored` (its execution). */
+    runThread: async (prompt: string, stored: Partial<ExecutorThread>) => {
+      activated ??= Promise.resolve(services.activate());
+      await activated;
+      return runPrompt(services, state, prompt, { thread: stored });
+    },
   };
 };
 
@@ -309,6 +315,130 @@ void test('persists streamed default-agent events with the configured provider i
   assert.deepEqual(
     harness.events().filter((type) => type.startsWith('agent.')),
     ['agent.started', 'agent.finished'],
+  );
+});
+
+/**
+ * The default configuration plus a second provider, `second`, that lists one
+ * model, `second/model`.
+ */
+const twoProviders = () => {
+  const configuration = testConfiguration();
+  return {
+    ...configuration,
+    providers: [
+      ...configuration.providers,
+      {
+        id: 'second',
+        kind: 'openrouter',
+        configuration: {
+          endpoint: 'https://second.example.com/api/v1',
+          token: 'credential-2',
+        },
+        models: [{ name: 'second/model', reasonings: ['low', 'high'] }],
+      },
+    ],
+  } as ReturnType<typeof testConfiguration>;
+};
+
+const unavailableMessage = (model: string, provider: string) =>
+  `The model "${model}" on provider "${provider}" is not available for this thread. Choose another model in the conversation footer.`;
+
+void test('T-15 runs a Thread stored on a second provider with that provider, model and effort', async () => {
+  const harness = harnessOf(twoProviders());
+
+  await harness.runThread('prompt', {
+    providerId: 'second',
+    model: 'second/model',
+    effort: 'high',
+  });
+
+  assert.deepEqual(harness.services.resolved, [
+    { providerId: 'second', model: 'second/model', effort: 'high' },
+  ]);
+  assert.ok(harness.services.modalities.length > 0);
+  for (const request of harness.services.modalities) {
+    assert.deepEqual(request, { providerId: 'second', model: 'second/model' });
+  }
+  assert.equal(harness.requests[0]?.model, 'second/model');
+  assert.equal(harness.requests[0]?.effort, 'high');
+  const started = harness.state.events.find(
+    ({ event }) => (event as { type: string }).type === 'response.started',
+  );
+  assert.equal(
+    (started?.event as { providerId?: string } | undefined)?.providerId,
+    'second',
+  );
+});
+
+for (const { what, stored, issue } of [
+  {
+    what: 'a provider the configuration no longer has',
+    stored: { providerId: 'gone', model: 'second/model' },
+    issue: 'provider',
+  },
+  {
+    what: 'a model its provider no longer lists',
+    stored: { providerId: 'second', model: 'retired/model', effort: 'low' },
+    issue: 'model',
+  },
+] as const) {
+  void test(`T-16 refuses before any model request a Thread stored on ${what}, and warns once`, async () => {
+    const harness = harnessOf(twoProviders());
+
+    await assert.rejects(harness.runThread('prompt', stored), {
+      message: unavailableMessage(stored.model, stored.providerId),
+      code: 'thread_execution_unavailable',
+    });
+
+    assert.equal(harness.requests.length, 0);
+    assert.deepEqual(
+      harness.services.logs.filter(({ level }) => level === 'warn'),
+      [
+        {
+          level: 'warn',
+          message: 'Thread execution unavailable',
+          fields: {
+            threadId,
+            providerId: stored.providerId,
+            model: stored.model,
+            issue,
+          },
+        },
+      ],
+    );
+  });
+}
+
+void test('T-17 runs a Thread stored without an effort without one, though the default names one', async () => {
+  const harness = harnessOf(twoProviders());
+
+  await harness.runThread('prompt', {
+    providerId: 'second',
+    model: 'second/model',
+  });
+
+  assert.equal(testConfiguration().models.execution.effort, 'low');
+  assert.equal(
+    (harness.services.resolved[0] as { effort?: string } | undefined)?.effort,
+    undefined,
+  );
+  assert.equal(harness.requests[0]?.effort, undefined);
+});
+
+void test('T-18 runs a legacy Thread with its own model on the configured provider and effort, as before', async () => {
+  const harness = harnessOf(twoProviders());
+
+  await harness.runThread('prompt', { model: 'own/model' });
+
+  assert.deepEqual(harness.services.resolved, [
+    { providerId: 'openrouter', model: 'own/model', effort: 'low' },
+  ]);
+  assert.equal(harness.requests[0]?.model, 'own/model');
+  assert.equal(harness.requests[0]?.effort, 'low');
+  assert.deepEqual(
+    harness.services.logs.filter(({ level }) => level === 'warn'),
+    [],
   );
 });
 

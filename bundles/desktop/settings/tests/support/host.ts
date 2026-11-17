@@ -10,6 +10,7 @@ import {
   type CredentialDescription,
   type CredentialRef,
   type CredentialUpdate,
+  type Disposable,
   defineMethod,
   defineService,
   type ModelIconAnswers,
@@ -26,9 +27,13 @@ import {
 import { createTestServices } from 'bundle/testing';
 import { ClaudeLoginV1, claudeLoginMethods } from 'claude-login/contracts';
 import { configurationMethods } from 'host-config/contracts';
-import type {
-  ConfigReplaceResult,
-  DoricConfiguration,
+import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'layout/contracts';
+import {
+  type ConfigReplaceResult,
+  type DoricConfiguration,
+  runtimeThreadsMethods,
+  type Thread,
+  type ThreadExecutionResult,
 } from 'runtime/contracts';
 import type { z } from 'zod';
 
@@ -62,6 +67,17 @@ export interface FakeHost {
     input: CredentialUpdate,
   ) => CredentialDescription;
   delete?: (ref: CredentialRef) => 'deleted' | 'missing' | 'referenced';
+  /** `layout.workspace/v1.selectedThread`: the workspace's selection. */
+  selectedThread?: () => Thread | undefined;
+  /** `layout.workspace/v1.subscribe`: the layout's change notifications. */
+  workspaceSubscribe?: (listener: () => void) => Disposable;
+  /** `runtime.threads/v1.setThreadExecution`. */
+  setThreadExecution?: (input: {
+    readonly id: string;
+    readonly providerId: string;
+    readonly model: string;
+    readonly effort?: string;
+  }) => ThreadExecutionResult | Promise<ThreadExecutionResult>;
 }
 
 const unanswered = (): never => {
@@ -72,11 +88,16 @@ type Specs = Readonly<
   Record<string, { readonly input: z.ZodType; readonly output: z.ZodType }>
 >;
 
-/** A provider of every method of a contract; the unlisted ones answer nothing. */
+/**
+ * A provider of every method of a contract; the unlisted ones answer nothing.
+ * `answer` follows the contract: `async` methods answer a promise, `sync`
+ * methods (such as `layout.workspace/v1`) answer their value directly.
+ */
 const fake = (
   id: string,
   specs: Specs,
   handlers: Readonly<Record<string, (input: never) => unknown>>,
+  answer: 'async' | 'sync' = 'async',
 ): AnyServiceDefinition =>
   defineService(
     id as `${string}/v${number}`,
@@ -86,8 +107,12 @@ const fake = (
         defineMethod({
           input: spec.input,
           output: spec.output,
-          execute: async (input: unknown) =>
-            (handlers[name] ?? unanswered)(input as never),
+          execute:
+            answer === 'sync'
+              ? (input: unknown) =>
+                  (handlers[name] ?? unanswered)(input as never)
+              : async (input: unknown) =>
+                  (handlers[name] ?? unanswered)(input as never),
         }),
       ]),
     ),
@@ -127,6 +152,25 @@ export const settingsOver = async (
         (host.update ?? unanswered)(ref, input),
       delete: (ref: CredentialRef) => (host.delete ?? unanswered)(ref),
     }),
+    fake(
+      LayoutWorkspaceV1.id,
+      layoutWorkspaceMethods,
+      {
+        selectedThread: () => (host.selectedThread ?? unanswered)(),
+        subscribe: (listener: () => void) =>
+          (host.workspaceSubscribe ?? unanswered)(listener),
+      },
+      'sync',
+    ),
+    // Referenced by its id, as the settings adapter references it.
+    fake('runtime.threads/v1', runtimeThreadsMethods as unknown as Specs, {
+      setThreadExecution: (input: {
+        id: string;
+        providerId: string;
+        model: string;
+        effort?: string;
+      }) => (host.setThreadExecution ?? unanswered)(input),
+    }),
   ];
   const test = createTestServices({ bundle: { id: 'settings' }, provide });
 
@@ -136,6 +180,38 @@ export const settingsOver = async (
     await test.dispose();
   }
 };
+
+/**
+ * The settings adapter's rejection (error-messages.md §6.4): a
+ * `SettingsApiError` (name kept) carrying `code`, the unchanged `message`, and
+ * `cause` — the contract error the host answered, or none (`undefined`).
+ */
+export const settingsError =
+  (expected: {
+    readonly code: string;
+    readonly message: string;
+    readonly cause: unknown;
+  }) =>
+  (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      throw new Error(`Rejected with a non-error: ${String(error)}`);
+    }
+    const { code } = error as Error & { readonly code?: unknown };
+    if (
+      error.name !== 'SettingsApiError' ||
+      code !== expected.code ||
+      error.message !== expected.message ||
+      error.cause !== expected.cause
+    ) {
+      throw new Error(
+        `Expected SettingsApiError ${expected.code} "${expected.message}" ` +
+          `(cause ${expected.cause === undefined ? 'none' : 'the contract error'}), ` +
+          `got ${error.name} ${String(code)} "${error.message}" ` +
+          `(cause ${error.cause === undefined ? 'none' : error.cause === expected.cause ? 'the contract error' : String(error.cause)})`,
+      );
+    }
+    return true;
+  };
 
 /** Whether a rejection shows exactly `message`, the text a surface renders. */
 export const showing =

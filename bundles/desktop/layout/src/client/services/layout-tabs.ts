@@ -78,6 +78,7 @@ export const createLayoutTabs = ({
           tabs.open(tabOwner, {
             kind: 'element',
             id: input.id,
+            tag: input.tag,
             title: input.title,
             element,
             ...(input.props === undefined ? {} : { props: input.props }),

@@ -17,14 +17,28 @@ for how bundles work.
 - **UI:**
   - `<chat-view>`, the conversation, at
     `/projects/:projectId/threads/:threadId`, a child route of the
-    [`layout`](../layout/README.md) bundle's `/`;
+    [`layout`](../layout/README.md) bundle's `/`. `<chat-view>` reads
+    `--chat-footer-height`, the height of a footer floating over its
+    conversation's bottom, set by its host on an ancestor (the layout's
+    conversation frame sets 2.75rem, from layout 3.0.3); its scrollbar ends
+    and its scroll padding stops that far above the bottom; unset, 0. Its
+    scroll area is isolated (`isolation: isolate`), so a footer that follows
+    it paints over the transcript's layers with no `z-index`. Known
+    limitations: the caret of a prompt being typed can stop under a floating
+    footer (a follow-up is planned), and a wheel over the footer's band does
+    not scroll the conversation;
   - `<chat-composer>`, the send, stop, resume and save controls, a
     `layout.footer` item (order 40) present with or without a Thread. On an
     agent Thread — one an agent spawned — it draws the reader's three levers
     instead: pause the run, continue the prompt it left unfinished, or retry
     the last one (`domain/agent-control.ts`);
   - `<chat-thread-panel>`, a conversation with its own footer, which the layout
-    uses for a child Thread's tab;
+    uses for a child Thread's tab. `<chat-thread-panel>`'s own footer floats
+    over its conversation's bottom 44 px, 8 px over and under its 28 px row,
+    as tall as the `--chat-footer-height` it sets itself (2.75rem). It ends on
+    the card's edge while the layout's viewer card drops its bottom padding,
+    as it does while that tab is selected; otherwise the band sits 8 px above
+    the card's edge;
   - `<chat-readonly-markdown text>`, the conversation's read-only Markdown for
     another bundle's block element;
   - `<chat-block>`, the fallback for a block no renderer claims: its type, id,
@@ -48,7 +62,11 @@ for how bundles work.
   `+added / −removed` counts, and a `terminal` call shows its command and its
   live output. A `load_skill` call draws its own block naming the skill and
   where it came from. A background command's result, a paused or resumed
-  prompt, a history compaction and a failure each get their own row.
+  prompt, a history compaction and a failure each get their own row; a
+  failure row, a failed tool call and a failed compaction draw the shared
+  error notice (`desktop/ui/error-notice`) with its code, a Copy details action
+  and the cause chain in collapsed details, and the last prompt's failure offers
+  Retry while the agent control's status is `failed` and it can retry.
 - **Steer while it runs.** `Cmd/Ctrl+Enter` sends; while a prompt runs it
   steers the prompt at its next safe point. `Tab` queues the words for after
   it, `Escape` with words aborts the current step and steers, and `Escape`
@@ -71,8 +89,10 @@ for how bundles work.
   its paragraph with an arrow that goes to it, and go out with the next send
   as a `<comments>` block before your `<message>`. The agent's `comment_reply`
   answers show as rows of its turn, with a pin coloured by the thread's state.
-- **Find your place.** A rail on the right edge has one handle per prompt,
-  queued receipt and subthread result; hovering one previews its words.
+- **Find your place.** A rail in its own column left of the conversation has
+  one handle per prompt of yours the host accepted (queued or unaccepted
+  prompts have none), then a "Go to the end" bar; hovering a handle previews
+  its words, and the bar's popover shows its own label.
 
 History is durable on the host and replayed, never invented locally: chat
 watches each opened Thread through `runtime.threads/v1` and treats its copy as
@@ -112,8 +132,9 @@ batch.
 - `onThreadUpdateHook` reports every live event of a held Thread as it arrives,
   before the 100 ms flush, and every `updated` record; chat does not await it.
 - A card inside the conversation can dispatch a `chat:intent` DOM event; chat
-  runs it as `commands/v1.execute(command, input)` and shows a failure as a
-  toast.
+  runs it as `commands/v1.execute(command, input)` and shows a failure as an
+  error toast with the id `chat-intent-<command>`, so repeated failures replace
+  each other instead of stacking.
 
 ## The composer draft
 

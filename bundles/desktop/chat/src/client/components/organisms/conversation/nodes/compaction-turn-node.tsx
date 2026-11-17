@@ -5,12 +5,14 @@
  * the durable summary; the caret skips this read-only block.
  */
 
+import { type ErrorInfo, errorFrom, sameErrorInfo } from 'desktop/reads';
 import { Button } from 'desktop/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from 'desktop/ui/collapsible';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { Marker, MarkerContent } from 'desktop/ui/marker';
 import { toast } from 'desktop/ui/sonner';
 import {
@@ -21,10 +23,13 @@ import {
   type Spread,
 } from 'lexical';
 import { ChevronRightIcon, CopyIcon } from 'lucide-react';
+import { useContext } from 'react';
 import type { JSX } from 'react/jsx-runtime';
 
 import { COMPACTION_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
+import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import type { CompactionTurn } from '../../../../domain/projector.js';
+import { ConversationThreadContext } from '../../../../hooks/use-live-terminal.js';
 import { ReadonlyMarkdown } from '../readonly-markdown.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
@@ -38,24 +43,49 @@ export type SerializedCompactionTurnNode = Spread<
     tokensFreed: CompactionTurn['tokensFreed'];
     code: CompactionTurn['code'];
     summary?: string;
+    /** Written only when the node holds a failure. */
+    error?: ErrorInfo;
   },
   SerializedLexicalNode
 >;
 
-/** The line the row reads: what the compaction did, or why it failed. */
+/** The line a completed row reads: what the compaction did. */
 const rowLine = (
-  status: CompactionTurn['status'],
   condensedMessages: CompactionTurn['condensedMessages'],
   tokensFreed: CompactionTurn['tokensFreed'],
-  code: CompactionTurn['code'],
 ): string => {
-  if (status === 'failed') return `Compactação de contexto falhou (${code})`;
   // The closing half carries the counts; a report that names none of them
   // still reads as a compaction that happened.
   if (condensedMessages === undefined || tokensFreed === undefined)
-    return 'Contexto compactado';
-  return `Contexto compactado · ${condensedMessages} ${condensedMessages === 1 ? 'mensagem' : 'mensagens'} → resumo (${tokensFreed.toLocaleString('pt-BR')} tokens liberados)`;
+    return 'Context compacted';
+  return `Context compacted · ${condensedMessages} ${condensedMessages === 1 ? 'message' : 'messages'} → summary (${tokensFreed.toLocaleString('en-US')} tokens freed)`;
 };
+
+/** A failed compaction: the compact notice of its failure, inside the separator. */
+function CompactionFailure({
+  error,
+  promptId,
+}: {
+  readonly error: ErrorInfo;
+  readonly promptId: string;
+}) {
+  const thread = useContext(ConversationThreadContext);
+  return (
+    <Marker variant="separator" className="gap-1.5 text-xs">
+      <MarkerContent>
+        <ErrorNotice
+          variant="compact"
+          error={error}
+          catalog={chatErrorCatalog}
+          context={{
+            ...(thread === null ? {} : { Thread: thread.threadId }),
+            Prompt: promptId,
+          }}
+        />
+      </MarkerContent>
+    </Marker>
+  );
+}
 
 function CompactionDetails({
   label,
@@ -88,24 +118,30 @@ function CompactionDetails({
       <CollapsibleContent className="mt-2 min-w-0 select-text rounded-md border border-border p-3">
         {summary === undefined ? (
           <p className="text-xs text-muted-foreground">
-            O resumo desta compactação antiga não foi preservado no histórico.
+            The summary of this older compaction was not kept in the history.
           </p>
         ) : (
           <>
             <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>Resumo enviado ao modelo</span>
+              <span>Summary sent to the model</span>
               <Button
                 variant="ghost"
                 size="xs"
                 onClick={() => {
                   void navigator.clipboard.writeText(summary).then(
-                    () => toast.success('Resumo copiado.'),
-                    () => toast.error('Não foi possível copiar o resumo.'),
+                    () =>
+                      toast.success('Summary copied.', {
+                        id: 'compaction-summary-copy',
+                      }),
+                    () =>
+                      toast.error('Could not copy the summary.', {
+                        id: 'compaction-summary-copy',
+                      }),
                   );
                 }}
               >
                 <CopyIcon data-icon="inline-start" />
-                Copiar
+                Copy
               </Button>
             </div>
             <ReadonlyMarkdown text={summary} />
@@ -125,6 +161,8 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
   __tokensFreed: CompactionTurn['tokensFreed'];
   __code: CompactionTurn['code'];
   __summary: string | undefined;
+  /** The failure of a failed compaction, as `CompactionTurn.error`. */
+  __error: ErrorInfo | undefined;
 
   constructor(
     turnKey: string,
@@ -135,6 +173,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
     tokensFreed: CompactionTurn['tokensFreed'],
     code: CompactionTurn['code'],
     summary?: string,
+    error?: ErrorInfo,
     key?: NodeKey,
   ) {
     super(key);
@@ -146,6 +185,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
     this.__tokensFreed = tokensFreed;
     this.__code = code;
     this.__summary = summary;
+    this.__error = error;
   }
 
   static override getType(): string {
@@ -162,6 +202,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
       node.__tokensFreed,
       node.__code,
       node.__summary,
+      node.__error,
       node.__key,
     );
   }
@@ -203,25 +244,21 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
           </MarkerContent>
         </Marker>
       );
-    const label = rowLine(
-      this.__status,
-      this.__condensedMessages,
-      this.__tokensFreed,
-      this.__code,
-    );
     if (this.__status === 'completed')
-      return <CompactionDetails label={label} summary={this.__summary} />;
+      return (
+        <CompactionDetails
+          label={rowLine(this.__condensedMessages, this.__tokensFreed)}
+          summary={this.__summary}
+        />
+      );
     return (
-      <Marker variant="separator" className="gap-1.5 text-xs">
-        <MarkerContent>
-          {rowLine(
-            this.__status,
-            this.__condensedMessages,
-            this.__tokensFreed,
-            this.__code,
-          )}
-        </MarkerContent>
-      </Marker>
+      <CompactionFailure
+        error={
+          this.__error ??
+          errorFrom(this.__code ?? '', '', undefined, { at: null })
+        }
+        promptId={this.__promptId}
+      />
     );
   }
 
@@ -238,7 +275,8 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
       this.__condensedMessages === turn.condensedMessages &&
       this.__tokensFreed === turn.tokensFreed &&
       this.__code === turn.code &&
-      this.__summary === turn.summary
+      this.__summary === turn.summary &&
+      sameErrorInfo(this.__error, turn.error)
     )
       return;
     const writable = this.getWritable();
@@ -248,6 +286,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
     writable.__tokensFreed = turn.tokensFreed;
     writable.__code = turn.code;
     writable.__summary = turn.summary;
+    writable.__error = turn.error;
   }
 
   override exportJSON(): SerializedCompactionTurnNode {
@@ -261,6 +300,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
       tokensFreed: this.__tokensFreed,
       code: this.__code,
       ...(this.__summary === undefined ? {} : { summary: this.__summary }),
+      ...(this.__error === undefined ? {} : { error: this.__error }),
     };
   }
 
@@ -276,6 +316,7 @@ export class CompactionTurnNode extends DecoratorNode<JSX.Element> {
       serialized.tokensFreed,
       serialized.code,
       serialized.summary,
+      serialized.error,
     );
   }
 }
@@ -289,6 +330,7 @@ export function $createCompactionTurnNode(
   tokensFreed: CompactionTurn['tokensFreed'],
   code: CompactionTurn['code'],
   summary?: string,
+  error?: ErrorInfo,
 ): CompactionTurnNode {
   return new CompactionTurnNode(
     turnKey,
@@ -299,6 +341,7 @@ export function $createCompactionTurnNode(
     tokensFreed,
     code,
     summary,
+    error,
   );
 }
 

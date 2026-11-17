@@ -12,6 +12,7 @@ import {
 } from '../../src/contracts/attachments.js';
 import { attachmentsService } from '../../src/host/services/attachments.js';
 import type { RuntimeStores } from '../../src/host/store/index.js';
+import { testExecution } from '../support/execution.js';
 import { type Backend, backends, snapshot, stores } from './support.js';
 
 const png = (marker: number) =>
@@ -74,6 +75,7 @@ const attachmentTest = (
             const { thread } = await runtime.threads.create(
               project.id,
               'Thread',
+              testExecution,
             );
             return { projectId: project.id, threadId: thread.id };
           },
@@ -110,7 +112,9 @@ attachmentTest(
   'another Thread of the same Project reads the image',
   async ({ from, project, threads }) => {
     const { projectId, threadId } = await project();
-    const child = (await threads.create(projectId, 'Child', threadId)).thread;
+    const child = (
+      await threads.create(projectId, 'Child', testExecution, threadId)
+    ).thread;
 
     const { id } = await from(threadId).attach({
       name: 'cat.png',
@@ -203,7 +207,8 @@ attachmentTest(
   'deleting a Thread deletes the images it attached, bytes and all',
   async ({ backend, from, project, threads }) => {
     const { projectId, threadId } = await project();
-    const sibling = (await threads.create(projectId, 'Sibling')).thread;
+    const sibling = (await threads.create(projectId, 'Sibling', testExecution))
+      .thread;
     const { id } = await from(threadId).attach({
       name: 'cat.png',
       bytes: png(1),
@@ -245,7 +250,9 @@ attachmentTest(
   'deleting a Project deletes the images of every Thread it held',
   async ({ backend, from, project, projects, threads }) => {
     const { projectId, threadId } = await project();
-    const child = (await threads.create(projectId, 'Child', threadId)).thread;
+    const child = (
+      await threads.create(projectId, 'Child', testExecution, threadId)
+    ).thread;
     const first = await from(threadId).attach({ name: 'a.png', bytes: png(1) });
     const second = await from(child.id).attach({
       name: 'b.png',

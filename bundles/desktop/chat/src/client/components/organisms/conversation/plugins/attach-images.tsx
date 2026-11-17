@@ -9,7 +9,8 @@
  */
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { toast } from 'desktop/ui/sonner';
+import { errorInfo } from 'desktop/reads';
+import { toastError } from 'desktop/ui/error-notice';
 import {
   $createLineBreakNode,
   $getSelection,
@@ -29,6 +30,7 @@ import {
 import { useEffect } from 'react';
 
 import { attachmentsApi } from '../../../../api/attachments-api.js';
+import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import {
   $createAttachmentImageNode,
   $isAttachmentImageNode,
@@ -89,9 +91,13 @@ const attach = async (
       const attached = await attachmentsApi.attach(threadId, file, name);
       editor.update(() => $insertImage(attached.name, attached.id));
     } catch (error) {
-      toast.error(
-        `${name} could not be attached: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      toastError({
+        id: `attach-image-${threadId}-${name}`,
+        error: errorInfo(error),
+        catalog: chatErrorCatalog,
+        fallbackCode: 'attach_failed',
+        context: { Thread: threadId, File: name },
+      });
     }
   }
 };

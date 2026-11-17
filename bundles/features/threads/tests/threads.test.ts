@@ -14,8 +14,6 @@ import { createToolStorage, type ToolCall, ToolErrorObject } from 'tool';
 import {
   activatedTools,
   activationRecord,
-  defaultConfiguration,
-  parentThreadId,
   type SpawnFakes,
 } from './support/services.js';
 
@@ -62,7 +60,7 @@ void test('activation provides no service and registers no event', async () => {
   assert.deepEqual(record.events, []);
 });
 
-void test('the manifest is 2.0.0 and declares no provided contract', async () => {
+void test('the manifest is 2.0.1 and declares no provided contract', async () => {
   const manifest = JSON.parse(
     await readFile(new URL('../../manifest.json', import.meta.url), 'utf8'),
   ) as {
@@ -71,7 +69,7 @@ void test('the manifest is 2.0.0 and declares no provided contract', async () =>
     readonly desktopScope?: Record<string, unknown>;
   };
 
-  assert.equal(manifest.version, '2.0.0');
+  assert.equal(manifest.version, '2.0.1');
   assert.deepEqual(manifest.provides ?? [], []);
   assert.equal(
     JSON.stringify(manifest).includes('threads.ask/v1'),
@@ -199,8 +197,14 @@ void test('rejects invalid thread control inputs at the tool boundary', async ()
 // called as `parentThreadId`; `control.spawn` records what the runtime would
 // receive, and the fakes record every other boundary read.
 
-/** One harness: the spawns `control.spawn` received and the boundary calls. */
-const spawnHarness = async (fakes: Omit<SpawnFakes, 'calls'> = {}) => {
+/**
+ * One harness: the spawns `control.spawn` received and the boundary calls.
+ * With `rejection`, `control.spawn` records the spawn and then throws it.
+ */
+const spawnHarness = async (
+  fakes: Omit<SpawnFakes, 'calls'> = {},
+  rejection?: unknown,
+) => {
   const spawns: [string, string | undefined, SpawnOptions | undefined][] = [];
   const calls: unknown[][] = [];
   const control = {
@@ -210,6 +214,7 @@ const spawnHarness = async (fakes: Omit<SpawnFakes, 'calls'> = {}) => {
       options: SpawnOptions | undefined,
     ) => {
       spawns.push([prompt, title, options]);
+      if (rejection !== undefined) throw rejection;
       return { threadId, promptId };
     },
   } as unknown as ThreadControl;
@@ -227,12 +232,6 @@ const onlyOptions = (spawns: readonly unknown[][]): unknown => {
   assert.equal(spawns.length, 1);
   return spawns[0]?.[2];
 };
-
-/** The requests `models/v1.resolve` received. */
-const resolved = (calls: readonly unknown[][]) =>
-  calls
-    .filter(([name]) => name === 'models.resolve')
-    .map(([, request]) => request);
 
 /** The tool call failed in its handler; `check` inspects the original error. */
 const failsWith = (run: Promise<unknown>, check: (cause: unknown) => void) =>
@@ -333,111 +332,13 @@ void test('an invalid workspace agent fails the spawn with the agents error unch
   assert.deepEqual(spawns, []);
 });
 
-void test('a model the execution provider does not list fails before resolving it', async () => {
-  const { spawn, spawns, calls } = await spawnHarness();
-
-  await failsWithMessage(
-    spawn({ prompt: 'task', model: 'gpt-9' }),
-    'Model "gpt-9" is not available on provider "openai". Available models: gpt-5, gpt-5-mini.',
-  );
-  assert.deepEqual(resolved(calls), []);
-  assert.deepEqual(spawns, []);
-});
-
-void test('an effort the listed model does not support fails the spawn', async () => {
-  const { spawn, spawns } = await spawnHarness();
-
-  await failsWithMessage(
-    spawn({ prompt: 'task', model: 'gpt-5', effort: 'max' }),
-    'Effort "max" is not supported by model "gpt-5". Supported efforts: low, medium, high.',
-  );
-  assert.deepEqual(spawns, []);
-});
-
-void test('a model the configured provider cannot resolve fails with the models error', async () => {
-  const { spawn, spawns, calls } = await spawnHarness({
-    configuration: {
-      providers: defaultConfiguration.providers,
-      models: { execution: { providerId: 'missing', model: 'gpt-5-mini' } },
-    },
-  });
-
-  await failsWithMessage(
-    spawn({ prompt: 'task', model: 'x' }),
-    'Configured provider is unavailable.',
-  );
-  assert.deepEqual(resolved(calls), [{ providerId: 'missing', model: 'x' }]);
-  assert.deepEqual(spawns, []);
-});
-
-void test('a provider without a model list accepts any model and effort', async () => {
-  const { spawn, spawns, calls } = await spawnHarness({
-    configuration: {
-      providers: [
-        { id: 'local', kind: 'openai-compatible', configuration: {} },
-      ],
-      models: { execution: { providerId: 'local', model: 'base' } },
-    },
-  });
-
-  await spawn({ prompt: 'task', model: 'anything', effort: 'xhigh' });
-
-  assert.deepEqual(resolved(calls), [
-    { providerId: 'local', model: 'anything', effort: 'xhigh' },
-  ]);
-  // The model is given: the parent's record is never read.
-  assert.equal(
-    calls.some(([name]) => name === 'thread'),
-    false,
-  );
-  assert.deepEqual(onlyOptions(spawns), { model: 'anything', effort: 'xhigh' });
-});
-
-void test('an effort alone is checked against the model the parent runs on', async () => {
-  const { spawn, spawns, calls } = await spawnHarness({
-    parent: { model: 'gpt-5' },
-  });
-
-  await spawn({ prompt: 'task', effort: 'high' });
-
-  assert.ok(
-    calls.some((entry) => entry[0] === 'thread' && entry[1] === parentThreadId),
-  );
-  assert.deepEqual(resolved(calls), [
-    { providerId: 'openai', model: 'gpt-5', effort: 'high' },
-  ]);
-  // The child inherits the parent's model on its own: only the effort is passed.
-  assert.deepEqual(onlyOptions(spawns), { effort: 'high' });
-});
-
-void test("an effort the parent's model does not support fails the spawn", async () => {
-  const { spawn, spawns } = await spawnHarness({ parent: { model: 'gpt-5' } });
-
-  await failsWithMessage(
-    spawn({ prompt: 'task', effort: 'max' }),
-    'Effort "max" is not supported by model "gpt-5". Supported efforts: low, medium, high.',
-  );
-  assert.deepEqual(spawns, []);
-});
-
-void test('an effort alone under a parent without a model uses the execution model', async () => {
-  const { spawn, spawns, calls } = await spawnHarness({ parent: {} });
-
-  await spawn({ prompt: 'task', effort: 'low' });
-
-  assert.deepEqual(resolved(calls), [
-    { providerId: 'openai', model: 'gpt-5-mini', effort: 'low' },
-  ]);
-  assert.deepEqual(onlyOptions(spawns), { effort: 'low' });
-});
-
 void test("an agent's model and effort apply unless the spawn names its own", async () => {
   const agent = {
     name: 'review',
     source: 'workspace',
     instructions: 'Review it.',
   };
-  const { spawn, spawns, calls } = await spawnHarness({
+  const { spawn, spawns } = await spawnHarness({
     agents: () => ({
       ...agent,
       source: 'workspace',
@@ -462,10 +363,6 @@ void test("an agent's model and effort apply unless the spawn names its own", as
       { agent, model: 'gpt-5-mini', effort: 'high' },
     ],
   );
-  assert.deepEqual(resolved(calls), [
-    { providerId: 'openai', model: 'gpt-5', effort: 'low' },
-    { providerId: 'openai', model: 'gpt-5-mini', effort: 'high' },
-  ]);
 });
 
 void test('an agent fails the spawn when no runtime provides agent types', async () => {
@@ -482,4 +379,100 @@ void test('an agent fails the spawn when no runtime provides agent types', async
     JSON.stringify({ threadId, promptId }),
   );
   assert.deepEqual(spawns, [['task', undefined, undefined]]);
+});
+
+// T-21: thread-spawn checks no model or effort itself. It passes them to
+// `spawn`, whose rejection is the tool's error; the harness provides neither
+// host-config/v1 nor models/v1, so reading either would fail the call.
+
+void test('T-21 passes a model and an effort to spawn without reading the configuration or models/v1', async () => {
+  const { spawn, spawns, calls } = await spawnHarness();
+
+  assert.equal(
+    await spawn({ prompt: 'task', model: 'gpt-9', effort: 'max' }),
+    JSON.stringify({ threadId, promptId }),
+  );
+  assert.deepEqual(onlyOptions(spawns), { model: 'gpt-9', effort: 'max' });
+  assert.deepEqual(calls, []);
+});
+
+void test('T-21 passes an effort alone to spawn, for the runtime to complete with the parent model', async () => {
+  const { spawn, spawns, calls } = await spawnHarness();
+
+  await spawn({ prompt: 'task', effort: 'high' });
+
+  assert.deepEqual(onlyOptions(spawns), { effort: 'high' });
+  assert.deepEqual(calls, []);
+});
+
+const invalidModel = new ContractError(
+  'invalid_execution',
+  'Model "gpt-9" is not available on provider "openai". Available models: gpt-5, gpt-5-mini.',
+  { issue: 'model' },
+);
+
+void test("T-21 an invalid_execution model rejection of an agent definition's model names the agent and keeps the runtime's message", async () => {
+  const { spawn, spawns } = await spawnHarness(
+    {
+      agents: () => ({
+        ...review,
+        source: 'workspace',
+        model: 'gpt-9',
+      }),
+    },
+    invalidModel,
+  );
+
+  await failsWithMessage(
+    spawn({ prompt: 'task', agent: 'review' }),
+    `Agent "review" names model "gpt-9", which its parent thread's provider does not list. ${invalidModel.message}`,
+  );
+  assert.equal(spawns.length, 1);
+});
+
+void test("T-21 the same rejection when the input names the model is the runtime's error alone", async () => {
+  const { spawn } = await spawnHarness(
+    {
+      agents: () => ({
+        ...review,
+        source: 'workspace',
+        model: 'gpt-5',
+      }),
+    },
+    invalidModel,
+  );
+
+  await failsWith(
+    spawn({ prompt: 'task', agent: 'review', model: 'gpt-9' }),
+    (cause) => {
+      assert.ok(isContractError(cause));
+      assert.equal(cause.code, 'invalid_execution');
+      assert.equal(cause.message, invalidModel.message);
+    },
+  );
+});
+
+void test("T-21 an effort rejection of an agent definition's values is the runtime's error alone", async () => {
+  const invalidEffort = new ContractError(
+    'invalid_execution',
+    'Effort "max" is not supported by model "gpt-5". Supported efforts: low, medium, high.',
+    { issue: 'effort' },
+  );
+  const { spawn } = await spawnHarness(
+    {
+      agents: () => ({
+        ...review,
+        source: 'workspace',
+        model: 'gpt-5',
+        effort: 'max',
+      }),
+    },
+    invalidEffort,
+  );
+
+  await failsWith(spawn({ prompt: 'task', agent: 'review' }), (cause) => {
+    assert.ok(isContractError(cause));
+    assert.equal(cause.code, 'invalid_execution');
+    assert.equal(cause.message, invalidEffort.message);
+  });
 });

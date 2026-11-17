@@ -753,7 +753,7 @@ Minimal bundle sheets (U15). `bundles/features/screen/src/client/styles.css` and
 
 - Why a list and not a scan. Version 8 first had each sheet scan its bundle's `src/client/` (`@source './'`, about 8 KB and 15 KB). The cascade check below, run on those sheets on 2026-11-11, found re-emitted classes that change elements of other bundles, in every window, since every window loads every bundle sheet (Terms, "Renderer sheet, bundle sheet"):
   - mcp's `border` after `border-l-3` turns the 3 px left edge of a comment line into 1 px (`bundles/desktop/chat/src/client/components/molecules/comment-line.tsx:134`, `bundles/desktop/chat/src/client/components/organisms/comment-entry.tsx:445`);
-  - mcp's `transition-transform` after `motion-reduce:transition-none` animates the thread rail's icon under reduced motion (`bundles/desktop/chat/src/client/components/molecules/thread-nav-rail.tsx:206`);
+  - mcp's `transition-transform` after `motion-reduce:transition-none` animates the thread rail's icon under reduced motion (`bundles/desktop/chat/src/client/components/molecules/thread-nav-rail.tsx:206`; removed since, the rail no longer draws that icon);
   - mcp's `hover:text-foreground` after `dark:text-muted-foreground` changes a hovered inactive tab's text in the dark theme (`packages/desktop/src/components/tabs.tsx:58`).
 
   The scanned sheets gave 28 (screen) and 73 (mcp) candidate pairs found on one element or through a `*:` rule (step 3 of the check), each to be judged by hand on every change to either bundle. The lists hold only the phase 5 classes, and their check below finds no conflict. The user kept the lists (SQ9, closed).

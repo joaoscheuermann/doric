@@ -124,6 +124,11 @@ Base UI across the app. Where this section says "the renderer", it means those
 bundles in the window.
 All app footers use font weight 400, including their nested text and controls,
 enforced by one shared stylesheet rule.
+The conversation footer and a child Thread's footer in the viewer float over the
+bottom 44 px of their conversation, 8 px over and under a 28 px row, on the
+background at 70 % with a 2 px backdrop blur; the transcript scrolls on under
+them to the card's bottom edge, the conversation's scrollbar ends 44 px above
+that edge and its scroll padding is 44 px.
 The conversation footer shows OpenRouter context usage without a text
 prefix or progress bar and an approximate dollar total. Spacing alone separates
 the execution picker, context text and cost. Context uses the selected Thread's last
@@ -152,7 +157,8 @@ context is reconstructed from the surviving events. Old Threads lazily derive
 their totals from retained events until the next response event materializes them.
 When old measurements lack capacity, the usage read fills it from the current
 OpenRouter catalog for the measured model, marking that source in the tooltip.
-New measurements retain the configured provider id; legacy measurements resolve
+New measurements retain the run's provider id (`response.started` carries the
+Thread's `providerId`); legacy measurements resolve
 only when exactly one OpenRouter provider lists that model. Recorded capacities
 remain authoritative. Historical `unified` events remain readable for accounting.
 The OpenRouter provider shares its model catalog between
@@ -333,12 +339,12 @@ If that Thread creation fails after the Project was saved, the desktop opens the
 saved Project and reports the failure without resubmitting Project creation. One
 full-height resize handle owns the sidebar boundary, with no divider inside
 the sidebar; the sidebar stays expanded and the handle draws no grip of its
-own. A segmented
-footer shares that geometry: the sidebar side shows the Electron main process's
-Socket.IO connection status, while the content side carries the execution picker
-— the model a prompt is sent to and its reasoning effort — beside the
-settings trigger. The conversation footer combines the selected Thread's working
-directory and branch in one popover trigger, without a Git icon. An adjacent
+own. The conversation footer, a 44 px band floating over the conversation's
+bottom, carries the execution picker — the model a prompt is sent to and its
+reasoning effort — first, with the composer and usage items after it. Settings
+open from the account avatar in the Files column header. The Files column
+footer combines the selected Thread's working directory and branch in one
+popover trigger, without a Git icon. An adjacent
 added/removed line-count button opens the right panel's Changes tab for the current
 directory; counts share its lightweight status query.
 The footer shows the full CWD, a middle dot and the branch, truncating the path
@@ -353,10 +359,13 @@ the host still rejects unsafe switches.
 Conversation streaming preserves focus and selection in external controls; transcript
 updates do not restore the editor's DOM selection while a popover or another input
 owns focus.
-The Conversation Trail uses base widths of 10 pixels for accepted user prompts and
-grouped queued receipts, and 12 pixels for subthread results. Inactive queued
-handles use a subtle primary tint distinct from ordinary prompts; every active
-handle uses the full primary color, including during hover. Block handles
+The Conversation Trail sits in its own 26-pixel column to the left of the
+conversation's scroll area, not inside it, so the scrollbar stays at the pane's
+right edge; its hover popover opens to the right of the handle; wheel and touch over that column scroll the
+conversation. It has one handle per accepted prompt the reader wrote, then a
+final "Go to the end" bar; queued receipts, delegated parent instructions and
+subthread results, and unsent drafts have no handle. Handles have a base width of 10
+pixels; every active handle uses the full primary color, including during hover. Block handles
 follow transcript order and jump instantly to place their block's top at 40%
 of the conversation viewport where scroll range permits; the first and last
 blocks stop at the available scroll edges. A clicked block handle stays
@@ -364,21 +373,15 @@ active until the reader scrolls manually, even when an edge prevents
 exact alignment. Clicking a trail handle briefly fills its destination with a
 neutral hover-like background, which fades by CSS transition to a subtle tint;
 manual scrolling or hovering the highlighted block clears that tint. Passive
-visibility changes never trigger this effect. Parent instructions and unsent
-drafts have no handle. Trail
-previews identify user prompts with the
-reader's avatar and subthread results with the agent's bot icon and name. A
-result preview also names its child Thread and links to it when that Thread is
-still in the loaded tree, with an open-tab icon; otherwise it shows the short ID.
-Hovering a handle makes it 17 pixels wide regardless of type, while its two
+visibility changes never trigger this effect. Trail previews identify user
+prompts with the reader's avatar.
+Hovering a handle makes it 17 pixels wide, while its two
 nearest neighbors step up in width and brightness. The cascade changes only the
 handles and ends when the pointer leaves the handle. The visible block's
-primary-color highlight remains independent. A subthread result takes the
-highlight as soon as it enters the visible conversation, even when it is too
-short to reach the viewport's top.
+primary-color highlight remains independent.
 Conversation scrolling rests at the end of the scrollable content: the surface
 opens with the caret in the prompt and the view at the end, and the trail's
-Prompt Input handle goes to the end. Opening or choosing that handle keeps the
+last handle, a bar labelled "Go to the end", goes to the end. Opening or choosing that handle keeps the
 view at the end while the transcript loads and grows, including late layout
 changes, until the reader scrolls away. A reader who scrolled away keeps the
 same visible content while later turns arrive; scrolling back within 32 pixels
@@ -428,8 +431,9 @@ mark, whose opaque backing follows the row's state.
 Both trees share a lightweight Git status read, separate from file comparisons.
 Status preserves staged and unstaged changes, conflicts, and rename origins;
 NUL-delimited Git output preserves special characters in file names. The tabs sit in the
-Project tab bar's right side. The panel's footer carries the hardware
-monitor and shares the conversation footer's height. The monitor reports the
+Project tab bar's right side. The panel's footer is one 28 px row holding the
+working directory and branch. The hardware monitor sits in a slot over the
+account avatar's bottom-right corner, in the Files column header. The monitor reports the
 selected Project's sandbox — the container's own CPU against the cores it was
 given and its memory against its cgroup limit — beside the machine Doric runs
 on, which the host process reads from its own kernel. It polls every three
@@ -440,7 +444,7 @@ threshold wears the theme's warning tone: memory at 85 percent of its limit, or
 CPU sustained at 90 percent. The sandbox half answers the lease states every
 Project subresource answers — still being acquired, unavailable in this provider,
 or unknown — while the machine half depends on no lease. Working-directory,
-branch and changes controls appear only in the conversation footer.
+branch and changes controls appear only in the Files column footer.
 Selecting a file opens a resizable division between the
 conversation and sandbox panel. This division keeps multiple tabs per Thread,
 mixing files, individual Git comparisons, both agent and manual terminals, and
@@ -642,6 +646,21 @@ unavailable. The model list and selector share the compact bordered popover
 styling used for conversation costs, with the selector in a shaded footer. Its
 effort menu and the footer's effort menu use compact rows, a subtle highlight
 for the selected level, and the same bordered surface.
+The execution model chosen in Settings is the workspace default; each Thread
+stores its own `providerId`, `model` and `effort`. A new top-level Thread copies
+the default at creation; a child inherits its parent's, and a spawn may override
+the model and effort on the parent's provider (a model-only override naming
+another model takes that model's start effort; naming the parent's own model
+keeps the parent's effort). A Thread stored without `providerId` runs on the
+default's provider, with its own stored model and effort over the default's
+when set, until its execution is first changed. The conversation footer's picker edits
+only the selected Thread's execution through `runtime.threads/v1`
+`setThreadExecution` (1.7.0), shows the default read-only with no Thread
+selected, applies a change from the Thread's next run, and never
+writes `models.execution`. A Thread whose stored provider or model is gone
+fails each run with `thread_execution_unavailable`, and its manual compaction
+fails as `summarizer_failed`
+([docs/features/per-thread-model.md](docs/features/per-thread-model.md)).
 A credential is named and has one of a set of kinds that fixes its fields: the
 built-in `API_TOKEN` is authentication, which a provider key and the GitHub token
 both are; `USERNAME_PASSWORD` is authentication with a name; and the kinds a
@@ -674,7 +693,8 @@ within each Thread remains serial. Threads share their Project's sandbox;
 each Thread's working directory starts at the sandbox's workspace root
 `/workspace` and is inherited by a child Thread at creation. The agent moves it
 with the `cwd` tool, and a reader moves the same Thread's with
-`PATCH /threads/:id`; both reach one rule, which refuses any path that resolves
+`PATCH /threads/:id` (which also sets the Thread's `providerId`, `model` and
+`effort`); both reach one rule, which refuses any path that resolves
 outside the workspace root. The `cwd` result also says whether the directory
 is a repository root ([docs/features/cwd-tool.md](docs/features/cwd-tool.md)). The
 existing sandbox-pool capacity governs Projects, not Threads.
@@ -710,18 +730,21 @@ optional title its parent gives it, or the start of its prompt without one.
 A spawn may also name an agent (`name`, `source` `built-in` or `workspace`,
 and instructions of at most 64 000 characters), a model and a reasoning effort
 (`runtime.threads/v1` 1.6.0); the runtime stores them in the child's
-`runtime.thread/v1` document (1.1.0) as a snapshot taken at the spawn. A child
-spawned without a model or an effort takes its parent's stored value, and an
-agent is never inherited. The runtime does not check the model or the effort;
-the `thread-spawn` tool does, before it spawns: against the models the
-configured execution provider lists (a provider without a list accepts any),
-then through `models/v1`. The public Thread record shows the agent's name and
-source, the model and the effort, never the instructions; the runner reads them
+`runtime.thread/v1` document (1.2.0) as a snapshot taken at the spawn, with the
+parent's `providerId`. A child spawned without a model or an effort takes its
+parent's stored value (a spawn naming another model alone takes that model's
+start effort; naming the parent's own model keeps the parent's effort), and an
+agent is never inherited. The runtime checks the model and the effort before
+it spawns (`runtime` 2.7.0): against the models the parent's provider lists (a
+provider without a list accepts any), then through `models/v1.resolve`; the
+`thread-spawn` tool (`threads` 2.0.1) reads no configuration or models. The
+public Thread record shows the agent's name and source, the `providerId`, the
+model and the effort, never the instructions; the runner reads them
 from the stored document on every run and hands them to the executor as
 `thread.agent.instructions`, so a retry, a parent's send, the restart of a
 failed child and a run after a host restart use the same values. The default
-executor (`executor/v1` 1.3.0) runs the Thread as that agent, with its model
-and effort in place of the configured ones on the configured provider; when no
+executor (`executor/v1` 1.5.0) runs the Thread as that agent, with its model
+and effort on the Thread's stored provider; when no
 instructions are stored for an agent Thread, the runner drops the agent and the
 Thread runs as the default agent.
 
@@ -766,9 +789,10 @@ run's prompt variables (instructions citing another name fail the run before
 its first model request), then the run's `# Agents` section, then its
 `# Skills` section, which `src/host/agents` and `src/host/skills` build once
 per prompt run and which stay the same for the whole run. Each run uses the
-Thread's own model and effort when it has them, else the configured execution
-ones, always on the configured provider; the run's automatic compaction uses
-the run's model, and a manual compaction the configured one. The agents a Thread
+Thread's stored provider, model and effort (a Thread without `providerId` runs
+on the configured default's provider, with its own stored model and effort over
+the default's when set); the run's automatic compaction uses the run's
+model, and a manual compaction the Thread's. The agents a Thread
 can be spawned as are served by `default.agents/v1` (host-only, `list` and
 `resolve`): the built-in agents shipped with the bundle (the ten
 coding-workflow steps `triage` … `docs`; an invalid one makes activation
@@ -929,7 +953,9 @@ payload)` to the same bundle in every other live generation. The kernel names
 Client reads and UI that name a bundle's concept belong to that bundle.
 `packages/desktop/reads` and `packages/desktop/ui` hold only generic primitives
 (refresh queues, path utilities, tree and panel components, tokens, and the
-pan, zoom and wheel-gesture helpers of `desktop/ui/viewport`).
+pan, zoom and wheel-gesture helpers of `desktop/ui/viewport`, and the error
+notice of `desktop/ui/error-notice`). Bundle-specific error codes stay in each
+bundle's error catalog, which the bundle passes to the shared notice.
 
 ### Current Runtime
 
@@ -1676,7 +1702,9 @@ UUID prompt identifier compatible with event storage. The
 finished event retains the exact summary message and its `summaryId`, so each
 completed compaction node can expand to read and copy its own Markdown summary
 after a shimmering `Compacting` row appears on `compaction.started` and updates
-in place on completion or failure. The expansion icon sits immediately after
+in place on completion or failure. `compaction.failed` carries its `code` and,
+when known, the `error` behind it; a failed compaction row shows an error
+notice with that code and cause. The expansion icon sits immediately after
 the completed row's label, on its right. The saved summary remains available
 after later compactions. Legacy events without a saved summary show that it is
 unavailable. A span containing only existing summary messages is refused as
@@ -1757,12 +1785,15 @@ contract to the window, the `desktopMain` generation or the host; at stage 8 the
 legacy Project, Thread, settings and terminal IPC channels remained beside it
 and the renderer was the shell's legacy React tree (both removed by stage 9);
 the shared desktop package is `packages/desktop`: `desktop/ui` supplies tokens,
-theme, fonts, shadcn/ui components and the reader's identity
-(`desktop/ui/identity`, `desktop/ui/reader-avatar`), whose overlays portal into the
+theme, fonts, shadcn/ui components — whose overlays portal into the
 container the nearest `PortalContainerProvider` (`desktop/ui/portal-container`,
 also exported by `desktop/ui`) names, else into `document.body`, while a
-`container` passed to a `*Portal` wins; `desktop/client` runs the window;
-`desktop/reads` supplies generic read helpers; and `desktop/protocol` names the
+`container` passed to a `*Portal` wins — the reader's identity
+(`desktop/ui/identity`, `desktop/ui/reader-avatar`), and the error notice and
+`toastError` (`desktop/ui/error-notice`, which also holds the shared error
+catalog entries); `desktop/client` runs the window;
+`desktop/reads` supplies generic read helpers, the error value (`ErrorInfo`,
+`errorInfo`, `errorFrom`, `sameErrorInfo`), `ClientError` and the error catalog types; and `desktop/protocol` names the
 window-main API. `app/desktop/doric-platform` builds the platform files and
 import map (React, ReactDOM, Lexical, Base UI, zod, `desktop/ui` and
 `bundle/contracts`); Base UI (`@base-ui/react` and each exported subpath) is
@@ -1847,6 +1878,8 @@ The sidebar alignment replaces `layout.stack/v1` with `layout.stack/v2@2.0.0`
 (panes pinned under the Thread region, no sizes), adds
 `layout.sidebar/v1@1.1.0` (`busy`), and moves layout to 3.0.0 and the
 platform to 1.6.0 (`ScrollArea.scrollbars`).
+The error messages change moves the platform to 1.7.0
+(`desktop/ui/error-notice`).
 `alwaysAvailable` (a `tools/v1` registration option and an optional skill
 frontmatter key) is recorded and, for tools, never consulted: every registered
 tool is bound on every prompt. For skills it decides where the default agent
@@ -2138,7 +2171,8 @@ provider integration.
 The `host-config` bundle receives complete singleton configuration replacements
 through `PUT /config`, which the `transport` bundle routes to it. It persists only provider IDs, the kind each provider is, the
 configuration values that kind declares, the models each provider offers, one
-`models.execution` profile, `execution.maxTurns`, and an optional `profile`
+`models.execution` profile (the default execution new top-level Threads
+store), `execution.maxTurns`, and an optional `profile`
 with the user's name and time zone. That `profile` (strict, last in the
 configuration, `host-config/v1` and `host-config.configuration/v1` 1.1.0)
 carries an optional `name`, trimmed, 1–100 characters on one line, and an
@@ -2644,6 +2678,11 @@ volume, not privacy. Consumers own display, persistence, and privacy policies;
 this does not change host credential handling or add payloads to operational
 logs. HTTP stream-opening failures retain structured status and diagnostic
 information and are normalized to provider errors without changing cancellation.
+A transport failure whose cause chain, followed up to 8 levels, carries
+`UND_ERR_CONNECT_TIMEOUT`, `ECONNREFUSED`, `ECONNRESET`, `UND_ERR_SOCKET` or
+`EAI_AGAIN`, including a connection dropped mid-stream, becomes a retryable
+`network_error` provider error that keeps the original error as its cause;
+`ENOTFOUND` and aborts pass through unchanged.
 Provider requests may set
 `flags.includeStructuredSchemaOnSystemPrompt: true` together with `schema` to
 append one deterministic, collision-safe Markdown system message containing
@@ -2710,10 +2749,19 @@ submission, throws `output_truncated` instead of repairing. A `content_filter`
 turn drops its calls, is stored without them, and throws `provider_refusal`. A
 stream that ends on a provider `error` event throws that provider error. A
 provider failure marked `retryable`, thrown or streamed before any output, is
-asked again up to `retry.retries` (2) times; the wait is the provider's
-`retryAfterMs` or `retry.baseDelayMs` (1000) doubled, capped by
-`retry.maxDelayMs` (30000), and the abort signal ends it. A turn that already
-streamed output is never retried.
+asked again with a separate budget per kind: up to `retry.networkRetries` (4)
+times for a `network_error` connection failure and up to `retry.retries` (2)
+times for any other; the wait is the provider's `retryAfterMs` or
+`retry.baseDelayMs` (1000) doubled, capped by `retry.maxDelayMs` (30000), and
+the abort signal ends it. A thrown connection failure that exhausts its
+retries after at least one retry fails the run with "Could not connect to
+<provider> (tried N times).", N counting every attempt of the turn, and the
+transport error as cause; with `retry.networkRetries: 0` the original "Could
+not connect to <provider>." error is thrown, and a stream `error` event is
+passed on unchanged. A turn that already streamed output is never retried.
+Retry counts must be non-negative safe integers and delays non-negative
+numbers, or agent creation throws a `TypeError`; a field set to `undefined`
+replaces its default and throws too.
 Handler failures are never retried by this protocol repair path. Structured
 runs require a terminal tool call at the runtime validation boundary and
 disable parallel tool calls. They do not force provider `tool_choice`, because
@@ -3030,7 +3078,8 @@ and `prompt.resumed` carries the attempt number of a prompt the host took up
 again. An interrupted prompt is resumed from the provider history persisted as
 the run advanced, so it continues where it stopped, and an attempt budget counted
 from those events stops a prompt that keeps interrupting the host: it is closed
-as a failure carrying the `resume_exhausted` code. Closing an exhausted delegated
+as a failure carrying the `resume_exhausted` code, whose message is English and
+which the chat titles "Execution stopped". Closing an exhausted delegated
 prompt also accepts its correlated result for an active parent in the same
 transaction; the boot queues that result once. `prompt.finished` carries the
 input source, terminal status, and response text;
@@ -3188,12 +3237,17 @@ base64 in a bridge envelope.
 From `executor/v1` 1.3.0 the executor's `run` and `compact` receive the Thread
 as an `ExecutorThread`: the public record whose `agent`, when present, also
 carries the agent's instructions, checked at the boundary by
-`executorThreadSchema`; the runtime still requires `executor/v1@^1.0.0`.
+`executorThreadSchema`. From 1.4.0 the executor runs and compacts on the
+Thread's own provider (`providerId`); the runtime requires
+`executor/v1@^1.4.0`, since an older executor would ignore the Thread's
+provider.
 
 A failed tool call's row and a prompt's failure marker read the stored error,
-not only its outermost message: its message, then each cause's on its own line
-(`Caused by: …`), starting below the tool registry's `handler_failed` wrapper,
-so the reader sees the reason the model read.
+not only its outermost message: each draws an error notice
+(`desktop/ui/error-notice`) with a title from the error's code, a muted
+explanation and, in its collapsed details, the message and then each cause on
+its own line (`Caused by: …`), starting below the tool registry's
+`handler_failed` wrapper, so the reader sees the reason the model read.
 
 The conversation states the two lifecycle events as markers between the blocks
 they sit between: a pause reads as a quiet row — the reason it

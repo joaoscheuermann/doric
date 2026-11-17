@@ -38,6 +38,10 @@ type ModelPickerProps = {
   readonly reasoning: Reasoning;
   /** The composite key of the selected model, for the check the list draws. */
   readonly value: string;
+  /** Whether the trigger is disabled; the popover never opens. */
+  readonly disabled?: boolean;
+  /** The trigger's tooltip, e.g. why it is disabled. */
+  readonly title?: string;
 };
 
 /**
@@ -59,6 +63,8 @@ export function ModelPicker({
   onSelect,
   reasoning,
   value,
+  disabled = false,
+  title,
 }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -73,11 +79,13 @@ export function ModelPicker({
       }}
     >
       <PopoverTrigger
+        disabled={disabled}
         render={
           <Button
             variant="ghost"
             size="sm"
             aria-label={ariaLabel}
+            title={title}
             className="max-w-72 min-w-0 gap-2"
           />
         }

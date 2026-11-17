@@ -2,8 +2,15 @@
  * The chat bundle's styles (design §9.4): the utilities its components use,
  * over the platform theme the window loads once, and the conversation's own
  * rules moved from the renderer's sheet with their layering unchanged: the
- * Lexical placeholder and the conversation scroll and trail rules in the base
- * layer, the queue-edit surface and the markdown theme unlayered.
+ * Lexical placeholder and the scroll viewport and trail rules in the base
+ * layer; the column's rules, the `.conversation-scroll` pane rule, the
+ * queue-edit surface and the markdown theme unlayered. The pane rule also
+ * isolates the scroll area (`isolation: isolate`, conversation-footer spec, D7,
+ * §6), so the layers inside the transcript stack within it and a footer floating
+ * over it paints on top with no `z-index`; layout 3.0.3 relies on it. The rules
+ * a floating footer needs are unlayered too (§3, §4): the conversation's vertical
+ * bar and scroll padding, read from `--chat-footer-height`, and the viewer
+ * footer's height, fill and blur.
  *
  * The layer order is stated here, not only in the platform theme: a preview (or
  * a page) that loads this sheet before `theme.css` would otherwise create the
@@ -109,36 +116,9 @@
     overflow-anchor: none;
   }
 
-  /*
-   * The trail's arrow is drawn in ink, not in a bar's translucent fill: where
-   * the chevron crosses its own stem, an alpha stroke composites twice and the
-   * joins read darker than the rest of the glyph. These are the same muted
-   * foreground laid over the conversation's background once — `in srgb`, the
-   * space alpha composites in — so each step is the colour an alpha bar shows
-   * there, opaque, with nothing to overlap.
-   */
-  .conversation-trail {
-    --trail-ink-60: color-mix(
-      in srgb,
-      var(--muted-foreground) 60%,
-      var(--background)
-    );
-    --trail-ink-45: color-mix(
-      in srgb,
-      var(--muted-foreground) 45%,
-      var(--background)
-    );
-    --trail-ink-30: color-mix(
-      in srgb,
-      var(--muted-foreground) 30%,
-      var(--background)
-    );
-  }
-
   /* A trail click briefly uses the same neutral surface as a hovered button.
      The solid shadow gives the tint breathing room without shifting scroll positions. */
-  .conversation-scroll
-  :is([data-prompt-id], [data-queued-prompt-id], [data-prompt-input]) {
+  .conversation-scroll :is([data-prompt-id], [data-prompt-input]) {
     border-radius: var(--radius-sm);
     background-color: transparent;
     box-shadow: 0 0 0 0.5rem transparent;
@@ -160,8 +140,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .conversation-scroll
-      :is([data-prompt-id], [data-queued-prompt-id], [data-prompt-input]) {
+    .conversation-scroll :is([data-prompt-id], [data-prompt-input]) {
       transition-duration: 0ms;
     }
   }
@@ -288,10 +267,39 @@
 .conversation-scroll {
   container-type: inline-size;
   font-weight: 300;
+  isolation: isolate;
+}
+
+/* `--chat-footer-height` is the height of a footer floating over the bottom of
+   the conversation: the footer's owner sets it to 2.75rem on the footer's
+   positioned parent (`<chat-thread-panel>`'s own footer, and from layout 3.0.3
+   the layout's conversation footer); unset, it is 0. The
+   vertical bar ends where that footer begins (only its height changes, so it
+   keeps its right edge), and a block the browser scrolls into view stops above
+   it. */
+.conversation-scroll
+> [data-slot='scroll-area-scrollbar'][data-orientation='vertical'] {
+  height: calc(100% - var(--chat-footer-height, 0px));
+}
+
+.conversation-scroll > [data-slot='scroll-area-viewport'] {
+  scroll-padding-bottom: var(--chat-footer-height, 0px);
+}
+
+/* The viewer footer (`<chat-thread-panel>`'s own footer) floats over the
+   conversation (conversation-footer spec, D2 and D13): as tall as
+   `--chat-footer-height`, which `<chat-thread-panel>` sets beside it (D13);
+   the card's background at 70 % with a 2 px backdrop blur, so the transcript
+   shows through it. */
+[data-slot='chat-thread-footer'] {
+  height: var(--chat-footer-height);
+  background-color: color-mix(in oklab, var(--background) 70%, transparent);
+  backdrop-filter: blur(2px);
 }
 
 /* The column's own left padding holds the mark (1.875rem, `index.tsx`). A
-   pane narrower than the column's 48rem — a viewer beside the conversation —
+   scroll area narrower than the column's 48rem — a pane narrower than 48rem
+   plus the trail's 26 px column, as with a viewer beside the conversation —
    gives the text more room from the pane's edge and the first line more room
    from the top: 40 px and 16 px, as Figma's 432 px viewer draws them
    (`99:8508`, `36:21281`). The mark still stands whole inside the padding,

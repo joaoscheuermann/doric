@@ -152,6 +152,7 @@ export const toThread = (stored: ThreadDocument): Thread => ({
     : { agent: { name: stored.agent.name, source: stored.agent.source } }),
   ...(stored.model === undefined ? {} : { model: stored.model }),
   ...(stored.effort === undefined ? {} : { effort: stored.effort }),
+  ...(stored.providerId === undefined ? {} : { providerId: stored.providerId }),
 });
 
 /** The record with the executor-only instructions, when it has an agent. */
@@ -631,7 +632,7 @@ export const createThreadStore = (
       return threadUsage(rows);
     },
 
-    create(projectId, name, parentThreadId, inherit, origin, options) {
+    create(projectId, name, execution, parentThreadId, inherit, origin, agent) {
       const id = randomUUID();
       return projects.mutate(projectId, async (owner) => {
         if (
@@ -677,9 +678,12 @@ export const createThreadStore = (
           updatedAt: at,
           startedAt: null,
           finishedAt: null,
-          ...(options?.agent === undefined ? {} : { agent: options.agent }),
-          ...(options?.model === undefined ? {} : { model: options.model }),
-          ...(options?.effort === undefined ? {} : { effort: options.effort }),
+          ...(agent === undefined ? {} : { agent }),
+          model: execution.model,
+          ...(execution.effort === undefined
+            ? {}
+            : { effort: execution.effort }),
+          providerId: execution.providerId,
           createdKey: createdKey(at, id),
         };
         return {
@@ -750,6 +754,21 @@ export const createThreadStore = (
     // The directory and its hint are one write: a hint can never describe a
     // directory the Thread is no longer in.
     setCwd: (id, cwd, cwdRepo) => update(id, { cwd, cwdRepo: cwdRepo ?? null }),
+
+    // Provider, model and effort are one write; an absent effort is removed.
+    setExecution: (id, execution) =>
+      threads.mutate(id, (current) => {
+        if (current === undefined) return { done: () => undefined };
+        const { effort: _removed, ...rest } = current.value;
+        const value = touched(rest, {
+          model: execution.model,
+          ...(execution.effort === undefined
+            ? {}
+            : { effort: execution.effort }),
+          providerId: execution.providerId,
+        });
+        return { value, done: () => toThread(value) };
+      }),
 
     setState: (id, state, activePromptId, errorCode) =>
       threads.mutate(id, (current) => {

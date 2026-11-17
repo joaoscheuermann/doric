@@ -64,7 +64,7 @@ const failure = (promptId = 'p1'): Turn => ({
   type: 'failure',
   promptId,
   events: [],
-  failure: { name: 'AgentError', code: 'tool_failed', message: '' },
+  failure: { code: 'tool_failed', message: '', causes: [] },
 });
 
 describe('lastReaderText', () => {

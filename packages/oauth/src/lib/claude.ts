@@ -418,7 +418,9 @@ const claudeHome = (
   options: ResolveClaudeAuthOptions,
   env: Readonly<Record<string, string | undefined>>,
 ): string =>
-  options.claudeHome ?? clean(env.CLAUDE_CONFIG_DIR) ?? join(homedir(), '.claude');
+  options.claudeHome ??
+  clean(env.CLAUDE_CONFIG_DIR) ??
+  join(homedir(), '.claude');
 
 const error = (
   code: string,

@@ -25,6 +25,14 @@ import {
 import { z } from 'zod';
 
 import {
+  announced,
+  noticesIn,
+  retryOf,
+  type Toasts,
+  titleOf,
+  windowToasts,
+} from './support/notices.js';
+import {
   type HostAnswer,
   openSettingsWindow,
   type ProbeBundle,
@@ -129,9 +137,9 @@ const answerIcons = (input: unknown) => {
 };
 
 /** A host with the configuration stored; a replace stores what it gets. */
-const host = (): Record<string, HostAnswer> => {
+const host = (initial: unknown = configuration): Record<string, HostAnswer> => {
   let revision = 1;
-  let stored: unknown = configuration;
+  let stored: unknown = initial;
 
   return {
     'host-config/v1.current': () => ({
@@ -172,7 +180,7 @@ const LayoutDashboardV1 = ref<LayoutDashboard>('layout.dashboard/v1');
  * schemas the layout declares, the dashboard route mounting the Providers
  * group, and the provider page's host mounted while that page is active.
  */
-const layoutProbe = () => {
+const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
   let active: string | undefined;
   const shown: string[] = [];
   const listeners = new Set<() => void>();
@@ -241,6 +249,10 @@ const layoutProbe = () => {
         create: () => {
           root = document.createElement('div');
           root.append(create('settings-dashboard-providers'));
+          // The conversation footer's picker, mounted in the same window.
+          if (options.picker === true) {
+            root.append(create('settings-execution-picker'));
+          }
           drawPage();
           return root;
         },
@@ -259,17 +271,28 @@ const layoutProbe = () => {
 };
 
 let opened: SettingsWindow | undefined;
+/** The toasts of the window a T-38 test opened, dismissed before it closes. */
+let toasts: Toasts | undefined;
 
 afterEach(async () => {
+  toasts?.dismissAll();
+  toasts = undefined;
   await opened?.close();
   opened = undefined;
 });
 
-const openDashboard = async () => {
-  const layout = layoutProbe();
+const openDashboard = async (
+  options: {
+    readonly picker?: boolean;
+    readonly stored?: unknown;
+    /** Host answers over the defaults. */
+    readonly answers?: Readonly<Record<string, HostAnswer>>;
+  } = {},
+) => {
+  const layout = layoutProbe(options);
   opened = await openSettingsWindow({
     url: 'doric://app/projects',
-    host: host(),
+    host: { ...host(options.stored), ...options.answers },
     probe: layout.probe,
   });
   await settle(20);
@@ -422,6 +445,60 @@ test('a change on the provider page saves itself once typing settles', async () 
   );
 });
 
+test("a model the provider page adds reaches the footer picker's list without a window focus, with no Thread selected (T-40)", async () => {
+  // No provider lists a model, so the picker offers a typed field; the
+  // default runs on a typed model of the local server.
+  const stored = {
+    ...configuration,
+    providers: configuration.providers.map((provider) => ({
+      ...provider,
+      models: [],
+    })),
+    models: { execution: { providerId: 'lmstudio', model: 'local-1' } },
+  };
+  const { window } = await openDashboard({ picker: true, stored });
+  rowOf(window, 'openrouter').click();
+  await settle(20);
+
+  const picker = (): HTMLElement => {
+    const trigger = window.document.querySelector<HTMLElement>(
+      'settings-execution-picker [aria-label="Execution model"]',
+    );
+    assert.ok(trigger !== null, 'The footer picker is not drawn.');
+    return trigger;
+  };
+  assert.equal(picker().tagName, 'INPUT');
+
+  const add = [
+    ...window.document.querySelectorAll<HTMLElement>(
+      'settings-dashboard-provider button',
+    ),
+  ].find((button) => button.textContent?.trim() === 'Add model');
+  assert.ok(add !== undefined, 'The provider page offers no Add model.');
+  add.click();
+  await settle(20);
+  const name = window.document.querySelector<HTMLInputElement>(
+    'settings-dashboard-provider [aria-label="Model 1"]',
+  );
+  assert.ok(name !== null, 'The added model has no name field.');
+  type(name, 'deepseek/v4');
+  await settle(800);
+  assert.equal(window.received('host-config/v1.replace').length, 1);
+  await settle(20);
+
+  // The provider now lists a model: the picker draws its list's trigger, still
+  // locked on the workspace default since no Thread is selected.
+  assert.equal(picker().tagName, 'BUTTON');
+  assert.ok(
+    picker().hasAttribute('disabled') || picker().hasAttribute('data-disabled'),
+    'The picker is not locked without a selected Thread.',
+  );
+  assert.equal(
+    picker().getAttribute('title'),
+    'New threads start on the workspace default. Change it in Settings.',
+  );
+});
+
 test('renaming a provider on its page renames its row', async () => {
   const { window } = await openProviderPage('lmstudio');
 
@@ -545,4 +622,86 @@ test("the Providers group follows the Projects group's metrics: no inset, a 20 p
     for (const name of ['h-7', 'gap-1.5', 'px-1.5', 'py-0', 'text-[13px]'])
       assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
   }
+});
+
+// T-38 (error-messages.md §5.2): the dashboard's failure surfaces. The
+// Providers group draws a failed provider kinds read, else a failed
+// credentials list read, as one compact, announced notice after its rows,
+// whose Retry reads that list again; the provider page's open-site failure
+// toasts as `provider-open-site`. A host failure the test throws reaches the
+// window as code `internal`, which the notices skip for their fallback code.
+
+const hostDown = (): never => {
+  throw new Error('The host store is locked.');
+};
+
+const groupNotices = (window: SettingsWindow): HTMLElement[] =>
+  noticesIn(window.document.querySelector('settings-dashboard-providers'));
+
+test('the Providers group shows a failed kinds read, then a failed credentials read, as one compact notice whose Retry reads again (T-38)', async () => {
+  let kindsDown = true;
+  let credentialsDown = true;
+  const { window } = await openDashboard({
+    answers: {
+      'models/v1.kinds': () =>
+        kindsDown ? hostDown() : [openrouter, openai, acme],
+      'secrets/v1.list': () =>
+        credentialsDown ? hostDown() : [openrouterToken],
+    },
+  });
+
+  // Both failed: the kinds read is the one the group names.
+  let notices = groupNotices(window);
+  assert.equal(notices.length, 1, 'the group draws no single notice');
+  let notice = notices[0] as HTMLElement;
+  assert.equal(titleOf(notice), 'Providers not loaded');
+  assert.equal(notice.getAttribute('data-variant'), 'compact');
+  assert.equal(announced(notice), true);
+  let retry = retryOf(notice);
+  assert.ok(retry, 'the failed kinds read offers no Retry');
+
+  kindsDown = false;
+  retry.click();
+  await settle(40);
+
+  // The kinds arrived; the credentials list is still the failed read.
+  notices = groupNotices(window);
+  assert.equal(notices.length, 1, 'the group draws no single notice');
+  notice = notices[0] as HTMLElement;
+  assert.equal(titleOf(notice), 'Credentials not loaded');
+  retry = retryOf(notice);
+  assert.ok(retry, 'the failed credentials read offers no Retry');
+
+  credentialsDown = false;
+  retry.click();
+  await settle(40);
+  assert.deepEqual(groupNotices(window), []);
+  assert.ok(rowNames(window).includes('openrouter'));
+});
+
+test('a failed open-site toasts as provider-open-site, titled "Page not opened" (T-38)', async () => {
+  const { window } = await openDashboard({
+    answers: {
+      'doric.shell/v1.openExternal': () => {
+        throw new Error('No browser is installed.');
+      },
+    },
+  });
+  toasts = await windowToasts(window.document, { mount: true });
+  rowOf(window, 'openrouter').click();
+  await settle(20);
+
+  const site = window.document.querySelector<HTMLElement>(
+    'settings-dashboard-provider [aria-label="Open OpenRouter"]',
+  );
+  assert.ok(site !== null, 'The OpenRouter page offers no site link.');
+  site.click();
+  await settle(40);
+
+  assert.ok(toasts.ids().includes('provider-open-site'));
+  const surfaces = toasts.surfaces();
+  assert.equal(surfaces.length, 1, 'one failure toast is drawn');
+  const notice = noticesIn(surfaces[0])[0];
+  assert.ok(notice, 'the toast holds no notice');
+  assert.equal(titleOf(notice), 'Page not opened');
 });

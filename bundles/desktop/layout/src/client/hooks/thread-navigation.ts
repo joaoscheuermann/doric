@@ -1,9 +1,11 @@
+import { errorFrom } from 'desktop/reads';
 import type { RefObject } from 'react';
 
 import { LayoutTabsV1 } from '../../contracts/index.js';
 import { isDescribed, type Selection } from '../domain/project-tree.js';
 import { mainThreadFor } from '../domain/thread-navigation.js';
 import type { Thread } from '../domain/workspace.js';
+import { THREAD_PANEL_TAG } from '../domain/workspace-tabs.js';
 import { layoutServices } from '../services/layout-services.js';
 import { rewriteRoute } from '../stores/route-selection.js';
 import { workspaceStore } from '../stores/workspace.js';
@@ -20,7 +22,7 @@ export const openThreadTab = async (thread: Thread): Promise<void> => {
       .open({
         id: `thread:${thread.id}`,
         title: thread.name || 'Untitled',
-        tag: 'chat-thread-panel',
+        tag: THREAD_PANEL_TAG,
         props: { projectId: thread.projectId, threadId: thread.id },
         icon: 'thread',
       });
@@ -60,7 +62,7 @@ export function createThreadNavigation({
       main = mainThreadFor(workspaceStore.getState().tree, target);
     }
     if (main === undefined) {
-      store.report('The parent thread was not found.');
+      store.report(errorFrom('not_found', 'The parent thread was not found.'));
       return undefined;
     }
     const selection = { projectId: main.projectId, threadId: main.id };

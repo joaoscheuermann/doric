@@ -6,6 +6,17 @@ export * from './attachments.js';
 export * from './configuration.js';
 export * from './deltas.js';
 export * from './events.js';
+export {
+  type ExecutionConfiguration,
+  modelDefaultEffort,
+  modelEfforts,
+  modelStartEffort,
+  type ResolvedThreadExecution,
+  resolveThreadExecution,
+  type ThreadExecution,
+  type ThreadExecutionIssue,
+  threadExecutionIssues,
+} from './execution.js';
 export * from './executor.js';
 export * from './hooks.js';
 export * from './lease.js';

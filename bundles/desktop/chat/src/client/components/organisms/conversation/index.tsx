@@ -16,8 +16,8 @@ import { LexicalExtensionComposer } from '@lexical/react/LexicalExtensionCompose
 import { HeadingNode, QuoteNode, RichTextExtension } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import type { Ui } from 'bundle/contracts';
+import { toastError } from 'desktop/ui/error-notice';
 import { ScrollArea } from 'desktop/ui/scroll-area';
-import { toast } from 'desktop/ui/sonner';
 import {
   $getRoot,
   $isTextNode,
@@ -38,11 +38,13 @@ import {
 } from 'react';
 
 import type { ChatFenceView } from '../../../../contracts/index.js';
+import { agentControl } from '../../../domain/agent-control.js';
 import {
   isReadOnlyBlock,
   isUndeletableBlock,
 } from '../../../domain/conversation-nodes.js';
 import { turnKey } from '../../../domain/conversation-sync.js';
+import { chatErrorCatalog } from '../../../domain/error-catalog.js';
 import { threadFences } from '../../../domain/fences.js';
 import {
   withPendingTurns,
@@ -79,7 +81,11 @@ import { CommentSeatNode } from './nodes/comment-seat-node.js';
 import { CompactionTurnNode } from './nodes/compaction-turn-node.js';
 import { ComposerStackNode } from './nodes/composer-stack-node.js';
 import { DelegatedTurnNode } from './nodes/delegated-turn-node.js';
-import { FailureTurnNode } from './nodes/failure-turn-node.js';
+import {
+  type FailureRetry,
+  FailureRetryContext,
+  FailureTurnNode,
+} from './nodes/failure-turn-node.js';
 import {
   ChatFencesContext,
   FenceElements,
@@ -414,7 +420,13 @@ export const Conversation = memo(function Conversation({
   const external = useExternalBlocks(chat.events);
   useEffect(() => {
     if (chat.sendError !== undefined)
-      toast.error(chat.sendError, { id: `thread-send-${thread.id}` });
+      toastError({
+        id: `thread-send-${thread.id}`,
+        error: chat.sendError,
+        catalog: chatErrorCatalog,
+        fallbackCode: 'send_failed',
+        context: { Thread: thread.id },
+      });
   }, [chat.sendError, thread.id]);
   /**
    * The element the editor edits, built once and kept.
@@ -428,8 +440,8 @@ export const Conversation = memo(function Conversation({
     () => <ContentEditable className="min-w-0 flex-1 outline-none" />,
     [],
   );
-  // The scroll area whose viewport holds the transcript, for the nav rail beside it.
-  const scrollRoot = useRef<HTMLDivElement>(null);
+  // The wrapper holding the transcript's scroll area and the nav rail's column.
+  const trailRoot = useRef<HTMLDivElement>(null);
   const navigating = useRef(false);
   const following = useRef(true);
   // What the editor draws: the log's turns, and the two things the surface is
@@ -456,6 +468,22 @@ export const Conversation = memo(function Conversation({
   const blocksSource = useMemo(
     () => ({ blocks: external.drawn, ui }),
     [external.drawn, ui],
+  );
+  // Retry on the failed-prompt block: only the last failure's, and only while
+  // the agent controls offer the same retry (§5.1, §6.1).
+  const control = agentControl(chat.thread, chat.turns, queue.data);
+  const retryPromptId =
+    control.status === 'failed' && control.canRetry
+      ? chat.turns.filter((turn) => turn.type === 'failure').at(-1)?.promptId
+      : undefined;
+  const { retry: retryChat, sending } = chat;
+  const failureRetry = useMemo<FailureRetry>(
+    () => ({
+      ...(retryPromptId === undefined ? {} : { promptId: retryPromptId }),
+      retrying: sending,
+      retry: () => void retryChat(),
+    }),
+    [retryPromptId, sending, retryChat],
   );
   const threadInfo = useMemo(
     () => ({ threadId: thread.id, projectId: thread.projectId }),
@@ -512,11 +540,18 @@ export const Conversation = memo(function Conversation({
   useEffect(() => () => fenceElements?.dispose(), [fenceElements]);
 
   return (
-    <div className="flex min-h-0 min-w-0 w-full flex-1">
-      <ScrollArea
-        ref={scrollRoot}
-        className="conversation-scroll min-h-0 min-w-0 w-full flex-1"
-      >
+    <div ref={trailRoot} className="flex min-h-0 min-w-0 w-full flex-1">
+      {/* The rail has its own column left of the scroll area, so the
+        transcript never scrolls beneath it and the scrollbar stays at the
+        pane's right edge; it measures and scrolls the viewport through the
+        wrapper both share. */}
+      <ThreadNavRail
+        root={trailRoot}
+        turns={turns}
+        navigating={navigating}
+        following={following}
+      />
+      <ScrollArea className="conversation-scroll min-h-0 min-w-0 w-full flex-1">
         {/* The column holds the gutter mark inside its own left padding (the
           mark's 1.875rem), so the text is 722 px wide in the 768 px column,
           and its first line sits 2 px under the top (Figma `99:8035`
@@ -524,72 +559,65 @@ export const Conversation = memo(function Conversation({
           (`styles.css`). */}
         <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-1 flex-col pl-[1.875rem] pr-4 pt-0.5 pb-80 text-sm font-light">
           <ConversationThreadContext.Provider value={threadInfo}>
-            <CommentThreadsContext.Provider value={threads}>
-              <ChatBlocksContext.Provider value={blocksSource}>
-                <ChatFencesContext.Provider value={fenceElements}>
-                  <LexicalExtensionComposer
-                    extension={extension}
-                    contentEditable={contentEditable}
-                  >
-                    <FenceSync tags={tags} turns={turns} />
-                    <UndeletableBlocksPlugin
-                      isReadOnly={isReadOnlyBlock}
-                      isUndeletable={isUndeletableNode}
-                    />
-                    <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
-                    <CaretNavigation />
-                    <TableBlocksPlugin />
-                    <MarkdownPromptPlugin />
-                    <PromptLineBreaks />
-                    <AttachImages threadId={thread.id} />
-                    <PasteIntoPrompt />
-                    <InsertThreadTurnNodes
-                      autoFocus={autoFocus}
-                      thread={threadScope}
-                      turns={turns}
-                      agentIcons={agentIcons}
-                      blocks={external.placed}
-                      onResume={chat.resume}
-                      navigating={navigating}
-                      following={following}
-                    />
-                    <ComposerDraft thread={thread} />
-                    <SendPrompt
-                      canStop={running}
-                      promptSignal={promptSignal}
-                      send={chat.prompt}
-                      steer={chat.steer}
-                      sendRequest={sendRequest}
-                      threadId={thread.id}
-                      onStop={stop}
-                      onResumeQueue={
-                        !queue.resuming &&
-                        !queue.isError &&
-                        composerAction(running, queue.data) === 'resume'
-                          ? queue.resume
-                          : undefined
-                      }
-                    />
-                    <EditQueuePrompt threadId={thread.id} />
-                    <CommentSelection />
-                    <CommentSeats />
-                    <CommentHighlights />
-                    <StackCaret />
-                  </LexicalExtensionComposer>
-                </ChatFencesContext.Provider>
-              </ChatBlocksContext.Provider>
-            </CommentThreadsContext.Provider>
+            <FailureRetryContext.Provider value={failureRetry}>
+              <CommentThreadsContext.Provider value={threads}>
+                <ChatBlocksContext.Provider value={blocksSource}>
+                  <ChatFencesContext.Provider value={fenceElements}>
+                    <LexicalExtensionComposer
+                      extension={extension}
+                      contentEditable={contentEditable}
+                    >
+                      <FenceSync tags={tags} turns={turns} />
+                      <UndeletableBlocksPlugin
+                        isReadOnly={isReadOnlyBlock}
+                        isUndeletable={isUndeletableNode}
+                      />
+                      <ReadOnlyBlocksPlugin isReadOnly={isReadOnlyBlock} />
+                      <CaretNavigation />
+                      <TableBlocksPlugin />
+                      <MarkdownPromptPlugin />
+                      <PromptLineBreaks />
+                      <AttachImages threadId={thread.id} />
+                      <PasteIntoPrompt />
+                      <InsertThreadTurnNodes
+                        autoFocus={autoFocus}
+                        thread={threadScope}
+                        turns={turns}
+                        agentIcons={agentIcons}
+                        blocks={external.placed}
+                        onResume={chat.resume}
+                        navigating={navigating}
+                        following={following}
+                      />
+                      <ComposerDraft thread={thread} />
+                      <SendPrompt
+                        canStop={running}
+                        promptSignal={promptSignal}
+                        send={chat.prompt}
+                        steer={chat.steer}
+                        sendRequest={sendRequest}
+                        threadId={thread.id}
+                        onStop={stop}
+                        onResumeQueue={
+                          !queue.resuming &&
+                          !queue.isError &&
+                          composerAction(running, queue.data) === 'resume'
+                            ? queue.resume
+                            : undefined
+                        }
+                      />
+                      <EditQueuePrompt threadId={thread.id} />
+                      <CommentSelection />
+                      <CommentSeats />
+                      <CommentHighlights />
+                      <StackCaret />
+                    </LexicalExtensionComposer>
+                  </ChatFencesContext.Provider>
+                </ChatBlocksContext.Provider>
+              </CommentThreadsContext.Provider>
+            </FailureRetryContext.Provider>
           </ConversationThreadContext.Provider>
         </div>
-        {/* Inside the scroll view, pinned to it: the rail is absolutely
-          positioned against the scroll area's root, so the transcript scrolls
-          beneath it and the rail holds the viewport's right edge. */}
-        <ThreadNavRail
-          scrollRoot={scrollRoot}
-          turns={turns}
-          navigating={navigating}
-          following={following}
-        />
       </ScrollArea>
     </div>
   );

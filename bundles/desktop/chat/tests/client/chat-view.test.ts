@@ -39,6 +39,13 @@ import {
   READER_NAME,
 } from '../../src/contracts/index.js';
 import {
+  detailsOf,
+  explanationOf,
+  noticesIn,
+  noticesTitled,
+  retryOf,
+} from './support/notices.js';
+import {
   type ChatWindow,
   openChatWindow,
   type Probe,
@@ -142,7 +149,7 @@ test('a compaction row expands its saved Markdown summary and keeps it open acro
   await deliver(opened, events);
   assert.equal(opened.document.querySelector('[role="status"] .shimmer'), null);
   const toggle = [...opened.document.querySelectorAll('button')].find(
-    (button) => button.textContent?.includes('Contexto compactado'),
+    (button) => button.textContent?.includes('Context compacted'),
   );
   assert.ok(toggle);
   assert.equal(markerNode?.isConnected, true);
@@ -155,7 +162,7 @@ test('a compaction row expands its saved Markdown summary and keeps it open acro
   );
   assert.ok(
     [...opened.document.querySelectorAll('button')].some(
-      (button) => button.textContent === 'Copiar',
+      (button) => button.textContent === 'Copy',
     ),
   );
   await deliver(opened, [
@@ -276,6 +283,11 @@ test("a trail handle previews its prompt while hovered, keeps the preview throug
   handle.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
   await settle();
   assert.ok(preview(), 'hovering the handle previews its prompt');
+  assert.equal(
+    preview()?.getAttribute('data-side'),
+    'right',
+    'the preview opens to the right of the trail',
+  );
   assert.equal(document.activeElement, focused, 'the preview takes no focus');
 
   handle.click();
@@ -287,6 +299,137 @@ test("a trail handle previews its prompt while hovered, keeps the preview throug
   await settle(300);
   assert.equal(preview(), undefined, 'leaving the handle closes its preview');
   assert.equal(document.activeElement, focused, 'closing it moves no focus');
+});
+
+const trail = (window: ChatWindow): HTMLElement | null =>
+  window.document.querySelector<HTMLElement>(
+    'nav[aria-label="Conversation trail"]',
+  );
+
+const trailHandle = (
+  window: ChatWindow,
+  label: string,
+): HTMLButtonElement | null =>
+  trail(window)?.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"]`,
+  ) ?? null;
+
+/** Jumps to the reader's first prompt, which then wears the trail's highlight. */
+const jumpToFirstPrompt = async (window: ChatWindow): Promise<Element> => {
+  const handle = trailHandle(window, 'User prompt 1');
+  assert.ok(handle, 'the prompt has a handle on the trail');
+  handle.click();
+  await settle();
+  const block = window.document.querySelector(
+    `[data-prompt-id="${promptId}"][data-trail-highlight]`,
+  );
+  assert.ok(block, 'the jump highlights the prompt it went to');
+  return block;
+};
+
+test('the trail stands in its own column left of the conversation, outside its scroll view', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+
+  const nav = trail(opened);
+  assert.ok(nav, 'the conversation has its trail');
+  assert.equal(
+    nav.closest('.conversation-scroll') === null,
+    true,
+    'the trail is not inside the scroll view',
+  );
+  const scroll = opened.document.querySelector('.conversation-scroll');
+  assert.ok(scroll, 'the conversation has its scroll view');
+  assert.equal(
+    [...scroll.querySelectorAll('button')].some((button) =>
+      nav.contains(button),
+    ),
+    false,
+    'no trail handle sits in the scroll view',
+  );
+  const parent = scroll.parentElement;
+  assert.ok(parent, 'the scroll view has a parent');
+  const column = [...parent.children].find((child) => child.contains(nav));
+  assert.ok(column, 'the trail column shares a parent with the scroll view');
+  assert.ok(
+    column.compareDocumentPosition(scroll) &
+      opened.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'the trail column comes before the scroll view',
+  );
+});
+
+test("the trail's last handle goes to the end, says so in its preview without naming the reader, and highlights the prompt input", async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+  const { document } = opened;
+
+  const handles = [...(trail(opened)?.querySelectorAll('button') ?? [])];
+  const last = handles.at(-1);
+  assert.ok(last, 'the trail has handles');
+  assert.equal(last.getAttribute('aria-label'), 'Go to the end');
+
+  last.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  await settle();
+  const preview = [
+    ...document.querySelectorAll('[data-slot="popover-content"]'),
+  ].find((popup) => popup.textContent?.includes('Go to the end'));
+  assert.ok(preview, 'hovering the last handle previews where it goes');
+  assert.equal(
+    preview.textContent?.includes(READER_NAME),
+    false,
+    'the preview names no author',
+  );
+
+  last.click();
+  await settle();
+  assert.equal(
+    document
+      .querySelector('[data-prompt-input]')
+      ?.hasAttribute('data-trail-highlight'),
+    true,
+    'the prompt input wears the highlight',
+  );
+  // Closed before teardown: an open popover's portal outlives the window.
+  last.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+  await settle(300);
+});
+
+test('a wheel over the trail scrolls the conversation away from the prompt it jumped to', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+  const block = await jumpToFirstPrompt(opened);
+
+  trail(opened)?.dispatchEvent(
+    new WheelEvent('wheel', { bubbles: true, deltaY: -120 }),
+  );
+  await settle();
+  assert.equal(
+    block.hasAttribute('data-trail-highlight'),
+    false,
+    'the wheel releases the highlight',
+  );
+});
+
+test('a Page Up pressed on a trail handle leaves the prompt it jumped to', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+  const block = await jumpToFirstPrompt(opened);
+
+  const handle = trailHandle(opened, 'User prompt 1');
+  assert.ok(handle);
+  handle.focus();
+  handle.dispatchEvent(
+    new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp' }),
+  );
+  await settle();
+  assert.equal(
+    block.hasAttribute('data-trail-highlight'),
+    false,
+    'the key releases the highlight',
+  );
+  // Focus opened the handle's preview; let it close before the window does.
+  handle.blur();
+  await settle(300);
 });
 
 test("a reader's turn wears its mark in the gutter and trails a time-only footer", async () => {
@@ -1011,11 +1154,34 @@ test('a child conversation footer stops its Thread while the main Thread stays s
 // The inset-card look (ui-redesign phase 3, Figma `99:8035`, `99:8508`): the
 // footer's composer stands 8 px after what precedes it with no rule between,
 // its button is the prototype's small one, and a sub-thread viewer's footer
-// is the band the conversation footer is.
+// is a 44 px band floating over its conversation (conversation-footer spec).
 
-/** The classes of the conversation footer band (`workspace-view.tsx`). */
+/**
+ * The classes of the floating viewer footer band (conversation-footer
+ * spec, D2 and D13): 44 px over the conversation's bottom, `py-2` over and
+ * under the 28 px row.
+ */
 const FOOTER_BAND =
-  'flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal';
+  'absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 py-2 pl-2 text-[11px] font-normal';
+
+/**
+ * The band's height as `<chat-view>` reads it (`--chat-footer-height`), set
+ * inline by the band's owner: the band's 44 px, which the sheet rule reads
+ * as the band's height (D13).
+ */
+const FOOTER_HEIGHT = '2.75rem';
+
+/** The `--chat-footer-height` an element sets in its own inline style. */
+const ownFooterHeight = (element: Element | null | undefined): string => {
+  const style = (element as HTMLElement | null | undefined)?.style;
+  const value = style?.getPropertyValue('--chat-footer-height').trim();
+  if (value) return value;
+  return (
+    /(?:^|;)\s*--chat-footer-height\s*:\s*([^;]+)/
+      .exec(element?.getAttribute('style') ?? '')?.[1]
+      ?.trim() ?? ''
+  );
+};
 
 const classSet = (element: Element | null): string[] =>
   [...(element?.classList ?? [])].sort();
@@ -1040,7 +1206,7 @@ test('the footer composer stands after an 8 px gap with no rule, and its button 
   assert.ok(row?.classList.contains('gap-2'), '8 px between the controls');
 });
 
-test('a sub-thread viewer draws its composer in the conversation footer band', async () => {
+test('a sub-thread viewer draws its composer in its floating footer band', async () => {
   const childId = '44444444-4444-4444-8444-444444444444';
   let create:
     | ((tag: string, props: Record<string, string>) => HTMLElement)
@@ -1077,6 +1243,50 @@ test('a sub-thread viewer draws its composer in the conversation footer band', a
     true,
     'no rule before the composer',
   );
+
+  // The band floats over the bottom of its own conversation: its positioned
+  // parent is the Thread's root, which tells the conversation the band's height.
+  const parent = band?.parentElement;
+  assert.equal(
+    parent?.matches('[data-chat-thread]'),
+    true,
+    'the band is a child of the Thread root',
+  );
+  assert.ok(
+    parent?.classList.contains('relative'),
+    `the Thread root is positioned: ${classSet(parent ?? null).join(' ')}`,
+  );
+  assert.equal(ownFooterHeight(parent), FOOTER_HEIGHT);
+  assert.equal(
+    parent?.lastElementChild === band,
+    true,
+    'the band is the Thread root’s last child',
+  );
+  const before = band?.previousElementSibling;
+  assert.equal(
+    before?.querySelector('.conversation-scroll') != null,
+    true,
+    'the band follows the conversation',
+  );
+});
+
+test('a routed conversation sets no footer height of its own', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, exchange);
+
+  const root = opened.document.querySelector('div[data-chat-thread]');
+  assert.equal(root !== null, true, 'the Thread root');
+  assert.ok(
+    root?.classList.contains('relative'),
+    `the Thread root is positioned: ${classSet(root).join(' ')}`,
+  );
+  // Unset, it inherits the height its host sets on an ancestor.
+  assert.equal(ownFooterHeight(root), '');
+  assert.equal(
+    root?.querySelector('[data-slot="chat-thread-footer"]') === null,
+    true,
+    'no viewer band',
+  );
 });
 
 test("the column's own left padding holds the gutter mark, and the first line sits 2 px under the top", async () => {
@@ -1090,8 +1300,9 @@ test("the column's own left padding holds the gutter mark, and the first line si
   // The mark hangs 1.875rem left of the text (styles.css), so the column's
   // left padding must be at least that for the mark to stay inside it.
   const classes = classSet(column);
-  for (const name of ['pl-[1.875rem]', 'pr-4', 'pt-0.5'])
+  for (const name of ['pl-[1.875rem]', 'pr-4', 'pt-0.5', 'pb-80'])
     assert.ok(classes.includes(name), `${name} in ${classes.join(' ')}`);
+  assert.ok(!classes.includes('pr-2'), `no pr-2 in ${classes.join(' ')}`);
 });
 
 // R-9.7 and R-9.9: another Thread's input. Chat draws it itself until a
@@ -1414,4 +1625,249 @@ test('a load_skill call stands as a block of its own between tool calls, never i
     opened.document.body.textContent ?? '',
     /Called [34] tools/,
   );
+});
+
+// T-17: the failed-prompt block (§5.1, §6.1). A block notice that is not
+// announced; Retry only on the last prompt's failure block, only while the
+// agent controls answer `failed` and `canRetry`; while the retry runs it is
+// disabled and spins, and a second press sends nothing more.
+
+const secondPromptId = '44444444-4444-4444-8444-444444444444';
+
+/** An event of `prompt`, otherwise as `event`. */
+const eventOf = (
+  sequence: number,
+  prompt: string,
+  value: Readonly<Record<string, unknown> & { readonly type: string }>,
+) => ({ ...event(sequence, value), promptId: prompt });
+
+const resumeExhaustedExplanation =
+  'The host restarted three times during this prompt, so the work may be incomplete; retry to send the prompt again.';
+
+/** Two prompts that failed: the first ran out of resumes, the second stopped. */
+const twoFailures = [
+  eventOf(1, promptId, {
+    type: 'prompt.accepted',
+    text: 'First try',
+    source: { kind: 'user' },
+  }),
+  eventOf(2, promptId, {
+    type: 'agent.failed',
+    error: {
+      name: 'ResumeExhaustedError',
+      code: 'resume_exhausted',
+      message:
+        'The run was interrupted three times by a host restart and was not resumed again. The work may be incomplete; send the prompt again to continue.',
+    },
+  }),
+  eventOf(3, promptId, {
+    type: 'prompt.finished',
+    status: 'failed',
+    text: 'The prompt failed.',
+    source: { kind: 'user' },
+  }),
+  eventOf(4, secondPromptId, {
+    type: 'prompt.accepted',
+    text: 'Second try',
+    source: { kind: 'user' },
+  }),
+  eventOf(5, secondPromptId, {
+    type: 'agent.failed',
+    error: { name: 'Error', code: 'boom', message: 'it stopped' },
+  }),
+  eventOf(6, secondPromptId, {
+    type: 'prompt.finished',
+    status: 'failed',
+    text: 'The prompt failed.',
+    source: { kind: 'user' },
+  }),
+];
+
+const viewOf = (window: ChatWindow) =>
+  window.document.querySelector('chat-view');
+
+test('T-17 a failed prompt is a block notice in its tone, not announced, and only the last one offers Retry', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, twoFailures);
+
+  const view = viewOf(opened);
+  const [stopped] = noticesTitled(view, 'Execution stopped');
+  assert.ok(stopped, 'the exhausted resume draws its notice');
+  assert.equal(stopped.getAttribute('data-variant'), 'block');
+  assert.equal(stopped.getAttribute('data-tone'), 'warning');
+  assert.equal(stopped.getAttribute('role'), 'group');
+  assert.equal(explanationOf(stopped), resumeExhaustedExplanation);
+  assert.equal(retryOf(stopped), null, 'an older failure offers no Retry');
+
+  const [last] = noticesTitled(view, 'Prompt failed');
+  assert.ok(last, 'a code no entry knows falls back to prompt_failed');
+  assert.equal(last.getAttribute('data-tone'), 'error');
+  assert.equal(last.getAttribute('role'), 'group');
+  assert.equal(explanationOf(last), 'it stopped');
+  assert.ok(retryOf(last), 'the last failure offers Retry');
+});
+
+test('T-17 Retry on the last failure sends the prompt again once, disabled and spinning while it runs', async () => {
+  let answer: (value: unknown) => void = () => undefined;
+  opened = await openChatWindow({
+    url,
+    host: host(thread(), {
+      'runtime.threads/v1.retry': () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    }),
+  });
+  await deliver(opened, twoFailures);
+
+  const [last] = noticesTitled(viewOf(opened), 'Prompt failed');
+  assert.ok(last);
+  const retry = retryOf(last);
+  assert.ok(retry, 'the last failure offers Retry');
+  retry.click();
+  await settle(50);
+
+  const pending = retryOf(
+    noticesTitled(viewOf(opened), 'Prompt failed')[0] as HTMLElement,
+  );
+  assert.ok(pending, 'Retry stays while the retry runs');
+  assert.equal(pending.disabled, true);
+  assert.equal(pending.getAttribute('aria-busy'), 'true');
+  assert.equal(
+    pending.querySelector('svg')?.classList.contains('animate-spin'),
+    true,
+  );
+  pending.click();
+  await settle(50);
+  assert.equal(opened.received('runtime.threads/v1.retry').length, 1);
+  assert.deepEqual(opened.received('runtime.threads/v1.retry')[0]?.input, {
+    id: threadId,
+  });
+
+  answer({
+    status: 'accepted',
+    promptId: '55555555-5555-4555-8555-555555555555',
+  });
+  await settle(100);
+  assert.equal(opened.received('runtime.threads/v1.retry').length, 1);
+});
+
+test('T-17 with the queue paused no failure block offers Retry', async () => {
+  opened = await openChatWindow({
+    url,
+    host: host(thread(), {
+      'runtime.threads/v1.queue': () => ({ ...emptyQueue, paused: true }),
+    }),
+  });
+  await deliver(opened, twoFailures);
+
+  const view = viewOf(opened);
+  const failures = [
+    ...noticesTitled(view, 'Execution stopped'),
+    ...noticesTitled(view, 'Prompt failed'),
+  ];
+  assert.equal(failures.length, 2, 'both failures draw their notices');
+  for (const notice of failures) assert.equal(retryOf(notice), null);
+});
+
+// T-18: the compaction rows read in English with en-US numbers (§6.3), and a
+// failed compaction is a compact notice inside its row (§5.1).
+
+const compactionPrompt = (index: number) =>
+  `6666666${index}-6666-4666-8666-666666666666`;
+
+test('T-18 a completed compaction row reads its counts in English, with en-US numbers', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    eventOf(1, compactionPrompt(1), {
+      type: 'compaction.started',
+      trigger: 'manual',
+    }),
+    eventOf(2, compactionPrompt(1), {
+      type: 'compaction.finished',
+      summaryId: 'summary-1',
+      summary: 'Keep it.',
+      condensedMessages: 3,
+      tokensFreed: 12345,
+    }),
+    eventOf(3, compactionPrompt(2), {
+      type: 'compaction.started',
+      trigger: 'automatic',
+    }),
+    eventOf(4, compactionPrompt(2), {
+      type: 'compaction.finished',
+      summaryId: 'summary-2',
+      summary: 'Keep that.',
+      condensedMessages: 1,
+      tokensFreed: 5,
+    }),
+  ]);
+
+  const labels = [...(viewOf(opened)?.querySelectorAll('button') ?? [])].map(
+    (button) => button.textContent?.trim() ?? '',
+  );
+  assert.ok(
+    labels.includes(
+      'Context compacted · 3 messages → summary (12,345 tokens freed)',
+    ),
+    `rows: ${labels.join(' | ')}`,
+  );
+  assert.ok(
+    labels.includes('Context compacted · 1 message → summary (5 tokens freed)'),
+    `rows: ${labels.join(' | ')}`,
+  );
+});
+
+test('T-18 a failed compaction row is a compact notice titled by its code, without Retry', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await deliver(opened, [
+    eventOf(1, compactionPrompt(1), {
+      type: 'compaction.started',
+      trigger: 'manual',
+    }),
+    eventOf(2, compactionPrompt(1), {
+      type: 'compaction.failed',
+      code: 'summarizer_failed',
+      error: {
+        message: 'Rate limited',
+        data: { code: 'rate_limit_error', provider: 'openai', status: 429 },
+      },
+    }),
+    eventOf(3, compactionPrompt(2), {
+      type: 'compaction.started',
+      trigger: 'automatic',
+    }),
+    eventOf(4, compactionPrompt(2), {
+      type: 'compaction.failed',
+      code: 'unsafe_boundary',
+    }),
+  ]);
+
+  const view = viewOf(opened);
+  assert.doesNotMatch(view?.textContent ?? '', /Compactação|falhou/);
+  const [failed] = noticesTitled(view, 'Compaction failed');
+  assert.ok(failed, 'the summarizer failure draws its notice');
+  assert.equal(failed.getAttribute('data-variant'), 'compact');
+  assert.equal(failed.getAttribute('role'), 'group');
+  assert.equal(
+    explanationOf(failed),
+    'Earlier messages could not be summarized.',
+  );
+  assert.equal(retryOf(failed), null);
+  const details = await detailsOf(failed);
+  assert.match(details, /^Code: summarizer_failed$/m);
+  assert.match(
+    details,
+    /^Caused by: \[rate_limit_error\] Rate limited \(openai, 429\)$/m,
+  );
+  assert.match(details, /^Thread: /m);
+  assert.match(details, /^Prompt: /m);
+
+  const [skipped] = noticesTitled(view, 'Compaction skipped');
+  assert.ok(skipped, 'the unsafe boundary draws its notice');
+  assert.equal(
+    explanationOf(skipped),
+    'No safe point was found to summarize earlier messages.',
+  );
+  assert.equal(noticesIn(view).length, 2);
 });

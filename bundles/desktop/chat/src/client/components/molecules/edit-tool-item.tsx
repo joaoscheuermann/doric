@@ -1,3 +1,5 @@
+import { type ErrorInfo, errorInfo } from 'desktop/reads';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { cn } from 'desktop/ui/utils';
 import { memo, useMemo, useState } from 'react';
 
@@ -7,14 +9,17 @@ import {
   toolOpenness,
 } from '../../domain/collapsible.js';
 import { type DiffLine, parseEditCall } from '../../domain/edit-tool.js';
+import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import { CollapsibleBlock } from './collapsible-block.js';
 
 export const INITIAL_DIFF_LINES = 16;
 
 type EditToolItemProps = {
+  /** The tool's name, shown as the failure notice's `Tool` context. */
+  readonly name: 'edit' | 'write';
   readonly args: string;
-  readonly error?: string;
+  readonly error?: ErrorInfo;
   readonly result?: string;
   readonly status: ToolStatus;
   readonly chosen: Chosen;
@@ -55,6 +60,7 @@ export const EditToolItem = memo(function EditToolItem({
   chosen,
   error,
   focused,
+  name,
   onChosenChange,
   result,
   status,
@@ -62,8 +68,17 @@ export const EditToolItem = memo(function EditToolItem({
   const running = status === 'running';
   const [expanded, setExpanded] = useState(false);
   const parsed = useMemo(
-    () => parseEditCall(args, result, error),
+    () => parseEditCall(args, result, error?.message),
     [args, result, error],
+  );
+  // The output's own report carries no time the component can read (§6.1).
+  const notice = useMemo(
+    () =>
+      error ??
+      (parsed.error !== undefined && parsed.error.length > 0
+        ? errorInfo(parsed.error, { at: null })
+        : undefined),
+    [error, parsed.error],
   );
   const failed = status === 'failed' || parsed.success === false;
   const verb = running ? 'Editing' : failed ? 'Failed to edit' : 'Edited';
@@ -111,14 +126,15 @@ export const EditToolItem = memo(function EditToolItem({
       >
         {open ? (
           <div className="flex flex-col gap-1.5">
-            {parsed.error !== undefined && parsed.error.length > 0 ? (
-              <div
-                data-slot="edit-error"
-                className="whitespace-pre-wrap break-words font-mono text-sm text-destructive"
-              >
-                {parsed.error}
-              </div>
-            ) : null}
+            {notice === undefined ? null : (
+              <ErrorNotice
+                variant="compact"
+                error={notice}
+                catalog={chatErrorCatalog}
+                fallbackCode="tool_failed"
+                context={{ Tool: name }}
+              />
+            )}
             {parsed.diffLines.length > 0 ? (
               <div data-slot="edit-diff" className="font-mono text-sm">
                 {visibleLines.map((line, index) => (

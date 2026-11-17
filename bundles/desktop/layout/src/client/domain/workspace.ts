@@ -1,6 +1,7 @@
 // The Project and Thread records are the runtime's (`runtime/contracts`),
 // imported as types only: a window's import map is not guaranteed to serve a
 // host bundle's contracts module.
+import type { ErrorInfo } from 'desktop/reads';
 import type { Project, ProjectColor, Thread } from 'runtime/contracts';
 
 export type {
@@ -68,7 +69,8 @@ export type ProjectUpdate =
     }
   | { readonly kind: 'project-updated'; readonly project: Project }
   | { readonly kind: 'project-deleted'; readonly projectId: string }
-  | { readonly kind: 'error'; readonly message: string };
+  /** The stream ended with a failure: `project_stream_failed` over its cause. */
+  | { readonly kind: 'error'; readonly error: ErrorInfo };
 
 export type Draft =
   | { readonly kind: 'project' }

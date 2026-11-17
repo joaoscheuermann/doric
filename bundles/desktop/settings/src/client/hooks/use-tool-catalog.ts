@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
+import type { ErrorInfo } from 'desktop/reads';
 
 import { api } from '../api/settings-api.js';
 import type { ToolCatalogEntry } from '../domain/config.js';
-import { messageFrom } from '../domain/errors.js';
 import { queryKeys } from '../queries/keys.js';
+import { useReadFailure } from './use-read-failure.js';
 
 /**
  * The tool catalog the host declares, and how its read is going. The catalog is
@@ -14,9 +15,19 @@ import { queryKeys } from '../queries/keys.js';
 export type ToolCatalog = {
   /** The declared tools, in the order the host lists them. */
   readonly list: readonly ToolCatalogEntry[];
+  /** True while a read runs, the first one or a `reload`. */
   readonly loading: boolean;
-  /** The last failure, which a section shows above its own controls. */
-  readonly error?: string;
+  /**
+   * The last read's failure (`errorInfo` of the query's error, `at` from its
+   * `errorUpdatedAt`); absent once a read succeeds. The Tools section shows it
+   * as a notice with `tools_read_failed` as fallback code (§5.2).
+   */
+  readonly error?: ErrorInfo;
+  /**
+   * Reads the catalog again (the query's refetch). Returns at once and never
+   * throws; the outcome arrives through `list`, `loading` and `error`.
+   */
+  readonly reload: () => void;
 };
 
 /**
@@ -32,9 +43,14 @@ export const useToolCatalog = (): ToolCatalog => {
     staleTime: Infinity,
   });
 
+  const error = useReadFailure(catalog);
+
   return {
     list: catalog.data ?? [],
     loading: catalog.isPending || catalog.isFetching,
-    error: catalog.isError ? messageFrom(catalog.error) : undefined,
+    error,
+    reload: () => {
+      void catalog.refetch();
+    },
   };
 };

@@ -5,6 +5,7 @@
 // image is handed to the page as a `data:` URL, kept once per attachment.
 
 import { isContractError } from 'bundle/contracts';
+import { ClientError } from 'desktop/reads';
 import {
   ATTACHMENT_MAX_BYTES,
   type Attachment,
@@ -13,7 +14,7 @@ import {
 } from 'runtime/contracts';
 
 import { chatServices } from '../services/chat-services.js';
-import { hostFailureMessage } from './threads-api.js';
+import { hostFailure } from './threads-api.js';
 
 export interface ChatAttachmentsApi {
   /** Keeps a file's bytes as an image of the Thread's Project. */
@@ -32,11 +33,14 @@ const base64Of = async (file: Blob): Promise<string> => {
   return btoa(binary);
 };
 
-/** Why an attach failed, in the reader's terms. */
-const attachFailure = (error: unknown): string =>
+/**
+ * Why an attach failed, in the reader's terms: a refused image keeps the
+ * host's sentence; the code and the cause follow §6.4.
+ */
+const attachFailure = (error: unknown): ClientError =>
   isContractError(error) && error.code === 'invalid_input'
-    ? error.message
-    : hostFailureMessage(error);
+    ? new ClientError(error.code, error.message, { cause: error })
+    : hostFailure(error);
 
 export const createAttachmentsApi = (
   attachments: (threadId: string) => RuntimeAttachments,
@@ -46,7 +50,8 @@ export const createAttachmentsApi = (
   return {
     attach: async (threadId, file, name) => {
       if (file.size > ATTACHMENT_MAX_BYTES)
-        throw new Error(
+        throw new ClientError(
+          'invalid_input',
           `The image is larger than ${ATTACHMENT_MAX_BYTES / (1024 * 1024)} MiB.`,
         );
       const bytes = await base64Of(file);
@@ -58,7 +63,7 @@ export const createAttachmentsApi = (
         );
         return attached;
       } catch (error) {
-        throw new Error(attachFailure(error));
+        throw attachFailure(error);
       }
     },
     imageUrl: (threadId, id) => {

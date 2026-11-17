@@ -6,6 +6,7 @@ import {
   defineService,
   HooksV1,
   hooksMethods,
+  logMethods,
   ModelsV1,
   modelsMethods,
   type RegisteredSkill,
@@ -184,6 +185,34 @@ const recorder =
   (calls: RecordedCall[], method: string) => (input: unknown, call: Call) => {
     calls.push({ method, input, scope: call.scope });
   };
+
+/** One entry the fake `log/v1` received. */
+export interface LoggedEntry {
+  readonly level: 'debug' | 'info' | 'warn' | 'error';
+  readonly message: string;
+  readonly fields?: Readonly<Record<string, unknown>>;
+}
+
+/** A fake `log/v1` that pushes every entry to `logs`. */
+export const logService = (logs: LoggedEntry[]) => {
+  const level = (name: LoggedEntry['level']) =>
+    defineMethod({
+      ...logMethods[name],
+      execute: ([message, fields]) => {
+        logs.push({
+          level: name,
+          message,
+          ...(fields === undefined ? {} : { fields }),
+        });
+      },
+    });
+  return defineService('log/v1', {
+    debug: level('debug'),
+    info: level('info'),
+    warn: level('warn'),
+    error: level('error'),
+  });
+};
 
 /** A fake `runtime.workspace/v1` (cwd only) recording every call. */
 export const workspaceService = (
@@ -481,6 +510,10 @@ const transformHooks = () => {
 export const bundleServices = (options: HarnessOptions) => {
   const configuration = options.configuration ?? testConfiguration();
   const resolved: unknown[] = [];
+  /** Every `models/v1.inputModalities` request, in order. */
+  const modalities: unknown[] = [];
+  /** Every entry the fake `log/v1` received, in order. */
+  const logs: LoggedEntry[] = [];
   const languageModel = toLanguageModel(options.provider);
   /**
    * Every call the fake `runtime.lease/v1`, `mcp/v1` and
@@ -495,6 +528,7 @@ export const bundleServices = (options: HarnessOptions) => {
     bundle: { id: 'default' },
     provide: [
       transformHooks(),
+      logService(logs),
       defineService(ConfigurationV1.id, {
         current: defineMethod({
           input: configurationMethods.current.input,
@@ -551,7 +585,10 @@ export const bundleServices = (options: HarnessOptions) => {
         inputModalities: defineMethod({
           input: modelsMethods.inputModalities.input,
           output: modelsMethods.inputModalities.output,
-          execute: () => options.inputModalities,
+          execute: (request) => {
+            modalities.push(request);
+            return options.inputModalities;
+          },
         }),
         icons: defineMethod({
           input: modelsMethods.icons.input,
@@ -601,7 +638,9 @@ export const bundleServices = (options: HarnessOptions) => {
   return {
     harness,
     resolved,
+    modalities,
     calls,
+    logs,
     activate: () =>
       activate(
         { services: harness.services },

@@ -255,6 +255,18 @@ const provider = createOpenRouterProvider({
 });
 ```
 
+## Errors
+
+A transport failure whose cause chain, followed up to 8 levels, carries
+`UND_ERR_CONNECT_TIMEOUT`, `ECONNREFUSED`, `ECONNRESET`, `UND_ERR_SOCKET`, or
+`EAI_AGAIN` becomes a retryable provider error with code `network_error` and
+the message "Could not connect to <provider>.". This covers a connection that
+drops mid-stream as well as one that cannot be made. The original error is kept
+as its cause and carries the transport error details, such as addresses and
+ports; see [Logging and content privacy](#logging-and-content-privacy) before
+logging or displaying it. An unresolvable host (`ENOTFOUND`), an abort, and any
+other error pass through unchanged.
+
 ## Logging and content privacy
 
 Every provider requires a Pino logger and creates a child bound to

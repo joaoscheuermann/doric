@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import { type ErrorInfo, errorFrom } from 'desktop/reads';
+
 import {
   beginDelete,
   beginProject,
@@ -20,6 +22,7 @@ import {
   type Sidebar,
   selectProject,
   selectThread,
+  settle,
   settleDelete,
   startRename,
   threadRowPadding,
@@ -60,7 +63,7 @@ const busy: Sidebar = {
   editing: renamingThread,
   deleting: renamingProject,
   deletingPending: false,
-  error: 'Something failed.',
+  error: { error: errorFrom('internal', 'Something failed.') },
 };
 
 describe('the dialogs a sidebar step opens', () => {
@@ -169,24 +172,70 @@ describe('the draft a settled create closes', () => {
   });
 });
 
-describe('the one error a failed request surfaces', () => {
-  test('carries the host message, or the fallback when there is none', () => {
-    assert.equal(
-      fail(emptySidebar, new Error('The host refused.')).error,
-      'The host refused.',
+describe('the one error a failed request surfaces (§8)', () => {
+  const refused: ErrorInfo = errorFrom('internal', 'The host refused.');
+  const broke: ErrorInfo = errorFrom('project_stream_failed', 'Stream broke.');
+
+  test('fail stores the error with its retry target, or with none', () => {
+    assert.deepEqual(fail(emptySidebar, refused, { kind: 'projects' }).error, {
+      error: refused,
+      retry: { kind: 'projects' },
+    });
+    assert.deepEqual(
+      fail(emptySidebar, refused, { kind: 'threads', projectId: 'project' })
+        .error,
+      { error: refused, retry: { kind: 'threads', projectId: 'project' } },
     );
-    assert.equal(
-      fail(emptySidebar, 'not an Error').error,
-      'The operation could not be completed.',
-    );
+    const write = fail(emptySidebar, refused).error;
+    assert.deepEqual(write?.error, refused);
+    assert.equal(write?.retry, undefined);
   });
 
-  test('reports a message the update already carried, and clears on ask', () => {
-    assert.equal(report(emptySidebar, 'Stream broke.').error, 'Stream broke.');
+  test('fail replaces an earlier error and keeps everything else', () => {
+    const failed = fail(busy, refused);
+    assert.deepEqual(failed.error?.error, refused);
+    assert.equal(failed.error?.retry, undefined);
+    assert.deepEqual(failed.draft, busy.draft);
+    assert.deepEqual(failed.editing, busy.editing);
+    assert.deepEqual(failed.deleting, busy.deleting);
+  });
+
+  test('report stores an error the host carried, with no target, and clears on ask', () => {
+    const reported = report(
+      fail(emptySidebar, refused, { kind: 'projects' }),
+      broke,
+    );
+    assert.deepEqual(reported.error?.error, broke);
+    assert.equal(reported.error?.retry, undefined);
+    assert.equal(clearError(reported).error, undefined);
+  });
+
+  test('settle clears only an error whose target is the loaded one', () => {
+    const projects = fail(emptySidebar, refused, { kind: 'projects' });
+    assert.equal(settle(projects, { kind: 'projects' }).error, undefined);
+
+    const threads = fail(emptySidebar, refused, {
+      kind: 'threads',
+      projectId: 'project',
+    });
     assert.equal(
-      clearError(report(emptySidebar, 'Stream broke.')).error,
+      settle(threads, { kind: 'threads', projectId: 'project' }).error,
       undefined,
     );
+    // Another Project's Threads, or the Projects list, is another target.
+    assert.equal(
+      settle(threads, { kind: 'threads', projectId: 'other' }),
+      threads,
+    );
+    assert.equal(settle(threads, { kind: 'projects' }), threads);
+    assert.equal(
+      settle(projects, { kind: 'threads', projectId: 'project' }),
+      projects,
+    );
+    // An error with no target stays.
+    const write = fail(emptySidebar, refused);
+    assert.equal(settle(write, { kind: 'projects' }), write);
+    assert.equal(settle(emptySidebar, { kind: 'projects' }), emptySidebar);
   });
 });
 

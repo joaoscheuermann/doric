@@ -11,7 +11,9 @@
  * Enter opens or closes it like any other widget.
  */
 
+import { type ErrorInfo, sameErrorInfo } from 'desktop/reads';
 import { Button } from 'desktop/ui/button';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -29,8 +31,12 @@ import {
   spawnOpenness,
 } from '../../../../domain/collapsible.js';
 import { THREAD_SPAWN_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
+import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import type { ToolStatus, ToolTurn } from '../../../../domain/projector.js';
-import { parseThreadSpawn } from '../../../../domain/thread-spawn.js';
+import {
+  parseThreadSpawn,
+  THREAD_SPAWN_TOOL,
+} from '../../../../domain/thread-spawn.js';
 import { useDelegatedSource } from '../../../../hooks/use-delegated-source.js';
 import { CollapsibleBlock } from '../../../molecules/collapsible-block.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
@@ -112,7 +118,7 @@ function ThreadSpawnRow({
 }: {
   readonly args: string;
   readonly chosen: Chosen;
-  readonly error: string | undefined;
+  readonly error: ErrorInfo | undefined;
   readonly focused: boolean;
   readonly onChosenChange: (chosen: boolean) => void;
   readonly result: string | undefined;
@@ -160,9 +166,13 @@ function ThreadSpawnRow({
       <div className="flex flex-col gap-2">
         <ReadonlyMarkdown text={parsed.prompt} />
         {error === undefined ? null : (
-          <div className="whitespace-pre-wrap break-words text-destructive">
-            {error}
-          </div>
+          <ErrorNotice
+            variant="compact"
+            error={error}
+            catalog={chatErrorCatalog}
+            fallbackCode="tool_failed"
+            context={{ Tool: THREAD_SPAWN_TOOL }}
+          />
         )}
       </div>
     </CollapsibleBlock>
@@ -177,7 +187,7 @@ export class ThreadSpawnNode extends DecoratorNode<JSX.Element> {
   __args: string;
   __status: ToolStatus;
   __result?: string;
-  __error?: string;
+  __error?: ErrorInfo;
   /** The reader's choice of open/closed; `null` until they make one. */
   __chosen: Chosen = null;
 
@@ -288,7 +298,7 @@ export class ThreadSpawnNode extends DecoratorNode<JSX.Element> {
       this.__args === turn.args &&
       this.__status === turn.status &&
       this.__result === turn.result &&
-      this.__error === turn.error
+      sameErrorInfo(this.__error, turn.error)
     ) {
       return;
     }

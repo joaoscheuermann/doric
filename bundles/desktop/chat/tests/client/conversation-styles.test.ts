@@ -339,3 +339,87 @@ test('a block that wears a gutter mark starts its first line at its top, whateve
   // A heading's own top margin would push the first line below the mark.
   assert.equal(first.get('margin-block-start'), '0');
 });
+
+// The conversation footer (conversation-footer spec, §3, §4, §6): a band that
+// floats over the conversation's bottom. The rules that answer it are
+// unlayered, so a layered utility (`data-vertical:h-full` on the bar) cannot
+// outrank them; they are read with every `@layer … { … }` block cut out, so a
+// rule moved into a layer fails them.
+
+/**
+ * The sheet without its comments and without the body of any `@layer <name>
+ * { … }` block, its braces matched as `narrowBlock` matches them. A layer
+ * order statement (`@layer a, b;`) stays: it has no block.
+ *
+ * The first rule after a cut block reads the at-statements before it as part
+ * of its selector, so no assertion names that rule through this helper.
+ */
+const unlayered = (sheet: string): string => {
+  let text = uncommented(sheet);
+  for (;;) {
+    const block = /@layer\b[^;{}]*\{/.exec(text);
+    if (block === null) return text;
+    const open = block.index + block[0].length - 1;
+    let depth = 0;
+    let end = text.length;
+    for (let at = open; at < text.length; at += 1) {
+      if (text[at] === '{') depth += 1;
+      if (text[at] === '}') depth -= 1;
+      if (depth === 0) {
+        end = at + 1;
+        break;
+      }
+    }
+    text = text.slice(0, block.index) + text.slice(end);
+  }
+};
+
+/** The conversation's vertical scrollbar, the platform's own attributes. */
+const VERTICAL_BAR =
+  ".conversation-scroll > [data-slot='scroll-area-scrollbar'][data-orientation='vertical']";
+
+/** The conversation's scroll viewport. */
+const VIEWPORT = ".conversation-scroll > [data-slot='scroll-area-viewport']";
+
+test('the conversation’s vertical bar ends where a floating footer begins, and moves no other edge', async () => {
+  const sheet = await readFile(stylesheet, 'utf8');
+
+  assert.deepEqual(
+    [...declared(unlayered(sheet), VERTICAL_BAR)],
+    [['height', 'calc(100% - var(--chat-footer-height, 0px))']],
+  );
+});
+
+test('a block scrolled into view stops above a floating footer', async () => {
+  const sheet = await readFile(stylesheet, 'utf8');
+
+  assert.equal(
+    declared(unlayered(sheet), VIEWPORT).get('scroll-padding-bottom'),
+    'var(--chat-footer-height, 0px)',
+  );
+});
+
+test('the conversation’s scroll root is its own stacking context, and keeps its measure and weight', async () => {
+  const sheet = await readFile(stylesheet, 'utf8');
+  const root = declared(unlayered(sheet), '.conversation-scroll');
+
+  assert.equal(root.get('isolation'), 'isolate');
+  assert.equal(root.get('container-type'), 'inline-size');
+  assert.equal(root.get('font-weight'), '300');
+});
+
+test('the viewer footer band is as tall as --chat-footer-height, the background at 70 % under a 2 px blur', async () => {
+  const sheet = await readFile(stylesheet, 'utf8');
+
+  assert.deepEqual(
+    [...declared(unlayered(sheet), "[data-slot='chat-thread-footer']")],
+    [
+      ['height', 'var(--chat-footer-height)'],
+      [
+        'background-color',
+        'color-mix(in oklab, var(--background) 70%, transparent)',
+      ],
+      ['backdrop-filter', 'blur(2px)'],
+    ],
+  );
+});

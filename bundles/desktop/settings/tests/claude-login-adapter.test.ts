@@ -8,7 +8,7 @@ import { describe, test } from 'node:test';
 
 import { ContractError, type CredentialDescription } from 'bundle/contracts';
 
-import { settingsOver, showing } from './support/host.js';
+import { settingsError, settingsOver, showing } from './support/host.js';
 
 const claude: CredentialDescription = {
   id: '00000000-0000-4000-8000-0000000000cc',
@@ -68,6 +68,53 @@ describe('signing in with Claude', () => {
         await assert.rejects(
           api.claude.start(),
           showing('The request could not be completed.'),
+        );
+      },
+    );
+  });
+});
+
+// T-22 (error-messages.md §6.4): a sign-in refusal keeps the contract's
+// message and code, with the contract error as its cause; anything else is
+// `internal` with no cause.
+describe('T-22 sign-in rejections keep their code and cause', () => {
+  for (const [code, message] of [
+    ['claude_login_busy', 'A Claude sign-in is already in progress.'],
+    ['claude_login_failed', 'The Claude sign-in failed: access_denied'],
+  ] as const) {
+    test(`a ${code} refusal keeps its code and is the cause`, async () => {
+      const contract = new ContractError(code, message);
+      await settingsOver(
+        {
+          claudeFinish: () => {
+            throw contract;
+          },
+        },
+        async (api) => {
+          await assert.rejects(
+            api.claude.finish(),
+            settingsError({ code, message, cause: contract }),
+          );
+        },
+      );
+    });
+  }
+
+  test('a failure that is not the contract is internal with no cause', async () => {
+    await settingsOver(
+      {
+        claudeStart: () => {
+          throw new Error('the bridge is gone');
+        },
+      },
+      async (api) => {
+        await assert.rejects(
+          api.claude.start(),
+          settingsError({
+            code: 'internal',
+            message: 'The request could not be completed.',
+            cause: undefined,
+          }),
         );
       },
     );

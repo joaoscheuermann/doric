@@ -65,6 +65,8 @@ const threadMethods: Readonly<Record<string, number | null>> = {
   editQueued: null,
   removeQueued: null,
   resumeQueue: 1,
+  // 1.4.0: sends the Thread's last prompt again.
+  retry: null,
 };
 
 /** `chat.composer/v1` as main routes it: tuple length per method. */

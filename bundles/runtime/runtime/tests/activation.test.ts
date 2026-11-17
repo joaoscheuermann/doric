@@ -109,7 +109,7 @@ void test('the runtime activates after its providers and before the bundles that
     candidate(await manifestOf('files')),
     candidate(await manifestOf('git')),
     candidate(await manifestOf('threads')),
-    candidate(provider('default', ['executor/v1@1.0.0'])),
+    candidate(provider('default', ['executor/v1@1.4.0'])),
     candidate(provider('docker', ['sandbox/v1@1.0.0'])),
     // The window surfaces the stage-10 client parts of files and git require.
     candidate(
@@ -168,7 +168,7 @@ void test('a second provider of runtime/v1 is quarantined without a choice', asy
     candidate(core),
     candidate(runtime),
     candidate(other),
-    candidate(provider('default', ['executor/v1@1.0.0'])),
+    candidate(provider('default', ['executor/v1@1.4.0'])),
     candidate(provider('docker', ['sandbox/v1@1.0.0'])),
     candidate(provider('host-config', ['host-config/v1@1.1.0'])),
     candidate(

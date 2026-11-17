@@ -115,7 +115,15 @@ awaited tool lifecycle through `onToolEvent` without exposing a stream.
 | `AgentErrorObject`               | Agent lifecycle errors, such as `turn_limit_exceeded`, `concurrent_run`, or ID collisions.   |
 
 `AgentOptions` also accepts `effort`, `flags`, `temperature`, and
-`maxOutputTokens`, which are forwarded to provider requests.
+`maxOutputTokens`, which are forwarded to provider requests, and `retry`,
+which sets how retryable provider failures are asked again:
+
+| `retry` field    | Default | Effect                                                    |
+| ---------------- | ------- | --------------------------------------------------------- |
+| `retries`        | `2`     | Retries for a retryable failure other than a network one. |
+| `networkRetries` | `4`     | Retries for a `network_error` connection failure.         |
+| `baseDelayMs`    | `1000`  | First wait, doubled per attempt.                          |
+| `maxDelayMs`     | `30000` | Longest wait.                                             |
 
 Per-run options for `complete` and `stream`:
 
@@ -261,6 +269,15 @@ correct the call, work around it or report it. Set `maxTurns` to bound a model
 that keeps calling a failing tool. A handler that fails after the run's signal
 is aborted ends the run with its error, and so does a result that cannot be
 serialized or recorded.
+
+### Provider retries
+
+A retryable provider failure before any output is asked again within its own
+budget: `retry.networkRetries` for `network_error`, `retry.retries` for the
+rest. A thrown connection failure that still fails after at least one retry
+ends the run with "Could not connect to <provider> (tried N times).", N
+counting every attempt of the turn, and the transport error as cause. A turn
+that already streamed output is never retried.
 
 ## Development
 

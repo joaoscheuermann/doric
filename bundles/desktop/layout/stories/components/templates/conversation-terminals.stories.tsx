@@ -3,13 +3,18 @@ import { ThreadPane } from '../../../src/client/components/templates/thread-pane
 import { planThread } from '../../support/data.js';
 import { LayoutHost } from '../../support/layout-host.js';
 import { Placeholder } from '../../support/placeholder.js';
-import { WorkspaceShell } from '../../support/shell.js';
+import { ContentFrame, WorkspaceShell } from '../../support/shell.js';
 import { windowDecorator } from '../../support/window-frame.js';
 
 const conversation = (
-  <ThreadPane>
-    <Placeholder tag="chat-thread" label={`Conversation: ${planThread.name}`} />
-  </ThreadPane>
+  <ContentFrame>
+    <ThreadPane>
+      <Placeholder
+        tag="chat-thread"
+        label={`Conversation: ${planThread.name}`}
+      />
+    </ThreadPane>
+  </ContentFrame>
 );
 
 export default {

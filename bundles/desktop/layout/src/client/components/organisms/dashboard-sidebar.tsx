@@ -28,6 +28,7 @@ import {
 import type { JSX, ReactNode } from 'react';
 
 import type { Project } from '../../domain/workspace.js';
+import { BundleHealthNotice } from '../molecules/bundle-health-notice.js';
 import { ElementHost } from '../molecules/element-host.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
 
@@ -142,6 +143,7 @@ export function DashboardSidebar({
             <ElementHost key={`${item.owner}:${item.id}`} tag={item.tag} />
           ))}
         </SidebarContent>
+        <BundleHealthNotice className="mx-2 shrink-0" />
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>

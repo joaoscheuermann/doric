@@ -52,6 +52,8 @@ const hostContracts: Readonly<
   'models/v1': { kinds: 0, kind: 1, catalog: null, icons: null },
   'tools/v1': { catalog: 0 },
   'secrets/v1': { list: 0, create: null, update: 2, delete: null },
+  // A Thread's provider, model and effort, set from the footer picker.
+  'runtime.threads/v1': { setThreadExecution: null },
 };
 
 /** The version each host contract is staged at; any other is at 1.0.0. */
@@ -60,6 +62,8 @@ const hostContractVersions: Readonly<Record<string, string>> = {
   'host-config/v1': '1.1.0',
   // The icons of providers and models (model icons).
   'models/v1': '1.3.0',
+  // `setThreadExecution` (per-thread model).
+  'runtime.threads/v1': '1.7.0',
 };
 
 const hostContractVersion = (id: string): string =>
@@ -84,6 +88,7 @@ const hostCandidateWithout = (
       // it behind the bridge, so the window harness stages it here the way
       // the real composition enables the bundle that provides it.
       'claude.login/v1@1.0.0',
+      `runtime.threads/v1@${hostContractVersion('runtime.threads/v1')}`,
     ].filter((entry) => !absent.has(entry.split('@')[0] ?? '')),
     requires: [],
   },
@@ -95,6 +100,7 @@ const hostCandidateWithout = (
       'secrets.backend/v1',
       'host-config/v1',
       'claude.login/v1',
+      'runtime.threads/v1',
     ]
       .filter((id) => !absent.has(id))
       .map((id) => ({
@@ -160,7 +166,10 @@ const hostRemote = (absent: ReadonlySet<string>): RemoteContract[] =>
     .map(([id, methods]) => ({
       id,
       environment: 'host',
-      bundleId: id === 'host-config/v1' ? 'host' : 'core',
+      bundleId:
+        id === 'host-config/v1' || id === 'runtime.threads/v1'
+          ? 'host'
+          : 'core',
       version: '1.0.0',
       contractVersion: hostContractVersion(id),
       cardinality: 'one',

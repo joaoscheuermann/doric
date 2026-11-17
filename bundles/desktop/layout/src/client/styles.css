@@ -1,8 +1,9 @@
 /*
- * The layout bundle's own rules (design §9.4), moved from the renderer's sheet:
- * the Monaco and xterm scrollbar sliders, unlayered as before. The build
- * appends the CSS the client part imports (xterm's) after them; Monaco's CSS
- * ships once per window in `desktop/ui/theme.css` (WP-10P).
+ * The layout bundle's own rules (design §9.4): the Monaco and xterm scrollbar
+ * sliders, moved from the renderer's sheet and unlayered as before, and the
+ * conversation footer's height, fill and blur (conversation-footer spec, D2
+ * and D13). The build appends the CSS the client part imports (xterm's) after
+ * them; Monaco's CSS ships once per window in `desktop/ui/theme.css` (WP-10P).
  *
  * No utilities are emitted here: the shell's sheet emits the whole sorted set
  * the in-repo surfaces use, this bundle's included, so the cascade stays the
@@ -42,4 +43,16 @@
   border: 1px solid transparent;
   border-left-width: 2px;
   border-radius: 9999px;
+}
+
+/* The conversation footer floats over the conversation (conversation-footer
+   spec, D2 and D13): as tall as `--chat-footer-height`, which the conversation
+   frame sets, so the band and the bar's end read one length; the card's
+   background at 70 % with a 2 px backdrop blur, so the transcript shows
+   through it. A rule, not utilities, because this sheet ships with the layout
+   bundle whatever app runs it. */
+[data-slot='workspace-footer'] {
+  height: var(--chat-footer-height);
+  background-color: color-mix(in oklab, var(--background) 70%, transparent);
+  backdrop-filter: blur(2px);
 }

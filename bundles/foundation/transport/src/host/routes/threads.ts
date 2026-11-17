@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import type { Git } from 'git/contracts';
-import type { RuntimeThreads, Thread } from 'runtime/contracts';
+import {
+  type RuntimeThreads,
+  reasoningEfforts,
+  restErrors,
+  type Thread,
+} from 'runtime/contracts';
 import type { Usage } from 'usage/contracts';
 import { z } from 'zod';
 
@@ -21,11 +26,28 @@ const cwdInput = z
       value.length <= 4096 &&
       value.includes('\0') === false,
   );
-/** A patch changes the name, the working directory, or both. */
+/**
+ * A patch changes the name, the working directory, the execution, or a
+ * combination. `providerId` and `model` come together, and `effort` only with
+ * them; bounds are the configuration's own.
+ */
 const threadInput = z
-  .object({ name: nameInput.optional(), cwd: cwdInput.optional() })
+  .object({
+    name: nameInput.optional(),
+    cwd: cwdInput.optional(),
+    providerId: z.string().trim().min(1).max(128).optional(),
+    model: z.string().trim().min(1).max(512).optional(),
+    effort: z.enum(reasoningEfforts).optional(),
+  })
   .strict()
-  .refine((value) => value.name !== undefined || value.cwd !== undefined);
+  .refine(
+    (value) =>
+      (value.providerId === undefined) === (value.model === undefined) &&
+      (value.effort === undefined || value.providerId !== undefined) &&
+      (value.name !== undefined ||
+        value.cwd !== undefined ||
+        value.providerId !== undefined),
+  );
 const promptInput = z
   .object({
     prompt: z.string().refine((value) => value.trim().length > 0),
@@ -206,11 +228,11 @@ export const createThreadsRouter = ({
         response,
         422,
         'invalid_thread',
-        'A Thread name, a working directory, or both are required.',
+        'A Thread name, a working directory, an execution (providerId and model, with an optional effort), or a combination is required.',
       );
       return;
     }
-    const { name, cwd } = input.data;
+    const { name, cwd, providerId, model, effort } = input.data;
     let thread: Thread | undefined;
     if (name !== undefined) {
       thread = await threads.renameThread({ id: request.params.id, name });
@@ -239,6 +261,20 @@ export const createThreadsRouter = ({
         return;
       }
       thread = result.thread;
+    }
+    if (providerId !== undefined && model !== undefined) {
+      const result = await threads.setThreadExecution({
+        id: request.params.id,
+        providerId,
+        model,
+        ...(effort === undefined ? {} : { effort }),
+      });
+      const error = restErrors.setThreadExecution(result);
+      if (error !== undefined) {
+        sendError(response, error.status, error.code, error.message);
+        return;
+      }
+      if (result.status === 'updated') thread = result.thread;
     }
     if (thread === undefined) {
       sendError(

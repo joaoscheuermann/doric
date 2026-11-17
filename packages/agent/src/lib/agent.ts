@@ -19,6 +19,7 @@ import type {
 import type { ToolCallRecord } from './types/tool-call-storage.js';
 import {
   answeredTurn,
+  exhaustedError,
   isRetryable,
   notifyStructuredAttempt,
   notifyToolCallRepair,
@@ -27,6 +28,7 @@ import {
   refusalError,
   repairLimit,
   responseFromFinish,
+  retryCounter,
   retryDelay,
   retryPolicy,
   type TurnGuard,
@@ -208,12 +210,13 @@ export const createAgent = (options: AgentOptions): Agent => {
     request: ProviderRequest<Output>,
     signal?: AbortSignal,
   ): Promise<ProviderFinished<Output>> => {
+    const mayRetry = retryCounter(retry);
     for (let attempt = 0; ; attempt += 1) {
       try {
         return await options.provider.complete(request);
       } catch (error) {
-        if (attempt >= retry.retries || !isRetryable(error) || signal?.aborted)
-          throw error;
+        if (!isRetryable(error) || signal?.aborted) throw error;
+        if (!mayRetry(error)) throw exhaustedError(error, attempt);
         await pause(retryDelay(error, attempt, retry), signal);
       }
     }
@@ -229,6 +232,7 @@ export const createAgent = (options: AgentOptions): Agent => {
     request: ProviderRequest<Output>,
     signal?: AbortSignal,
   ): AsyncGenerator<ProviderStreamEvent<Output>> {
+    const mayRetry = retryCounter(retry);
     for (let attempt = 0; ; attempt += 1) {
       const held: ProviderStreamEvent<Output>[] = [];
       let flowing = false;
@@ -242,9 +246,9 @@ export const createAgent = (options: AgentOptions): Agent => {
             }
             if (
               event.type === 'error' &&
-              attempt < retry.retries &&
               isRetryable(event.error) &&
-              !signal?.aborted
+              !signal?.aborted &&
+              mayRetry(event.error)
             ) {
               failure = event.error;
               break;
@@ -255,14 +259,13 @@ export const createAgent = (options: AgentOptions): Agent => {
           yield event;
         }
       } catch (error) {
-        if (
-          flowing ||
-          attempt >= retry.retries ||
-          !isRetryable(error) ||
-          signal?.aborted
-        ) {
+        if (flowing || !isRetryable(error) || signal?.aborted) {
           yield* held;
           throw error;
+        }
+        if (!mayRetry(error)) {
+          yield* held;
+          throw exhaustedError(error, attempt);
         }
         failure = error;
       }

@@ -4,15 +4,26 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { toast } from 'desktop/ui/sonner';
+import { errorInfo } from 'desktop/reads';
+import { toastError } from 'desktop/ui/error-notice';
 import { useEffect } from 'react';
 
 import { threadsApi } from '../api/threads-api.js';
-import { messageFrom } from '../domain/errors.js';
+import { chatErrorCatalog } from '../domain/error-catalog.js';
 import { latestQueue, type ThreadQueue } from '../domain/queue.js';
 import { queryKeys } from '../queries/keys.js';
 import { subscribeThreadQueue } from '../stores/thread-chats.js';
 import { useConnectionStatus } from './use-connection-status.js';
+
+/** Shows a refused queue action as the Thread's one queue toast (§5.1). */
+const toastQueueError = (id: string | undefined, error: unknown): void =>
+  toastError({
+    id: `thread-queue-${id}`,
+    error: errorInfo(error),
+    catalog: chatErrorCatalog,
+    fallbackCode: 'queue_action_failed',
+    ...(id === undefined ? {} : { context: { Thread: id } }),
+  });
 
 /** How long queue invalidations wait so one read answers a burst of them. */
 const REFRESH_SETTLE_MS = 100;
@@ -97,14 +108,14 @@ export const useThreadQueue = (id: string | undefined) => {
     mutationFn: () => threadsApi.resumeQueue(id as string),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: queryKeys.threadQueue(id) }),
-    onError: (error) => toast.error(messageFrom(error)),
+    onError: (error) => toastQueueError(id, error),
   });
   const remove = useMutation({
     mutationFn: (promptId: string) =>
       threadsApi.removeQueued(id as string, promptId),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: queryKeys.threadQueue(id) }),
-    onError: (error) => toast.error(messageFrom(error)),
+    onError: (error) => toastQueueError(id, error),
   });
   return {
     ...query,

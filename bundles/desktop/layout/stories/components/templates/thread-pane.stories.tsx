@@ -10,7 +10,7 @@ import { ThreadPane } from '../../../src/client/components/templates/thread-pane
 import { checkout, planThread, projectRoute } from '../../support/data.js';
 import { LayoutHost } from '../../support/layout-host.js';
 import { Placeholder } from '../../support/placeholder.js';
-import { WorkspaceShell } from '../../support/shell.js';
+import { ContentFrame, WorkspaceShell } from '../../support/shell.js';
 import { windowDecorator } from '../../support/window-frame.js';
 import { sidebarModelOf } from '../../support/workspace.js';
 
@@ -28,12 +28,14 @@ export const Conversation = {
     <LayoutHost>
       <WorkspaceShell>
         <ConversationTerminals>
-          <ThreadPane>
-            <Placeholder
-              tag="chat-thread"
-              label={`Conversation: ${planThread.name}`}
-            />
-          </ThreadPane>
+          <ContentFrame>
+            <ThreadPane>
+              <Placeholder
+                tag="chat-thread"
+                label={`Conversation: ${planThread.name}`}
+              />
+            </ThreadPane>
+          </ContentFrame>
         </ConversationTerminals>
       </WorkspaceShell>
     </LayoutHost>
@@ -46,19 +48,21 @@ export const NoThread = {
     <LayoutHost>
       <WorkspaceShell path={projectRoute(checkout)} model={noThread}>
         <ConversationTerminals>
-          <ThreadPane>
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>{checkout.name}</EmptyTitle>
-                <EmptyDescription>
-                  Start a thread or select one from the sidebar.
-                </EmptyDescription>
-              </EmptyHeader>
-              <button type="button" className="dashboard-new">
-                New thread
-              </button>
-            </Empty>
-          </ThreadPane>
+          <ContentFrame>
+            <ThreadPane>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>{checkout.name}</EmptyTitle>
+                  <EmptyDescription>
+                    Start a thread or select one from the sidebar.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <button type="button" className="dashboard-new">
+                  New thread
+                </button>
+              </Empty>
+            </ThreadPane>
+          </ContentFrame>
         </ConversationTerminals>
       </WorkspaceShell>
     </LayoutHost>

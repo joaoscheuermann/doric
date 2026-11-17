@@ -1,9 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, normalize } from 'node:path';
 
-import type { Log } from 'bundle/contracts';
+import { ContractError, type Log } from 'bundle/contracts';
 import { type Sandbox, workspacePathKind } from 'sandbox';
 
+import {
+  type ExecutionConfiguration,
+  modelStartEffort,
+  resolveThreadExecution,
+  type ThreadExecution,
+} from '../../contracts/execution.js';
 import type {
   Executor,
   ExecutorThread,
@@ -19,12 +25,18 @@ import {
   type InputSource,
   isTerminal,
   nameFromPrompt,
+  type ReasoningEffort,
+  reasoningEfforts,
   type SteerResult,
   type Thread,
   type ThreadGit,
   type ThreadOrigin,
 } from '../../contracts/model.js';
-import type { InterruptResult, SpawnOptions } from '../../contracts/threads.js';
+import type {
+  InterruptResult,
+  SpawnAgent,
+  SpawnOptions,
+} from '../../contracts/threads.js';
 import type {
   Host,
   ThreadControl,
@@ -44,6 +56,7 @@ import {
 import type { ThreadStore } from '../store/types.js';
 import type { Bindings } from './bindings.js';
 import { physicallyInside } from './cwd.js';
+import type { ExecutionChoice, ExecutionRefusal } from './execution.js';
 import { delegatedResult } from './prompts.js';
 import type { Redactor } from './redactor.js';
 import {
@@ -73,6 +86,75 @@ const executorThread = (
     ? thread
     : { ...thread, agent: { ...agent, instructions } };
 
+const isReasoningEffort = (
+  value: string | undefined,
+): value is ReasoningEffort =>
+  value !== undefined &&
+  (reasoningEfforts as readonly string[]).includes(value);
+
+/** An execution with its effort kept only when it is one of `reasoningEfforts`. */
+const withReasoningEffort = (execution: {
+  readonly providerId: string;
+  readonly model: string;
+  readonly effort?: string;
+}): ThreadExecution => ({
+  providerId: execution.providerId,
+  model: execution.model,
+  ...(isReasoningEffort(execution.effort) ? { effort: execution.effort } : {}),
+});
+
+/**
+ * What a child of `parent` starts from: the parent's stored execution,
+ * available or not, or a legacy parent's resolved one.
+ */
+const parentExecution = (
+  parent: Thread,
+  configuration: ExecutionConfiguration,
+): ThreadExecution =>
+  withReasoningEffort(resolveThreadExecution(parent, configuration));
+
+/** The spawn rules: the parent's execution completed by what the spawn names. */
+const spawnExecution = (
+  base: ThreadExecution,
+  options: SpawnOptions | undefined,
+  configuration: ExecutionConfiguration,
+): ThreadExecution => {
+  const model = options?.model;
+  const effort = options?.effort;
+  if (model === undefined || model === base.model)
+    return effort === undefined ? base : { ...base, effort };
+  if (effort !== undefined)
+    return { providerId: base.providerId, model, effort };
+  const start = modelStartEffort(configuration, base.providerId, model);
+  return {
+    providerId: base.providerId,
+    model,
+    ...(start === undefined ? {} : { effort: start }),
+  };
+};
+
+/** The rejection a refused spawn execution answers. */
+const spawnRefusal = (
+  refusal: ExecutionRefusal,
+  execution: ThreadExecution,
+  configuration: ExecutionConfiguration,
+): unknown => {
+  if (refusal.kind === 'unresolvable') return refusal.error;
+  const { providerId, model, effort } = execution;
+  const models = configuration.providers.find(
+    ({ id }) => id === providerId,
+  )?.models;
+  const message =
+    refusal.issue === 'provider'
+      ? `Provider "${providerId}" is not configured.`
+      : refusal.issue === 'model'
+        ? `Model "${model}" is not available on provider "${providerId}". Available models: ${(models ?? []).map(({ name }) => name).join(', ')}.`
+        : `Effort "${effort}" is not supported by model "${model}". Supported efforts: ${(models?.find(({ name }) => name === model)?.reasonings ?? []).join(', ')}.`;
+  return new ContractError('invalid_execution', message, {
+    issue: refusal.issue,
+  });
+};
+
 /*
  * Moved from agents/doric (workspace/runner.ts, design 57 §4.10, §4.11). The
  * execution is the executor/v1 port with the runtime's PromptSession, the
@@ -97,6 +179,18 @@ export interface RunnerContext {
     readonly tailMinMessages: number;
     readonly summaryMaxChars: number;
   }>;
+  /**
+   * host-config/v1: the configuration in force, unwrapped from its
+   * `DoricConfiguration`. A rejection rejects the creation that asked,
+   * creating nothing.
+   */
+  readonly executionConfiguration: () => Promise<ExecutionConfiguration>;
+  /** The service's validator (`createExecutionValidator(ports.catalogSource)`). */
+  readonly validateExecution: (
+    configuration: ExecutionConfiguration,
+    execution: ThreadExecution,
+    choice: ExecutionChoice,
+  ) => Promise<ExecutionRefusal | undefined>;
   readonly checkStorage?: () => Promise<void>;
   /** The images each Project holds, read back for the prompts it runs. */
   readonly attachments?: AttachmentStore;
@@ -672,17 +766,33 @@ export const createThreadRunner = (context: RunnerContext) => {
         start(project, thread);
       });
   };
+  /**
+   * Creates a Thread under the Project's lock. `options.execution` is stored
+   * as given (spawn computes it outside the lock); without it, `create`
+   * computes it inside the lock: a top-level Thread takes `models.execution`
+   * (effort kept only when one of `reasoningEfforts`); a child takes its
+   * parent's stored execution, available or not, or a legacy parent's
+   * resolved one. Rejects with `executionConfiguration()`'s error, creating
+   * nothing.
+   */
   const create = async (
     project: ProjectRuntime,
     name: string,
     parentThreadId?: string,
     origin?: ThreadOrigin,
-    options?: SpawnOptions,
-  ) => {
+    options?: {
+      readonly agent?: SpawnAgent;
+      readonly execution?: ThreadExecution;
+    },
+  ): Promise<
+    | { readonly status: 'inactive' | 'invalid_parent' }
+    | { readonly status: 'created'; readonly thread: Thread }
+  > => {
     if (project.closing) return { status: 'inactive' as const };
     let inherit:
       | { readonly cwd: string; readonly cwdRepo?: CwdRepo }
       | undefined;
+    let parentThread: Thread | undefined;
     if (parentThreadId !== undefined) {
       const parent = project.threads.get(parentThreadId);
       if (parent === undefined) return { status: 'invalid_parent' as const };
@@ -700,14 +810,26 @@ export const createThreadRunner = (context: RunnerContext) => {
           ? {}
           : { cwdRepo: parent.thread.cwdRepo }),
       };
+      parentThread = parent.thread;
     }
+    const execution =
+      options?.execution ??
+      (parentThread === undefined
+        ? withReasoningEffort(
+            (await context.executionConfiguration()).models.execution,
+          )
+        : parentExecution(
+            parentThread,
+            await context.executionConfiguration(),
+          ));
     const record = await store.create(
       project.project.id,
       name,
+      execution,
       parentThreadId,
       inherit,
       origin,
-      options,
+      options?.agent,
     );
     const runtime: ThreadRuntime = {
       thread: record.thread,
@@ -1469,24 +1591,44 @@ export const createThreadRunner = (context: RunnerContext) => {
       promptId: job.id,
     };
     return {
-      spawn: (prompt, title, options) =>
-        exclusive(project.project.id, async () => {
+      spawn: async (prompt, title, options) => {
+        allowed();
+        if (prompt.trim().length === 0)
+          throw new TypeError('A non-empty prompt is required.');
+        if (title !== undefined && title.trim().length === 0)
+          throw new TypeError('A non-empty title is required.');
+        // The child's execution is computed and validated outside the lock,
+        // because validation may wait on models/v1.resolve.
+        const configuration = await context.executionConfiguration();
+        const child = spawnExecution(
+          parentExecution(parent.thread, configuration),
+          options,
+          configuration,
+        );
+        if (options?.model !== undefined || options?.effort !== undefined) {
+          const refused = await context.validateExecution(
+            configuration,
+            child,
+            {
+              model: options.model !== undefined,
+              effort: options.effort !== undefined,
+            },
+          );
+          if (refused !== undefined)
+            throw spawnRefusal(refused, child, configuration);
+        }
+        return exclusive(project.project.id, async () => {
+          // The calling prompt may have ended while the validation waited.
           allowed();
-          if (prompt.trim().length === 0)
-            throw new TypeError('A non-empty prompt is required.');
-          if (title !== undefined && title.trim().length === 0)
-            throw new TypeError('A non-empty title is required.');
-          // An agent is the child's own; a model and an effort fall back to
-          // the parent's.
+          // An agent is the child's own; it is never inherited.
           const created = await create(
             project,
             nameFromPrompt(title ?? prompt),
             parent.thread.id,
             'agent',
             {
-              ...options,
-              model: options?.model ?? parent.thread.model,
-              effort: options?.effort ?? parent.thread.effort,
+              ...(options?.agent === undefined ? {} : { agent: options.agent }),
+              execution: child,
             },
           );
           if (created.status !== 'created')
@@ -1500,7 +1642,8 @@ export const createThreadRunner = (context: RunnerContext) => {
           if (accepted.status !== 'accepted')
             throw new Error('Thread cannot accept a task.');
           return { threadId: created.thread.id, promptId: accepted.promptId };
-        }),
+        });
+      },
       list: (limit, cursor) =>
         exclusive(project.project.id, () => {
           allowed();

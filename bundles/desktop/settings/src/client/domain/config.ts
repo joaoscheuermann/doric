@@ -11,11 +11,21 @@
  * and `hasSecret` is what stands in for the value.
  */
 
+import { modelEfforts, modelStartEffort } from 'runtime/contracts';
+
 import { type IconLookup, noIcons } from './model-icons.js';
 
 /**
- * The host's vocabulary, mirrored: these rules are not imported from the
- * host's contracts.
+ * The model-effort rules are the runtime's own (`runtime/contracts`), so the
+ * picker and the runtime agree on what a model accepts; a settings
+ * `Configuration` is passed as their structural `ExecutionConfiguration`.
+ */
+export { modelDefaultEffort, modelEfforts } from 'runtime/contracts';
+
+/**
+ * The host's vocabulary, mirrored: the same values as the runtime's
+ * `reasoningEfforts`, kept here so the configuration rules below read them
+ * without the runtime's other types.
  */
 export const reasoningEfforts = [
   'none',
@@ -1439,31 +1449,6 @@ export const isReasoningEffort = (value: string): value is ReasoningEffort =>
   reasoningEfforts.includes(value as ReasoningEffort);
 
 /**
- * The reasoning efforts the model an execution profile names lists, in the order
- * the model records them. A model that lists none — and a model no provider lists
- * — offers nothing to choose, because what a model accepts is the catalog's to
- * say rather than a menu this surface invents.
- */
-export const modelEfforts = (
-  configuration: Configuration,
-  providerId: string,
-  model: string,
-): readonly ReasoningEffort[] =>
-  (modelEntry(configuration, providerId, model)?.reasonings ?? []).filter(
-    isReasoningEffort,
-  );
-
-/** The entry a provider lists one model under, or `undefined` when it lists none. */
-const modelEntry = (
-  configuration: Configuration,
-  providerId: string,
-  model: string,
-): ProviderModel | undefined =>
-  configuration.providers
-    .find((provider) => provider.id === providerId)
-    ?.models?.find((entry) => entry.name === model);
-
-/**
  * The models the execution picker offers, grouped by the provider that lists
  * them, in the order the providers are configured.
  *
@@ -1544,44 +1529,6 @@ export const searchModelGroups = (
     .filter((group) => group.choices.length > 0);
 };
 
-/**
- * The effort the model's own catalog names as its default, when the model lists
- * it. It is the level a model starts at, which a picker marks as the model's own.
- */
-export const modelDefaultEffort = (
-  configuration: Configuration,
-  providerId: string,
-  model: string,
-): ReasoningEffort | undefined => {
-  const preferred = modelEntry(configuration, providerId, model)?.defaultEffort;
-
-  return preferred !== undefined &&
-    isReasoningEffort(preferred) &&
-    modelEfforts(configuration, providerId, model).includes(preferred)
-    ? preferred
-    : undefined;
-};
-
-/**
- * The effort thinking turns on at for the model the profile names: the one its
- * own catalog names when it is active, and otherwise its first effort other than
- * `none`. A model that offers only `none` keeps that value; one that lists no
- * effort carries no reasoning block.
- */
-export const modelThinkingEffort = (
-  configuration: Configuration,
-  providerId: string,
-  model: string,
-): ReasoningEffort | undefined => {
-  const efforts = modelEfforts(configuration, providerId, model);
-  if (efforts.length === 0) return undefined;
-
-  const preferred = modelDefaultEffort(configuration, providerId, model);
-  return preferred !== 'none' && preferred !== undefined
-    ? preferred
-    : (efforts.find((effort) => effort !== 'none') ?? efforts[0]);
-};
-
 /** The UI never leaves a thinking-capable model at a stored off effort. */
 export const enableExecutionReasoning = (
   configuration: Configuration,
@@ -1589,7 +1536,7 @@ export const enableExecutionReasoning = (
   const { effort, providerId, model } = configuration.models.execution;
   if (effort !== undefined && effort !== 'none') return configuration;
 
-  const enabled = modelThinkingEffort(configuration, providerId, model);
+  const enabled = modelStartEffort(configuration, providerId, model);
   return enabled === undefined || enabled === 'none'
     ? configuration
     : setExecutionEffort(configuration, enabled);
@@ -1605,7 +1552,7 @@ const modelProfile = (
   providerId: string,
   model: string,
 ): ModelExecution => {
-  const effort = modelThinkingEffort(configuration, providerId, model);
+  const effort = modelStartEffort(configuration, providerId, model);
 
   return effort === undefined
     ? { providerId, model }
@@ -1667,6 +1614,19 @@ export const setExecutionEffort = (
  */
 export const modelChoiceKey = (providerId: string, model: string): string =>
   `${providerId}\u0000${model}`;
+
+/**
+ * The configuration with `models.execution` replaced, so the picker rules
+ * read a Thread's execution instead of the stored default. Pure; the result
+ * is never sent to the host.
+ */
+export const withExecution = (
+  configuration: Configuration,
+  execution: ModelExecution,
+): Configuration => ({
+  ...configuration,
+  models: { ...configuration.models, execution },
+});
 
 /** The execution profile a composite model choice names. */
 export const selectModelChoice = (

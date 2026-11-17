@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
+import { testExecution } from '../support/execution.js';
 import {
   connectionString,
   postgresBackend,
@@ -21,7 +22,11 @@ void test('PostgreSQL retains storage pauses, history, and FIFO across reconcili
   try {
     const { projects, threads } = stores(backend.storage);
     const { project } = await projects.create('Storage', snapshot(), 'blue');
-    const { thread } = await threads.create(project.id, 'Important');
+    const { thread } = await threads.create(
+      project.id,
+      'Important',
+      testExecution,
+    );
     const promptId = randomUUID();
     const next = randomUUID();
     await threads.appendEvent(thread.id, promptId, {

@@ -6,6 +6,7 @@
 
 import { SidebarInset, SidebarProvider } from 'desktop/ui/sidebar';
 import { Tabs } from 'desktop/ui/tabs';
+import { cn } from 'desktop/ui/utils';
 import {
   type CSSProperties,
   createElement,
@@ -26,8 +27,10 @@ import {
   WorkspaceTabBar,
   WorkspaceTabs,
 } from '../../src/client/components/organisms/workspace-tabs.js';
+import { ConversationFrame } from '../../src/client/components/templates/conversation-frame.js';
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import { WorkspaceLayout } from '../../src/client/components/templates/workspace-layout.js';
+import { isThreadPanelTab } from '../../src/client/domain/workspace-tabs.js';
 import { useRegionItems } from '../../src/client/hooks/use-region-items.js';
 import { useWorkspaceTabs } from '../../src/client/hooks/use-workspace-tabs.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
@@ -43,15 +46,15 @@ const panelWidth = { '--sidebar-width': '100%' } as CSSProperties;
 
 const region = (name: string) => createElement('core-region', { name });
 
-/** The bar under the conversation: the `layout.footer` region. */
-export function ContentFooter() {
+/**
+ * The conversation frame with the `layout.footer` region floating over its
+ * bottom, as the workspace view draws it inside the split's top panel.
+ */
+export function ContentFrame({ children }: { readonly children: ReactNode }) {
   return (
-    <footer
-      data-slot="workspace-footer"
-      className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal"
-    >
-      {region('layout.footer')}
-    </footer>
+    <ConversationFrame footer={region('layout.footer')}>
+      {children}
+    </ConversationFrame>
   );
 }
 
@@ -138,6 +141,9 @@ export function WorkspaceShell({
             </div>
           }
           fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
+          viewerOpenBottom={tabs.items.some(
+            (tab) => tab.id === tabs.selected && isThreadPanelTab(tab),
+          )}
           sidebar={
             <ProjectSidebar
               header={
@@ -152,9 +158,11 @@ export function WorkspaceShell({
             />
           }
         >
-          <SidebarInset className={INSET_CARD}>
+          {/* No bottom padding, as the app's conversation card (D14): the
+          stories put `ContentFrame`, whose band stands on the card's edge,
+          in this card. */}
+          <SidebarInset className={cn(INSET_CARD, 'pb-0')}>
             {children}
-            <ContentFooter />
           </SidebarInset>
         </WorkspaceLayout>
       </Tabs>

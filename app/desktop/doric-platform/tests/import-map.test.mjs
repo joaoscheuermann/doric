@@ -230,6 +230,7 @@ describe('the platform import map', () => {
     for (const name of [
       ...components,
       'chrome-bar',
+      'error-notice',
       'react-element',
       'utils',
       'tokens',

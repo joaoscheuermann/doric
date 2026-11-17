@@ -207,6 +207,25 @@ const threadCases = (): Case[] => [
   })),
 ];
 
+/** T-24 (per-thread model §7): every `setThreadExecution` refusal. */
+const executionCases = (): Case[] =>
+  (
+    [
+      { status: 'missing' },
+      { status: 'invalid', reason: 'provider' },
+      { status: 'invalid', reason: 'model' },
+      { status: 'invalid', reason: 'effort' },
+      { status: 'unresolvable', message: 'The provider has no credential.' },
+    ] as const
+  ).map((result) => ({
+    name: `setThreadExecution ${JSON.stringify(result)}`,
+    fakes: { threads: { setThreadExecution: answering(result) } },
+    method: 'PATCH',
+    path: `/threads/${id}`,
+    body: { providerId: 'openai', model: 'gpt-5', effort: 'high' },
+    expected: restErrors.setThreadExecution(result),
+  }));
+
 const leaseAndTerminalCases = (): Case[] => [
   ...(
     [
@@ -288,6 +307,34 @@ void test('the Thread and queue outcomes answer the table errors', async () => {
   await check(threadCases());
 });
 
+void test('the Thread execution outcomes answer the table errors', async () => {
+  await check(executionCases());
+});
+
+void test('the Thread execution refusals carry their own messages', () => {
+  assert.deepEqual(
+    restErrors.setThreadExecution({ status: 'missing' }),
+    restErrors.thread(undefined),
+  );
+  for (const [reason, message] of [
+    ['provider', 'The provider is not configured.'],
+    ['model', 'The model is not available on this provider.'],
+    ['effort', 'This model does not support that effort.'],
+  ] as const) {
+    const error = restErrors.setThreadExecution({ status: 'invalid', reason });
+    assert.equal(error?.status, 422);
+    assert.equal(error?.code, 'invalid_execution');
+    assert.equal(error?.message, message);
+  }
+  const unresolvable = restErrors.setThreadExecution({
+    status: 'unresolvable',
+    message: 'The provider has no credential.',
+  });
+  assert.equal(unresolvable?.status, 422);
+  assert.equal(unresolvable?.code, 'invalid_execution');
+  assert.equal(unresolvable?.message, 'The provider has no credential.');
+});
+
 void test('the branch switch and terminal outcomes answer the table errors', async () => {
   await check(leaseAndTerminalCases());
 });
@@ -301,6 +348,25 @@ void test('a success outcome is no error', () => {
   assert.equal(restErrors.removeQueued('removed'), undefined);
   assert.equal(restErrors.terminalWrite(true), undefined);
   assert.equal(restErrors.thread({}), undefined);
+});
+
+void test('an updated execution is no error', () => {
+  assert.equal(
+    restErrors.setThreadExecution({
+      status: 'updated',
+      thread: {
+        id,
+        projectId: id,
+        name: 'Thread',
+        state: 'ready',
+        lastSequence: 0,
+        cwd: '/workspace',
+        createdAt: '',
+        updatedAt: '',
+      },
+    }),
+    undefined,
+  );
 });
 
 void test('the adapter error keeps the code, the message and the status', () => {

@@ -55,7 +55,7 @@ export const resumeExhaustedError: PromptFailure = {
   name: 'ResumeExhaustedError',
   code: 'resume_exhausted',
   message:
-    'A execução foi interrompida três vezes por reinício do host e não foi ' +
-    'retomada de novo. O trabalho pode estar incompleto; mande o prompt ' +
-    'novamente para continuar.',
+    'The run was interrupted three times by a host restart and was not ' +
+    'resumed again. The work may be incomplete; send the prompt again ' +
+    'to continue.',
 };

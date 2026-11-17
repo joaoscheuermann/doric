@@ -65,7 +65,7 @@ const VIEWER = 'section[aria-label="Viewer"]';
 const FILES_HEADER = '[data-slot="workspace-files-header"]';
 const SUB_THREAD_TAB = `[data-tab-id="thread:${PAYMENT_FORM.id}"]`;
 const AGENT_THREAD_TAB = `[data-tab-id="thread:${VALIDATE_CARDS.id}"]`;
-const SIDEBAR_ROWS =
+export const SIDEBAR_ROWS =
   '[data-slot="sidebar-menu-button"], [data-slot="sidebar-menu-sub-button"]';
 const VIEWER_TAB_CLOSE =
   '[data-slot="workspace-viewer-header"] [data-slot="tab-close"]';
@@ -163,7 +163,7 @@ const restPointer = async (
 };
 
 /** Closes every tab of the viewer, so the viewer itself closes. */
-const closeViewer = async (contents: WebContents): Promise<void> => {
+export const closeViewer = async (contents: WebContents): Promise<void> => {
   while (
     await inPage<boolean>(
       contents,

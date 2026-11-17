@@ -15,6 +15,7 @@ import {
 } from 'bundle/contracts';
 import { z } from 'zod';
 
+import { assertToolNotice } from './support/notices.js';
 import {
   type ChatWindow,
   openChatWindow,
@@ -224,7 +225,12 @@ test('a spawn that failed is open with its error and names no Thread', async () 
   );
   // Open: the prompt it was to hand down stays readable beside the error.
   assert.match(spawn?.textContent ?? '', /Audit the contrast/);
-  assert.equal(spawn?.querySelector('button[title]'), null);
+  // The child-Thread link is a button titled with the child's id; the
+  // error notice's own "Copy details" button is not a Thread link.
+  const threadLinks = [
+    ...(spawn?.querySelectorAll('button[title]') ?? []),
+  ].filter((button) => button.getAttribute('title') !== 'Copy details');
+  assert.equal(threadLinks.length, 0);
 });
 
 test('a spawning block updates in place once its child exists', async () => {
@@ -354,4 +360,15 @@ test('a spawn that names no settings keeps its header to the verb alone', async 
   assert.equal(toggle(spawn)?.textContent, 'Spawning');
   assert.equal(meta(spawn), null);
   assert.equal(labelHolder(spawn)?.children.length, 1);
+});
+
+test('T-19 a spawn that failed shows the compact tool notice naming the call', async () => {
+  const window = await open();
+  await deliver(window, [asked, spawning, failed]);
+
+  await assertToolNotice(block(window), {
+    title: 'Tool failed',
+    explanation: 'The child Thread could not be started.',
+    tool: 'thread-spawn',
+  });
 });

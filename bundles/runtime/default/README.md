@@ -3,7 +3,7 @@
 `default` is the default agent: the agent loop behind every Doric
 conversation. It was named `direct` until 2026-10-19. It runs one prompt
 of a Thread: it builds the system prompt with the run's skills, offers the
-model every registered tool and its own `load_skill`, calls the configured
+model every registered tool and its own `load_skill`, calls the Thread's
 model, saves the history as
 it goes, and compacts a long conversation so the agent can keep working
 within the model's context window.
@@ -15,14 +15,17 @@ generation process next to `runtime`, which calls it. See the
 
 ## What it provides
 
-`executor/v1@1.3.0`, with:
+`executor/v1@1.5.0`, with:
 
 - `run` — run one prompt of a Thread; from 1.3.0 the Thread it receives
   carries its agent with the agent's instructions, and its model and effort;
+  from 1.4.0 it runs on the Thread's own provider (`providerId`);
 - `checkpoint` and `rewind` — give the runtime the history patch it commits;
 - `formats` — the history formats it reads (`default.history/v1`, and
   `direct.history/v1` written before the rename);
-- `compact` — condense an idle Thread's history on demand.
+- `compact` — condense an idle Thread's history on demand; from 1.5.0 a
+  failure after the bracket opens records `compaction.failed` with
+  `{ code, error }`, `error` holding the failure behind the code.
 
 `default.hooks/v1@1.0.0`, an extension point for other bundles (the
 `default` bundle registers no handler of its own), with:
@@ -237,11 +240,20 @@ reason="agents-changed">` message (`agents-changed.md`), before any "Skills
   `defaultMaxToolResultChars` when it is absent, applies to every tool but
   `load_skill`, whose answer reaches the model whole.
   A prompt whose tool settings are unmet is refused before the model is called.
-- **Model:** the configured execution provider, model and effort, read from
-  `host-config/v1` and resolved through `models/v1`. A Thread's own model and
-  effort, when it has them, replace the configured ones; the provider stays the
-  configured one. The run's automatic compaction uses the run's model; manual
-  compaction (`compact`) uses the configured execution model.
+- **Model:** the Thread's resolved execution (`resolveThreadExecution` on the
+  configuration read from `host-config/v1`), resolved through `models/v1`: a
+  Thread with a `providerId` runs on its own provider, model and effort; a
+  legacy Thread without one runs on the workspace default's provider, with its
+  own model and effort over the default's when set. When the Thread's provider
+  or model is not available, the run logs one `LogV1` warning (`Thread
+execution unavailable`, with `threadId`, `providerId`, `model` and `issue`)
+  and fails before any model request with an error whose `code` is
+  `thread_execution_unavailable`: `The model "<model>" on provider
+"<providerId>" is not available for this thread. Choose another model in the
+conversation footer.` The run's automatic compaction uses the run's model;
+  manual compaction (`compact`) uses the Thread's resolved provider and model,
+  without effort, and fails as `summarizer_failed` when that execution is
+  unavailable or `models/v1` cannot resolve it.
 - **History:** stored as `default.history/v1` in two parts, `messages` and
   `meta` (turn boundaries, message count, and `retained`: the index of each
   standing instruction by `<bundleId>:<reason>`, recorded when the run stores a

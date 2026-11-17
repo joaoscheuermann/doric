@@ -1,12 +1,23 @@
 import { CommandsV1, type ContractId, type Services } from 'bundle/contracts';
-import { toast } from 'desktop/ui/sonner';
+import { errorInfo } from 'desktop/reads';
+import { toastError } from 'desktop/ui/error-notice';
 import { type ReactNode, useEffect, useRef } from 'react';
 
 import {
   CHAT_INTENT_EVENT,
   type ChatIntentDetail,
 } from '../../../contracts/index.js';
-import { messageFrom } from '../../domain/errors.js';
+import { chatErrorCatalog } from '../../domain/error-catalog.js';
+
+/** Shows a failed intent as the command's one toast (§5.1). */
+const toastIntentError = (command: string, error: unknown): void =>
+  toastError({
+    id: `chat-intent-${command}`,
+    error: errorInfo(error),
+    catalog: chatErrorCatalog,
+    fallbackCode: 'command_failed',
+    context: { Command: command },
+  });
 
 const isIntent = (detail: unknown): detail is ChatIntentDetail =>
   typeof detail === 'object' &&
@@ -42,10 +53,12 @@ export function IntentDispatcher({
           .use(CommandsV1)
           .execute(detail.command as ContractId, detail.input);
       } catch (error) {
-        toast.error(messageFrom(error));
+        toastIntentError(detail.command, error);
         return;
       }
-      running.catch((error: unknown) => toast.error(messageFrom(error)));
+      running.catch((error: unknown) =>
+        toastIntentError(detail.command, error),
+      );
     };
     element.addEventListener(CHAT_INTENT_EVENT, listener);
     return () => element.removeEventListener(CHAT_INTENT_EVENT, listener);

@@ -1,4 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
+import { errorFrom } from 'desktop/reads';
 import { type ReactNode, useState } from 'react';
 
 import { AccountStatus } from '../../../src/client/components/organisms/account-status.js';
@@ -165,7 +166,11 @@ export const WithError = {
   render: () => (
     <Board
       all={false}
-      workspace={workspaceOf({ error: 'The request could not be completed.' })}
+      workspace={workspaceOf({
+        error: {
+          error: errorFrom('internal', 'The request could not be completed.'),
+        },
+      })}
     />
   ),
 };

@@ -1,3 +1,4 @@
+import { errorFrom } from 'desktop/reads';
 import type { ComponentProps } from 'react';
 
 import { SkillToolItem } from '../../../src/client/components/molecules/skill-tool-item.js';
@@ -97,7 +98,7 @@ export const Failed = {
   render: () => (
     <Skill
       args={skillArgs('cwd/missing-skill')}
-      error="No skill is named cwd/missing-skill."
+      error={errorFrom('', 'No skill is named cwd/missing-skill.')}
       status="failed"
     />
   ),

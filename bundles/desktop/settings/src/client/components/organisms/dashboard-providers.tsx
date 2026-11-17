@@ -1,8 +1,10 @@
+import type { ErrorInfo } from 'desktop/reads';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from 'desktop/ui/collapsible';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   SidebarGroup,
   SidebarGroupAction,
@@ -21,6 +23,7 @@ import {
   type ProviderKind,
   providerLabel,
 } from '../../domain/config.js';
+import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { providerIconRequest } from '../../domain/model-icons.js';
 import { useModelIcons } from '../../hooks/use-model-icons.js';
 import { ProviderIcon } from '../molecules/provider-icon.js';
@@ -38,7 +41,8 @@ const row =
  * drawn by its mark and name, which opens that provider's page; the row of the
  * open page is the active one. The group folds from its label, and its "+"
  * opens a page for a new provider (none while the host lists no kind). A
- * skeleton row stands in while the configuration is still arriving.
+ * skeleton row stands in while the configuration is still arriving, and
+ * `failure`, when given, draws its notice after the rows.
  */
 export function DashboardProvidersGroup({
   draft,
@@ -46,12 +50,26 @@ export function DashboardProvidersGroup({
   activeIndex,
   onOpen,
   onAdd,
+  failure,
 }: {
   readonly draft: Configuration | undefined;
   readonly kinds: readonly ProviderKind[];
   readonly activeIndex: number | undefined;
   readonly onOpen: (index: number) => void;
   readonly onAdd: () => void;
+  /**
+   * A provider kinds or credentials list read failure, drawn after the rows as
+   * a compact, announced `ErrorNotice` of `error`, titled from the settings
+   * catalog with `fallbackCode` when `error.code` has no entry (§5.2). Its
+   * Retry calls `retry` and shows progress while `retrying` is true; whether
+   * Retry shows is the notice's rule (D5). Absent: no notice.
+   */
+  readonly failure?: {
+    readonly error: ErrorInfo;
+    readonly fallbackCode: string;
+    readonly retry: () => void;
+    readonly retrying: boolean;
+  };
 }) {
   // One request per provider shown, kept while the providers are the same.
   const providers = draft?.providers;
@@ -114,6 +132,18 @@ export function DashboardProvidersGroup({
                 ))
               )}
             </SidebarMenu>
+            {failure !== undefined && (
+              <ErrorNotice
+                announce
+                catalog={settingsErrorCatalog}
+                className="mx-1.5"
+                error={failure.error}
+                fallbackCode={failure.fallbackCode}
+                onRetry={failure.retry}
+                retrying={failure.retrying}
+                variant="compact"
+              />
+            )}
           </SidebarGroupContent>
         </CollapsibleContent>
       </SidebarGroup>

@@ -1,3 +1,4 @@
+import { ProviderErrorObject } from '../../classes/provider-error.js';
 import type {
   FinishReason,
   ProviderFinished,
@@ -6,6 +7,7 @@ import type {
   ProviderToolCall,
   UsageMetadata,
 } from '../../types/provider.js';
+import { diagnosticExcerpt } from '../../utils/diagnostics.js';
 import {
   arrayField,
   asRecord,
@@ -13,8 +15,6 @@ import {
   recordField,
   stringField,
 } from '../../utils/json.js';
-import { ProviderErrorObject } from '../../classes/provider-error.js';
-import { diagnosticExcerpt } from '../../utils/diagnostics.js';
 import { deltaEvent } from '../common.js';
 import { claudeReplayProvider, parseObject } from './body.js';
 
@@ -102,9 +102,7 @@ const claudeUsage = (
  * An Anthropic stop_reason as the shared finish reason; an unknown one stays
  * unset. A full context window is a cut-off answer, as `max_tokens` is.
  */
-const claudeFinishReason = (
-  value: unknown,
-): FinishReason | undefined => {
+const claudeFinishReason = (value: unknown): FinishReason | undefined => {
   if (
     value === 'end_turn' ||
     value === 'stop_sequence' ||
@@ -511,8 +509,7 @@ export const claudeHttpError = (
     }${hint}`,
     status,
     retryable:
-      (status === 429 || status >= 500) &&
-      error.code !== spendLimitCode,
+      (status === 429 || status >= 500) && error.code !== spendLimitCode,
     diagnostic: diagnosticExcerpt(body),
     ...(wait === undefined ? {} : { retryAfterMs: wait }),
     ...(requestId === undefined ? {} : { requestId }),

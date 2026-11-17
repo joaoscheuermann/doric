@@ -43,6 +43,21 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   agent Thread "in viewer"), adds, copies and deletes. Other bundles add
   panes only under the Thread region, pinned to the column's bottom; each
   pane collapses but does not resize (`project-sidebar.tsx`).
+- **Errors.** A failed workspace request is shown once, by the workspace error
+  notice (`workspace-error-notice.tsx`): in the sidebar on the workspace frame,
+  in the dashboard body on the dashboard frame. A failed Projects or Threads
+  load offers Retry, which loads it again (the dashboard keeps the last list
+  failure on screen while it reloads); a failed create, rename, color change
+  or delete offers none. The name field shows no toast; its validation reason
+  is a line under the name.
+- **Quarantined bundles.** When the window's bundle catalog
+  (`doric.catalog/v1`) lists quarantined bundles, one warning notice at the
+  bottom of the left sidebar (on the workspace frame at its bottom edge after
+  the stack panes; on the dashboard frame directly above the "All settings"
+  footer) names them all ("N
+  extension(s) couldn't start"), its details one bundle per line with its
+  reasons; the regions they would fill stay empty. An element whose creation
+  throws shows a compact notice in its place.
 - **Conversation.** The selected Thread fills the main area; a child Thread
   opens as a tab beside its root Thread instead of replacing it. Each of these
   viewer tabs has a context menu: the entries the bundle that opened it
@@ -50,9 +65,19 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   last.
 - **Project panel.** An icon tab strip of views beside the conversation, always
   shown; it resizes but cannot be hidden or collapsed.
-- **Footers.** The conversation footer, and one window-wide footer with the
-  host connection status and the settings button, which runs `core`'s
-  `core.open-settings/v1`.
+- **Footers.** Two footers. The conversation footer (`layout.footer`) floats
+  over the conversation's bottom 44 px, to the card's bottom edge (the card
+  draws no bottom padding); its height, fill and blur are this bundle's sheet
+  rule, and the conversation frame sets `--chat-footer-height: 2.75rem` for
+  `<chat-view>` (see [chat's README](../chat/README.md)). The viewer card draws
+  no bottom padding while its selected tab's element is `<chat-thread-panel>`,
+  whose footer band stands on the card's bottom edge; any other tab keeps the
+  card's 8 px, whatever its icon
+  ([SR12](../../../docs/designs/conversation-footer.md#risks)). The Files column
+  footer (`layout.panel.footer`) is one 28 px row under the Project panel.
+  Settings open from the account avatar, which runs `core`'s
+  `core.open-settings/v1`. Layout 3.0.3 needs
+  chat 1.6.2 or later in the same bundle set.
 
 The selection is the window path (`/`, `/projects/<projectId>` or
 `/projects/<projectId>/threads/<threadId>`); a saved selection is validated
@@ -104,7 +129,7 @@ tab with no Thread or Project selected fails with `unavailable`.
 | ----------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `layout.header`         | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
 | `layout.panel`          | the Project panel's views                                                              | `files`, `git`                                                 |
-| `layout.footer`         | the conversation footer                                                                | `settings`' execution picker, `chat`'s composer, `usage`       |
+| `layout.footer`         | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
 | `layout.panel.footer`   | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
 | `layout.account.status` | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
 | `layout.main.bottom`    | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
@@ -126,7 +151,8 @@ npx nx test bundle-layout
 ```
 
 Most tests are DOM-free; `tests/client/shell.test.ts` renders the shell in a
-DOM. They cover the tree, the selection route, tabs, the
+DOM, and `tests/client/footer-styles.test.ts` reads the bundle's stylesheet
+from disk. They cover the tree, the selection route, tabs, the
 sidebar stack, Thread navigation and the contract services. Stories under
 `stories/` are CSF3, and `.storybook/preview.tsx` is the harness that wraps
 them. The build writes `bundles/desktop/layout/dist`, which

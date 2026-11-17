@@ -1,7 +1,8 @@
 // `<layout-workspace>` (stage 9 §5.4): the old renderer's `views/app.tsx`
 // with the same hooks and props. The conversation is the child route in the
-// inner `<core-outlet>`, the content footer is the `layout.footer` region and
-// the header's actions are the `layout.header` region. The `layout.overlay`
+// inner `<core-outlet>`; the content footer is the `layout.footer` region,
+// which `ConversationFrame` floats over the conversation's bottom; the
+// header's actions are the `layout.header` region. The `layout.overlay`
 // region is the floating layer over the conversation area.
 
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -16,6 +17,7 @@ import { SidebarInset, SidebarProvider } from 'desktop/ui/sidebar';
 import { Toaster } from 'desktop/ui/sonner';
 import { Tabs } from 'desktop/ui/tabs';
 import { TooltipProvider } from 'desktop/ui/tooltip';
+import { cn } from 'desktop/ui/utils';
 import {
   type CSSProperties,
   createElement,
@@ -46,10 +48,12 @@ import {
   WorkspaceTabBar,
   WorkspaceTabs,
 } from '../components/organisms/workspace-tabs.js';
+import { ConversationFrame } from '../components/templates/conversation-frame.js';
 import { ConversationTerminals } from '../components/templates/conversation-terminals.js';
 import { INSET_CARD } from '../components/templates/inset-card.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
+import { isThreadPanelTab } from '../domain/workspace-tabs.js';
 import { useProjectTabs } from '../hooks/use-project-tabs.js';
 import { useRegionItems } from '../hooks/use-region-items.js';
 import { useWorkspace } from '../hooks/use-workspace.js';
@@ -139,6 +143,7 @@ function Workspace() {
     createThread: actions.createThread,
     deleteEntity: actions.requestDelete,
     rename: actions.rename,
+    retryError: actions.retryError,
     selectProject: actions.selectProject,
     selectThread: actions.selectThread,
     setProjectColor: actions.setProjectColor,
@@ -282,6 +287,9 @@ function Workspace() {
                 <WorkspaceTabs state={tabs} />
               )
             }
+            viewerOpenBottom={tabs.items.some(
+              (tab) => tab.id === tabs.selected && isThreadPanelTab(tab),
+            )}
             sidebar={
               <ProjectSidebar
                 header={
@@ -292,44 +300,40 @@ function Workspace() {
               />
             }
           >
-            <SidebarInset className={INSET_CARD}>
+            <SidebarInset className={cn(INSET_CARD, 'pb-0')}>
               <ConversationTerminals
                 bottom={bottomVisible && <Region name="layout.main.bottom" />}
               >
-                <ThreadPane>
-                  {selectedThread ? (
-                    createElement('core-outlet')
-                  ) : (
-                    <Empty>
-                      <EmptyHeader>
-                        <EmptyTitle>
-                          {selectedProject?.name ?? 'No project selected'}
-                        </EmptyTitle>
-                        <EmptyDescription>
-                          Start a thread or select one from the sidebar.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                      {selectedProject && (
-                        <button
-                          type="button"
-                          className="dashboard-new"
-                          onClick={() =>
-                            actions.beginThread(selectedProject.id)
-                          }
-                        >
-                          New thread
-                        </button>
-                      )}
-                    </Empty>
-                  )}
-                </ThreadPane>
+                <ConversationFrame footer={<Region name="layout.footer" />}>
+                  <ThreadPane>
+                    {selectedThread ? (
+                      createElement('core-outlet')
+                    ) : (
+                      <Empty>
+                        <EmptyHeader>
+                          <EmptyTitle>
+                            {selectedProject?.name ?? 'No project selected'}
+                          </EmptyTitle>
+                          <EmptyDescription>
+                            Start a thread or select one from the sidebar.
+                          </EmptyDescription>
+                        </EmptyHeader>
+                        {selectedProject && (
+                          <button
+                            type="button"
+                            className="dashboard-new"
+                            onClick={() =>
+                              actions.beginThread(selectedProject.id)
+                            }
+                          >
+                            New thread
+                          </button>
+                        )}
+                      </Empty>
+                    )}
+                  </ThreadPane>
+                </ConversationFrame>
               </ConversationTerminals>
-              <footer
-                data-slot="workspace-footer"
-                className="flex h-7 shrink-0 items-center justify-end gap-1 pl-2 text-[11px] font-normal"
-              >
-                <Region name="layout.footer" />
-              </footer>
               {/*
                 The floating layer over the conversation area: `layout.overlay`
                 items place themselves, and the layer itself never intercepts

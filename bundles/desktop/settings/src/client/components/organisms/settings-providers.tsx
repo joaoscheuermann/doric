@@ -14,8 +14,10 @@ import {
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
+import type { ErrorInfo } from 'desktop/reads';
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import { Button } from 'desktop/ui/button';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import { FieldGroup } from 'desktop/ui/field';
 import { Input } from 'desktop/ui/input';
 import {
@@ -58,6 +60,7 @@ import {
   providerRows,
   removeProvider,
 } from '../../domain/config.js';
+import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { RowActions } from '../molecules/row-actions.js';
 
 /**
@@ -112,6 +115,15 @@ type SettingsProvidersProps = {
   readonly draft: Configuration;
   /** The host's provider catalog, which says what every field and list is. */
   readonly kinds: readonly ProviderKind[];
+  /**
+   * The catalog read's failure, drawn as a block notice in place of the "No
+   * provider kind is available" alert, with `retry` as its Retry (§5.2).
+   */
+  readonly kindsFailure?: {
+    readonly error: ErrorInfo;
+    readonly retry: () => void;
+    readonly retrying: boolean;
+  };
   readonly onChange: (next: Configuration) => void;
   /** The stored credentials, of which a provider's secret fields name one. */
   readonly credentials: readonly Credential[];
@@ -454,6 +466,7 @@ export function SettingsProviders({
   credentials,
   draft,
   kinds,
+  kindsFailure,
   onChange,
   onAdd,
   onEdit,
@@ -462,14 +475,25 @@ export function SettingsProviders({
 
   return (
     <FieldGroup>
-      {kinds.length === 0 && (
-        <Alert>
-          <AlertCircleIcon />
-          <AlertTitle>No provider kind is available</AlertTitle>
-          <AlertDescription>
-            The host has not declared any provider kind, so none can be added.
-          </AlertDescription>
-        </Alert>
+      {kindsFailure !== undefined ? (
+        <ErrorNotice
+          announce
+          catalog={settingsErrorCatalog}
+          error={kindsFailure.error}
+          fallbackCode="kinds_read_failed"
+          onRetry={kindsFailure.retry}
+          retrying={kindsFailure.retrying}
+        />
+      ) : (
+        kinds.length === 0 && (
+          <Alert>
+            <AlertCircleIcon />
+            <AlertTitle>No provider kind is available</AlertTitle>
+            <AlertDescription>
+              The host has not declared any provider kind, so none can be added.
+            </AlertDescription>
+          </Alert>
+        )
       )}
 
       {credentialsOfKind(credentials, 'API_TOKEN').length === 0 && (

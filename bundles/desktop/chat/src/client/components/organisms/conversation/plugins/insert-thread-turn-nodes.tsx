@@ -1,4 +1,5 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { sameErrorInfo } from 'desktop/reads';
 import {
   $getRoot,
   HISTORIC_TAG,
@@ -250,6 +251,7 @@ const $createBlock = (
         turn.tokensFreed,
         turn.code,
         turn.summary,
+        turn.error,
       );
   }
 };
@@ -349,7 +351,7 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
         left.args === other.args &&
         left.status === other.status &&
         left.result === other.result &&
-        left.error === other.error
+        sameErrorInfo(left.error, other.error)
       );
     }
     case 'user': {
@@ -400,7 +402,7 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
             a.args !== b.args ||
             a.status !== b.status ||
             a.result !== b.result ||
-            a.error !== b.error
+            !sameErrorInfo(a.error, b.error)
           )
             return false;
         }
@@ -419,16 +421,13 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
         left.condensedMessages === other.condensedMessages &&
         left.tokensFreed === other.tokensFreed &&
         left.code === other.code &&
-        left.summary === other.summary
+        left.summary === other.summary &&
+        sameErrorInfo(left.error, other.error)
       );
     }
     case 'failure': {
       const other = right as Extract<Turn, { type: 'failure' }>;
-      return (
-        left.failure.code === other.failure.code &&
-        left.failure.message === other.failure.message &&
-        left.failure.name === other.failure.name
-      );
+      return sameErrorInfo(left.failure, other.failure);
     }
     case 'replies': {
       const other = right as Extract<Turn, { type: 'replies' }>;

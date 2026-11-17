@@ -15,11 +15,18 @@ import {
 /** The scroll area's viewport, the element that actually scrolls. */
 const VIEWPORT_SELECTOR = '[data-slot="scroll-area-viewport"]';
 
-/**
- * The attributes the three transcript blocks carry in the DOM.
- */
-const PROMPT_BLOCK_SELECTOR = '[data-prompt-id]';
-const QUEUED_BLOCK_SELECTOR = '[data-queued-prompt-id]';
+/** The conversation's scroll area; anything outside it under `root` is the rail. */
+const SCROLL_AREA_SELECTOR = '[data-slot="scroll-area"]';
+
+/** Pixels per wheel line, for wheels that report their delta in lines. */
+const WHEEL_LINE_HEIGHT = 16;
+
+/** `WheelEvent.deltaMode` values: deltas counted in lines, or in pages. */
+const DOM_DELTA_LINE = 1;
+const DOM_DELTA_PAGE = 2;
+
+/** The attribute a transcript prompt block carries in the DOM. */
+const PROMPT_BLOCK_SELECTOR = '[data-prompt-id]:not([data-result-prompt-id])';
 const INPUT_MARKER_KEY = 'prompt-input';
 const INPUT_BLOCK_SELECTOR = `[${PROMPT_INPUT_ATTRIBUTE}]`;
 const HIGHLIGHT_DELAY = 80;
@@ -39,17 +46,17 @@ export type ThreadNav = {
 const resolveViewport = (root: HTMLElement | null): HTMLElement | null =>
   root?.querySelector<HTMLElement>(VIEWPORT_SELECTOR) ?? null;
 
-const markerKey = (marker: Pick<ThreadMarker, 'kind' | 'promptId'>): string =>
-  `${marker.kind}:${marker.promptId}`;
-
 /**
- * The blocks the surface draws, keyed by marker kind and prompt id.
+ * The prompt blocks the surface draws, keyed by `promptId`.
  *
- * The transcript blocks live as direct children of `[data-lexical-editor]`, so
- * scanning its `children` when present avoids walking every nested token and
- * diff line in the viewport.
+ * Accepts the scroll viewport and returns a fresh map. When two blocks carry
+ * the same id, the first in document order wins. Blocks that carry
+ * `data-result-prompt-id` (a delegated result) and queued receipts are left
+ * out. Prompts with no block are simply absent, never an error. The scan reads
+ * the direct children of `[data-lexical-editor]` when it holds any prompt
+ * block, and otherwise every `[data-prompt-id]` under the viewport.
  */
-const blocksByMarker = (viewport: HTMLElement): Map<string, HTMLElement> => {
+const promptBlocks = (viewport: HTMLElement): Map<string, HTMLElement> => {
   const blocks = new Map<string, HTMLElement>();
   const editorRoot = viewport.querySelector<HTMLElement>(
     '[data-lexical-editor]',
@@ -57,18 +64,10 @@ const blocksByMarker = (viewport: HTMLElement): Map<string, HTMLElement> => {
   if (editorRoot !== null) {
     for (const child of Array.from(editorRoot.children)) {
       if (!(child instanceof HTMLElement)) continue;
+      if (child.dataset.resultPromptId !== undefined) continue;
       const promptId = child.dataset.promptId;
-      if (promptId !== undefined && promptId !== '') {
-        const kind =
-          child.dataset.resultPromptId === undefined ? 'prompt' : 'result';
-        const key = markerKey({ kind, promptId });
-        if (!blocks.has(key)) blocks.set(key, child);
-      }
-      const queuedPromptId = child.dataset.queuedPromptId;
-      if (queuedPromptId !== undefined && queuedPromptId !== '') {
-        const key = markerKey({ kind: 'queued', promptId: queuedPromptId });
-        if (!blocks.has(key)) blocks.set(key, child);
-      }
+      if (promptId !== undefined && promptId !== '' && !blocks.has(promptId))
+        blocks.set(promptId, child);
     }
     if (blocks.size > 0) return blocks;
   }
@@ -77,19 +76,9 @@ const blocksByMarker = (viewport: HTMLElement): Map<string, HTMLElement> => {
     viewport.querySelectorAll<HTMLElement>(PROMPT_BLOCK_SELECTOR),
   )) {
     const promptId = block.dataset.promptId;
-    if (promptId === undefined || promptId === '') continue;
-    const kind =
-      block.dataset.resultPromptId === undefined ? 'prompt' : 'result';
-    const key = markerKey({ kind, promptId });
-    if (!blocks.has(key)) blocks.set(key, block);
-  }
-  for (const block of Array.from(
-    viewport.querySelectorAll<HTMLElement>(QUEUED_BLOCK_SELECTOR),
-  )) {
-    const promptId = block.dataset.queuedPromptId;
-    if (promptId === undefined || promptId === '') continue;
-    const key = markerKey({ kind: 'queued', promptId });
-    if (!blocks.has(key)) blocks.set(key, block);
+    if (promptId === undefined || promptId === '' || blocks.has(promptId))
+      continue;
+    blocks.set(promptId, block);
   }
   return blocks;
 };
@@ -111,24 +100,27 @@ const maxScroll = (viewport: HTMLElement): number =>
   Math.max(0, viewport.scrollHeight - viewport.clientHeight);
 
 /**
- * The thread navigation rail's data: destinations become handles, stacked
- * down the rail at fixed spacing, with a visible result or the marker at or
- * nearest above the viewport's reading line named active. The measurement follows the transcript
- * as it grows, shifts and streams — blocks arriving, tool blocks opening and
- * closing, the window resizing, the reader scrolling. Opening a thread or
- * choosing the last handle follows the end until the reader scrolls.
+ * The thread navigation rail's data: the reader's prompts become handles, with
+ * the prompt at or nearest above the viewport's reading line named active. The
+ * measurement follows the transcript as it grows, shifts and streams: blocks
+ * arriving, tool blocks opening and closing, the window resizing, the reader
+ * scrolling. Opening a thread or choosing the last handle follows the end until
+ * the reader scrolls.
  *
- * `scrollRoot` is the conversation's scroll area root; its viewport is found
- * beneath it, so this hook knows nothing of how the surface mounts it.
+ * `root` is the element that holds both the conversation's scroll area and
+ * the rail's column. The hook finds the scroll viewport beneath it, so it knows
+ * nothing of how the surface mounts either. While `root` or its viewport is
+ * missing, `markers` still reflects `turns`, `active` is `-1`, and the jumps do
+ * nothing. `markers` keeps its identity while `sameMarkers` holds.
  */
 export function useThreadNav({
   turns,
-  scrollRoot,
+  root,
   navigating,
   following,
 }: {
   readonly turns: readonly Turn[];
-  readonly scrollRoot: RefObject<HTMLElement | null>;
+  readonly root: RefObject<HTMLElement | null>;
   readonly navigating: RefObject<boolean>;
   readonly following: RefObject<boolean>;
 }): ThreadNav {
@@ -181,16 +173,15 @@ export function useThreadNav({
   );
 
   const measure = useCallback(() => {
-    const viewport = resolveViewport(scrollRoot.current);
+    const viewport = resolveViewport(root.current);
     if (viewport === null) return;
-    const blocks = blocksByMarker(viewport);
+    const blocks = promptBlocks(viewport);
     const viewportTop = viewport.getBoundingClientRect().top;
     const viewportScrollTop = viewport.scrollTop;
     const viewportClientHeight = viewport.clientHeight;
     const positions = markers.map((marker) => {
-      const block = blocks.get(markerKey(marker));
+      const block = blocks.get(marker.promptId);
       return {
-        kind: marker.kind,
         top:
           block === undefined
             ? null
@@ -202,7 +193,7 @@ export function useThreadNav({
       selectedMarker.current === INPUT_MARKER_KEY
         ? -1
         : markers.findIndex(
-            (marker) => markerKey(marker) === selectedMarker.current,
+            (marker) => marker.promptId === selectedMarker.current,
           );
     if (
       selectedMarker.current !== null &&
@@ -226,7 +217,7 @@ export function useThreadNav({
         ? selectedIndex
         : activeMarkerIndex(positions, viewportScrollTop, viewportClientHeight);
     setActive((current) => (current === next ? current : next));
-  }, [clearHighlight, markers, scrollRoot, showHighlight]);
+  }, [clearHighlight, markers, root, showHighlight]);
 
   const measureRef = useRef(measure);
   measureRef.current = measure;
@@ -236,7 +227,7 @@ export function useThreadNav({
   }, [measure]);
 
   useEffect(() => {
-    const viewport = resolveViewport(scrollRoot.current);
+    const viewport = resolveViewport(root.current);
     if (viewport === null) return;
     // One measurement per frame however many scrolls and mutations arrive.
     let frame: number | null = null;
@@ -290,7 +281,7 @@ export function useThreadNav({
         characterData: true,
         subtree: true,
       });
-    const root = scrollRoot.current;
+    const rootElement = root.current;
     const dismissOnHover = (event: PointerEvent): void => {
       if (
         (event.pointerType !== 'mouse' && event.pointerType !== 'pen') ||
@@ -309,6 +300,11 @@ export function useThreadNav({
     const leaveEnd = (): void => {
       following.current = false;
     };
+    // The rail stands beside the scroll area, so a wheel or a swipe over it
+    // reaches no scroller; the conversation scrolls for it.
+    const outsideScrollArea = (target: EventTarget | null): boolean =>
+      target instanceof Element &&
+      target.closest(SCROLL_AREA_SELECTOR) === null;
     const onWheel = (event: WheelEvent): void => {
       if (event.deltaY !== 0) releaseSelection();
       if (event.deltaY < 0) {
@@ -318,10 +314,18 @@ export function useThreadNav({
         suppressResume.current = false;
         resumeAtEnd();
       }
+      if (event.deltaY === 0 || !outsideScrollArea(event.target)) return;
+      const unit =
+        event.deltaMode === DOM_DELTA_PAGE
+          ? viewport.clientHeight
+          : event.deltaMode === DOM_DELTA_LINE
+            ? WHEEL_LINE_HEIGHT
+            : 1;
+      viewport.scrollTop += event.deltaY * unit;
     };
     let draggingScrollbar = false;
     const leaveOnScrollbar = (event: PointerEvent): void => {
-      const scrollbar = root?.querySelector(
+      const scrollbar = rootElement?.querySelector(
         '[data-slot="scroll-area-scrollbar"]',
       );
       if (event.target instanceof Node && scrollbar?.contains(event.target)) {
@@ -337,10 +341,19 @@ export function useThreadNav({
       suppressResume.current = false;
       resumeAtEnd();
     };
-    const onTouchMove = (): void => {
+    let touchY: number | null = null;
+    const onTouchStart = (event: TouchEvent): void => {
+      touchY = event.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (event: TouchEvent): void => {
       releaseSelection();
       suppressResume.current = true;
       leaveEnd();
+      const y = event.touches[0]?.clientY;
+      if (y === undefined) return;
+      if (touchY !== null && outsideScrollArea(event.target))
+        viewport.scrollTop += touchY - y;
+      touchY = y;
     };
     const onTouchEnd = (): void => {
       suppressResume.current = false;
@@ -372,16 +385,23 @@ export function useThreadNav({
         resumeAtEnd();
       }
     };
-    root?.addEventListener('wheel', onWheel, { capture: true, passive: true });
-    root?.addEventListener('touchmove', onTouchMove, {
+    rootElement?.addEventListener('wheel', onWheel, {
       capture: true,
       passive: true,
     });
-    root?.addEventListener('touchend', onTouchEnd);
-    root?.addEventListener('pointerdown', leaveOnScrollbar, true);
+    rootElement?.addEventListener('touchstart', onTouchStart, {
+      capture: true,
+      passive: true,
+    });
+    rootElement?.addEventListener('touchmove', onTouchMove, {
+      capture: true,
+      passive: true,
+    });
+    rootElement?.addEventListener('touchend', onTouchEnd);
+    rootElement?.addEventListener('pointerdown', leaveOnScrollbar, true);
     viewport.addEventListener('pointerover', dismissOnHover);
-    root?.addEventListener('keydown', leaveOnKey, true);
-    root?.addEventListener('keyup', onKeyUp);
+    rootElement?.addEventListener('keydown', leaveOnKey, true);
+    rootElement?.addEventListener('keyup', onKeyUp);
     window.addEventListener('pointerup', finishScrollbarDrag);
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
@@ -389,16 +409,17 @@ export function useThreadNav({
       viewport.removeEventListener('scroll', onScroll);
       resize.disconnect();
       mutations.disconnect();
-      root?.removeEventListener('wheel', onWheel, true);
-      root?.removeEventListener('touchmove', onTouchMove, true);
-      root?.removeEventListener('touchend', onTouchEnd);
-      root?.removeEventListener('pointerdown', leaveOnScrollbar, true);
+      rootElement?.removeEventListener('wheel', onWheel, true);
+      rootElement?.removeEventListener('touchstart', onTouchStart, true);
+      rootElement?.removeEventListener('touchmove', onTouchMove, true);
+      rootElement?.removeEventListener('touchend', onTouchEnd);
+      rootElement?.removeEventListener('pointerdown', leaveOnScrollbar, true);
       viewport.removeEventListener('pointerover', dismissOnHover);
-      root?.removeEventListener('keydown', leaveOnKey, true);
-      root?.removeEventListener('keyup', onKeyUp);
+      rootElement?.removeEventListener('keydown', leaveOnKey, true);
+      rootElement?.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('pointerup', finishScrollbarDrag);
     };
-  }, [clearHighlight, following, navigating, scrollRoot]);
+  }, [clearHighlight, following, navigating, root]);
 
   const jump = useCallback(
     (viewport: HTMLElement, block: HTMLElement) => {
@@ -423,22 +444,22 @@ export function useThreadNav({
 
   const jumpTo = useCallback(
     (marker: ThreadMarker) => {
-      const key = markerKey(marker);
-      const viewport = resolveViewport(scrollRoot.current);
+      const key = marker.promptId;
+      const viewport = resolveViewport(root.current);
       const block =
-        viewport === null ? undefined : blocksByMarker(viewport).get(key);
+        viewport === null ? undefined : promptBlocks(viewport).get(key);
       if (viewport === null || block === undefined) return;
       selectedMarker.current = key;
-      setActive(markers.findIndex((item) => markerKey(item) === key));
+      setActive(markers.findIndex((item) => item.promptId === key));
       showHighlight(block, true);
       jump(viewport, block);
     },
-    [jump, markers, scrollRoot, showHighlight],
+    [jump, markers, root, showHighlight],
   );
 
   /** The last handle goes to the end and keeps following new content. */
   const jumpToInput = useCallback(() => {
-    const viewport = resolveViewport(scrollRoot.current);
+    const viewport = resolveViewport(root.current);
     if (viewport === null) return;
     if (jumpFrame.current !== null) cancelAnimationFrame(jumpFrame.current);
     jumpFrame.current = null;
@@ -451,14 +472,7 @@ export function useThreadNav({
     if (input === null) clearHighlight();
     else showHighlight(input, true);
     measure();
-  }, [
-    clearHighlight,
-    following,
-    measure,
-    navigating,
-    scrollRoot,
-    showHighlight,
-  ]);
+  }, [clearHighlight, following, measure, navigating, root, showHighlight]);
 
   return {
     markers,

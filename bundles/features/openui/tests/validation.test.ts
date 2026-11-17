@@ -261,7 +261,7 @@ test("B24: after a 'queued' answer a second report waits for the queued prompt's
   assert.deepEqual(linesAt(world, 1), [fenceLine('b')]);
 });
 
-test("B24: a closed report for the previous prompt after the next one started steers the prompt that runs now", async () => {
+test('B24: a closed report for the previous prompt after the next one started steers the prompt that runs now', async () => {
   const world = await start();
 
   await world.promptStarted('thread-1', 'p1');

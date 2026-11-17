@@ -2,11 +2,13 @@
  * A prompt the host closed as a failure, as a block of the transcript: the run's
  * own words for why it stopped, at the point in the log it stopped at.
  *
- * Whether the block reads as a quiet failure or as a warning is the code's
- * business, decided in `@/domain/prompt-lifecycle`; this only draws it where the
- * log put it.
+ * Whether the block reads as a failure or as a warning is the chat's error
+ * catalog's business (`chatErrorCatalog`); this only draws it where the log put
+ * it.
  */
 
+import { type ErrorInfo, sameErrorInfo } from 'desktop/reads';
+import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   DecoratorNode,
   type LexicalNode,
@@ -14,29 +16,87 @@ import {
   type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
+import { createContext, useContext } from 'react';
 import type { JSX } from 'react/jsx-runtime';
 
 import { FAILURE_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
+import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import type { FailureTurn } from '../../../../domain/projector.js';
-import type { PromptFailure } from '../../../../domain/prompt-lifecycle.js';
-import { FailureNotice } from '../../../molecules/failure-notice.js';
+import { ConversationThreadContext } from '../../../../hooks/use-live-terminal.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
+/**
+ * What the failed-prompt block needs to offer Retry (§5.1, §6.1).
+ *
+ * `promptId` is the prompt whose failure block may show Retry: the last
+ * `FailureTurn`'s prompt while the agent controls answer `status: 'failed'`
+ * and `canRetry`; undefined otherwise, and then no block shows Retry. A block
+ * passes `retry` and `retrying` to its notice only when its own `promptId`
+ * equals this one. `retrying` is true while the retry runs. `retry` starts the
+ * retry and returns at once; it never throws, and a failure of the retry shows
+ * where a send failure shows. The Thread is the one `ConversationThreadContext`
+ * names, so this context carries no Thread id.
+ */
+export interface FailureRetry {
+  readonly promptId?: string;
+  readonly retrying: boolean;
+  retry(): void;
+}
+
+/**
+ * Provided by the conversation around its editor. The default, used outside
+ * a provider, offers Retry on no block: no `promptId`, not retrying, and a
+ * `retry` that does nothing.
+ */
+export const FailureRetryContext = createContext<FailureRetry>({
+  retrying: false,
+  retry: () => undefined,
+});
+
 export type SerializedFailureTurnNode = Spread<
-  { turnKey: string; promptId: string; failure: PromptFailure },
+  { turnKey: string; promptId: string; failure: ErrorInfo },
   SerializedLexicalNode
 >;
+
+/** The failed-prompt block: a block notice, with Retry on the prompt it names. */
+function FailureBlock({
+  failure,
+  promptId,
+}: {
+  readonly failure: ErrorInfo;
+  readonly promptId: string;
+}) {
+  const thread = useContext(ConversationThreadContext);
+  const {
+    promptId: retryable,
+    retrying,
+    retry,
+  } = useContext(FailureRetryContext);
+  const offers = retryable !== undefined && retryable === promptId;
+  return (
+    <ErrorNotice
+      error={failure}
+      catalog={chatErrorCatalog}
+      fallbackCode="prompt_failed"
+      context={{
+        ...(thread === null ? {} : { Thread: thread.threadId }),
+        Prompt: promptId,
+      }}
+      {...(offers ? { onRetry: retry, retrying } : {})}
+    />
+  );
+}
 
 export class FailureTurnNode extends DecoratorNode<JSX.Element> {
   __turnKey: string;
   __promptId: string;
-  __failure: PromptFailure;
+  __failure: ErrorInfo;
 
   constructor(
     turnKey: string,
     promptId: string,
-    failure: PromptFailure,
+    failure: ErrorInfo,
     key?: NodeKey,
   ) {
     super(key);
@@ -83,18 +143,19 @@ export class FailureTurnNode extends DecoratorNode<JSX.Element> {
   override decorate(): JSX.Element {
     return (
       <WidgetFocus nodeKey={this.__key}>
-        {() => <FailureNotice failure={this.__failure} />}
+        {() => (
+          <FailureBlock failure={this.__failure} promptId={this.__promptId} />
+        )}
       </WidgetFocus>
     );
   }
 
   /**
-   * Take the chat's latest reading of the failure. The projection reuses the
-   * failure object while nothing about it changed, so an unchanged block is not
-   * drawn again.
+   * Take the chat's latest reading of the failure. An unchanged failure, by
+   * `sameErrorInfo`, is not drawn again.
    */
   setTurn(turn: FailureTurn): void {
-    if (this.__failure === turn.failure) return;
+    if (sameErrorInfo(this.__failure, turn.failure)) return;
     this.getWritable().__failure = turn.failure;
   }
 
@@ -121,7 +182,7 @@ export class FailureTurnNode extends DecoratorNode<JSX.Element> {
 export function $createFailureTurnNode(
   turnKey: string,
   promptId: string,
-  failure: PromptFailure,
+  failure: ErrorInfo,
 ): FailureTurnNode {
   return new FailureTurnNode(turnKey, promptId, failure);
 }

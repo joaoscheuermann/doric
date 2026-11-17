@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { ProviderMessage, ProviderRequest } from 'llms';
 
+import { CompactionError } from '../src/host/compaction/errors.js';
 import {
   bundleServices,
   fakeThreadState,
@@ -573,4 +574,249 @@ void test('EX2b a resumed run of a Thread with its own model condenses with that
   assert.ok(summary !== undefined, 'the run condensed its history');
   assert.equal(summary.model, 'thread-model');
   assert.equal(requests.at(-1)?.model, 'thread-model');
+});
+
+/**
+ * The compaction configuration plus a second provider, `second`, that lists
+ * one model, `second/model`.
+ */
+const secondProviderConfiguration = () => {
+  const configuration = compactionConfiguration();
+  return {
+    ...configuration,
+    providers: [
+      ...configuration.providers,
+      {
+        id: 'second',
+        kind: 'openrouter',
+        configuration: {
+          endpoint: 'https://second.example.com/api/v1',
+          token: 'credential-2',
+        },
+        models: [{ name: 'second/model' }],
+      },
+    ],
+  } as ReturnType<typeof testConfiguration>;
+};
+
+void test('T-19 the on-demand compact of a Thread stored on another provider and model summarizes with them', async () => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(12),
+      { role: 'user' as const, content: 'recent' },
+    ],
+  });
+  const services = bundleServices({
+    configuration: secondProviderConfiguration(),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: (request: ProviderRequest) => {
+        requests.push(request);
+        return summaryAnswer();
+      },
+    },
+  });
+  await services.activate();
+
+  const result = await services.executor(scope).compact({
+    thread: { ...thread(), providerId: 'second', model: 'second/model' },
+    session: state.session('compaction-second'),
+    policy: { tailMinMessages: 2, summaryMaxChars: 6000 },
+  });
+
+  assert.equal(result.status, 'compacted');
+  assert.deepEqual(
+    services.resolved.map(
+      (request) =>
+        (request as { providerId: string; model: string }).providerId,
+    ),
+    ['second'],
+  );
+  assert.deepEqual(
+    requests.map(({ model }) => model),
+    ['second/model'],
+  );
+});
+
+void test('T-20 the on-demand compact of an unavailable Thread answers summarizer_failed and calls no model', async () => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(12),
+      { role: 'user' as const, content: 'recent' },
+    ],
+  });
+  const services = bundleServices({
+    configuration: secondProviderConfiguration(),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: (request: ProviderRequest) => {
+        requests.push(request);
+        return summaryAnswer();
+      },
+    },
+  });
+  await services.activate();
+
+  const result = await services.executor(scope).compact({
+    thread: { ...thread(), providerId: 'second', model: 'retired/model' },
+    session: state.session('compaction-unavailable'),
+    policy: { tailMinMessages: 2, summaryMaxChars: 6000 },
+  });
+
+  assert.deepEqual(result, { status: 'failed', code: 'summarizer_failed' });
+  assert.equal(requests.length, 0);
+  assert.deepEqual(
+    eventTypes(state).filter((type) => type?.startsWith('compaction.')),
+    ['compaction.started', 'compaction.failed'],
+  );
+  assert.equal(
+    ((await state.reader().read('messages')) as unknown[]).length,
+    13,
+  );
+});
+
+/** A provider stream that fails with `error` on its first read. */
+const rejecting = (error: unknown): AsyncIterable<never> => ({
+  [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error) }),
+});
+
+/** A provider error the way `llms` throws one: a message, `data` and a cause. */
+const providerFailure = () =>
+  Object.assign(
+    new Error('claude request failed with HTTP 529.', {
+      cause: new Error('upstream overloaded'),
+    }),
+    {
+      data: {
+        provider: 'claude',
+        code: 'provider_error',
+        message: 'claude request failed with HTTP 529.',
+        status: 529,
+      },
+    },
+  );
+
+/** The stored `compaction.failed` event, as the log holds it. */
+interface FailedCompaction {
+  readonly type: 'compaction.failed';
+  readonly code?: string;
+  readonly error?: {
+    readonly code?: string;
+    readonly message?: string;
+    readonly data?: {
+      readonly code?: string;
+      readonly provider?: string;
+      readonly status?: number;
+    };
+    readonly cause?: { readonly message?: string };
+  };
+}
+
+const failedCompaction = (
+  state: ReturnType<typeof fakeThreadState>,
+): FailedCompaction | undefined =>
+  state.events
+    .map((entry) => entry.event as { type?: string })
+    .find(
+      (event): event is FailedCompaction => event.type === 'compaction.failed',
+    );
+
+void test('T-10 a manual compaction whose summarizer throws a provider error records the error with its code and cause', async () => {
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(12),
+      { role: 'user' as const, content: 'recent' },
+    ],
+  });
+  const services = bundleServices({
+    configuration: compactionConfiguration(),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: () => rejecting(providerFailure()),
+    },
+  });
+  await services.activate();
+
+  const result = await services.executor(scope).compact({
+    thread: thread(),
+    session: state.session('compaction-provider-failure'),
+    policy: { tailMinMessages: 2, summaryMaxChars: 6000 },
+  });
+
+  assert.deepEqual(result, { status: 'failed', code: 'summarizer_failed' });
+  const failed = failedCompaction(state);
+  assert.equal(failed?.code, 'summarizer_failed');
+  assert.equal(failed?.error?.data?.code, 'provider_error');
+  assert.equal(failed?.error?.data?.provider, 'claude');
+  assert.equal(failed?.error?.data?.status, 529);
+  assert.equal(failed?.error?.cause?.message, 'upstream overloaded');
+});
+
+void test('T-11 an automatic compaction whose summarizer throws a provider error records the error and the run goes on', async () => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(20),
+      { role: 'user' as const, content: 'recent' },
+    ],
+    checkpoints: { 'old-prompt': 20 },
+  });
+  const services = bundleServices({
+    configuration: compactionConfiguration(),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: (request: ProviderRequest) =>
+        summarizing(request)
+          ? rejecting(providerFailure())
+          : finishing(requests).stream(request),
+    },
+  });
+  await services.activate();
+
+  assert.equal(await runPrompt(services, state, 'continue'), 'done');
+
+  const failed = failedCompaction(state);
+  assert.equal(failed?.code, 'summarizer_failed');
+  assert.equal(failed?.error?.data?.code, 'provider_error');
+  assert.equal(failed?.error?.data?.provider, 'claude');
+  assert.equal(failed?.error?.data?.status, 529);
+  assert.equal(failed?.error?.cause?.message, 'upstream overloaded');
+});
+
+void test('T-11 an automatic compaction that fails with unsafe_boundary records its own code and message', async () => {
+  const requests: ProviderRequest[] = [];
+  const state = fakeThreadState();
+  seedHistory(state, {
+    messages: [
+      ...longHistory(20),
+      { role: 'user' as const, content: 'recent' },
+    ],
+    checkpoints: { 'old-prompt': 20 },
+  });
+  const message =
+    'The planned compaction boundary no longer balances tool calls.';
+  const services = bundleServices({
+    configuration: compactionConfiguration(),
+    provider: {
+      metadata: { id: 'provider', name: 'provider' },
+      stream: (request: ProviderRequest) =>
+        summarizing(request)
+          ? rejecting(new CompactionError('unsafe_boundary', message))
+          : finishing(requests).stream(request),
+    },
+  });
+  await services.activate();
+
+  assert.equal(await runPrompt(services, state, 'continue'), 'done');
+
+  const failed = failedCompaction(state);
+  assert.equal(failed?.code, 'unsafe_boundary');
+  assert.equal(failed?.error?.code, 'unsafe_boundary');
+  assert.equal(failed?.error?.message, message);
 });

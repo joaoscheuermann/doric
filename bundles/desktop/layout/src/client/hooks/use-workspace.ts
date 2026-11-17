@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { RouteMatch } from 'bundle/contracts';
+import { errorFrom } from 'desktop/reads';
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from 'zustand/react';
 
@@ -10,6 +11,7 @@ import {
   threadsOf,
 } from '../domain/project-tree.js';
 import { routeIntent } from '../domain/route-selection.js';
+import type { WorkspaceError } from '../domain/sidebar.js';
 import type {
   Draft,
   Entity,
@@ -36,6 +38,14 @@ export type WorkspaceActions = {
   readonly dismissDelete: () => void;
   readonly rename: (entity: Entity, name: string) => Promise<void>;
   readonly requestDelete: (entity: Entity) => void;
+  /**
+   * Clears the error, then loads its retry target again: the Projects list
+   * for `{ kind: 'projects' }`, that Project's Threads for `{ kind: 'threads' }`.
+   * Without an error, or with an error that has no target, it does nothing.
+   * A load that fails again stores its error with the same target; one that
+   * succeeds leaves no error. Never throws or rejects.
+   */
+  readonly retryError: () => void;
   readonly selectProject: (project: Project) => void;
   readonly selectThread: (thread: Thread) => void;
   readonly setProjectColor: (project: Project, color?: ProjectColor) => void;
@@ -54,7 +64,8 @@ export type Workspace = {
   readonly deletingPending: boolean;
   readonly draft?: Draft;
   readonly editing?: Entity;
-  readonly error?: string;
+  /** The one workspace error, with its retry target when it has one (§8). */
+  readonly error?: WorkspaceError;
   readonly loadingProjectThreads: ReadonlySet<string>;
   readonly loadingProjects: boolean;
   readonly projects: readonly Project[];
@@ -101,6 +112,8 @@ export const useWorkspace = (): Workspace => {
   /** Interaction intent at mount, so a late selection restore cannot win. */
   const restoreIntent = useRef(intent.current);
   const loadSequences = useRef(new Map<string, number>());
+  /** The mount the Projects loads belong to; an unmount ends it. */
+  const mounts = useRef(0);
   const mutationSequences = useRef(new Map<string, number>());
 
   // Memoized so the mount effect that starts the first Threads load can list it
@@ -119,12 +132,13 @@ export const useWorkspace = (): Workspace => {
         if (!isCurrentSequence(loadSequences.current, projectId, sequence))
           return;
         store.applyThreads(projectId, threads);
+        store.settle({ kind: 'threads', projectId });
       } catch (reason) {
         if (
           isCurrentSequence(loadSequences.current, projectId, sequence) &&
           intent.current === requestIntent
         ) {
-          store.fail(reason);
+          store.fail(reason, { kind: 'threads', projectId });
         }
       } finally {
         if (isCurrentSequence(loadSequences.current, projectId, sequence)) {
@@ -136,6 +150,7 @@ export const useWorkspace = (): Workspace => {
       queryClient.fetchQuery,
       store.beginThreadsLoad,
       store.applyThreads,
+      store.settle,
       store.fail,
       store.endThreadsLoad,
     ],
@@ -148,43 +163,50 @@ export const useWorkspace = (): Workspace => {
     store.endThreadsLoad(projectId);
   };
 
-  useEffect(() => {
-    let active = true;
-    const initialIntent = intent.current;
-    void queryClient
-      .fetchQuery({
+  // Memoized so the mount effect and `retryError` share one Projects load. A
+  // load lands only in the mount that started it, and its failure only while
+  // no newer reader intent has started.
+  const loadProjects = useCallback(async (): Promise<void> => {
+    const mount = mounts.current;
+    const requestIntent = intent.current;
+    const active = () => mounts.current === mount;
+    try {
+      const projects = await queryClient.fetchQuery({
         queryKey: queryKeys.projects,
         queryFn: () => api.projects.list(),
-      })
-      .then((projects) => {
-        if (!active) return;
-        store.applyProjects(projects);
-        const selected = workspaceStore.getState().tree.selection.projectId;
-        if (selected && !projects.some((project) => project.id === selected)) {
-          store.select({});
-          rewriteRoute();
-        }
-      })
-      .catch((reason: unknown) => {
-        if (active && intent.current === initialIntent) {
-          store.fail(reason);
-        }
-      })
-      .finally(() => {
-        if (active) store.setLoadingProjects(false);
       });
-    return () => {
-      active = false;
-    };
-    // The workspace loads its Projects once; the actions it settles through are
-    // stable, so listing them keeps the load from running again.
+      if (!active()) return;
+      store.applyProjects(projects);
+      const selected = workspaceStore.getState().tree.selection.projectId;
+      if (selected && !projects.some((project) => project.id === selected)) {
+        store.select({});
+        rewriteRoute();
+      }
+      store.settle({ kind: 'projects' });
+    } catch (reason) {
+      if (active() && intent.current === requestIntent) {
+        store.fail(reason, { kind: 'projects' });
+      }
+    } finally {
+      if (active()) store.setLoadingProjects(false);
+    }
   }, [
     queryClient.fetchQuery,
     store.applyProjects,
     store.select,
+    store.settle,
     store.fail,
     store.setLoadingProjects,
   ]);
+
+  useEffect(() => {
+    void loadProjects();
+    return () => {
+      mounts.current += 1;
+    };
+    // The workspace loads its Projects once; `loadProjects` is stable, so
+    // listing it keeps the load from running again.
+  }, [loadProjects]);
 
   const selectMissingThreadProject = (projectId: string): Selection => {
     const current = workspaceStore.getState();
@@ -293,7 +315,7 @@ export const useWorkspace = (): Workspace => {
       // Every transition advances the tree from its latest value, so
       // back-to-back updates are all kept.
       store.applyUpdate(update),
-    onError: (message) => store.report(message),
+    onError: (error) => store.report(error),
   });
 
   const { mutateAsync: createProjectWrite } = useMutation({
@@ -527,13 +549,28 @@ export const useWorkspace = (): Workspace => {
       store.clearError();
       void navigator.clipboard
         .writeText(id)
-        .catch(() => store.report('Unable to copy the thread ID.'));
+        .catch((reason: unknown) =>
+          store.report(
+            errorFrom(
+              'clipboard_failed',
+              'Unable to copy the thread ID.',
+              reason,
+            ),
+          ),
+        );
     },
     createProject,
     createThread,
     dismissDelete: () => store.dismissDelete(),
     rename,
     requestDelete: (entity) => store.requestDelete(entity),
+    retryError: () => {
+      const target = workspaceStore.getState().sidebar.error?.retry;
+      if (target === undefined) return;
+      store.clearError();
+      if (target.kind === 'projects') void loadProjects();
+      else void loadThreads(target.projectId);
+    },
     selectProject,
     selectThread,
     setProjectColor,

@@ -26,7 +26,7 @@ export default {
     (Story: ComponentType) => (
       <ChatHost>
         <InsetCard>
-          <FooterBand data-slot="chat-thread-footer">
+          <FooterBand>
             <Story />
           </FooterBand>
         </InsetCard>

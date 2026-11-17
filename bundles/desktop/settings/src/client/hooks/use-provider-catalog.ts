@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { useId, useRef, useState } from 'react';
+import { type ErrorInfo, errorInfo } from 'desktop/reads';
+import { useId, useMemo, useRef, useState } from 'react';
 
 import { api } from '../api/settings-api.js';
 import type { CatalogModel, ProviderValuesRef } from '../domain/config.js';
-import { messageFrom } from '../domain/errors.js';
 import { queryKeys } from '../queries/keys.js';
 
 /**
@@ -14,8 +14,13 @@ export type ProviderCatalog = {
   /** The models the endpoint listed, in the order it listed them. */
   readonly models: readonly CatalogModel[];
   readonly loading: boolean;
-  /** The last failure, which a picker shows in place of the list. */
-  readonly error?: string;
+  /**
+   * The current read's failure (`errorInfo` of the query's error, `at` from
+   * its `errorUpdatedAt`), which a picker shows in place of the list with
+   * `catalog_read_failed` as fallback code; absent while a read runs or after
+   * one succeeds. A `reload` starts with no error (§5.2).
+   */
+  readonly error?: ErrorInfo;
   /** Reads again, for the values the draft holds now. */
   readonly reload: () => void;
 };
@@ -49,10 +54,20 @@ export const useProviderCatalog = (
     gcTime: 0,
   });
 
+  const failure = catalog.isError ? catalog.error : undefined;
+  const failedAt = catalog.errorUpdatedAt;
+  const error = useMemo(
+    () =>
+      failure === undefined
+        ? undefined
+        : errorInfo(failure, { at: new Date(failedAt).toISOString() }),
+    [failure, failedAt],
+  );
+
   return {
     models: catalog.data ?? noModels,
     loading: catalog.isPending || catalog.isFetching,
-    error: catalog.isError ? messageFrom(catalog.error) : undefined,
+    error,
     reload: () => setRead((value) => value + 1),
   };
 };

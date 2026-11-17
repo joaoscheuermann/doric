@@ -4,9 +4,9 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import type { ModelKindDescriptor } from 'bundle/contracts';
+import { ContractError, type ModelKindDescriptor } from 'bundle/contracts';
 
-import { settingsOver, showing } from './support/host.js';
+import { settingsError, settingsOver, showing } from './support/host.js';
 
 const openrouter: ModelKindDescriptor = {
   id: 'openrouter',
@@ -226,6 +226,82 @@ describe('the host catalogs', () => {
           },
           { name: 'shell', settings: [] },
         ]);
+      },
+    );
+  });
+});
+
+// T-22 (error-messages.md §6.4): catalog rejections keep their messages and
+// gain the code of their outcome.
+describe('T-22 catalog rejections keep their code and cause', () => {
+  test('values the kind does not declare are invalid_input with no cause', async () => {
+    await settingsOver(
+      {
+        kind: (id) => (id === 'openrouter' ? openrouter : undefined),
+        catalog: () => ({ status: 'absent' }),
+      },
+      async (api) => {
+        await assert.rejects(
+          api.providers.models({
+            ...draft,
+            configuration: { endpoint: draft.configuration.endpoint },
+          }),
+          settingsError({
+            code: 'invalid_input',
+            message: 'The provider values are invalid.',
+            cause: undefined,
+          }),
+        );
+      },
+    );
+  });
+
+  test('a catalog the endpoint did not answer is internal with no cause', async () => {
+    for (const status of ['absent', 'failed'] as const) {
+      await settingsOver(
+        { kind: () => openrouter, catalog: () => ({ status }) },
+        async (api) => {
+          await assert.rejects(
+            api.providers.models(draft),
+            settingsError({
+              code: 'internal',
+              message: 'The provider model catalog could not be read.',
+              cause: undefined,
+            }),
+          );
+        },
+      );
+    }
+  });
+
+  test('a kinds or tools read the host fails keeps the contract code and cause, or is internal', async () => {
+    const contract = new ContractError('unavailable', 'gone');
+    await settingsOver(
+      {
+        kinds: () => {
+          throw contract;
+        },
+        tools: () => {
+          throw new ContractError('internal', 'raw host text');
+        },
+      },
+      async (api) => {
+        await assert.rejects(
+          api.providers.kinds(),
+          settingsError({
+            code: 'unavailable',
+            message: 'Doric backend is unavailable.',
+            cause: contract,
+          }),
+        );
+        await assert.rejects(
+          api.tools.catalog(),
+          settingsError({
+            code: 'internal',
+            message: 'The request could not be completed.',
+            cause: undefined,
+          }),
+        );
       },
     );
   });

@@ -34,7 +34,6 @@ import {
   modelDefaultEffort,
   modelEfforts,
   modelGroups,
-  modelThinkingEffort,
   type ProviderConfiguration,
   type ProviderDraft,
   type ProviderField,
@@ -63,6 +62,7 @@ import {
   updateProfileTimezone,
   updateProvider,
   updateTurnLimit,
+  withExecution,
 } from '../src/client/domain/config.js';
 import type { IconLookup } from '../src/client/domain/model-icons.js';
 
@@ -170,11 +170,6 @@ const configuration = (
   execution: { maxTurns: 8 },
   ...overrides,
 });
-
-const withExecution = (
-  base: Configuration,
-  patch: Configuration['models']['execution'],
-): Configuration => ({ ...base, models: { execution: patch } });
 
 const withProviders = (
   base: Configuration,
@@ -1323,70 +1318,6 @@ describe('the models the execution picker offers', () => {
     );
   });
 
-  test('starts a model at the effort its catalog names, and otherwise at its first other than none', () => {
-    const named = withProviders(configuration(), [
-      {
-        ...provider('openai'),
-        models: [
-          {
-            name: 'gpt-5',
-            reasonings: ['high', 'medium', 'low'],
-            defaultEffort: 'high',
-          },
-        ],
-      },
-    ]);
-
-    assert.equal(modelThinkingEffort(named, 'openai', 'gpt-5'), 'high');
-
-    const unnamed = withProviders(configuration(), [
-      {
-        ...provider('openai'),
-        models: [{ name: 'gpt-5', reasonings: ['none', 'low', 'high'] }],
-      },
-    ]);
-
-    assert.equal(modelThinkingEffort(unnamed, 'openai', 'gpt-5'), 'low');
-
-    const defaultOff = withProviders(configuration(), [
-      {
-        ...provider('openai'),
-        models: [
-          {
-            name: 'gpt-5',
-            reasonings: ['none', 'low'],
-            defaultEffort: 'none',
-          },
-        ],
-      },
-    ]);
-    assert.equal(modelThinkingEffort(defaultOff, 'openai', 'gpt-5'), 'low');
-
-    const onlyOff = withProviders(configuration(), [
-      {
-        ...provider('openai'),
-        models: [{ name: 'gpt-5', reasonings: ['none'] }],
-      },
-    ]);
-    assert.equal(modelThinkingEffort(onlyOff, 'openai', 'gpt-5'), 'none');
-
-    // A default the model does not list is no default at all.
-    const unlisted = withProviders(configuration(), [
-      {
-        ...provider('openai'),
-        models: [
-          { name: 'gpt-5', reasonings: ['medium'], defaultEffort: 'high' },
-        ],
-      },
-    ]);
-
-    assert.equal(modelThinkingEffort(unlisted, 'openai', 'gpt-5'), 'medium');
-    assert.equal(
-      modelThinkingEffort(configuration(), 'openai', 'gpt-5-mini'),
-      undefined,
-    );
-  });
-
   test('enables reasoning from a stored off choice only when the model offers it', () => {
     const off = withExecution(configuration(), {
       providerId: 'openai',
@@ -2028,5 +1959,31 @@ describe('the profile the agent addresses', () => {
       'Europe/Lisbon',
       'UTC',
     ]);
+  });
+});
+
+describe('a Thread execution read through the picker rules', () => {
+  test('withExecution replaces models.execution and keeps every other part of the configuration', () => {
+    const base = configuration({
+      providers: [provider('openai'), provider('openrouter')],
+      execution: { maxTurns: 12, maxToolResultChars: 4000 },
+      tools: { web: { endpoint: 'https://search.example' } },
+      gitCredentialId: 'git-1',
+      githubCredentialId: 'github-1',
+      profile: { name: 'Ana', timezone: 'UTC' },
+    });
+    const before = structuredClone(base);
+
+    const result = withExecution(base, {
+      providerId: 'openrouter',
+      model: 'acme/coder',
+    });
+
+    assert.deepEqual(result, {
+      ...before,
+      models: { execution: { providerId: 'openrouter', model: 'acme/coder' } },
+    });
+    // The stored default is only read through: the input is left as it was.
+    assert.deepEqual(base, before);
   });
 });

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type ErrorInfo, errorInfo } from 'desktop/reads';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../api/settings-api.js';
@@ -12,7 +13,6 @@ import {
   isSameConfiguration,
   type ProviderKind,
 } from '../domain/config.js';
-import { messageFrom } from '../domain/errors.js';
 import { queryKeys } from '../queries/keys.js';
 
 /** How long typing settles before a valid change sends itself to the host. */
@@ -21,7 +21,14 @@ const saveDelayMs = 500;
 export type Config = {
   readonly dirty: boolean;
   readonly draft?: Configuration;
-  readonly error?: string;
+  /**
+   * The last failed save, as `errorInfo` of its rejection with `at` set to
+   * when it failed; absent before any failure, and cleared when the hook opens,
+   * rereads on focus or starts the next save. A failed save keeps the draft.
+   * Surfaces toast it as `config-save-failed` with `config_save_failed` as
+   * fallback code; the status line shows the fixed word "Not saved" (§5.2).
+   */
+  readonly error?: ErrorInfo;
   /** Sends a valid, dirty draft now; a field blur or a close calls this. */
   readonly flush: () => Promise<void>;
   /** The first reason the host would refuse the draft, if any. */
@@ -62,7 +69,7 @@ export const useConfig = (
   const [saved, setSaved] = useState<DoricConfiguration>();
   const [draft, setDraft] = useState<Configuration>();
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<ErrorInfo>();
   /** Interaction intent, so a load whose modal closed cannot land after it. */
   const intent = useRef(0);
   /** The settle timer that sends a change after typing stops. */
@@ -130,6 +137,12 @@ export const useConfig = (
     setError(undefined);
     try {
       const updated = await write(configurationInput(next));
+      // The footer picker reads the stored configuration without a draft; a
+      // save in this window reaches it without waiting for a focus.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.configSnapshot,
+        exact: true,
+      });
       if (intent.current !== request) return;
       setSaved(updated);
       // Keep a draft the user changed while the request was in flight.
@@ -140,11 +153,11 @@ export const useConfig = (
         setDraft(updated.configuration);
       }
     } catch (reason) {
-      if (intent.current === request) setError(messageFrom(reason));
+      if (intent.current === request) setError(errorInfo(reason));
     } finally {
       if (intent.current === request) setSaving(false);
     }
-  }, [write]);
+  }, [queryClient, write]);
 
   const flush = useCallback(async (): Promise<void> => {
     clearTimeout(pending.current);

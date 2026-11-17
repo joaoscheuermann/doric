@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import type { ErrorInfo } from 'desktop/reads';
+
 import {
   type ActivityTurn,
   type CompactionTurn,
@@ -11,7 +13,6 @@ import {
   type ToolTurn,
   type Turn,
 } from '../src/client/domain/projector.js';
-import type { PromptFailure } from '../src/client/domain/prompt-lifecycle.js';
 import type { ThreadEvent } from '../src/client/domain/workspace.js';
 
 const event = (
@@ -68,7 +69,7 @@ const standingOf = (turn: Turn | undefined): boolean | undefined => {
   return lifecycle?.kind === 'pause' ? lifecycle.standing : undefined;
 };
 
-const failureOf = (turn: Turn | undefined): PromptFailure | undefined =>
+const failureOf = (turn: Turn | undefined): ErrorInfo | undefined =>
   turn?.type === 'failure' ? turn.failure : undefined;
 
 describe('thread event projection', () => {
@@ -694,7 +695,12 @@ describe('thread event projection', () => {
 
     const tool = toolOf(projection.turns[0]);
     assert.equal(tool?.status, 'failed');
-    assert.equal(tool?.error, 'command failed');
+    assert.deepEqual(tool?.error, {
+      code: '',
+      message: 'command failed',
+      causes: [],
+      at: '2026-01-01T00:00:02.000Z',
+    });
   });
 
   test('a failed call shows what the tool threw, not the wrapper', () => {
@@ -714,7 +720,71 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    assert.equal(toolOf(projection.turns[0])?.error, 'a.tsx did not compile');
+    assert.deepEqual(toolOf(projection.turns[0])?.error, {
+      code: 'invalid_input',
+      message: 'a.tsx did not compile',
+      causes: [],
+      at: '2026-01-01T00:00:02.000Z',
+    });
+  });
+
+  test('T-13 a failed call keeps the chain below the wrapper, so its first known level can head it', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'tool.started',
+        call: call('c1', 'edit', { path: 'a.ts' }),
+      }),
+      event(2, 'one', {
+        type: 'tool.failed',
+        call: call('c1', 'edit', { path: 'a.ts' }),
+        error: {
+          message: 'Tool handler failed: edit',
+          data: { code: 'handler_failed' },
+          cause: {
+            message: 'The edit could not be applied.',
+            cause: { code: 'not_found', message: 'a.ts does not exist.' },
+          },
+        },
+      }),
+    ]);
+
+    const error = toolOf(projection.turns[0])?.error;
+    // The outermost level names no code; the first level with one is the
+    // cause, which §2.3 makes the headline.
+    assert.equal(error?.code, '');
+    assert.equal(error?.message, 'The edit could not be applied.');
+    assert.deepEqual(error?.causes, [
+      { code: 'not_found', message: 'a.ts does not exist.' },
+    ]);
+    assert.equal(error?.at, '2026-01-01T00:00:02.000Z');
+  });
+
+  test('T-13 a grouped activity item of a failed call carries the same error', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'a' }),
+      event(2, 'one', { type: 'tool.started', call: call('c1', 'read_file') }),
+      event(3, 'one', {
+        type: 'tool.failed',
+        call: call('c1', 'read_file'),
+        error: {
+          message: 'Tool handler failed: read_file',
+          data: { code: 'handler_failed' },
+          cause: { code: 'not_found', message: 'a.ts does not exist.' },
+        },
+      }),
+      event(4, 'one', { type: 'reasoning.delta', delta: 'b' }),
+      event(5, 'one', { type: 'text.delta', delta: 'answer' }),
+    ]);
+
+    const item = activityOf(projection.turns[0])?.items.find(
+      (candidate) => candidate.kind === 'tool',
+    );
+    assert.deepEqual(item?.kind === 'tool' ? item.error : undefined, {
+      code: 'not_found',
+      message: 'a.ts does not exist.',
+      causes: [],
+      at: '2026-01-01T00:00:03.000Z',
+    });
   });
 
   test('leaves a call running when the prompt finishes first', () => {
@@ -1298,11 +1368,61 @@ describe('the prompt lifecycle in a log', () => {
 
     assert.deepEqual(types(projection.turns), ['failure']);
     assert.deepEqual(failureOf(projection.turns[0]), {
-      name: 'ResumeExhaustedError',
       code: 'resume_exhausted',
       message: 'A execução foi interrompida três vezes.',
+      causes: [],
+      at: '2026-01-01T00:00:01.000Z',
     });
     assert.equal(agentStatus(projection.turns[0]), undefined);
+  });
+
+  test('T-14 a failure reads its code under data, its causes, and the time of its event', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'text.delta', delta: 'partial' }),
+      event(2, 'one', {
+        type: 'agent.failed',
+        error: {
+          name: 'AgentErrorObject',
+          message: 'The model request failed.',
+          data: { code: 'turn_limit_exceeded' },
+          cause: {
+            message: 'Rate limited',
+            data: { code: 'rate_limit_error', provider: 'openai', status: 429 },
+          },
+        },
+      }),
+    ]);
+
+    assert.deepEqual(failureOf(projection.turns[1]), {
+      code: 'turn_limit_exceeded',
+      message: 'The model request failed.',
+      causes: [
+        {
+          code: 'rate_limit_error',
+          provider: 'openai',
+          status: 429,
+          message: 'Rate limited',
+        },
+      ],
+      at: '2026-01-01T00:00:02.000Z',
+    });
+  });
+
+  test('T-14 a failure whose code and message are both empty opens no block', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', {
+        type: 'agent.failed',
+        error: { name: 'Error', code: '', message: '   ' },
+      }),
+      event(2, 'one', {
+        type: 'prompt.finished',
+        status: 'failed',
+        text: 'The prompt failed.',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    assert.deepEqual(types(projection.turns), ['agent']);
   });
 
   test('keeps the partial output of a failed run above its failure block', () => {
@@ -1388,6 +1508,111 @@ describe('a compaction bracket in the log', () => {
     assert.equal(turn?.trigger, 'manual');
     assert.equal(turn?.condensedMessages, undefined);
     assert.equal(turn?.tokensFreed, undefined);
+  });
+
+  test('T-16 a failure logged without its error gets the fixed sentence of its code and no causes', () => {
+    const unsafe = compactionOf(
+      projectEvents(emptyProjection, [
+        event(1, 'one', { type: 'compaction.started', trigger: 'manual' }),
+        event(2, 'one', { type: 'compaction.failed', code: 'unsafe_boundary' }),
+      ]).turns[0],
+    );
+    assert.deepEqual(unsafe?.error, {
+      code: 'unsafe_boundary',
+      message: 'No safe compaction boundary was found.',
+      causes: [],
+      at: '2026-01-01T00:00:02.000Z',
+    });
+
+    const summarizer = compactionOf(
+      projectEvents(emptyProjection, [
+        event(1, 'one', { type: 'compaction.started', trigger: 'automatic' }),
+        event(2, 'one', {
+          type: 'compaction.failed',
+          code: 'summarizer_failed',
+        }),
+      ]).turns[0],
+    );
+    assert.deepEqual(summarizer?.error, {
+      code: 'summarizer_failed',
+      message: 'The summarizer failed.',
+      causes: [],
+      at: '2026-01-01T00:00:02.000Z',
+    });
+  });
+
+  test('T-16 a summarizer failure keeps the event code outermost and the provider error as its cause', () => {
+    const turn = compactionOf(
+      projectEvents(emptyProjection, [
+        event(1, 'one', { type: 'compaction.started', trigger: 'manual' }),
+        event(2, 'one', {
+          type: 'compaction.failed',
+          code: 'summarizer_failed',
+          error: {
+            message: 'Rate limited',
+            data: { code: 'rate_limit_error', provider: 'openai', status: 429 },
+            cause: { message: 'HTTP 429 Too Many Requests' },
+          },
+        }),
+      ]).turns[0],
+    );
+
+    assert.equal(turn?.code, 'summarizer_failed');
+    assert.deepEqual(turn?.error, {
+      code: 'summarizer_failed',
+      message: 'The summarizer failed.',
+      causes: [
+        {
+          code: 'rate_limit_error',
+          provider: 'openai',
+          status: 429,
+          message: 'Rate limited',
+        },
+        { message: 'HTTP 429 Too Many Requests' },
+      ],
+      at: '2026-01-01T00:00:02.000Z',
+    });
+  });
+
+  test('T-16 a compaction error with the event code is read as stored', () => {
+    const turn = compactionOf(
+      projectEvents(emptyProjection, [
+        event(1, 'one', { type: 'compaction.started', trigger: 'automatic' }),
+        event(2, 'one', {
+          type: 'compaction.failed',
+          code: 'unsafe_boundary',
+          error: {
+            name: 'CompactionError',
+            code: 'unsafe_boundary',
+            message: 'No boundary keeps the last tool call whole.',
+          },
+        }),
+      ]).turns[0],
+    );
+
+    assert.deepEqual(turn?.error, {
+      code: 'unsafe_boundary',
+      message: 'No boundary keeps the last tool call whole.',
+      causes: [],
+      at: '2026-01-01T00:00:02.000Z',
+    });
+  });
+
+  test('T-16 a completed compaction carries no error', () => {
+    const turn = compactionOf(
+      projectEvents(emptyProjection, [
+        event(1, 'one', { type: 'compaction.started', trigger: 'manual' }),
+        event(2, 'one', {
+          type: 'compaction.finished',
+          summaryId: 's1',
+          summary: 'Keep it.',
+          condensedMessages: 3,
+          tokensFreed: 10,
+        }),
+      ]).turns[0],
+    );
+    assert.equal(turn?.status, 'completed');
+    assert.equal(turn?.error, undefined);
   });
 
   test('shows an open compaction turn as soon as the bracket starts', () => {

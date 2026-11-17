@@ -5,6 +5,7 @@ type AgentOptions = Parameters<typeof createAgent>[0];
 import {
   type Call,
   type HookHandle,
+  LogV1,
   ModelsV1,
   type RegisteredTool,
   type Services,
@@ -16,10 +17,11 @@ import {
 } from 'host-config/contracts';
 import type { LlmProvider, ProviderMessage } from 'llms';
 import { createMessageStorage } from 'messages';
-import type {
-  ExecutorRunInput,
-  ExecutorRunResult,
-  SpawnAgent,
+import {
+  type ExecutorRunInput,
+  type ExecutorRunResult,
+  resolveThreadExecution,
+  type SpawnAgent,
 } from 'runtime/contracts';
 import {
   type BoundTool,
@@ -273,13 +275,16 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * as one "Agents changed" bundle instruction, given before the "Skills
  * changed" one. A compaction makes the next check compare with the system
  * prompt's agents again.
- * The run resolves `thread.model ?? execution.model` and `thread.effort ??
- * execution.effort` on `execution.providerId` once, for its agent loop and its
- * automatic compaction; manual compaction (`compactThread`) keeps the
- * execution model. A Thread running as an agent gets its `agentSection` before
- * `# Agents`, is not offered the coding workflow skill
- * (`CODING_WORKFLOW_SKILL`), and on invalid instructions rejects with
- * `agentSection`'s Error before its first model request.
+ * The run resolves the Thread's provider, model and effort once with
+ * `resolveThreadExecution`, for its agent loop, its input modalities, its
+ * `response.started` events and its automatic compaction; manual compaction
+ * (`compactThread`) resolves the same way. A Thread whose stored execution is
+ * unavailable logs one warning and rejects, before any model request, with an
+ * Error whose own `code` is `thread_execution_unavailable`. A Thread running
+ * as an agent gets its `agentSection` before `# Agents`, is not offered the
+ * coding workflow skill (`CODING_WORKFLOW_SKILL`), and on invalid
+ * instructions rejects with `agentSection`'s Error before its first model
+ * request.
  */
 export const runPrompt = async (
   { thread, job, session }: ExecutorRunInput,
@@ -302,6 +307,24 @@ export const runPrompt = async (
   const boundary = checkpoints[job.id];
   const resume = boundary !== undefined && stored.length > boundary;
   const { configuration } = await services.use(ConfigurationV1).current(call);
+  const execution = resolveThreadExecution(thread, configuration);
+  if (execution.status === 'unavailable') {
+    const { providerId, model, issue } = execution;
+    services
+      .use(LogV1)
+      .warn(
+        'Thread execution unavailable',
+        { threadId: thread.id, providerId, model, issue },
+        call,
+      );
+    throw Object.assign(
+      new Error(
+        `The model "${model}" on provider "${providerId}" is not available for this thread. Choose another model in the conversation footer.`,
+      ),
+      { code: 'thread_execution_unavailable' as const },
+    );
+  }
+  const { model, effort } = execution;
   const runVariables = variables(
     thread.projectId,
     configuration.profile,
@@ -339,9 +362,6 @@ export const runPrompt = async (
     call,
     services,
   );
-  const execution = configuration.models.execution;
-  const model = thread.model ?? execution.model;
-  const effort = thread.effort ?? execution.effort;
   const { languageModel } = await services.use(ModelsV1).resolve(
     {
       providerId: execution.providerId,

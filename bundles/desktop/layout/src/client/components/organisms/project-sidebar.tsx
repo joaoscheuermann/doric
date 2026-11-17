@@ -1,4 +1,3 @@
-import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import { Button } from 'desktop/ui/button';
 import {
   InputGroup,
@@ -17,12 +16,7 @@ import {
   SidebarMenuSkeleton,
 } from 'desktop/ui/sidebar';
 import { cn } from 'desktop/ui/utils';
-import {
-  AlertCircleIcon,
-  ChevronRightIcon,
-  PlusIcon,
-  SearchIcon,
-} from 'lucide-react';
+import { ChevronRightIcon, PlusIcon, SearchIcon } from 'lucide-react';
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -34,6 +28,7 @@ import {
 
 import type { StackPane } from '../../../contracts/index.js';
 import { searchShortcutKeys } from '../../domain/dashboard.js';
+import type { WorkspaceError } from '../../domain/sidebar.js';
 import { filterThreadTree } from '../../domain/thread-filter.js';
 import {
   type ThreadActivity,
@@ -52,12 +47,14 @@ import { usePaneOpen, useStackPanes } from '../../hooks/use-stack-panes.js';
 import { useThreadRows } from '../../hooks/use-thread-rows.js';
 import { togglePane } from '../../stores/stack.js';
 import { threadRowsBusy } from '../../stores/thread-rows.js';
+import { BundleHealthNotice } from '../molecules/bundle-health-notice.js';
 import { ElementHost } from '../molecules/element-host.js';
 import { SEARCH_FIELD } from '../molecules/search-field.js';
 import {
   ThreadBranches,
   type ThreadBranchesActions,
 } from '../molecules/thread-branches.js';
+import { WorkspaceErrorNotice } from '../molecules/workspace-error-notice.js';
 
 /** Placeholder thread rows while the selected project's tree loads. */
 const THREAD_SKELETON_ROWS = Array.from(
@@ -68,7 +65,7 @@ const THREAD_SKELETON_ROWS = Array.from(
 export type SidebarModel = {
   readonly draft?: Draft;
   readonly editing?: Entity;
-  readonly error?: string;
+  readonly error?: WorkspaceError;
   readonly loadingProjectThreads: ReadonlySet<string>;
   readonly loadingProjects: boolean;
   readonly projects: readonly Project[];
@@ -87,6 +84,8 @@ export type SidebarActions = {
   readonly createThread: (name: string) => Promise<void>;
   readonly deleteEntity: (entity: Entity) => void;
   readonly rename: (entity: Entity, name: string) => Promise<void>;
+  /** The workspace notice's Retry (`WorkspaceActions.retryError`). */
+  readonly retryError: () => void;
   readonly selectProject: (project: Project) => void;
   readonly selectThread: (thread: Thread) => void;
   readonly setProjectColor: (project: Project, color?: ProjectColor) => void;
@@ -354,11 +353,11 @@ export function ProjectSidebar({
       className="-mx-1.5 min-h-0 overflow-y-auto px-1.5"
     >
       {model.error && (
-        <Alert variant="destructive" className="mx-2 mb-2 w-auto">
-          <AlertCircleIcon />
-          <AlertTitle>Unable to update</AlertTitle>
-          <AlertDescription>{model.error}</AlertDescription>
-        </Alert>
+        <WorkspaceErrorNotice
+          className="mx-2 mb-2 w-auto"
+          error={model.error}
+          onRetry={actions.retryError}
+        />
       )}
       <SidebarMenu className="w-full gap-0">
         {loading &&
@@ -445,6 +444,7 @@ export function ProjectSidebar({
         {panes.map((pane) => (
           <StackPaneGroup key={pane.id} action={paneAction(pane)} pane={pane} />
         ))}
+        <BundleHealthNotice className="mx-1.5 shrink-0" />
       </SidebarContent>
     </Sidebar>
   );

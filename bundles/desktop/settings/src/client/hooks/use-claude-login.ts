@@ -1,10 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { errorInfo } from 'desktop/reads';
+import { toastError } from 'desktop/ui/error-notice';
 import { toast } from 'desktop/ui/sonner';
 import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
 
 import { api } from '../api/settings-api.js';
 import type { Credential } from '../domain/config.js';
-import { messageFrom } from '../domain/errors.js';
+import { settingsErrorCatalog } from '../domain/error-catalog.js';
 import { queryKeys } from '../queries/keys.js';
 
 /**
@@ -61,7 +63,8 @@ export interface ClaudeLogin {
  * *before* it publishes it as `signedIn` — so the render that runs the
  * view's auto-select effect already sees it in `credentials.list`, and the
  * commit the effect sends is one the configuration accepts. A failure
- * toasts under the id `claude-login`, except a failure of this hook's own
+ * toasts under the id `claude-login-failed`, and a success under
+ * `claude-login` after dismissing that failure, except a failure of this hook's own
  * signal, which is the cancel it asked for and stays silent.
  */
 export const useClaudeLogin = (): ClaudeLogin => {
@@ -108,11 +111,17 @@ export const useClaudeLogin = (): ClaudeLogin => {
         // commits against `credentials.list`, which is this cache.
         settle(signed);
         setSignedIn(signed);
+        toast.dismiss('claude-login-failed');
         toast.success('Claude is signed in.', { id: 'claude-login' });
       } catch (error) {
         // A refusal of this hook's own cancel is the cancel it asked for.
         if (!controller.signal.aborted) {
-          toast.error(messageFrom(error), { id: 'claude-login' });
+          toastError({
+            id: 'claude-login-failed',
+            error: errorInfo(error),
+            catalog: settingsErrorCatalog,
+            fallbackCode: 'sign_in_failed',
+          });
         }
       } finally {
         if (inFlight.current === controller) inFlight.current = undefined;

@@ -42,8 +42,8 @@ const manifests = (): Map<string, { engines?: { doric?: string } }> => {
 };
 
 describe('the platform version', () => {
-  test('T-4.7: is 1.6.0 once ScrollArea draws a horizontal scrollbar on request', () => {
-    assert.equal(PLATFORM_VERSION, '1.6.0');
+  test('T-9: is 1.7.0 once desktop/ui/error-notice is platform API', () => {
+    assert.equal(PLATFORM_VERSION, '1.7.0');
   });
 
   test('leaves the folders and URLs at 1.0.0', () => {
@@ -52,18 +52,22 @@ describe('the platform version', () => {
 });
 
 describe('the platform each bundle asks for', () => {
-  test('chat and layout ask for ^1.1.0 and every other bundle for ^1.0.0', () => {
-    const onMinorOne = new Set(['desktop/chat', 'desktop/layout']);
+  test('chat, settings and layout ask for ^1.7.0 and every other bundle for ^1.0.0', () => {
+    const onMinorSeven = new Set([
+      'desktop/chat',
+      'desktop/settings',
+      'desktop/layout',
+    ]);
     const found = manifests();
-    for (const name of onMinorOne) {
+    for (const name of onMinorSeven) {
       assert.ok(found.has(name), [...found.keys()].join(', '));
     }
-    assert.ok(found.size > onMinorOne.size, [...found.keys()].join(', '));
+    assert.ok(found.size > onMinorSeven.size, [...found.keys()].join(', '));
 
     for (const [name, manifest] of found) {
       assert.equal(
         manifest.engines?.doric,
-        onMinorOne.has(name) ? '^1.1.0' : '^1.0.0',
+        onMinorSeven.has(name) ? '^1.7.0' : '^1.0.0',
         name,
       );
     }
