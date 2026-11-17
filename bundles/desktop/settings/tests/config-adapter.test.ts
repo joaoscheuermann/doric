@@ -271,6 +271,147 @@ describe('the profile', () => {
   });
 });
 
+describe('the auto-archive policy', () => {
+  const archiving: Configuration = {
+    ...configuration,
+    threads: { autoArchive: { agentThreads: false, mainThreadsAfter: '30d' } },
+  };
+
+  test('a read keeps threads.autoArchive as the host answered it', async () => {
+    await settingsOver({ current: () => stored(archiving, 3) }, async (api) => {
+      assert.deepEqual(await api.config.get(), stored(archiving, 3));
+    });
+  });
+
+  test('a save sends threads.autoArchive, and a save without threads sends none', async () => {
+    const sent: unknown[] = [];
+
+    await settingsOver(
+      {
+        replace: (input) => {
+          sent.push(input);
+          return { status: 'replaced', config: stored(archiving, 5) };
+        },
+      },
+      async (api) => {
+        await api.config.update(archiving);
+        await api.config.update(configuration);
+      },
+    );
+
+    assert.deepEqual(sent, [archiving, configuration]);
+    assert.equal('threads' in (sent[1] as object), false);
+  });
+
+  test('a save of a stored threads read back keeps it beside an edit elsewhere', async () => {
+    let sent: unknown;
+
+    await settingsOver(
+      {
+        current: () => stored(archiving, 3),
+        replace: (input) => {
+          sent = input;
+          return { status: 'replaced', config: stored(archiving, 4) };
+        },
+      },
+      async (api) => {
+        const read = await api.config.get();
+        await api.config.update({
+          ...read.configuration,
+          execution: { maxTurns: 12 },
+        });
+      },
+    );
+
+    assert.deepEqual((sent as Configuration).threads, archiving.threads);
+  });
+
+  test('keeps only the keys it knows, on a read and on a save', async () => {
+    const extended = {
+      ...configuration,
+      threads: {
+        autoArchive: {
+          agentThreads: true,
+          mainThreadsAfter: '1d',
+          pinnedToo: true,
+        },
+        legacy: 'x',
+      },
+    } as unknown as Configuration;
+    const known = {
+      autoArchive: { agentThreads: true, mainThreadsAfter: '1d' },
+    };
+    let sent: unknown;
+
+    await settingsOver(
+      {
+        current: () => stored(extended, 3),
+        replace: (input) => {
+          sent = input;
+          return { status: 'replaced', config: stored(configuration, 4) };
+        },
+      },
+      async (api) => {
+        const read = await api.config.get();
+        assert.deepEqual(read.configuration.threads, known);
+
+        await api.config.update(extended);
+      },
+    );
+
+    assert.deepEqual((sent as Configuration).threads, known);
+  });
+
+  test('refuses a threads value the host could never accept before asking it', async () => {
+    let asked = false;
+
+    await settingsOver(
+      {
+        replace: () => {
+          asked = true;
+          return { status: 'rejected' };
+        },
+      },
+      async (api) => {
+        for (const threads of [
+          { autoArchive: { mainThreadsAfter: '14d' } },
+          { autoArchive: { agentThreads: 'yes' } },
+          { autoArchive: 'on' },
+          'on',
+        ]) {
+          await assert.rejects(
+            api.config.update({
+              ...configuration,
+              threads,
+            } as unknown as Configuration),
+            showing('The configuration is invalid.'),
+          );
+        }
+      },
+    );
+
+    assert.equal(asked, false);
+  });
+
+  test('refuses a host answer naming an unknown mainThreadsAfter as an invalid response', async () => {
+    await settingsOver(
+      {
+        current: () =>
+          stored({
+            ...configuration,
+            threads: { autoArchive: { mainThreadsAfter: '14d' } },
+          } as unknown as Configuration),
+      },
+      async (api) => {
+        await assert.rejects(
+          api.config.get(),
+          showing('Doric returned an invalid response.'),
+        );
+      },
+    );
+  });
+});
+
 describe('reading the configuration', () => {
   test('reads the stored configuration, its revision and update time', async () => {
     const value = {

@@ -67,6 +67,10 @@ const threadsHost = (overrides: Partial<ThreadsHost> = {}): ThreadsHost => ({
   renameThread: unexpected,
   terminateThread: unexpected,
   deleteThread: unexpected,
+  archiveThread: unexpected,
+  restoreThread: unexpected,
+  setThreadPinned: unexpected,
+  viewThread: unexpected,
   ...overrides,
 });
 
@@ -581,9 +585,209 @@ describe('codes and causes (spec §6.4)', () => {
       ),
       {
         code: 'conflict',
-        message: 'An agent opened this Thread, so it cannot be deleted.',
+        message:
+          'An agent opened this Thread, so it cannot be deleted until it is archived.',
         cause: undefined,
       },
     );
+  });
+});
+
+describe('archive, restore and pin (T-26, thread-archive §10.6)', () => {
+  const batch = 'c0ffee00-1234-4abc-8def-0123456789ab';
+  const childId = 'd4c3b2a1-0f9e-4d8c-8b7a-6f5e4d3c2b1a';
+  const archived: Thread = {
+    ...thread,
+    archivedAt: '2026-11-17T12:00:00.000Z',
+  };
+  const child: Thread = {
+    ...archived,
+    id: childId,
+    parentThreadId: threadId,
+  };
+
+  test('an archive answers its batch and every Thread it marked', async () => {
+    const asked: unknown[] = [];
+    const answer = await adapter(
+      {},
+      {
+        archiveThread: async (input) => {
+          asked.push(input);
+          return { status: 'archived', batch, threads: [archived, child] };
+        },
+      },
+    ).threads.archive(threadId);
+
+    assert.deepEqual(asked, [{ id: threadId }]);
+    assert.equal(answer.batch, batch);
+    assert.deepEqual(
+      answer.threads.map(({ id }) => id),
+      [threadId, childId],
+    );
+  });
+
+  test('a restore names the batch it undoes, or none', async () => {
+    const asked: { readonly id: string; readonly batch?: string }[] = [];
+    const api = adapter(
+      {},
+      {
+        restoreThread: async (input) => {
+          asked.push(input);
+          return { status: 'restored', threads: [thread] };
+        },
+      },
+    );
+
+    const restored = await api.threads.restore(threadId, batch);
+    await api.threads.restore(threadId);
+
+    assert.deepEqual(
+      restored.map(({ id }) => id),
+      [threadId],
+    );
+    assert.deepEqual(
+      asked.map((input) => [input.id, input.batch]),
+      [
+        [threadId, batch],
+        [threadId, undefined],
+      ],
+    );
+  });
+
+  test('a pin answers the record the host wrote', async () => {
+    const asked: unknown[] = [];
+    const pinned = await adapter(
+      {},
+      {
+        setThreadPinned: async (input) => {
+          asked.push(input);
+          return { ...thread, pinned: input.pinned };
+        },
+      },
+    ).threads.setPinned(threadId, true);
+
+    assert.deepEqual(asked, [{ id: threadId, pinned: true }]);
+    assert.equal(pinned.pinned, true);
+  });
+
+  test('a refusal is a ClientError with the message of its status, without a cause', async () => {
+    const refusals: readonly [
+      string,
+      () => Promise<unknown>,
+      { readonly code: string; readonly message: string },
+    ][] = [
+      [
+        'archive of a missing Thread',
+        () =>
+          adapter(
+            {},
+            { archiveThread: async () => ({ status: 'missing' }) },
+          ).threads.archive(threadId),
+        { code: 'not_found', message: 'The thread was not found.' },
+      ],
+      [
+        'archive of a busy Thread',
+        () =>
+          adapter(
+            {},
+            { archiveThread: async () => ({ status: 'busy' }) },
+          ).threads.archive(threadId),
+        {
+          code: 'conflict',
+          message: 'The thread is running, so it cannot be archived.',
+        },
+      ],
+      [
+        'archive of an archived Thread',
+        () =>
+          adapter(
+            {},
+            { archiveThread: async () => ({ status: 'already_archived' }) },
+          ).threads.archive(threadId),
+        { code: 'conflict', message: 'The thread is already archived.' },
+      ],
+      [
+        'restore of a missing Thread',
+        () =>
+          adapter(
+            {},
+            { restoreThread: async () => ({ status: 'missing' }) },
+          ).threads.restore(threadId),
+        { code: 'not_found', message: 'The thread was not found.' },
+      ],
+      [
+        'restore of a Thread that is not archived',
+        () =>
+          adapter(
+            {},
+            { restoreThread: async () => ({ status: 'not_archived' }) },
+          ).threads.restore(threadId, batch),
+        { code: 'conflict', message: 'The thread is not archived.' },
+      ],
+      [
+        'pin of a missing Thread',
+        () =>
+          adapter(
+            {},
+            { setThreadPinned: async () => undefined },
+          ).threads.setPinned(threadId, true),
+        { code: 'not_found', message: 'The thread was not found.' },
+      ],
+    ];
+
+    for (const [name, call, expected] of refusals) {
+      await rejectsWithClientError(call(), {
+        ...expected,
+        cause: undefined,
+      }).catch((error: unknown) => {
+        throw new Error(`${name}: ${String(error)}`);
+      });
+    }
+  });
+
+  test('a write over the storage batch limit keeps its code and shows the generic message (AC8)', async () => {
+    const limit = new ContractError(
+      'limit_exceeded',
+      'The write exceeds the storage batch limit.',
+    );
+    const reject = async (): Promise<never> => {
+      throw limit;
+    };
+    const api = adapter(
+      {},
+      {
+        archiveThread: reject,
+        restoreThread: reject,
+        setThreadPinned: reject,
+      },
+    );
+
+    for (const call of [
+      () => api.threads.archive(threadId),
+      () => api.threads.restore(threadId, batch),
+      () => api.threads.setPinned(threadId, false),
+    ]) {
+      await rejectsWithClientError(call(), {
+        code: 'limit_exceeded',
+        message: 'The request could not be completed.',
+        cause: limit,
+      });
+    }
+  });
+
+  test('an id that is not a UUID is refused before the host', async () => {
+    const api = adapter();
+
+    for (const call of [
+      () => api.threads.archive('not-a-uuid'),
+      () => api.threads.restore('not-a-uuid'),
+      () => api.threads.setPinned('not-a-uuid', true),
+    ]) {
+      await rejectsWithClientError(call(), {
+        code: 'invalid_input',
+        message: 'The thread ID is invalid.',
+        cause: undefined,
+      });
+    }
   });
 });

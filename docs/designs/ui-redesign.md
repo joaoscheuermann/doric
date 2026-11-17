@@ -77,7 +77,7 @@ Goals:
 Non-goals:
 
 - The concept's [Non-goals](../features/ui-redesign.md#non-goals): the Artifacts page, Sidebar/ProjectSwitcher and the global-footer variants, an app icon, the preview frames' generic theme, host configuration, a real account, a Settings menu item, new contrast requirements beyond [S4](#design-decisions), model icons.
-- Archive (UR9); Reveal in Finder (P17); the Project "Copy path" (UR13); a Discord link (UR14); any network request from the splash (UR18); setting the release number (UR16); a recoverable Discard (UR21).
+- Archive (UR9; since delivered by the [thread archive](../features/thread-archive.md)); Reveal in Finder (P17); the Project "Copy path" (UR13); a Discord link (UR14); any network request from the splash (UR18); setting the release number (UR16); a recoverable Discard (UR21).
 - InsetHeader (`82:41663`) and a React wordmark or glyph component: no surface of this change draws them. The cloud-fill and cloud-off-fill glyphs (`179:32`, `179:45`) ship inside the `resources` bundle, not as shared components (UR24, [2.7](#27-account-status-ur7-ur24)).
 - The `xs` NewTerminalButton (`166:157`): its one call site, the `layout.header` item (`bundles/features/terminal/src/client/index.ts:43-49`), already uses `icon-sm`, Figma's `Size=sm` (`40:28978`, 28×28).
 

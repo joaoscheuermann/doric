@@ -99,9 +99,102 @@ export const projectUpdateOf = (
   }
 };
 
-const defaultSchedule = (run: () => void, ms: number): (() => void) => {
+/**
+ * Runs `run` once after `ms` milliseconds on the window's timer; the answer
+ * cancels it (a no-op once it ran). The schedule every watch uses outside
+ * tests.
+ */
+export const defaultSchedule = (run: () => void, ms: number): (() => void) => {
   const timer = setTimeout(run, ms);
   return () => clearTimeout(timer);
+};
+
+/** What `followStream` follows and where it reports (§10.8). */
+export interface FollowStreamOptions<Item> {
+  /** Opens the stream once; called again after each silent end. */
+  readonly open: (observer: StreamObserver<Item>) => Disposable;
+  readonly connection: ConnectionSource;
+  readonly schedule: (run: () => void, ms: number) => () => void;
+  readonly onItem: (item: Item) => void;
+  /** An end with an error that is not silent; the stream stays ended. */
+  readonly onFailure: (error: ContractError) => void;
+}
+
+/**
+ * Opens the stream and keeps it open: after a silent end it opens it again
+ * when the connection reports `connected`, or `resubscribeDelayMs` later when
+ * the connection never went down. An end without an error stays ended.
+ * Returns the stop.
+ *
+ * Silent ends are `disconnected`, `unavailable` and `generation_lost`; they
+ * report nothing. `open` throwing counts as an end with that error. Items
+ * reach `onItem` only from the stream currently open, never after the stop;
+ * `onFailure` is called at most once. The stop disposes the open stream and
+ * every pending wait, and is idempotent.
+ */
+export const followStream = <Item>(
+  options: FollowStreamOptions<Item>,
+): (() => void) => {
+  const { open, connection, schedule, onItem, onFailure } = options;
+  let active = true;
+  let stream: Disposable | undefined;
+  let waiting: Disposable | undefined;
+  let cancelTimer: (() => void) | undefined;
+
+  const clearWaits = () => {
+    waiting?.dispose();
+    waiting = undefined;
+    cancelTimer?.();
+    cancelTimer = undefined;
+  };
+
+  const subscribe = () => {
+    clearWaits();
+    if (!active) return;
+    let ended = false;
+    const observer: StreamObserver<Item> = {
+      next: (item) => {
+        if (!active || ended) return;
+        onItem(item);
+      },
+      end: (error) => {
+        if (!active || ended) return;
+        ended = true;
+        stream = undefined;
+        if (silent(error)) {
+          waitForConnection();
+          return;
+        }
+        if (error !== undefined) onFailure(error);
+      },
+    };
+    try {
+      const opened = open(observer);
+      if (ended || !active) opened.dispose();
+      else stream = opened;
+    } catch (error) {
+      observer.end?.(error as ContractError);
+    }
+  };
+
+  const waitForConnection = () => {
+    clearWaits();
+    waiting = connection.subscribe((status) => {
+      if (status === 'connected') subscribe();
+    });
+    if (connection.status() === 'connected') {
+      cancelTimer = schedule(subscribe, resubscribeDelayMs);
+    }
+  };
+
+  subscribe();
+  return () => {
+    if (!active) return;
+    active = false;
+    clearWaits();
+    stream?.dispose();
+    stream = undefined;
+  };
 };
 
 export const createProjectWatch = ({
@@ -116,78 +209,30 @@ export const createProjectWatch = ({
     onUpdate: (update: ProjectUpdate) => void,
   ): (() => void) => {
     stopCurrent?.();
-    let active = true;
-    let stream: Disposable | undefined;
-    let waiting: Disposable | undefined;
-    let cancelTimer: (() => void) | undefined;
-
-    const clearWaits = () => {
-      waiting?.dispose();
-      waiting = undefined;
-      cancelTimer?.();
-      cancelTimer = undefined;
-    };
-
-    const subscribe = () => {
-      clearWaits();
-      if (!active) return;
-      let ended = false;
-      const observer: StreamObserver<ProjectWatchItem> = {
-        next: (item) => {
-          if (!active || ended) return;
-          const update = projectUpdateOf(projectId, item);
-          if (update !== undefined) onUpdate(update);
-        },
-        end: (error) => {
-          if (!active || ended) return;
-          ended = true;
-          stream = undefined;
-          if (silent(error)) {
-            waitForConnection();
-            return;
-          }
-          if (error !== undefined) {
-            onUpdate({
-              kind: 'error',
-              error: errorFrom(
-                'project_stream_failed',
-                projectStreamFailed,
-                error,
-              ),
-            });
-          }
-        },
-      };
-      try {
-        const opened = runtime.watchProject({ projectId }, observer);
-        if (ended || !active) opened.dispose();
-        else stream = opened;
-      } catch (error) {
-        observer.end?.(error as ContractError);
-      }
-    };
-
-    const waitForConnection = () => {
-      clearWaits();
-      waiting = connection.subscribe((status) => {
-        if (status === 'connected') subscribe();
-      });
-      if (connection.status() === 'connected') {
-        cancelTimer = schedule(subscribe, resubscribeDelayMs);
-      }
-    };
-
+    let stopped = false;
+    let stopStream: (() => void) | undefined;
     const stop = () => {
-      if (!active) return;
-      active = false;
-      clearWaits();
-      stream?.dispose();
-      stream = undefined;
+      if (stopped) return;
+      stopped = true;
+      stopStream?.();
       if (stopCurrent === stop) stopCurrent = undefined;
     };
-
     stopCurrent = stop;
-    subscribe();
+    stopStream = followStream<ProjectWatchItem>({
+      open: (observer) => runtime.watchProject({ projectId }, observer),
+      connection,
+      schedule,
+      onItem: (item) => {
+        const update = projectUpdateOf(projectId, item);
+        if (update !== undefined) onUpdate(update);
+      },
+      onFailure: (error) =>
+        onUpdate({
+          kind: 'error',
+          error: errorFrom('project_stream_failed', projectStreamFailed, error),
+        }),
+    });
+    if (stopped) stopStream();
     return stop;
   };
 

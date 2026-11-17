@@ -14,6 +14,7 @@ import { SettingsExecution } from '../components/organisms/settings-execution.js
 import { SettingsProfile } from '../components/organisms/settings-profile.js';
 import { SettingsProviderScreen } from '../components/organisms/settings-provider.js';
 import { SettingsProviders } from '../components/organisms/settings-providers.js';
+import { SettingsThreads } from '../components/organisms/settings-threads.js';
 import { SettingsTools } from '../components/organisms/settings-tools.js';
 import type { SettingsCrumb } from '../components/templates/settings-surface.js';
 import { SettingsWindow } from '../components/templates/settings-window.js';
@@ -128,6 +129,8 @@ function Section({
       return <SettingsExecution draft={draft} onChange={onChange} />;
     case 'tools':
       return <SettingsTools draft={draft} onChange={onChange} />;
+    case 'threads':
+      return <SettingsThreads draft={draft} onChange={onChange} />;
     case 'credentials':
       return <SettingsCredentials />;
   }
@@ -150,6 +153,7 @@ const useSectionHost = (id: SectionId | undefined): HTMLElement | undefined => {
   const providers = sectionHosts.providers.useHosts();
   const execution = sectionHosts.execution.useHosts();
   const tools = sectionHosts.tools.useHosts();
+  const threads = sectionHosts.threads.useHosts();
   const credentials = sectionHosts.credentials.useHosts();
   const hosts = {
     profile,
@@ -157,6 +161,7 @@ const useSectionHost = (id: SectionId | undefined): HTMLElement | undefined => {
     providers,
     execution,
     tools,
+    threads,
     credentials,
   };
   return id === undefined ? undefined : hosts[id].at(-1)?.element;

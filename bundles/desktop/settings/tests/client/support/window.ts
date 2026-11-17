@@ -58,8 +58,9 @@ const hostContracts: Readonly<
 
 /** The version each host contract is staged at; any other is at 1.0.0. */
 const hostContractVersions: Readonly<Record<string, string>> = {
-  // The configuration that carries the optional profile (DORIC-86).
-  'host-config/v1': '1.1.0',
+  // The configuration that carries the optional profile (DORIC-86) and the
+  // auto-archive policy (thread-archive §9).
+  'host-config/v1': '1.2.0',
   // The icons of providers and models (model icons).
   'models/v1': '1.3.0',
   // `setThreadExecution` (per-thread model).

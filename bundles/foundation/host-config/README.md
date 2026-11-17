@@ -37,18 +37,19 @@ It requires `hooks/v1`, `settings/v1`, `secrets/v1`, `models/v1` and
 
 ## The configuration
 
-| Field                          | Meaning                                                                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `providers`                    | At least one provider: a unique `id`, a `kind` from the `llms` catalog, exactly that kind's values, and its model list. |
-| `models.execution`             | The workspace default `providerId`, `model` and optional `effort`, copied by a new top-level Thread at its creation.    |
-| `execution.maxTurns`           | The turn limit of one prompt.                                                                                           |
-| `execution.maxToolResultChars` | Optional cap on one tool result; when absent, the consumer applies `defaultMaxToolResultChars` (50,000).                |
-| `execution.contextCompaction`  | Optional compaction policy; when absent, the consumer applies `defaultContextCompaction`.                               |
-| `tools`                        | Per-tool values, keyed by tool name and then by the field keys the tool declares.                                       |
-| `gitCredentialId`              | Optional `GIT` credential used as the Git identity.                                                                     |
-| `githubCredentialId`           | Optional `API_TOKEN` credential used for GitHub.                                                                        |
-| `profile.name`                 | Optional user's name: trimmed, 1–100 characters, one line.                                                              |
-| `profile.timezone`             | Optional IANA time zone the host's `Intl` accepts, stored as chosen; when absent, the host's own applies.               |
+| Field                          | Meaning                                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `providers`                    | At least one provider: a unique `id`, a `kind` from the `llms` catalog, exactly that kind's values, and its model list.   |
+| `models.execution`             | The workspace default `providerId`, `model` and optional `effort`, copied by a new top-level Thread at its creation.      |
+| `execution.maxTurns`           | The turn limit of one prompt.                                                                                             |
+| `execution.maxToolResultChars` | Optional cap on one tool result; when absent, the consumer applies `defaultMaxToolResultChars` (50,000).                  |
+| `execution.contextCompaction`  | Optional compaction policy; when absent, the consumer applies `defaultContextCompaction`.                                 |
+| `tools`                        | Per-tool values, keyed by tool name and then by the field keys the tool declares.                                         |
+| `gitCredentialId`              | Optional `GIT` credential used as the Git identity.                                                                       |
+| `githubCredentialId`           | Optional `API_TOKEN` credential used for GitHub.                                                                          |
+| `profile.name`                 | Optional user's name: trimmed, 1–100 characters, one line.                                                                |
+| `profile.timezone`             | Optional IANA time zone the host's `Intl` accepts, stored as chosen; when absent, the host's own applies.                 |
+| `threads.autoArchive`          | Optional, strict `{ agentThreads?, mainThreadsAfter? }`; absent keys mean `true` and `'7d'` (`1d`, `7d`, `30d`, `never`). |
 
 The configuration holds no secret of its own. A provider field of kind
 `secret` carries the UUID of a stored credential, so `GET /config` answers the
@@ -57,12 +58,16 @@ value the provider kind does not declare, an empty optional value, a non-HTTP
 URL, a repeated model, or an effort outside a model's list is refused, and so
 is an unknown key inside `profile`, a `profile.name` that is empty or only
 spaces, longer than 100 characters or broken across lines, or a
-`profile.timezone` the host does not know. `profile` is optional and comes
-last, so a configuration written without it reads and serializes as before.
+`profile.timezone` the host does not know, or an unknown key inside `threads`
+or `threads.autoArchive`. `profile` and `threads` are optional and come last,
+`threads` after `profile`, so a configuration written without them reads and
+serializes as before.
 The `default` bundle will use the profile as the prompt variables `user.name`
 and `timezone`; it is never read from the host's operating system, because
 the host can be remote. `host-config/v1` and `host-config.configuration/v1`
-added `profile` in 1.1.0.
+added `profile` in 1.1.0 and `threads` in 1.2.0. Rolling back to 0.1.0 needs
+`threads` removed from the stored configuration first (`GET /config`, then
+`PUT /config` without it), or 0.1.0 cannot read the configuration.
 
 ## Replacing a configuration
 

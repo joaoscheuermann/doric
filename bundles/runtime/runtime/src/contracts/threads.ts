@@ -47,6 +47,8 @@ import {
   threadUsageSchema,
 } from './model.js';
 import {
+  type ThreadViewInput,
+  type ThreadViewItem,
   type ThreadWatchInput,
   type ThreadWatchItem,
   watchMethods,
@@ -298,6 +300,53 @@ export const threadExecutionResultSchema: z.ZodType<
   z.looseObject({ status: z.literal('unresolvable'), message: z.string() }),
 ]);
 
+/** What `archiveThread` answers (1.8.0). Every refusal writes nothing. */
+export type ArchiveThreadResult =
+  | {
+      readonly status: 'archived';
+      /** The archive batch; pass it to restoreThread to undo. */
+      readonly batch: string;
+      /** Every Thread this archive marked, target first. */
+      readonly threads: readonly Thread[];
+    }
+  /**
+   * `missing`: no such Thread. `busy`: the Thread is queued, running,
+   * cancelling or holds work. `already_archived`: it is archived already.
+   */
+  | { readonly status: 'missing' | 'busy' | 'already_archived' };
+
+export const archiveThreadResultSchema: z.ZodType<
+  ArchiveThreadResult,
+  ArchiveThreadResult
+> = z.union([
+  z.looseObject({
+    status: z.literal('archived'),
+    batch: z.string(),
+    threads: z.array(threadSchema),
+  }),
+  z.looseObject({ status: z.enum(['missing', 'busy', 'already_archived']) }),
+]);
+
+/** What `restoreThread` answers (1.8.0). Every refusal writes nothing. */
+export type RestoreThreadResult =
+  | { readonly status: 'restored'; readonly threads: readonly Thread[] }
+  /**
+   * `missing`: no such Thread. `not_archived`: neither the Thread nor a
+   * descendant carries the batch (the given one, else the Thread's own).
+   */
+  | { readonly status: 'missing' | 'not_archived' };
+
+export const restoreThreadResultSchema: z.ZodType<
+  RestoreThreadResult,
+  RestoreThreadResult
+> = z.union([
+  z.looseObject({
+    status: z.literal('restored'),
+    threads: z.array(threadSchema),
+  }),
+  z.looseObject({ status: z.enum(['missing', 'not_archived']) }),
+]);
+
 export const interruptResultSchema = z.enum([
   'interrupted',
   'missing',
@@ -418,6 +467,37 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     },
     call?: CallArg,
   ): Promise<ThreadExecutionResult>;
+  /**
+   * 1.8.0: archives the Thread and its idle, unpinned descendants (one batch).
+   * A busy target is refused; busy and pinned descendants stay as they are;
+   * failed and cancelled ones are archived. Keeps each Thread's `updatedAt`
+   * and publishes each marked record as a Thread update. Rejects when the
+   * store refuses the write (as one over the storage batch limit); then
+   * nothing is written.
+   */
+  archiveThread(
+    input: { readonly id: string },
+    call?: CallArg,
+  ): Promise<ArchiveThreadResult>;
+  /**
+   * 1.8.0: un-archives the Thread and its descendants of one batch: `batch`,
+   * else the Thread's own. Ancestors are never restored. Keeps `updatedAt`,
+   * publishes each restored record, and a restored Thread is not archived
+   * again on its own until a turn of it ends after the restore. Rejects as
+   * `archiveThread` does.
+   */
+  restoreThread(
+    input: { readonly id: string; readonly batch?: string },
+    call?: CallArg,
+  ): Promise<RestoreThreadResult>;
+  /**
+   * 1.8.0: pins or unpins; undefined for a missing Thread. Keeps
+   * `updatedAt` and publishes the record.
+   */
+  setThreadPinned(
+    input: { readonly id: string; readonly pinned: boolean },
+    call?: CallArg,
+  ): Promise<Thread | undefined>;
   prompt(
     input: { readonly id: string; readonly prompt: string },
     call?: CallArg,
@@ -547,6 +627,21 @@ export interface RuntimeThreads extends RuntimeThreadControls {
     listener: StreamListener<ThreadWatchItem>,
     call?: CallArg,
   ): Disposable;
+  /**
+   * 1.8.0: holds a view of the Thread while the stream is open; a viewed
+   * Thread is never archived on its own. Returns at once; once the view is
+   * held the stream emits one `{ kind: 'viewing', threadId }` and nothing
+   * else. The stream ends when disposed, when the host link closes, with
+   * `ContractError('not_found')` for a missing Thread (no view held),
+   * with `ContractError('unavailable')` when the runtime hands over to a new
+   * generation, and with `ContractError('internal')` when reading the Thread
+   * fails (no view held). Each stream holds its own view.
+   */
+  viewThread(
+    input: ThreadViewInput,
+    listener: StreamListener<ThreadViewItem>,
+    call?: CallArg,
+  ): Disposable;
 }
 
 export interface TerminalResultInput {
@@ -652,6 +747,18 @@ export const runtimeThreadsMethods = {
       .strict(),
     output: threadExecutionResultSchema,
   },
+  archiveThread: {
+    input: z.object({ id: z.uuid() }).strict(),
+    output: archiveThreadResultSchema,
+  },
+  restoreThread: {
+    input: z.object({ id: z.uuid(), batch: z.uuid().optional() }).strict(),
+    output: restoreThreadResultSchema,
+  },
+  setThreadPinned: {
+    input: z.object({ id: z.uuid(), pinned: z.boolean() }).strict(),
+    output: threadSchema.optional(),
+  },
   prompt: {
     input: z.object({ id: z.string(), prompt: z.string() }).strict(),
     output: promptResultSchema,
@@ -728,6 +835,7 @@ export const runtimeThreadsMethods = {
     output: z.void(),
   },
   watchThread: watchMethods.thread,
+  viewThread: watchMethods.view,
 } as const;
 
 export const RuntimeThreadsV1 = ref<RuntimeThreads>('runtime.threads/v1');

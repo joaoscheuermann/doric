@@ -84,7 +84,8 @@ const serializable: Record<string, Specs> = {
 /** The stage-9 remote watches (R-STREAM): a stream listener, then a Disposable. */
 const streams: Record<string, readonly string[]> = {
   'runtime/v1': ['watchProject'],
-  'runtime.threads/v1': ['watchThread'],
+  // 1.8.0: viewThread holds a view while its stream is open.
+  'runtime.threads/v1': ['watchThread', 'viewThread'],
   'runtime.terminals/v1': ['watchProject'],
 };
 
@@ -181,8 +182,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0:
     // retry; 1.5.0: a bundle's instruction and restarting a failed child;
     // 1.6.0: spawn options (agent, model, effort); 1.7.0: a Thread's own
-    // provider, model and effort, and setThreadExecution.
-    `${RuntimeThreadsV1.id}@1.7.0`,
+    // provider, model and effort, and setThreadExecution; 1.8.0: archive,
+    // restore, pin and view.
+    `${RuntimeThreadsV1.id}@1.8.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
     // 1.2.0: location
     `${RuntimeWorkspaceV1.id}@1.2.0`,
@@ -203,8 +205,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // The storage types the host part defines are provided contracts too.
     // 1.1.0: the internal `owner` field (57-WP-H).
     `${projectType.type}@1.1.0`,
-    // 1.1.0: a spawned Thread's agent, model and effort; 1.2.0: providerId.
-    `${threadType.type}@1.2.0`,
+    // 1.1.0: a spawned Thread's agent, model and effort; 1.2.0: providerId;
+    // 1.3.0: the archive fields.
+    `${threadType.type}@1.3.0`,
     `${historyType.type}@1.0.0`,
     `${migrationType.type}@1.0.0`,
     `${attachmentType.type}@1.0.0`,
@@ -525,4 +528,61 @@ void test('runtime.threads/v1 1.7.0 declares setThreadExecution next to setThrea
     output.safeParse({ status: 'invalid', reason: 'agent' }).success,
     false,
   );
+});
+
+void test('runtime.threads/v1 1.8.0 declares archiveThread, restoreThread, setThreadPinned and viewThread', () => {
+  const thread = {
+    id: '00000000-0000-4000-8000-000000000001',
+    projectId: '00000000-0000-4000-8000-000000000002',
+    name: 'Thread',
+    state: 'ready',
+    lastSequence: 0,
+    cwd: '/workspace',
+    createdAt: '2026-11-17T00:00:00.000Z',
+    updatedAt: '2026-11-17T00:00:00.000Z',
+    archivedAt: '2026-11-17T01:00:00.000Z',
+    pinned: true,
+  };
+  const batch = '00000000-0000-4000-8000-000000000003';
+  const { archiveThread, restoreThread, setThreadPinned, viewThread } =
+    runtimeThreadsMethods;
+  for (const answer of [
+    { status: 'archived', batch, threads: [thread] },
+    { status: 'missing' },
+    { status: 'busy' },
+    { status: 'already_archived' },
+  ])
+    assert.equal(
+      archiveThread.output.safeParse(answer).success,
+      true,
+      answer.status,
+    );
+  for (const answer of [
+    { status: 'restored', threads: [thread] },
+    { status: 'missing' },
+    { status: 'not_archived' },
+  ])
+    assert.equal(
+      restoreThread.output.safeParse(answer).success,
+      true,
+      answer.status,
+    );
+  assert.equal(archiveThread.input.safeParse({ id: thread.id }).success, true);
+  assert.equal(
+    restoreThread.input.safeParse({ id: thread.id, batch }).success,
+    true,
+  );
+  assert.equal(
+    restoreThread.input.safeParse({ id: thread.id, batch: 'nope' }).success,
+    false,
+  );
+  assert.equal(
+    setThreadPinned.input.safeParse({ id: thread.id, pinned: true }).success,
+    true,
+  );
+  assert.equal(setThreadPinned.output.safeParse(undefined).success, true);
+  const pinned = setThreadPinned.output.safeParse(thread);
+  assert.equal(pinned.success && pinned.data?.pinned, true);
+  assert.deepEqual(markers(viewThread.input, 'input'), ['callback']);
+  assert.deepEqual(markers(viewThread.output, 'output'), ['disposable']);
 });

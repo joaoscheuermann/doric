@@ -5,11 +5,12 @@
 // services the layout itself provides (`layout.tabs/v1` and the rest) are
 // kept and answered in process, so a child Thread still opens its tab.
 
-import type {
-  CatalogSnapshot,
-  DoricAbout,
-  Navigation,
-  ProviderInfo,
+import {
+  type CatalogSnapshot,
+  ContractError,
+  type DoricAbout,
+  type Navigation,
+  type ProviderInfo,
 } from 'bundle/contracts';
 import { type ComponentProps, createElement } from 'react';
 import { flushSync } from 'react-dom';
@@ -226,6 +227,13 @@ const matchPath = (path: string): RouteMatch | undefined => {
 
 const disposable = { dispose: () => undefined };
 
+/** The states in which `archiveThread` answers `busy`. */
+const busyStates: ReadonlySet<Thread['state']> = new Set([
+  'queued',
+  'running',
+  'cancelling',
+]);
+
 const never = <Value>(): Promise<Value> => new Promise<Value>(() => undefined);
 
 type Method = {
@@ -301,6 +309,50 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
   };
 
   const now = () => new Date().toISOString();
+  /**
+   * Each archived Thread's batch, as the stored `archive` holds it. A seeded
+   * archived Thread shares the batch of its archived ancestors with the same
+   * `archivedAt`, as one archive of that ancestor would have written.
+   */
+  const batches = new Map<string, string>();
+  {
+    const byId = new Map(threads.map((thread) => [thread.id, thread]));
+    for (const thread of threads) {
+      if (thread.archivedAt === undefined) continue;
+      let root = thread;
+      const seen = new Set([thread.id]);
+      for (
+        let parent = byId.get(root.parentThreadId ?? '');
+        parent !== undefined &&
+        parent.archivedAt === thread.archivedAt &&
+        !seen.has(parent.id);
+        parent = byId.get(root.parentThreadId ?? '')
+      ) {
+        seen.add(parent.id);
+        root = parent;
+      }
+      batches.set(thread.id, `seeded:${root.id}`);
+    }
+  }
+  /** `id` and every Thread under it. */
+  const subtreeOf = (id: string): ReadonlySet<string> => {
+    const ids = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const thread of threads) {
+        if (
+          thread.parentThreadId !== undefined &&
+          ids.has(thread.parentThreadId) &&
+          !ids.has(thread.id)
+        ) {
+          ids.add(thread.id);
+          grew = true;
+        }
+      }
+    }
+    return ids;
+  };
   const updateProject = (
     id: string,
     change: (project: Project) => Project,
@@ -409,6 +461,99 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       }
       threads = threads.filter((thread) => !removed.has(thread.id));
       return Promise.resolve('deleted');
+    },
+    // runtime.threads/v1 1.8.0 (thread-archive §10.6, §10.8), answered in
+    // memory. None of these writes changes `updatedAt` (D2).
+    archiveThread: ({ id }) => {
+      const target = threads.find((thread) => thread.id === id);
+      if (target === undefined) return Promise.resolve({ status: 'missing' });
+      if (target.archivedAt !== undefined)
+        return Promise.resolve({ status: 'already_archived' });
+      if (busyStates.has(target.state))
+        return Promise.resolve({ status: 'busy' });
+      const batch = crypto.randomUUID();
+      const archivedAt = now();
+      const subtree = subtreeOf(id);
+      const marked = new Set(
+        threads
+          .filter(
+            (thread) =>
+              thread.id === id ||
+              (subtree.has(thread.id) &&
+                thread.archivedAt === undefined &&
+                !busyStates.has(thread.state) &&
+                thread.pinned !== true),
+          )
+          .map((thread) => thread.id),
+      );
+      threads = threads.map((thread) =>
+        marked.has(thread.id) ? { ...thread, archivedAt } : thread,
+      );
+      for (const markedId of marked) batches.set(markedId, batch);
+      return Promise.resolve({
+        status: 'archived',
+        batch,
+        // The target first, as the contract answers.
+        threads: [
+          ...threads.filter((thread) => thread.id === id),
+          ...threads.filter(
+            (thread) => thread.id !== id && marked.has(thread.id),
+          ),
+        ],
+      });
+    },
+    restoreThread: ({ id, batch }) => {
+      if (!threads.some((thread) => thread.id === id))
+        return Promise.resolve({ status: 'missing' });
+      const restoring = batch ?? batches.get(id);
+      const subtree = subtreeOf(id);
+      const restored = threads.filter(
+        (thread) =>
+          subtree.has(thread.id) &&
+          thread.archivedAt !== undefined &&
+          restoring !== undefined &&
+          batches.get(thread.id) === restoring,
+      );
+      if (restored.length === 0)
+        return Promise.resolve({ status: 'not_archived' });
+      const ids = new Set(restored.map((thread) => thread.id));
+      threads = threads.map((thread) => {
+        if (!ids.has(thread.id)) return thread;
+        const { archivedAt: _archivedAt, ...rest } = thread;
+        return rest;
+      });
+      for (const restoredId of ids) batches.delete(restoredId);
+      return Promise.resolve({
+        status: 'restored',
+        threads: threads.filter((thread) => ids.has(thread.id)),
+      });
+    },
+    setThreadPinned: ({ id, pinned }) => {
+      const current = threads.find((thread) => thread.id === id);
+      if (current === undefined) return Promise.resolve(undefined);
+      const { pinned: _pinned, ...rest } = current;
+      const next: Thread = pinned ? { ...rest, pinned: true } : rest;
+      threads = threads.map((thread) => (thread.id === id ? next : thread));
+      return Promise.resolve(next);
+    },
+    viewThread: ({ threadId }, listener) => {
+      const observer =
+        typeof listener === 'function' ? { next: listener } : listener;
+      let open = true;
+      queueMicrotask(() => {
+        if (!open) return;
+        if (threads.some((thread) => thread.id === threadId)) {
+          observer.next({ kind: 'viewing', threadId });
+          return;
+        }
+        open = false;
+        observer.end?.(new ContractError('not_found', 'Thread not found.'));
+      });
+      return {
+        dispose: () => {
+          open = false;
+        },
+      };
     },
   };
 

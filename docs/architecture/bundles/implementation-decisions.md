@@ -1426,3 +1426,27 @@ Spec: [docs/designs/error-messages.md](../../designs/error-messages.md). Feature
 - **App antigo (R1).** Um app abaixo da plataforma 1.7.0 que recebe `chat`, `settings` ou `layout` novos os põe em quarentena (`engines_unsatisfied`); o splash os lista e, depois de "Continue without them", o aviso da janela também. Risco aceito, como na plataforma 1.1.0.
 - **Cópias de `desktop/reads` (R10).** Cada parte client embute sua cópia; as regras de `errorInfo`/`errorFrom` e de `describeError` são da plataforma e só mudam numa minor dela, com os bundles subindo `engines.doric`. As cópias trocam só dados simples, sem `instanceof`.
 - **Pontos cegos da quarentena (R11).** Com o `layout` em quarentena nada desenha o aviso nem o frame; a janela de settings não tem aviso de quarentena; um `layout` posto em quarentena ao ativar na janela não é relatado. Aceito nesta mudança.
+
+## Arquivamento de threads (2026-11-17)
+
+Spec: [docs/designs/thread-archive.md](../../designs/thread-archive.md). Feature: [docs/features/thread-archive.md](../../features/thread-archive.md).
+
+- **Arquivo é campo, não estado (D1).** O registro público ganha `archivedAt` e `pinned` opcionais; o documento `runtime.thread/v1` 1.3.0 guarda `archive: { at, batch }`, `pinned`, `restoredAt`, `viewedAt` e `result.reason`. Ausente significa não arquivada, não fixada, nunca restaurada, nunca vista. Sem migração.
+- **`updatedAt` intocado (D2).** Arquivar, restaurar, fixar e registrar visualização não movem `updatedAt`, para que uma varredura não faça um Project parecer ativo.
+- **Atividade desarquiva só a própria Thread (D10, U17).** Uma entrada aceita, um prompt retomado, uma fila retomada e o início de uma execução desarquivam a Thread que alcançam, nunca os ancestrais; um resultado de filho entregue desarquiva o pai.
+- **Restaurar e desfazer por lote (D11).** Restore e Undo desarquivam a Thread e os descendentes do mesmo lote.
+- **Presença por stream (D12).** `viewThread` é um stream exposto ao desktop; a visualização dura enquanto o stream está aberto, contada por Thread entre janelas, sem TTL nem heartbeat.
+- **Uma varredura a cada 10 s (D13).** Sem timers por Thread; uma agent thread é arquivada entre 30 s e 40 s depois do fim do turno ou da última visualização, o que vier depois.
+- **Exclusão de agent threads arquivadas (D16).** `deleteThread` recusa uma agent thread só enquanto ela não está arquivada; a subárvore ainda precisa estar terminal.
+- **Configuração (D18).** `threads: { autoArchive: { agentThreads, mainThreadsAfter } }`, strict, opcional, último campo de `ConfigInputSchema`; ausente vale `agentThreads: true` e `mainThreadsAfter: '7d'`. `defaultConfig` não muda.
+- **Parada do leitor (D23).** Só o stop do leitor (`result.reason: 'interrupted'`) bloqueia o arquivamento automático; outros cancelamentos não.
+- **Formulário de pergunta (D24).** O host decide uma pergunta aberta só pelo texto do resultado, com `hasQuestionForm`, código de fences movido para `runtime/contracts` e compartilhado com `chat` e `openui`; `completedStatements` descarta uma quebra de linha final de uma fence não fechada.
+- **Leitura fora do lock, sem esperar lock (D25, D26).** Cada varredura lê o armazenamento fora do lock do Project e decide de novo sob o lock antes de escrever; um Project cujo lock está ocupado é pulado.
+- **Um commit por operação (D27).** Arquivar e restaurar são um commit cada; acima do limite do lote (cerca de 5 000 Threads) o store recusa com `limit_exceeded` e nada é escrito.
+- **Um relógio (D28).** Todo tempo vem de `Date`; só o agendador da varredura é injetado.
+- **Troca de geração (D29).** Ao drenar, o arquivador para e encerra cada stream de visualização com `unavailable`; um Project só é varrido depois de 30 s vivo no processo.
+- **Restaurada conta como pendente (D6, D7, implementação).** Uma Thread restaurada pelo leitor sem turno terminado desde a restauração conta como pendente para a regra das threads principais, então a subárvore não é arquivada por inatividade até um turno terminar.
+- **Recusas no desktop.** `busy`, `already_archived` e `not_archived` chegam ao desktop como `ClientError('conflict')`; uma data de arquivo ilegível agrupa como Older.
+- **Versões.** `runtime` 2.8.0 (`runtime.threads/v1` 1.8.0, `runtime.thread/v1` 1.3.0), `host-config` 0.2.0 (`host-config/v1` e `host-config.configuration/v1` 1.2.0), `layout` 3.2.0, `settings` 1.8.0, `chat` 1.8.0, `openui` 2.3.0; os quatro últimos requerem as novas minors dos contratos.
+- **Sem rollback do runtime (R2).** Depois que o `runtime` 2.8.0 grava uma Thread com um campo novo, a 2.7.x não consegue mais escrevê-la. Risco aceito.
+- **Rollback do `host-config` (R16).** Voltar para 0.1.0 exige, com a 0.2.0 ainda rodando, `GET /config`, remover `threads` da `configuration` e `PUT /config` com o resto; só então instalar a 0.1.0. Com `threads` gravado a 0.1.0 não lê a configuração.

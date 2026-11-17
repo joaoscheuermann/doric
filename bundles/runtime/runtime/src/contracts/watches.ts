@@ -98,6 +98,20 @@ export type TerminalWatchItem =
   /** `terminal:output`: live only, never buffered before the snapshot. */
   | { readonly kind: 'output'; readonly output: TerminalOutput };
 
+/** The Thread a window shows (runtime.threads/v1 1.8.0, `viewThread`). */
+export interface ThreadViewInput {
+  readonly threadId: string;
+}
+
+/**
+ * The one item a view stream emits once the runtime holds the view; the view
+ * lasts until the stream ends. No other item follows.
+ */
+export interface ThreadViewItem {
+  readonly kind: 'viewing';
+  readonly threadId: string;
+}
+
 export const threadWatchInputSchema: z.ZodType<
   ThreadWatchInput,
   ThreadWatchInput
@@ -112,6 +126,15 @@ export const projectWatchInputSchema: z.ZodType<
   ProjectWatchInput,
   ProjectWatchInput
 > = z.object({ projectId: z.uuid() }).strict();
+
+export const threadViewInputSchema: z.ZodType<
+  ThreadViewInput,
+  ThreadViewInput
+> = z.object({ threadId: z.uuid() }).strict();
+
+export const threadViewItemSchema: z.ZodType<ThreadViewItem, ThreadViewItem> = z
+  .object({ kind: z.literal('viewing'), threadId: z.uuid() })
+  .strict();
 
 export const threadWatchItemSchema: z.ZodType<
   ThreadWatchItem,
@@ -196,7 +219,10 @@ export const terminalWatchItemSchema: z.ZodType<
     .strict(),
 ]);
 
-/** The method specs of the three watches, spread into their contracts. */
+/**
+ * The method specs of the three watches and of the view stream, spread into
+ * their contracts.
+ */
 export const watchMethods = {
   thread: {
     input: z.tuple([
@@ -214,6 +240,13 @@ export const watchMethods = {
   },
   terminals: {
     input: z.tuple([z.uuid(), streamListener(terminalWatchItemSchema)]),
+    output: disposableSchema,
+  },
+  view: {
+    input: z.tuple([
+      threadViewInputSchema,
+      streamListener(threadViewItemSchema),
+    ]),
     output: disposableSchema,
   },
 } as const;

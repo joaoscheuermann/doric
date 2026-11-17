@@ -27,6 +27,7 @@ import { createLayoutStack } from './services/layout-stack.js';
 import { createLayoutTabs } from './services/layout-tabs.js';
 import { createLayoutWorkspace } from './services/layout-workspace.js';
 import { watchThreadTabs } from './services/thread-tabs.js';
+import { watchThreadViews } from './services/thread-views.js';
 import { resetBottom } from './stores/bottom.js';
 import { disposeConnection, initConnection } from './stores/connection.js';
 import { resetDashboard } from './stores/dashboard.js';
@@ -51,6 +52,7 @@ export function activate({ services }: ClientContext): Cleanup {
   // (git, usage, terminal, files, resources); the layout draws none itself.
   const ui = services.use(UiV1);
   const stopThreadTabs = watchThreadTabs(ui);
+  const stopThreadViews = watchThreadViews(services, connection);
   ui.define('layout-workspace', LayoutWorkspaceElement);
 
   const navigation = services.use(NavigationV1);
@@ -90,6 +92,7 @@ export function activate({ services }: ClientContext): Cleanup {
 
   return () => {
     stopThreadTabs();
+    stopThreadViews();
     disposeProjectWatch();
     disposeConnection();
     about.dispose();

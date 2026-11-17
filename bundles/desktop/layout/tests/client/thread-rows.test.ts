@@ -467,14 +467,15 @@ test('T-2.8: the elapsed badge sits at the right edge and gives way to the plus 
   );
   assert.deepEqual(missing(treeitem(planRow), ['pr-14']), []);
 
-  // Audit: idle, with the plus.
+  // Audit: idle, with the plus and Archive (thread-archive §10.1, §10.5):
+  // two hover actions.
   assert.deepEqual(
     missing(treeitem(row(rendered, audit.name)), [
       'pr-1.5',
-      'group-hover/tree-row:pr-8',
+      'group-hover/tree-row:pr-14',
     ]),
     [],
-    "Audit's padding does not widen for its plus on hover only.",
+    "Audit's padding does not widen for its plus and Archive on hover only.",
   );
 });
 

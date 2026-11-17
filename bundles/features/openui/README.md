@@ -52,7 +52,10 @@ same identity holds only the statements that change, and the fold merges them
 into the program by statement name; a fence without an identity starts a new
 program. Each fence is one revision, keyed by chat as
 `<promptId>/<turnSequence>/<index>`, in the state `streaming`, `closed` or
-`unterminated`.
+`unterminated`. The fence and question-line rules (`isQuestionLine`,
+`completedStatements`, `firstCompletedLine`) delegate to the shared code in
+`runtime/contracts`, which the host and `chat` use too; an unclosed fence's
+trailing newline is dropped before its statements are read.
 
 ## The question form
 
@@ -158,7 +161,7 @@ off, an older revision). While a click is sent the fence stays busy at least
 ## Dependencies
 
 - **Required:** `chat.views/v1@^1.1.0`, `chat.send/v1@^1.1.0`,
-  `runtime.threads/v1@^1.5.0`, `runtime.hooks/v1@^1.2.0`, `hooks/v1`,
+  `runtime.threads/v1@^1.8.0`, `runtime.hooks/v1@^1.2.0`, `hooks/v1`,
   `events/v1`, `skills/v1@^1.1.0` and `ui/v1`.
 - **Packages:** `@openuidev/lang-core` and `@openuidev/react-lang` 1.0.2,
   `@openuidev/react-ui` 0.18.1, with React 19 and `lucide-react`; `elkjs`

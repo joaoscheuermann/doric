@@ -94,7 +94,7 @@ const hostCandidateFor = (modelsV1?: ModelsV1Version): CatalogCandidate => {
   const contracts: readonly (readonly [string, string])[] = [
     ['storage.backend/v1', '1.0.0'],
     ['secrets.backend/v1', '1.0.0'],
-    ['runtime.threads/v1', '1.3.0'],
+    ['runtime.threads/v1', '1.8.0'],
     ['runtime.attachments/v1', '1.0.0'],
     ['comments/v1', '1.0.0'],
     ...(modelsV1 === undefined ? [] : [['models/v1', modelsV1] as const]),

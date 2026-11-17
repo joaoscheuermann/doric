@@ -267,6 +267,28 @@ export const createThreadRunner = (context: RunnerContext) => {
       publisher.threadUpdated(thread.thread);
     }
   };
+  /**
+   * New activity un-archives the one Thread it reaches (thread-archive.md
+   * §4, D10). A failed restore is logged and leaves the input alone: the
+   * Thread stays archived until the next wake point.
+   */
+  const wake = async (thread: ThreadRuntime) => {
+    if (thread.thread.archivedAt === undefined) return;
+    try {
+      const [restored] = await store.restore(
+        [thread.thread.id],
+        new Date().toISOString(),
+      );
+      if (restored === undefined) return;
+      thread.thread = restored;
+      publisher.threadUpdated(restored);
+    } catch (error) {
+      context.log.error('Could not un-archive a Thread', {
+        threadId: thread.thread.id,
+        error: String(error),
+      });
+    }
+  };
   // Caller holds the project's mutation lock.
   const enqueue = async (
     project: ProjectRuntime,
@@ -298,6 +320,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     );
     for (const event of accepted) publisher.event(event);
     thread.jobs.push(job);
+    await wake(thread);
     start(project, thread);
     return { status: 'accepted' as const, promptId: job.id };
   };
@@ -327,6 +350,7 @@ export const createThreadRunner = (context: RunnerContext) => {
       return { status: 'busy' as const };
     }
     await publish(thread, job, { type: 'prompt.resumed', attempt });
+    await wake(thread);
     thread.jobs.push(job);
     // The event moved the Thread's last sequence, so the record this answers with
     // is read back rather than handed out one event behind the log.
@@ -383,12 +407,16 @@ export const createThreadRunner = (context: RunnerContext) => {
     });
     // Materialize the result on the thread, so reading its state later never has
     // to reconstruct it from the event log. The last finished prompt wins.
-    await store.setResult(thread.thread.id, {
-      status,
-      text,
-      promptId: job.id,
-      at: new Date().toISOString(),
-    });
+    await store.setResult(
+      thread.thread.id,
+      {
+        status,
+        text,
+        promptId: job.id,
+        at: new Date().toISOString(),
+      },
+      reason,
+    );
     if (thread.active?.job.id === job.id) thread.active.reported = true;
     await notify(project, thread, job, status, text);
   };
@@ -585,6 +613,7 @@ export const createThreadRunner = (context: RunnerContext) => {
           taken: [],
         };
         thread.active = active;
+        await wake(thread);
         await state(thread, 'running', job.id);
         // The turn's rewind boundary is the history it is about to read: the
         // executor records it once, and an existing boundary wins.
@@ -932,6 +961,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     thread.jobs.splice(0, thread.jobs.length, ...jobs);
     await queueState(thread, false);
     await state(thread, 'ready');
+    if (jobs.length > 0) await wake(thread);
     start(project, thread);
     return { status: 'resumed' as const, thread: thread.thread };
   };

@@ -7,10 +7,14 @@ import {
   ContextMenuTrigger,
 } from 'desktop/ui/context-menu';
 import {
+  ArchiveIcon,
   CopyIcon,
   ExternalLinkIcon,
   MessageSquarePlusIcon,
   PanelRightOpenIcon,
+  PinIcon,
+  PinOffIcon,
+  RotateCcwIcon,
   Trash2Icon,
 } from 'lucide-react';
 import type { ReactElement } from 'react';
@@ -29,8 +33,15 @@ type ItemContextMenuProps = {
   };
   readonly deleteLabel?: string;
   readonly onAdd?: () => void;
+  /**
+   * Given: "Archive thread" (`ArchiveIcon`), in the group after Copy and
+   * before Color and Delete (docs/designs/thread-archive.md §10.5).
+   */
+  readonly onArchive?: () => void;
   readonly onCopyId?: () => void;
   readonly onDelete?: () => void;
+  /** Given: "Restore thread" (`RotateCcwIcon`), in the same group. */
+  readonly onRestore?: () => void;
   /** A1: present on Thread rows, which open in a viewer tab (§4.4). */
   readonly onOpenInTab?: () => void;
   /**
@@ -39,6 +50,12 @@ type ItemContextMenuProps = {
    * 29:5496). The action is the same.
    */
   readonly openIn?: 'new-tab' | 'viewer';
+  /**
+   * Given: "Pin thread" (`PinIcon`) while `pinned` is false, "Unpin thread"
+   * (`PinOffIcon`) while true, first in the archive group; choosing it calls
+   * `onToggle`.
+   */
+  readonly pin?: { readonly pinned: boolean; readonly onToggle: () => void };
 };
 
 /**
@@ -55,13 +72,18 @@ export function ItemContextMenu({
   color,
   deleteLabel,
   onAdd,
+  onArchive,
   onCopyId,
   onDelete,
+  onRestore,
   onOpenInTab,
   openIn = 'new-tab',
+  pin,
 }: ItemContextMenuProps) {
   const adding = onAdd !== undefined && addLabel !== undefined;
   const deleting = onDelete !== undefined && deleteLabel !== undefined;
+  const archiving =
+    pin !== undefined || onArchive !== undefined || onRestore !== undefined;
   return (
     <ContextMenu>
       <ContextMenuTrigger render={children} />
@@ -99,6 +121,33 @@ export function ItemContextMenu({
                 <CopyIcon />
                 Copy thread ID
               </ContextMenuItem>
+            </ContextMenuGroup>
+          </>
+        )}
+        {archiving && (
+          <>
+            {(onOpenInTab !== undefined ||
+              adding ||
+              onCopyId !== undefined) && <ContextMenuSeparator />}
+            <ContextMenuGroup>
+              {pin && (
+                <ContextMenuItem onClick={pin.onToggle}>
+                  {pin.pinned ? <PinOffIcon /> : <PinIcon />}
+                  {pin.pinned ? 'Unpin thread' : 'Pin thread'}
+                </ContextMenuItem>
+              )}
+              {onArchive && (
+                <ContextMenuItem onClick={onArchive}>
+                  <ArchiveIcon />
+                  Archive thread
+                </ContextMenuItem>
+              )}
+              {onRestore && (
+                <ContextMenuItem onClick={onRestore}>
+                  <RotateCcwIcon />
+                  Restore thread
+                </ContextMenuItem>
+              )}
             </ContextMenuGroup>
           </>
         )}

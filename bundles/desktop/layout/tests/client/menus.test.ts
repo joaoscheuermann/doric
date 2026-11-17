@@ -334,7 +334,7 @@ describe('the Thread menu', () => {
   const renderTree = () =>
     render({ path: planPath, threads: [plan, subThread, agentThread, audit] });
 
-  test('a main Thread: Open and Create, then Copy thread ID, then Delete', async () => {
+  test('a main Thread: Open and Create, then Copy thread ID, then Pin and Archive, then Delete', async () => {
     await render({ path: planPath });
 
     await openMenu(threadRow('Plan the checkout'));
@@ -342,6 +342,7 @@ describe('the Thread menu', () => {
     assert.deepEqual(groups(), [
       ['Open in new tab', 'New sub-thread in Plan the checkout'],
       ['Copy thread ID'],
+      ['Pin thread', 'Archive thread'],
       ['Delete thread'],
     ]);
   });
@@ -354,6 +355,7 @@ describe('the Thread menu', () => {
     assert.deepEqual(groups(), [
       ['Open in viewer'],
       ['Copy thread ID'],
+      ['Pin thread', 'Archive thread'],
       ['Delete thread'],
     ]);
     await pick('Open in viewer');
@@ -361,12 +363,17 @@ describe('the Thread menu', () => {
     assert.equal(pathOf(workspace), planPath);
   });
 
-  test('an agent Thread opens in the viewer and copies its ID', async () => {
+  // §10.5: every idle Chat row offers Pin and Archive, agent threads included.
+  test('an agent Thread opens in the viewer, copies its ID, and pins or archives', async () => {
     await renderTree();
 
     await openMenu(threadRow('Validate inputs'));
 
-    assert.deepEqual(groups(), [['Open in viewer'], ['Copy thread ID']]);
+    assert.deepEqual(groups(), [
+      ['Open in viewer'],
+      ['Copy thread ID'],
+      ['Pin thread', 'Archive thread'],
+    ]);
   });
 });
 

@@ -88,6 +88,7 @@ const fromSettings = (entry: SettingsEntry<ConfigInput>): DoricConfig => {
         ? {}
         : { githubCredentialId: value.githubCredentialId }),
       ...(value.profile === undefined ? {} : { profile: value.profile }),
+      ...(value.threads === undefined ? {} : { threads: value.threads }),
     }),
     revision: entry.revision,
     updatedAt: entry.updatedAt,

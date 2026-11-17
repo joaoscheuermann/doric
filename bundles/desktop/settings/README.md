@@ -23,7 +23,7 @@ footer picker), loaded by the `bundle` platform. See the
   default. Change it in Settings." It never writes `models.execution`: the workspace default
   changes only in Settings. The bundle requires `runtime.threads/v1` and
   reads `layout.workspace/v1` optionally.
-- **Sections:** five child routes of `/settings`, each listed in the window's
+- **Sections:** six child routes of `/settings`, each listed in the window's
   nav through the `settings.sections` region.
 - **Region:** `settings.sections`, where other bundles add their own sections.
 - **Contract:** `settings.config/v1` (client), the window's one autosave draft
@@ -40,6 +40,7 @@ section that window showed, or Providers.
 | `/settings/profile`     | Profile     | your optional name and time zone, which the agent's prompts will use             |
 | `/settings/providers`   | Providers   | every provider Doric may call, its fields, its models and the credential it uses |
 | `/settings/execution`   | Execution   | the workspace default provider, model and reasoning effort, and the turn limit   |
+| `/settings/threads`     | Threads     | when agent threads and inactive main threads move to Archived (Auto-archive)     |
 | `/settings/tools`       | Tools       | the fields each tool of the loaded bundles declares in the `tools/v1` catalog    |
 | `/settings/credentials` | Credentials | the secrets of the kinds it manages, which the host stores and never sends back  |
 

@@ -55,6 +55,7 @@ function ThreadTree({
       return next;
     });
   const actions: ThreadBranchesActions = {
+    archive: report('archive'),
     beginChild: report('beginChild'),
     cancelDraft: report('cancelDraft'),
     cancelRename: () => setEditingId(undefined),
@@ -70,7 +71,9 @@ function ThreadTree({
       setEditingId(undefined);
       return Promise.resolve();
     },
+    restore: report('restore'),
     select: (thread) => setSelectedId(thread.id),
+    setPinned: report('setPinned'),
     startRename: (thread) => setEditingId(thread.id),
   };
 

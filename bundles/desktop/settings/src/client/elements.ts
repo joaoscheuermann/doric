@@ -27,6 +27,7 @@ export const sectionIds = [
   'providers',
   'execution',
   'tools',
+  'threads',
   'credentials',
 ] as const;
 
@@ -38,6 +39,7 @@ export const sectionHosts = {
   providers: portalHosts<Record<string, never>>([]),
   execution: portalHosts<Record<string, never>>([]),
   tools: portalHosts<Record<string, never>>([]),
+  threads: portalHosts<Record<string, never>>([]),
   credentials: portalHosts<Record<string, never>>([]),
 } as const satisfies Record<SectionId, unknown>;
 

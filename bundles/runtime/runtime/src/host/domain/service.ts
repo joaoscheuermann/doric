@@ -1,3 +1,4 @@
+import { ContractError } from 'bundle/contracts';
 import {
   listSandboxDirectory,
   listSandboxTree,
@@ -40,6 +41,18 @@ import type {
   ThreadStore,
 } from '../store/types.js';
 import { sortActivity, summarizeActivity } from './activity.js';
+import {
+  autoArchiveSettings,
+  manualArchiveSet,
+  restoreSet,
+} from './archive.js';
+import {
+  type ArchiveSchedule,
+  createArchiver,
+  factsOf,
+  hostArchiveSchedule,
+  writeArchive,
+} from './archiver.js';
 import type { Bindings } from './bindings.js';
 import { randomProjectColor } from './colors.js';
 import { workingDirectoriesInside } from './cwd.js';
@@ -93,6 +106,11 @@ export interface WorkspaceServiceOptions {
   readonly terminals?: (projectId: string) => Promise<readonly Terminal[]>;
   /** The images the Threads attached; without it, prompts read none. */
   readonly attachments?: AttachmentStore;
+  /**
+   * Arms each archive sweep; `hostArchiveSchedule` without it. Tests pass
+   * one that never fires and call the sweep themselves.
+   */
+  readonly archiveSchedule?: ArchiveSchedule;
 }
 
 /**
@@ -116,6 +134,7 @@ export const createWorkspaceService = ({
   bindings,
   terminals: sessions = async () => [],
   attachments,
+  archiveSchedule = hostArchiveSchedule,
 }: WorkspaceServiceOptions): WorkspaceService => {
   const { log } = ports;
   const runtimes = new Map<string, ProjectRuntime>();
@@ -736,12 +755,47 @@ export const createWorkspaceService = ({
    * is logged before it reaches the caller.
    */
   const oversized =
-    (fields: Readonly<Record<string, string>>) =>
+    (fields: Readonly<Record<string, string>>, operation = 'Deletion') =>
     (error: unknown): never => {
       if ((error as { code?: unknown } | null)?.code === 'limit_exceeded')
-        log.error('Deletion exceeds the storage batch limit', fields);
+        log.error(`${operation} exceeds the storage batch limit`, fields);
       throw error;
     };
+  const archiver = createArchiver({
+    threads,
+    publisher,
+    exclusive,
+    runtimes,
+    settings: async () =>
+      autoArchiveSettings((await ports.configuration()).configuration),
+    oversized: (fields) => oversized(fields, 'Auto-archive'),
+    schedule: archiveSchedule,
+    log,
+  });
+  /** The facts of `id` and of its descendants, from one Project's states. */
+  const familyFacts = async (projectId: string, id: string) => {
+    const states = await threads.archiveStates(projectId);
+    const live = runtimes.get(projectId)?.threads;
+    const facts = new Map(
+      states.map((state) => [
+        state.thread.id,
+        factsOf(
+          state,
+          live?.get(state.thread.id),
+          archiver.viewing(state.thread.id),
+        ),
+      ]),
+    );
+    const descendants = [
+      ...subtreeIds(
+        states.map(({ thread }) => thread),
+        id,
+      ),
+    ]
+      .filter((member) => member !== id)
+      .flatMap((member) => facts.get(member) ?? []);
+    return { target: facts.get(id), descendants };
+  };
   const changeProject = (
     id: string,
     change: () => Promise<Project | undefined>,
@@ -1383,7 +1437,8 @@ export const createWorkspaceService = ({
       delete: async (id) => {
         const record = await threads.record(id);
         if (record === undefined) return 'missing';
-        if (record.origin === 'agent') return 'forbidden';
+        if (record.origin === 'agent' && record.archivedAt === undefined)
+          return 'forbidden';
         return exclusive(record.projectId, async () => {
           const values = await threads.listByProject(record.projectId);
           const ids = subtreeIds(values, id);
@@ -1397,6 +1452,99 @@ export const createWorkspaceService = ({
             }
           return outcome;
         });
+      },
+      archive: async (id) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        return exclusive(record.projectId, async () => {
+          const { target, descendants } = await familyFacts(
+            record.projectId,
+            id,
+          );
+          if (target === undefined) return { status: 'missing' };
+          const ids = manualArchiveSet(target, descendants);
+          if (typeof ids === 'string') return { status: ids };
+          const { batch, threads: values } = await writeArchive(
+            { threads, publisher, runtimes },
+            record.projectId,
+            ids,
+          ).catch(oversized({ threadId: id }, 'Archive'));
+          return { status: 'archived', batch, threads: values };
+        });
+      },
+      restore: async (id, batch) => {
+        const record = await threads.record(id);
+        if (record === undefined) return { status: 'missing' };
+        return exclusive(record.projectId, async () => {
+          const { target, descendants } = await familyFacts(
+            record.projectId,
+            id,
+          );
+          if (target === undefined) return { status: 'missing' };
+          const ids = restoreSet(target, descendants, batch);
+          if (ids.length === 0) return { status: 'not_archived' };
+          const values = await threads
+            .restore(ids, new Date().toISOString())
+            .catch(oversized({ threadId: id }, 'Restore'));
+          const live = runtimes.get(record.projectId)?.threads;
+          for (const value of values) {
+            const runtime = live?.get(value.id);
+            if (runtime !== undefined) runtime.thread = value;
+            publisher.threadUpdated(value);
+          }
+          return { status: 'restored', threads: values };
+        });
+      },
+      setPinned: async (id, pinned) => {
+        const record = await threads.record(id);
+        if (record === undefined) return undefined;
+        return exclusive(record.projectId, async () => {
+          const value = await threads.setPinned(id, pinned);
+          if (value !== undefined) {
+            const runtime = runtimes.get(record.projectId)?.threads.get(id);
+            if (runtime !== undefined) runtime.thread = value;
+            publisher.threadUpdated(value);
+          }
+          return value;
+        });
+      },
+      view: (id, listener) => {
+        const observer =
+          typeof listener === 'function' ? { next: listener } : listener;
+        let ended = false;
+        const end = (error: ContractError) => {
+          if (ended) return;
+          ended = true;
+          observer.end?.(error);
+        };
+        let disposed = false;
+        let held: { dispose(): void } | undefined;
+        void threads.record(id).then(
+          (record) => {
+            if (disposed) return;
+            if (record === undefined) {
+              end(new ContractError('not_found', 'Thread not found.'));
+              return;
+            }
+            held = archiver.view(id, end);
+            // A draining archiver ends the stream at once and holds nothing.
+            if (!ended) observer.next({ kind: 'viewing', threadId: id });
+          },
+          (error: unknown) => {
+            if (disposed) return;
+            log.warn('Thread view failed', {
+              threadId: id,
+              error: String(error),
+            });
+            end(new ContractError('internal', 'Thread view failed.'));
+          },
+        );
+        return {
+          dispose: () => {
+            disposed = true;
+            held?.dispose();
+          },
+        };
       },
     },
     /**
@@ -1527,6 +1675,7 @@ export const createWorkspaceService = ({
         }
       },
       drain: async (released) => {
+        archiver.drain();
         await exclusive('creation', () => {
           draining = true;
           return Promise.resolve();
@@ -1557,6 +1706,7 @@ export const createWorkspaceService = ({
       },
     },
     dispose: async () => {
+      archiver.dispose();
       await exclusive('creation', () => {
         disposed = true;
         return Promise.resolve();

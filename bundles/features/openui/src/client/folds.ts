@@ -3,6 +3,8 @@
 // with its sheet; the window's folds are made with the chunk's
 // `mergeStatements` and `isQuestionLine`.
 
+import { isQuestionLine } from 'runtime/contracts';
+
 import { createProgramFolds, type ProgramFolds } from '../contracts/index.js';
 
 /** The chunk's exports, as a type only: the entry bundles none of its code. */
@@ -55,5 +57,4 @@ export const chunkLoader: ChunkLoader = createChunkLoader(() => {
 });
 
 /** D21's first-line test, which the fold calls (D4): `/^root\s*=\s*AskForm\(/`. */
-export const isQuestionLine = (line: string): boolean =>
-  /^root\s*=\s*AskForm\(/.test(line);
+export { isQuestionLine };

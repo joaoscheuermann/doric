@@ -463,3 +463,29 @@ void test('the runtime contracts refuse a watch whose input is not an ID', () =>
     void harness.dispose();
   }
 });
+
+void test('viewThread emits one viewing item through the runtime contracts and nothing else', {
+  timeout: 10_000,
+}, async () => {
+  const harness = createHarness();
+  try {
+    const created = await harness.readyProject();
+    const viewed = await harness.createThread(created.id);
+    const items: unknown[] = [];
+    const view = harness.threads.viewThread({ threadId: viewed.id }, (item) =>
+      items.push(item),
+    );
+    await harness.waitFor(() => items.length === 1, 'the viewing item');
+    assert.deepEqual(items, [{ kind: 'viewing', threadId: viewed.id }]);
+    await harness.threads.prompt({ id: viewed.id, prompt: 'Hello' });
+    await harness.threadState(viewed.id, 'ready');
+    assert.equal(items.length, 1);
+    view.dispose();
+    assert.throws(
+      () => harness.threads.viewThread({ threadId: 'bad' }, () => undefined),
+      { code: 'invalid_input' },
+    );
+  } finally {
+    await harness.dispose();
+  }
+});

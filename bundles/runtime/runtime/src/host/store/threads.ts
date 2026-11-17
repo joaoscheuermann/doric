@@ -153,6 +153,8 @@ export const toThread = (stored: ThreadDocument): Thread => ({
   ...(stored.model === undefined ? {} : { model: stored.model }),
   ...(stored.effort === undefined ? {} : { effort: stored.effort }),
   ...(stored.providerId === undefined ? {} : { providerId: stored.providerId }),
+  ...(stored.archive === undefined ? {} : { archivedAt: stored.archive.at }),
+  ...(stored.pinned === undefined ? {} : { pinned: stored.pinned }),
 });
 
 /** The record with the executor-only instructions, when it has an agent. */
@@ -506,6 +508,45 @@ export const createThreadStore = (
       value: value as ThreadDocument,
       revision,
     }));
+
+  /**
+   * Rewrites every id's document with `change` in one store commit, without
+   * moving updatedAt or open; answers the records in `ids` order. A missing id
+   * rejects with Error('Missing thread.') and writes nothing.
+   */
+  const rewrite = (
+    ids: readonly string[],
+    change: (stored: ThreadDocument) => ThreadDocument,
+  ): Promise<readonly Thread[]> => {
+    const [first, ...rest] = ids;
+    if (first === undefined) return Promise.resolve([]);
+    return threads.mutate(first, async (current) => {
+      const kept = (
+        await Promise.all(rest.map((id) => threads.get(id)))
+      ).filter((other): other is Cached<ThreadDocument> => other !== undefined);
+      if (current === undefined || kept.length !== rest.length)
+        throw new Error('Missing thread.');
+      const value = change(current.value);
+      const values = kept.map(({ value: other }) => change(other));
+      return {
+        value,
+        batch: {
+          expect: kept.map(({ value: other, revision }) => ({
+            type: threadType.type,
+            id: other.id,
+            revision,
+          })),
+          put: values.map((next) => ({
+            type: threadType.type,
+            id: next.id,
+            value: next,
+          })),
+        },
+        touches: rest,
+        done: () => [value, ...values].map(toThread),
+      };
+    });
+  };
 
   /** A Thread and its descendants, the Thread first then level by level. */
   const subtreeOf = (
@@ -936,13 +977,14 @@ export const createThreadStore = (
     eventsAfterPage: (id, sequence, limit) =>
       eventsAfterPage(storage, id, sequence, limit),
 
-    async setResult(id, result) {
+    async setResult(id, result, reason) {
       await update(id, {
         result: {
           status: result.status,
           text: storable(result.text),
           promptId: result.promptId,
           at: new Date(result.at).toISOString(),
+          ...(reason === undefined ? {} : { reason }),
         },
       });
     },
@@ -1186,6 +1228,44 @@ export const createThreadStore = (
       }
       return resumed;
     },
+
+    async archiveStates(projectId) {
+      return (await ofProject(projectId)).map(({ value }) => ({
+        thread: toThread(value),
+        ...(value.archive === undefined ? {} : { batch: value.archive.batch }),
+        ...(value.restoredAt === undefined
+          ? {}
+          : { restoredAt: value.restoredAt }),
+        ...(value.viewedAt === undefined ? {} : { viewedAt: value.viewedAt }),
+        interrupted: value.result?.reason === 'interrupted',
+      }));
+    },
+
+    archive: (ids, archive) =>
+      rewrite(ids, (stored) => ({ ...stored, archive: { ...archive } })),
+
+    restore: (ids, at) =>
+      rewrite(ids, ({ archive: _removed, ...stored }) => ({
+        ...stored,
+        restoredAt: at,
+      })),
+
+    setPinned: (id, pinned) =>
+      threads.mutate(id, (current) => {
+        if (current === undefined) return { done: () => undefined };
+        const { pinned: _removed, ...rest } = current.value;
+        const value: ThreadDocument = pinned ? { ...rest, pinned: true } : rest;
+        return { value, done: () => toThread(value) };
+      }),
+
+    markViewed: (id, at) =>
+      threads.mutate(id, (current) => {
+        if (current === undefined) return { done: () => undefined };
+        return {
+          value: { ...current.value, viewedAt: at },
+          done: () => undefined,
+        };
+      }),
   };
 
   return store;

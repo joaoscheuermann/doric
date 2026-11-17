@@ -28,6 +28,7 @@ const reportAsync =
   };
 
 export const workspaceActions: WorkspaceActions = {
+  archiveThread: reportAsync('archiveThread'),
   beginProject: report('beginProject'),
   beginThread: report('beginThread'),
   cancelDraft: report('cancelDraft'),
@@ -39,14 +40,17 @@ export const workspaceActions: WorkspaceActions = {
   dismissDelete: report('dismissDelete'),
   rename: reportAsync('rename'),
   requestDelete: report('requestDelete'),
+  restoreThread: reportAsync('restoreThread'),
   retryError: report('retryError'),
   selectProject: report('selectProject'),
   selectThread: report('selectThread'),
   setProjectColor: report('setProjectColor'),
+  setThreadPinned: reportAsync('setThreadPinned'),
   startRename: report('startRename'),
 };
 
 export const sidebarActions: SidebarActions = {
+  archiveThread: workspaceActions.archiveThread,
   beginProject: workspaceActions.beginProject,
   beginThread: workspaceActions.beginThread,
   cancelDraft: workspaceActions.cancelDraft,
@@ -56,10 +60,12 @@ export const sidebarActions: SidebarActions = {
   createThread: workspaceActions.createThread,
   deleteEntity: workspaceActions.requestDelete,
   rename: workspaceActions.rename,
+  restoreThread: workspaceActions.restoreThread,
   retryError: workspaceActions.retryError,
   selectProject: workspaceActions.selectProject,
   selectThread: workspaceActions.selectThread,
   setProjectColor: workspaceActions.setProjectColor,
+  setThreadPinned: workspaceActions.setThreadPinned,
   startRename: workspaceActions.startRename,
 };
 

@@ -1,3 +1,4 @@
+import { isArchived } from './thread-archive.js';
 import type { Project, ProjectUpdate, Thread } from './workspace.js';
 import { threadSubtreeIds, threadsForProject, upsert } from './workspace.js';
 
@@ -45,12 +46,20 @@ export const threadsOf = (
 ): readonly Thread[] =>
   projectId === undefined ? [] : (tree.threadsByProject[projectId] ?? []);
 
+/**
+ * The tree with `selection` selected. When `selection` names no Thread, the
+ * first main thread (no `parentThreadId`) of the selected Project that is not
+ * archived is selected (docs/designs/thread-archive.md §10.1); with none, no
+ * Thread is selected. A Thread `selection` names is kept as given, archived or
+ * not. Selecting what is already selected answers `tree` itself (the same
+ * object); otherwise a new tree. Pure; never throws.
+ */
 export const withSelection = (
   tree: ProjectTree,
   selection: Selection,
 ): ProjectTree => {
   const first = threadsOf(tree, selection.projectId).find(
-    (thread) => thread.parentThreadId === undefined,
+    (thread) => thread.parentThreadId === undefined && !isArchived(thread),
   );
   const next =
     selection.threadId === undefined && first !== undefined

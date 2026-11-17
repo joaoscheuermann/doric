@@ -106,6 +106,11 @@ export const threadDocumentSchema = z
         text: z.string(),
         promptId: z.uuid(),
         at: iso,
+        /**
+         * runtime.thread/v1 1.3.0: present when the reader stopped the turn
+         * (a `cancelled` result); a later turn's result replaces it.
+         */
+        reason: z.literal('interrupted').optional(),
       })
       .strict()
       .nullable(),
@@ -139,6 +144,21 @@ export const threadDocumentSchema = z
     effort: z.enum(reasoningEfforts).optional(),
     /** The Thread's provider; absent on documents written before runtime.thread/v1 1.2.0. */
     providerId: z.string().optional(),
+    /** runtime.thread/v1 1.3.0: present while archived. */
+    archive: z
+      .object({
+        at: iso,
+        /** The archive batch; Undo and Restore act on it. */
+        batch: z.uuid(),
+      })
+      .strict()
+      .optional(),
+    /** 1.3.0: the last time an archive of this Thread was undone. */
+    restoredAt: iso.optional(),
+    /** 1.3.0: present (true) while pinned; removed on unpin. */
+    pinned: z.literal(true).optional(),
+    /** 1.3.0: the last time a view of it started or ended. */
+    viewedAt: iso.optional(),
     createdKey: z.string(),
   })
   .strict();

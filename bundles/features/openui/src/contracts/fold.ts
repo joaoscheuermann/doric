@@ -3,6 +3,11 @@
 // nothing from OpenUI: each owner passes lang-core's `mergeStatements` from
 // its own adapter, and the `openui` client passes `isQuestion`.
 
+import {
+  completedStatements as runtimeCompletedStatements,
+  firstCompletedLine as runtimeFirstCompletedLine,
+} from 'runtime/contracts';
+
 import { anonymousIdentity, writtenIdentity } from './identity.js';
 
 /** One fence, as the chat lists it (chat's `ChatFence`, D1); only these fields are read. */
@@ -59,11 +64,8 @@ export interface ProgramFold {
  * otherwise every line but the last when the body does not end with `\n`
  * (the last line may be half written). Pure.
  */
-export const completedStatements = (fence: ProgramFence): string => {
-  if (fence.state === 'closed' || fence.body.endsWith('\n')) return fence.body;
-  const end = fence.body.lastIndexOf('\n');
-  return end < 0 ? '' : fence.body.slice(0, end + 1);
-};
+export const completedStatements = (fence: ProgramFence): string =>
+  runtimeCompletedStatements(fence.body, fence.state === 'closed');
 
 /**
  * The first line of `completedStatements(fence)` that is not blank, or
@@ -71,9 +73,7 @@ export const completedStatements = (fence: ProgramFence): string => {
  * Pure.
  */
 export const firstCompletedLine = (fence: ProgramFence): string | undefined =>
-  completedStatements(fence)
-    .split('\n')
-    .find((line) => line.trim() !== '');
+  runtimeFirstCompletedLine(fence.body, fence.state === 'closed');
 
 const sameFence = (a: ProgramFence, b: ProgramFence): boolean =>
   a.key === b.key &&
