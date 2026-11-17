@@ -224,7 +224,18 @@ Screens pane starts collapsed, listing only the current Project's views. Threads
 start open over their children and retain their
 independent expansion state. The sidebar supports
 inline create and rename and context actions for child creation,
-lifecycle-aware delete, and copying Thread IDs. Projects retain the color the
+lifecycle-aware delete, and copying Thread IDs. Two icon-only tabs above the
+Thread tree, Chat and Archived, split the tree; ⌘F search filters the open
+tab's. The Chat tab draws non-archived Threads and, dimmed with an archive
+mark, the archived ancestors of one; a row's hover actions add Archive (and
+Unpin on a pinned row, which shows a pin mark at rest), and the row menu
+has Pin/Unpin thread on every row, busy ones included, and Archive thread
+only on an archivable one (not queued, running or cancelling). Archiving shows
+the toast "Thread archived" with Undo. The Archived tab groups the archived
+tree into Today, Last 7 days and Older, with Restore and Delete on hover of an
+archived row; every ancestor not archived in that section is an inert context
+row, including one archived in a different section
+([docs/features/thread-archive.md](docs/features/thread-archive.md)). Projects retain the color the
 host assigns from a fixed palette; their navigation and actions live in the
 Project tabs and Dashboard.
 The tree uses the Papermache UI's regular font weight. An active Thread's name uses shadcn's shimmer: a Thread
@@ -599,7 +610,9 @@ user's optional name and time zone (a host-time-zone choice that stores none,
 and UTC always offered), the configured providers as
 an editable table, the execution model with its reasoning effort, the execution
 turn limit, and a Credentials section over the credential kinds the window
-manages in the host's credential store. A
+manages in the host's credential store, and a Threads section with the
+Auto-archive group (archive finished agent threads; archive inactive main
+threads after 1 day, 7 days, 30 days or never). A
 provider is configured on a page of its own, opened from the providers table,
 whose breadcrumb names the provider and whose back control returns to the table.
 The same provider page also opens in the workspace window's `/projects`
@@ -859,6 +872,21 @@ alternatives, checks the composition's `required` block, owns the native HTTP
 and Socket.IO listeners and the generic desktop bridge, runs the platform's
 start and stop hooks and binds the port. It names no bundle contract.
 
+The runtime archives Threads: an archived Thread keeps its place and record
+(`archivedAt`, and `pinned` for a pinned one) and only leaves the Chat tab.
+`runtime.threads/v1` 1.8.0 adds the desktop-exposed `archiveThread`,
+`restoreThread`, `setThreadPinned` and `viewThread` (a window holds a view of
+each Thread it shows while the stream is open), and `deleteThread` deletes an
+archived agent thread. A sweep every 10 s archives an agent thread 30–40 s
+after the later of its turn's end and its last view, and a main thread with its
+subtree after the configured inactivity when nothing in it is pending; neither
+rule archives a busy, failed, reader-stopped, waiting (open question form
+included), viewed or pinned Thread, and a Thread restored by the reader waits
+for a turn to end. Any new activity un-archives the Thread it reaches, and a
+delivered child result its parent. These writes keep `updatedAt`. The first
+sweep after the upgrade archives every eligible Thread at once
+([docs/features/thread-archive.md](docs/features/thread-archive.md)).
+
 ### Platform Boundary
 
 The platform installs bundles, composes providers, routes calls, and runs
@@ -1070,7 +1098,7 @@ draws nothing for them; the agent asks the user with the `openui` question
 form described below. `/bundles/features/terminal` owns `terminal/v1` and the `terminal` tool, as stage 10
 describes below. Migration stages 5 to 7 are described below.
 
-`/bundles/features/openui` (2.2.0) draws UI the agent writes in its answer as
+`/bundles/features/openui` (2.3.0) draws UI the agent writes in its answer as
 OpenUI Lang programs (`@openuidev/lang-core` and `@openuidev/react-lang` 1.0.2,
 `@openuidev/react-ui` 0.18.1). Its client registers `<openui-fence>` as chat's
 renderer of `openui-lang` fences (`chat.views/v1.registerFenceRenderer`) at
@@ -2172,8 +2200,11 @@ The `host-config` bundle receives complete singleton configuration replacements
 through `PUT /config`, which the `transport` bundle routes to it. It persists only provider IDs, the kind each provider is, the
 configuration values that kind declares, the models each provider offers, one
 `models.execution` profile (the default execution new top-level Threads
-store), `execution.maxTurns`, and an optional `profile`
-with the user's name and time zone. That `profile` (strict, last in the
+store), `execution.maxTurns`, an optional strict
+`threads.autoArchive` (`agentThreads`, default true; `mainThreadsAfter`,
+`1d`, `7d` by default, `30d` or `never`; `host-config/v1` and `host-config.configuration/v1` 1.2.0), which the
+runtime's archiver reads on every sweep, and an optional `profile`
+with the user's name and time zone. That `profile` (strict, followed only by `threads` in the
 configuration, `host-config/v1` and `host-config.configuration/v1` 1.1.0)
 carries an optional `name`, trimmed, 1–100 characters on one line, and an
 optional `timezone`, an IANA name the host's `Intl` accepts, stored as chosen;

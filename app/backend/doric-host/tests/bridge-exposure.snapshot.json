@@ -66,6 +66,7 @@
       "watchProject"
     ],
     "runtime.threads/v1": [
+      "archiveThread",
       "compact",
       "createThread",
       "deleteThread",
@@ -76,17 +77,20 @@
       "queuedPrompt",
       "removeQueued",
       "renameThread",
+      "restoreThread",
       "resume",
       "resumeQueue",
       "retry",
       "rewind",
       "setThreadCwd",
       "setThreadExecution",
+      "setThreadPinned",
       "steer",
       "terminateThread",
       "thread",
       "threads",
       "usage",
+      "viewThread",
       "watchThread"
     ],
     "runtime/v1": [

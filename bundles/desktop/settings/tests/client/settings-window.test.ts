@@ -1,5 +1,5 @@
 // The settings window as the user meets it: opened at `/settings`, the nav
-// of its own six sections (Versioning is the git bundle's, WP-10N; Appearance
+// of its own seven sections (Versioning is the git bundle's, WP-10N; Appearance
 // shows while the app answers `doric.appearance/v1`, as this window's app
 // does), each section a route, the search, and the save the window's close
 // waits for.
@@ -172,6 +172,7 @@ test('a window opened at /settings shows the Providers section and names itself'
     'Appearance',
     'Providers',
     'Execution',
+    'Threads',
     'Tools',
     'Credentials',
   ]);
@@ -259,6 +260,136 @@ test('choosing the host time zone saves a profile without one', async () => {
   await flush(opened);
 
   assert.deepEqual(savedProfile(opened), { name: 'Ana' });
+});
+
+/** The auto-archive policy of the last configuration the window sent the host. */
+const savedAutoArchive = (window: SettingsWindow): unknown =>
+  (
+    window.received('host-config/v1.replace').at(-1)?.input as
+      | { readonly threads?: { readonly autoArchive?: unknown } }
+      | undefined
+  )?.threads?.autoArchive;
+
+/** The switch that archives finished agent threads. */
+const agentThreadsSwitch = (window: SettingsWindow): HTMLElement => {
+  const control = window.document.querySelector<HTMLElement>('[role="switch"]');
+  assert.ok(control, 'no switch in the Threads section');
+  return control;
+};
+
+/** The row of the main-thread choice named `label` (its note aside). */
+const choiceRow = (window: SettingsWindow, label: string): HTMLElement => {
+  const row = [...window.document.querySelectorAll<HTMLElement>('button')].find(
+    (button) =>
+      button.textContent === label || button.textContent === `${label}default`,
+  );
+  assert.ok(row, `no choice ${label}`);
+  return row;
+};
+
+/** Whether the choice row bears the check that marks the current value. */
+const isCurrentChoice = (row: HTMLElement): boolean =>
+  row.querySelector('svg.lucide-check') !== null;
+
+// T-29 (thread-archive §12): the Threads section edits threads.autoArchive
+// through the window's draft, and no other section's save drops it.
+test('the Threads section shows the stored auto-archive policy under its copy (T-29)', async () => {
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/threads',
+    host: host({
+      ...configuration,
+      threads: {
+        autoArchive: { agentThreads: false, mainThreadsAfter: '30d' },
+      },
+    }),
+  });
+  await settle(20);
+
+  assert.equal(heading(opened), 'Threads');
+  assert.equal(activeRow(opened), 'Threads');
+  const text = opened.document.body.textContent ?? '';
+  for (const copy of [
+    'Auto-archive',
+    'Archive finished agent threads',
+    'Moves an agent thread to Archived about 30 seconds after its work finishes. It comes back on its own when it gets new work, from its parent or from you.',
+    'Archive inactive main threads after',
+    'Inactive means no messages, answers or running child threads for that long. A main thread is never archived automatically while it or a child thread has a failure, a pending action or question, an unread result or a pin.',
+  ]) {
+    assert.ok(text.includes(copy), `missing copy: ${copy}`);
+  }
+  assert.equal(
+    agentThreadsSwitch(opened).getAttribute('aria-checked'),
+    'false',
+  );
+  assert.equal(choiceRow(opened, '7 days').textContent, '7 daysdefault');
+  assert.deepEqual(
+    ['1 day', '7 days', '30 days', 'Never'].filter((label) =>
+      isCurrentChoice(choiceRow(opened as SettingsWindow, label)),
+    ),
+    ['30 days'],
+  );
+});
+
+test('without a stored policy the Threads section shows agent threads on and 7 days (T-29)', async () => {
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/threads',
+    host: host(),
+  });
+  await settle(20);
+
+  assert.equal(agentThreadsSwitch(opened).getAttribute('aria-checked'), 'true');
+  assert.deepEqual(
+    ['1 day', '7 days', '30 days', 'Never'].filter((label) =>
+      isCurrentChoice(choiceRow(opened as SettingsWindow, label)),
+    ),
+    ['7 days'],
+  );
+});
+
+test('turning the switch off and picking a choice autosaves threads.autoArchive (T-29)', async () => {
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/threads',
+    host: host(),
+  });
+  await settle(20);
+
+  agentThreadsSwitch(opened).click();
+  await settle();
+  await flush(opened);
+  assert.deepEqual(savedAutoArchive(opened), {
+    agentThreads: false,
+    mainThreadsAfter: '7d',
+  });
+
+  choiceRow(opened, 'Never').click();
+  await settle();
+  await flush(opened);
+  assert.deepEqual(savedAutoArchive(opened), {
+    agentThreads: false,
+    mainThreadsAfter: 'never',
+  });
+});
+
+test('a change in the Execution section saves the stored threads.autoArchive with it (T-29)', async () => {
+  const policy = { agentThreads: false, mainThreadsAfter: '1d' };
+  opened = await openSettingsWindow({
+    url: 'doric://app/settings/execution',
+    host: host({ ...configuration, threads: { autoArchive: policy } }),
+  });
+  await settle(20);
+
+  type(field(opened, 'execution-max-turns'), '12');
+  await settle();
+  await flush(opened);
+
+  const sent = opened.received('host-config/v1.replace').at(-1)?.input as
+    | {
+        readonly execution: { readonly maxTurns: number };
+        readonly threads?: unknown;
+      }
+    | undefined;
+  assert.equal(sent?.execution.maxTurns, 12);
+  assert.deepEqual(sent?.threads, { autoArchive: policy });
 });
 
 test('a nav row opens its section at its own path', async () => {
@@ -387,6 +518,7 @@ test('a section another bundle adds is headed by its link and saves through the 
     'Appearance',
     'Providers',
     'Execution',
+    'Threads',
     'Tools',
     'Git',
     'Credentials',

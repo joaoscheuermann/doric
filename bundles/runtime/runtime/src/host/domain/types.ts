@@ -1,3 +1,5 @@
+import type { Disposable, StreamListener } from 'bundle/contracts';
+
 import type { ThreadExecution } from '../../contracts/execution.js';
 import type { LeaseOutcome, LeaseTask } from '../../contracts/lease.js';
 import type {
@@ -38,10 +40,13 @@ import type {
   VmSsh,
 } from '../../contracts/runtime.js';
 import type {
+  ArchiveThreadResult,
   InterruptResult,
+  RestoreThreadResult,
   TerminalResultInput,
   ThreadExecutionResult,
 } from '../../contracts/threads.js';
+import type { ThreadViewItem } from '../../contracts/watches.js';
 import type {
   ThreadTask,
   ThreadTaskOutcome,
@@ -201,7 +206,39 @@ export interface WorkspaceService {
     >;
     interrupt(id: string, promptId: string): Promise<InterruptResult>;
     terminate(id: string): Promise<Thread | undefined>;
+    /**
+     * Deletes a terminal subtree. An agent Thread is refused (`forbidden`)
+     * only while it is not archived.
+     */
     delete(id: string): Promise<DeleteResult>;
+    /**
+     * Manual archive (D8) under the Project's lock: refuses a busy target
+     * (`busy`) or an archived one (`already_archived`); otherwise archives
+     * the target and every non-archived descendant that is neither busy nor
+     * pinned, in one batch, publishes each record and answers the batch and
+     * the records, target first. Works on a Project that is not live.
+     * Rejects when the store rejects the write; nothing is written then.
+     */
+    archive(id: string): Promise<ArchiveThreadResult>;
+    /**
+     * Restore and Undo (D11) under the Project's lock: un-archives the target
+     * and every descendant carrying `batch`, else the target's own batch,
+     * writes `restoredAt`, publishes each record and answers them.
+     * `not_archived` when nothing carries that batch. Rejects as `archive`.
+     */
+    restore(id: string, batch?: string): Promise<RestoreThreadResult>;
+    /**
+     * Pins or unpins under the Project's lock; keeps `updatedAt`; publishes
+     * the record; undefined for a missing id.
+     */
+    setPinned(id: string, pinned: boolean): Promise<Thread | undefined>;
+    /**
+     * Holds a view (§6): returns at once; a missing Thread ends the stream
+     * with `ContractError('not_found')`; otherwise emits one `viewing` item
+     * and holds the view until disposed or until the runtime hands over
+     * (`ContractError('unavailable')`).
+     */
+    view(id: string, listener: StreamListener<ThreadViewItem>): Disposable;
   };
   /**
    * Takes up every prompt the host owes a run before anyone asks: the ones its

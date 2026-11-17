@@ -239,20 +239,27 @@ describe('the one error a failed request surfaces (§8)', () => {
   });
 });
 
-describe('the room a Thread row keeps for its trailing slot (T-2.12)', () => {
-  test('a timed row keeps the badge room, with or without the plus', () => {
-    assert.equal(threadRowPadding(true, true), 'pr-14');
-    assert.equal(threadRowPadding(true, false), 'pr-14');
-  });
+describe('the room a Thread row keeps for its trailing slot (T-25, thread-archive §10.1)', () => {
+  const hoverAt = (pr: string) =>
+    ` group-hover/tree-row:${pr} group-has-[:focus-visible]/tree-row:${pr}`;
+  const cases: readonly ['none' | 'mark' | 'badge', 0 | 1 | 2 | 3, string][] = [
+    ['none', 0, 'pr-1.5'],
+    ['none', 1, `pr-1.5${hoverAt('pr-8')}`],
+    ['none', 2, `pr-1.5${hoverAt('pr-14')}`],
+    ['none', 3, `pr-1.5${hoverAt('pr-20')}`],
+    ['mark', 0, 'pr-7'],
+    ['mark', 1, `pr-7${hoverAt('pr-8')}`],
+    ['mark', 2, `pr-7${hoverAt('pr-14')}`],
+    ['mark', 3, `pr-7${hoverAt('pr-20')}`],
+    ['badge', 0, 'pr-14'],
+    ['badge', 1, 'pr-14'],
+    ['badge', 2, 'pr-14'],
+    ['badge', 3, `pr-14${hoverAt('pr-20')}`],
+  ];
 
-  test('an untimed row with the plus widens only on hover or focus', () => {
-    assert.equal(
-      threadRowPadding(false, true),
-      'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8',
-    );
-  });
-
-  test('an untimed row without the plus keeps the rest padding', () => {
-    assert.equal(threadRowPadding(false, false), 'pr-1.5');
-  });
+  for (const [rest, hover, classes] of cases) {
+    test(`rest ${rest} with ${hover} hover actions is "${classes}"`, () => {
+      assert.equal(threadRowPadding(rest, hover), classes);
+    });
+  }
 });

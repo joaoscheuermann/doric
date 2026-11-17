@@ -87,6 +87,21 @@ export interface ConfigurationValue {
    * zone, so every configuration written before this field stays valid.
    */
   readonly profile?: ConfigurationProfile;
+  /**
+   * 1.2.0: how the runtime archives Threads on its own. Absent, like each of
+   * its keys, means the defaults: agent threads are archived
+   * (`agentThreads: true`) and inactive main threads after seven days
+   * (`mainThreadsAfter: '7d'`). Every configuration written before this
+   * field stays valid.
+   */
+  readonly threads?: {
+    readonly autoArchive?: {
+      /** Archive an agent thread 30 s after its turn ends; absent: true. */
+      readonly agentThreads?: boolean;
+      /** Archive an inactive main thread after this; absent: '7d'. */
+      readonly mainThreadsAfter?: '1d' | '7d' | '30d' | 'never';
+    };
+  };
 }
 
 /** The exact GET /config body. */
@@ -160,6 +175,16 @@ export const configurationValueSchema: z.ZodType<
     .looseObject({
       name: z.string().optional(),
       timezone: z.string().optional(),
+    })
+    .optional(),
+  threads: z
+    .looseObject({
+      autoArchive: z
+        .looseObject({
+          agentThreads: z.boolean().optional(),
+          mainThreadsAfter: z.enum(['1d', '7d', '30d', 'never']).optional(),
+        })
+        .optional(),
     })
     .optional(),
 });

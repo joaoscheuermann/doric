@@ -25,7 +25,11 @@ export type RuntimeHost = Pick<
   | 'watchProject'
 >;
 
-/** The subset of `runtime.threads/v1` the layout calls. */
+/**
+ * The subset of `runtime.threads/v1` the layout calls. `archiveThread`,
+ * `restoreThread`, `setThreadPinned` and `viewThread` need
+ * `runtime.threads/v1@^1.8.0` (docs/designs/thread-archive.md §10.6, §10.8).
+ */
 export type ThreadsHost = Pick<
   RuntimeThreads,
   | 'threads'
@@ -34,4 +38,8 @@ export type ThreadsHost = Pick<
   | 'renameThread'
   | 'terminateThread'
   | 'deleteThread'
+  | 'archiveThread'
+  | 'restoreThread'
+  | 'setThreadPinned'
+  | 'viewThread'
 >;

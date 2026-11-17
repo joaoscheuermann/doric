@@ -2,27 +2,62 @@ import type { ErrorInfo } from 'desktop/reads';
 
 import type { Draft, Entity } from './workspace.js';
 
+const ROW_PADDING = {
+  none: [
+    'pr-1.5',
+    'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8',
+    'pr-1.5 group-hover/tree-row:pr-14 group-has-[:focus-visible]/tree-row:pr-14',
+    'pr-1.5 group-hover/tree-row:pr-20 group-has-[:focus-visible]/tree-row:pr-20',
+  ],
+  mark: [
+    'pr-7',
+    'pr-7 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8',
+    'pr-7 group-hover/tree-row:pr-14 group-has-[:focus-visible]/tree-row:pr-14',
+    'pr-7 group-hover/tree-row:pr-20 group-has-[:focus-visible]/tree-row:pr-20',
+  ],
+  badge: [
+    'pr-14',
+    'pr-14',
+    'pr-14',
+    'pr-14 group-hover/tree-row:pr-20 group-has-[:focus-visible]/tree-row:pr-20',
+  ],
+} as const;
+
 /**
  * The Thread row button's right padding, as Tailwind classes, so the name
- * truncates before the trailing slot (§4 table). `timed`: the row is active
- * with a badge start, so its elapsed badge shows. `addable`: the row has the
- * plus.
+ * truncates before the trailing slot (docs/designs/thread-archive.md §10.1).
+ * `rest`: what the trailing slot shows at rest — nothing, a 14 px mark (pin
+ * or archive) at `right-2`, or the elapsed badge. `hover`: how many 20 px
+ * hover actions the row draws (at `right-1`, `right-7`, `right-13`).
  *
- * | timed | addable | classes                                                              |
- * | ----- | ------- | -------------------------------------------------------------------- |
- * | true  | either  | `'pr-14'` (56 px at rest and on hover or keyboard focus)             |
- * | false | true    | `'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8'` |
- * | false | false   | `'pr-1.5'`                                                           |
+ * The padding clears the rest slot plus 6 px at rest, and the leftmost hover
+ * action plus 8 px on row hover or keyboard focus, never less than at rest.
+ * Every answer is one of these complete literals, so the sheets that scan
+ * this source emit them:
  *
- * A timed row keeps 56 px on hover, which already holds the 20 px plus at
- * `right-1`, so its name does not truncate again.
+ * | rest    | hover | classes                                                                         |
+ * | ------- | ----- | ------------------------------------------------------------------------------- |
+ * | `none`  | 0     | `'pr-1.5'`                                                                      |
+ * | `none`  | 1     | `'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8'`   |
+ * | `none`  | 2     | `'pr-1.5 group-hover/tree-row:pr-14 group-has-[:focus-visible]/tree-row:pr-14'` |
+ * | `none`  | 3     | `'pr-1.5 group-hover/tree-row:pr-20 group-has-[:focus-visible]/tree-row:pr-20'` |
+ * | `mark`  | 0     | `'pr-7'`                                                                        |
+ * | `mark`  | 1     | `'pr-7 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8'`     |
+ * | `mark`  | 2     | `'pr-7 group-hover/tree-row:pr-14 group-has-[:focus-visible]/tree-row:pr-14'`   |
+ * | `mark`  | 3     | `'pr-7 group-hover/tree-row:pr-20 group-has-[:focus-visible]/tree-row:pr-20'`   |
+ * | `badge` | 0     | `'pr-14'`                                                                       |
+ * | `badge` | 1     | `'pr-14'`                                                                       |
+ * | `badge` | 2     | `'pr-14'`                                                                       |
+ * | `badge` | 3     | `'pr-14 group-hover/tree-row:pr-20 group-has-[:focus-visible]/tree-row:pr-20'`  |
+ *
+ * `('none', 1)` is the old addable row and `('badge', 1)` the old timed one:
+ * a badge row keeps 56 px on hover, which already holds up to two hover
+ * actions, so its name does not truncate again. Pure; never throws.
  */
-export const threadRowPadding = (timed: boolean, addable: boolean): string => {
-  if (timed) return 'pr-14';
-  return addable
-    ? 'pr-1.5 group-hover/tree-row:pr-8 group-has-[:focus-visible]/tree-row:pr-8'
-    : 'pr-1.5';
-};
+export const threadRowPadding = (
+  rest: 'none' | 'mark' | 'badge',
+  hover: 0 | 1 | 2 | 3,
+): string => ROW_PADDING[rest][hover];
 
 /**
  * A tree row's fill, on its `group/tree-row` wrapper

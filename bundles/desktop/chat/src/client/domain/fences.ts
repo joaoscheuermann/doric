@@ -3,6 +3,8 @@
 // draws. The key is `${promptId}/${turnSequence}/${index}`, `index` counting
 // the earlier fences of the same tag in the turn.
 
+import { closesFence, fenceInfo, fenceMarker } from 'runtime/contracts';
+
 import type { ChatFence } from '../../contracts/index.js';
 import { lineSource, type MarkdownBlock, markdownBlocks } from './markdown.js';
 import { lastTurnIndex, type Turn } from './projector.js';
@@ -15,25 +17,17 @@ export interface BlockFence {
   readonly closed: boolean;
 }
 
-const OPENER = /^\s*(`{3,}|~{3,})(.*)$/;
-const CLOSER = /^\s*(`{3,}|~{3,})\s*$/;
-
 /** Reads a `code` block's lines, opener and closer included (`markdown.ts`). */
 export const blockFence = (block: MarkdownBlock): BlockFence | undefined => {
   if (block.kind !== 'code') return undefined;
   const lines = block.lines.map(lineSource);
-  const opener = OPENER.exec(lines[0] ?? '');
-  if (opener === null) return undefined;
-  const marker = opener[1] ?? '```';
-  const info = (opener[2] ?? '').trim();
-  const closer = CLOSER.exec(lines.at(-1) ?? '')?.[1];
-  const closed =
-    lines.length > 1 &&
-    closer !== undefined &&
-    closer[0] === marker[0] &&
-    closer.length >= marker.length;
+  const opener = lines[0] ?? '';
+  const marker = fenceMarker(opener);
+  if (marker === undefined) return undefined;
+  const { info, tag } = fenceInfo(opener);
+  const closed = lines.length > 1 && closesFence(lines.at(-1) ?? '', marker);
   return {
-    tag: info.split(/\s+/)[0] ?? '',
+    tag,
     info,
     body: lines.slice(1, closed ? -1 : undefined),
     closed,

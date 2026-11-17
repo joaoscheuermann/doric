@@ -480,6 +480,10 @@ provider.` or `This model does not support that effort.`; an unresolvable
   and `cwd` are applied before the execution and kept when it is refused. A
   valid one answers the updated Thread, whose record carries `providerId`,
   `model` and `effort`, and applies from the Thread's next run.
+- **Thread archive.** Thread records may carry `archivedAt` and `pinned`, set
+  from the desktop app only (`runtime.threads/v1` 1.8.0; no route sets them).
+  `DELETE /threads/:id` deletes an archived agent thread; a non-archived one is
+  still refused.
 - **Prompt** accepts only a non-empty `prompt`. Public callers cannot forge
   parent/result origins or correlation.
 - **Rewind** accepts only `{ "promptId", "prompt" }` and answers

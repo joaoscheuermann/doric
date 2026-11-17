@@ -109,6 +109,21 @@ export const threadsService = ({
       execute: ({ id, ...execution }) =>
         service.threads.setExecution(id, execution),
     }),
+    archiveThread: defineMethod({
+      expose: 'desktop',
+      ...methods.archiveThread,
+      execute: ({ id }) => service.threads.archive(id),
+    }),
+    restoreThread: defineMethod({
+      expose: 'desktop',
+      ...methods.restoreThread,
+      execute: ({ id, batch }) => service.threads.restore(id, batch),
+    }),
+    setThreadPinned: defineMethod({
+      expose: 'desktop',
+      ...methods.setThreadPinned,
+      execute: ({ id, pinned }) => service.threads.setPinned(id, pinned),
+    }),
     prompt: defineMethod({
       expose: 'desktop',
       ...methods.prompt,
@@ -229,5 +244,11 @@ export const threadsService = ({
       expose: 'desktop',
       ...methods.watchThread,
       execute: ([input, listener]) => watches.thread(input, listener),
+    }),
+    viewThread: defineMethod({
+      expose: 'desktop',
+      ...methods.viewThread,
+      execute: ([{ threadId }, listener]) =>
+        service.threads.view(threadId, listener),
     }),
   });

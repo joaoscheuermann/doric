@@ -12,6 +12,7 @@ import { type TerminalService, TerminalServiceV1 } from 'terminal/contracts';
 import { promptFinishedEvent, threadEventSink } from '../contracts/events.js';
 import type { ThreadEvent } from '../contracts/model.js';
 import { onEventAppended } from './appends.js';
+import type { ArchiveSchedule } from './domain/archiver.js';
 import { type Bindings, createBindings } from './domain/bindings.js';
 import { createNotices, type Notices } from './domain/notices.js';
 import { createRedactor } from './domain/redactor.js';
@@ -69,6 +70,7 @@ export const provideRuntime = (
     terminal = () => undefined,
     resources = () => undefined,
     attachments,
+    archiveSchedule,
   }: {
     readonly projects: ProjectStore;
     readonly threads: ThreadStore;
@@ -89,6 +91,11 @@ export const provideRuntime = (
      * deprecated `runtime.lease/v1.resources` read delegates to it.
      */
     readonly resources?: () => ProjectResourcesReader | undefined;
+    /**
+     * Arms each archive sweep; the host's unref'd timer without it. A test
+     * passes one that never fires and sweeps through the service itself.
+     */
+    readonly archiveSchedule?: ArchiveSchedule;
   },
 ): RuntimeProvision => {
   const notices = injectedNotices ?? createNotices(ports.log);
@@ -102,6 +109,7 @@ export const provideRuntime = (
     bindings,
     terminals: async (projectId) => (await terminal()?.list(projectId)) ?? [],
     ...(attachments === undefined ? {} : { attachments }),
+    ...(archiveSchedule === undefined ? {} : { archiveSchedule }),
   });
 
   // The remote watches read what the transport socket reads (R-STREAM).

@@ -154,7 +154,7 @@ export const deleteWhenTerminal = async (
     if (result === 'forbidden')
       throw new ClientError(
         'conflict',
-        'An agent opened this Thread, so it cannot be deleted.',
+        'An agent opened this Thread, so it cannot be deleted until it is archived.',
       );
     await pause();
   }
@@ -207,6 +207,36 @@ export interface WorkspaceApi {
     rename(threadId: string, name: string): Promise<Thread>;
     terminate(threadId: string): Promise<Thread>;
     delete(threadId: string): Promise<void>;
+    /**
+     * Archives the Thread and its idle, unpinned descendants as one batch
+     * (`runtime.threads/v1.archiveThread`). Resolves with the batch, to pass
+     * to `restore` for Undo, and every Thread the archive marked, target
+     * first. Rejects with a `ClientError`: `not_found` "The thread was not
+     * found." for `missing`; `conflict` "The thread is running, so it cannot
+     * be archived." for `busy` and "The thread is already archived." for
+     * `already_archived`; an invalid id as the other Thread writes do; a
+     * rejected host call (`limit_exceeded` included) through `hostFailure`.
+     * A rejection wrote nothing.
+     */
+    archive(
+      threadId: string,
+    ): Promise<{ readonly batch: string; readonly threads: readonly Thread[] }>;
+    /**
+     * Un-archives the Thread and its descendants of one batch: `batch`, else
+     * the Thread's own (`runtime.threads/v1.restoreThread`). Resolves with
+     * every restored Thread. Rejects with a `ClientError`: `not_found` "The
+     * thread was not found." for `missing`; `conflict` "The thread is not
+     * archived." for `not_archived`; otherwise as `archive`. A rejection
+     * wrote nothing.
+     */
+    restore(threadId: string, batch?: string): Promise<readonly Thread[]>;
+    /**
+     * Pins or unpins the Thread (`runtime.threads/v1.setThreadPinned`) and
+     * resolves with its record. A missing Thread (the host's `undefined`)
+     * rejects with `ClientError('not_found', "The thread was not found.")`;
+     * other failures as `archive`.
+     */
+    setPinned(threadId: string, pinned: boolean): Promise<Thread>;
   };
 }
 
@@ -335,6 +365,43 @@ export const createWorkspaceApi = ({
           pause,
         );
       },
+      archive: async (id) => {
+        const thread = threadId(id);
+        const result = await host(() => threads.archiveThread({ id: thread }));
+        if (result.status === 'archived') {
+          return { batch: result.batch, threads: result.threads };
+        }
+        if (result.status === 'missing') {
+          throw new ClientError('not_found', hostMessages.threadNotFound);
+        }
+        throw new ClientError(
+          'conflict',
+          result.status === 'busy'
+            ? 'The thread is running, so it cannot be archived.'
+            : 'The thread is already archived.',
+        );
+      },
+      restore: async (id, batch) => {
+        const thread = threadId(id);
+        const result = await host(() =>
+          threads.restoreThread({
+            id: thread,
+            ...(batch === undefined ? {} : { batch }),
+          }),
+        );
+        if (result.status === 'restored') return result.threads;
+        if (result.status === 'missing') {
+          throw new ClientError('not_found', hostMessages.threadNotFound);
+        }
+        throw new ClientError('conflict', 'The thread is not archived.');
+      },
+      setPinned: async (id, pinned) => {
+        const thread = threadId(id);
+        return found(
+          await host(() => threads.setThreadPinned({ id: thread, pinned })),
+          hostMessages.threadNotFound,
+        );
+      },
     },
   };
 };
@@ -378,5 +445,8 @@ export const api: WorkspaceApi = {
     rename: (id, name) => bound().threads.rename(id, name),
     terminate: (id) => bound().threads.terminate(id),
     delete: (id) => bound().threads.delete(id),
+    archive: (id) => bound().threads.archive(id),
+    restore: (id, batch) => bound().threads.restore(id, batch),
+    setPinned: (id, pinned) => bound().threads.setPinned(id, pinned),
   },
 };

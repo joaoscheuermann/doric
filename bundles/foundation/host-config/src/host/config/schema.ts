@@ -356,6 +356,22 @@ const profile = z
   })
   .strict();
 
+/**
+ * How the runtime archives Threads on its own. Strict: an unknown key is
+ * refused. Each key is optional; the runtime applies the defaults it names.
+ */
+const autoArchive = z
+  .object({
+    /** Archive agent threads 30 s after their turn ends; absent: true. */
+    agentThreads: z.boolean().optional(),
+    /** Archive inactive main threads after; absent: '7d'. */
+    mainThreadsAfter: z.enum(['1d', '7d', '30d', 'never']).optional(),
+  })
+  .strict();
+
+/** Thread preferences of the host. Strict: an unknown key is refused. */
+const threads = z.object({ autoArchive: autoArchive.optional() }).strict();
+
 const execution = z
   .object({
     maxTurns: limit,
@@ -424,8 +440,10 @@ export const ConfigInputSchema = z
     tools,
     gitCredentialId: z.uuid().optional(),
     githubCredentialId: z.uuid().optional(),
-    // Optional and last, so a configuration without it serialises as before.
+    // Optional and at the end, so a configuration without them serialises as
+    // before; a later optional key goes after the last one.
     profile: profile.optional(),
+    threads: threads.optional(),
   })
   .strict()
   .superRefine(referencesKnownProviders);

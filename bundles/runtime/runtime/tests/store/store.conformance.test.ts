@@ -1869,3 +1869,235 @@ storeTest(
     );
   },
 );
+
+// runtime.thread/v1 1.3.0: the archive fields (docs/designs/thread-archive.md
+// §3, T-5, AC12).
+
+/** The archive state of `id` among its Project's, as `store` reads it. */
+const archiveStateOf = async (
+  threads: RuntimeStores['threads'],
+  projectId: string,
+  id: string,
+) =>
+  (await threads.archiveStates(projectId)).find(
+    (state) => state.thread.id === id,
+  );
+
+storeTest(
+  'archives Threads in one batch, restores them and keeps updatedAt',
+  async ({ projects, threads, second }) => {
+    const { project } = await projects.create('Archive', snapshot(), 'blue');
+    const { thread: parent } = await threads.create(
+      project.id,
+      'Parent',
+      testExecution,
+    );
+    const { thread: child } = await threads.create(
+      project.id,
+      'Child',
+      testExecution,
+      parent.id,
+    );
+    const ids = [parent.id, child.id];
+    const batch = randomUUID();
+    const archivedAt = '2026-11-17T10:00:00.000Z';
+    const marked = await threads.archive(ids, { at: archivedAt, batch });
+    assert.deepEqual(
+      marked.map((thread) => [thread.id, thread.archivedAt]),
+      ids.map((id) => [id, archivedAt]),
+    );
+    for (const store of [threads, second.threads])
+      for (const [id, before] of [
+        [parent.id, parent.updatedAt],
+        [child.id, child.updatedAt],
+      ] as const) {
+        const state = await archiveStateOf(store, project.id, id);
+        assert.equal(state?.batch, batch);
+        assert.equal(state?.thread.archivedAt, archivedAt);
+        assert.equal(state?.restoredAt, undefined);
+        assert.equal((await store.record(id))?.archivedAt, archivedAt);
+        assert.equal((await store.record(id))?.updatedAt, before);
+      }
+
+    const restoredAt = '2026-11-17T11:00:00.000Z';
+    const restored = await threads.restore(ids, restoredAt);
+    assert.deepEqual(
+      restored.map((thread) => [thread.id, 'archivedAt' in thread]),
+      ids.map((id) => [id, false]),
+    );
+    for (const store of [threads, second.threads])
+      for (const [id, before] of [
+        [parent.id, parent.updatedAt],
+        [child.id, child.updatedAt],
+      ] as const) {
+        const state = await archiveStateOf(store, project.id, id);
+        assert.equal(state?.batch, undefined);
+        assert.equal(state?.restoredAt, restoredAt);
+        assert.equal(
+          state !== undefined && 'archivedAt' in state.thread,
+          false,
+        );
+        assert.equal((await store.record(id))?.updatedAt, before);
+      }
+  },
+);
+
+storeTest(
+  'pins, unpins and marks a view without moving updatedAt',
+  async ({ projects, threads, second }) => {
+    const { project } = await projects.create('Pins', snapshot(), 'blue');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
+    const pinned = await threads.setPinned(thread.id, true);
+    assert.equal(pinned?.pinned, true);
+    assert.equal((await second.threads.record(thread.id))?.pinned, true);
+    const unpinned = await threads.setPinned(thread.id, false);
+    assert.equal(unpinned !== undefined && 'pinned' in unpinned, false);
+    const read = await second.threads.record(thread.id);
+    assert.equal(read !== undefined && 'pinned' in read, false);
+    assert.equal(await threads.setPinned(randomUUID(), true), undefined);
+
+    const viewedAt = '2026-11-17T12:00:00.000Z';
+    await threads.markViewed(thread.id, viewedAt);
+    await threads.markViewed(randomUUID(), viewedAt);
+    assert.equal(
+      (await archiveStateOf(second.threads, project.id, thread.id))?.viewedAt,
+      viewedAt,
+    );
+    assert.equal(
+      (await threads.record(thread.id))?.updatedAt,
+      thread.updatedAt,
+    );
+  },
+);
+
+storeTest(
+  'stores a reader stop on the result and a later result without it replaces it',
+  async ({ projects, threads, second }) => {
+    const { project } = await projects.create('Stops', snapshot(), 'blue');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
+    const outcome = {
+      status: 'cancelled',
+      text: 'stopped',
+      promptId,
+      at: '2026-11-17T13:00:00.000Z',
+    };
+    await threads.setResult(thread.id, outcome, 'interrupted');
+    const stopped = await archiveStateOf(second.threads, project.id, thread.id);
+    assert.equal(stopped?.interrupted, true);
+    assert.deepEqual(stopped?.thread.result, outcome);
+    assert.deepEqual((await threads.record(thread.id))?.result, outcome);
+
+    await threads.setResult(thread.id, { ...outcome, promptId: randomUUID() });
+    assert.equal(
+      (await archiveStateOf(second.threads, project.id, thread.id))
+        ?.interrupted,
+      false,
+    );
+  },
+);
+
+storeTest(
+  'refuses an archive naming a missing Thread and writes nothing',
+  async ({ projects, threads }) => {
+    const { project } = await projects.create('Missing', snapshot(), 'blue');
+    const { thread } = await threads.create(
+      project.id,
+      'Thread',
+      testExecution,
+    );
+    await assert.rejects(
+      threads.archive([thread.id, randomUUID()], {
+        at: '2026-11-17T14:00:00.000Z',
+        batch: randomUUID(),
+      }),
+      { message: 'Missing thread.' },
+    );
+    const state = await archiveStateOf(threads, project.id, thread.id);
+    assert.equal(state?.batch, undefined);
+    assert.equal((await threads.record(thread.id))?.archivedAt, undefined);
+  },
+);
+
+void test('refuses an archive over the backend batch limit without writing anything', async () => {
+  const backend = memoryBackend({ maxBatch: 4 });
+  try {
+    const { projects, threads } = stores(backend.storage);
+    const { project } = await projects.create('Large', snapshot(), 'blue');
+    const ids: string[] = [];
+    for (const name of ['a', 'b', 'c'])
+      ids.push(
+        (await threads.create(project.id, name, testExecution)).thread.id,
+      );
+    await assert.rejects(
+      threads.archive(ids, {
+        at: '2026-11-17T15:00:00.000Z',
+        batch: randomUUID(),
+      }),
+      { code: 'limit_exceeded' },
+    );
+    for (const id of ids)
+      assert.equal((await threads.record(id))?.archivedAt, undefined);
+  } finally {
+    await backend.close();
+  }
+});
+
+storeTest(
+  'reads a Thread written before runtime.thread/v1 1.3.0 with no archive fields',
+  async ({ projects, threads, backend, second }) => {
+    const { project } = await projects.create('Old', snapshot(), 'blue');
+    const id = randomUUID();
+    const at = new Date(0).toISOString();
+    await backend.storage.commit({
+      expect: [{ type: 'runtime.thread/v1', id, revision: 0 }],
+      put: [
+        {
+          type: 'runtime.thread/v1',
+          id,
+          value: {
+            id,
+            projectId: project.id,
+            parentThreadId: null,
+            origin: 'user',
+            name: 'Old',
+            state: 'ready',
+            open: true,
+            cwd: '/workspace',
+            cwdRepo: null,
+            queuePaused: false,
+            activePromptId: null,
+            errorCode: null,
+            lastSequence: 0,
+            result: { status: 'completed', text: 'done', promptId, at },
+            lastStarted: null,
+            usage: null,
+            pending: [],
+            createdAt: at,
+            updatedAt: at,
+            startedAt: null,
+            finishedAt: null,
+            createdKey: createdKey(at, id),
+          },
+        },
+      ],
+    });
+    for (const store of [threads, second.threads]) {
+      const state = await archiveStateOf(store, project.id, id);
+      assert.ok(state);
+      assert.equal(state.batch, undefined);
+      assert.equal(state.restoredAt, undefined);
+      assert.equal(state.viewedAt, undefined);
+      assert.equal(state.interrupted, false);
+      assert.equal('archivedAt' in state.thread, false);
+      assert.equal('pinned' in state.thread, false);
+    }
+  },
+);

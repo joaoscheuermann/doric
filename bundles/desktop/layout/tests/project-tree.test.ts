@@ -351,3 +351,51 @@ describe('project rows open one at a time', () => {
     assert.deepEqual([...open].sort(), ['one', 'three']);
   });
 });
+
+describe('the first selection skips archived main threads (T-25, thread-archive §10.1)', () => {
+  const archived = (value: Thread): Thread => ({
+    ...value,
+    archivedAt: '2026-11-10T12:00:00.000Z',
+  });
+
+  test('opening a Project selects its first main thread that is not archived', () => {
+    const opened = withSelection(
+      tree([project('one')], {
+        one: [
+          archived(thread('a', 'one')),
+          thread('a1', 'one', 'a'),
+          thread('b', 'one'),
+        ],
+      }),
+      { projectId: 'one' },
+    );
+
+    assert.deepEqual(opened.selection, { projectId: 'one', threadId: 'b' });
+  });
+
+  test('a Project whose main threads are all archived selects no Thread', () => {
+    const opened = withSelection(
+      tree([project('one')], {
+        one: [
+          archived(thread('a', 'one')),
+          thread('a1', 'one', 'a'),
+          archived(thread('b', 'one')),
+        ],
+      }),
+      { projectId: 'one' },
+    );
+
+    assert.deepEqual(opened.selection, { projectId: 'one' });
+  });
+
+  test('an archived Thread the selection names stays selected', () => {
+    const opened = withSelection(
+      tree([project('one')], {
+        one: [archived(thread('a', 'one')), thread('b', 'one')],
+      }),
+      { projectId: 'one', threadId: 'a' },
+    );
+
+    assert.deepEqual(opened.selection, { projectId: 'one', threadId: 'a' });
+  });
+});

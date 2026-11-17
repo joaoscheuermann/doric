@@ -18,6 +18,7 @@ export {
   threadExecutionIssues,
 } from './execution.js';
 export * from './executor.js';
+export * from './fences.js';
 export * from './hooks.js';
 export * from './lease.js';
 export * from './model.js';

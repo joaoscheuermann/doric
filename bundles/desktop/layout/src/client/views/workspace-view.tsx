@@ -53,6 +53,7 @@ import { ConversationTerminals } from '../components/templates/conversation-term
 import { INSET_CARD } from '../components/templates/inset-card.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
+import { descendantsInChat, isArchived } from '../domain/thread-archive.js';
 import { isThreadPanelTab } from '../domain/workspace-tabs.js';
 import { useProjectTabs } from '../hooks/use-project-tabs.js';
 import { useRegionItems } from '../hooks/use-region-items.js';
@@ -82,6 +83,15 @@ const setNewTab = (open: boolean) => newTabStore.getState().set(open);
 
 function Workspace() {
   const workspace = useWorkspace();
+  // U16: deleting an archived Thread names its descendants still in Chat.
+  const { deleting } = workspace;
+  const inChat =
+    deleting?.kind === 'thread' && isArchived(deleting.value)
+      ? descendantsInChat(
+          workspace.threadsByProject[deleting.value.projectId] ?? [],
+          deleting.value.id,
+        )
+      : 0;
   const newTab = useSyncExternalStore(
     newTabStore.subscribe,
     () => newTabStore.getState().open,
@@ -134,6 +144,7 @@ function Workspace() {
     threadsByProject: workspace.threadsByProject,
   };
   const sidebarActions: SidebarActions = {
+    archiveThread: actions.archiveThread,
     beginProject: actions.beginProject,
     beginThread: actions.beginThread,
     cancelDraft: actions.cancelDraft,
@@ -143,10 +154,12 @@ function Workspace() {
     createThread: actions.createThread,
     deleteEntity: actions.requestDelete,
     rename: actions.rename,
+    restoreThread: actions.restoreThread,
     retryError: actions.retryError,
     selectProject: actions.selectProject,
     selectThread: actions.selectThread,
     setProjectColor: actions.setProjectColor,
+    setThreadPinned: actions.setThreadPinned,
     startRename: actions.startRename,
   };
   const { selectedThread } = workspace;
@@ -229,6 +242,7 @@ function Workspace() {
         />
         <DeleteDialog
           entity={workspace.deleting}
+          inChat={inChat}
           pending={workspace.deletingPending}
           onDelete={actions.confirmDelete}
           onOpenChange={(open) => {
@@ -350,6 +364,7 @@ function Workspace() {
         </Tabs>
         <DeleteDialog
           entity={workspace.deleting}
+          inChat={inChat}
           pending={workspace.deletingPending}
           onDelete={actions.confirmDelete}
           onOpenChange={(open) => {

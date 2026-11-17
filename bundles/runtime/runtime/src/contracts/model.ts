@@ -205,6 +205,17 @@ export interface Thread {
    * own `model` / `effort` over it when set. See `resolveThreadExecution`.
    */
   readonly providerId?: string;
+  /**
+   * When the Thread was archived (ISO 8601; runtime.threads/v1 1.8.0); absent
+   * while it is not archived. An archived Thread keeps every other field and
+   * still accepts input, which un-archives it.
+   */
+  readonly archivedAt?: string;
+  /**
+   * True while the reader has the Thread pinned (runtime.threads/v1 1.8.0);
+   * absent when it is not pinned. No rule archives a pinned Thread on its own.
+   */
+  readonly pinned?: boolean;
 }
 
 export type InputSource =
@@ -701,6 +712,8 @@ export const threadSchema: z.ZodType<Thread, Thread> = z.looseObject({
   model: z.string().optional(),
   effort: z.enum(reasoningEfforts).optional(),
   providerId: z.string().optional(),
+  archivedAt: z.string().optional(),
+  pinned: z.boolean().optional(),
 });
 
 export const threadEventSchema: z.ZodType<ThreadEvent, ThreadEvent> =

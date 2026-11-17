@@ -262,6 +262,18 @@ export type Profile = {
   readonly timezone?: string;
 };
 
+/**
+ * How the runtime archives Threads on its own, as `host-config/v1` 1.2.0 keeps
+ * it. Each key is optional and an absent one means the host's default:
+ * `agentThreads: true` (an agent thread moves to Archived about 30 s after its
+ * work finishes) and `mainThreadsAfter: '7d'` (an inactive main thread moves
+ * after seven days; `'never'` turns that off).
+ */
+export type AutoArchive = {
+  readonly agentThreads?: boolean;
+  readonly mainThreadsAfter?: '1d' | '7d' | '30d' | 'never';
+};
+
 export type Configuration = {
   readonly providers: readonly ProviderConfiguration[];
   readonly models: {
@@ -288,6 +300,8 @@ export type Configuration = {
   readonly githubCredentialId?: string;
   /** Name and time zone for the agent's prompts; absent for neither. */
   readonly profile?: Profile;
+  /** How Threads are archived on their own; absent means the defaults. */
+  readonly threads?: { readonly autoArchive?: AutoArchive };
 };
 
 /**
@@ -1029,7 +1043,11 @@ export const isSameConfiguration = (
   left.gitCredentialId === right.gitCredentialId &&
   left.githubCredentialId === right.githubCredentialId &&
   left.profile?.name === right.profile?.name &&
-  left.profile?.timezone === right.profile?.timezone;
+  left.profile?.timezone === right.profile?.timezone &&
+  left.threads?.autoArchive?.agentThreads ===
+    right.threads?.autoArchive?.agentThreads &&
+  left.threads?.autoArchive?.mainThreadsAfter ===
+    right.threads?.autoArchive?.mainThreadsAfter;
 
 /**
  * Whether two tool-value maps describe the same values. A missing map and an
@@ -1715,6 +1733,38 @@ export const updateProfileTimezone = (
   configuration: Configuration,
   timezone: string | undefined,
 ): Configuration => updateProfile(configuration, 'timezone', timezone);
+
+/**
+ * The auto-archive policy the configuration means, with every default filled
+ * in: an absent `threads`, `autoArchive` or key reads as `agentThreads: true`
+ * and `mainThreadsAfter: '7d'`. A stored value is answered unchanged. Pure; never
+ * throws.
+ */
+export const autoArchiveOf = (
+  configuration: Configuration,
+): Required<AutoArchive> => ({
+  agentThreads: configuration.threads?.autoArchive?.agentThreads ?? true,
+  mainThreadsAfter:
+    configuration.threads?.autoArchive?.mainThreadsAfter ?? '7d',
+});
+
+/**
+ * The configuration with `change` applied to its auto-archive policy. The
+ * result's `threads.autoArchive` always carries both keys explicitly: a key
+ * `change` names takes its value, the other keeps what `autoArchiveOf` reads
+ * (so a default becomes stored). Every other field is unchanged, and the input
+ * is not mutated. Pure; never throws.
+ */
+export const updateAutoArchive = (
+  configuration: Configuration,
+  change: Partial<Required<AutoArchive>>,
+): Configuration => ({
+  ...configuration,
+  threads: {
+    ...configuration.threads,
+    autoArchive: { ...autoArchiveOf(configuration), ...change },
+  },
+});
 
 /**
  * The time zones the picker offers: every `supported` zone, plus `'UTC'`, plus

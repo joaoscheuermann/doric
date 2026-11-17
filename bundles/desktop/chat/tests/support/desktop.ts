@@ -83,7 +83,7 @@ const shell: DesktopBundle = {
       'regions/v1@1.0.0',
       'commands/v1@1.0.0',
       'menus/v1@1.0.0',
-      'runtime.threads/v1@1.3.0',
+      'runtime.threads/v1@1.8.0',
       'runtime.attachments/v1@1.0.0',
       'comments/v1@1.0.0',
     ],
@@ -112,7 +112,7 @@ const shell: DesktopBundle = {
       .concat([
         {
           id: 'runtime.threads/v1',
-          version: '1.3.0',
+          version: '1.8.0',
           kind: 'service' as const,
           environment: 'desktopMain' as const,
           cardinality: 'one' as const,

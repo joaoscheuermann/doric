@@ -29,6 +29,7 @@ import {
 import type { StackPane } from '../../../contracts/index.js';
 import { searchShortcutKeys } from '../../domain/dashboard.js';
 import type { WorkspaceError } from '../../domain/sidebar.js';
+import { chatThreads, type SidebarTab } from '../../domain/thread-archive.js';
 import { filterThreadTree } from '../../domain/thread-filter.js';
 import {
   type ThreadActivity,
@@ -50,11 +51,13 @@ import { threadRowsBusy } from '../../stores/thread-rows.js';
 import { BundleHealthNotice } from '../molecules/bundle-health-notice.js';
 import { ElementHost } from '../molecules/element-host.js';
 import { SEARCH_FIELD } from '../molecules/search-field.js';
+import { SidebarTabs } from '../molecules/sidebar-tabs.js';
 import {
   ThreadBranches,
   type ThreadBranchesActions,
 } from '../molecules/thread-branches.js';
 import { WorkspaceErrorNotice } from '../molecules/workspace-error-notice.js';
+import { ArchivedThreads } from './archived-threads.js';
 
 /** Placeholder thread rows while the selected project's tree loads. */
 const THREAD_SKELETON_ROWS = Array.from(
@@ -75,6 +78,8 @@ export type SidebarModel = {
 };
 
 export type SidebarActions = {
+  /** `WorkspaceActions.archiveThread`. */
+  readonly archiveThread: (thread: Thread) => Promise<void>;
   readonly beginProject: () => void;
   readonly beginThread: (projectId: string, parentThreadId?: string) => void;
   readonly cancelDraft: () => void;
@@ -84,11 +89,15 @@ export type SidebarActions = {
   readonly createThread: (name: string) => Promise<void>;
   readonly deleteEntity: (entity: Entity) => void;
   readonly rename: (entity: Entity, name: string) => Promise<void>;
+  /** `WorkspaceActions.restoreThread`. */
+  readonly restoreThread: (thread: Thread, batch?: string) => Promise<void>;
   /** The workspace notice's Retry (`WorkspaceActions.retryError`). */
   readonly retryError: () => void;
   readonly selectProject: (project: Project) => void;
   readonly selectThread: (thread: Thread) => void;
   readonly setProjectColor: (project: Project, color?: ProjectColor) => void;
+  /** `WorkspaceActions.setThreadPinned`. */
+  readonly setThreadPinned: (thread: Thread, pinned: boolean) => Promise<void>;
   readonly startRename: (entity: Entity) => void;
 };
 
@@ -246,6 +255,8 @@ export function ProjectSidebar({
   const threads = projectId ? (model.threadsByProject[projectId] ?? []) : [];
   // The search query (§4.3): never persisted, cleared with the Project.
   const [query, setQuery] = useState('');
+  // §10.2: the open sidebar tab; Chat by default.
+  const [tab, setTab] = useState<SidebarTab>('chat');
   const searchInput = useRef<HTMLInputElement>(null);
   const tree = useRef<HTMLDivElement>(null);
   const [treeFocus, setTreeFocus] = useState(0);
@@ -259,7 +270,10 @@ export function ProjectSidebar({
   const [queryDraft, setQueryDraft] = useState(model.draft);
   if (queryDraft !== model.draft) {
     setQueryDraft(model.draft);
-    if (model.draft !== undefined) setQuery('');
+    if (model.draft !== undefined) {
+      setQuery('');
+      setTab('chat');
+    }
   }
   useEffect(() => {
     const focusSearch = (event: globalThis.KeyboardEvent) => {
@@ -282,10 +296,14 @@ export function ProjectSidebar({
     row?.focus();
   }, [treeFocus]);
   const threadRows = useThreadRows();
+  const chat = chatThreads(
+    threads,
+    model.draft?.kind === 'thread' ? model.draft.parentThreadId : undefined,
+  );
   const level =
     projectId === undefined
       ? undefined
-      : threadLevel(threads, model.draft, projectId);
+      : threadLevel(chat.threads, model.draft, projectId);
   // Every Thread of the Project, drawn or not, so a hidden busy descendant
   // still makes its ancestors active (§2).
   const activity =
@@ -306,6 +324,7 @@ export function ProjectSidebar({
   const beginThread = (parentThreadId?: string) => {
     if (projectId === undefined) return;
     setQuery('');
+    setTab('chat');
     actions.beginThread(projectId, parentThreadId);
   };
   const loading =
@@ -326,8 +345,10 @@ export function ProjectSidebar({
       return next;
     });
   const threadActions: ThreadBranchesActions = {
+    archive: (thread) => void actions.archiveThread(thread),
     beginChild: (thread) => {
       setQuery('');
+      setTab('chat');
       actions.beginThread(thread.projectId, thread.id);
     },
     cancelDraft: actions.cancelDraft,
@@ -338,7 +359,9 @@ export function ProjectSidebar({
     openInTab: (thread) => void openThreadTab(thread),
     rename: (thread, name) =>
       actions.rename({ kind: 'thread', value: thread }, name),
+    restore: (thread) => void actions.restoreThread(thread),
     select: actions.selectThread,
+    setPinned: (thread, pinned) => void actions.setThreadPinned(thread, pinned),
     startRename: (thread) =>
       actions.startRename({ kind: 'thread', value: thread }),
   };
@@ -369,11 +392,25 @@ export function ProjectSidebar({
               />
             </SidebarMenuItem>
           ))}
-        {projectId !== undefined && (
+        {projectId !== undefined && tab === 'archived' && (
+          <ArchivedThreads
+            actions={threadActions}
+            activity={activity}
+            collapsed={collapsedThreads}
+            onExpand={expandThread}
+            onToggle={toggleThread}
+            projectId={projectId}
+            query={query}
+            selectedThreadId={model.selectedThreadId}
+            threads={threads}
+          />
+        )}
+        {projectId !== undefined && tab === 'chat' && (
           <ThreadBranches
             actions={threadActions}
             activity={activity}
             collapsed={collapsedThreads}
+            context={chat.context}
             depth={0}
             editingThreadId={
               model.editing?.kind === 'thread'
@@ -381,20 +418,23 @@ export function ProjectSidebar({
                 : undefined
             }
             {...(filter === undefined ? {} : { filter })}
-            level={level ?? threadLevel(threads, model.draft, projectId)}
+            level={level ?? threadLevel(chat.threads, model.draft, projectId)}
             onExpand={expandThread}
             onToggle={toggleThread}
             selectedThreadId={model.selectedThreadId}
           />
         )}
-        {filter !== undefined && filter.shown.size === 0 && !loading && (
-          <SidebarMenuItem
-            data-threads-empty=""
-            className="px-2.5 py-1 text-[13px] leading-[19.5px] text-muted-foreground"
-          >
-            No threads match
-          </SidebarMenuItem>
-        )}
+        {tab === 'chat' &&
+          filter !== undefined &&
+          filter.shown.size === 0 &&
+          !loading && (
+            <SidebarMenuItem
+              data-threads-empty=""
+              className="px-2.5 py-1 text-[13px] leading-[19.5px] text-muted-foreground"
+            >
+              No threads match
+            </SidebarMenuItem>
+          )}
       </SidebarMenu>
     </div>
   );
@@ -421,6 +461,9 @@ export function ProjectSidebar({
             onKeyDown={onSearchKeyDown}
           />
         </div>
+        <div className="shrink-0 px-1.5 pb-3">
+          <SidebarTabs value={tab} onChange={setTab} />
+        </div>
         {/* The Thread region gives up its free height first; it keeps 40 px,
             so the button never leaves the column. */}
         <div
@@ -429,17 +472,20 @@ export function ProjectSidebar({
         >
           {threadTree}
           {/* The rows' ghost tokens instead of the secondary colours: the row
-              hover fill at rest, the row pressed fill under the pointer. */}
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-label="New Thread"
-            className="w-full shrink-0 bg-[var(--paper-ghost-hover)] hover:bg-[var(--paper-ghost-pressed)]"
-            disabled={projectId === undefined}
-            onClick={() => beginThread()}
-          >
-            <PlusIcon />
-          </Button>
+              hover fill at rest, the row pressed fill under the pointer. Chat
+              only (§10.2). */}
+          {tab === 'chat' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label="New Thread"
+              className="w-full shrink-0 bg-[var(--paper-ghost-hover)] hover:bg-[var(--paper-ghost-pressed)]"
+              disabled={projectId === undefined}
+              onClick={() => beginThread()}
+            >
+              <PlusIcon />
+            </Button>
+          )}
         </div>
         {panes.map((pane) => (
           <StackPaneGroup key={pane.id} action={paneAction(pane)} pane={pane} />

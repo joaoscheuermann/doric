@@ -6,6 +6,7 @@ import { SettingsExecution } from '../../../src/client/components/organisms/sett
 import { SettingsProfile } from '../../../src/client/components/organisms/settings-profile.js';
 import { SettingsProviderScreen } from '../../../src/client/components/organisms/settings-provider.js';
 import { SettingsProviders } from '../../../src/client/components/organisms/settings-providers.js';
+import { SettingsThreads } from '../../../src/client/components/organisms/settings-threads.js';
 import { SettingsTools } from '../../../src/client/components/organisms/settings-tools.js';
 import { SettingsWindow } from '../../../src/client/components/templates/settings-window.js';
 import {
@@ -78,6 +79,8 @@ function Window({
         return <SettingsExecution draft={draft} onChange={setDraft} />;
       case 'tools':
         return <SettingsTools draft={draft} onChange={setDraft} />;
+      case 'threads':
+        return <SettingsThreads draft={draft} onChange={setDraft} />;
       case 'credentials':
         return <SettingsCredentials />;
     }

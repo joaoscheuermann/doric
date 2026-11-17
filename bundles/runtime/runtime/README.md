@@ -26,7 +26,21 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   `setThreadExecution({ id, providerId, model, effort? })` (1.7.0) sets a
   Thread's provider, model and effort together, validated against the
   configuration in force and `models/v1.resolve`, and applies from the
-  Thread's next run. Its prompt-scoped members `spawn`,
+  Thread's next run. 1.8.0 adds, exposed to the desktop only,
+  `archiveThread({ id })` (archives the Thread and its idle, unpinned
+  descendants as one batch; `archived` with the `batch`, or `missing`, `busy`,
+  `already_archived`), `restoreThread({ id, batch? })` (`restored`, `missing`
+  or `not_archived`), `setThreadPinned({ id, pinned })` and `viewThread`, a
+  stream that holds a view of the Thread while open; `deleteThread` deletes an
+  archived agent thread. An archiver sweeps the live Projects every 10 s and
+  archives finished agent threads and inactive main threads under
+  `threads.autoArchive`, never a busy, failed, reader-stopped
+  (`result.reason: 'interrupted'`), waiting, viewed or pinned one; new
+  activity un-archives a Thread. The fence and question-form rules
+  (`hasQuestionForm`, `completedStatements`) are shared from
+  `contracts/fences.ts` with `chat` and `openui`
+  ([docs/features/thread-archive.md](../../../docs/features/thread-archive.md)).
+  Its prompt-scoped members `spawn`,
   `list`, `get`, `events`, `send`, `restart`, `interrupt` and `terminate` act on the
   calling prompt's direct children, through the `ThreadControl` type in
   `contracts/tool-host`; the [`threads`](../../features/threads/README.md)
@@ -72,8 +86,9 @@ the reader, so a workspace written before the field keeps every Thread it had.
 The reader's own Threads — a main Thread at the Project root and the
 sub-threads it is branched into — take prompts, steer, rewind, rename and
 delete. An agent Thread is one the `thread-spawn` tool created: the reader may
-watch it, pause it, continue a paused prompt and `retry` the last one, and the
-host refuses the rest. `retry` is therefore its own method: it sends the
+watch it, pause it, continue a paused prompt, `retry` the last one, archive,
+restore and pin it, and delete it once archived (`deleteThread` refuses a
+non-archived agent Thread); the host refuses the rest. `retry` is therefore its own method: it sends the
 Thread's last prompt again, read from the Thread's own log, so a retry can never
 become a way to prompt an agent Thread. The reader branches a main Thread in the
 sidebar, and the host enforces the same tree: `create` answers `invalid_parent`

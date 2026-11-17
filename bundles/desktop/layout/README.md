@@ -42,7 +42,13 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   renamed, and a context menu opens a Thread in a new tab (a sub-thread or an
   agent Thread "in viewer"), adds, copies and deletes. Other bundles add
   panes only under the Thread region, pinned to the column's bottom; each
-  pane collapses but does not resize (`project-sidebar.tsx`).
+  pane collapses but does not resize (`project-sidebar.tsx`). Two icon-only
+  tabs, Chat and Archived, sit above the tree (`sidebar-tabs.tsx`). Rows
+  archive (hover or menu, with an Undo toast), pin and unpin; the Archived tab
+  (`archived-threads.tsx`) groups archived Threads by date (Today, Last 7 days,
+  Older) with Restore and Delete. Open Threads report presence through
+  `runtime.threads/v1.viewThread`
+  ([thread archive](../../../docs/features/thread-archive.md)).
 - **Errors.** A failed workspace request is shown once, by the workspace error
   notice (`workspace-error-notice.tsx`): in the sidebar on the workspace frame,
   in the dashboard body on the dashboard frame. A failed Projects or Threads

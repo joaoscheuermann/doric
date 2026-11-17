@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { RouteMatch } from 'bundle/contracts';
 import { errorFrom } from 'desktop/reads';
+import { toast } from 'desktop/ui/sonner';
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from 'zustand/react';
 
@@ -27,6 +28,15 @@ import { useProjectEvents } from './use-project-events.js';
 import { useRouteSelection } from './use-route-selection.js';
 
 export type WorkspaceActions = {
+  /**
+   * Archives the Thread and its idle, unpinned descendants
+   * (`api.threads.archive`), applies every answered record to the tree, then
+   * shows the toast "Thread archived" / `"<name or Untitled>" moved to
+   * Archived` whose Undo restores that batch (docs/designs/thread-archive.md
+   * §10.6). A failure is stored as the workspace error (no retry target) and
+   * shows no toast. Never rejects.
+   */
+  readonly archiveThread: (thread: Thread) => Promise<void>;
   readonly beginProject: () => void;
   readonly beginThread: (projectId: string, parentThreadId?: string) => void;
   readonly cancelDraft: () => void;
@@ -39,6 +49,13 @@ export type WorkspaceActions = {
   readonly rename: (entity: Entity, name: string) => Promise<void>;
   readonly requestDelete: (entity: Entity) => void;
   /**
+   * Restores the Thread's batch: `batch` when given (Undo), else the
+   * Thread's own (`api.threads.restore`), and applies every answered record.
+   * Shows no toast. A failure is stored as the workspace error. Never
+   * rejects.
+   */
+  readonly restoreThread: (thread: Thread, batch?: string) => Promise<void>;
+  /**
    * Clears the error, then loads its retry target again: the Projects list
    * for `{ kind: 'projects' }`, that Project's Threads for `{ kind: 'threads' }`.
    * Without an error, or with an error that has no target, it does nothing.
@@ -49,6 +66,12 @@ export type WorkspaceActions = {
   readonly selectProject: (project: Project) => void;
   readonly selectThread: (thread: Thread) => void;
   readonly setProjectColor: (project: Project, color?: ProjectColor) => void;
+  /**
+   * Pins or unpins the Thread (`api.threads.setPinned`) and applies the
+   * answered record. A failure is stored as the workspace error. Never
+   * rejects.
+   */
+  readonly setThreadPinned: (thread: Thread, pinned: boolean) => Promise<void>;
   readonly startRename: (entity: Entity) => void;
 };
 
@@ -533,7 +556,50 @@ export const useWorkspace = (): Workspace => {
     }
   };
 
+  const restoreThread = async (
+    thread: Thread,
+    batch?: string,
+  ): Promise<void> => {
+    invalidateLoads(thread.projectId);
+    try {
+      const restored = await api.threads.restore(thread.id, batch);
+      for (const record of restored) store.applyThread(record);
+    } catch (reason) {
+      store.fail(reason);
+    }
+  };
+
+  const archiveThread = async (thread: Thread): Promise<void> => {
+    invalidateLoads(thread.projectId);
+    try {
+      const { batch, threads } = await api.threads.archive(thread.id);
+      for (const record of threads) store.applyThread(record);
+      toast('Thread archived', {
+        description: `"${thread.name || 'Untitled'}" moved to Archived`,
+        action: {
+          label: 'Undo',
+          onClick: () => void restoreThread(thread, batch),
+        },
+      });
+    } catch (reason) {
+      store.fail(reason);
+    }
+  };
+
+  const setThreadPinned = async (
+    thread: Thread,
+    pinned: boolean,
+  ): Promise<void> => {
+    invalidateLoads(thread.projectId);
+    try {
+      store.applyThread(await api.threads.setPinned(thread.id, pinned));
+    } catch (reason) {
+      store.fail(reason);
+    }
+  };
+
   const actions: WorkspaceActions = {
+    archiveThread,
     beginProject,
     beginThread,
     cancelDraft: () => {
@@ -564,6 +630,7 @@ export const useWorkspace = (): Workspace => {
     dismissDelete: () => store.dismissDelete(),
     rename,
     requestDelete: (entity) => store.requestDelete(entity),
+    restoreThread,
     retryError: () => {
       const target = workspaceStore.getState().sidebar.error?.retry;
       if (target === undefined) return;
@@ -574,6 +641,7 @@ export const useWorkspace = (): Workspace => {
     selectProject,
     selectThread,
     setProjectColor,
+    setThreadPinned,
     startRename: (entity) => {
       intent.current += 1;
       store.startRename(entity);

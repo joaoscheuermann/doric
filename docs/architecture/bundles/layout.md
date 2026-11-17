@@ -11,7 +11,7 @@ O `layout` é o bundle client que desenha o workspace: a moldura que hoje é `ap
 | Funcionalidade           | Como os outros bundles usam                                                                                                                               |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rota `/`                 | Registram rotas filhas com `parent: '/'`, que aparecem na área principal.                                                                                 |
-| Sidebar                  | Mostra Projects e Threads; clicar numa Thread navega para `/projects/:projectId/threads/:threadId`.                                                       |
+| Sidebar                  | Mostra Projects e Threads, em duas abas (Chat e Archived); clicar numa Thread navega para `/projects/:projectId/threads/:threadId`.                       |
 | Header                   | Mostra o Project e a Thread da rota ativa; ações de outros bundles entram na região `layout.header`.                                                      |
 | Painel lateral           | Mostra um item da região `layout.panel` por vez, com um seletor entre eles (como Files e Changes hoje).                                                   |
 | Rodapé                   | Mostra os itens da região `layout.footer`, como uso e recursos.                                                                                           |

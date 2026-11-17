@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "openui",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "engines": { "doric": "^1.0.0" },
   "description": "Answers with UI in the conversation: OpenUI Lang fences drawn while the agent writes, diagrams laid out by the app, the question form, actions back to the agent and validation feedback.",
   "provides": [
@@ -12,7 +12,7 @@
   "requires": [
     "chat.views/v1@^1.1.0",
     "chat.send/v1@^1.1.0",
-    "runtime.threads/v1@^1.5.0",
+    "runtime.threads/v1@^1.8.0",
     "runtime.hooks/v1@^1.2.0",
     "hooks/v1@^1.0.0",
     "events/v1@^1.0.0",

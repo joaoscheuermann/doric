@@ -5,6 +5,7 @@ import {
   addModel,
   addProvider,
   applyProviderDraft,
+  autoArchiveOf,
   type CatalogModel,
   type Configuration,
   type ContextCompactionConfig,
@@ -55,6 +56,7 @@ import {
   setExecutionEffort,
   timeZoneChoices,
   turnsFromInput,
+  updateAutoArchive,
   updateCredentialChoice,
   updatedAtLabel,
   updateModel,
@@ -1959,6 +1961,111 @@ describe('the profile the agent addresses', () => {
       'Europe/Lisbon',
       'UTC',
     ]);
+  });
+});
+
+describe('the auto-archive policy the Threads section edits', () => {
+  test('reads an absent policy, or an absent key, as agent threads on and main threads after 7 days', () => {
+    const defaults = { agentThreads: true, mainThreadsAfter: '7d' };
+
+    assert.deepEqual(autoArchiveOf(configuration()), defaults);
+    assert.deepEqual(autoArchiveOf(configuration({ threads: {} })), defaults);
+    assert.deepEqual(
+      autoArchiveOf(configuration({ threads: { autoArchive: {} } })),
+      defaults,
+    );
+    assert.deepEqual(
+      autoArchiveOf(
+        configuration({ threads: { autoArchive: { agentThreads: false } } }),
+      ),
+      { agentThreads: false, mainThreadsAfter: '7d' },
+    );
+    assert.deepEqual(
+      autoArchiveOf(
+        configuration({ threads: { autoArchive: { mainThreadsAfter: '1d' } } }),
+      ),
+      { agentThreads: true, mainThreadsAfter: '1d' },
+    );
+  });
+
+  test('answers a stored policy as it is stored', () => {
+    assert.deepEqual(
+      autoArchiveOf(
+        configuration({
+          threads: {
+            autoArchive: { agentThreads: false, mainThreadsAfter: 'never' },
+          },
+        }),
+      ),
+      { agentThreads: false, mainThreadsAfter: 'never' },
+    );
+  });
+
+  test('writes both keys, the changed one and the one it read, leaving everything else and the input as they were', () => {
+    const base = configuration({ profile: { name: 'Ana' } });
+    const before = structuredClone(base);
+
+    const off = updateAutoArchive(base, { agentThreads: false });
+    assert.deepEqual(off.threads, {
+      autoArchive: { agentThreads: false, mainThreadsAfter: '7d' },
+    });
+    const { threads: _threads, ...rest } = off;
+    assert.deepEqual(rest, base);
+    assert.deepEqual(base, before);
+
+    const monthly = updateAutoArchive(off, { mainThreadsAfter: '30d' });
+    assert.deepEqual(monthly.threads, {
+      autoArchive: { agentThreads: false, mainThreadsAfter: '30d' },
+    });
+
+    const both = updateAutoArchive(configuration(), {
+      agentThreads: true,
+      mainThreadsAfter: 'never',
+    });
+    assert.deepEqual(both.threads, {
+      autoArchive: { agentThreads: true, mainThreadsAfter: 'never' },
+    });
+  });
+
+  test('a configuration differs when only agentThreads or only mainThreadsAfter differs, and two without threads are the same', () => {
+    const stored = configuration({
+      threads: { autoArchive: { agentThreads: true, mainThreadsAfter: '7d' } },
+    });
+
+    assert.equal(
+      isSameConfiguration(
+        stored,
+        configuration({
+          threads: {
+            autoArchive: { agentThreads: false, mainThreadsAfter: '7d' },
+          },
+        }),
+      ),
+      false,
+    );
+    assert.equal(
+      isSameConfiguration(
+        stored,
+        configuration({
+          threads: {
+            autoArchive: { agentThreads: true, mainThreadsAfter: '1d' },
+          },
+        }),
+      ),
+      false,
+    );
+    assert.equal(isSameConfiguration(stored, configuration()), false);
+    assert.ok(
+      isSameConfiguration(
+        stored,
+        configuration({
+          threads: {
+            autoArchive: { agentThreads: true, mainThreadsAfter: '7d' },
+          },
+        }),
+      ),
+    );
+    assert.ok(isSameConfiguration(configuration(), configuration()));
   });
 });
 

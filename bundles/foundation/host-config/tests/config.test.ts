@@ -981,3 +981,86 @@ void test('loads a configuration stored before profiles existed without one', as
 
   assert.equal('profile' in loaded.configuration, false);
 });
+
+// threads.autoArchive (host-config/v1 1.2.0; docs/designs/thread-archive.md
+// §9, T-20, T-21, AC13).
+
+const withThreads = (threads: unknown): unknown => ({
+  ...structuredClone(defaultConfig),
+  threads,
+});
+
+void test('T-20 accepts threads.autoArchive with each choice of days and a boolean toggle', () => {
+  for (const mainThreadsAfter of ['1d', '7d', '30d', 'never'] as const)
+    for (const agentThreads of [true, false])
+      assert.equal(
+        ConfigInputSchema.safeParse(
+          withThreads({ autoArchive: { agentThreads, mainThreadsAfter } }),
+        ).success,
+        true,
+        `${agentThreads} ${mainThreadsAfter}`,
+      );
+  for (const threads of [{}, { autoArchive: {} }])
+    assert.equal(
+      ConfigInputSchema.safeParse(withThreads(threads)).success,
+      true,
+      JSON.stringify(threads),
+    );
+});
+
+void test('T-20 refuses an unknown key in threads or autoArchive and an unknown mainThreadsAfter', () => {
+  for (const threads of [
+    { autoArchive: {}, pinned: true },
+    { autoArchive: { agentThreads: true, everything: true } },
+    { autoArchive: { mainThreadsAfter: '2d' } },
+    { autoArchive: { agentThreads: 'yes' } },
+  ]) {
+    const configuration = withThreads(threads);
+    assert.equal(
+      ConfigInputSchema.safeParse(configuration).success,
+      false,
+      JSON.stringify(threads),
+    );
+    assert.ok(
+      issuePaths(configuration).some((path) => path.startsWith('threads')),
+      `${JSON.stringify(threads)} was not refused under threads`,
+    );
+  }
+});
+
+void test('T-20 stores threads.autoArchive and answers it after the host loads again', async () => {
+  const settings = memorySettings(structuredClone(defaultConfig));
+  const threads = {
+    autoArchive: { agentThreads: false, mainThreadsAfter: '30d' as const },
+  };
+
+  const result = await storedService(settings).replace({
+    ...structuredClone(defaultConfig),
+    threads,
+  });
+
+  assert.ok(result.status === 'replaced');
+  assert.deepEqual(result.config.configuration.threads, threads);
+  const reloaded = await storedService(settings).current();
+  assert.deepEqual(reloaded.configuration.threads, threads);
+});
+
+void test('T-20 reads a configuration stored without threads without one', async () => {
+  const loaded = await storedService(
+    memorySettings(structuredClone(defaultConfig)),
+  ).current();
+
+  assert.equal('threads' in loaded.configuration, false);
+});
+
+void test('T-21 the current configuration passes a stored threads through', async () => {
+  const threads = { autoArchive: { mainThreadsAfter: 'never' as const } };
+  const settings = memorySettings({
+    ...structuredClone(defaultConfig),
+    threads,
+  });
+
+  const current = await storedService(settings).current();
+
+  assert.deepEqual(current.configuration.threads, threads);
+});

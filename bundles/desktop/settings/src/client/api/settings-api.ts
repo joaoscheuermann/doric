@@ -41,6 +41,7 @@ import type {
 } from 'runtime/contracts';
 
 import {
+  type AutoArchive,
   type CatalogModel,
   type Configuration,
   type ConfigurationInput,
@@ -337,6 +338,55 @@ const guardedProfile = (value: unknown): Profile | undefined => {
   };
 };
 
+const mainThreadsAfterChoices: readonly unknown[] = [
+  '1d',
+  '7d',
+  '30d',
+  'never',
+];
+
+/**
+ * The known keys of a `threads` value, or `fail()` for one no host accepts: a
+ * plain record whose `autoArchive`, when present, is a plain record with
+ * `agentThreads` absent or boolean and `mainThreadsAfter` absent or a known
+ * choice.
+ */
+const knownThreads = (
+  value: unknown,
+  fail: () => never,
+): NonNullable<Configuration['threads']> => {
+  if (!isPlainRecord(value)) return fail();
+  const { autoArchive } = value;
+  if (autoArchive === undefined) return {};
+  if (
+    !isPlainRecord(autoArchive) ||
+    (autoArchive.agentThreads !== undefined &&
+      typeof autoArchive.agentThreads !== 'boolean') ||
+    (autoArchive.mainThreadsAfter !== undefined &&
+      !mainThreadsAfterChoices.includes(autoArchive.mainThreadsAfter))
+  ) {
+    return fail();
+  }
+  const { agentThreads, mainThreadsAfter } = autoArchive as AutoArchive;
+  return {
+    autoArchive: {
+      ...(agentThreads === undefined ? {} : { agentThreads }),
+      ...(mainThreadsAfter === undefined ? {} : { mainThreadsAfter }),
+    },
+  };
+};
+
+/**
+ * The `threads` a save sends: none for `undefined` or `null`, its known keys
+ * otherwise, and `invalidConfiguration()` for a value no host accepts.
+ */
+const guardedThreads = (
+  value: unknown,
+): Configuration['threads'] | undefined =>
+  value === undefined || value === null
+    ? undefined
+    : knownThreads(value, invalidConfiguration);
+
 /**
  * The configuration a settings save sends to the host: the former IPC guard,
  * unchanged but for the profile. It keeps only the providers, the execution
@@ -357,6 +407,7 @@ export const desktopConfiguration = (value: unknown): ConfigurationInput => {
   const gitCredentialId = guardedReference(value.gitCredentialId);
   const githubCredentialId = guardedReference(value.githubCredentialId);
   const profile = guardedProfile(value.profile);
+  const threads = guardedThreads(value.threads);
   return {
     providers: value.providers.map(guardedProvider),
     models: { execution: guardedExecutionModel(models.execution) },
@@ -364,6 +415,7 @@ export const desktopConfiguration = (value: unknown): ConfigurationInput => {
     ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
     ...(githubCredentialId === undefined ? {} : { githubCredentialId }),
     ...(profile === undefined ? {} : { profile }),
+    ...(threads === undefined ? {} : { threads }),
   };
 };
 
@@ -749,6 +801,13 @@ const profileFrom = (value: unknown): Profile | undefined => {
   };
 };
 
+/**
+ * The `threads` a host answer carries: none when it is absent, its known keys
+ * otherwise, and `invalidResponse()` for a value outside the contract.
+ */
+const threadsFrom = (value: unknown): Configuration['threads'] | undefined =>
+  value === undefined ? undefined : knownThreads(value, invalidResponse);
+
 const toolValuesFrom = (
   value: unknown,
 ): Readonly<Record<string, Readonly<Record<string, string>>>> | undefined => {
@@ -802,6 +861,7 @@ const configurationFrom = (value: unknown): Configuration => {
   const githubCredentialId = credentialReferenceFrom(value.githubCredentialId);
   const tools = toolValuesFrom(value.tools);
   const profile = profileFrom(value.profile);
+  const threads = threadsFrom(value.threads);
   return {
     providers: value.providers.map(providerConfigurationFrom),
     models: {
@@ -824,6 +884,7 @@ const configurationFrom = (value: unknown): Configuration => {
     ...(gitCredentialId === undefined ? {} : { gitCredentialId }),
     ...(githubCredentialId === undefined ? {} : { githubCredentialId }),
     ...(profile === undefined ? {} : { profile }),
+    ...(threads === undefined ? {} : { threads }),
   };
 };
 

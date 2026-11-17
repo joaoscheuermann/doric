@@ -2,6 +2,7 @@ import {
   GitBranchIcon,
   KeyRoundIcon,
   type LucideIcon,
+  MessagesSquareIcon,
   ServerIcon,
   SunMoonIcon,
   UserRoundIcon,
@@ -17,6 +18,7 @@ const icons: Readonly<Record<string, LucideIcon>> = {
   wrench: WrenchIcon,
   'git-branch': GitBranchIcon,
   'key-round': KeyRoundIcon,
+  'messages-square': MessagesSquareIcon,
 };
 
 /** The icon a section is named by, from the fixed map of `settings-link` (D9-15). */

@@ -39,7 +39,7 @@
  * anything.
  */
 
-import { attachmentLine } from 'runtime/contracts';
+import { attachmentLine, closesFence, fenceMarker } from 'runtime/contracts';
 
 /** The emphasis one run wears, and the source it wears it over. */
 export type MarkdownRun = {
@@ -126,21 +126,6 @@ export type MarkdownCell = readonly MarkdownRun[];
 /** One table row: its cells, in order. */
 export type MarkdownRow = readonly MarkdownCell[];
 
-/** A fence opener: three backticks or three tildes, whatever follows them. */
-const fenceOf = (line: string): string | undefined => {
-  const match = /^\s*(`{3,}|~{3,})/.exec(line);
-  return match?.[1];
-};
-
-/** Whether a line closes the fence an opener of this marker started. */
-const closesFence = (line: string, fence: string): boolean => {
-  const marker = fence[0] ?? '`';
-  const match = new RegExp(`^\\s*\\${marker}{${fence.length},}\\s*$`).exec(
-    line,
-  );
-  return match !== null;
-};
-
 /** One line as a single plain run, for text no rule reads as anything else. */
 const plainLine = (line: string): MarkdownLine => [
   { kind: 'text', source: line },
@@ -217,7 +202,7 @@ const listMarker = /^\s*(?:[-*+]|\d+[.)])\s+/;
  * item — rather than continuing the item above it.
  */
 const opensBlock = (line: string): boolean =>
-  fenceOf(line) !== undefined ||
+  fenceMarker(line) !== undefined ||
   attachmentLine(line) !== undefined ||
   headingLine.test(line) ||
   quoteLine.test(line) ||
@@ -403,7 +388,7 @@ export const markdownBlocks = (source: string): readonly MarkdownBlock[] => {
       continue;
     }
 
-    const fence = fenceOf(line);
+    const fence = fenceMarker(line);
     if (fence !== undefined) {
       endParagraph();
       const body: MarkdownLine[] = [plainLine(line)];

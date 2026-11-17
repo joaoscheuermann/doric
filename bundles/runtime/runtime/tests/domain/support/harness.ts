@@ -60,6 +60,7 @@ import {
   type RuntimeWorkspace,
   RuntimeWorkspaceV1,
 } from '../../../src/contracts/workspace.js';
+import type { ArchiveSchedule } from '../../../src/host/domain/archiver.js';
 import { createBindings } from '../../../src/host/domain/bindings.js';
 import type { WorkspaceService } from '../../../src/host/domain/types.js';
 import type { ModelCatalogSource } from '../../../src/host/domain/usage-context.js';
@@ -184,6 +185,12 @@ export interface HarnessOptions {
   readonly generation?: () => Promise<RuntimeOwner | undefined>;
   /** A bundle's handler of every runtime hook the runtime executes. */
   readonly onHook?: (hook: string, input: unknown) => Promise<void> | void;
+  /**
+   * Arms the runtime's archive sweeps. By default the harness keeps every
+   * armed sweep without running it, so no case sees a sweep unless it calls
+   * `sweep()`.
+   */
+  readonly archiveSchedule?: ArchiveSchedule;
 }
 
 export interface LogEntry {
@@ -204,9 +211,10 @@ export const waitUntil = async (
   check: () => boolean | Promise<boolean>,
   what = 'a condition',
 ): Promise<void> => {
-  const deadline = Date.now() + 10_000;
+  // performance.now(), not Date.now(): a case may mock Date (D28).
+  const deadline = performance.now() + 10_000;
   while (!(await check())) {
-    if (Date.now() > deadline)
+    if (performance.now() > deadline)
       throw new Error(`Timed out waiting for ${what}.`);
     await new Promise((done) => setTimeout(done, 2));
   }
@@ -358,6 +366,33 @@ export const createHarness = (options: HarnessOptions = {}) => {
   /** The stores the runtime uses; a case may replace one method to observe it. */
   const projects: ProjectStore = overridable(real.projects);
   const threads: ThreadStore = overridable(real.threads);
+  // The archive reads and writes in flight, so `sweep()` can wait them out.
+  let archiveCalls = 0;
+  for (const name of ['archiveStates', 'archive'] as const) {
+    const call = threads[name] as (...args: unknown[]) => Promise<unknown>;
+    (threads as unknown as Record<string, unknown>)[name] = async (
+      ...args: unknown[]
+    ) => {
+      archiveCalls += 1;
+      try {
+        return await call(...args);
+      } finally {
+        archiveCalls -= 1;
+      }
+    };
+  }
+  /** The sweeps the default schedule holds, oldest first. */
+  const armed: { readonly run: () => void }[] = [];
+  const archiveSchedule: ArchiveSchedule =
+    options.archiveSchedule ??
+    ((run) => {
+      const entry = { run };
+      armed.push(entry);
+      return () => {
+        const index = armed.indexOf(entry);
+        if (index >= 0) armed.splice(index, 1);
+      };
+    });
   const definitions: AnyServiceDefinition[] = [];
   const bindings = createBindings();
   const { cleanup } = provideRuntime(
@@ -374,6 +409,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
       bindings,
       terminal: (): TerminalService => consumed().use(TerminalServiceV1),
       resources: (): ProjectResourcesReader => consumed().use(ResourcesV1),
+      archiveSchedule,
     },
   );
   // The terminal sessions are the `terminal` bundle's (stage 10 host
@@ -518,6 +554,14 @@ export const createHarness = (options: HarnessOptions = {}) => {
       interrupt: (id, promptId) => threadsApi.pause({ id, promptId }),
       terminate: (id) => threadsApi.terminateThread(id),
       delete: (id) => threadsApi.deleteThread(id),
+      archive: (id) => threadsApi.archiveThread({ id }),
+      restore: (id, batch) =>
+        threadsApi.restoreThread({
+          id,
+          ...(batch === undefined ? {} : { batch }),
+        }),
+      setPinned: (id, pinned) => threadsApi.setThreadPinned({ id, pinned }),
+      view: (id, listener) => threadsApi.viewThread({ threadId: id }, listener),
     },
     resumeInterrupted: async () => (await runtime.recover()).resumedPrompts,
     // recover() schedules the Project recovery after the resume.
@@ -576,6 +620,24 @@ export const createHarness = (options: HarnessOptions = {}) => {
     projectState,
     threadState,
     waitFor: waitUntil,
+    /** How many sweeps the default archive schedule holds armed. */
+    armedSweeps: () => armed.length,
+    /**
+     * Runs the oldest armed archive sweep (default schedule only), waits
+     * until the runtime arms the next one, which it does when the sweep
+     * ends, then until the archive reads and writes it started settle.
+     */
+    sweep: async () => {
+      const next = armed.shift();
+      if (next === undefined)
+        throw new Error('The runtime armed no archive sweep.');
+      next.run();
+      await waitUntil(() => armed.length > 0, 'the next archive sweep');
+      for (let round = 0; round < 3; round += 1) {
+        await new Promise((done) => setImmediate(done));
+        await waitUntil(() => archiveCalls === 0, 'the archive writes');
+      }
+    },
     /** Creates a Project and waits until its sandbox is leased. */
     readyProject: async (name = 'Project') => {
       const project = await runtime.createProject({ name });

@@ -135,6 +135,22 @@ export interface ProjectStore {
   release(id: string, owner: RuntimeOwner): Promise<void>;
 }
 
+/**
+ * One Thread's record and the archive fields the record does not carry
+ * (runtime.thread/v1 1.3.0). Absent fields were never written.
+ */
+export interface ArchiveState {
+  readonly thread: Thread;
+  /** The batch of the archive the Thread carries; absent while not archived. */
+  readonly batch?: string;
+  /** The last time an archive of this Thread was undone (ISO 8601). */
+  readonly restoredAt?: string;
+  /** The last time a view of it started or ended (ISO 8601). */
+  readonly viewedAt?: string;
+  /** The stored result carries reason 'interrupted'. */
+  readonly interrupted: boolean;
+}
+
 export interface ThreadStore {
   /**
    * Folds what other bundles appended to the Thread's stream (through
@@ -234,7 +250,34 @@ export interface ThreadStore {
     readonly events: readonly ThreadEvent[];
     readonly nextSequence?: number;
   }>;
-  setResult(id: string, result: ThreadOutcome): Promise<void>;
+  /**
+   * Writes the Thread's last result. `reason` 'interrupted' marks a result
+   * the reader stopped and is stored with it; without it the stored result
+   * carries no reason, so a later turn's result replaces a stop.
+   */
+  setResult(
+    id: string,
+    result: ThreadOutcome,
+    reason?: 'interrupted',
+  ): Promise<void>;
+  /** Every Thread of one Project with its archive fields, oldest first; [] for none. */
+  archiveStates(projectId: string): Promise<readonly ArchiveState[]>;
+  /**
+   * Writes `archive` on every id (one Project) in one store commit and answers
+   * the records in `ids` order. A missing id rejects with Error('Missing
+   * thread.') and writes nothing; a commit over the storage batch limit rejects
+   * with the backend's `limit_exceeded` and writes nothing. Keeps updatedAt and open.
+   */
+  archive(
+    ids: readonly string[],
+    archive: { readonly at: string; readonly batch: string },
+  ): Promise<readonly Thread[]>;
+  /** Removes `archive` and writes `restoredAt: at` on every id, in one store commit, as `archive` does. */
+  restore(ids: readonly string[], at: string): Promise<readonly Thread[]>;
+  /** Writes `pinned: true` or removes `pinned`; keeps updatedAt; undefined for a missing id. */
+  setPinned(id: string, pinned: boolean): Promise<Thread | undefined>;
+  /** Writes `viewedAt`; keeps updatedAt; a missing id writes nothing. */
+  markViewed(id: string, at: string): Promise<void>;
   /** Every unfinished prompt in log order, or one Thread's alone. */
   unfinishedPrompts(id?: string): Promise<readonly PromptProgress[]>;
   /**

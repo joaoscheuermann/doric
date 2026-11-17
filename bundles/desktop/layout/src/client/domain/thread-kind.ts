@@ -1,3 +1,4 @@
+import { isArchived } from './thread-archive.js';
 import type { Thread } from './workspace.js';
 
 /**
@@ -105,9 +106,16 @@ const CONTROL: Record<ThreadKind, ThreadControl> = {
   },
 };
 
-/** The handle the reader has on `thread`. */
-export const threadControl = (thread: Thread): ThreadControl =>
-  CONTROL[threadKind(thread)];
+/**
+ * The handle the reader has on `thread`: its kind's control, except that an
+ * archived Thread (`archivedAt` set) of any kind answers `deletes: true`
+ * (docs/designs/thread-archive.md D16, U11); every other field is its kind's.
+ * Pure; never throws.
+ */
+export const threadControl = (thread: Thread): ThreadControl => {
+  const control = CONTROL[threadKind(thread)];
+  return isArchived(thread) ? { ...control, deletes: true } : control;
+};
 
 /**
  * The Thread a surface may open under `parent` on behalf of `by`: the reader

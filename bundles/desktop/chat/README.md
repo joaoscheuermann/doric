@@ -80,7 +80,8 @@ for how bundles work.
   `papercraft` from [`papercraft`](../../features/papercraft/README.md)) is
   drawn by that bundle's element instead of a code block. Each fence has the key
   `<promptId>/<turnSequence>/<index>` and a state: `streaming`, `closed`, or
-  `unterminated` when its answer ended before the closer.
+  `unterminated` when its answer ended before the closer. The fence rules are
+  shared code in `runtime/contracts`, used by the host and `openui` too.
 - **Comments before the prompt.** Select text in an agent message and start
   typing: the comment opens right after the paragraph or list item your
   selection ends in, its words stay highlighted, and one paragraph can hold

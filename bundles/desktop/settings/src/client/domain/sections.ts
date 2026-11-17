@@ -8,7 +8,8 @@ export type SectionIconName =
   | 'zap'
   | 'wrench'
   | 'git-branch'
-  | 'key-round';
+  | 'key-round'
+  | 'messages-square';
 
 export interface SettingsSectionEntry {
   readonly id:
@@ -17,6 +18,7 @@ export interface SettingsSectionEntry {
     | 'providers'
     | 'execution'
     | 'tools'
+    | 'threads'
     | 'credentials';
   readonly label: string;
   readonly icon: SectionIconName;
@@ -63,6 +65,14 @@ export const sections = [
     order: 20,
     description:
       'What runs a prompt: the provider, the model on it, its reasoning effort, and how many turns one prompt may take.',
+  },
+  {
+    id: 'threads',
+    label: 'Threads',
+    icon: 'messages-square',
+    order: 25,
+    description:
+      'When agent threads and inactive main threads move to Archived.',
   },
   {
     id: 'tools',
