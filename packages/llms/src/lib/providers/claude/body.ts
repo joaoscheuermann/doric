@@ -34,8 +34,7 @@ const claudeDefaultInstructions =
  * a request whose last message is the assistant's is a prefill, which every
  * current model refuses.
  */
-const claudeContinuation =
-  'Continue from where your previous response ended.';
+const claudeContinuation = 'Continue from where your previous response ended.';
 
 /** The beta a request needs to set `thinking.block_binding`. */
 const claudeThinkingBindingBeta = 'thinking-binding-controls-2026-08-01';

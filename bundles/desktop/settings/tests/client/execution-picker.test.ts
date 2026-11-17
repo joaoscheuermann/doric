@@ -21,12 +21,7 @@ import {
 } from 'bundle/contracts';
 import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'layout/contracts';
 
-import {
-  announced,
-  noticesIn,
-  retryOf,
-  titleOf,
-} from './support/notices.js';
+import { announced, noticesIn, retryOf, titleOf } from './support/notices.js';
 import {
   type HostAnswer,
   openSettingsWindow,
@@ -902,7 +897,10 @@ test('while a write is pending both triggers are disabled, and refused answers s
   answers[0]?.resolve({ status: 'invalid', reason: 'effort' });
   await settle(20);
   assert.equal(alertOf(window)?.title, 'Model not accepted');
-  assert.equal(await alertText(window), 'This model does not support that effort.');
+  assert.equal(
+    await alertText(window),
+    'This model does not support that effort.',
+  );
   assert.ok(!isDisabled(trigger(window)), 'The model trigger stays disabled.');
   assert.equal(shownModel(window), CODER);
 
@@ -1080,7 +1078,10 @@ test('a write in flight on one Thread never changes what another Thread shows, a
 
   workspace.select(a);
   await settle(20);
-  assert.equal(await alertText(window), 'This model does not support that effort.');
+  assert.equal(
+    await alertText(window),
+    'This model does not support that effort.',
+  );
   assert.equal(shownModel(window), CODER);
 });
 
@@ -1172,10 +1173,7 @@ test('a failed read shows an inline notice whose Retry reads the snapshot again,
 
   const failed = alertOf(window);
   assert.equal(failed?.title, 'Settings not loaded');
-  assert.equal(
-    await alertText(window),
-    'The request could not be completed.',
-  );
+  assert.equal(await alertText(window), 'The request could not be completed.');
   assert.equal(failed?.variant, 'inline');
   assert.equal(failed?.announced, true);
   assert.ok(failed?.retry, 'A failed read offers no Retry.');

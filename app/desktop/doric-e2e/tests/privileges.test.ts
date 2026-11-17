@@ -101,7 +101,7 @@ describe('doric:// privileges', () => {
 
     const resources = { ...resourcesFor(MAIN_DIR), shellRoot };
     const importMap = platformImportMap(resources.platformRoot);
-    const zodPath = new URL(importMap.imports['zod']).pathname;
+    const zodPath = new URL(importMap.imports.zod).pathname;
 
     await mkdir(shellRoot, { recursive: true });
     await mkdir(join(root, 'bundles', 'probe@1.0.0', 'client'), {

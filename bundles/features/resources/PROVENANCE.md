@@ -15,7 +15,6 @@ file, drawn by the connection badge as CSS masks (UR24,
   ```
 
   Before it, two changes that the export forced:
-
   - The whitespace-only line breaks between tags, and the trailing one, are
     removed (`svg.replace(/>\s*\n\s*</g, '><').trimEnd()`), so the value fits
     a single-quoted literal.

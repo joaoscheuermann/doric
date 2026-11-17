@@ -354,7 +354,11 @@ test('owned lines come before rendered lines', () => {
 
   assert.deepEqual(lines, [
     { code: 'unknown-function', statementId: 'btn', message: 'checked' },
-    { code: 'unknown-component', statementId: 'card', message: 'Foo is unknown' },
+    {
+      code: 'unknown-component',
+      statementId: 'card',
+      message: 'Foo is unknown',
+    },
   ]);
 });
 
@@ -398,7 +402,11 @@ test('of an owned and a rendered error with the same code and statement only the
       statementId: 'card',
       message: 'Foo is unknown. With a hint.',
     },
-    { code: 'unknown-component', statementId: 'other', message: 'Bar is unknown' },
+    {
+      code: 'unknown-component',
+      statementId: 'other',
+      message: 'Bar is unknown',
+    },
   ]);
 });
 

@@ -53,7 +53,11 @@ describe('the platform version', () => {
 
 describe('the platform each bundle asks for', () => {
   test('chat, settings and layout ask for ^1.7.0 and every other bundle for ^1.0.0', () => {
-    const onMinorSeven = new Set(['desktop/chat', 'desktop/settings', 'desktop/layout']);
+    const onMinorSeven = new Set([
+      'desktop/chat',
+      'desktop/settings',
+      'desktop/layout',
+    ]);
     const found = manifests();
     for (const name of onMinorSeven) {
       assert.ok(found.has(name), [...found.keys()].join(', '));

@@ -4,7 +4,6 @@ import test from 'node:test';
 import type { ProviderMessage, ProviderRequest } from 'llms';
 
 import { CompactionError } from '../src/host/compaction/errors.js';
-
 import {
   bundleServices,
   fakeThreadState,

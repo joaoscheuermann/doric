@@ -420,7 +420,8 @@ test('answersProjector gives no block for an openui.answered/v1 row', async () =
 // C18 (conversation-openui.md D29, "The reader's error card"; openui.md D18):
 // the fence's errors in one card under it.
 
-const CARD = 'section[aria-label="Program errors"][data-testid="openui-fence-errors"]';
+const CARD =
+  'section[aria-label="Program errors"][data-testid="openui-fence-errors"]';
 const QUERY_HINT =
   'Query and Mutation are not available; write the data as literals.';
 const SENT = 'Sent to the agent.';
@@ -520,7 +521,10 @@ test('C18: a fence with one error reads "1 error"', async () => {
   const { mounted, cards } = await mountCard(ONE_ERROR);
 
   assert.equal(cards().length, 1, mounted.container.innerHTML);
-  assert.equal(cards()[0]?.querySelector('header')?.textContent?.trim(), '1 error');
+  assert.equal(
+    cards()[0]?.querySelector('header')?.textContent?.trim(),
+    '1 error',
+  );
   assert.equal(cards()[0]?.querySelectorAll('li').length, 1);
   await mounted.unmount();
 });
@@ -529,14 +533,18 @@ test('C18: the same program while streaming draws no card, and a closed fence wi
   const streaming = await mountCard(TWO_ERRORS, { state: 'streaming' });
   assert.equal(streaming.cards().length, 0);
   assert.equal(
-    streaming.mounted.container.querySelector('[data-testid="openui-fence-errors"]'),
+    streaming.mounted.container.querySelector(
+      '[data-testid="openui-fence-errors"]',
+    ),
     null,
   );
   await streaming.mounted.unmount();
 
   const clean = await mountCard('root = Stack([t])\nt = TextContent("Hi")\n');
   assert.equal(
-    clean.mounted.container.querySelector('[data-testid="openui-fence-errors"]'),
+    clean.mounted.container.querySelector(
+      '[data-testid="openui-fence-errors"]',
+    ),
     null,
   );
   await clean.mounted.unmount();
