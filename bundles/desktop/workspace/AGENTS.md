@@ -5,8 +5,11 @@ These instructions apply to `bundles/desktop/workspace` and narrow
 
 ## Function
 
-Choosing what the window shows: Projects, Threads and the selection. Read
-[`README.md`](README.md) for what it draws, its contracts and its slots.
+Choosing what the window shows: Projects, Threads and the selection. A change
+adds no frame and no slot of the window (they belong to the bundle that draws
+the frame), and no drawing of a Thread's conversation or of its tab (they
+belong to the bundle that draws Threads, which observes `onOpenThreadHook`).
+Read [`README.md`](README.md) for what it draws, its contracts and its slots.
 
 ## Layers
 
@@ -34,9 +37,17 @@ Choosing what the window shows: Projects, Threads and the selection. Read
   element's services (D9-17).
 - A shell slot is written as a literal checked against `layout/contracts`
   with `import type`; the workspace draws no Thread tab and names no chat tag.
+- Every host failure shows the message the REST path showed (R-ERR); the
+  adapter in the runtime's `src/client/api/workspace-api.ts` owns those
+  messages.
 
 ## Links
 
 - [`manifest.json`](manifest.json): the contracts it provides, requires and
   may use.
-- Feature doc: [bundle isolation](../../../docs/features/bundle-isolation.md).
+- [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json):
+  its entries, by the id `workspace`.
+- [`README.md`](README.md): what it draws, its contracts, its slots, and how to
+  build and test it.
+- Feature docs: [bundle isolation](../../../docs/features/bundle-isolation.md),
+  [thread archive](../../../docs/features/thread-archive.md).

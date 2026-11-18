@@ -30,6 +30,17 @@ As **fronteiras públicas da UI são Web Components** definidos pelos bundles. O
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
+> **Desatualizado.** Desde o passo 4(c) do isolamento de bundles, a sidebar de
+> Projects e Threads, as abas de Project e o Dashboard não são mais do layout: o
+> bundle `workspace` 0.1.0 os desenha nos slots `shell.sidebar`,
+> `shell.sidebar.footer`, `shell.titlebar.tabs` e `shell.page` do
+> `<layout-workspace>`, que é só a moldura (layout 5.0.0), e o `chat` 1.8.4 abre
+> as abas de Thread. As regiões do Dashboard são `workspace.dashboard.nav`,
+> `workspace.dashboard.page` e `workspace.dashboard.footer`. O comportamento
+> atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 O core client não desenha telas de produto: define só `<core-outlet>`, `<core-region>`, `<core-not-found>` e `<core-unavailable>`. O workspace é o `<layout-workspace>` do bundle [layout](./layout.md), na rota `/`; o template dele tem as regiões `layout.sidebar`, `layout.header`, `layout.panel` e `layout.footer` e um `<core-outlet>` na área principal, onde `<chat-view>`, do bundle `chat`, aparece pela rota filha `/projects/:projectId/threads/:threadId`. A página de settings é o `<settings-page>` do bundle `settings`, na rota `/settings`, com a região `settings.sections` e um `<core-outlet>` para as seções. Outra composição pode registrar outras rotas ou dispensar a conversa.
 
 Itens de região têm IDs sem versão, como `providers` na região `settings.sections`; são distintos das rotas, que são paths como `/settings/providers` ou `/projects/:projectId/threads/:threadId`.

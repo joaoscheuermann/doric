@@ -41,8 +41,9 @@ for how bundles work.
     the card's edge;
   - `<chat-thread-tab-icon projectId threadId>`, the mark of the Thread the
     records mirror (`runtime.records/v1`) describes: the dashed bubble for an
-    Untitled Thread, else its kind's mark; the layout names it as the
-    `iconTag` of a Thread's tab (`layout.tabs/v2`, from chat 1.8.2);
+    Untitled Thread, else its kind's mark; the chat names it as the
+    `iconTag` of the Thread tabs it opens (`layout.tabs/v2`; the element
+    from chat 1.8.2, the tabs from 1.8.4);
   - `<chat-readonly-markdown text>`, the conversation's read-only Markdown for
     another bundle's block element;
   - `<chat-block>`, the fallback for a block no renderer claims: its type, id,
@@ -181,10 +182,14 @@ From 1.8.4 the chat owns its Thread tabs (bundle isolation 4(c)). When
 `src/client/api/workspace-hooks.ts`), it opens
 `{ id: 'thread:<id>', tag: 'chat-thread-panel', iconTag: 'chat-thread-tab-icon',
 openBottom: true, props: { projectId, threadId } }` through `layout.tabs/v2`,
-titled with the Thread's name. On every change of `runtime.records/v1` it
-retitles each tab it opened when the Thread's name changes and closes it, in
-every owner, when the Thread leaves its described Project; a tab whose Project
-is loading is left as it is (`services/thread-tabs.ts`).
+titled with the Thread's name ("Untitled" without one). On every change of
+`runtime.records/v1` it retitles each tab it opened when the Thread's name
+changes and closes it, in every owner, when the Thread leaves its described
+Project; a tab whose Project is loading or not described is left as it is.
+That read, `threads(projectId)`, starts a load of a Project the mirror does
+not describe. A failed open, retitle or close is logged with
+`console.error('Doric: …')` (`services/thread-tabs.ts`). Without `workspace`
+the hook never fires, and the chat opens no Thread tab.
 
 The chat also holds a `view` of the mirror for every Thread the window shows:
 the Thread of its route and the Thread of the selected viewer tab when the

@@ -150,8 +150,10 @@ window has no account menu, no connection badge and no About line, and
 nothing reports it.
 
 A custom `DORIC_COMPOSITION` lists `workspace` in `enabled`; without it the
-window has no sidebar, no Project tabs and no Dashboard, the files and git
-views and the terminal rows are quarantined, and nothing else reports it.
+window has no sidebar, no Project tabs and no Dashboard, the chat opens no
+Thread tab, and `files`, `git`, `terminal`, `resources`, `mcp`, `screen` and
+`usage` are quarantined (each requires `layout.workspace/v1` or
+`layout.sidebar/v1`, which `workspace` provides); nothing else reports it.
 
 What each bundle owns:
 

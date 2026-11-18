@@ -54,9 +54,8 @@ src/client/
 - `ElementHost` and `useRegionItems` come from the platform's
   `desktop/ui/element-host` (platform 1.8.0, `engines.doric` `^1.8.0`), with the
   `ui` and `regions` services passed in; keep no local copy.
-- Every host failure shows the message the REST path showed (R-ERR); the
-  adapter in the runtime's `src/client/api/workspace-api.ts` owns those
-  messages.
+- The frame keeps the quarantined-bundle notice in its own sidebar column,
+  outside `shell.sidebar`, so it shows whoever fills the slot.
 
 ## Slots
 

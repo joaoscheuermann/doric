@@ -85,7 +85,7 @@ and offers `+` only where the reader may open a sub-thread. The trailing slot
 shows only the elapsed badge and that `+`, which hover or keyboard focus
 reveals. An Untitled Thread wears `message-circle-dashed` on its row, the
 breadcrumb and its tab. A row is active while its Thread or any descendant runs,
-or while a `busy` registration (`workspace.sidebar/v1`, or `layout.sidebar/v1` 1.1.0,) answers true; the
+or while a `busy` registration (`workspace.sidebar/v1`, or `layout.sidebar/v1` 1.1.0) answers true; the
 badge times from the Thread's own last start. Rename/delete stay hidden where the kind forbids
 them, and the row's tooltip names the kind. The breadcrumb and a conversation tab
 wear the same mark. The reader's three levers on an agent Thread live in `chat`'s
@@ -102,7 +102,11 @@ footer, where the composer would be.
 
 Until the bundles that read them move, `workspace` also provides
 `layout.workspace/v1`, `layout.sidebar/v1` and `layout.dashboard/v1`,
-unchanged; `workspace/contracts` declares them (`src/contracts/transition.ts`).
+unchanged; `workspace/contracts` declares them (`src/contracts/transition.ts`,
+the only file of the module that imports `runtime/contracts`). Step 4(e) of
+bundle isolation deletes them, and `workspace` becomes 1.0.0. The sidebar's and
+the dashboard's interfaces live in `src/contracts/navigation.ts`, which both
+`index.ts` and `transition.ts` read.
 The chat observes `onOpenThreadHook` and opens its Thread tab; without the
 chat the hook opens nothing.
 
@@ -118,9 +122,17 @@ checked by `satisfies typeof`, with `import type`.
 | `workspace.dashboard.footer` | data items: `props` are `DashboardFooterItemProps` (`label`, `command`, optional `input`), `tag` the icon | `settings` ("All settings", `settings-entry-icon`) |
 
 Picking a footer entry executes its `command` with its `input` through
-`commands/v1`, once per pick. An item whose props fail the type is not drawn
-and is reported once per id per activation with a `Doric:` error. With no
-drawable item the footer draws nothing.
+`commands/v1`, once per pick; a pick that fails is logged with
+`console.error('Doric: the command … could not run:')`. An item is dropped
+(not drawn) when its `label` is not a string, its `command` fails
+`isContractId`, or its `input` is present but not a plain object; it is
+reported once per id per activation with a `Doric:` error. Each entry is a
+button whose accessible name (`aria-label`) is its `label`; its icon element
+takes the button's colour, so the filler's SVG should take `currentColor` and
+draw at 16 px. With no drawable item the footer draws nothing.
+
+Without `settings` the Dashboard has no settings entry. Without `chat`,
+`onOpenThreadHook` opens nothing and reports nothing.
 
 ## Development
 

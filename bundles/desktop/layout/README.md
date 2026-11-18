@@ -59,8 +59,9 @@ quarantines them along with the layout.
   extension(s) couldn't start"), its details one bundle per line with its
   reasons; the regions they would fill stay empty. An element whose creation
   throws shows a compact notice in its place.
-- **Conversation.** The selected Thread fills the main area; a child Thread
-  opens as a tab beside its root Thread instead of replacing it. Each of these
+- **Conversation.** The selected Thread fills the main area; the
+  [`chat`](../chat/README.md) opens a child Thread as a tab beside its root
+  Thread instead of replacing it. Each of these
   viewer tabs has a context menu: the entries the bundle that opened it
   stated, each with its icon, then "Close tab", then its destructive entries
   last. A tab's icon is the element its opener names (`iconTag`); the frame
@@ -87,16 +88,17 @@ quarantines them along with the layout.
 
 ## Contracts
 
-| Contract                 | What another bundle can do                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Used by                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `layout.tabs/v2`         | open, focus or close a tab drawn by its own element in the tabs of the active owner, with an icon element (`iconTag`, created with the tab's props), `openBottom`, an aria label, a tooltip and context-menu entries, each with an optional React-element icon; retitle it; read the current tab; subscribe; name the owner whose tabs the frame shows (`setOwner`); close a tab in every owner (`everyOwner`). The request is strict: an unknown key, such as v1's `icon`, fails `invalid_input` | `files`, `git`, `terminal`, and the layout's own Thread tabs |
-| `layout.panel/v3`        | select the Project panel's view; the panel starts with no view selected, and an id no item has yet is kept until that item registers                                                                                                                                                                                                                                                                                                                                                              | `files`                                                      |
-| `layout.conversation/v1` | show or hide the `shell.conversation.bottom` split for one item (`setBottomVisible`)                                                                                                                                                                                                                                                                                                                                                                                                              | none yet                                                     |
-| `layout.stack/v2`        | register a sidebar pane with title, order, header action and collapse state; panes are pinned to the column's bottom, with no sizes                                                                                                                                                                                                                                                                                                                                                               | `screen`, `mcp`                                              |
+| Contract                 | What another bundle can do                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Used by                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `layout.tabs/v2`         | open, focus or close a tab drawn by its own element in the tabs of the active owner, with an icon element (`iconTag`, created with the tab's props), `openBottom`, an aria label, a tooltip and context-menu entries, each with an optional React-element icon; retitle it; read the current tab; subscribe; name the owner whose tabs the frame shows (`setOwner`); close a tab in every owner (`everyOwner`). The request is strict: an unknown key, such as v1's `icon`, fails `invalid_input` | `files`, `git`, `terminal`, `chat` (Thread tabs), `workspace` (`setOwner`) |
+| `layout.panel/v3`        | select the Project panel's view; the panel starts with no view selected, and an id no item has yet is kept until that item registers                                                                                                                                                                                                                                                                                                                                                              | `files`                                                                    |
+| `layout.conversation/v1` | show or hide the `shell.conversation.bottom` split for one item (`setBottomVisible`)                                                                                                                                                                                                                                                                                                                                                                                                              | none yet                                                                   |
+| `layout.stack/v2`        | register a sidebar pane with title, order, header action and collapse state; panes are pinned to the column's bottom, with no sizes                                                                                                                                                                                                                                                                                                                                                               | `screen`, `mcp`                                                            |
 
 `layout.workspace/v1`, `layout.dashboard/v1` and `layout.sidebar/v1` left
-the layout in 5.0.0: `workspace` provides them, unchanged, until it retires
-them, and `workspace/contracts` declares them.
+the layout in 5.0.0: `workspace` provides them, unchanged, until step 4(e) of
+bundle isolation deletes them, and `workspace/contracts` declares them;
+`layout/contracts` no longer exports them.
 
 A duplicate pane id fails with `registration_conflict`, and opening a
 tab with no owner fails with `unavailable`. Since layout 4.0.0 the tabs and
@@ -148,7 +150,9 @@ npx nx test bundle-layout
 ```
 
 Most tests are DOM-free; `tests/client/shell.test.ts` renders the shell in a
-DOM with stand-in items in the navigation's slots, and
+DOM with stand-in items in the navigation's slots,
+`tests/client/frame-notices.test.ts` covers the frame's own notices and
+toasts in both forms, and
 `tests/client/footer-styles.test.ts` reads the bundle's stylesheet from disk.
 They cover the frame, the tabs, the sidebar stack and the contract services. Stories under
 `stories/` are CSF3, and `.storybook/preview.tsx` is the harness that wraps

@@ -49,6 +49,15 @@ Os paths da composição padrão:
 | `/settings/providers`                    | `settings` | `/settings` | `<settings-providers>` |
 | `/settings/git`                          | `git`      | `/settings` | `<git-settings>`       |
 
+> **Desatualizado.** A tabela acima não cita as rotas da navegação. Desde o
+> passo 4(c) do isolamento de bundles, o bundle `workspace` registra
+> `/projects` (elemento `<workspace-projects-route>`, que não desenha nada) e
+> `/projects/:projectId` (elemento `<workspace-project-empty>`), as duas com
+> `parent: '/'`, e desenha a sidebar, as abas de Project e o Dashboard nos slots
+> do layout; o `<layout-workspace>` é só a moldura. O comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 `parent` é explícito, e não deduzido do prefixo do path, porque `/settings` começa com `/` mas não deve aparecer dentro do workspace.
 
 ## O roteador: `navigation/v1`
