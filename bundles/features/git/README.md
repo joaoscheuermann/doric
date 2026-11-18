@@ -108,6 +108,10 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   whose `FileTree` predates `rowMenu` drops the file rows' menu; the
   repository row's menu stays.
 
+`src/client/styles.css` ships, unlayered, the Monaco scrollbar slider rule
+(`.monaco-scrollable-element > .scrollbar > .slider`), because the diff editor
+draws a Monaco editor; the layout's sheet no longer carries it.
+
 ## Change the bundle
 
 1. Update the tool in `src/host/tools/git.ts` or add a skill at

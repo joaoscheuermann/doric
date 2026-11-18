@@ -54,7 +54,8 @@ the outage message "Doric backend is unavailable.".
 Since 3.2.4 the layout imports `ElementHost` and `useRegionItems` from the
 platform's `desktop/ui/element-host` and has `engines.doric` `^1.8.0`: a
 desktop app older than platform 1.8.0 cannot load it and lists it on its start
-screen.
+screen. `files`, `git` and `terminal` require `layout.tabs/v2`, so such an app
+quarantines them along with the layout.
 
 ## What you see
 
@@ -81,16 +82,16 @@ screen.
   `view` of `runtime.records/v1`
   ([thread archive](../../../docs/features/thread-archive.md)).
 - **Errors.** A failed workspace request is shown once, by the workspace error
-  notice (`workspace-error-notice.tsx`): in the sidebar on the workspace frame,
-  in the dashboard body on the dashboard frame. A failed Projects or Threads
+  notice (`workspace-error-notice.tsx`): in the sidebar in the conversation form,
+  in the dashboard body in the page form. A failed Projects or Threads
   load offers Retry, which loads it again (the dashboard keeps the last list
   failure on screen while it reloads); a failed create, rename, color change
   or delete offers none. The name field shows no toast; its validation reason
   is a line under the name.
 - **Quarantined bundles.** When the window's bundle catalog
   (`doric.catalog/v1`) lists quarantined bundles, one warning notice at the
-  bottom of the left sidebar (on the workspace frame at its bottom edge after
-  the stack panes; on the dashboard frame directly above the "All settings"
+  bottom of the left sidebar (in the conversation form at its bottom edge after
+  the stack panes; in the page form directly above the "All settings"
   footer) names them all ("N
   extension(s) couldn't start"), its details one bundle per line with its
   reasons; the regions they would fill stay empty. An element whose creation

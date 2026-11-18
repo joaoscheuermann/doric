@@ -263,7 +263,7 @@ export const layoutWorkspaceMethods = {
 export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
 
 /**
- * The Project panel beside the conversation (2.0.0, ui-redesign S36). Its
+ * The Project panel beside the conversation (`layout.panel/v3` 3.0.0). Its
  * views are the `shell.panel` region items `{ id, tag, order, props: { label,
  * iconTag?, badgeTag? } }`, drawn as the icon-only "Project views" tab strip; the
  * selected item's element is mounted. The panel is always shown: it has no

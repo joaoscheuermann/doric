@@ -122,6 +122,10 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   which keeps the typed name. On an app whose `FileTree` draws no row menus
   these entries are absent and the view works as before.
 
+`src/client/styles.css` ships, unlayered, the Monaco scrollbar slider rule
+(`.monaco-scrollable-element > .scrollbar > .slider`), because the file viewer
+draws a Monaco editor; the layout's sheet no longer carries it.
+
 ## Change the bundle
 
 1. Add or update a tool in `src/host/tools/` with `defineTool` from `tool`

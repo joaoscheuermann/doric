@@ -80,6 +80,10 @@ The tool runs a command in the current working directory; a relative
 consumers; `TerminalServiceV1` is the full 1.2.0 contract. The `runtime`
 bundle delegates its terminal reads to this bundle while it is active.
 
+`src/client/styles.css` ships the xterm scrollbar slider rule, scoped to
+`[data-slot='terminal-view']`, which matches ScrollArea's lane; the layout's
+sheet no longer carries it.
+
 ## Development
 
 ```console
