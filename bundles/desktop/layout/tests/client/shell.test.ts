@@ -19,7 +19,18 @@ import { existsSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { NavigationV1 } from 'bundle/contracts';
+import {
+  type CatalogBundle,
+  type CatalogSnapshot,
+  NavigationV1,
+  type RegionItem,
+  RegionsV1,
+  type RouteMatch,
+  type RouteRegistration,
+  type Services,
+  UiV1,
+} from 'bundle/contracts';
+import type { RuntimeRecords } from 'runtime/contracts';
 
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
@@ -1999,5 +2010,560 @@ test('T-1.5: the tab of a Thread missing from the tree keeps the main bubble', a
     tab.querySelectorAll('svg.lucide-message-circle-dashed').length,
     0,
     'The tab of a missing Thread wears the Untitled icon.',
+  );
+});
+
+// Bundle isolation step 4(a), change 7 ---------------------------------------
+// - O2: `layout/contracts` names the five new slots, and the layout fills
+//   `shell.sidebar`, `shell.titlebar.tabs` and `shell.window.actions` in every
+//   window, and `shell.page` and `shell.sidebar.footer` while the route is `/`
+//   or `/projects`.
+// - T4.2: the frame is in the page form exactly while `shell.page` holds an
+//   item; `/projects` and `/projects/:projectId` are children of `/`, and the
+//   second's element, `layout-project-empty`, draws the empty state.
+// - T4.6: the sidebar column reads `shell.sidebar`, the stack panes
+//   (conversation form only), the quarantine notice, then
+//   `shell.sidebar.footer`.
+// - O1 (OD38): the navigation's slot elements are separate roots; its state
+//   lives in stores, and its once-per-window effects run in `layout-sidebar`
+//   alone.
+
+/** A Thread route of `project`, where the conversation form is drawn. */
+const planPath = `/projects/${project.id}/threads/${planThread.id}`;
+
+/** The layout activated on a fake host whose routes, elements and region items are recorded. */
+interface RecordedActivation {
+  /** Every route the layout registered, in order. */
+  readonly routes: readonly RouteRegistration[];
+  /** Every element the layout asked `ui/v1` to create, in order. */
+  readonly created: readonly {
+    readonly tag: string;
+    readonly props?: Readonly<Record<string, unknown>>;
+  }[];
+  /** The tags of the items the layout holds in `region` now, in add order. */
+  tags(region: string): readonly string[];
+  /** Moves the host's navigation to `path`, as the window's router does. */
+  navigate(path: string): void;
+  deactivate(): Promise<void>;
+}
+
+/**
+ * Activates the layout alone, with no window mounted, on the stories' fake
+ * host for `path`: `navigation/v1` `register`, `ui/v1` `create` and
+ * `regions/v1` `add` are recorded on their way to the host.
+ */
+const activateRecorded = async (path: string): Promise<RecordedActivation> => {
+  // Rendering the workspace once installs happy-dom's window as the globals.
+  (await renderWorkspace()).cleanup();
+  const { createFakeHost } = await import('../../stories/support/fake-host.js');
+  const { activate } = await import('../../src/client/index.js');
+  const host = createFakeHost({ projects: [project], path });
+  const inner = host.services;
+  const navigation = inner.use(NavigationV1);
+  const ui = inner.use(UiV1);
+  const regions = inner.use(RegionsV1);
+
+  const routes: RouteRegistration[] = [];
+  const created: {
+    tag: string;
+    props?: Readonly<Record<string, unknown>>;
+  }[] = [];
+  const live = new Map<string, { readonly item: RegionItem }[]>();
+  const recorded: Record<string, unknown> = {
+    [NavigationV1.id]: {
+      ...navigation,
+      register: (route: RouteRegistration) => {
+        routes.push(route);
+        return navigation.register(route);
+      },
+    },
+    [UiV1.id]: {
+      ...ui,
+      create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
+        created.push(props === undefined ? { tag } : { tag, props });
+        return ui.create(tag, props);
+      },
+    },
+    [RegionsV1.id]: {
+      ...regions,
+      add: (region: string, item: RegionItem) => {
+        const entry = { item };
+        live.set(region, [...(live.get(region) ?? []), entry]);
+        const added = regions.add(region, item);
+        return {
+          dispose: () => {
+            live.set(
+              region,
+              (live.get(region) ?? []).filter((other) => other !== entry),
+            );
+            added.dispose();
+          },
+        };
+      },
+    },
+  };
+  const services = {
+    ...inner,
+    use: (contract: { readonly id: string }) =>
+      recorded[contract.id] ?? inner.use(contract as never),
+  } as unknown as Services;
+  const cleanup = activate({ services });
+  return {
+    routes,
+    created,
+    tags: (region) => (live.get(region) ?? []).map(({ item }) => item.tag),
+    navigate: (next) => navigation.navigate(next),
+    deactivate: async () => {
+      await cleanup();
+    },
+  };
+};
+
+/** The one route registered for `path`; fails naming what was registered. */
+const routeOf = (
+  activation: RecordedActivation,
+  path: string,
+): RouteRegistration => {
+  const found = activation.routes.filter((route) => route.path === path);
+  const [first] = found;
+  assert.ok(
+    found.length === 1 && first !== undefined,
+    `Expected one route ${path}, found ${found.length}; registered: ${activation.routes
+      .map((route) => route.path)
+      .join(' | ')}`,
+  );
+  return first;
+};
+
+const matchOf = (
+  path: string,
+  pattern: string,
+  params: Record<string, string> = {},
+): RouteMatch => ({ path, pattern, params }) as RouteMatch;
+
+// O2
+test('layout/contracts names the five new shell slots', async () => {
+  const contracts: Readonly<Record<string, unknown>> = await import(
+    '../../src/contracts/index.js'
+  );
+  assert.deepEqual(
+    {
+      SHELL_SIDEBAR: contracts.SHELL_SIDEBAR,
+      SHELL_SIDEBAR_FOOTER: contracts.SHELL_SIDEBAR_FOOTER,
+      SHELL_TITLEBAR_TABS: contracts.SHELL_TITLEBAR_TABS,
+      SHELL_PAGE: contracts.SHELL_PAGE,
+      SHELL_WINDOW_ACTIONS: contracts.SHELL_WINDOW_ACTIONS,
+    },
+    {
+      SHELL_SIDEBAR: 'shell.sidebar',
+      SHELL_SIDEBAR_FOOTER: 'shell.sidebar.footer',
+      SHELL_TITLEBAR_TABS: 'shell.titlebar.tabs',
+      SHELL_PAGE: 'shell.page',
+      SHELL_WINDOW_ACTIONS: 'shell.window.actions',
+    },
+  );
+});
+
+// O2: the navigation's five elements, and the two slots that follow the route.
+test('the layout fills shell.sidebar, shell.titlebar.tabs and shell.window.actions always, and shell.page and shell.sidebar.footer only on / and /projects', async () => {
+  const activation = await activateRecorded('/projects');
+  try {
+    for (const path of [
+      '/projects',
+      `/projects/${project.id}`,
+      '/',
+      planPath,
+      '/projects',
+    ]) {
+      activation.navigate(path);
+      const onDashboard = path === '/' || path === '/projects';
+      assert.deepEqual(
+        {
+          'shell.sidebar': activation.tags('shell.sidebar'),
+          'shell.titlebar.tabs': activation.tags('shell.titlebar.tabs'),
+          'shell.window.actions': activation.tags('shell.window.actions'),
+          'shell.page': activation.tags('shell.page'),
+          'shell.sidebar.footer': activation.tags('shell.sidebar.footer'),
+        },
+        {
+          'shell.sidebar': ['layout-sidebar'],
+          'shell.titlebar.tabs': ['layout-project-tabs'],
+          'shell.window.actions': ['layout-account-status'],
+          'shell.page': onDashboard ? ['layout-dashboard'] : [],
+          'shell.sidebar.footer': onDashboard ? ['layout-sidebar-footer'] : [],
+        },
+        `The layout's slot items on ${path}.`,
+      );
+    }
+  } finally {
+    await activation.deactivate();
+  }
+});
+
+// T4.2
+test('T4.2: / is the root route, and /projects and /projects/:projectId are registered as its children', async () => {
+  const activation = await activateRecorded('/');
+  try {
+    assert.equal(routeOf(activation, '/').parent, undefined);
+    assert.equal(routeOf(activation, '/projects').parent, '/');
+    assert.equal(routeOf(activation, '/projects/:projectId').parent, '/');
+  } finally {
+    await activation.deactivate();
+  }
+});
+
+// T4.2
+test('T4.2: /projects creates layout-projects-route, and /projects/:projectId creates layout-project-empty with its Project id', async () => {
+  const activation = await activateRecorded('/');
+  try {
+    routeOf(activation, '/projects').create(matchOf('/projects', '/projects'));
+    assert.deepEqual(
+      activation.created.at(-1)?.tag,
+      'layout-projects-route',
+      'The /projects route does not create layout-projects-route.',
+    );
+
+    routeOf(activation, '/projects/:projectId').create(
+      matchOf(`/projects/${project.id}`, '/projects/:projectId', {
+        projectId: project.id,
+      }),
+    );
+    const empty = activation.created.at(-1);
+    assert.equal(
+      empty?.tag,
+      'layout-project-empty',
+      'The /projects/:projectId route does not create layout-project-empty.',
+    );
+    assert.equal(empty?.props?.projectId, project.id);
+  } finally {
+    await activation.deactivate();
+  }
+});
+
+/** Creates `tag` through the window's `ui/v1`, as the outlet does, and mounts it. */
+const mountCreated = async (
+  workspace: RenderedWorkspace,
+  tag: string,
+  props?: Readonly<Record<string, unknown>>,
+): Promise<HTMLElement> => {
+  const element = workspace.services
+    .use(UiV1)
+    .create(tag, props) as HTMLElement;
+  const outlet = document.createElement('div');
+  document.body.append(outlet);
+  outlet.append(element);
+  await settle();
+  return outlet;
+};
+
+const EMPTY_TEXT = 'Start a thread or select one from the sidebar.';
+
+// T4.2
+test("T4.2: layout-project-empty draws the Project's name, the text and New thread", async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    path: `/projects/${project.id}`,
+  });
+
+  const empty = await mountCreated(rendered, 'layout-project-empty', {
+    projectId: project.id,
+  });
+
+  const text = normalized(empty.textContent);
+  assert.ok(text.includes(project.name), `No Project name in: ${text}`);
+  assert.ok(text.includes(EMPTY_TEXT), `No empty-state text in: ${text}`);
+  assert.ok(!text.includes('No project selected'), text);
+  only(empty, 'button', 'New thread');
+});
+
+// T4.2
+test('T4.2: for a Project the mirror does not hold, layout-project-empty draws "No project selected" and no button', async () => {
+  const missing = 'c0ffee00-0000-4000-8000-000000000000';
+  rendered = await renderWorkspace({
+    projects: [project],
+    path: `/projects/${missing}`,
+  });
+
+  const empty = await mountCreated(rendered, 'layout-project-empty', {
+    projectId: missing,
+  });
+
+  const text = normalized(empty.textContent);
+  assert.ok(text.includes('No project selected'), `No title in: ${text}`);
+  assert.ok(text.includes(EMPTY_TEXT), `No empty-state text in: ${text}`);
+  assert.equal(
+    named(empty, 'button', 'New thread').length,
+    0,
+    'The empty state offers New thread for a Project the mirror lacks.',
+  );
+});
+
+// T4.2: `/projects` is covered by the page form; its element draws nothing.
+test('T4.2: layout-projects-route draws nothing', async () => {
+  rendered = await renderWorkspace({ projects: [project], path: '/projects' });
+
+  const route = await mountCreated(rendered, 'layout-projects-route');
+
+  assert.equal(normalized(route.textContent), '');
+  assert.equal(
+    route.querySelectorAll('*').length,
+    1,
+    'layout-projects-route draws something inside itself.',
+  );
+});
+
+// T4.2
+test('T4.2: the frame is in the page form exactly while shell.page holds an item', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread],
+    path: planPath,
+  });
+  const workspace = rendered;
+  const form = () => ({
+    outlets: workspace.root.querySelectorAll('core-outlet').length,
+    pageItems: standIns(workspace.root, 'page-probe').length,
+  });
+  assert.deepEqual(
+    form(),
+    { outlets: 1, pageItems: 0 },
+    'A Thread route with shell.page empty is not in the conversation form.',
+  );
+
+  const probe = workspace.services
+    .use(RegionsV1)
+    .add('shell.page', { id: 'page-probe', tag: 'page-probe' });
+  await settle();
+  assert.deepEqual(
+    form(),
+    { outlets: 0, pageItems: 1 },
+    'With an item in shell.page the frame is not in the page form.',
+  );
+
+  probe.dispose();
+  await settle();
+  assert.deepEqual(
+    form(),
+    { outlets: 1, pageItems: 0 },
+    'With shell.page emptied again the frame is not in the conversation form.',
+  );
+});
+
+// T4.6 ------------------------------------------------------------------------
+
+const quarantined: CatalogSnapshot = (() => {
+  const bundles: readonly CatalogBundle[] = [
+    { id: 'layout', version: '4.1.0', state: 'active', reasons: [] },
+    {
+      id: 'terminal',
+      version: '2.0.1',
+      state: 'quarantined',
+      reasons: [{ code: 'activate_failed', message: 'activate() threw: boom' }],
+    },
+  ];
+  return {
+    generation: 1,
+    composition: {
+      core: 'core',
+      enabled: bundles.map(({ id }) => id),
+      providers: {},
+    },
+    bundles,
+    order: bundles.map(({ id }) => id),
+    contracts: [],
+  };
+})();
+
+/** The window's one quarantine notice. */
+const quarantineNotice = (root: ParentNode): HTMLElement =>
+  single(root, '[data-slot="error-notice"][data-tone="warning"]');
+
+const footerProbe = { id: 'footer-probe', tag: 'footer-probe' };
+const sidebarProbe = { id: 'sidebar-probe', tag: 'sidebar-probe' };
+
+// T4.6
+test('T4.6: in the conversation form the notice follows the shell.sidebar items and the last stack pane, and precedes shell.sidebar.footer, with mx-1.5', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread],
+    path: planPath,
+    catalog: quarantined,
+    regions: { 'shell.sidebar.footer': [footerProbe] },
+  });
+  const notice = quarantineNotice(rendered.root);
+  const search = single(rendered.root, 'input[aria-label="Search Threads"]');
+  const lastPane = paneGroups(rendered.root).at(-1);
+  assert.ok(lastPane !== undefined, 'The fixture shows no stack pane.');
+  const [footer] = standIns(rendered.root, 'footer-probe');
+  assert.ok(footer, 'The shell.sidebar.footer item is not drawn.');
+
+  assert.ok(follows(search, notice), 'The notice precedes shell.sidebar.');
+  assert.ok(
+    !lastPane.contains(notice) && follows(lastPane, notice),
+    'The notice does not follow the last stack pane.',
+  );
+  assert.ok(
+    follows(notice, footer),
+    'The notice does not precede shell.sidebar.footer.',
+  );
+  assert.ok(
+    notice.classList.contains('mx-1.5'),
+    `The notice lacks mx-1.5: ${notice.className}`,
+  );
+});
+
+// T4.6
+test('T4.6: in the page form the notice follows the shell.sidebar items and precedes shell.sidebar.footer, with mx-2', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    path: '/projects',
+    catalog: quarantined,
+    regions: {
+      'shell.sidebar': [sidebarProbe],
+      'shell.sidebar.footer': [footerProbe],
+    },
+  });
+  const notice = quarantineNotice(rendered.root);
+  const [sidebarItem] = standIns(rendered.root, 'sidebar-probe');
+  assert.ok(sidebarItem, 'The shell.sidebar item is not drawn.');
+  const search = single(rendered.root, 'input[aria-label="Search projects"]');
+  const [footer] = standIns(rendered.root, 'footer-probe');
+  assert.ok(footer, 'The shell.sidebar.footer item is not drawn.');
+  const settings = only(rendered.root, 'button', 'All settings');
+
+  for (const [label, item] of [
+    ['the shell.sidebar item', sidebarItem],
+    ["the Dashboard sidebar's search", search],
+  ] as const) {
+    assert.ok(follows(item, notice), `The notice precedes ${label}.`);
+  }
+  for (const [label, item] of [
+    ['the shell.sidebar.footer item', footer],
+    ['All settings', settings],
+  ] as const) {
+    assert.ok(follows(notice, item), `The notice follows ${label}.`);
+  }
+  assert.ok(
+    notice.classList.contains('mx-2'),
+    `The notice lacks mx-2: ${notice.className}`,
+  );
+});
+
+// O1 (OD38) -------------------------------------------------------------------
+
+/** The navigation's elements the frame draws in the page form, one per slot. */
+const pageFormElements = [
+  'layout-sidebar',
+  'layout-sidebar-footer',
+  'layout-project-tabs',
+  'layout-dashboard',
+  'layout-account-status',
+];
+
+/** The navigation's elements the frame draws in the conversation form. */
+const conversationFormElements = [
+  'layout-sidebar',
+  'layout-project-tabs',
+  'layout-account-status',
+];
+
+/** Each tag in `tags` is drawn exactly once in the window. */
+const assertMountedOnce = (
+  workspace: RenderedWorkspace,
+  tags: readonly string[],
+): void => {
+  assert.deepEqual(
+    Object.fromEntries(
+      tags.map((tag) => [tag, workspace.root.querySelectorAll(tag).length]),
+    ),
+    Object.fromEntries(tags.map((tag) => [tag, 1])),
+    'The navigation elements are not each drawn once.',
+  );
+};
+
+// O1: the Projects load (`use-workspace.ts`'s mount effect) runs once per
+// window, in `layout-sidebar`, however many navigation elements mount.
+test('O1: on /projects the five navigation elements mount and the Projects load once', async () => {
+  rendered = await renderWorkspace({
+    projects: [project, docs],
+    path: '/projects',
+  });
+  const records: RuntimeRecords = rendered.records;
+  const reload = records.reload.bind(records);
+  let loads = 0;
+  records.reload = (input, call) => {
+    if (input.target === 'projects') loads += 1;
+    return reload(input, call);
+  };
+
+  await rendered.remount();
+
+  assertMountedOnce(rendered, pageFormElements);
+  assert.equal(loads, 1, `The window loaded its Projects ${loads} times.`);
+});
+
+// O1: following the selected Project runs once per window as well.
+test('O1: in a Thread the navigation elements mount and the selected Project is followed once', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    threads: [planThread],
+    path: planPath,
+  });
+  const records: RuntimeRecords = rendered.records;
+  const follow = records.follow.bind(records);
+  const following = new Set<{ readonly projectId: string }>();
+  records.follow = (input, call) => {
+    const token = { projectId: input.projectId };
+    following.add(token);
+    const followed = follow(input, call);
+    return {
+      dispose: () => {
+        following.delete(token);
+        followed.dispose();
+      },
+    };
+  };
+
+  await rendered.remount();
+
+  assertMountedOnce(rendered, conversationFormElements);
+  assert.deepEqual(
+    [...following].map(({ projectId }) => projectId),
+    [project.id],
+    'The selected Project is not followed exactly once.',
+  );
+});
+
+// O1: the Project tabs live in a module store, so a Project opened in
+// `layout-dashboard` shows its tab in `layout-project-tabs`, and the tab stays
+// when the frame changes form.
+test('O1: a Project opened in layout-dashboard gets its tab in layout-project-tabs, and keeps it when the forms switch', async () => {
+  rendered = await renderWorkspace({
+    projects: [project, docs],
+    path: '/projects',
+  });
+  const content = single(rendered.root, 'layout-dashboard');
+  const [entry] = [...content.querySelectorAll<HTMLElement>('button')]
+    .filter((button) => normalized(button.textContent).includes(docs.name))
+    .filter((button) => !button.hasAttribute('aria-label'));
+  assert.ok(entry !== undefined, 'layout-dashboard does not list Docs site.');
+
+  await click(entry);
+
+  assert.equal(pathOf(rendered), `/projects/${docs.id}`);
+  const tabs = single(rendered.root, 'layout-project-tabs');
+  assert.ok(
+    isCurrent(only(tabs, 'button[aria-label]', docs.name)),
+    'The Docs site tab in layout-project-tabs is not the current one.',
+  );
+
+  rendered.services.use(NavigationV1).navigate('/projects');
+  await settle();
+
+  assert.equal(rendered.root.querySelectorAll('layout-dashboard').length, 1);
+  only(
+    single(rendered.root, 'layout-project-tabs'),
+    'button[aria-label]',
+    docs.name,
   );
 });

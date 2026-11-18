@@ -285,7 +285,8 @@ export interface FakeHost {
    * answers: `runtime.records/v1` (`records`), `doric.connection/v1`,
    * `doric.about/v1` (`get()` resolves `{ version: '0.0.1' }`), `ui/v1`,
    * `navigation/v1`, `regions/v1` and `commands/v1`. It throws for an id in
-   * `absent` or unknown.
+   * `absent` or unknown. `ui/v1` creates each element defined through it
+   * under its own tag, with these services; any other tag is a stand-in.
    *
    * `whenAvailable(ref, callback)` behaves as follows:
    * - for an id `use` would answer, it calls `callback(api, provider)` once,
@@ -296,7 +297,11 @@ export interface FakeHost {
    *   callback returned one, at most once.
    */
   readonly services: Services;
-  /** The items of a region, the same array until the story ends. */
+  /**
+   * The items of a region: the fixture's, then those added through
+   * `regions/v1`, whose `subscribe` hears every change. The same array until
+   * the region changes.
+   */
   regionItems(region: string): readonly RegionEntry[];
   /**
    * The ids of the commands executed through `commands/v1` so far, in order.
@@ -400,21 +405,59 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
     },
   } satisfies Navigation;
 
+  // The fixture's items in their order, then the items added through
+  // `regions/v1`, in add order.
+  const added = new Map<string, readonly RegionEntry[]>();
+  const seeds = new Map<string, readonly RegionEntry[]>();
   const regions = new Map<string, readonly RegionEntry[]>();
+  const regionListeners = new Map<string, Set<() => void>>();
   const regionItems = (region: string): readonly RegionEntry[] => {
     const known = regions.get(region);
     if (known !== undefined) return known;
-    const items = Object.freeze(
+    const seeded =
+      seeds.get(region) ??
       (options.regions?.[region] ?? []).map(
         ({ owner, ...item }): RegionEntry => ({
           ...item,
           owner: owner ?? 'story',
         }),
-      ),
-    );
+      );
+    seeds.set(region, seeded);
+    const items = Object.freeze([...seeded, ...(added.get(region) ?? [])]);
     regions.set(region, items);
     return items;
   };
+  const regionChanged = (region: string): void => {
+    regions.delete(region);
+    for (const listener of [...(regionListeners.get(region) ?? [])]) listener();
+  };
+  const addRegionItem = (region: string, item: RegionItem): Disposable => {
+    const entry: RegionEntry = { ...item, owner: item.owner ?? 'layout' };
+    added.set(region, [...(added.get(region) ?? []), entry]);
+    regionChanged(region);
+    let disposed = false;
+    return {
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        added.set(
+          region,
+          (added.get(region) ?? []).filter((other) => other !== entry),
+        );
+        regionChanged(region);
+      },
+    };
+  };
+  const subscribeRegion = (region: string, listener: () => void) => {
+    const listeners = regionListeners.get(region) ?? new Set<() => void>();
+    regionListeners.set(region, listeners);
+    listeners.add(listener);
+    return { dispose: () => listeners.delete(listener) };
+  };
+
+  // The elements the layout defined through `ui/v1`: `create` makes them as
+  // the host does, with the services and the props set on the element.
+  const defined = new Set<string>();
 
   const status = options.connection ?? 'connected';
   const apis: Record<string, unknown> = {
@@ -427,8 +470,18 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
       get: () => Promise.resolve({ version: '0.0.1' }),
     } satisfies DoricAbout,
     'ui/v1': {
-      define: () => disposable,
+      define: (tag: string, element: CustomElementConstructor) => {
+        if (customElements.get(tag) === undefined)
+          customElements.define(tag, element);
+        defined.add(tag);
+        return disposable;
+      },
       create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
+        if (defined.has(tag)) {
+          const element = document.createElement(tag);
+          Object.assign(element, { services }, props ?? {});
+          return element;
+        }
         if (tag === 'chat-thread-tab-icon')
           return threadTabIconElement(
             options.threads?.find((thread) => thread.id === props?.threadId),
@@ -443,16 +496,22 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
             )
           : placeholderElement(tag, props);
       },
-      dispose: () => undefined,
+      // As the host's: the element leaves the document, and one the layout
+      // defined unmounts its root at once.
+      dispose: (element: object) => {
+        const target = element as { remove?: () => void; dispose?: () => void };
+        target.remove?.();
+        target.dispose?.();
+      },
     },
     ...(options.catalog === undefined
       ? {}
       : { 'doric.catalog/v1': { get: () => options.catalog } }),
     'navigation/v1': navigation,
     'regions/v1': {
-      add: () => disposable,
+      add: addRegionItem,
       items: regionItems,
-      subscribe: () => disposable,
+      subscribe: subscribeRegion,
     },
     'commands/v1': {
       register: () => disposable,

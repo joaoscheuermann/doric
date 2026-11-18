@@ -1,41 +1,42 @@
 import { NavigationV1 } from 'bundle/contracts';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useStore } from 'zustand/react';
 
 import {
   closeProjectTabs,
-  emptyProjectTabs,
   type ProjectTabs,
-  parseProjectTabs,
   projectIdFromPath,
   reconcileProjectTabs,
   rememberPath,
 } from '../domain/project-tabs.js';
 import type { Project } from '../domain/workspace.js';
 import { layoutServices } from '../services/layout-services.js';
+import { projectTabsKey, projectTabsStore } from '../stores/project-tabs.js';
 
-const key = 'doric.project-tabs';
+const update = (change: (current: ProjectTabs) => ProjectTabs): void =>
+  projectTabsStore.setState((state) => ({ tabs: change(state.tabs) }));
 
-const read = (): ProjectTabs => {
-  try {
-    return parseProjectTabs(localStorage.getItem(key));
-  } catch {
-    return emptyProjectTabs;
-  }
-};
-
+/**
+ * The window's Project tabs (`stores/project-tabs.ts`): the hook follows the
+ * route while it is mounted, reconciles the tabs with the loaded Projects and
+ * writes them to the window's storage. `layout-project-tabs`, which both
+ * forms draw, is the one element that mounts it.
+ */
 export const useProjectTabs = (
   projects: readonly Project[],
   loaded: boolean,
 ) => {
   const navigation = useMemo(() => layoutServices().use(NavigationV1), []);
-  const [state, setState] = useState(read);
-  const [path, setPath] = useState(() => navigation.current()?.path ?? '/');
+  const state = useStore(projectTabsStore, (current) => current.tabs);
+  const path = useStore(projectTabsStore, (current) => current.path);
 
   useEffect(() => {
     const onRoute = () => {
       const next = navigation.current()?.path ?? '/';
-      setPath(next);
-      setState((current) => rememberPath(current, next));
+      projectTabsStore.setState((current) => ({
+        path: next,
+        tabs: rememberPath(current.tabs, next),
+      }));
     };
     const subscription = navigation.subscribe(onRoute);
     onRoute();
@@ -44,7 +45,7 @@ export const useProjectTabs = (
 
   useEffect(() => {
     if (!loaded) return;
-    setState((current) =>
+    update((current) =>
       reconcileProjectTabs(
         current,
         new Set(projects.map((project) => project.id)),
@@ -54,21 +55,21 @@ export const useProjectTabs = (
 
   useEffect(() => {
     try {
-      localStorage.setItem(key, JSON.stringify(state));
+      localStorage.setItem(projectTabsKey, JSON.stringify(state));
     } catch {
       // Tabs remain usable in memory when the origin's storage is unavailable.
     }
   }, [state]);
 
   const navigate = (target: string) => {
-    setState((current) => rememberPath(current, target));
+    update((current) => rememberPath(current, target));
     navigation.navigate(target);
   };
   const closeMany = (ids: readonly string[]) => {
     const activeId = projectIdFromPath(path);
     const index = activeId ? state.order.indexOf(activeId) : -1;
     const next = closeProjectTabs(state, ids);
-    setState(next);
+    update(() => next);
     if (activeId && ids.includes(activeId)) {
       const neighbor = next.order[Math.min(index, next.order.length - 1)];
       navigate(neighbor ? next.paths[neighbor] : '/projects');
@@ -82,7 +83,7 @@ export const useProjectTabs = (
     if (source < 0 || target < 0) return;
     order.splice(source, 1);
     order.splice(target, 0, from);
-    setState({ ...state, order });
+    update(() => ({ ...state, order }));
   };
   return { state, path, navigate, close, closeMany, move };
 };

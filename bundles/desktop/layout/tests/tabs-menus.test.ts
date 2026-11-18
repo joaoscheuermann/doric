@@ -213,7 +213,7 @@ describe('layout.tabs/v2 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v2@2.0.0 and layout.panel/v3@3.0.0 (neither layout.tabs/v1 nor layout.panel/v1 or v2), layout.conversation/v1@1.0.0, layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 4.0.0, requires neither runtime/v1 nor runtime.threads/v1, and takes runtime.records/v1 as optional (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive, bundle isolation AC3.1, S12, step 4(a) change 6)', () => {
+  test('provides layout.tabs/v2@2.0.0 and layout.panel/v3@3.0.0 (neither layout.tabs/v1 nor layout.panel/v1 or v2), layout.conversation/v1@1.0.0, layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 4.1.0, requires neither runtime/v1 nor runtime.threads/v1, and takes runtime.records/v1 as optional (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive, bundle isolation AC3.1, S12, step 4(a) changes 6 and 7)', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
     ) as {
@@ -223,7 +223,7 @@ describe('the layout manifest', () => {
       optional: string[];
     };
 
-    assert.equal(manifest.version, '4.0.0');
+    assert.equal(manifest.version, '4.1.0');
     assert.ok(
       !manifest.requires.some(
         (entry) =>

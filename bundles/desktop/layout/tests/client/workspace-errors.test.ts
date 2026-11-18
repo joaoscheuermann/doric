@@ -860,8 +860,9 @@ describe('the quarantine notice (T-33)', () => {
     const notice = await assertQuarantineNotice(workspace);
     const aside = workspace.root.querySelector(DASHBOARD);
     assert.ok(aside?.contains(notice), 'The notice is not in the sidebar.');
+    // From step 4(a) change 7 the frame draws the notice, then the slot
+    // `shell.sidebar.footer` (a `<core-region>`), which holds the footer.
     const footer = notice.nextElementSibling;
-    assert.equal(footer?.getAttribute('data-slot'), 'sidebar-footer');
     assert.ok(
       normalized(footer?.textContent).includes('All settings'),
       'The footer below the notice does not hold "All settings".',

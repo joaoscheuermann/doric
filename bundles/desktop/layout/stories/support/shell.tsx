@@ -22,7 +22,10 @@ import {
   ProjectPanelTabs,
 } from '../../src/client/components/organisms/project-panel.js';
 import type { SidebarModel } from '../../src/client/components/organisms/project-sidebar.js';
-import { ProjectSidebar } from '../../src/client/components/organisms/project-sidebar.js';
+import {
+  ProjectSidebar,
+  ProjectSidebarColumn,
+} from '../../src/client/components/organisms/project-sidebar.js';
 import { ProjectTabBar } from '../../src/client/components/organisms/project-tabs.js';
 import { SidebarHeader } from '../../src/client/components/organisms/sidebar-header.js';
 import {
@@ -149,17 +152,21 @@ export function WorkspaceShell({
               tab.openBottom === true,
           )}
           sidebar={
-            <ProjectSidebar
-              header={
-                <SidebarHeader
-                  onDashboard={() =>
-                    console.info('Story navigate', '/projects')
-                  }
-                />
-              }
-              actions={sidebarActions}
-              model={model}
-            />
+            // As the conversation form draws its column: the frame's panes
+            // and notice under the sidebar's own content.
+            <ProjectSidebarColumn>
+              <ProjectSidebar
+                header={
+                  <SidebarHeader
+                    onDashboard={() =>
+                      console.info('Story navigate', '/projects')
+                    }
+                  />
+                }
+                actions={sidebarActions}
+                model={model}
+              />
+            </ProjectSidebarColumn>
           }
         >
           {/* No bottom padding, as the app's conversation card (D14): the

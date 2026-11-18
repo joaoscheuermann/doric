@@ -16,6 +16,12 @@ import {
 } from '../stores/route-selection.js';
 
 export type RouteSelectionOptions = {
+  /**
+   * Whether this caller owns the window's route selection: it restores the
+   * path's selection and follows the route. False, the hook only answers the
+   * store's writers.
+   */
+  readonly active: boolean;
   readonly isCurrent: () => boolean;
   readonly onRestore: (
     thread: Thread,
@@ -40,6 +46,7 @@ export type RouteSelection = {
  * is handed to `onRoute`.
  */
 export const useRouteSelection = ({
+  active: owner,
   isCurrent,
   onRestore,
   onMissingProject,
@@ -62,6 +69,7 @@ export const useRouteSelection = ({
   options.current = { get, isCurrent, onRestore, onMissingProject, onRoute };
 
   useEffect(() => {
+    if (!owner) return;
     let active = true;
     const navigation = layoutServices().use(NavigationV1);
     setRouteWriter({
@@ -96,7 +104,7 @@ export const useRouteSelection = ({
       subscription.dispose();
       setRouteWriter(undefined);
     };
-  }, [queryClient.fetchQuery]);
+  }, [owner, queryClient.fetchQuery]);
 
   const state = routeSelectionStore.getState();
   return {

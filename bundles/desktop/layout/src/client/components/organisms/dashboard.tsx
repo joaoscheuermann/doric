@@ -13,12 +13,11 @@ import { cn } from 'desktop/ui/utils';
 import { PlusIcon, SearchIcon } from 'lucide-react';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-  useCallback,
   useEffect,
   useRef,
   useState,
 } from 'react';
+import { useStore } from 'zustand/react';
 
 import {
   dashboardPage,
@@ -36,6 +35,7 @@ import { SEARCH_FIELD } from '../molecules/search-field.js';
 import { WorkspaceErrorNotice } from '../molecules/workspace-error-notice.js';
 import { INSET_CARD } from '../templates/inset-card.js';
 import { DashboardSidebar } from './dashboard-sidebar.js';
+import { SidebarHeader } from './sidebar-header.js';
 
 /**
  * The Dashboard's content card (S34, Figma `85:7726`/`85:7520`): the inset
@@ -52,103 +52,29 @@ const CARD = cn(INSET_CARD, 'mr-2 mb-2 flex-1 p-0');
 // `component/layout-primary-dark-pressed` (#4a433b light, #d9cdb6 dark), which
 // has no token of its own.
 
-export function Dashboard({
-  workspace,
-  all,
-  navigate,
-  createRequest = 0,
-  header,
-  sidebarHeader,
-  onOpenSettings,
-}: {
-  readonly workspace: Workspace;
-  /**
-   * True: the Projects list (`/projects`, and `/` unless it was reached
-   * through "New project"), with "All projects" selected in the sidebar.
-   * False: the home body (`85:7726`), with the same sidebar and no row
-   * selected. Both draw their content in the inset card.
-   */
-  readonly all: boolean;
-  readonly navigate: (path: string) => void;
-  readonly createRequest?: number;
-  /**
-   * The content column's top row (G4): the Project tab bar with the account
-   * status at its right end (§2.8, `85:7520`). It is drawn once, as the first
-   * child of `div[data-slot="dashboard-content"]`, above the content's scroll
-   * container. That holds for the list, for a `layout.dashboard.page` page
-   * and for the home body alike, so it never scrolls away. `Dashboard`
-   * neither reads nor wraps it. Required: the window has no other tab bar on
-   * the Dashboard.
-   */
-  readonly header: ReactNode;
-  /**
-   * The Dashboard sidebar's header, passed unchanged to
-   * `DashboardSidebar.header`. Every form draws it.
-   */
-  readonly sidebarHeader: ReactNode;
-  readonly onOpenSettings: () => void;
-}) {
-  const [search, setSearch] = useState('');
-  const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  const [scrolled, setScrolled] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const nameInput = useRef<HTMLInputElement>(null);
-  // The sidebar's search, and the home body's own search on the home body:
-  // Ctrl+F focuses the home body's while it is shown, else the sidebar's.
-  const searchInput = useRef<HTMLInputElement>(null);
-  const homeSearchInput = useRef<HTMLInputElement>(null);
-  const navigateRef = useRef(navigate);
-  navigateRef.current = navigate;
-  const list = useRef<HTMLDivElement>(null);
-  const navItems = useRegionItems(
-    layoutServices().use(RegionsV1),
-    'layout.dashboard.nav',
-  );
-  const page = dashboardPage(
-    useRegionItems(layoutServices().use(RegionsV1), 'layout.dashboard.page'),
-    useDashboardPage(),
-  );
-  const beginCreation = useCallback(() => {
-    dashboardStore.getState().close();
-    setCreating(true);
-    requestAnimationFrame(() => nameInput.current?.focus());
-  }, []);
-  useEffect(() => {
-    if (creating) nameInput.current?.focus();
-  }, [creating]);
-  useEffect(() => {
-    if (createRequest > 0) {
-      beginCreation();
-    }
-  }, [createRequest, beginCreation]);
-  // The home body draws no `layout.dashboard.page`: it starts with none
-  // shown, and a sidebar nav item that shows one opens the list form, which
-  // draws it.
-  useEffect(() => {
-    if (all) return;
-    dashboardStore.getState().close();
-    return dashboardStore.subscribe((state) => {
-      if (state.active !== undefined) navigateRef.current('/projects');
-    });
-  }, [all]);
-  useEffect(() => {
-    const focusSearch = (event: KeyboardEvent) => {
-      if (!event.metaKey && !event.ctrlKey) return;
-      if (event.key.toLowerCase() === 'f') {
-        event.preventDefault();
-        const input = (all ? searchInput : homeSearchInput).current;
-        input?.focus();
-        input?.select();
-      } else if (!all && event.key.toLowerCase() === 'n') {
-        event.preventDefault();
-        beginCreation();
-      }
-    };
-    document.addEventListener('keydown', focusSearch);
-    return () => document.removeEventListener('keydown', focusSearch);
-  }, [all, beginCreation]);
+/**
+ * Opens the create form, as the sidebar's and the list's "New project" and
+ * the home body's ⌘N do: the shown `layout.dashboard.page` closes and the
+ * content part focuses the name field.
+ */
+export const beginCreation = (): void => {
+  const store = dashboardStore.getState();
+  store.close();
+  store.requestCreate();
+};
 
+/**
+ * The Projects the dashboard lists and the search over them, read from
+ * `stores/dashboard.ts` and the shared query client, so the sidebar part and
+ * the content part, separate roots, filter the same list.
+ */
+const useDashboardList = (workspace: Workspace, all: boolean) => {
+  const store = dashboardStore.getState();
+  const search = useStore(dashboardStore, (state) => state.search);
+  const highlightedId = useStore(
+    dashboardStore,
+    (state) => state.highlightedId,
+  );
   const projectVersion = workspace.projects
     .map(({ id, updatedAt }) => `${id}:${updatedAt}`)
     .join('|');
@@ -203,8 +129,8 @@ export function Dashboard({
   };
   const onSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
-      setSearch('');
-      setHighlightedId(null);
+      store.setSearch('');
+      store.setHighlightedId(null);
       event.currentTarget.blur();
       return;
     }
@@ -224,41 +150,78 @@ export function Dashboard({
     const next = event.key === 'ArrowDown' ? index + 1 : index - 1;
     const entry = filtered[next];
     if (!entry) return;
-    setHighlightedId(entry.project.id);
+    store.setHighlightedId(entry.project.id);
+    // The list is in `layout-dashboard`, a root of its own: find the row in
+    // the document.
     const item = Array.from(
-      list.current?.querySelectorAll<HTMLElement>('[data-project-id]') ?? [],
+      document.querySelectorAll<HTMLElement>('[data-project-id]'),
     ).find((element) => element.dataset.projectId === entry.project.id);
     item?.scrollIntoView({ block: 'nearest' });
   };
 
   const changeSearch = (value: string) => {
-    if (value !== '') dashboardStore.getState().close();
-    setSearch(value);
-    setHighlightedId(null);
+    if (value !== '') store.close();
+    store.setSearch(value);
+    store.setHighlightedId(null);
   };
-  const searchField = (
-    <label className="group relative flex h-[36px] min-w-0 items-center rounded-[8px] bg-[var(--paper-ghost-hover)] outline-2 -outline-offset-1 outline-transparent focus-within:outline-[var(--paper-focus)]">
-      <SearchIcon
-        size={14}
-        className="pointer-events-none absolute left-[10px] text-[var(--paper-gray-3)] group-focus-within:text-[var(--paper-gray-1)]"
-      />
-      <input
-        ref={homeSearchInput}
-        aria-label="Search projects"
-        type="text"
-        placeholder="Search projects"
-        value={search}
-        onChange={(event) => changeSearch(event.target.value)}
-        onKeyDown={onSearchKeyDown}
-        className="h-full w-full min-w-0 bg-transparent pl-[28px] pr-[72px] text-[13px] leading-[16px] text-[var(--paper-gray-1)] outline-none placeholder:text-[var(--paper-gray-4)]"
-      />
-      {!search && (
-        <kbd className="pointer-events-none absolute right-[10px] font-sans text-[12px] leading-[16px] text-[var(--paper-gray-4)]">
-          {searchShortcutLabel(navigator.platform)}
-        </kbd>
-      )}
-    </label>
+  return {
+    activity,
+    activeId,
+    changeSearch,
+    entries,
+    failure,
+    filtered,
+    onSearchKeyDown,
+    open,
+    query,
+    search,
+  };
+};
+
+/**
+ * The Dashboard's sidebar part (`layout-sidebar` on `/` and `/projects`): the
+ * sidebar header, the sidebar's "Search projects" and the side menu. While
+ * `all`, ⌘F or Ctrl+F focuses its search.
+ */
+export function DashboardNavigation({
+  workspace,
+  all,
+  navigate,
+}: {
+  readonly workspace: Workspace;
+  /** As `DashboardContent.all`: the list, not the home body. */
+  readonly all: boolean;
+  readonly navigate: (path: string) => void;
+}) {
+  const { search, changeSearch, onSearchKeyDown } = useDashboardList(
+    workspace,
+    all,
   );
+  const searchInput = useRef<HTMLInputElement>(null);
+  const navItems = useRegionItems(
+    layoutServices().use(RegionsV1),
+    'layout.dashboard.nav',
+  );
+  const page = dashboardPage(
+    useRegionItems(layoutServices().use(RegionsV1), 'layout.dashboard.page'),
+    useDashboardPage(),
+  );
+  const focusSearch = () => {
+    searchInput.current?.focus();
+    searchInput.current?.select();
+  };
+  useEffect(() => {
+    if (!all) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.key.toLowerCase() !== 'f') return;
+      event.preventDefault();
+      searchInput.current?.focus();
+      searchInput.current?.select();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [all]);
   const dashboardSearch = (
     <InputGroup className={SEARCH_FIELD}>
       <InputGroupAddon>
@@ -282,6 +245,143 @@ export function Dashboard({
         </InputGroupAddon>
       )}
     </InputGroup>
+  );
+  return (
+    <DashboardSidebar
+      header={
+        <SidebarHeader
+          active
+          onDashboard={() => navigate('/projects')}
+          onSearch={focusSearch}
+        />
+      }
+      search={dashboardSearch}
+      projects={workspace.projects}
+      listActive={all && page === undefined}
+      navItems={navItems}
+      onAllProjects={() => {
+        dashboardStore.getState().close();
+        if (!all) navigate('/projects');
+      }}
+      onNewProject={beginCreation}
+      onSelectProject={workspace.actions.selectProject}
+    />
+  );
+}
+
+/**
+ * The Dashboard's content part (`layout-dashboard`, the page form's
+ * `shell.page` item): the inset card with the Projects list, a
+ * `layout.dashboard.page` page, or the home body. While the home body shows,
+ * ⌘F or Ctrl+F focuses its search and ⌘N or Ctrl+N opens the create form.
+ */
+export function DashboardContent({
+  workspace,
+  all,
+  navigate,
+}: {
+  readonly workspace: Workspace;
+  /**
+   * True: the Projects list (`/projects`, and `/` unless it was reached
+   * through "New project"), with "All projects" selected in the sidebar.
+   * False: the home body (`85:7726`), with the same sidebar and no row
+   * selected. Both draw their content in the inset card.
+   */
+  readonly all: boolean;
+  readonly navigate: (path: string) => void;
+}) {
+  const {
+    activity,
+    activeId,
+    changeSearch,
+    entries,
+    failure,
+    filtered,
+    onSearchKeyDown,
+    open,
+    query,
+    search,
+  } = useDashboardList(workspace, all);
+  const creating = useStore(dashboardStore, (state) => state.creating);
+  const createRequest = useStore(
+    dashboardStore,
+    (state) => state.createRequest,
+  );
+  const { setCreating } = dashboardStore.getState();
+  const [scrolled, setScrolled] = useState(false);
+  const [name, setName] = useState('');
+  const nameInput = useRef<HTMLInputElement>(null);
+  const homeSearchInput = useRef<HTMLInputElement>(null);
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const page = dashboardPage(
+    useRegionItems(layoutServices().use(RegionsV1), 'layout.dashboard.page'),
+    useDashboardPage(),
+  );
+  // Every request focuses the name field, the first one once it mounts.
+  useEffect(() => {
+    if (creating && createRequest > 0) nameInput.current?.focus();
+  }, [creating, createRequest]);
+  // The search and the create form end with the content part, as they ended
+  // with the Dashboard before it was split.
+  useEffect(
+    () => () =>
+      dashboardStore.setState({
+        search: '',
+        highlightedId: null,
+        creating: false,
+      }),
+    [],
+  );
+  // The home body draws no `layout.dashboard.page`: it starts with none
+  // shown, and a sidebar nav item that shows one opens the list form, which
+  // draws it.
+  useEffect(() => {
+    if (all) return;
+    dashboardStore.getState().close();
+    return dashboardStore.subscribe((state) => {
+      if (state.active !== undefined) navigateRef.current('/projects');
+    });
+  }, [all]);
+  useEffect(() => {
+    if (all) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        homeSearchInput.current?.focus();
+        homeSearchInput.current?.select();
+      } else if (event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        beginCreation();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [all]);
+
+  const searchField = (
+    <label className="group relative flex h-[36px] min-w-0 items-center rounded-[8px] bg-[var(--paper-ghost-hover)] outline-2 -outline-offset-1 outline-transparent focus-within:outline-[var(--paper-focus)]">
+      <SearchIcon
+        size={14}
+        className="pointer-events-none absolute left-[10px] text-[var(--paper-gray-3)] group-focus-within:text-[var(--paper-gray-1)]"
+      />
+      <input
+        ref={homeSearchInput}
+        aria-label="Search projects"
+        type="text"
+        placeholder="Search projects"
+        value={search}
+        onChange={(event) => changeSearch(event.target.value)}
+        onKeyDown={onSearchKeyDown}
+        className="h-full w-full min-w-0 bg-transparent pl-[28px] pr-[72px] text-[13px] leading-[16px] text-[var(--paper-gray-1)] outline-none placeholder:text-[var(--paper-gray-4)]"
+      />
+      {!search && (
+        <kbd className="pointer-events-none absolute right-[10px] font-sans text-[12px] leading-[16px] text-[var(--paper-gray-4)]">
+          {searchShortcutLabel(navigator.platform)}
+        </kbd>
+      )}
+    </label>
   );
   const createForm = creating && (
     <form
@@ -360,10 +460,7 @@ export function Dashboard({
         <p>{query ? 'No results found. Maybe a typo?' : 'No projects yet'}</p>
       </div>
     ) : (
-      <div
-        ref={list}
-        className={all ? 'flex flex-col' : 'flex flex-col gap-[2px]'}
-      >
+      <div className={all ? 'flex flex-col' : 'flex flex-col gap-[2px]'}>
         {all && (
           <div
             data-slot="dashboard-columns"
@@ -495,32 +592,8 @@ export function Dashboard({
     );
 
   return (
-    <div className="flex min-h-0 flex-1 bg-sidebar">
-      <aside className="flex shrink-0" aria-label="Dashboard navigation">
-        <DashboardSidebar
-          header={sidebarHeader}
-          search={dashboardSearch}
-          projects={workspace.projects}
-          listActive={all && page === undefined}
-          navItems={navItems}
-          onAllProjects={() => {
-            dashboardStore.getState().close();
-            if (!all) navigate('/projects');
-          }}
-          onNewProject={beginCreation}
-          onSelectProject={workspace.actions.selectProject}
-          onOpenSettings={onOpenSettings}
-        />
-      </aside>
-      <div
-        data-slot="dashboard-content"
-        className="flex min-w-0 flex-1 flex-col bg-sidebar"
-      >
-        {header}
-        <div data-slot="dashboard-card" className={CARD}>
-          {all ? listBody : homeBody}
-        </div>
-      </div>
+    <div data-slot="dashboard-card" className={CARD}>
+      {all ? listBody : homeBody}
     </div>
   );
 }

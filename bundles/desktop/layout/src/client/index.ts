@@ -8,13 +8,37 @@
 import {
   type Cleanup,
   type ClientContext,
+  type Disposable,
   NavigationV1,
+  RegionsV1,
   UiV1,
 } from 'bundle/contracts';
 
+import {
+  SHELL_PAGE,
+  SHELL_SIDEBAR,
+  SHELL_SIDEBAR_FOOTER,
+  SHELL_TITLEBAR_TABS,
+  SHELL_WINDOW_ACTIONS,
+} from '../contracts/index.js';
 import { followAbout } from './domain/about.js';
-import { tabOwnerOf } from './domain/route-selection.js';
+import {
+  PROJECT_ROUTE,
+  PROJECTS_ROUTE,
+  tabOwnerOf,
+} from './domain/route-selection.js';
 import { RecordsV1 } from './domain/workspace.js';
+import {
+  LayoutAccountStatusElement,
+  LayoutDashboardElement,
+  LayoutProjectTabsElement,
+  LayoutSidebarElement,
+  LayoutSidebarFooterElement,
+} from './elements/navigation-elements.js';
+import {
+  LayoutProjectEmptyElement,
+  LayoutProjectsRouteElement,
+} from './elements/project-empty-element.js';
 import { LayoutWorkspaceElement } from './elements/workspace-element.js';
 import { resetLayoutQueryClient } from './queries/client.js';
 import { createLayoutConversation } from './services/layout-conversation.js';
@@ -31,6 +55,7 @@ import { resetBottom } from './stores/bottom.js';
 import { resetDashboard } from './stores/dashboard.js';
 import { resetNewTab } from './stores/new-tab.js';
 import { resetPanel } from './stores/panel.js';
+import { restoreProjectTabs } from './stores/project-tabs.js';
 import { resetRouteSelection } from './stores/route-selection.js';
 import { resetStack } from './stores/stack.js';
 import { resetThreadRows } from './stores/thread-rows.js';
@@ -52,15 +77,65 @@ export function activate({ services }: ClientContext): Cleanup {
   const stopThreadTabs = watchThreadTabs(ui);
   const stopThreadViews = watchThreadViews(services);
   ui.define('layout-workspace', LayoutWorkspaceElement);
+  ui.define('layout-projects-route', LayoutProjectsRouteElement);
+  ui.define('layout-project-empty', LayoutProjectEmptyElement);
+  ui.define('layout-sidebar', LayoutSidebarElement);
+  ui.define('layout-sidebar-footer', LayoutSidebarFooterElement);
+  ui.define('layout-project-tabs', LayoutProjectTabsElement);
+  ui.define('layout-dashboard', LayoutDashboardElement);
+  ui.define('layout-account-status', LayoutAccountStatusElement);
+  restoreProjectTabs();
 
   const navigation = services.use(NavigationV1);
   navigation.register({
     path: '/',
     create: () => ui.create('layout-workspace'),
   });
-  for (const path of ['/projects', '/projects/:projectId']) {
-    navigation.register({ path, create: () => ui.create('layout-workspace') });
-  }
+  navigation.register({
+    path: PROJECTS_ROUTE,
+    parent: '/',
+    create: () => ui.create('layout-projects-route'),
+  });
+  navigation.register({
+    path: PROJECT_ROUTE,
+    parent: '/',
+    create: (match) => ui.create('layout-project-empty', match.params),
+  });
+  // The navigation's slot items (decision O2): the sidebar, the Project tabs
+  // and the account in every window; the Dashboard and its footer while the
+  // route is `/` or `/projects`, which puts the frame in the page form.
+  const regions = services.use(RegionsV1);
+  const slots = [
+    regions.add(SHELL_SIDEBAR, { id: 'navigation', tag: 'layout-sidebar' }),
+    regions.add(SHELL_TITLEBAR_TABS, {
+      id: 'project-tabs',
+      tag: 'layout-project-tabs',
+    }),
+    regions.add(SHELL_WINDOW_ACTIONS, {
+      id: 'account',
+      tag: 'layout-account-status',
+    }),
+  ];
+  let dashboard: readonly Disposable[] = [];
+  const followDashboard = () => {
+    const path = navigation.current()?.path;
+    const onDashboard = path === '/' || path === PROJECTS_ROUTE;
+    if (onDashboard === dashboard.length > 0) return;
+    if (!onDashboard) {
+      for (const item of dashboard) item.dispose();
+      dashboard = [];
+      return;
+    }
+    dashboard = [
+      regions.add(SHELL_PAGE, { id: 'dashboard', tag: 'layout-dashboard' }),
+      regions.add(SHELL_SIDEBAR_FOOTER, {
+        id: 'settings',
+        tag: 'layout-sidebar-footer',
+      }),
+    ];
+  };
+  followDashboard();
+  const dashboardRoute = navigation.subscribe(followDashboard);
   // The tab owner (bundle isolation 4a): the route's Thread, else the
   // selected Project, pushed into the tabs store the tab service reads.
   const followOwner = () =>
@@ -87,6 +162,8 @@ export function activate({ services }: ClientContext): Cleanup {
   services.provide(createLayoutStack());
 
   return () => {
+    dashboardRoute.dispose();
+    for (const item of [...dashboard, ...slots]) item.dispose();
     ownerRoute.dispose();
     ownerTree();
     stopThreadTabs();

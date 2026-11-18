@@ -4,6 +4,7 @@ import { type CSSProperties, useEffect, useState } from 'react';
 
 import {
   ProjectSidebar,
+  ProjectSidebarColumn,
   type SidebarActions,
   type SidebarModel,
 } from '../../../src/client/components/organisms/project-sidebar.js';
@@ -80,10 +81,12 @@ function Sidebar({
     <LayoutHost fixture={fixture}>
       <SidebarScope>
         <div ref={setFrame} className="flex h-[640px] w-60 border" style={fill}>
-          <ProjectSidebar
-            actions={actions}
-            model={{ ...model, draft, editing, selectedThreadId }}
-          />
+          <ProjectSidebarColumn>
+            <ProjectSidebar
+              actions={actions}
+              model={{ ...model, draft, editing, selectedThreadId }}
+            />
+          </ProjectSidebarColumn>
         </div>
       </SidebarScope>
     </LayoutHost>

@@ -132,7 +132,32 @@ const isCurrentSequence = (
   sequence: number,
 ): boolean => sequences.get(key) === sequence;
 
-export const useWorkspace = (): Workspace => {
+/**
+ * The work counters every caller of `useWorkspace` shares. The navigation's
+ * slot elements are separate roots, each with its own hook, and an action one
+ * of them starts must still outdate the work another started.
+ */
+const windowWork = {
+  /** Interaction intent, so work started before the last one cannot land after it. */
+  intent: { current: 0 },
+  loadSequences: new Map<string, number>(),
+  mutationSequences: new Map<string, number>(),
+};
+
+export type WorkspaceOptions = {
+  /**
+   * True in the one element per window that runs the workspace's
+   * once-per-window effects (`layout-sidebar`, which both forms draw): the
+   * Projects load, the route's selection restore and persistence, and the
+   * follow of the selected Project. Absent or false, the hook reads the
+   * stores and offers the actions only.
+   */
+  readonly effects?: boolean;
+};
+
+export const useWorkspace = ({
+  effects = false,
+}: WorkspaceOptions = {}): Workspace => {
   const queryClient = useQueryClient();
   // The store's actions are stable and read the current state through the store;
   // this hook only ever calls them.
@@ -147,14 +172,11 @@ export const useWorkspace = (): Workspace => {
     workspaceStore,
     (state) => state.loadingProjectThreads,
   );
-  /** Interaction intent, so work started before the last one cannot land after it. */
-  const intent = useRef(0);
+  const { intent } = windowWork;
   /** Interaction intent at mount, so a late selection restore cannot win. */
   const restoreIntent = useRef(intent.current);
-  const loadSequences = useRef(new Map<string, number>());
   /** The mount the Projects loads belong to; an unmount ends it. */
   const mounts = useRef(0);
-  const mutationSequences = useRef(new Map<string, number>());
 
   // Memoized so the mount effect that starts the first Threads load can list it
   // as a dependency without the load running again on every render. Its own
@@ -162,11 +184,11 @@ export const useWorkspace = (): Workspace => {
   const loadThreads = useCallback(
     async (projectId: string): Promise<void> => {
       const requestIntent = intent.current;
-      const sequence = nextSequence(loadSequences.current, projectId);
+      const sequence = nextSequence(windowWork.loadSequences, projectId);
       store.beginThreadsLoad(projectId);
       store.request(projectId);
       const read = await awaitRead({ target: 'threads', projectId });
-      if (isCurrentSequence(loadSequences.current, projectId, sequence)) {
+      if (isCurrentSequence(windowWork.loadSequences, projectId, sequence)) {
         if (read.status === 'failed') {
           if (intent.current === requestIntent) {
             store.fail(read.error, { kind: 'threads', projectId });
@@ -188,7 +210,7 @@ export const useWorkspace = (): Workspace => {
 
   /** Discards loads already in flight for a Project whose Threads just changed. */
   const invalidateLoads = (projectId: string): void => {
-    nextSequence(loadSequences.current, projectId);
+    nextSequence(windowWork.loadSequences, projectId);
     store.endThreadsLoad(projectId);
   };
 
@@ -218,13 +240,14 @@ export const useWorkspace = (): Workspace => {
   }, [store.select, store.settle, store.fail, store.setLoadingProjects]);
 
   useEffect(() => {
+    if (!effects) return;
     void loadProjects();
     return () => {
       mounts.current += 1;
     };
     // The workspace loads its Projects once; `loadProjects` is stable, so
     // listing it keeps the load from running again.
-  }, [loadProjects]);
+  }, [effects, loadProjects]);
 
   const selectMissingThreadProject = (projectId: string): Selection => {
     const current = workspaceStore.getState();
@@ -287,6 +310,7 @@ export const useWorkspace = (): Workspace => {
   };
 
   const { changeSelection, markUserSelection } = useRouteSelection({
+    active: effects,
     isCurrent: () => intent.current === restoreIntent.current,
     onRestore: (thread) => {
       intent.current += 1;
@@ -314,6 +338,7 @@ export const useWorkspace = (): Workspace => {
    * the path cannot drift from the selection the surfaces render.
    */
   useEffect(() => {
+    if (!effects) return;
     // Route restoration can select synchronously in an earlier mount effect.
     // Let its next render persist instead of writing this stale snapshot.
     const current = workspaceStore.getState().tree.selection;
@@ -323,16 +348,21 @@ export const useWorkspace = (): Workspace => {
     )
       return;
     changeSelection(current);
-  }, [changeSelection, tree.selection.projectId, tree.selection.threadId]);
+  }, [
+    effects,
+    changeSelection,
+    tree.selection.projectId,
+    tree.selection.threadId,
+  ]);
 
   // The selected Project is kept current by the mirror while it is selected;
   // its notices reach the tree through `sync`.
   const followedProjectId = tree.selection.projectId;
   useEffect(() => {
-    if (followedProjectId === undefined) return;
+    if (!effects || followedProjectId === undefined) return;
     const follow = boundRecords()?.follow({ projectId: followedProjectId });
     return () => follow?.dispose();
-  }, [followedProjectId]);
+  }, [effects, followedProjectId]);
 
   const { mutateAsync: createProjectWrite } = useMutation({
     mutationFn: (name: string): Promise<Project> =>
@@ -419,7 +449,10 @@ export const useWorkspace = (): Workspace => {
 
   const createProject = async (name: string): Promise<void> => {
     const operationIntent = intent.current;
-    const sequence = nextSequence(mutationSequences.current, 'projects:create');
+    const sequence = nextSequence(
+      windowWork.mutationSequences,
+      'projects:create',
+    );
     try {
       const project = await createProjectWrite(name);
       // The mirror describes the created Project with no Threads (R3).
@@ -438,7 +471,7 @@ export const useWorkspace = (): Workspace => {
       }
       if (
         isCurrentSequence(
-          mutationSequences.current,
+          windowWork.mutationSequences,
           'projects:create',
           sequence,
         ) &&
@@ -465,7 +498,7 @@ export const useWorkspace = (): Workspace => {
     const operationDraft = sidebar.draft;
     const operationIntent = intent.current;
     const key = `threads:create:${operationDraft.projectId}`;
-    const sequence = nextSequence(mutationSequences.current, key);
+    const sequence = nextSequence(windowWork.mutationSequences, key);
     invalidateLoads(operationDraft.projectId);
     try {
       const thread = await createThreadWrite({
@@ -475,7 +508,7 @@ export const useWorkspace = (): Workspace => {
       });
       invalidateLoads(thread.projectId);
       if (
-        isCurrentSequence(mutationSequences.current, key, sequence) &&
+        isCurrentSequence(windowWork.mutationSequences, key, sequence) &&
         intent.current === operationIntent
       ) {
         await openThread(thread, true);
@@ -488,17 +521,17 @@ export const useWorkspace = (): Workspace => {
 
   const rename = async (entity: Entity, name: string): Promise<void> => {
     const key = `${entity.kind}:rename:${entity.value.id}`;
-    const sequence = nextSequence(mutationSequences.current, key);
+    const sequence = nextSequence(windowWork.mutationSequences, key);
     const operationIntent = intent.current;
     try {
       if (entity.kind === 'project') {
         await renameProjectWrite({ id: entity.value.id, name });
-        if (!isCurrentSequence(mutationSequences.current, key, sequence))
+        if (!isCurrentSequence(windowWork.mutationSequences, key, sequence))
           return;
       } else {
         invalidateLoads(entity.value.projectId);
         const thread = await renameThreadWrite({ id: entity.value.id, name });
-        if (!isCurrentSequence(mutationSequences.current, key, sequence))
+        if (!isCurrentSequence(windowWork.mutationSequences, key, sequence))
           return;
         invalidateLoads(thread.projectId);
       }
@@ -527,18 +560,18 @@ export const useWorkspace = (): Workspace => {
     if (entity === undefined) return;
     const operationIntent = intent.current;
     const key = `${entity.kind}:delete:${entity.value.id}`;
-    const sequence = nextSequence(mutationSequences.current, key);
+    const sequence = nextSequence(windowWork.mutationSequences, key);
     store.beginDelete();
     try {
       if (entity.kind === 'project') {
         invalidateLoads(entity.value.id);
         await deleteProjectWrite(entity.value.id);
-        if (!isCurrentSequence(mutationSequences.current, key, sequence))
+        if (!isCurrentSequence(windowWork.mutationSequences, key, sequence))
           return;
       } else {
         invalidateLoads(entity.value.projectId);
         await deleteThreadWrite(entity.value.id);
-        if (!isCurrentSequence(mutationSequences.current, key, sequence))
+        if (!isCurrentSequence(windowWork.mutationSequences, key, sequence))
           return;
         void loadThreads(entity.value.projectId);
       }

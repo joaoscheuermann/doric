@@ -1,11 +1,16 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { errorFrom } from 'desktop/reads';
-import { type ReactNode, useState } from 'react';
+import { Sidebar, SidebarScope } from 'desktop/ui/sidebar';
+import { useEffect, useState } from 'react';
 
 import { AccountStatus } from '../../../src/client/components/organisms/account-status.js';
-import { Dashboard } from '../../../src/client/components/organisms/dashboard.js';
+import {
+  beginCreation,
+  DashboardContent,
+  DashboardNavigation,
+} from '../../../src/client/components/organisms/dashboard.js';
+import { DashboardSidebarFooter } from '../../../src/client/components/organisms/dashboard-sidebar.js';
 import { ProjectTabBar } from '../../../src/client/components/organisms/project-tabs.js';
-import { SidebarHeader } from '../../../src/client/components/organisms/sidebar-header.js';
 import type { Project } from '../../../src/client/domain/workspace.js';
 import type { Workspace } from '../../../src/client/hooks/use-workspace.js';
 import { createQueryClient } from '../../../src/client/queries/client.js';
@@ -46,15 +51,25 @@ const many: LayoutFixture = { projects: manyProjects, threads: [] };
 const none: LayoutFixture = { projects: [], threads: [] };
 const failing: LayoutFixture = { projects, threads, failing: ['activity'] };
 
-/** The dashboard over the fake host, which answers the activity read. */
+/** Opens the create form once, as ⌘N or the "+" tab does. */
+function OpenCreateForm() {
+  useEffect(beginCreation, []);
+  return null;
+}
+
+/**
+ * The dashboard over the fake host, which answers the activity read, laid out
+ * as the window's page form draws its two parts: the sidebar part in the
+ * sidebar column, the content part under the tab bar.
+ */
 function Board({
   all = true,
-  createRequest,
+  creating = false,
   fixture = loaded,
   workspace = workspaceOf(),
 }: {
   readonly all?: boolean;
-  readonly createRequest?: number;
+  readonly creating?: boolean;
   readonly fixture?: LayoutFixture;
   readonly workspace?: Workspace;
 }) {
@@ -62,48 +77,58 @@ function Board({
   return (
     <LayoutHost fixture={fixture}>
       <QueryClientProvider client={client}>
-        <Frame>
-          <Dashboard
-            workspace={workspace}
-            all={all}
-            navigate={navigate}
-            createRequest={createRequest}
-            onOpenSettings={() => undefined}
-            sidebarHeader={
-              <SidebarHeader active onDashboard={() => navigate('/projects')} />
-            }
-            header={
-              <ProjectTabBar
-                actions={<AccountStatus onOpenSettings={() => undefined} />}
-                state={projectTabsOf([checkout, docs, billing])}
-                path={all ? '/projects' : '/'}
-                projects={[checkout, docs, billing]}
-                navigate={navigate}
-                close={(id) => console.info('Story close tab', id)}
-                closeMany={(ids) => console.info('Story close tabs', ids)}
-                move={(from, to) => console.info('Story move tab', from, to)}
-                onNewProject={workspaceActions.beginProject}
-                onNewThread={(project) =>
-                  workspaceActions.beginThread(project.id)
-                }
-                setColor={workspaceActions.setProjectColor}
-                rename={async () => undefined}
-              />
-            }
-          />
-        </Frame>
+        {creating && <OpenCreateForm />}
+        <div className="flex min-h-0 flex-1 bg-sidebar">
+          <aside className="flex shrink-0" aria-label="Dashboard navigation">
+            <SidebarScope>
+              <Sidebar
+                collapsible="none"
+                className="h-full w-[280px] shrink-0 font-normal"
+              >
+                <DashboardNavigation
+                  workspace={workspace}
+                  all={all}
+                  navigate={navigate}
+                />
+                <DashboardSidebarFooter onOpenSettings={() => undefined} />
+              </Sidebar>
+            </SidebarScope>
+          </aside>
+          <div
+            data-slot="dashboard-content"
+            className="flex min-w-0 flex-1 flex-col bg-sidebar"
+          >
+            <ProjectTabBar
+              actions={<AccountStatus onOpenSettings={() => undefined} />}
+              state={projectTabsOf([checkout, docs, billing])}
+              path={all ? '/projects' : '/'}
+              projects={[checkout, docs, billing]}
+              navigate={navigate}
+              close={(id) => console.info('Story close tab', id)}
+              closeMany={(ids) => console.info('Story close tabs', ids)}
+              move={(from, to) => console.info('Story move tab', from, to)}
+              onNewProject={workspaceActions.beginProject}
+              onNewThread={(project) =>
+                workspaceActions.beginThread(project.id)
+              }
+              setColor={workspaceActions.setProjectColor}
+              rename={async () => undefined}
+            />
+            <DashboardContent
+              workspace={workspace}
+              all={all}
+              navigate={navigate}
+            />
+          </div>
+        </div>
       </QueryClientProvider>
     </LayoutHost>
   );
 }
 
-function Frame({ children }: { readonly children: ReactNode }) {
-  return <div className="flex min-h-0 flex-1 flex-col">{children}</div>;
-}
-
 export default {
   title: 'Layout/Organisms/Dashboard',
-  component: Dashboard,
+  component: DashboardContent,
   decorators: [windowDecorator],
 };
 
@@ -122,7 +147,7 @@ export const Recent = {
 
 /** The new-project form open, as ⌘N or the "+" tab opens it. */
 export const Creating = {
-  render: () => <Board all={false} createRequest={1} />,
+  render: () => <Board all={false} creating />,
 };
 
 /** More Projects than the recent list shows. */

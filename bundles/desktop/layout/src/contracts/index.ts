@@ -13,6 +13,21 @@ import { isValidElement, type ReactElement } from 'react';
 import type { Project, Thread } from 'runtime/contracts';
 import { z } from 'zod';
 
+// The shell's slots (4.1.0). Their items are elements `{ id, tag, order? }`
+// with no props type. The frame is in the page form while `shell.page`
+// holds an item, and in the conversation form otherwise.
+
+/** The sidebar column's content, in both forms. */
+export const SHELL_SIDEBAR = 'shell.sidebar';
+/** The sidebar column's foot, under the quarantine notice. */
+export const SHELL_SIDEBAR_FOOTER = 'shell.sidebar.footer';
+/** The title bar's tabs, in both forms. */
+export const SHELL_TITLEBAR_TABS = 'shell.titlebar.tabs';
+/** The page form's body; an item here switches the frame to the page form. */
+export const SHELL_PAGE = 'shell.page';
+/** The window's actions: the title bar's end (page form) or the side panel's header (conversation form). */
+export const SHELL_WINDOW_ACTIONS = 'shell.window.actions';
+
 /** One entry of a viewer tab's context menu (1.2.0). */
 export interface TabMenuItem {
   readonly id: string;

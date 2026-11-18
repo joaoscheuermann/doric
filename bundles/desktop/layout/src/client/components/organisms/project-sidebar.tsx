@@ -106,9 +106,9 @@ export type SidebarActions = {
 type ProjectSidebarProps = {
   readonly actions: SidebarActions;
   /**
-   * The column's 40 px header (`SidebarHeader`), drawn as the first child of
-   * the `<Sidebar collapsible="none">`, above the search field, the Thread
-   * region and the panes. Absent: the search field starts at the top.
+   * The column's 40 px header (`SidebarHeader`), drawn first, above the
+   * search field and the Thread region. Absent: the search field starts at
+   * the top.
    */
   readonly header?: ReactNode;
   readonly model: SidebarModel;
@@ -253,7 +253,6 @@ export function ProjectSidebar({
   const [collapsedThreads, setCollapsedThreads] = useState<ReadonlySet<string>>(
     new Set(),
   );
-  const panes = useStackPanes();
   const projectId = model.selectedProjectId;
   const threads = projectId ? (model.threadsByProject[projectId] ?? []) : [];
   // The search query (§4.3): never persisted, cleared with the Project.
@@ -442,60 +441,84 @@ export function ProjectSidebar({
     </div>
   );
 
-  const paneAction = (pane: StackPane): ReactNode =>
-    pane.headerTag === undefined ? null : (
-      <ElementHost ui={layoutServices().use(UiV1)} tag={pane.headerTag} />
-    );
+  // The column's content: the frame draws it in `ProjectSidebarColumn`, with
+  // the stack panes and the notice below it.
+  return (
+    <>
+      {header}
+      {/* Figma `269:31402`: the field 268×36 at y 40, then the tree, the New
+          Thread button under it, and the panes pinned to the bottom (px 6,
+          12 px gaps). */}
+      <div className="shrink-0 px-1.5 pb-3">
+        <ThreadSearch
+          input={searchInput}
+          value={query}
+          onChange={setQuery}
+          onKeyDown={onSearchKeyDown}
+        />
+      </div>
+      <div className="shrink-0 px-1.5 pb-3">
+        <SidebarTabs value={tab} onChange={setTab} />
+      </div>
+      {/* The Thread region gives up its free height first; it keeps 40 px,
+          so the button never leaves the column. */}
+      <div
+        data-slot="thread-region"
+        className="flex min-h-10 flex-1 flex-col gap-3 px-1.5"
+      >
+        {threadTree}
+        {/* The rows' ghost tokens instead of the secondary colours: the row
+            hover fill at rest, the row pressed fill under the pointer. Chat
+            only (§10.2). */}
+        {tab === 'chat' && (
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label="New Thread"
+            className="w-full shrink-0 bg-[var(--paper-ghost-hover)] hover:bg-[var(--paper-ghost-pressed)]"
+            disabled={projectId === undefined}
+            onClick={() => beginThread()}
+          >
+            <PlusIcon />
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
 
+const paneAction = (pane: StackPane): ReactNode =>
+  pane.headerTag === undefined ? null : (
+    <ElementHost ui={layoutServices().use(UiV1)} tag={pane.headerTag} />
+  );
+
+/**
+ * The conversation form's sidebar column: `children` (the `shell.sidebar`
+ * items, which draw `ProjectSidebar`), then one group per registered stack
+ * pane (`layout.stack/v2`), the quarantine notice, and `footer` (the
+ * `shell.sidebar.footer` items) last.
+ */
+export function ProjectSidebarColumn({
+  children,
+  footer,
+}: {
+  readonly children: ReactNode;
+  readonly footer?: ReactNode;
+}) {
+  const panes = useStackPanes();
   return (
     <Sidebar collapsible="none" className="overflow-hidden font-normal">
-      {header}
       {/* Not clipped: the search field's focus ring (3 px) reaches above the
           content's top edge, into the header's last 3 px. The Thread tree and
           the panes below bound their own overflow; 14 px below the last
           pane. */}
       <SidebarContent className="overflow-visible p-0 pb-3.5">
-        {/* Figma `269:31402`: the field 268×36 at y 40, then the tree, the New
-            Thread button under it, and the panes pinned to the bottom (px 6,
-            12 px gaps). */}
-        <div className="shrink-0 px-1.5 pb-3">
-          <ThreadSearch
-            input={searchInput}
-            value={query}
-            onChange={setQuery}
-            onKeyDown={onSearchKeyDown}
-          />
-        </div>
-        <div className="shrink-0 px-1.5 pb-3">
-          <SidebarTabs value={tab} onChange={setTab} />
-        </div>
-        {/* The Thread region gives up its free height first; it keeps 40 px,
-            so the button never leaves the column. */}
-        <div
-          data-slot="thread-region"
-          className="flex min-h-10 flex-1 flex-col gap-3 px-1.5"
-        >
-          {threadTree}
-          {/* The rows' ghost tokens instead of the secondary colours: the row
-              hover fill at rest, the row pressed fill under the pointer. Chat
-              only (§10.2). */}
-          {tab === 'chat' && (
-            <Button
-              variant="secondary"
-              size="sm"
-              aria-label="New Thread"
-              className="w-full shrink-0 bg-[var(--paper-ghost-hover)] hover:bg-[var(--paper-ghost-pressed)]"
-              disabled={projectId === undefined}
-              onClick={() => beginThread()}
-            >
-              <PlusIcon />
-            </Button>
-          )}
-        </div>
+        {children}
         {panes.map((pane) => (
           <StackPaneGroup key={pane.id} action={paneAction(pane)} pane={pane} />
         ))}
         <BundleHealthNotice className="mx-1.5 shrink-0" />
+        {footer}
       </SidebarContent>
     </Sidebar>
   );

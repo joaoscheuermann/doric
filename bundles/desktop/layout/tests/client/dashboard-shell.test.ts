@@ -423,3 +423,77 @@ test('a fresh start on / without New project still shows All projects with the D
     "All projects' sidebar has no Search projects field.",
   );
 });
+
+// Bundle isolation step 4(a), change 7, decision O1 (OD38): the Dashboard is
+// split into `layout-sidebar` (its sidebar) and `layout-dashboard` (its
+// content column), two slot elements with roots of their own. The fields the
+// two parts share (the search, the create form) live in `stores/dashboard.ts`,
+// so what the reader does in one element shows in the other.
+
+const docs: Project = {
+  id: '0b7d9c1e-2f3a-4b5c-9d8e-7f6a5b4c3d2e',
+  name: 'Docs site',
+  state: 'ready',
+  configRevision: 1,
+  createdAt: '2026-11-02T10:00:00.000Z',
+  updatedAt: '2026-11-08T10:00:00.000Z',
+};
+
+/** Types `text` into `input` as the reader does: React sees the new value. */
+const type = async (input: HTMLInputElement, text: string): Promise<void> => {
+  input.focus();
+  Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value',
+  )?.set?.call(input, text);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await settle();
+};
+
+test("O1: on /projects the sidebar's New project, in layout-sidebar, opens the create form in layout-dashboard", async () => {
+  rendered = await renderWorkspace({ projects: [project], path: '/projects' });
+  const sidebar = single(rendered.root, 'layout-sidebar');
+  const content = single(rendered.root, 'layout-dashboard');
+  assert.equal(
+    content.querySelectorAll('input[aria-label="Project name"]').length,
+    0,
+    'The create form shows before New project is pressed.',
+  );
+
+  only(sidebar, 'button', 'New project').click();
+  await settle();
+
+  single(content, 'input[aria-label="Project name"]');
+  assert.equal(
+    sidebar.querySelectorAll('input[aria-label="Project name"]').length,
+    0,
+    'The create form opened in the sidebar, not the content column.',
+  );
+});
+
+test("O1: on /projects typing in the sidebar's Search projects, in layout-sidebar, filters the list in layout-dashboard", async () => {
+  rendered = await renderWorkspace({
+    projects: [project, docs],
+    path: '/projects',
+  });
+  const sidebar = single(rendered.root, 'layout-sidebar');
+  const content = single(rendered.root, 'layout-dashboard');
+  assert.ok(
+    normalized(content.textContent).includes(project.name),
+    'The list does not show Checkout redesign before the search.',
+  );
+
+  await type(
+    single(sidebar, SEARCH) as HTMLInputElement,
+    docs.name.slice(0, 4),
+  );
+
+  const listed = normalized(
+    single(rendered.root, 'layout-dashboard').textContent,
+  );
+  assert.ok(listed.includes(docs.name), `The list lost Docs site: ${listed}`);
+  assert.ok(
+    !listed.includes(project.name),
+    `The list still shows Checkout redesign: ${listed}`,
+  );
+});
