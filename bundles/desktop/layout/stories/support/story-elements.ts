@@ -1,22 +1,12 @@
 // Stand-ins for the shell's own elements the layout writes into its tree:
 // `<core-region name>` (the items bundles add to a region) and `<core-outlet>`
-// (the child route: the Thread's conversation, or the Project's empty state).
+// (the child route, drawn as the conversation's placeholder: the routes and
+// their elements are other bundles' since bundle isolation 4(c)).
 // They are defined only where the shell has not defined them, and read the
 // story's fake host while connected.
 
-import {
-  type Disposable,
-  NavigationV1,
-  RegionsV1,
-  type Ui,
-  UiV1,
-} from 'bundle/contracts';
+import { type Disposable, RegionsV1, type Ui, UiV1 } from 'bundle/contracts';
 
-import {
-  describedThread,
-  PROJECT_ROUTE,
-} from '../../src/client/domain/route-selection.js';
-import { workspaceStore } from '../../src/client/stores/workspace.js';
 import type { FakeHost } from './fake-host.js';
 import { placeholderElement } from './placeholder.js';
 
@@ -39,9 +29,7 @@ const defineOnce = (
  * - `<core-region name>` creates each item through the host's `ui/v1`, as the
  *   shell's region does: an element the layout defined is the real one, any
  *   other tag a labelled placeholder. It follows the region's changes.
- * - `<core-outlet>` draws the selected Thread's conversation as a
- *   placeholder, and on `/projects/:projectId` the route's element,
- *   `layout-project-empty`, through the host's `ui/v1`.
+ * - `<core-outlet>` draws the conversation as a labelled placeholder.
  */
 export const defineStoryElements = (host: FakeHost): void => {
   current = host;
@@ -108,56 +96,11 @@ export const defineStoryElements = (host: FakeHost): void => {
     'core-outlet',
     () =>
       class StoryOutlet extends HTMLElement {
-        #stops: (() => void)[] = [];
-
         connectedCallback(): void {
           this.style.display = 'contents';
-          const services = current?.services;
-          if (services === undefined) return;
-          const navigation = services.use(NavigationV1);
-          let empty:
-            | { readonly projectId: string; readonly node: Node }
-            | undefined;
-          const draw = () => {
-            const match = navigation.current();
-            const projectId = match?.params.projectId;
-            if (match?.pattern === PROJECT_ROUTE && projectId !== undefined) {
-              if (empty?.projectId !== projectId) {
-                empty = {
-                  projectId,
-                  node: services
-                    .use(UiV1)
-                    .create('layout-project-empty', match.params) as Node,
-                };
-              }
-              if (this.firstChild !== empty.node)
-                this.replaceChildren(empty.node);
-              return;
-            }
-            const { tree } = workspaceStore.getState();
-            const threadId = tree.selection.threadId;
-            const thread =
-              threadId === undefined
-                ? undefined
-                : describedThread(tree, threadId);
-            this.replaceChildren(
-              placeholderElement(
-                'chat-thread',
-                thread === undefined ? undefined : { threadId: thread.id },
-                thread === undefined
-                  ? 'Conversation'
-                  : `Conversation: ${thread.name || 'Untitled'}`,
-              ),
-            );
-          };
-          draw();
-          const route = navigation.subscribe(draw);
-          this.#stops = [workspaceStore.subscribe(draw), () => route.dispose()];
-        }
-
-        disconnectedCallback(): void {
-          for (const stop of this.#stops) stop();
-          this.#stops = [];
+          this.replaceChildren(
+            placeholderElement('chat-thread', undefined, 'Conversation'),
+          );
         }
       },
   );

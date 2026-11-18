@@ -1,46 +1,41 @@
 import { WorkspaceView } from '../../src/client/views/workspace-view.js';
-import {
-  billing,
-  checkout,
-  checkoutTabs,
-  docs,
-  empty,
-  formThread,
-  planThread,
-  projectRoute,
-  projects,
-  threadRoute,
-  threads,
-  validationThread,
-} from '../support/data.js';
 import { type LayoutFixture, LayoutHost } from '../support/layout-host.js';
+import {
+  checkoutTabs,
+  childThreadId,
+  dashboardStandIns,
+  navigationStandIns,
+  owner,
+  projectId,
+  projectRoute,
+  threadRoute,
+} from '../support/tabs.js';
 import { windowDecorator } from '../support/window-frame.js';
 
 const workspace: LayoutFixture = {
-  projects: [...projects, empty],
-  threads,
-  path: threadRoute(planThread),
-  projectTabs: [checkout, docs, billing],
+  path: threadRoute,
+  owner,
+  regions: navigationStandIns,
   tabs: checkoutTabs,
-  terminalRows: { [formThread.id]: 1 },
   // The files bundle selects its view through `layout.panel/v3` as it activates.
   panel: { active: 'files' },
 };
+
+const agentThreadId = '5b3c7d9e-1f2a-4b3c-8d4e-5f6a7b8c9d0e';
 
 const fixtures = {
   thread: workspace,
   childThread: {
     ...workspace,
-    path: threadRoute(validationThread),
     tabs: {
-      [planThread.id]: [
+      [owner]: [
         {
-          id: `thread:${validationThread.id}`,
-          title: validationThread.name,
+          id: `thread:${childThreadId}`,
+          title: 'Build the payment form',
           tag: 'chat-thread-panel',
           iconTag: 'chat-thread-tab-icon',
           openBottom: true,
-          props: { projectId: checkout.id, threadId: validationThread.id },
+          props: { projectId, threadId: childThreadId },
         },
       ],
     },
@@ -48,27 +43,23 @@ const fixtures = {
   /** A sub-thread and an agent Thread open side by side, the agent's selected. */
   threadKinds: {
     ...workspace,
-    path: threadRoute(validationThread),
-    // An open terminal and a running one under the sub-thread, and the same
-    // under the agent Thread: the rows the sidebar always drew.
-    terminalRows: { [formThread.id]: 2, [validationThread.id]: 2 },
     tabs: {
-      [planThread.id]: [
+      [owner]: [
         {
-          id: `thread:${formThread.id}`,
-          title: formThread.name,
+          id: `thread:${childThreadId}`,
+          title: 'Build the payment form',
           tag: 'chat-thread-panel',
           iconTag: 'chat-thread-tab-icon',
           openBottom: true,
-          props: { projectId: checkout.id, threadId: formThread.id },
+          props: { projectId, threadId: childThreadId },
         },
         {
-          id: `thread:${validationThread.id}`,
-          title: validationThread.name,
+          id: `thread:${agentThreadId}`,
+          title: 'Validate inputs',
           tag: 'chat-thread-panel',
           iconTag: 'chat-thread-tab-icon',
           openBottom: true,
-          props: { projectId: checkout.id, threadId: validationThread.id },
+          props: { projectId, threadId: agentThreadId },
         },
       ],
     },
@@ -76,15 +67,13 @@ const fixtures = {
   terminals: { ...workspace, bottom: true },
   changes: { ...workspace, panel: { active: 'changes' } },
   disconnected: { ...workspace, connection: 'disconnected' },
-  project: { ...workspace, path: projectRoute(empty), tabs: {} },
-  dashboard: { ...workspace, path: '/projects' },
-  firstRun: { projects: [], threads: [], path: '/projects' },
-  loading: { ...workspace, path: '/projects', pending: ['projects'] },
-  unavailable: {
+  project: {
     ...workspace,
-    path: '/projects',
-    failing: ['projects', 'activity'],
+    path: projectRoute,
+    owner: `project:${projectId}`,
+    tabs: {},
   },
+  dashboard: { path: '/projects', regions: dashboardStandIns },
 } satisfies Record<string, LayoutFixture>;
 
 export default {
@@ -163,33 +152,6 @@ export const ProjectWithoutThreads = {
 export const Dashboard = {
   render: () => (
     <LayoutHost fixture={fixtures.dashboard}>
-      <WorkspaceView />
-    </LayoutHost>
-  ),
-};
-
-/** The first launch: no Project yet. */
-export const FirstRun = {
-  render: () => (
-    <LayoutHost fixture={fixtures.firstRun}>
-      <WorkspaceView />
-    </LayoutHost>
-  ),
-};
-
-/** The Projects are still arriving from the host. */
-export const LoadingProjects = {
-  render: () => (
-    <LayoutHost fixture={fixtures.loading}>
-      <WorkspaceView />
-    </LayoutHost>
-  ),
-};
-
-/** The host does not answer: the dashboard's error and retry. */
-export const HostUnavailable = {
-  render: () => (
-    <LayoutHost fixture={fixtures.unavailable}>
       <WorkspaceView />
     </LayoutHost>
   ),

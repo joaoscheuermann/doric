@@ -20,6 +20,7 @@
 @source '../../../../desktop/chat/src/client';
 @source '../../../../desktop/settings/src/client';
 @source '../../../../desktop/account/src/client';
+@source '../../../../desktop/workspace/src/client';
 
 /*
  * Monaco's scrollbar slider is a plain `<div class="slider">` that no option can

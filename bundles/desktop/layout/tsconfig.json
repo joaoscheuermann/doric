@@ -15,9 +15,6 @@
   "exclude": ["src/client/**"],
   "references": [
     {
-      "path": "../../runtime/runtime"
-    },
-    {
       "path": "../../../packages/bundle"
     },
     {

@@ -13,7 +13,14 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import type { Activate } from 'bundle/contracts';
+import {
+  type Activate,
+  defineMethod,
+  defineService,
+  disposableSchema,
+  functionSchema,
+  noInput,
+} from 'bundle/contracts';
 import {
   type CatalogCandidate,
   type Descriptor,
@@ -32,6 +39,7 @@ import {
 } from 'desktop/client';
 import { Window } from 'happy-dom';
 import { createRecordsFake, type RecordsFakeOptions } from 'runtime/testing';
+import { z } from 'zod';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CHAT_DIST = resolve(here, '../../../../dist');
@@ -240,6 +248,12 @@ const commentsRemote: RemoteContract = {
 /** The probe bundle: a client part defined by the test. */
 export interface Probe {
   readonly provides?: readonly string[];
+  /**
+   * Hooks contracts the probe defines through `hooks/v1` (listed under
+   * `provides`, described as `kind: 'hooks'`), as `workspace` defines
+   * `workspace.hooks/v1` (bundle isolation 4(c)).
+   */
+  readonly hooks?: readonly string[];
   readonly requires?: readonly string[];
   readonly activate: Activate;
 }
@@ -252,28 +266,44 @@ const probeCandidate = (probe: Probe): CatalogCandidate => ({
     id: 'probe',
     version: '1.0.0',
     engines: { doric: '^1.0.0' },
-    provides: [...(probe.provides ?? [])].map((id) => `${id}@1.0.0`),
+    provides: [...(probe.provides ?? []), ...(probe.hooks ?? [])].map(
+      (id) => `${id}@1.0.0`,
+    ),
     requires: [...(probe.requires ?? [])],
   },
   descriptor: {
     descriptorVersion: 1,
     bundle: { id: 'probe', version: '1.0.0' },
-    contracts: (probe.provides ?? []).map((id) => ({
-      id,
-      version: '1.0.0',
-      kind: 'service' as const,
-      environment: 'client' as const,
-      cardinality: 'one' as const,
-      local: true,
-      schema: `schemas/${id}.json`,
-    })),
+    contracts: [
+      ...(probe.provides ?? []).map((id) => ({
+        id,
+        version: '1.0.0',
+        kind: 'service' as const,
+        environment: 'client' as const,
+        cardinality: 'one' as const,
+        local: true,
+        schema: `schemas/${id}.json`,
+      })),
+      ...(probe.hooks ?? []).map((id) => ({
+        id,
+        version: '1.0.0',
+        kind: 'hooks' as const,
+        environment: 'client' as const,
+        cardinality: 'one' as const,
+        local: true,
+        schema: `schemas/${id}.json`,
+      })),
+    ],
   },
   errors: [],
 });
 
 /**
  * The records bundle: a client part that provides `runtime.records/v1` from
- * `createRecordsFake`, which the chat requires (bundle isolation 4a, O7).
+ * `createRecordsFake`, which the chat requires (bundle isolation 4a, O7), and,
+ * standing in for the shell, `layout.tabs/v2` as a recording fake, which the
+ * chat requires from bundle isolation 4(c) to open its Thread tabs; without
+ * it every chat window would quarantine the chat.
  */
 const recordsCandidate: CatalogCandidate = {
   id: 'records',
@@ -283,13 +313,22 @@ const recordsCandidate: CatalogCandidate = {
     id: 'records',
     version: '1.0.0',
     engines: { doric: '^1.0.0' },
-    provides: ['runtime.records/v1@1.0.0'],
+    provides: ['runtime.records/v1@1.0.0', 'layout.tabs/v2@2.0.0'],
     requires: [],
   },
   descriptor: {
     descriptorVersion: 1,
     bundle: { id: 'records', version: '1.0.0' },
     contracts: [
+      {
+        id: 'layout.tabs/v2',
+        version: '2.0.0',
+        kind: 'service' as const,
+        environment: 'client' as const,
+        cardinality: 'one' as const,
+        local: true,
+        schema: 'schemas/layout.tabs/v2.json',
+      },
       {
         id: 'runtime.records/v1',
         version: '1.0.0',
@@ -330,6 +369,51 @@ const globalNames = (window: Window): string[] => [
   ),
 ];
 
+/** One call of the `layout.tabs/v2` fake. */
+export interface TabsCall {
+  readonly method: string;
+  readonly input: unknown;
+}
+
+/**
+ * `layout.tabs/v2` as a recording fake: every call is recorded with its input
+ * and answers at once; `current()` answers nothing and `subscribe` hears
+ * nothing, as a window whose shell shows no tab.
+ */
+const tabsFake = (received: TabsCall[]) =>
+  // By id: the chat's tests do not import the layout.
+  defineService('layout.tabs/v2', {
+    ...Object.fromEntries(
+      (['open', 'close', 'focus', 'retitle'] as const).map((method) => [
+        method,
+        defineMethod({
+          input: z.unknown(),
+          output: z.void(),
+          execute: async (input: unknown) => {
+            received.push({ method, input });
+          },
+        }),
+      ]),
+    ),
+    current: defineMethod({
+      input: noInput,
+      output: z.unknown(),
+      execute: () => undefined,
+    }),
+    subscribe: defineMethod({
+      input: functionSchema<() => void>(),
+      output: disposableSchema,
+      execute: () => ({ dispose: () => undefined }),
+    }),
+    setOwner: defineMethod({
+      input: z.unknown(),
+      output: z.void(),
+      execute: (input: unknown) => {
+        received.push({ method: 'setOwner', input });
+      },
+    }),
+  });
+
 let imports = 0;
 
 export interface ChatWindow {
@@ -343,6 +427,8 @@ export interface ChatWindow {
   watches(): readonly OpenStream[];
   /** Every open `chat.composer/v1.watch` stream. */
   composerWatches(): readonly OpenStream[];
+  /** The calls the `layout.tabs/v2` fake received, in order, with their input. */
+  tabCalls(): readonly TabsCall[];
   /** Reports a host connection status on main's stream. */
   connection(status: 'connected' | 'disconnected'): void;
   close(): Promise<void>;
@@ -479,6 +565,7 @@ export const openChatWindow = async (input: {
     storageGeneration: 1,
   };
   const calls: BridgeCallEnvelope[] = [];
+  const tabCalls: TabsCall[] = [];
   const streams: OpenStream[] = [];
   const connectionListeners = new Set<(event: BridgeStreamEvent) => void>();
 
@@ -672,6 +759,7 @@ export const openChatWindow = async (input: {
     [partUrl('records', '1.0.0')]: {
       activate: ({ services }) => {
         services.provide(createRecordsFake(input.records));
+        services.provide(tabsFake(tabCalls));
       },
     },
     ...(input.probe === undefined
@@ -710,6 +798,7 @@ export const openChatWindow = async (input: {
       streams.filter(
         (stream) => stream.envelope.contract === 'runtime.threads/v1',
       ),
+    tabCalls: () => [...tabCalls],
     composerWatches: () =>
       streams.filter(
         (stream) => stream.envelope.contract === 'chat.composer/v1',

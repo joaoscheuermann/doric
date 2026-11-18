@@ -112,7 +112,7 @@ function DashboardProviders({ services }: { readonly services: Services }) {
 }
 
 /**
- * `<settings-dashboard-providers>`, a `layout.dashboard.nav` item: the
+ * `<settings-dashboard-providers>`, a `workspace.dashboard.nav` item: the
  * Providers group of the /projects dashboard sidebar, in its own root.
  */
 export const DashboardProvidersElement = defineReactElement({

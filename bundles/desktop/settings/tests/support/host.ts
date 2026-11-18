@@ -27,7 +27,6 @@ import {
 import { createTestServices } from 'bundle/testing';
 import { ClaudeLoginV1, claudeLoginMethods } from 'claude-login/contracts';
 import { configurationMethods } from 'host-config/contracts';
-import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'layout/contracts';
 import {
   type ConfigReplaceResult,
   type DoricConfiguration,
@@ -35,6 +34,7 @@ import {
   type Thread,
   type ThreadExecutionResult,
 } from 'runtime/contracts';
+import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'workspace/contracts';
 import type { z } from 'zod';
 
 import {

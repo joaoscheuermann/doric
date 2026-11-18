@@ -1,17 +1,14 @@
 import { useEffect, useRef } from 'react';
 
 import { LayoutWorkspaceElement } from '../../src/client/elements/workspace-element.js';
-import {
-  billing,
-  checkout,
-  checkoutTabs,
-  docs,
-  planThread,
-  projects,
-  threadRoute,
-  threads,
-} from '../support/data.js';
 import { bindLayout, type LayoutFixture } from '../support/layout-host.js';
+import {
+  checkoutTabs,
+  dashboardStandIns,
+  navigationStandIns,
+  owner,
+  threadRoute,
+} from '../support/tabs.js';
 import { windowDecorator } from '../support/window-frame.js';
 
 const tag = 'layout-workspace';
@@ -50,16 +47,18 @@ function WorkspaceElement({ fixture }: { readonly fixture: LayoutFixture }) {
 }
 
 const workspace: LayoutFixture = {
-  projects,
-  threads,
-  path: threadRoute(planThread),
-  projectTabs: [checkout, docs, billing],
+  path: threadRoute,
+  owner,
+  regions: navigationStandIns,
   tabs: checkoutTabs,
   // The files bundle selects its view through `layout.panel/v3` as it activates.
   panel: { active: 'files' },
 };
 
-const dashboard: LayoutFixture = { ...workspace, path: '/projects' };
+const dashboard: LayoutFixture = {
+  path: '/projects',
+  regions: dashboardStandIns,
+};
 
 export default {
   title: 'Layout/Elements/Workspace element',

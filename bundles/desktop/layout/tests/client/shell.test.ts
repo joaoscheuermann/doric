@@ -1,4 +1,9 @@
-// The workspace shell, read the way a reader meets it.
+// The workspace shell's frame, read the way a reader meets it. Since bundle
+// isolation 4(c) the navigation (the sidebar's content, the Project tabs, the
+// Dashboard and the routes) is the `workspace` bundle's: these cases render
+// the frame with stand-ins in its slots, and the navigation's cases moved to
+// `bundles/desktop/workspace/tests/client/shell.test.ts`.
+//
 // - T-2.1, S10: after phase 2 removed the global footer, neither the Project
 //   view nor the Dashboard renders it, so nothing draws the
 //   `layout.global-footer` region.
@@ -22,18 +27,10 @@ import { fileURLToPath } from 'node:url';
 import {
   type CatalogBundle,
   type CatalogSnapshot,
-  NavigationV1,
-  type RegionItem,
   RegionsV1,
-  type RouteMatch,
-  type RouteRegistration,
-  type Services,
-  UiV1,
 } from 'bundle/contracts';
-import type { RuntimeRecords } from 'runtime/contracts';
 
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
-import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import { resetPanel } from '../../src/client/stores/panel.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
 import {
@@ -43,12 +40,17 @@ import {
 } from '../../src/contracts/index.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
 import {
-  type RenderedWorkspace,
-  renderWorkspace,
+  dashboardStandIns,
+  navigationStandIns,
+} from '../../stories/support/tabs.js';
+import {
+  type RenderedShell,
+  renderShell,
   settle,
-} from './support/render-workspace.js';
+} from './support/render-shell.js';
 
-const project: Project = {
+/** The Project and Threads the routes name; the shell reads no record of them. */
+const project = {
   id: '6f1c2a3e-4b5d-4e6f-8a7b-1c2d3e4f5a6b',
   name: 'Checkout redesign',
   state: 'ready',
@@ -57,25 +59,7 @@ const project: Project = {
   updatedAt: '2026-11-09T10:00:00.000Z',
 };
 
-const docs: Project = {
-  id: '0b7d9c1e-2f3a-4b5c-9d8e-7f6a5b4c3d2e',
-  name: 'Docs site',
-  state: 'ready',
-  configRevision: 1,
-  createdAt: '2026-11-02T10:00:00.000Z',
-  updatedAt: '2026-11-08T10:00:00.000Z',
-};
-
-const billing: Project = {
-  id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
-  name: 'Billing service',
-  state: 'ready',
-  configRevision: 1,
-  createdAt: '2026-11-03T10:00:00.000Z',
-  updatedAt: '2026-11-07T10:00:00.000Z',
-};
-
-const thread = (id: string, name: string): Thread => ({
+const thread = (id: string, name: string) => ({
   id,
   projectId: project.id,
   name,
@@ -87,9 +71,7 @@ const thread = (id: string, name: string): Thread => ({
 });
 
 const planThread = thread('3d1e5f7a-9b2c-4d6e-8f0a-1b3c5d7e9f2a', 'Plan');
-const formThread = thread('7e9f1a3b-5c7d-4e9f-a1b3-c5d7e9f1a3b5', 'Form');
-
-let rendered: RenderedWorkspace | undefined;
+let rendered: RenderedShell | undefined;
 
 afterEach(() => {
   rendered?.cleanup();
@@ -103,10 +85,6 @@ const normalized = (text: string | null | undefined): string =>
 /** The accessible name of a control: its `aria-label`, else its text. */
 const nameOf = (element: Element): string =>
   normalized(element.getAttribute('aria-label') ?? element.textContent);
-
-/** The window's path, as the host's navigation holds it. */
-const pathOf = (workspace: RenderedWorkspace): string | undefined =>
-  workspace.services.use(NavigationV1).current()?.path;
 
 /** The controls under `root` with `selector` whose accessible name is `name`. */
 const named = (
@@ -137,24 +115,6 @@ const only = (
   return first;
 };
 
-/** The Project tabs, by name, in the order the strip shows them. */
-const projectTabNames = (
-  workspace: RenderedWorkspace,
-  candidates: readonly Project[],
-): string[] => {
-  const names = new Set(candidates.map((candidate) => candidate.name));
-  return [...workspace.root.querySelectorAll('button')]
-    .map(nameOf)
-    .filter((name) => names.has(name));
-};
-
-/** The Project tab named `name`, the one control that carries that label. */
-const projectTab = (workspace: RenderedWorkspace, name: string): HTMLElement =>
-  only(workspace.root, 'button[aria-label]', name);
-
-const isCurrent = (element: Element): boolean =>
-  element.getAttribute('aria-current') === 'page';
-
 /** The labelled stand-ins for another bundle's element `tag`. */
 const standIns = (root: ParentNode, tag: string): HTMLElement[] => [
   ...root.querySelectorAll<HTMLElement>(`[data-story-placeholder="${tag}"]`),
@@ -171,19 +131,45 @@ const click = async (element: HTMLElement): Promise<void> => {
   await settle();
 };
 
-const key = async (
-  element: HTMLElement,
-  init: KeyboardEventInit,
-): Promise<void> => {
-  element.dispatchEvent(
-    new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }),
-  );
-  await settle();
+/**
+ * `fixture` as the frame meets it since bundle isolation 4(c): the stand-ins
+ * `workspace` adds to the navigation's slots for its path (the page form's on
+ * `/` and `/projects`, the conversation form's elsewhere), and the tab owner
+ * `workspace` would name for that path, a Thread id or `project:<id>`.
+ */
+const shellFixture = (fixture: LayoutFixture): LayoutFixture => {
+  const path = fixture.path ?? '/';
+  const page = path === '/' || path === '/projects';
+  const threadId = /\/threads\/([^/]+)$/.exec(path)?.[1];
+  const projectId = /^\/projects\/([^/]+)/.exec(path)?.[1];
+  const owner =
+    fixture.owner ??
+    threadId ??
+    (projectId === undefined ? undefined : `project:${projectId}`);
+  return {
+    ...fixture,
+    ...(owner === undefined ? {} : { owner }),
+    regions: {
+      ...(page ? dashboardStandIns : navigationStandIns),
+      ...fixture.regions,
+    },
+  };
 };
+
+/** Renders the frame for `fixture` with the navigation's stand-ins. */
+const renderFrame = (fixture: LayoutFixture = {}): Promise<RenderedShell> =>
+  renderShell(shellFixture(fixture));
+
+/** The conversation form: a Thread route of `project`. */
+const conversationForm = (fixture: LayoutFixture = {}): LayoutFixture =>
+  shellFixture({
+    path: `/projects/${project.id}/threads/${planThread.id}`,
+    ...fixture,
+  });
 
 for (const path of [`/projects/${project.id}`, '/projects']) {
   test(`the workspace at ${path} renders no global footer`, async () => {
-    rendered = await renderWorkspace({ projects: [project], path });
+    rendered = await renderFrame({ path });
 
     // A count, not the element: inspecting a happy-dom node on failure
     // walks its whole window.
@@ -196,210 +182,8 @@ for (const path of [`/projects/${project.id}`, '/projects']) {
   });
 }
 
-// T-2.9.1
-test('selecting a Thread in the tree opens its route and shows its conversation', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
-    path: `/projects/${project.id}`,
-  });
-  // Opening the Project opens its main Thread, Plan, so Form is not shown yet.
-  assert.ok(
-    !standIns(rendered.root, 'chat-thread').some((element) =>
-      normalized(element.textContent).includes(
-        `Conversation: ${formThread.name}`,
-      ),
-    ),
-    'Form is shown before it is selected.',
-  );
-
-  await click(only(rendered.root, '[role="treeitem"]', formThread.name));
-
-  assert.equal(
-    pathOf(rendered),
-    `/projects/${project.id}/threads/${formThread.id}`,
-  );
-  const conversations = standIns(rendered.root, 'chat-thread');
-  assert.equal(conversations.length, 1, 'No single conversation is shown.');
-  assert.ok(
-    normalized(conversations[0]?.textContent).includes(
-      `Conversation: ${formThread.name}`,
-    ),
-    `The conversation is not Form's: ${normalized(conversations[0]?.textContent)}`,
-  );
-});
-
-// T-2.9.2
-test('opening a Project from the Dashboard adds its tab and selects it', async () => {
-  rendered = await renderWorkspace({
-    projects: [project, docs],
-    path: '/projects',
-  });
-  assert.equal(
-    named(rendered.root, 'button[aria-label]', docs.name).length,
-    0,
-    'Docs site has a tab before it is opened.',
-  );
-
-  const entries = [...rendered.root.querySelectorAll<HTMLElement>('button')]
-    .filter((button) => normalized(button.textContent).includes(docs.name))
-    .filter((button) => !button.hasAttribute('aria-label'));
-  const [entry] = entries;
-  assert.ok(entry !== undefined, 'The Dashboard does not list Docs site.');
-  await click(entry);
-
-  assert.equal(pathOf(rendered), `/projects/${docs.id}`);
-  const tab = projectTab(rendered, docs.name);
-  assert.ok(isCurrent(tab), 'The opened Project tab is not the selected one.');
-});
-
-// T-2.9.2: closing the selected tab selects the tab that took its place, its
-// right-hand neighbour (`use-project-tabs.ts` `closeMany`).
-test('closing the selected Project tab removes it and selects the next tab', async () => {
-  rendered = await renderWorkspace({
-    projects: [project, docs, billing],
-    projectTabs: [project, docs, billing],
-    path: `/projects/${docs.id}`,
-  });
-  assert.ok(isCurrent(projectTab(rendered, docs.name)));
-
-  await click(only(rendered.root, 'button', `Close ${docs.name} tab`));
-
-  assert.deepEqual(projectTabNames(rendered, [project, docs, billing]), [
-    project.name,
-    billing.name,
-  ]);
-  assert.equal(pathOf(rendered), `/projects/${billing.id}`);
-  assert.ok(
-    isCurrent(projectTab(rendered, billing.name)),
-    'The tab after the closed one is not selected.',
-  );
-});
-
-// T-2.9.2: the last tab has no right-hand neighbour, so the one before it is
-// selected.
-test('closing the selected last Project tab selects the tab before it', async () => {
-  rendered = await renderWorkspace({
-    projects: [project, docs, billing],
-    projectTabs: [project, docs, billing],
-    path: `/projects/${billing.id}`,
-  });
-
-  await click(only(rendered.root, 'button', `Close ${billing.name} tab`));
-
-  assert.deepEqual(projectTabNames(rendered, [project, docs, billing]), [
-    project.name,
-    docs.name,
-  ]);
-  assert.equal(pathOf(rendered), `/projects/${docs.id}`);
-  assert.ok(isCurrent(projectTab(rendered, docs.name)));
-});
-
-// T-2.9.3
-test('Alt+Shift+Left and Alt+Shift+Right move the selected Project tab one place', async () => {
-  rendered = await renderWorkspace({
-    projects: [project, docs, billing],
-    projectTabs: [project, docs, billing],
-    path: `/projects/${docs.id}`,
-  });
-  const all = [project, docs, billing];
-
-  await key(projectTab(rendered, docs.name), {
-    key: 'ArrowRight',
-    altKey: true,
-    shiftKey: true,
-  });
-  assert.deepEqual(projectTabNames(rendered, all), [
-    project.name,
-    billing.name,
-    docs.name,
-  ]);
-
-  await key(projectTab(rendered, docs.name), {
-    key: 'ArrowLeft',
-    altKey: true,
-    shiftKey: true,
-  });
-  await key(projectTab(rendered, docs.name), {
-    key: 'ArrowLeft',
-    altKey: true,
-    shiftKey: true,
-  });
-  assert.deepEqual(projectTabNames(rendered, all), [
-    docs.name,
-    project.name,
-    billing.name,
-  ]);
-  assert.ok(
-    isCurrent(projectTab(rendered, docs.name)),
-    'The moved tab is no longer selected.',
-  );
-});
-
-/** Double-clicks the Project tab named `name` and answers the name field. */
-const openRename = async (
-  workspace: RenderedWorkspace,
-  name: string,
-): Promise<HTMLElement> => {
-  projectTab(workspace, name).dispatchEvent(
-    new MouseEvent('dblclick', { bubbles: true, cancelable: true }),
-  );
-  await settle();
-  return only(workspace.root, '[role="textbox"]', 'Project name');
-};
-
-// T-2.9.4
-test('double-clicking a Project tab renames it, and Enter saves the name', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
-    path: `/projects/${project.id}`,
-  });
-
-  const field = await openRename(rendered, project.name);
-  field.textContent = 'Checkout v2';
-  field.dispatchEvent(new Event('input', { bubbles: true }));
-  await key(field, { key: 'Enter' });
-
-  assert.equal(
-    named(rendered.root, '[role="textbox"]', 'Project name').length,
-    0,
-    'The name field is still open after Enter.',
-  );
-  assert.equal(
-    named(rendered.root, 'button[aria-label]', project.name).length,
-    0,
-  );
-  projectTab(rendered, 'Checkout v2');
-});
-
-// T-2.9.4
-test('Escape in a Project tab rename keeps the old name', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
-    path: `/projects/${project.id}`,
-  });
-
-  const field = await openRename(rendered, project.name);
-  field.textContent = 'Checkout v2';
-  field.dispatchEvent(new Event('input', { bubbles: true }));
-  await key(field, { key: 'Escape' });
-
-  assert.equal(
-    named(rendered.root, '[role="textbox"]', 'Project name').length,
-    0,
-    'The name field is still open after Escape.',
-  );
-  projectTab(rendered, project.name);
-  assert.equal(
-    named(rendered.root, 'button[aria-label]', 'Checkout v2').length,
-    0,
-  );
-});
-
 /** The viewer's stand-ins for the files it shows, by what each reads. */
-const shownFiles = (workspace: RenderedWorkspace): string[] =>
+const shownFiles = (workspace: RenderedShell): string[] =>
   standIns(workspace.root, 'files-viewer')
     .filter((element) => element.closest('[hidden]') === null)
     .map((element) => normalized(element.textContent));
@@ -409,8 +193,7 @@ const shownFiles = (workspace: RenderedWorkspace): string[] =>
 // "opening the first file shows the viewer" (render-workspace.ts stands in
 // the `offsetLeft` react-resizable-panels orders panels by).
 test('a file opened through layout.tabs/v2 gets a viewer tab and shows; closing the last tab removes the viewer', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
     tabs: {
       [`project:${project.id}`]: [
@@ -457,46 +240,18 @@ test('a file opened through layout.tabs/v2 gets a viewer tab and shows; closing 
     0,
     'The viewer is still there after its last tab closed.',
   );
-  // 2e (T-2.8): the Project view's witness is the "New Thread" row; the
-  // Threads pane's "New thread" plus it replaces is gone.
-  assert.ok(
-    named(rendered.root, '[role="treeitem"], button', 'New Thread').length > 0,
-    'The Project view is gone with the viewer.',
-  );
-});
-
-// T-2.9.7 (G7)
-test("a Thread's terminal rows mount under that Thread in the tree", async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
-    path: `/projects/${project.id}`,
-    terminalRows: { [planThread.id]: 1 },
-  });
-
-  const rows = [...rendered.root.querySelectorAll('button')].filter(
-    (button) => normalized(button.textContent) === 'npm run dev',
-  );
-  const [row] = rows;
-  assert.ok(
-    rows.length === 1 && row !== undefined,
-    `Expected one terminal row, found ${rows.length}.`,
-  );
-  const owners = [
-    ...rendered.root.querySelectorAll<HTMLElement>('[role="treeitem"]'),
-  ].filter((item) => follows(item, row));
+  // The conversation form stays: its witness is the `shell.sidebar` item,
+  // which the frame keeps drawing (the Project view is `workspace`'s, 4(c)).
   assert.equal(
-    nameOf(owners.at(-1) ?? rendered.root),
-    planThread.name,
-    'The terminal row does not sit under Plan.',
+    standIns(rendered.root, 'workspace-sidebar').length,
+    1,
+    'The conversation form is gone with the viewer.',
   );
 });
 
 // T-2.9.8
-test('the Screens pane renders below the Thread tree with its items', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
+test('the Screens pane renders below the shell.sidebar items with its items', async () => {
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
 
@@ -510,13 +265,11 @@ test('the Screens pane renders below the Thread tree with its items', async () =
     `Expected the Screens pane's items once, found ${screens.length}.`,
   );
   assert.equal(standIns(rendered.root, 'screen-group-action').length, 1);
-  const items = [
-    ...rendered.root.querySelectorAll<HTMLElement>('[role="treeitem"]'),
-  ];
-  assert.equal(items.length, 2, 'The Thread tree does not show both Threads.');
+  const items = standIns(rendered.root, 'workspace-sidebar');
+  assert.equal(items.length, 1, 'The shell.sidebar item is not drawn once.');
   assert.ok(
     items.every((item) => follows(item, pane)),
-    'The Screens pane is not below the Thread tree.',
+    'The Screens pane is not below the shell.sidebar items.',
   );
 });
 
@@ -547,7 +300,6 @@ const single = (root: ParentNode, selector: string): HTMLElement => {
 
 /** A viewer tab on README.md, open under the Project, as T-2.9.5 seeds it. */
 const withViewer: LayoutFixture = {
-  projects: [project],
   path: `/projects/${project.id}`,
   tabs: {
     [`project:${project.id}`]: [
@@ -561,16 +313,12 @@ const withViewer: LayoutFixture = {
   },
 };
 
-const conversationCard = (workspace: RenderedWorkspace): HTMLElement =>
+const conversationCard = (workspace: RenderedShell): HTMLElement =>
   single(workspace.root, 'main[data-slot="sidebar-inset"]');
-
-const tabBar = (workspace: RenderedWorkspace): HTMLElement =>
-  single(workspace.root, 'nav[aria-label="Workspace tabs"]');
 
 // T-2.13
 test('the workspace canvas is the sidebar fill', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
 
@@ -584,8 +332,7 @@ test('the workspace canvas is the sidebar fill', async () => {
 // T-2.13, conversation-footer T-11.1 (D14)
 test('the conversation is drawn as an inset card with no bottom padding', async () => {
   const classes = INSET_CARD;
-  rendered = await renderWorkspace({
-    projects: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
 
@@ -601,13 +348,13 @@ test('the conversation is drawn as an inset card with no bottom padding', async 
   );
 });
 
-const viewerCard = (workspace: RenderedWorkspace): HTMLElement =>
+const viewerCard = (workspace: RenderedShell): HTMLElement =>
   single(workspace.root, 'section[aria-label="Viewer"]');
 
 // T-2.13, conversation-footer T-11.2 (D15)
 test('an open viewer is drawn as an inset card', async () => {
   const classes = INSET_CARD;
-  rendered = await renderWorkspace(withViewer);
+  rendered = await renderFrame(withViewer);
 
   const viewer = viewerCard(rendered);
   assert.deepEqual(
@@ -636,7 +383,7 @@ const threadTab = {
 // conversation-footer T-11.3 (D15), bundle isolation T4.5: `openBottom`
 // decides.
 test('the viewer card draws no bottom padding while a tab with openBottom is selected', async () => {
-  rendered = await renderWorkspace(withViewer);
+  rendered = await renderFrame(withViewer);
 
   await rendered.services.use(LayoutTabsV2).open(threadTab);
   await settle();
@@ -651,7 +398,7 @@ test('the viewer card draws no bottom padding while a tab with openBottom is sel
 
 // bundle isolation T4.5: the tag no longer decides.
 test('the viewer card keeps its bottom padding for a chat-thread-panel tab without openBottom', async () => {
-  rendered = await renderWorkspace(withViewer);
+  rendered = await renderFrame(withViewer);
   await rendered.services.use(LayoutTabsV2).open({
     id: threadTab.id,
     title: threadTab.title,
@@ -671,7 +418,7 @@ test('the viewer card keeps its bottom padding for a chat-thread-panel tab witho
 // conversation-footer T-11.4 (D15), bundle isolation 4a change 6: the Thread
 // icon element does not decide; only `openBottom` does.
 test('the viewer card keeps its bottom padding for another element with the Thread icon', async () => {
-  rendered = await renderWorkspace({
+  rendered = await renderFrame({
     ...withViewer,
     tabs: {
       [`project:${project.id}`]: [
@@ -696,7 +443,7 @@ test('the viewer card keeps its bottom padding for another element with the Thre
 // conversation-footer T-11.5 (D15): the selected tab decides, not any open tab.
 test('the viewer card drops its bottom padding only while the openBottom tab is selected', async () => {
   const owner = `project:${project.id}`;
-  rendered = await renderWorkspace(withViewer);
+  rendered = await renderFrame(withViewer);
   await rendered.services.use(LayoutTabsV2).open(threadTab);
   await settle();
   assert.ok(
@@ -716,7 +463,7 @@ test('the viewer card drops its bottom padding only while the openBottom tab is 
 // bundle isolation T4.5: a v2 tab's trigger draws the element its iconTag
 // names, created through `ui/v1` with the tab's props.
 test('a layout.tabs/v2 tab with iconTag draws that element in its trigger', async () => {
-  rendered = await renderWorkspace(withViewer);
+  rendered = await renderFrame(withViewer);
 
   await rendered.services.use(LayoutTabsV2).open({
     id: 'probe',
@@ -737,102 +484,24 @@ test('a layout.tabs/v2 tab with iconTag draws that element in its trigger', asyn
   );
 });
 
-// T-2.7, first clause
-test('the Dashboard button in the sidebar header opens the Dashboard', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
-    path: `/projects/${project.id}`,
-  });
-
-  const header = single(
-    rendered.root,
-    '[data-slot="workspace-sidebar-header"]',
+// The account status sits in the Files header (contracts 2d-2 §2.3; part 2i,
+// S36). The tab bar and its end region are `workspace`'s since step 4(c)
+// (`bundles/desktop/workspace/tests/client/shell.test.ts`).
+test('Account is in the Files header', async () => {
+  rendered = await renderFrame(
+    conversationForm({
+      regions: {
+        'shell.header.actions': [
+          { id: 'header-probe', tag: 'header-probe', order: 10 },
+        ],
+      },
+    }),
   );
-  await click(only(header, 'button', 'Dashboard'));
 
-  assert.equal(pathOf(rendered), '/projects');
-});
-
-// UR1, Figma `99:8035`: in a Project the Dashboard button is not the current
-// page (it is on `/` and `/projects`, dashboard-shell.test.ts)
-test('in a Project the Dashboard button is not the current page', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
-    path: `/projects/${project.id}`,
-  });
-
-  const header = single(
-    rendered.root,
-    '[data-slot="workspace-sidebar-header"]',
-  );
-  const button = only(header, 'button', 'Dashboard');
-  assert.equal(button.getAttribute('aria-current'), null);
-  assert.equal(button.hasAttribute('data-active'), false);
-});
-
-// T-2.7, first clause
-test('the Project tab bar has no Dashboard tab', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
-    path: `/projects/${project.id}`,
-  });
-
-  assert.equal(
-    named(tabBar(rendered), 'button, [role="tab"], a', 'Dashboard').length,
-    0,
-    'The tab bar still has a Dashboard control.',
-  );
-});
-
-// One header row: the Dashboard control exists once in the window.
-test('the window names one control "Dashboard"', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
-    path: `/projects/${project.id}`,
-  });
-
-  const dashboards = named(
-    rendered.root,
-    'button, a, [role], [aria-label]',
-    'Dashboard',
-  );
-  assert.ok(
-    dashboards.length <= 1,
-    `"Dashboard" names ${dashboards.length} elements.`,
-  );
-});
-
-// One header row: the tab bar keeps "New project", and its right end holds
-// the `shell.header.actions` items. The account status sits in the Files header
-// (contracts 2d-2 §2.3; part 2i, S36).
-test('the tab bar keeps New project and ends with the header items; Account is in the Files header', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
-    path: `/projects/${project.id}`,
-    regions: {
-      'shell.header.actions': [
-        { id: 'header-probe', tag: 'header-probe', order: 10 },
-      ],
-    },
-  });
-
-  const bar = tabBar(rendered);
-  only(bar, 'button', 'New project');
-  const end = single(bar, '[data-slot="project-tab-actions"]');
   only(
     single(rendered.root, '[data-slot="workspace-files-header"]'),
     'button',
     'Account',
-  );
-  assert.equal(
-    standIns(end, 'header-probe').length,
-    1,
-    'The shell.header.actions item is not at the tab bar right end.',
   );
 });
 
@@ -878,8 +547,7 @@ const ownFooterHeight = (element: Element | null | undefined): string => {
 
 // G12, T-2.9.9 (band), the layout half of T-2.5, and conversation-footer T-1
 test('the conversation footer band is regular weight, borderless and draws shell.conversation.footer', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
     regions: {
       'shell.conversation.footer': [
@@ -947,9 +615,7 @@ test('the conversation footer band is regular weight, borderless and draws shell
 
 // conversation-footer T-2: the routed conversation inherits the band's height.
 test('the routed conversation stands inside the conversation frame', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, untitledThread],
+  rendered = await renderFrame({
     path: `/projects/${project.id}/threads/${planThread.id}`,
   });
 
@@ -963,7 +629,7 @@ test('the routed conversation stands inside the conversation frame', async () =>
 // G1: the handle between the conversation and the viewer is invisible and
 // full height. Without layout in happy-dom, its classes are the only witness.
 test('the handle before the viewer is a full-height transparent 8 px strip', async () => {
-  rendered = await renderWorkspace(withViewer);
+  rendered = await renderFrame(withViewer);
 
   const card = conversationCard(rendered);
   const [shown] = standIns(rendered.root, 'files-viewer');
@@ -990,7 +656,7 @@ test('the handle before the viewer is a full-height transparent 8 px strip', asy
 // react-resizable-panels then sizes each panel as a share of that width.
 test('the viewer opens 448 px wide and the conversation takes the rest', async () => {
   // A first render installs happy-dom's window, whose `HTMLElement` this patches.
-  (await renderWorkspace(withViewer)).cleanup();
+  (await renderFrame(withViewer)).cleanup();
   const windowWidth = 1920;
   const columns = 4; // sidebar, conversation, viewer, Files
   let owner: object | null = HTMLElement.prototype;
@@ -1011,7 +677,7 @@ test('the viewer opens 448 px wide and the conversation takes the rest', async (
     },
   });
   try {
-    rendered = await renderWorkspace(withViewer);
+    rendered = await renderFrame(withViewer);
 
     const card = conversationCard(rendered);
     const viewer = single(rendered.root, 'section[aria-label="Viewer"]');
@@ -1035,32 +701,6 @@ test('the viewer opens 448 px wide and the conversation takes the rest', async (
   }
 });
 
-// Check 2, item 9 (`99:8035`, `85:7520`): every Project tab is 172 px wide,
-// and may shrink, down to its 100 px floor, before the strip scrolls.
-test('every Project tab is 172 px wide and may shrink', async () => {
-  rendered = await renderWorkspace({
-    projects: [project, docs, billing],
-    projectTabs: [project, docs, billing],
-    path: `/projects/${project.id}`,
-  });
-
-  const tabs = [
-    ...tabBar(rendered).querySelectorAll<HTMLElement>('[data-tab-id]'),
-  ];
-  assert.equal(tabs.length, 3, 'The tab bar does not show three Projects.');
-  for (const tab of tabs) {
-    assert.deepEqual(
-      missingClasses(tab, 'w-[172px] min-w-[100px] shrink'),
-      [],
-      `The tab "${nameOf(tab)}" is not 172 px wide with a 100 px floor.`,
-    );
-    assert.ok(
-      !tab.classList.contains('shrink-0'),
-      `The tab "${nameOf(tab)}" cannot shrink.`,
-    );
-  }
-});
-
 // Contracts 2d-1 §1.8: the stale header organism is gone.
 test('the old workspace header organism is deleted', () => {
   // The compiled test runs from `dist-tests/tests/client`; three levels up is
@@ -1068,7 +708,7 @@ test('the old workspace header organism is deleted', () => {
   const source = (path: string): string =>
     fileURLToPath(new URL(`../../../src/client/${path}`, import.meta.url));
   assert.ok(
-    existsSync(source('components/organisms/project-tabs.tsx')),
+    existsSync(source('components/organisms/workspace-tabs.tsx')),
     'The bundle source is not where this test looks.',
   );
 
@@ -1082,8 +722,7 @@ test('the old workspace header organism is deleted', () => {
 // T-2.9.5 for the first file: before 2d-1, happy-dom's run of
 // react-resizable-panels threw "Panel constraints not found" here.
 test('opening the first file shows the viewer', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
   assert.equal(
@@ -1147,14 +786,11 @@ const withHeaderItems = (fixture: LayoutFixture): LayoutFixture => ({
   },
 });
 
-const filesHeaders = (workspace: RenderedWorkspace): HTMLElement[] => [
+const filesHeaders = (workspace: RenderedShell): HTMLElement[] => [
   ...workspace.root.querySelectorAll<HTMLElement>(
     '[data-slot="workspace-files-header"]',
   ),
 ];
-
-const tabBarEnd = (workspace: RenderedWorkspace): HTMLElement =>
-  single(tabBar(workspace), '[data-slot="project-tab-actions"]');
 
 /** Whether `root` holds the "Project views" controls, Files and Changes. */
 const holdsProjectViews = (root: ParentNode): boolean =>
@@ -1163,7 +799,7 @@ const holdsProjectViews = (root: ParentNode): boolean =>
   named(root, '[aria-label]', 'Changes').length === 1;
 
 /** Asserts that the window has exactly one "Account" button. */
-const oneAccount = (workspace: RenderedWorkspace, when: string): void => {
+const oneAccount = (workspace: RenderedShell, when: string): void => {
   const accounts = named(workspace.root, 'button', 'Account');
   assert.equal(
     accounts.length,
@@ -1174,8 +810,7 @@ const oneAccount = (workspace: RenderedWorkspace, when: string): void => {
 
 // T-2.5, layout half
 test('shell.panel.footer items render in the Files footer, shell.conversation.footer items in the conversation band', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
     regions: {
       'shell.panel.footer': [
@@ -1215,14 +850,8 @@ test('shell.panel.footer items render in the Files footer, shell.conversation.fo
 });
 
 // §2.6, S36: the Files column's header
-test('the Files header holds the Project views and Account; the tab bar holds neither', async () => {
-  rendered = await renderWorkspace(
-    withHeaderItems({
-      projects: [project],
-      projectTabs: [project],
-      path: `/projects/${project.id}`,
-    }),
-  );
+test('the Files header holds the Project views and Account', async () => {
+  rendered = await renderFrame(withHeaderItems(conversationForm()));
 
   const header = single(rendered.root, '[data-slot="workspace-files-header"]');
   assert.ok(
@@ -1234,27 +863,10 @@ test('the Files header holds the Project views and Account; the tab bar holds ne
       .join(' | ')}`,
   );
   only(header, 'button', 'Account');
-
-  const end = tabBarEnd(rendered);
-  assert.equal(
-    end.querySelectorAll('[aria-label="Project views"]').length,
-    0,
-    'The tab bar still holds the Project views.',
-  );
-  assert.equal(
-    named(end, 'button', 'Account').length,
-    0,
-    'The tab bar still holds Account.',
-  );
-  assert.equal(
-    standIns(end, 'header-probe').length,
-    1,
-    'The shell.header.actions item left the tab bar.',
-  );
 });
 
 /** The one Files header; fails if the column draws none or several. */
-const filesHeader = (workspace: RenderedWorkspace): HTMLElement => {
+const filesHeader = (workspace: RenderedShell): HTMLElement => {
   const headers = filesHeaders(workspace);
   const [first] = headers;
   assert.ok(
@@ -1275,15 +887,13 @@ for (const [label, fixture] of [
   [
     'without a viewer',
     {
-      projects: [project],
-      projectTabs: [project],
       path: `/projects/${project.id}`,
     },
   ],
-  ['with a viewer tab open', { ...withViewer, projectTabs: [project] }],
+  ['with a viewer tab open', withViewer],
 ] as const) {
   test(`the window draws no files-toggle and one Account button, in the Files header, ${label}`, async () => {
-    rendered = await renderWorkspace(withHeaderItems(fixture));
+    rendered = await renderFrame(withHeaderItems(fixture));
 
     assert.equal(
       rendered.root.querySelectorAll('files-toggle').length +
@@ -1306,10 +916,8 @@ for (const [label, fixture] of [
 // T-2.17, bundle isolation T4.5: `layout.panel/v3` `select` only selects a
 // view; the column stays.
 test('layout.panel/v3 select selects the view and the Files column stays', async () => {
-  rendered = await renderWorkspace(
+  rendered = await renderFrame(
     withHeaderItems({
-      projects: [project],
-      projectTabs: [project],
       path: `/projects/${project.id}`,
       panel: { active: 'changes' },
     }),
@@ -1333,10 +941,8 @@ test('layout.panel/v3 select selects the view and the Files column stays', async
 // `layout.panel/v3` a window's panel starts with no view selected, so it
 // draws none until the files bundle selects Files as it activates.
 test('a fresh panel draws no view until layout.panel/v3 selects Files', async () => {
-  rendered = await renderWorkspace(
+  rendered = await renderFrame(
     withHeaderItems({
-      projects: [project],
-      projectTabs: [project],
       path: `/projects/${project.id}`,
     }),
   );
@@ -1370,8 +976,7 @@ test('a fresh panel draws no view until layout.panel/v3 selects Files', async ()
 // step 4(a) change 6: the layout provides layout.tabs/v2 and layout.panel/v3
 // alone; a bundle asking for the old ids finds nothing.
 test('the layout provides neither layout.tabs/v1 nor layout.panel/v2', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
   const services = rendered.services;
@@ -1389,9 +994,7 @@ test('the layout provides neither layout.tabs/v1 nor layout.panel/v2', async () 
 // bundle isolation T4.5: a shell.panel item's iconTag draws that element as
 // the view's icon.
 test('a shell.panel item with props.iconTag draws that element as its icon', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
     regions: {
       'shell.panel': [
@@ -1422,10 +1025,8 @@ test('a shell.panel item with props.iconTag draws that element as its icon', asy
 
 // T-2.17, regression guard: choosing a view in the header keeps the column.
 test('selecting the Changes tab draws the Changes view and keeps the Files header and footer', async () => {
-  rendered = await renderWorkspace(
+  rendered = await renderFrame(
     withHeaderItems({
-      projects: [project],
-      projectTabs: [project],
       path: `/projects/${project.id}`,
     }),
   );
@@ -1445,9 +1046,7 @@ test('selecting the Changes tab draws the Changes view and keeps the Files heade
 // T-2.17, UR28: without the files bundle `shell.panel` lists only Changes.
 // The panel still selects `files`, which no item has, so it draws no view.
 test('without the files bundle the Files header holds the Changes tab and Account only', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
     regions: {
       'shell.panel': panelViews.filter((view) => view.id === 'changes'),
@@ -1474,9 +1073,7 @@ test('without the files bundle the Files header holds the Changes tab and Accoun
 
 // T-2.17 (S36), guard: the Files column's handle resizes but never collapses.
 test('the Files column cannot be collapsed', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    projectTabs: [project],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
 
@@ -1495,87 +1092,18 @@ test('the Files column cannot be collapsed', async () => {
   single(rendered.root, '[data-slot="workspace-files-footer"]');
 });
 
-// Phase 2e, T-2.8 (spec §2.2, contracts 2e §1): a "+ New Thread" button
-// starts the inline root draft; nothing else in the sidebar is named "New
-// thread" (T-3.2 below).
-
-// T-2.8
-test('pressing New Thread with a selected Project shows the new thread name field in the tree', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
-    path: `/projects/${project.id}`,
-  });
-  assert.equal(
-    named(rendered.root, '[role="textbox"]', 'New thread name').length,
-    0,
-    'A new thread name field is open before New Thread is pressed.',
-  );
-
-  await click(only(rendered.root, 'button', 'New Thread'));
-
-  assert.equal(rendered.errors().length, 0, 'Pressing New Thread failed.');
-  const fields = [
-    ...rendered.root.querySelectorAll<HTMLElement>('[role="textbox"]'),
-  ].filter(
-    (element) => element.getAttribute('aria-label') === 'New thread name',
-  );
-  assert.equal(fields.length, 1, 'No single "New thread name" field shows.');
-  const items = [
-    ...rendered.root.querySelectorAll<HTMLElement>('[role="treeitem"]'),
-  ];
-  assert.ok(
-    fields[0] !== undefined &&
-      items.length > 0 &&
-      items.every((item) => follows(item, fields[0] as HTMLElement)),
-    'The new thread name field is not at the end of the tree.',
-  );
-});
-
-// Phase 5, T-5.11 (spec §11.6): the draft row takes the unselected fill and
-// the textbox outline on the div that holds its field and guides.
-test('T-5.11: the New Thread draft row has the unselected fill and the textbox ring', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
-    path: `/projects/${project.id}`,
-  });
-  await click(only(rendered.root, 'button', 'New Thread'));
-  assert.equal(rendered.errors().length, 0, 'Pressing New Thread failed.');
-
-  const field = only(rendered.root, '[role="textbox"]', 'New thread name');
-  let holder: HTMLElement | null = field.parentElement;
-  while (holder !== null && holder.tagName !== 'DIV')
-    holder = holder.parentElement;
-  assert.ok(holder !== null, 'The new thread name field is not inside a div.');
-  const classes = [...holder.classList];
-  assert.deepEqual(
-    [
-      'rounded-[4px]',
-      'hover:bg-[var(--paper-ghost-hover)]',
-      'active:bg-[var(--paper-ghost-pressed)]',
-      'has-[[role=textbox]:focus-visible]:outline-2',
-      'has-[[role=textbox]:focus-visible]:-outline-offset-2',
-      'has-[[role=textbox]:focus-visible]:outline-[var(--sidebar-ring)]',
-    ].filter((name) => !classes.includes(name)),
-    [],
-    `The draft row lacks its states: ${classes.join(' ')}`,
-  );
-  assert.ok(!classes.includes('bg-sidebar-accent'), classes.join(' '));
-});
-
 // Sidebar alignment phase 3 (spec §9, D8–D14): the column is the search
 // field, then the Thread region (the tree's scroller and the New Thread
 // button), then one group per registered pane at the bottom. There is no
 // Threads pane and nothing in the stack resizes. happy-dom lays nothing out,
 // so the caps and minimums are observable only as the classes that set them.
 
-/** The Project sidebar: the `sidebar` slot that holds "Search Threads". */
+/** The sidebar column: the `sidebar` slot that holds the `shell.sidebar` stand-in. */
 const projectSidebar = (root: ParentNode): HTMLElement => {
   const sidebar = root
-    .querySelector('input[aria-label="Search Threads"]')
+    .querySelector('[data-story-placeholder="workspace-sidebar"]')
     ?.closest<HTMLElement>('[data-slot="sidebar"]');
-  assert.ok(sidebar, 'No sidebar holds the "Search Threads" field.');
+  assert.ok(sidebar, 'No sidebar holds the shell.sidebar stand-in.');
   return sidebar;
 };
 
@@ -1584,160 +1112,9 @@ const paneGroups = (root: ParentNode): HTMLElement[] => [
   ...root.querySelectorAll<HTMLElement>('[data-slot="sidebar-pane"]'),
 ];
 
-/**
- * Renders the `ProjectSidebar` story `name` alone, as the `NoProject` case
- * below does, and calls `check` with its root; unmounts afterwards.
- */
-const withStory = async (
-  name: 'LoadingThreads' | 'RequestFailed' | 'SearchNoMatch',
-  check: (root: HTMLElement) => void,
-): Promise<void> => {
-  // Rendering the workspace once installs happy-dom's window as the globals.
-  (await renderWorkspace()).cleanup();
-  const { createElement } = await import('react');
-  const { flushSync } = await import('react-dom');
-  const { createRoot } = await import('react-dom/client');
-  const stories = await import(
-    '../../stories/components/organisms/project-sidebar.stories.js'
-  );
-  const story = stories[name];
-  const root = document.createElement('div');
-  document.body.append(root);
-  const react = createRoot(root);
-  try {
-    flushSync(() => react.render(createElement(() => story.render())));
-    await settle();
-    await settle();
-    check(root);
-  } finally {
-    react.unmount();
-  }
-};
-
-/** The Thread tree's scroller in `root`. */
-const threadTree = (root: ParentNode): HTMLElement =>
-  single(root, '[data-slot="thread-tree"]');
-
-// T-3.2, replacing T-2.8's "the Threads pane header has no New thread control"
-test('the column reads search, the Thread tree, the New Thread button, then the panes', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
-    path: `/projects/${project.id}`,
-  });
-  const sidebar = projectSidebar(rendered.root);
-  const search = single(sidebar, 'input[aria-label="Search Threads"]');
-  const tree = threadTree(sidebar);
-  const button = only(sidebar, 'button', 'New Thread');
-  const items = [...sidebar.querySelectorAll<HTMLElement>('[role="treeitem"]')];
-
-  assert.ok(follows(search, tree), 'The tree is not below the search field.');
-  assert.equal(items.length, 2, 'The tree does not show both Threads.');
-  assert.ok(
-    items.every((item) => tree.contains(item)),
-    'A Thread row is outside the tree scroller.',
-  );
-  assert.ok(
-    !tree.contains(button) && follows(tree, button),
-    'The New Thread button does not follow the tree scroller.',
-  );
-  assert.ok(
-    items.every((item) => follows(item, button)),
-    'A Thread row comes after the New Thread button.',
-  );
-  assert.equal(normalized(button.textContent), '', 'New Thread has text.');
-  assert.equal(button.querySelectorAll('svg').length, 1);
-  assert.equal(button.querySelectorAll('svg.lucide-plus').length, 1);
-  // The button takes the rows' ghost tokens: the row hover fill at rest and
-  // the row pressed fill under the pointer, not the secondary colours.
-  assert.deepEqual(
-    missingClasses(
-      button,
-      'w-full bg-[var(--paper-ghost-hover)] hover:bg-[var(--paper-ghost-pressed)]',
-    ),
-    [],
-  );
-  for (const dropped of [
-    'bg-secondary',
-    'hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]',
-  ]) {
-    assert.equal(
-      button.classList.contains(dropped),
-      false,
-      `New Thread keeps ${dropped}.`,
-    );
-  }
-  const panes = paneGroups(sidebar);
-  assert.equal(panes.length, 1, 'The Screens pane has no group.');
-  assert.ok(
-    panes.every((pane) => follows(button, pane)),
-    'A pane is not below the New Thread button.',
-  );
-  assert.equal(
-    named(sidebar, 'button, [aria-label]', 'New thread').length,
-    0,
-    'A control named "New thread" is still in the sidebar.',
-  );
-});
-
-// T-3.2: the error alert is inside the tree scroller, above the rows.
-test('a failed request is reported inside the tree scroller, above the rows', async () => {
-  await withStory('RequestFailed', (root) => {
-    const tree = threadTree(root);
-    const alert = single(root, '[role="alert"]');
-    const [first] = tree.querySelectorAll('[role="treeitem"]');
-    assert.ok(tree.contains(alert), 'The alert is outside the tree scroller.');
-    assert.ok(
-      first !== undefined && follows(alert, first),
-      'The alert is not above the rows.',
-    );
-    assert.ok(
-      follows(tree, only(root, 'button', 'New Thread')),
-      'The New Thread button is not below the tree scroller.',
-    );
-  });
-});
-
-// T-3.2: the skeleton rows are inside the tree scroller.
-test('while the Threads load, the skeleton rows are inside the tree scroller', async () => {
-  await withStory('LoadingThreads', (root) => {
-    const tree = threadTree(root);
-    const skeletons = root.querySelectorAll(
-      '[data-slot="sidebar-menu-skeleton"]',
-    );
-    assert.ok(skeletons.length > 0, 'No skeleton rows while loading.');
-    assert.equal(
-      tree.querySelectorAll('[data-slot="sidebar-menu-skeleton"]').length,
-      skeletons.length,
-      'A skeleton row is outside the tree scroller.',
-    );
-  });
-});
-
-// T-3.2: "No threads match" ends the tree scroller, above the button.
-test('a query that matches nothing ends the tree scroller with its notice', async () => {
-  await withStory('SearchNoMatch', (root) => {
-    const tree = threadTree(root);
-    const notice = single(root, '[data-threads-empty]');
-    assert.ok(tree.contains(notice), 'The notice is outside the scroller.');
-    assert.ok(
-      [...tree.querySelectorAll('*')].every(
-        (element) => notice.contains(element) || !follows(notice, element),
-      ),
-      'Something in the tree scroller follows the notice.',
-    );
-    assert.ok(
-      follows(tree, only(root, 'button', 'New Thread')),
-      'The New Thread button is not below the tree scroller.',
-    );
-  });
-});
-
 // T-3.3
 test('the stack has no resize handle and no resizable group', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
   const sidebar = projectSidebar(rendered.root);
@@ -1757,19 +1134,18 @@ test('the stack has no resize handle and no resizable group', async () => {
 // T-3.3, T-3.5: the Screens pane sits at the bottom with its header, and
 // collapses to it.
 test('the Screens pane sits at the bottom with its header, and collapses to it', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
   const sidebar = projectSidebar(rendered.root);
   const [pane] = paneGroups(sidebar);
   assert.ok(pane, 'The Screens pane has no group.');
   assert.equal(pane.getAttribute('data-pane-id'), 'screen-sidebar');
-  const region = single(sidebar, '[data-slot="thread-region"]');
+  const [region] = standIns(sidebar, 'workspace-sidebar');
+  assert.ok(region, 'The shell.sidebar item is not drawn.');
   assert.ok(
     !region.contains(pane) && follows(region, pane),
-    'The Screens pane is not below the Thread region.',
+    'The Screens pane is not below the shell.sidebar items.',
   );
   assert.ok(
     [...sidebar.querySelectorAll('*')].every(
@@ -1805,10 +1181,8 @@ test('the Screens pane sits at the bottom with its header, and collapses to it',
 });
 
 // T-3.4
-test('a pane is capped at 40% and keeps its header; the Thread region keeps 40 px and the button', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
+test('a pane is capped at 40% and keeps its header; the shell.sidebar items stay above it', async () => {
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
   const sidebar = projectSidebar(rendered.root);
@@ -1823,16 +1197,11 @@ test('a pane is capped at 40% and keeps its header; the Thread region keeps 40 p
   const content = single(pane, '[data-slot="sidebar-group-content"]');
   assert.deepEqual(missingClasses(content, 'min-h-0 overflow-y-auto'), []);
 
-  const region = single(sidebar, '[data-slot="thread-region"]');
-  assert.deepEqual(missingClasses(region, 'flex-1 min-h-10'), []);
-  const tree = threadTree(region);
-  assert.deepEqual(missingClasses(tree, 'min-h-0 overflow-y-auto'), []);
-  const button = only(region, 'button', 'New Thread');
-  assert.deepEqual(missingClasses(button, 'shrink-0'), []);
-  assert.equal(button.hidden, false, 'New Thread is hidden.');
+  const [navigation] = standIns(sidebar, 'workspace-sidebar');
+  assert.ok(navigation, 'The shell.sidebar stand-in left the column.');
   assert.ok(
-    !button.classList.contains('hidden'),
-    'New Thread is hidden by its classes.',
+    follows(navigation, pane),
+    'The pane does not follow the shell.sidebar items.',
   );
 });
 
@@ -1840,9 +1209,7 @@ test('a pane is capped at 40% and keeps its header; the Thread region keeps 40 p
 // pane headers): the pane header's action is revealed
 // only while the header is hovered or holds focus, as a Thread row's are.
 test('a pane header reveals its action only while it is hovered or holds focus', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
   const [pane] = paneGroups(projectSidebar(rendered.root));
@@ -1883,9 +1250,7 @@ test('a pane header reveals its action only while it is hovered or holds focus',
 
 // T-3.5
 test('layout.stack/v2 lists only the registered panes, with no Threads pane', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread, formThread],
+  rendered = await renderFrame({
     path: `/projects/${project.id}`,
   });
 
@@ -1897,259 +1262,6 @@ test('layout.stack/v2 lists only the registered panes, with no Threads pane', as
     ['screen-sidebar'],
   );
 });
-
-// T-2.8. The workspace always selects the Project its path names, and sends
-// any other path to the Dashboard, so the sidebar without a selected Project
-// is rendered alone, as its `NoProject` story draws it.
-test('New Thread is disabled while no Project is selected', async () => {
-  // Rendering the workspace once installs happy-dom's window as the globals.
-  (await renderWorkspace()).cleanup();
-  const { createElement } = await import('react');
-  const { flushSync } = await import('react-dom');
-  const { createRoot } = await import('react-dom/client');
-  const { NoProject } = await import(
-    '../../stories/components/organisms/project-sidebar.stories.js'
-  );
-  const root = document.createElement('div');
-  document.body.append(root);
-  const react = createRoot(root);
-  try {
-    flushSync(() => react.render(createElement(() => NoProject.render())));
-    await settle();
-
-    const row = only(root, 'button', 'New Thread');
-    assert.ok(
-      row.hasAttribute('disabled'),
-      'New Thread is enabled without a selected Project.',
-    );
-  } finally {
-    react.unmount();
-  }
-});
-
-// T-1.5 (spec §5, U2): an Untitled Thread wears the Untitled icon
-// (`message-circle-dashed`) on every surface that names it by its kind icon.
-const untitledThread: Thread = {
-  ...thread('8b0d2f4a-6c8e-4a0b-9d2f-4a6c8e0b2d4f', ''),
-  parentThreadId: planThread.id,
-};
-
-test("T-1.5: the breadcrumb's last crumb wears the Untitled icon for an Untitled Thread", async () => {
-  // Rendering the workspace once installs happy-dom's window as the globals.
-  (await renderWorkspace()).cleanup();
-  const { createElement } = await import('react');
-  const { flushSync } = await import('react-dom');
-  const { createRoot } = await import('react-dom/client');
-  const { ThreadBreadcrumb } = await import(
-    '../../src/client/components/molecules/thread-breadcrumb.js'
-  );
-  const root = document.createElement('div');
-  document.body.append(root);
-  const react = createRoot(root);
-  try {
-    flushSync(() =>
-      react.render(
-        createElement(ThreadBreadcrumb, {
-          project,
-          path: [planThread, untitledThread],
-          onSelectProject: () => undefined,
-          onSelectThread: () => undefined,
-        }),
-      ),
-    );
-    await settle();
-
-    const pages = root.querySelectorAll('[data-slot="breadcrumb-page"]');
-    assert.equal(pages.length, 1, 'The breadcrumb has no single last crumb.');
-    assert.equal(
-      pages[0]?.querySelectorAll('svg.lucide-message-circle-dashed').length,
-      1,
-      'The last crumb does not wear the Untitled icon.',
-    );
-  } finally {
-    react.unmount();
-  }
-});
-
-/**
- * The workspace at Plan with a conversation tab on each of `threads`, named by
- * the Project `projectId` (Checkout redesign unless a case says otherwise).
- */
-const withThreadTabs = (
-  threads: readonly Thread[],
-  projectId: string = project.id,
-): LayoutFixture => ({
-  projects: [project],
-  threads: [planThread, untitledThread],
-  path: `/projects/${project.id}/threads/${planThread.id}`,
-  tabs: {
-    [planThread.id]: threads.map((tabThread) => ({
-      id: `thread:${tabThread.id}`,
-      title: tabThread.name || 'Untitled',
-      tag: 'chat-thread-panel',
-      iconTag: 'chat-thread-tab-icon',
-      props: { projectId, threadId: tabThread.id },
-    })),
-  },
-});
-
-test("T-1.5: an Untitled Thread's tab wears the Untitled icon", async () => {
-  rendered = await renderWorkspace(withThreadTabs([untitledThread]));
-
-  const tab = only(rendered.root, '[role="tab"]', 'Untitled');
-  assert.equal(
-    tab.querySelectorAll('svg.lucide-message-circle-dashed').length,
-    1,
-    'The Untitled tab does not wear the Untitled icon.',
-  );
-});
-
-test('T-1.5: the tab of a Thread missing from the tree keeps the main bubble', async () => {
-  // The tab names a Thread of Docs site, a Project whose Threads the window
-  // never loaded: the tab stays open, and the tree cannot say what it is.
-  const missing = thread('1f3b5d7f-9a1c-4e3b-8d5f-7a9c1e3b5d7f', 'Gone');
-  rendered = await renderWorkspace(withThreadTabs([missing], docs.id));
-
-  const tab = only(rendered.root, '[role="tab"]', 'Gone');
-  assert.equal(
-    tab.querySelectorAll('svg.lucide-message-circle').length,
-    1,
-    'The tab of a missing Thread does not wear the main bubble.',
-  );
-  assert.equal(
-    tab.querySelectorAll('svg.lucide-message-circle-dashed').length,
-    0,
-    'The tab of a missing Thread wears the Untitled icon.',
-  );
-});
-
-// Bundle isolation step 4(a), change 7 ---------------------------------------
-// - O2: `layout/contracts` names the five new slots, and the layout fills
-//   `shell.sidebar` and `shell.titlebar.tabs` in every window, and
-//   `shell.page` and `shell.sidebar.footer` while the route is `/` or
-//   `/projects`. Since step 4(b) `account` fills `shell.window.actions`.
-// - T4.2: the frame is in the page form exactly while `shell.page` holds an
-//   item; `/projects` and `/projects/:projectId` are children of `/`, and the
-//   second's element, `layout-project-empty`, draws the empty state.
-// - T4.6: the sidebar column reads `shell.sidebar`, the stack panes
-//   (conversation form only), the quarantine notice, then
-//   `shell.sidebar.footer`.
-// - O1 (OD38): the navigation's slot elements are separate roots; its state
-//   lives in stores, and its once-per-window effects run in `layout-sidebar`
-//   alone.
-
-/** A Thread route of `project`, where the conversation form is drawn. */
-const planPath = `/projects/${project.id}/threads/${planThread.id}`;
-
-/** The layout activated on a fake host whose routes, elements and region items are recorded. */
-interface RecordedActivation {
-  /** Every route the layout registered, in order. */
-  readonly routes: readonly RouteRegistration[];
-  /** Every element the layout asked `ui/v1` to create, in order. */
-  readonly created: readonly {
-    readonly tag: string;
-    readonly props?: Readonly<Record<string, unknown>>;
-  }[];
-  /** The tags of the items the layout holds in `region` now, in add order. */
-  tags(region: string): readonly string[];
-  /** Moves the host's navigation to `path`, as the window's router does. */
-  navigate(path: string): void;
-  deactivate(): Promise<void>;
-}
-
-/**
- * Activates the layout alone, with no window mounted, on the stories' fake
- * host for `path`: `navigation/v1` `register`, `ui/v1` `create` and
- * `regions/v1` `add` are recorded on their way to the host.
- */
-const activateRecorded = async (path: string): Promise<RecordedActivation> => {
-  // Rendering the workspace once installs happy-dom's window as the globals.
-  (await renderWorkspace()).cleanup();
-  const { createFakeHost } = await import('../../stories/support/fake-host.js');
-  const { activate } = await import('../../src/client/index.js');
-  const host = createFakeHost({ projects: [project], path });
-  const inner = host.services;
-  const navigation = inner.use(NavigationV1);
-  const ui = inner.use(UiV1);
-  const regions = inner.use(RegionsV1);
-
-  const routes: RouteRegistration[] = [];
-  const created: {
-    tag: string;
-    props?: Readonly<Record<string, unknown>>;
-  }[] = [];
-  const live = new Map<string, { readonly item: RegionItem }[]>();
-  const recorded: Record<string, unknown> = {
-    [NavigationV1.id]: {
-      ...navigation,
-      register: (route: RouteRegistration) => {
-        routes.push(route);
-        return navigation.register(route);
-      },
-    },
-    [UiV1.id]: {
-      ...ui,
-      create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
-        created.push(props === undefined ? { tag } : { tag, props });
-        return ui.create(tag, props);
-      },
-    },
-    [RegionsV1.id]: {
-      ...regions,
-      add: (region: string, item: RegionItem) => {
-        const entry = { item };
-        live.set(region, [...(live.get(region) ?? []), entry]);
-        const added = regions.add(region, item);
-        return {
-          dispose: () => {
-            live.set(
-              region,
-              (live.get(region) ?? []).filter((other) => other !== entry),
-            );
-            added.dispose();
-          },
-        };
-      },
-    },
-  };
-  const services = {
-    ...inner,
-    use: (contract: { readonly id: string }) =>
-      recorded[contract.id] ?? inner.use(contract as never),
-  } as unknown as Services;
-  const cleanup = activate({ services });
-  return {
-    routes,
-    created,
-    tags: (region) => (live.get(region) ?? []).map(({ item }) => item.tag),
-    navigate: (next) => navigation.navigate(next),
-    deactivate: async () => {
-      await cleanup();
-    },
-  };
-};
-
-/** The one route registered for `path`; fails naming what was registered. */
-const routeOf = (
-  activation: RecordedActivation,
-  path: string,
-): RouteRegistration => {
-  const found = activation.routes.filter((route) => route.path === path);
-  const [first] = found;
-  assert.ok(
-    found.length === 1 && first !== undefined,
-    `Expected one route ${path}, found ${found.length}; registered: ${activation.routes
-      .map((route) => route.path)
-      .join(' | ')}`,
-  );
-  return first;
-};
-
-const matchOf = (
-  path: string,
-  pattern: string,
-  params: Record<string, string> = {},
-): RouteMatch => ({ path, pattern, params }) as RouteMatch;
 
 // O2
 test('layout/contracts names the five new shell slots', async () => {
@@ -2174,161 +1286,10 @@ test('layout/contracts names the five new shell slots', async () => {
   );
 });
 
-// O2: the navigation's four elements, and the two slots that follow the route;
-// since step 4(b) the layout adds nothing to shell.window.actions (AC4.6).
-test('the layout fills shell.sidebar and shell.titlebar.tabs always, nothing in shell.window.actions, and shell.page and shell.sidebar.footer only on / and /projects', async () => {
-  const activation = await activateRecorded('/projects');
-  try {
-    for (const path of [
-      '/projects',
-      `/projects/${project.id}`,
-      '/',
-      planPath,
-      '/projects',
-    ]) {
-      activation.navigate(path);
-      const onDashboard = path === '/' || path === '/projects';
-      assert.deepEqual(
-        {
-          'shell.sidebar': activation.tags('shell.sidebar'),
-          'shell.titlebar.tabs': activation.tags('shell.titlebar.tabs'),
-          'shell.window.actions': activation.tags('shell.window.actions'),
-          'shell.page': activation.tags('shell.page'),
-          'shell.sidebar.footer': activation.tags('shell.sidebar.footer'),
-        },
-        {
-          'shell.sidebar': ['layout-sidebar'],
-          'shell.titlebar.tabs': ['layout-project-tabs'],
-          'shell.window.actions': [],
-          'shell.page': onDashboard ? ['layout-dashboard'] : [],
-          'shell.sidebar.footer': onDashboard ? ['layout-sidebar-footer'] : [],
-        },
-        `The layout's slot items on ${path}.`,
-      );
-    }
-  } finally {
-    await activation.deactivate();
-  }
-});
-
-// T4.2
-test('T4.2: / is the root route, and /projects and /projects/:projectId are registered as its children', async () => {
-  const activation = await activateRecorded('/');
-  try {
-    assert.equal(routeOf(activation, '/').parent, undefined);
-    assert.equal(routeOf(activation, '/projects').parent, '/');
-    assert.equal(routeOf(activation, '/projects/:projectId').parent, '/');
-  } finally {
-    await activation.deactivate();
-  }
-});
-
-// T4.2
-test('T4.2: /projects creates layout-projects-route, and /projects/:projectId creates layout-project-empty with its Project id', async () => {
-  const activation = await activateRecorded('/');
-  try {
-    routeOf(activation, '/projects').create(matchOf('/projects', '/projects'));
-    assert.deepEqual(
-      activation.created.at(-1)?.tag,
-      'layout-projects-route',
-      'The /projects route does not create layout-projects-route.',
-    );
-
-    routeOf(activation, '/projects/:projectId').create(
-      matchOf(`/projects/${project.id}`, '/projects/:projectId', {
-        projectId: project.id,
-      }),
-    );
-    const empty = activation.created.at(-1);
-    assert.equal(
-      empty?.tag,
-      'layout-project-empty',
-      'The /projects/:projectId route does not create layout-project-empty.',
-    );
-    assert.equal(empty?.props?.projectId, project.id);
-  } finally {
-    await activation.deactivate();
-  }
-});
-
-/** Creates `tag` through the window's `ui/v1`, as the outlet does, and mounts it. */
-const mountCreated = async (
-  workspace: RenderedWorkspace,
-  tag: string,
-  props?: Readonly<Record<string, unknown>>,
-): Promise<HTMLElement> => {
-  const element = workspace.services
-    .use(UiV1)
-    .create(tag, props) as HTMLElement;
-  const outlet = document.createElement('div');
-  document.body.append(outlet);
-  outlet.append(element);
-  await settle();
-  return outlet;
-};
-
-const EMPTY_TEXT = 'Start a thread or select one from the sidebar.';
-
-// T4.2
-test("T4.2: layout-project-empty draws the Project's name, the text and New thread", async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    path: `/projects/${project.id}`,
-  });
-
-  const empty = await mountCreated(rendered, 'layout-project-empty', {
-    projectId: project.id,
-  });
-
-  const text = normalized(empty.textContent);
-  assert.ok(text.includes(project.name), `No Project name in: ${text}`);
-  assert.ok(text.includes(EMPTY_TEXT), `No empty-state text in: ${text}`);
-  assert.ok(!text.includes('No project selected'), text);
-  only(empty, 'button', 'New thread');
-});
-
-// T4.2
-test('T4.2: for a Project the mirror does not hold, layout-project-empty draws "No project selected" and no button', async () => {
-  const missing = 'c0ffee00-0000-4000-8000-000000000000';
-  rendered = await renderWorkspace({
-    projects: [project],
-    path: `/projects/${missing}`,
-  });
-
-  const empty = await mountCreated(rendered, 'layout-project-empty', {
-    projectId: missing,
-  });
-
-  const text = normalized(empty.textContent);
-  assert.ok(text.includes('No project selected'), `No title in: ${text}`);
-  assert.ok(text.includes(EMPTY_TEXT), `No empty-state text in: ${text}`);
-  assert.equal(
-    named(empty, 'button', 'New thread').length,
-    0,
-    'The empty state offers New thread for a Project the mirror lacks.',
-  );
-});
-
-// T4.2: `/projects` is covered by the page form; its element draws nothing.
-test('T4.2: layout-projects-route draws nothing', async () => {
-  rendered = await renderWorkspace({ projects: [project], path: '/projects' });
-
-  const route = await mountCreated(rendered, 'layout-projects-route');
-
-  assert.equal(normalized(route.textContent), '');
-  assert.equal(
-    route.querySelectorAll('*').length,
-    1,
-    'layout-projects-route draws something inside itself.',
-  );
-});
-
 // T4.2
 test('T4.2: the frame is in the page form exactly while shell.page holds an item', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread],
-    path: planPath,
+  rendered = await renderFrame({
+    path: `/projects/${project.id}/threads/${planThread.id}`,
   });
   const workspace = rendered;
   const form = () => ({
@@ -2394,15 +1355,14 @@ const sidebarProbe = { id: 'sidebar-probe', tag: 'sidebar-probe' };
 
 // T4.6
 test('T4.6: in the conversation form the notice follows the shell.sidebar items and the last stack pane, and precedes shell.sidebar.footer, with mx-1.5', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread],
-    path: planPath,
+  rendered = await renderFrame({
+    path: `/projects/${project.id}/threads/${planThread.id}`,
     catalog: quarantined,
     regions: { 'shell.sidebar.footer': [footerProbe] },
   });
   const notice = quarantineNotice(rendered.root);
-  const search = single(rendered.root, 'input[aria-label="Search Threads"]');
+  const [search] = standIns(rendered.root, 'workspace-sidebar');
+  assert.ok(search, 'The shell.sidebar item is not drawn.');
   const lastPane = paneGroups(rendered.root).at(-1);
   assert.ok(lastPane !== undefined, 'The fixture shows no stack pane.');
   const [footer] = standIns(rendered.root, 'footer-probe');
@@ -2425,8 +1385,7 @@ test('T4.6: in the conversation form the notice follows the shell.sidebar items 
 
 // T4.6
 test('T4.6: in the page form the notice follows the shell.sidebar items and precedes shell.sidebar.footer, with mx-2', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
+  rendered = await renderFrame({
     path: '/projects',
     catalog: quarantined,
     regions: {
@@ -2437,139 +1396,21 @@ test('T4.6: in the page form the notice follows the shell.sidebar items and prec
   const notice = quarantineNotice(rendered.root);
   const [sidebarItem] = standIns(rendered.root, 'sidebar-probe');
   assert.ok(sidebarItem, 'The shell.sidebar item is not drawn.');
-  const search = single(rendered.root, 'input[aria-label="Search projects"]');
   const [footer] = standIns(rendered.root, 'footer-probe');
   assert.ok(footer, 'The shell.sidebar.footer item is not drawn.');
-  const settings = only(rendered.root, 'button', 'All settings');
 
-  for (const [label, item] of [
-    ['the shell.sidebar item', sidebarItem],
-    ["the Dashboard sidebar's search", search],
-  ] as const) {
-    assert.ok(follows(item, notice), `The notice precedes ${label}.`);
-  }
-  for (const [label, item] of [
-    ['the shell.sidebar.footer item', footer],
-    ['All settings', settings],
-  ] as const) {
-    assert.ok(follows(notice, item), `The notice follows ${label}.`);
-  }
+  // The Dashboard's search and "All settings" are drawn inside these two
+  // items by `workspace` and `settings` (bundle isolation 4(c)).
+  assert.ok(
+    follows(sidebarItem, notice),
+    'The notice precedes the shell.sidebar item.',
+  );
+  assert.ok(
+    follows(notice, footer),
+    'The notice follows the shell.sidebar.footer item.',
+  );
   assert.ok(
     notice.classList.contains('mx-2'),
     `The notice lacks mx-2: ${notice.className}`,
-  );
-});
-
-// O1 (OD38) -------------------------------------------------------------------
-
-/** The navigation's elements the frame draws in the page form, one per slot. */
-const pageFormElements = [
-  'layout-sidebar',
-  'layout-sidebar-footer',
-  'layout-project-tabs',
-  'layout-dashboard',
-];
-
-/** The navigation's elements the frame draws in the conversation form. */
-const conversationFormElements = ['layout-sidebar', 'layout-project-tabs'];
-
-/** Each tag in `tags` is drawn exactly once in the window. */
-const assertMountedOnce = (
-  workspace: RenderedWorkspace,
-  tags: readonly string[],
-): void => {
-  assert.deepEqual(
-    Object.fromEntries(
-      tags.map((tag) => [tag, workspace.root.querySelectorAll(tag).length]),
-    ),
-    Object.fromEntries(tags.map((tag) => [tag, 1])),
-    'The navigation elements are not each drawn once.',
-  );
-};
-
-// O1: the Projects load (`use-workspace.ts`'s mount effect) runs once per
-// window, in `layout-sidebar`, however many navigation elements mount.
-test('O1: on /projects the four navigation elements mount and the Projects load once', async () => {
-  rendered = await renderWorkspace({
-    projects: [project, docs],
-    path: '/projects',
-  });
-  const records: RuntimeRecords = rendered.records;
-  const reload = records.reload.bind(records);
-  let loads = 0;
-  records.reload = (input, call) => {
-    if (input.target === 'projects') loads += 1;
-    return reload(input, call);
-  };
-
-  await rendered.remount();
-
-  assertMountedOnce(rendered, pageFormElements);
-  assert.equal(loads, 1, `The window loaded its Projects ${loads} times.`);
-});
-
-// O1: following the selected Project runs once per window as well.
-test('O1: in a Thread the navigation elements mount and the selected Project is followed once', async () => {
-  rendered = await renderWorkspace({
-    projects: [project],
-    threads: [planThread],
-    path: planPath,
-  });
-  const records: RuntimeRecords = rendered.records;
-  const follow = records.follow.bind(records);
-  const following = new Set<{ readonly projectId: string }>();
-  records.follow = (input, call) => {
-    const token = { projectId: input.projectId };
-    following.add(token);
-    const followed = follow(input, call);
-    return {
-      dispose: () => {
-        following.delete(token);
-        followed.dispose();
-      },
-    };
-  };
-
-  await rendered.remount();
-
-  assertMountedOnce(rendered, conversationFormElements);
-  assert.deepEqual(
-    [...following].map(({ projectId }) => projectId),
-    [project.id],
-    'The selected Project is not followed exactly once.',
-  );
-});
-
-// O1: the Project tabs live in a module store, so a Project opened in
-// `layout-dashboard` shows its tab in `layout-project-tabs`, and the tab stays
-// when the frame changes form.
-test('O1: a Project opened in layout-dashboard gets its tab in layout-project-tabs, and keeps it when the forms switch', async () => {
-  rendered = await renderWorkspace({
-    projects: [project, docs],
-    path: '/projects',
-  });
-  const content = single(rendered.root, 'layout-dashboard');
-  const [entry] = [...content.querySelectorAll<HTMLElement>('button')]
-    .filter((button) => normalized(button.textContent).includes(docs.name))
-    .filter((button) => !button.hasAttribute('aria-label'));
-  assert.ok(entry !== undefined, 'layout-dashboard does not list Docs site.');
-
-  await click(entry);
-
-  assert.equal(pathOf(rendered), `/projects/${docs.id}`);
-  const tabs = single(rendered.root, 'layout-project-tabs');
-  assert.ok(
-    isCurrent(only(tabs, 'button[aria-label]', docs.name)),
-    'The Docs site tab in layout-project-tabs is not the current one.',
-  );
-
-  rendered.services.use(NavigationV1).navigate('/projects');
-  await settle();
-
-  assert.equal(rendered.root.querySelectorAll('layout-dashboard').length, 1);
-  only(
-    single(rendered.root, 'layout-project-tabs'),
-    'button[aria-label]',
-    docs.name,
   );
 });

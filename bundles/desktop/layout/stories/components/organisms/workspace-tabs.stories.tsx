@@ -6,10 +6,10 @@ import {
 } from '../../../src/client/components/organisms/workspace-tabs.js';
 import { useWorkspaceTabs } from '../../../src/client/hooks/use-workspace-tabs.js';
 import { workspaceTabsStore } from '../../../src/client/stores/workspace-tabs.js';
-import { checkoutTabs, planThread } from '../../support/data.js';
 import { type LayoutFixture, LayoutHost } from '../../support/layout-host.js';
+import { checkoutTabs, owner as tabsOwner } from '../../support/tabs.js';
 
-const owner = planThread.id;
+const owner = tabsOwner;
 
 /** The tab bar over the tab panel, as the viewer division draws them. */
 function Viewer() {

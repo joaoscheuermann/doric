@@ -90,7 +90,11 @@ export function AccountStatus({ services }: AccountStatusProps) {
               <DropdownMenuSeparator />
               {entries.map((entry) => (
                 <DropdownMenuItem key={entry.id} onClick={() => pick(entry)}>
-                  <ElementHost ui={ui} tag={entry.tag} />
+                  <ElementHost
+                    ui={ui}
+                    tag={entry.tag}
+                    className="contents text-muted-foreground"
+                  />
                   {entry.props.label}
                 </DropdownMenuItem>
               ))}

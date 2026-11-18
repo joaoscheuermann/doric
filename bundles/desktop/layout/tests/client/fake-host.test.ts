@@ -6,33 +6,44 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CommandsV1, ref } from 'bundle/contracts';
+import {
+  type CatalogSnapshot,
+  CommandsV1,
+  DoricCatalogV1,
+  ref,
+} from 'bundle/contracts';
 
 import { createFakeHost } from '../../stories/support/fake-host.js';
 
-const AboutV1 = ref<{
-  get(): Promise<{ readonly version: string }>;
-}>('doric.about/v1');
+// The sample id is `doric.catalog/v1` (step 4(c)): the host no longer
+// answers `doric.about/v1`, which left with the account menu.
+const catalog = {
+  generation: 1,
+  bundles: [],
+} as unknown as CatalogSnapshot;
 
-test('whenAvailable calls back once, synchronously, with the about answer use returns', async () => {
-  const { services } = createFakeHost();
+test('whenAvailable calls back once, synchronously, with the catalog answer use returns', () => {
+  const { services } = createFakeHost({ catalog });
   const answers: unknown[] = [];
 
-  const watch = services.whenAvailable(AboutV1, (api) => {
+  const watch = services.whenAvailable(DoricCatalogV1, (api) => {
     answers.push(api);
   });
 
   assert.equal(answers.length, 1);
-  assert.equal(answers[0], services.use(AboutV1));
-  assert.deepEqual(await services.use(AboutV1).get(), { version: '0.0.1' });
+  assert.equal(answers[0], services.use(DoricCatalogV1));
+  assert.equal(services.use(DoricCatalogV1).get(), catalog);
   watch.dispose();
 });
 
 test('whenAvailable never calls back for an absent id', () => {
-  const { services } = createFakeHost({ absent: ['doric.about/v1'] });
+  const { services } = createFakeHost({
+    catalog,
+    absent: ['doric.catalog/v1'],
+  });
   let calls = 0;
 
-  const watch = services.whenAvailable(AboutV1, () => {
+  const watch = services.whenAvailable(DoricCatalogV1, () => {
     calls += 1;
   });
 
@@ -41,10 +52,10 @@ test('whenAvailable never calls back for an absent id', () => {
 });
 
 test("disposing a whenAvailable runs the callback's cleanup at most once", () => {
-  const { services } = createFakeHost();
+  const { services } = createFakeHost({ catalog });
   let cleanups = 0;
 
-  const watch = services.whenAvailable(AboutV1, () => () => {
+  const watch = services.whenAvailable(DoricCatalogV1, () => () => {
     cleanups += 1;
   });
   assert.equal(cleanups, 0);
@@ -56,9 +67,12 @@ test("disposing a whenAvailable runs the callback's cleanup at most once", () =>
 });
 
 test('use throws for an absent id', () => {
-  const { services } = createFakeHost({ absent: ['doric.about/v1'] });
+  const { services } = createFakeHost({
+    catalog,
+    absent: ['doric.catalog/v1'],
+  });
 
-  assert.throws(() => services.use(AboutV1));
+  assert.throws(() => services.use(DoricCatalogV1));
 });
 
 test('executed records the executed command ids in order, in a fresh array each call', async () => {

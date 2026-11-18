@@ -7,14 +7,11 @@ import {
 
 import { ConversationTerminals } from '../../../src/client/components/templates/conversation-terminals.js';
 import { ThreadPane } from '../../../src/client/components/templates/thread-pane.js';
-import { checkout, planThread, projectRoute } from '../../support/data.js';
 import { LayoutHost } from '../../support/layout-host.js';
 import { Placeholder } from '../../support/placeholder.js';
 import { ContentFrame, WorkspaceShell } from '../../support/shell.js';
+import { conversationLabel } from '../../support/tabs.js';
 import { windowDecorator } from '../../support/window-frame.js';
-import { sidebarModelOf } from '../../support/workspace.js';
-
-const noThread = sidebarModelOf({ selectedThreadId: undefined });
 
 export default {
   title: 'Layout/Templates/Thread pane',
@@ -30,10 +27,7 @@ export const Conversation = {
         <ConversationTerminals>
           <ContentFrame>
             <ThreadPane>
-              <Placeholder
-                tag="chat-thread"
-                label={`Conversation: ${planThread.name}`}
-              />
+              <Placeholder tag="chat-thread" label={conversationLabel} />
             </ThreadPane>
           </ContentFrame>
         </ConversationTerminals>
@@ -46,13 +40,13 @@ export const Conversation = {
 export const NoThread = {
   render: () => (
     <LayoutHost>
-      <WorkspaceShell path={projectRoute(checkout)} model={noThread}>
+      <WorkspaceShell owner="project:6f1c2a3e-4b5d-4e6f-8a7b-1c2d3e4f5a6b">
         <ConversationTerminals>
           <ContentFrame>
             <ThreadPane>
               <Empty>
                 <EmptyHeader>
-                  <EmptyTitle>{checkout.name}</EmptyTitle>
+                  <EmptyTitle>Checkout redesign</EmptyTitle>
                   <EmptyDescription>
                     Start a thread or select one from the sidebar.
                   </EmptyDescription>

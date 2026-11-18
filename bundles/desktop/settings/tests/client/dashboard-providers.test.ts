@@ -1,7 +1,7 @@
 // The Providers group of the /projects dashboard as the user meets it: the
 // settings bundle draws one row per configured provider into the dashboard's
-// side menu (`layout.dashboard.nav`) and a provider's page into the
-// dashboard's main area (`layout.dashboard.page`), opened through
+// side menu (`workspace.dashboard.nav`) and a provider's page into the
+// dashboard's main area (`workspace.dashboard.page`), opened through
 // `layout.dashboard/v1`. A probe bundle plays the layout: it provides that
 // contract and mounts the two settings elements the way the layout's
 // dashboard does, the nav element always and the page element while the page

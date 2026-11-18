@@ -213,47 +213,37 @@ describe('layout.tabs/v2 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v2@2.0.0 and layout.panel/v3@3.0.0 (neither layout.tabs/v1 nor layout.panel/v1 or v2), layout.conversation/v1@1.0.0, layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 4.7.1, requires neither runtime/v1 nor runtime.threads/v1, and takes runtime.records/v1 as optional (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive, bundle isolation AC3.1, S12, step 4(a) changes 6 and 7)', () => {
+  test('is the frame and its slots only at version 5.0.0: provides exactly layout.tabs/v2, layout.panel/v3, layout.stack/v2 and layout.conversation/v1, requires nothing of the runtime and lists nothing optional (bundle isolation AC4.7, step 4(c))', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
     ) as {
       version: string;
+      description: string;
       provides: string[];
       requires: string[];
-      optional: string[];
+      optional?: string[];
     };
 
-    assert.equal(manifest.version, '4.7.1');
-    assert.ok(
-      !manifest.requires.some(
-        (entry) =>
-          entry.startsWith('runtime/v1@') ||
-          entry.startsWith('runtime.threads/v1@'),
-      ),
-      'The layout still requires runtime/v1 or runtime.threads/v1.',
+    assert.equal(manifest.version, '5.0.0');
+    assert.equal(
+      manifest.description,
+      "The workspace window's frame and its slots.",
     );
-    assert.deepEqual(manifest.optional, [
-      'core.open-settings/v1',
-      'runtime.records/v1',
+    assert.deepEqual([...manifest.provides].sort(), [
+      'layout.conversation/v1@1.0.0',
+      'layout.panel/v3@3.0.0',
+      'layout.stack/v2@2.0.0',
+      'layout.tabs/v2@2.0.0',
     ]);
-    assert.ok(manifest.provides.includes('layout.stack/v2@2.0.0'));
-    assert.ok(
-      !manifest.provides.some((entry) => entry.startsWith('layout.stack/v1@')),
-      'The layout still provides layout.stack/v1.',
+    assert.deepEqual(
+      manifest.requires.filter((entry) => entry.startsWith('runtime')),
+      [],
+      'The layout still requires a runtime contract.',
     );
-    assert.ok(
-      !manifest.provides.some((entry) => entry.startsWith('layout.tabs/v1@')),
-      'The layout still provides layout.tabs/v1.',
+    assert.equal(
+      manifest.optional,
+      undefined,
+      'The layout still lists optional contracts.',
     );
-    assert.ok(manifest.provides.includes('layout.sidebar/v1@1.1.0'));
-    assert.ok(!manifest.provides.includes('layout.sidebar/v1@1.0.0'));
-    assert.ok(
-      !manifest.provides.some((entry) => entry.startsWith('layout.panel/v2@')),
-      'The layout still provides layout.panel/v2.',
-    );
-    assert.ok(!manifest.provides.includes('layout.panel/v1@1.0.0'));
-    assert.ok(manifest.provides.includes('layout.tabs/v2@2.0.0'));
-    assert.ok(manifest.provides.includes('layout.panel/v3@3.0.0'));
-    assert.ok(manifest.provides.includes('layout.conversation/v1@1.0.0'));
   });
 });

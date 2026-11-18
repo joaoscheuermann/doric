@@ -40,7 +40,8 @@ before the entries is drawn only when there is one.
 
 `account` does not size the icon element: the menu item's `svg` size rule is
 the only sizing, so the filler's element should draw an SVG at 16 px
-(`size-4`).
+(`size-4`). The element's host gives it the muted colour
+(`text-muted-foreground`), so the filler's SVG should take `currentColor`.
 
 Without `settings` the menu has no Settings entry.
 

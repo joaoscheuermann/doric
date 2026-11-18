@@ -394,10 +394,10 @@ const idsOf = (text: string, call: RegExp): string[] => {
   return ids;
 };
 
-test('no success or message toast in the chat, settings and layout sources uses an id a toastError call uses (T-39)', async () => {
+test('no success or message toast in the chat, settings, layout and workspace sources uses an id a toastError call uses (T-39)', async () => {
   const failureIds = new Set<string>();
   const otherIds = new Set<string>();
-  for (const bundle of ['chat', 'settings', 'layout']) {
+  for (const bundle of ['chat', 'settings', 'layout', 'workspace']) {
     for (const file of await sources(join(bundlesRoot, bundle, 'src'))) {
       const text = await readFile(file, 'utf8');
       for (const id of idsOf(text, /\btoastError\(/g)) failureIds.add(id);

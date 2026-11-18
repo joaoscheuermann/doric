@@ -1,14 +1,32 @@
-// A Thread's tab icon, as the layout's tab strip draws it from bundle
-// isolation 4a: the chat defines `<chat-thread-tab-icon>`, which reads the
-// Thread from `runtime.records/v1` and draws the icon of its kind (spec §10,
-// the icon part of T4.10 pulled into change 2, decision O8).
+// The chat's Thread tabs (spec §10, T4.10). From bundle isolation 4a the chat
+// defines `<chat-thread-tab-icon>`, which reads the Thread from
+// `runtime.records/v1` and draws the icon of its kind (the icon part of T4.10
+// pulled into change 2, decision O8). From 4(c) the chat opens the tab
+// itself when `workspace.hooks/v1.onOpenThreadHook` fires, through the shell's
+// `layout.tabs/v2` (a recording fake in this window), retitles it when the
+// Thread is renamed and closes it when the Thread leaves a described Project;
+// a tab whose Project is loading is left as it is. Rewritten from the
+// layout's `tests/thread-tabs.test.ts`; the hook's definer is a made-up
+// probe standing in for `workspace`.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
 
-import { type ClientContext, UiV1 } from 'bundle/contracts';
-import type { Thread } from 'runtime/contracts';
+import {
+  type ClientContext,
+  defineHook,
+  defineHooks,
+  HooksV1,
+  UiV1,
+} from 'bundle/contracts';
+import {
+  type RuntimeRecords,
+  RuntimeRecordsV1,
+  type Thread,
+} from 'runtime/contracts';
+import type { RecordsFakeOptions } from 'runtime/testing';
+import { z } from 'zod';
 
 import { type ChatWindow, openChatWindow, settle } from './support/window.js';
 
@@ -112,12 +130,144 @@ test('chat-thread-tab-icon draws the bubble for a Thread the records do not desc
   assert.deepEqual(iconsOf(element), ['lucide-message-circle']);
 });
 
-test('the chat requires runtime.records/v1@^1.0.0 at version 1.8.3 (spec §10)', () => {
+test('the chat requires runtime.records/v1@^1.0.0 and layout.tabs/v2@^2.0.0 and takes workspace.hooks/v1 as optional, at version 1.8.4 (spec §10, decision O2)', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as { version: string; requires: string[]; optional: string[] };
 
-  assert.equal(manifest.version, '1.8.3');
+  assert.equal(manifest.version, '1.8.4');
   assert.ok(manifest.requires.includes('runtime.records/v1@^1.0.0'));
   assert.ok(!manifest.optional.includes('runtime.records/v1'));
+  assert.ok(manifest.requires.includes('layout.tabs/v2@^2.0.0'));
+  assert.ok(manifest.optional.includes('workspace.hooks/v1'));
+  assert.ok(
+    !manifest.requires.some((entry) => entry.startsWith('workspace.hooks/v1@')),
+    'The chat requires workspace.hooks/v1.',
+  );
+});
+
+// T4.10: the chat opens, retitles and closes its Thread tabs ---------------
+
+/** `workspace.hooks/v1` as `workspace` defines it (structural: hooks match by id). */
+const WorkspaceHooksV1 = defineHooks('workspace.hooks/v1', {
+  onOpenThreadHook: defineHook({
+    kind: 'observe',
+    input: z.object({ projectId: z.string(), threadId: z.string() }).strict(),
+  }),
+});
+
+const fix = thread('22222222-2222-4222-8222-222222222232', {
+  name: 'Fix',
+  parentThreadId: rootId,
+});
+const other = thread('22222222-2222-4222-8222-222222222233', { name: 'Other' });
+
+/**
+ * Opens a window whose probe defines `workspace.hooks/v1`, as `workspace`
+ * does, and reaches the records the chat reads; answers a way to fire
+ * `onOpenThreadHook` and the records.
+ */
+const openWithHook = async (records: RecordsFakeOptions) => {
+  let fire:
+    | ((input: { projectId: string; threadId: string }) => Promise<unknown>)
+    | undefined;
+  let mirror: RuntimeRecords | undefined;
+  opened = await openChatWindow({
+    url: 'doric://app/elsewhere',
+    host: {},
+    records,
+    probe: {
+      hooks: ['workspace.hooks/v1'],
+      requires: ['hooks/v1@^1.0.0', 'runtime.records/v1@^1.0.0'],
+      activate: (context: ClientContext) => {
+        const handle = context.services.use(HooksV1).define(WorkspaceHooksV1);
+        fire = (input) => handle.onOpenThreadHook.execute(input);
+        mirror = context.services.use(RuntimeRecordsV1);
+      },
+    },
+  });
+  assert.ok(fire && mirror, 'The probe did not activate.');
+  // The window reads the Threads of the Project as the workspace would.
+  mirror.threads(projectId);
+  await settle();
+  return { window: opened, fire, records: mirror };
+};
+
+const callsTo = (window: ChatWindow, method: string) =>
+  window.tabCalls().filter((call) => call.method === method);
+
+test('T4.10: when onOpenThreadHook fires the chat opens its tab for the Thread', async () => {
+  const { window, fire } = await openWithHook({ threads: [main, fix, other] });
+
+  await fire({ projectId, threadId: fix.id });
+  await settle();
+
+  assert.deepEqual(callsTo(window, 'open'), [
+    {
+      method: 'open',
+      input: {
+        id: `thread:${fix.id}`,
+        title: 'Fix',
+        tag: 'chat-thread-panel',
+        iconTag: 'chat-thread-tab-icon',
+        openBottom: true,
+        props: { projectId, threadId: fix.id },
+      },
+    },
+  ]);
+});
+
+test('T4.10: renaming the Thread retitles its tab in every owner', async () => {
+  const { window, fire, records } = await openWithHook({
+    threads: [main, fix, other],
+  });
+  await fire({ projectId, threadId: fix.id });
+  await settle();
+
+  await records.renameThread({ threadId: fix.id, name: 'Fix 2' });
+  await settle();
+
+  assert.deepEqual(callsTo(window, 'retitle'), [
+    {
+      method: 'retitle',
+      input: { id: `thread:${fix.id}`, title: 'Fix 2', everyOwner: true },
+    },
+  ]);
+  assert.deepEqual(callsTo(window, 'close'), []);
+});
+
+test('T4.10: a Thread that leaves its described Project closes its tab in every owner, once', async () => {
+  const { window, fire, records } = await openWithHook({
+    threads: [main, fix, other],
+  });
+  await fire({ projectId, threadId: fix.id });
+  await settle();
+
+  await records.deleteThread({ threadId: fix.id });
+  await settle();
+  assert.deepEqual(callsTo(window, 'close'), [
+    { method: 'close', input: { id: `thread:${fix.id}`, everyOwner: true } },
+  ]);
+
+  // A later change of the records makes no call for the closed tab.
+  await records.renameThread({ threadId: other.id, name: 'Other 2' });
+  await settle();
+  assert.equal(callsTo(window, 'close').length, 1);
+  assert.deepEqual(callsTo(window, 'retitle'), []);
+});
+
+test('T4.10: while the Project is loading its tab is left as it is', async () => {
+  const { window, fire, records } = await openWithHook({
+    threads: [main, fix, other],
+    pending: ['threads'],
+  });
+  await fire({ projectId, threadId: fix.id });
+  await settle();
+
+  await records.renameThread({ threadId: other.id, name: 'Other 2' });
+  await records.deleteThread({ threadId: fix.id });
+  await settle();
+
+  assert.deepEqual(callsTo(window, 'close'), []);
+  assert.deepEqual(callsTo(window, 'retitle'), []);
 });

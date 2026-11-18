@@ -19,7 +19,8 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import type { SHELL_PANEL } from 'layout/contracts';
-import { LayoutPanelV3, LayoutWorkspaceV1 } from 'layout/contracts';
+import { LayoutPanelV3 } from 'layout/contracts';
+import { LayoutWorkspaceV1 } from 'workspace/contracts';
 
 import { ChatHooksV1 } from './api/peers.js';
 import { filesReadsOf } from './api/reads.js';

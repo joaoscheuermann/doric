@@ -578,6 +578,29 @@ test('a Thread the host does not know draws no conversation', async () => {
   assert.equal(opened.watches().length, 0);
 });
 
+// T4.11 (bundle isolation 4(c), R13, plan S10): for the moment between a
+// restored route and the mirror describing its Thread, the conversation
+// column shows the chat's element, which draws its own state for a Thread it
+// cannot describe yet: no failure notice, and the element stays mounted.
+// Characterization: no code changes for it.
+test('T4.11: mounted for a Thread the records mirror does not describe yet, chat-view stands and reports no failure', async () => {
+  opened = await openChatWindow({
+    url,
+    host: host(thread()),
+    records: { pending: ['threads'] },
+  });
+  await settle(50);
+
+  const view = opened.document.querySelector('chat-view');
+  assert.ok(view, 'The conversation column holds no chat-view.');
+  assert.equal(view.isConnected, true);
+  assert.equal(
+    view.querySelectorAll('[data-slot="error-notice"]').length,
+    0,
+    'chat-view draws a failure notice for an undescribed Thread.',
+  );
+});
+
 test('a versioned event nobody projects is drawn as a generic block', async () => {
   opened = await openChatWindow({ url, host: host(thread()) });
   await deliver(opened, [

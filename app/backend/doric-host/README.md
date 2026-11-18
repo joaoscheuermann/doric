@@ -149,6 +149,10 @@ A custom `DORIC_COMPOSITION` lists `account` in `enabled`; without it the
 window has no account menu, no connection badge and no About line, and
 nothing reports it.
 
+A custom `DORIC_COMPOSITION` lists `workspace` in `enabled`; without it the
+window has no sidebar, no Project tabs and no Dashboard, the files and git
+views and the terminal rows are quarantined, and nothing else reports it.
+
 What each bundle owns:
 
 - **`postgres`** (foundation) owns the Prisma schema, the migrations and the

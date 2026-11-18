@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "chat",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "engines": {
     "doric": "^1.7.0"
   },
@@ -22,7 +22,8 @@
     "layout.workspace/v1",
     "comments.added/v1",
     "comments.resolved/v1",
-    "runtime.prompt-finished/v1"
+    "runtime.prompt-finished/v1",
+    "workspace.hooks/v1"
   ],
   "requires": [
     "hooks/v1@^1.0.0",
@@ -35,7 +36,8 @@
     "runtime.attachments/v1@^1.0.0",
     "runtime.records/v1@^1.0.0",
     "comments/v1@^1.0.0",
-    "chat.composer/v1@^1.0.0"
+    "chat.composer/v1@^1.0.0",
+    "layout.tabs/v2@^2.0.0"
   ],
   "desktopScope": {
     "chat.composer/v1": ["projectId", "threadId", "promptId"]

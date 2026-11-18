@@ -49,6 +49,8 @@ import {
 import { watchSandboxActivity } from './services/sandbox-activity.js';
 import { createChatSend } from './services/send.js';
 import { sendPromptCommand } from './services/send-command.js';
+import { watchThreadTabs } from './services/thread-tabs.js';
+import { watchThreadViews } from './services/thread-views.js';
 import {
   createChatViews,
   GENERIC_BLOCK_TAG,
@@ -130,8 +132,14 @@ export function activate({ services }: ClientContext): Cleanup {
     return () => setRuntimeTerminalsApi(undefined);
   });
   const stopActivity = watchSandboxActivity(threadChatsStore, hooks);
+  // The Thread tabs the chat opens beside the conversation, and the views of
+  // the Threads the window shows (bundle isolation 4(c)).
+  const stopThreadTabs = watchThreadTabs(services);
+  const stopThreadViews = watchThreadViews(services);
 
   return () => {
+    stopThreadViews();
+    stopThreadTabs();
     stopActivity();
     threadChatsStore.getState().closeAll();
     runtimeTerminals.dispose();

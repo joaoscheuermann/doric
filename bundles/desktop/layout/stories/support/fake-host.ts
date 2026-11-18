@@ -1,36 +1,27 @@
-// A fake host for the layout stories: the services `activate` binds the
-// layout to, answered in memory from story data. The Projects and Threads are
-// a records mirror (`runtime.records/v1`) built by `createRecordsApi` of
-// `runtime/testing`: they can be created, renamed, colored and deleted; a read
-// can be held pending or made to fail, which is how the loading and error
-// states are drawn. The
-// services the layout itself provides (`layout.tabs/v2` and the rest) are kept and answered in process, so a child Thread still opens
-// its tab.
+// A fake host for the layout stories and tests: the services `activate`
+// binds the shell to, answered in memory. The services the layout itself
+// provides (`layout.tabs/v2` and the rest) are kept and answered in process.
+// Since bundle isolation 4(c) the shell reads no Project or Thread: the host
+// holds no records mirror, no terminal rows and no `doric.about/v1`, and an
+// element another bundle draws (the chat's tab icon among them) is a
+// placeholder.
 
 import type {
   CatalogSnapshot,
   Disposable,
-  DoricAbout,
   Navigation,
   ProviderInfo,
 } from 'bundle/contracts';
 import { FileDiffIcon, FileIcon, type LucideIcon } from 'lucide-react';
 import { type ComponentProps, createElement } from 'react';
-import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
-import type { ProjectActivity, RuntimeRecords } from 'runtime/contracts';
-import { createRecordsApi, type RecordsOperation } from 'runtime/testing';
 
-import { ThreadKindIcon } from '../../src/client/components/molecules/thread-mark.js';
 import type { ProjectPanel } from '../../src/client/components/organisms/project-panel.js';
-import { isUntitled, threadKind } from '../../src/client/domain/thread-kind.js';
-import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { activate } from '../../src/client/index.js';
-import type { StackPane, ThreadRows } from '../../src/contracts/index.js';
+import type { StackPane } from '../../src/contracts/index.js';
 import { placeholderElement } from './placeholder.js';
-import { type FixtureTerminal, TerminalRowsFixture } from './terminal-rows.js';
 
-export type { StackPane, ThreadRows };
+export type { StackPane };
 
 export type Services = Parameters<typeof activate>[0]['services'];
 
@@ -41,32 +32,12 @@ export type RegionItem = Omit<RegionEntry, 'owner'> & {
   readonly owner?: string;
 };
 
-/**
- * The host reads a story can hold pending or make fail; `thread` is the
- * mirror's `findThread`.
- */
-export type HostOperation = 'projects' | 'activity' | 'threads' | 'thread';
-
 export interface HostOptions {
-  readonly projects?: readonly Project[];
-  readonly threads?: readonly Thread[];
   /** The window path the story opens at. */
   readonly path?: string;
   readonly connection?: 'connected' | 'disconnected';
   /** The items other bundles added to each region. */
   readonly regions?: Readonly<Record<string, readonly RegionItem[]>>;
-  /** Reads that never answer, for loading states. */
-  readonly pending?: readonly HostOperation[];
-  /** Reads that fail as an unreachable host does. */
-  readonly failing?: readonly HostOperation[];
-  /** How many terminal rows each Thread has in the sidebar tree. */
-  readonly terminalRows?: Readonly<Record<string, number>>;
-  /**
-   * Thread ids with a busy agent terminal: the stories' `layout.sidebar/v1`
-   * registration answers `busy` true for them, so each one and its ancestors
-   * are active. Absent: no Thread is busy.
-   */
-  readonly terminalBusy?: readonly string[];
   /**
    * Contract ids the host does not provide, as an older app lacks a platform
    * contract. For an id listed here:
@@ -81,76 +52,10 @@ export interface HostOptions {
    * object on every call). Absent: the host does not provide the contract,
    * so `use` throws for it, as it does for any id the host does not know.
    * `LayoutFixture` extends `HostOptions`, so `bindLayout` and
-   * `renderWorkspace` pass it through unchanged.
+   * `renderShell` pass it through unchanged.
    */
   readonly catalog?: CatalogSnapshot;
 }
-
-const terminalCommands = ['npm run dev', 'npm test -- --watch', 'tsc --watch'];
-
-/** One fixture terminal per row: the reader's first, then the agent's runs. */
-const fixtureTerminals = (count: number): readonly FixtureTerminal[] =>
-  Array.from({ length: count }, (_, index) => {
-    const command = terminalCommands[index % terminalCommands.length] ?? '';
-    const agent = index % 2 === 1;
-    return {
-      id: `terminal-${index}`,
-      label: agent ? `${command} · 00:12 (10:00)` : command,
-      origin: agent ? 'agent' : 'user',
-    };
-  });
-
-/**
- * How deep a Thread's terminal rows sit: one level under a main Thread, one
- * more for each ancestor it was opened inside.
- */
-const rowsDepth = (threadId: string, threads: readonly Thread[]): number => {
-  const byId = new Map(threads.map((thread) => [thread.id, thread]));
-  let depth = 1;
-  let thread = byId.get(threadId);
-  while (thread?.parentThreadId !== undefined) {
-    depth += 1;
-    thread = byId.get(thread.parentThreadId);
-  }
-  return depth;
-};
-
-/**
- * The terminal bundle's rows under one Thread, as `<terminal-rows thread-id>`
- * draws them: one row per terminal, none when the Thread has no terminal, with
- * the app's row styling (its icon, its command, and the stop or discard button
- * that appears on hover).
- */
-const terminalRowsElement = (count: number, depth: number): HTMLElement => {
-  const element = document.createElement('div');
-  element.style.display = 'contents';
-  const root = createRoot(element);
-  flushSync(() =>
-    root.render(
-      createElement(TerminalRowsFixture, {
-        depth,
-        terminals: fixtureTerminals(count),
-      }),
-    ),
-  );
-  return element;
-};
-
-/**
- * The chat's `<chat-thread-tab-icon>` as the running app draws it: the mark of
- * the Thread its props name, the bubble for a Thread the story does not hold.
- */
-const threadTabIconElement = (thread: Thread | undefined): HTMLElement => {
-  const element = document.createElement('span');
-  element.style.display = 'contents';
-  createRoot(element).render(
-    createElement(ThreadKindIcon, {
-      kind: thread === undefined ? 'main' : threadKind(thread),
-      untitled: thread !== undefined && isUntitled(thread),
-    }),
-  );
-  return element;
-};
 
 /**
  * The `account` bundle's `<account-status>` (step 4(b), decision O1): a
@@ -287,9 +192,8 @@ export interface FakeHost {
    * The services `activate` binds the layout to.
    *
    * `use(ref)` answers an id the layout provided, then the host's own
-   * answers: `runtime.records/v1` (`records`), `doric.connection/v1`,
-   * `doric.about/v1` (`get()` resolves `{ version: '0.0.1' }`), `ui/v1`,
-   * `navigation/v1`, `regions/v1` and `commands/v1`. It throws for an id in
+   * answers: `doric.connection/v1`, `doric.catalog/v1` (with `catalog`),
+   * `ui/v1`, `navigation/v1`, `regions/v1` and `commands/v1`. It throws for an id in
    * `absent` or unknown. `ui/v1` creates each element defined through it
    * under its own tag, with these services; any other tag is a stand-in.
    *
@@ -314,42 +218,7 @@ export interface FakeHost {
    * executions do not change an array already returned.
    */
   executed(): readonly string[];
-  /**
-   * The object the host answers `use('runtime.records/v1')` with, the same on
-   * every `use`: a `createRecordsApi` mirror of the host options (`projects`,
-   * `threads`, `connection`, `pending`, `failing`; the operation `thread` is
-   * `findThread`). A test may replace its members; the layout calls the
-   * replacement.
-   */
-  readonly records: RuntimeRecords;
-  /**
-   * Calls every listener subscribed through `records.subscribe`, as the
-   * mirror does when a read changes, including the listeners subscribed
-   * before a test replaced a member.
-   */
-  notifyRecords(): void;
 }
-
-/** The activity of every Project: its latest Thread or own update, newest first. */
-const activityOf = (
-  projects: readonly Project[],
-  threads: readonly Thread[],
-): readonly ProjectActivity[] =>
-  projects
-    .map((project) => {
-      const latest = threads
-        .filter((thread) => thread.projectId === project.id)
-        .map((thread) => thread.updatedAt)
-        .concat(project.updatedAt)
-        .sort()
-        .at(-1);
-      return { project, activityAt: latest ?? project.updatedAt };
-    })
-    .sort((left, right) => right.activityAt.localeCompare(left.activityAt));
-
-/** The mirror's name for a host read. */
-const recordsOperation = (operation: HostOperation): RecordsOperation =>
-  operation === 'thread' ? 'findThread' : operation;
 
 /** The provider a story host's `whenAvailable` callback is bound to. */
 const storyProvider: ProviderInfo = { bundleId: 'story', version: '0.0.0' };
@@ -363,32 +232,6 @@ const commandId = (command: unknown): string =>
 export const createFakeHost = (options: HostOptions = {}): FakeHost => {
   const absent = new Set(options.absent ?? []);
   const commandsExecuted: string[] = [];
-
-  const records = createRecordsApi({
-    projects: options.projects ?? [],
-    threads: options.threads ?? [],
-    activity: activityOf(options.projects ?? [], options.threads ?? []),
-    connection: options.connection ?? 'connected',
-    pending: (options.pending ?? []).map(recordsOperation),
-    failing: (options.failing ?? []).map(recordsOperation),
-  });
-  // Every listener subscribed through `records`, so `notifyRecords` reaches
-  // them whatever member a test replaced since.
-  const recordsListeners = new Set<() => void>();
-  const subscribe = records.subscribe.bind(records);
-  records.subscribe = (listener, call): Disposable => {
-    recordsListeners.add(listener);
-    const subscription = subscribe(listener, call);
-    return {
-      dispose: () => {
-        recordsListeners.delete(listener);
-        subscription.dispose();
-      },
-    };
-  };
-  const notifyRecords = (): void => {
-    for (const listener of [...recordsListeners]) listener();
-  };
 
   let path = options.path ?? '/';
   const routeListeners = new Set<(match: RouteMatch | undefined) => void>();
@@ -466,14 +309,10 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
 
   const status = options.connection ?? 'connected';
   const apis: Record<string, unknown> = {
-    'runtime.records/v1': records,
     'doric.connection/v1': {
       status: () => status,
       subscribe: () => disposable,
     },
-    'doric.about/v1': {
-      get: () => Promise.resolve({ version: '0.0.1' }),
-    } satisfies DoricAbout,
     'ui/v1': {
       define: (tag: string, element: CustomElementConstructor) => {
         if (customElements.get(tag) === undefined)
@@ -488,19 +327,9 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
           return element;
         }
         if (tag === 'account-status') return accountStandIn();
-        if (tag === 'chat-thread-tab-icon')
-          return threadTabIconElement(
-            options.threads?.find((thread) => thread.id === props?.threadId),
-          );
         const glyph = glyphIcons[tag];
         if (glyph !== undefined) return glyphElement(glyph);
-        const threadId = props?.['thread-id'];
-        return tag === 'terminal-rows' && typeof threadId === 'string'
-          ? terminalRowsElement(
-              options.terminalRows?.[threadId] ?? 0,
-              rowsDepth(threadId, options.threads ?? []),
-            )
-          : placeholderElement(tag, props);
+        return placeholderElement(tag, props);
       },
       // As the host's: the element leaves the document, and one the layout
       // defined unmounts its root at once.
@@ -592,5 +421,5 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
 
   const executed = (): readonly string[] => [...commandsExecuted];
 
-  return { services, regionItems, executed, records, notifyRecords };
+  return { services, regionItems, executed };
 };

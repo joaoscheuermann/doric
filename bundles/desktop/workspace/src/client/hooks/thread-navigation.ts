@@ -1,0 +1,99 @@
+import type { HookHandle } from 'bundle/contracts';
+import { errorFrom } from 'desktop/reads';
+import type { RefObject } from 'react';
+
+import type { WorkspaceHooksV1 } from '../../contracts/index.js';
+import {
+  isDescribed,
+  type Selection,
+  threadsOf,
+} from '../domain/project-tree.js';
+import { mainThreadFor } from '../domain/thread-navigation.js';
+import type { Thread } from '../domain/workspace.js';
+import { rewriteRoute } from '../stores/route-selection.js';
+import { boundRecords, workspaceStore } from '../stores/workspace.js';
+
+/** The owner handle of `workspace.hooks/v1`, defined once at activation. */
+export type WorkspaceHooks = HookHandle<typeof WorkspaceHooksV1>;
+
+let hooks: WorkspaceHooks | undefined;
+
+/** Sets the handle `openThread` executes through; `undefined` on deactivation. */
+export const setOpenThreadHook = (handle: WorkspaceHooks | undefined): void => {
+  hooks = handle;
+};
+
+/**
+ * Asks for `thread` beside the conversation, as a sub-thread opens (P18):
+ * executes `onOpenThreadHook`, which the bundle that draws Threads observes
+ * (the chat opens its tab); the conversation column keeps what it shows. A
+ * refusal is reported in the sidebar.
+ */
+export const openThread = async (thread: Thread): Promise<void> => {
+  try {
+    await hooks?.onOpenThreadHook.execute({
+      projectId: thread.projectId,
+      threadId: thread.id,
+    });
+  } catch (reason) {
+    workspaceStore.getState().fail(reason);
+  }
+};
+
+/** Resolves a child into the right-hand tabs while keeping a root conversation. */
+export function createThreadNavigation({
+  intent,
+  loadThreads,
+  userSelection,
+}: {
+  readonly intent: RefObject<number>;
+  readonly loadThreads: (projectId: string) => Promise<void>;
+  readonly userSelection: (selection: Selection) => void;
+}) {
+  return async (
+    target: Thread,
+    user: boolean,
+  ): Promise<Selection | undefined> => {
+    const requestIntent = intent.current;
+    const store = workspaceStore.getState();
+    let described = isDescribed(store.tree, target.projectId);
+    // A fetched Thread of a Project not described yet: reading that Project's
+    // Threads starts the mirror's load. A described Project that does not hold
+    // it: the mirror reloads that Project's Threads. Either way the record
+    // reaches the tree when the load settles.
+    if (!described) store.request(target.projectId);
+    else if (
+      !threadsOf(store.tree, target.projectId).some(
+        (row) => row.id === target.id,
+      )
+    ) {
+      boundRecords()?.reload({
+        target: 'threads',
+        projectId: target.projectId,
+      });
+    }
+    let main = mainThreadFor(store.tree, target);
+    if (main === undefined) {
+      await loadThreads(target.projectId);
+      if (intent.current !== requestIntent) return undefined;
+      described = true;
+      main = mainThreadFor(workspaceStore.getState().tree, target);
+    }
+    if (main === undefined) {
+      store.report(errorFrom('not_found', 'The parent thread was not found.'));
+      return undefined;
+    }
+    const selection = { projectId: main.projectId, threadId: main.id };
+    if (user) userSelection(selection);
+    store.selectThread(main);
+    if (target.parentThreadId !== undefined) {
+      // The tab service takes ownership from the route. Canonicalize it before
+      // opening, so a direct child link cannot own a second set of tabs.
+      rewriteRoute(selection);
+      await openThread(target);
+    }
+    if (intent.current !== requestIntent) return undefined;
+    if (!described) void loadThreads(main.projectId);
+    return selection;
+  };
+}

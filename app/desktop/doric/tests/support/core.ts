@@ -23,6 +23,13 @@ export const RUNTIME_DIST = resolve('bundles/runtime/runtime/dist');
 export const COMMENTS_DIST = resolve('bundles/features/comments/dist');
 /** The real settings bundle: the settings window and the execution picker. */
 export const SETTINGS_DIST = resolve('bundles/desktop/settings/dist');
+/**
+ * The real workspace bundle (bundle isolation 4(c)): the navigation, and the
+ * three transition contracts `files`, `git` and the chat reach.
+ */
+export const WORKSPACE_DIST = resolve('bundles/desktop/workspace/dist');
+/** The real account bundle (bundle isolation 4(b)): the account menu. */
+export const ACCOUNT_DIST = resolve('bundles/desktop/account/dist');
 /** The real host-config bundle: only its manifest, descriptor and schemas. */
 const HOST_CONFIG_DIST = resolve('bundles/foundation/host-config/dist');
 /**
@@ -312,7 +319,7 @@ const HOST_ONLY_KEPT: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * The workspace distribution: the real core, layout, resources, git, files,
- * chat, usage and settings, the memory foundation, and host-only cuts of the runtime,
+ * chat, usage, settings, workspace and account, the memory foundation, and host-only cuts of the runtime,
  * comments and host-config bundles that provide the host contracts those
  * bundles `require` and none of them provides (`runtime/v1`,
  * `runtime.threads/v1`, `runtime.records/v1` with the runtime's client part,
@@ -341,6 +348,8 @@ export const workspaceDistribution = async (
     await builtBundle(CHAT_DIST),
     await builtBundle(USAGE_DIST),
     await builtBundle(SETTINGS_DIST),
+    await builtBundle(WORKSPACE_DIST),
+    await builtBundle(ACCOUNT_DIST),
   ];
   const provided = new Set(
     real.flatMap(({ bundle }) => contractsOf(bundle).map((entry) => entry.id)),

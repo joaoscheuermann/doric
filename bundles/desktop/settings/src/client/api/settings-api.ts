@@ -31,7 +31,6 @@ import {
 } from 'bundle/contracts';
 import { ClaudeLoginV1 } from 'claude-login/contracts';
 import { ClientError } from 'desktop/reads';
-import { LayoutDashboardV1, LayoutWorkspaceV1 } from 'layout/contracts';
 import type {
   ConfigReplaceResult,
   Configuration as HostConfiguration,
@@ -68,6 +67,7 @@ import {
   type ToolConfigFieldKind,
 } from '../domain/config.js';
 import type { IconRequest } from '../domain/model-icons.js';
+import { LayoutDashboardV1, LayoutWorkspaceV1 } from './navigation-refs.js';
 
 /**
  * `host-config/v1` (the `/config` pipeline), referenced by id with the

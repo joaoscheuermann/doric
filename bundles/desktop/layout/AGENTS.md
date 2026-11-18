@@ -1,8 +1,10 @@
 # Layout Bundle Agent Instructions
 
 These instructions apply to `bundles/desktop/layout` and narrow the root `AGENTS.md`.
-The layout is the workspace frame of the desktop window: Projects and Threads,
-the header, the side panel, the tabs and the footers. It moved here from
+The layout is the workspace window's frame and its slots: the sidebar column,
+the title bar, the conversation, the viewer tabs, the side panel and the
+footers. The navigation that fills the sidebar, the title bar and the page
+form (Projects, Threads, the Dashboard) is the `workspace` bundle's since 5.0.0. It moved here from
 `app/desktop/doric-renderer` in stage 9 and must keep that renderer's visible text,
 roles, layout and quirks.
 
@@ -17,7 +19,6 @@ src/client/
   elements/    the custom elements `ui/v1` defines
   hooks/       every `use*` hook
   stores/      Zustand stores
-  queries/     TanStack Query keys, the client, the refresh queue
   domain/      the vocabulary of the product (pure, tested)
   utility/     helpers stated only in terms of their arguments
   services/    the layout's own contract providers and activation services
@@ -36,15 +37,11 @@ src/client/
 
 - The client part never imports `bundle`, `bundle/runtime` or
   `desktop/client`, and touches no DOM at module load.
-- Projects and Threads are read from `runtime.records/v1`, the runtime's
-  records mirror; the layout calls no method of `runtime/v1` or
-  `runtime.threads/v1`. The host adapter, the Project watch and the Thread
-  views live in the runtime's client part.
-- `runtime/contracts` is imported for types only; contract references are
-  built from their IDs (D32).
-- Persistent work (the selection route, timers, watches such as
-  `watchThreadViews`, `watchThreadTabs` and the `bindRecords` subscription) is bound to the
-  activation services, never to an element's services (D9-17).
+- The layout reads no records and imports nothing from `runtime/contracts`;
+  Projects, Threads and the selection are `workspace`'s, and the Thread tabs
+  and the views of the Threads on screen are the chat's.
+- Persistent work is bound to the activation services, never to an element's
+  services (D9-17).
 - `src/client/styles.css` holds only the conversation footer's height, fill
   and blur (one rule keyed on `[data-slot='workspace-footer']`); the utilities
   this bundle uses are emitted by the shell's sorted sheet, so do not add
@@ -61,7 +58,7 @@ src/client/
   adapter in the runtime's `src/client/api/workspace-api.ts` owns those
   messages.
 
-## Slots and navigation elements
+## Slots
 
 - Every shell slot is a constant in `src/contracts/index.ts` (`SHELL_*`). The
   frame draws it as a value (`<Region name={SHELL_PANEL} />`,
@@ -69,22 +66,11 @@ src/client/
   `'shell.panel' satisfies typeof SHELL_PANEL` with an `import type`.
 - `views/workspace-view.tsx` draws one of two forms: the page form while
   `shell.page` holds an item, the conversation form otherwise. It keeps one
-  `shell.sidebar` region element and moves it between the forms, so
-  `<layout-sidebar>` does not remount on a form switch.
-- The navigation fills the slots with the elements of
-  `elements/navigation-elements.tsx` (`layout-sidebar`, `layout-project-tabs`,
-  `layout-dashboard`, `layout-sidebar-footer`) until step 4(c) moves them
-  out. Each is a React root of its own, so:
-  - only `layout-sidebar` runs `useWorkspace`'s once-per-window effects
-    (`useWorkspace({ effects: true })`: Projects load, follow, selection
-    persistence), because both forms draw it;
-  - state two elements share lives in a module store: the Project tabs in
-    `stores/project-tabs.ts` (restored by the activation), the Dashboard's
-    page, search, highlight and create form in `stores/dashboard.ts`;
-  - the tab owner lives in `stores/workspace-tabs.ts`; the activation's
-    watcher sets it from the route with `tabOwnerOf`, and the frame reads it.
-- `/projects` and `/projects/:projectId` are child routes of `/`, drawn by
-  `elements/project-empty-element.tsx`.
+  `shell.sidebar` region element and moves it between the forms, so its items
+  (`workspace`'s `<workspace-sidebar>`) do not remount on a form switch.
+- The tab owner lives in `stores/workspace-tabs.ts`; `layout.tabs/v2`
+  `setOwner` sets it (`workspace` names it from the route), and the frame
+  reads it. A failed close of a tab is reported with `console.error('Doric: …')`.
 
 ## Footers
 

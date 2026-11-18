@@ -32,8 +32,8 @@ for how bundles work.
     agent Thread — one an agent spawned — it draws the reader's three levers
     instead: pause the run, continue the prompt it left unfinished, or retry
     the last one (`domain/agent-control.ts`);
-  - `<chat-thread-panel>`, a conversation with its own footer, which the layout
-    uses for a child Thread's tab. `<chat-thread-panel>`'s own footer floats
+  - `<chat-thread-panel>`, a conversation with its own footer, which the chat
+    opens as a child Thread's tab. `<chat-thread-panel>`'s own footer floats
     over its conversation's bottom 44 px, 8 px over and under its 28 px row,
     as tall as the `--shell-conversation-footer-height` it sets itself (2.75rem). It ends on
     the card's edge while the layout's viewer card drops its bottom padding,
@@ -168,11 +168,29 @@ desktop part, as Papercraft does.
 - **Required:** `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   `commands/v1`, `menus/v1`, `runtime.threads/v1`, `runtime.attachments/v1`,
   `runtime.records/v1` (from 1.8.2, for `<chat-thread-tab-icon>`),
-  `comments/v1` and `chat.composer/v1`.
+  `comments/v1`, `chat.composer/v1` and, from 1.8.4, `layout.tabs/v2`.
 - **Optional:** `history.snapshots/v1`, `models/v1`, `layout.workspace/v1`,
   `comments.added/v1`, `comments.resolved/v1`, `runtime.prompt-finished/v1`,
-  and `terminal/v1` or `runtime.terminals/v1` for live terminal output.
-  Without them the conversation still works.
+  `workspace.hooks/v1`, and `terminal/v1` or `runtime.terminals/v1` for live
+  terminal output. Without them the conversation still works.
+
+## Thread tabs and the Threads on screen
+
+From 1.8.4 the chat owns its Thread tabs (bundle isolation 4(c)). When
+`workspace.hooks/v1.onOpenThreadHook` fires (a structural copy in
+`src/client/api/workspace-hooks.ts`), it opens
+`{ id: 'thread:<id>', tag: 'chat-thread-panel', iconTag: 'chat-thread-tab-icon',
+openBottom: true, props: { projectId, threadId } }` through `layout.tabs/v2`,
+titled with the Thread's name. On every change of `runtime.records/v1` it
+retitles each tab it opened when the Thread's name changes and closes it, in
+every owner, when the Thread leaves its described Project; a tab whose Project
+is loading is left as it is (`services/thread-tabs.ts`).
+
+The chat also holds a `view` of the mirror for every Thread the window shows:
+the Thread of its route and the Thread of the selected viewer tab when the
+chat opened that tab (`domain/thread-views.ts`, `services/thread-views.ts`).
+On each change of the route, the tabs or the records it takes the new views
+before it disposes the old ones.
 
 ## Design
 

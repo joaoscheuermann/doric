@@ -10,7 +10,6 @@ import {
   ref,
 } from 'bundle/contracts';
 import { isValidElement, type ReactElement } from 'react';
-import type { Project, Thread } from 'runtime/contracts';
 import { z } from 'zod';
 
 // The shell's slots (4.1.0). Their items are elements `{ id, tag, order? }`
@@ -197,71 +196,6 @@ export const layoutTabsMethods = {
 
 export const LayoutTabsV2 = ref<LayoutTabs>('layout.tabs/v2');
 
-/** A read-only view of the sidebar tree for other client bundles. */
-export interface LayoutWorkspace {
-  /** The tree's record of a Thread of any loaded Project. */
-  thread(threadId: string, call?: CallArg): Thread | undefined;
-  /** The selected Thread, once the tree describes it. */
-  selectedThread(call?: CallArg): Thread | undefined;
-  /**
-   * 1.1.0: the validated selection the workspace shows. A Project-only
-   * selection has no `thread`; a Thread the tree does not describe yet is
-   * absent too.
-   */
-  selection(call?: CallArg): WorkspaceSelection;
-  /** 1.1.0: the loaded Threads of a Project (empty until described). */
-  threads(projectId: string, call?: CallArg): readonly Thread[];
-  /** 1.1.0: whether the window is connected to the host (the sidebar footer). */
-  connected(call?: CallArg): boolean;
-  /**
-   * 1.1.0: shows (`true`) or hides the `shell.conversation.bottom` split for one
-   * item. The split is shown while any item asked for it; its items mount
-   * only while it is shown.
-   */
-  setBottomVisible(itemId: string, visible: boolean, call?: CallArg): void;
-  /** Called after every change of the tree, the selection or the connection. */
-  subscribe(listener: () => void, call?: CallArg): Disposable;
-}
-
-export interface WorkspaceSelection {
-  readonly project?: Project;
-  readonly thread?: Thread;
-}
-
-const threadRecordSchema = z.custom<Thread | undefined>(
-  (value) =>
-    value === undefined || (typeof value === 'object' && value !== null),
-  { message: 'Expected a Thread record or undefined.' },
-);
-
-const selectionSchema = z.custom<WorkspaceSelection>(
-  (value) => typeof value === 'object' && value !== null,
-  { message: 'Expected a selection.' },
-);
-
-const threadListSchema = z.custom<readonly Thread[]>(
-  (value) => Array.isArray(value),
-  { message: 'Expected a list of Threads.' },
-);
-
-export const layoutWorkspaceMethods = {
-  thread: { input: z.string(), output: threadRecordSchema },
-  selectedThread: { input: noInput, output: threadRecordSchema },
-  selection: { input: noInput, output: selectionSchema },
-  threads: { input: z.string(), output: threadListSchema },
-  connected: { input: noInput, output: z.boolean() },
-  setBottomVisible: {
-    input: z.tuple([z.string().min(1), z.boolean()]),
-    output: z.void(),
-  },
-  subscribe: {
-    input: functionSchema<() => void>(),
-    output: disposableSchema,
-  },
-} as const;
-
-export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
-
 /**
  * The Project panel beside the conversation (`layout.panel/v3` 3.0.0). Its
  * views are the `shell.panel` region items `{ id, tag, order, props: { label,
@@ -315,83 +249,6 @@ export const layoutConversationMethods = {
 export const LayoutConversationV1 = ref<LayoutConversation>(
   'layout.conversation/v1',
 );
-
-/**
- * The dashboard's shown page (1.0.0). Two regions extend the dashboard:
- * `layout.dashboard.nav` items `{ id, tag, order? }` are groups drawn in the
- * dashboard sidebar after the Projects group, each element drawing its own
- * `SidebarGroup`; `layout.dashboard.page` items `{ id, tag, order? }` are pages
- * the main area shows instead of the project list. At most one page shows at a
- * time; with none, the project list shows.
- */
-export interface LayoutDashboard {
-  /** The shown page's `layout.dashboard.page` item id; `undefined` while the project list shows. */
-  active(call?: CallArg): string | undefined;
-  /** Shows the page with this id. An id no item has is stored but draws the project list; an empty id is refused (`invalid_input`). Showing the shown page notifies no one. */
-  show(id: string, call?: CallArg): void;
-  /** Back to the project list: `active()` is `undefined` afterwards. */
-  close(call?: CallArg): void;
-  /** Called after every change of `active()`; disposing stops the calls. */
-  subscribe(listener: () => void, call?: CallArg): Disposable;
-}
-export const layoutDashboardMethods = {
-  active: { input: noInput, output: z.string().optional() },
-  show: { input: z.string().min(1), output: z.void() },
-  close: { input: noInput, output: z.void() },
-  subscribe: { input: listenerSchema, output: disposableSchema },
-} as const;
-export const LayoutDashboardV1 = ref<LayoutDashboard>('layout.dashboard/v1');
-
-/** Rows a bundle adds under each Thread of the sidebar tree (1.0.0; busy 1.1.0). */
-export interface ThreadRows {
-  readonly id: string;
-  /** Mounted as `<tag thread-id="…">` before the Thread's child Threads. */
-  readonly tag: string;
-  /** How many rows the Thread has; above 0 the Thread row is expandable. */
-  count(threadId: string): number;
-  /** Called by the owner after every change of any count. */
-  subscribe(listener: () => void): Disposable;
-  /**
-   * 1.1.0: whether work this bundle tracks directly under the Thread, not under
-   * its descendants, keeps the Thread active. The layout makes the Thread and
-   * every ancestor active (shimmer and elapsed badge) while it answers true.
-   * The layout calls it once per Thread of the selected Project on every render
-   * of the tree, drawn or not (under a collapsed row, outside a search), so it
-   * must answer from memory. A throw reads as false. The owner calls the
-   * `subscribe` listener after every change of any answer. Absent: never busy.
-   */
-  busy?(threadId: string): boolean;
-}
-
-export interface LayoutSidebar {
-  /** A duplicate id fails with `registration_conflict`. */
-  addThreadRows(rows: ThreadRows, call?: CallArg): Disposable;
-}
-
-const isThreadRows = (value: unknown): value is ThreadRows => {
-  if (typeof value !== 'object' || value === null) return false;
-  const rows = value as Record<string, unknown>;
-  return (
-    typeof rows.id === 'string' &&
-    rows.id.length > 0 &&
-    typeof rows.tag === 'string' &&
-    rows.tag.length > 0 &&
-    typeof rows.count === 'function' &&
-    typeof rows.subscribe === 'function' &&
-    (rows.busy === undefined || typeof rows.busy === 'function')
-  );
-};
-
-export const layoutSidebarMethods = {
-  addThreadRows: {
-    input: z.custom<ThreadRows>(isThreadRows, {
-      message: 'Expected { id, tag, count, subscribe, busy? }.',
-    }),
-    output: disposableSchema,
-  },
-} as const;
-
-export const LayoutSidebarV1 = ref<LayoutSidebar>('layout.sidebar/v1');
 
 /**
  * A group of the sidebar's vertical stack (`layout.stack/v2`, 2.0.0). The

@@ -14,7 +14,7 @@ describe('the git manifest', () => {
       readFileSync('bundles/features/git/manifest.json', 'utf8'),
     ) as { version: string; provides: string[]; requires: string[] };
 
-    assert.equal(manifest.version, '1.2.9');
+    assert.equal(manifest.version, '1.2.10');
     assert.ok(manifest.provides.includes('git.commands/v1@1.1.0'));
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('layout.tabs/')),

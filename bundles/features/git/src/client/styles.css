@@ -23,6 +23,7 @@
 @source '../../../../desktop/chat/src/client';
 @source '../../../../desktop/settings/src/client';
 @source '../../../../desktop/account/src/client';
+@source '../../../../desktop/workspace/src/client';
 
 /*
  * The colours of a change: the palette's `--git-*` variables, which the Changes

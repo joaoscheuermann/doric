@@ -1,8 +1,9 @@
 // The settings bundle's client part (stage 9, design §6): the settings window
 // at `/settings`, its own five sections as child routes (Versioning is the git bundle's since WP-10N), the nav as the
 // `settings.sections` region, the footer execution picker in
-// `shell.conversation.footer`, and the account menu's "Settings" entry in
-// `account.menu`, drawn with `settings-entry-icon`.
+// `shell.conversation.footer`, the account menu's "Settings" entry in
+// `account.menu` and the Dashboard's "All settings" entry in
+// `workspace.dashboard.footer`, both drawn with `settings-entry-icon`.
 
 import type { ACCOUNT_MENU, AccountMenuItemProps } from 'account/contracts';
 import {
@@ -13,8 +14,14 @@ import {
 } from 'bundle/contracts';
 import { ClaudeLoginV1 } from 'claude-login/contracts';
 import type { SHELL_CONVERSATION_FOOTER } from 'layout/contracts';
-import { LayoutDashboardV1, LayoutWorkspaceV1 } from 'layout/contracts';
+import type {
+  DashboardFooterItemProps,
+  WORKSPACE_DASHBOARD_FOOTER,
+  WORKSPACE_DASHBOARD_NAV,
+  WORKSPACE_DASHBOARD_PAGE,
+} from 'workspace/contracts';
 
+import { LayoutDashboardV1, LayoutWorkspaceV1 } from './api/navigation-refs.js';
 import {
   initSettingsApi,
   setDashboardAvailable,
@@ -92,16 +99,35 @@ export function activate({ services }: ClientContext): () => void {
         input: { defaultPath: '/settings' },
       } satisfies AccountMenuItemProps,
     }),
+    // The Dashboard's "All settings" entry, which opens this window.
+    regions.add(
+      'workspace.dashboard.footer' satisfies typeof WORKSPACE_DASHBOARD_FOOTER,
+      {
+        id: 'settings',
+        tag: 'settings-entry-icon',
+        props: {
+          label: 'All settings',
+          command: 'core.open-settings/v1',
+          input: { defaultPath: '/settings' },
+        } satisfies DashboardFooterItemProps,
+      },
+    ),
     // The /projects dashboard's Providers group and the page it opens.
-    regions.add('layout.dashboard.nav', {
-      id: 'providers',
-      tag: 'settings-dashboard-providers',
-      order: 100,
-    }),
-    regions.add('layout.dashboard.page', {
-      id: PROVIDER_PAGE_ID,
-      tag: 'settings-dashboard-provider',
-    }),
+    regions.add(
+      'workspace.dashboard.nav' satisfies typeof WORKSPACE_DASHBOARD_NAV,
+      {
+        id: 'providers',
+        tag: 'settings-dashboard-providers',
+        order: 100,
+      },
+    ),
+    regions.add(
+      'workspace.dashboard.page' satisfies typeof WORKSPACE_DASHBOARD_PAGE,
+      {
+        id: PROVIDER_PAGE_ID,
+        tag: 'settings-dashboard-provider',
+      },
+    ),
     createSectionRoute().follow(navigation),
     // `claude.login/v1` is optional: the provider page offers the sign-in
     // only while a provider answers it.
@@ -109,7 +135,7 @@ export function activate({ services }: ClientContext): () => void {
       setClaudeLoginAvailable(true);
       return () => setClaudeLoginAvailable(false);
     }),
-    // `layout.dashboard/v1` is optional too: without the layout's dashboard
+    // `layout.dashboard/v1` is optional too: without the workspace's dashboard
     // the Providers group has nowhere to open its page.
     services.whenAvailable(LayoutDashboardV1, () => {
       setDashboardAvailable(true);

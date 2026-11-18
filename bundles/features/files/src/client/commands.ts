@@ -7,14 +7,10 @@
 
 import { defineCommand, type Services } from 'bundle/contracts';
 import { baseName } from 'desktop/reads';
-import {
-  LayoutPanelV3,
-  LayoutTabsV2,
-  LayoutWorkspaceV1,
-  type TabRequest,
-} from 'layout/contracts';
+import { LayoutPanelV3, LayoutTabsV2, type TabRequest } from 'layout/contracts';
 import { FilesIcon } from 'lucide-react';
 import { createElement } from 'react';
+import { LayoutWorkspaceV1 } from 'workspace/contracts';
 
 import {
   OPEN_FILE_COMMAND,

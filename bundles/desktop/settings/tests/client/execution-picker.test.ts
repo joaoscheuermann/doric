@@ -19,7 +19,7 @@ import {
   NavigationV1,
   UiV1,
 } from 'bundle/contracts';
-import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'layout/contracts';
+import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'workspace/contracts';
 
 import { announced, noticesIn, retryOf, titleOf } from './support/notices.js';
 import {

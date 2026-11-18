@@ -1,6 +1,6 @@
 import type { Services } from 'bundle/contracts';
-import { LayoutWorkspaceV1 } from 'layout/contracts';
 import type { Project, Thread } from 'runtime/contracts';
+import { LayoutWorkspaceV1 } from 'workspace/contracts';
 
 import { useService, useSubscribed } from './use-service.js';
 

@@ -32,13 +32,20 @@ footer picker), loaded by the `bundle` platform. See the
   `core.open-settings/v1` with `defaultPath: '/settings'`. `settings` loads
   without `account`: it imports `account/contracts` as a type only
   (`import type`), so the entry is simply not drawn.
+- **Dashboard entries:** the "All settings" data item in the `workspace`
+  bundle's `workspace.dashboard.footer` slot, drawn with
+  `<settings-entry-icon>`, which runs the same command; the Providers group in
+  `workspace.dashboard.nav` and the provider page in
+  `workspace.dashboard.page`. `settings` names these slots and
+  `DashboardFooterItemProps` by `import type` from `workspace/contracts`, so it
+  loads without `workspace`, and then the Dashboard has no settings entry.
 - **Contract:** `settings.config/v1` (client), the window's one autosave draft
   for sections other bundles draw.
 
 The window is opened by `core`'s `core.open-settings/v1` command, which two
-entries run: the dashboard's "All settings" (the layout) and the account
-menu's "Settings", which this bundle adds to `account.menu` and `account`
-executes. In 1.1.0, with no `path`, the command focuses an open settings
+entries run: the Dashboard's "All settings", which this bundle adds to
+`workspace.dashboard.footer` and `workspace` executes, and the account menu's
+"Settings", which this bundle adds to `account.menu` and `account` executes. In 1.1.0, with no `path`, the command focuses an open settings
 window, or opens one at `defaultPath` when none is open; with a `path`, it
 focuses an open settings window and navigates it to `path`, or opens one there;
 with neither `path` nor `defaultPath` and no window open it fails with

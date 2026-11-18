@@ -11,7 +11,6 @@ import { beforeEach, describe, test } from 'node:test';
 import { ContractError, isContractError } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 
-import { tabOwnerOf } from '../src/client/domain/route-selection.js';
 import { emptyTabs } from '../src/client/domain/workspace-tabs.js';
 import { createLayoutTabs } from '../src/client/services/layout-tabs.js';
 import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
@@ -333,39 +332,6 @@ describe('the layout contracts (bundle isolation 4a, change 6)', () => {
         .filter((id) => id === 'layout.tabs/v1' || id === 'layout.panel/v2'),
       [],
       'A contract reference still names layout.tabs/v1 or layout.panel/v2.',
-    );
-  });
-});
-
-describe('tab owner', () => {
-  const threadRoute = {
-    path: '/projects/p1/threads/t1',
-    pattern: '/projects/:projectId/threads/:threadId',
-    params: { projectId: 'p1', threadId: 't1' },
-  };
-
-  test("the route's Thread owns the tabs", () => {
-    assert.equal(tabOwnerOf(threadRoute, 'p2'), 't1');
-  });
-
-  test('the Project route gives the Project ownership', () => {
-    assert.equal(
-      tabOwnerOf(
-        {
-          path: '/projects/p1',
-          pattern: '/projects/:projectId',
-          params: { projectId: 'p1' },
-        },
-        'p1',
-      ),
-      'project:p1',
-    );
-  });
-
-  test('without either there is no owner', () => {
-    assert.equal(
-      tabOwnerOf({ path: '/', pattern: '/', params: {} }, undefined),
-      undefined,
     );
   });
 });

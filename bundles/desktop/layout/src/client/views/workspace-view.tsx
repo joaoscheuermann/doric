@@ -9,7 +9,6 @@
 // header ends with `shell.window.actions`. The navigation fills the slots
 // with elements of its own (`elements/navigation-elements.tsx`).
 
-import { QueryClientProvider } from '@tanstack/react-query';
 import { RegionsV1 } from 'bundle/contracts';
 import { useRegionItems } from 'desktop/ui/element-host';
 import {
@@ -59,7 +58,6 @@ import { INSET_CARD } from '../components/templates/inset-card.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
 import { useWorkspaceTabs } from '../hooks/use-workspace-tabs.js';
-import { layoutQueryClient } from '../queries/client.js';
 import { layoutServices } from '../services/layout-services.js';
 import { bottomStore } from '../stores/bottom.js';
 import { panelStore } from '../stores/panel.js';
@@ -91,7 +89,7 @@ const KeptRegion = ({ region }: { readonly region: HTMLElement }) => (
 
 function Workspace() {
   const regions = layoutServices().use(RegionsV1);
-  // `shell.sidebar` holds `layout-sidebar`, which runs the navigation's
+  // `shell.sidebar` holds `workspace-sidebar`, which runs the navigation's
   // once-per-window effects: both forms draw this one region element.
   const sidebarRegion = useMemo(() => {
     const element = document.createElement('core-region');
@@ -243,12 +241,10 @@ export function WorkspaceView() {
   }, []);
   return (
     <StrictMode>
-      <QueryClientProvider client={layoutQueryClient()}>
-        <TooltipProvider>
-          <Workspace />
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
+      <TooltipProvider>
+        <Workspace />
+        <Toaster />
+      </TooltipProvider>
     </StrictMode>
   );
 }

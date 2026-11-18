@@ -18,22 +18,25 @@
       "path": "../../../packages/tool"
     },
     {
+      "path": "../../../packages/sandbox"
+    },
+    {
       "path": "../../runtime/runtime"
     },
     {
       "path": "../../../packages/bundle"
     },
     {
-      "path": "../../../packages/sandbox"
-    },
-    {
-      "path": "../../../packages/desktop"
+      "path": "../../desktop/workspace"
     },
     {
       "path": "../../desktop/layout"
     },
     {
       "path": "../files"
+    },
+    {
+      "path": "../../../packages/desktop"
     }
   ]
 }

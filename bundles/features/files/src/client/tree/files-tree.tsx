@@ -22,7 +22,7 @@ import {
 } from 'desktop/ui/panels';
 import { ScrollArea } from 'desktop/ui/scroll-area';
 import { SidebarMenu } from 'desktop/ui/sidebar';
-import { LayoutTabsV2, LayoutWorkspaceV1 } from 'layout/contracts';
+import { LayoutTabsV2 } from 'layout/contracts';
 import { CopyIcon, FolderIcon, PlusIcon } from 'lucide-react';
 import {
   memo,
@@ -32,6 +32,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { LayoutWorkspaceV1 } from 'workspace/contracts';
 import { useStore } from 'zustand/react';
 
 import {

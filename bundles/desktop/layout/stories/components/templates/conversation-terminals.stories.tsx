@@ -1,18 +1,15 @@
 import { ConversationTerminals } from '../../../src/client/components/templates/conversation-terminals.js';
 import { ThreadPane } from '../../../src/client/components/templates/thread-pane.js';
-import { planThread } from '../../support/data.js';
 import { LayoutHost } from '../../support/layout-host.js';
 import { Placeholder } from '../../support/placeholder.js';
 import { ContentFrame, WorkspaceShell } from '../../support/shell.js';
+import { conversationLabel } from '../../support/tabs.js';
 import { windowDecorator } from '../../support/window-frame.js';
 
 const conversation = (
   <ContentFrame>
     <ThreadPane>
-      <Placeholder
-        tag="chat-thread"
-        label={`Conversation: ${planThread.name}`}
-      />
+      <Placeholder tag="chat-thread" label={conversationLabel} />
     </ThreadPane>
   </ContentFrame>
 );

@@ -170,6 +170,9 @@
     },
     {
       "path": "./bundles/desktop/account"
+    },
+    {
+      "path": "./bundles/desktop/workspace"
     }
   ]
 }

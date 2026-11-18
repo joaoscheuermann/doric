@@ -11,7 +11,14 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import type { Activate } from 'bundle/contracts';
+import {
+  type Activate,
+  defineMethod,
+  defineService,
+  disposableSchema,
+  functionSchema,
+  noInput,
+} from 'bundle/contracts';
 import {
   type CatalogCandidate,
   type Descriptor,
@@ -30,6 +37,7 @@ import {
 } from 'desktop/client';
 import { Window } from 'happy-dom';
 import { createRecordsFake } from 'runtime/testing';
+import { z } from 'zod';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const THREADS_DIST = resolve(here, '../../../../dist');
@@ -218,8 +226,40 @@ const probeCandidate = (probe: Probe): CatalogCandidate => ({
 });
 
 /**
+ * `layout.tabs/v2` as an inert fake: the Threads window opens no tab; every
+ * call answers at once and `current()` answers nothing.
+ */
+const tabsFake = () =>
+  defineService('layout.tabs/v2', {
+    ...Object.fromEntries(
+      (['open', 'close', 'focus', 'retitle', 'setOwner'] as const).map(
+        (method) => [
+          method,
+          defineMethod({
+            input: z.unknown(),
+            output: z.void(),
+            execute: () => undefined,
+          }),
+        ],
+      ),
+    ),
+    current: defineMethod({
+      input: noInput,
+      output: z.unknown(),
+      execute: () => undefined,
+    }),
+    subscribe: defineMethod({
+      input: functionSchema<() => void>(),
+      output: disposableSchema,
+      execute: () => ({ dispose: () => undefined }),
+    }),
+  });
+
+/**
  * The records bundle: a client part that provides `runtime.records/v1` from
- * `createRecordsFake`, which the chat requires (bundle isolation 4a, O7).
+ * `createRecordsFake`, which the chat requires (bundle isolation 4a, O7), and,
+ * standing in for the shell, `layout.tabs/v2`, which the chat requires from
+ * bundle isolation 4(c); without it the chat would be quarantined.
  */
 const recordsCandidate: CatalogCandidate = {
   id: 'records',
@@ -229,13 +269,22 @@ const recordsCandidate: CatalogCandidate = {
     id: 'records',
     version: '1.0.0',
     engines: { doric: '^1.0.0' },
-    provides: ['runtime.records/v1@1.0.0'],
+    provides: ['runtime.records/v1@1.0.0', 'layout.tabs/v2@2.0.0'],
     requires: [],
   },
   descriptor: {
     descriptorVersion: 1,
     bundle: { id: 'records', version: '1.0.0' },
     contracts: [
+      {
+        id: 'layout.tabs/v2',
+        version: '2.0.0',
+        kind: 'service' as const,
+        environment: 'client' as const,
+        cardinality: 'one' as const,
+        local: true,
+        schema: 'schemas/layout.tabs/v2.json',
+      },
       {
         id: 'runtime.records/v1',
         version: '1.0.0',
@@ -541,6 +590,7 @@ export const openThreadsWindow = async (input: {
     [partUrl('records', '1.0.0')]: {
       activate: ({ services }) => {
         services.provide(createRecordsFake());
+        services.provide(tabsFake());
       },
     },
     [partUrl('threads', threadsManifest.version)]: threads,

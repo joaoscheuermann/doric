@@ -1,7 +1,5 @@
 import type { TabMenuItem } from '../../contracts/index.js';
 import { moveItem } from '../utility/move-item.js';
-import type { ProjectTree } from './project-tree.js';
-import { THREAD_TAB_ICON } from './thread-navigation.js';
 
 /**
  * A tab another bundle opened through `layout.tabs/v2`: the element it asked
@@ -31,40 +29,6 @@ export type WorkspaceTabs = {
 };
 
 export const emptyTabs: WorkspaceTabs = { items: [] };
-
-/** Reflect confirmed thread names and removals without replacing mounted views. */
-export const reconcileThreadTabs = (
-  state: WorkspaceTabs,
-  tree: ProjectTree,
-  loading: ReadonlySet<string>,
-): WorkspaceTabs => {
-  let next = state;
-  for (const tab of state.items) {
-    if (tab.kind !== 'element' || tab.iconTag !== THREAD_TAB_ICON) continue;
-    const projectId = tab.props?.projectId;
-    const threadId = tab.props?.threadId;
-    if (typeof projectId !== 'string' || typeof threadId !== 'string') continue;
-    const threads = tree.threadsByProject[projectId];
-    if (threads === undefined || loading.has(projectId)) continue;
-    const thread = threads.find((item) => item.id === threadId);
-    if (thread === undefined) {
-      next = closeTab(next, tab.id);
-      continue;
-    }
-    const title = thread.name || 'Untitled';
-    if (tab.title === title && tab.ariaLabel === title && tab.tooltip === title)
-      continue;
-    next = {
-      ...next,
-      items: next.items.map((item) =>
-        item.id === tab.id
-          ? { ...tab, title, ariaLabel: title, tooltip: title }
-          : item,
-      ),
-    };
-  }
-  return next;
-};
 
 export const moveTab = (
   state: WorkspaceTabs,

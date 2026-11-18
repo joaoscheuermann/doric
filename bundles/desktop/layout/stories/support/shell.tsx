@@ -1,6 +1,8 @@
-// The workspace shell the templates are seen in: the real tab bar, sidebar,
-// Project panel and tab panel around whatever main area a story passes, laid
-// out by `WorkspaceLayout` as the workspace view lays them out. It renders
+// The workspace shell the templates are seen in: the Project panel and tab
+// panel around whatever main area a story passes, laid out by
+// `WorkspaceLayout` as the workspace view lays them out. The tab bar and the
+// sidebar's content are the `workspace` bundle's since bundle isolation 4(c)
+// and show here as the stand-ins of their slots. It renders
 // inside a `LayoutHost`, whose fake host answers the panel's region items and
 // the elements other bundles draw.
 
@@ -20,13 +22,7 @@ import {
   ProjectPanel,
   ProjectPanelTabs,
 } from '../../src/client/components/organisms/project-panel.js';
-import type { SidebarModel } from '../../src/client/components/organisms/project-sidebar.js';
-import {
-  ProjectSidebar,
-  ProjectSidebarColumn,
-} from '../../src/client/components/organisms/project-sidebar.js';
-import { ProjectTabBar } from '../../src/client/components/organisms/project-tabs.js';
-import { SidebarHeader } from '../../src/client/components/organisms/sidebar-header.js';
+import { ProjectSidebarColumn } from '../../src/client/components/organisms/project-sidebar.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
@@ -37,14 +33,8 @@ import { WorkspaceLayout } from '../../src/client/components/templates/workspace
 import { useWorkspaceTabs } from '../../src/client/hooks/use-workspace-tabs.js';
 import { layoutServices } from '../../src/client/services/layout-services.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
-import { billing, checkout, docs, planThread, threadRoute } from './data.js';
 import { Placeholder } from './placeholder.js';
-import {
-  projectTabsOf,
-  sidebarActions,
-  sidebarModelOf,
-  workspaceActions,
-} from './workspace.js';
+import { owner as storyOwner } from './tabs.js';
 
 const panelWidth = { '--sidebar-width': '100%' } as CSSProperties;
 
@@ -65,9 +55,7 @@ export function ContentFrame({ children }: { readonly children: ReactNode }) {
 export function WorkspaceShell({
   children,
   panel = true,
-  owner = planThread.id,
-  path = threadRoute(planThread),
-  model = sidebarModelOf(),
+  owner = storyOwner,
 }: {
   /** What the main panel shows, inside the sidebar inset. */
   readonly children: ReactNode;
@@ -75,9 +63,6 @@ export function WorkspaceShell({
   readonly panel?: boolean;
   /** The owner of the tabs drawn beside the conversation. */
   readonly owner?: string;
-  /** The window path the Project tabs show. */
-  readonly path?: string;
-  readonly model?: SidebarModel;
 }) {
   const [active, setActive] = useState('files');
   const items = useRegionItems(layoutServices().use(RegionsV1), 'shell.panel');
@@ -95,29 +80,7 @@ export function WorkspaceShell({
         className="min-h-0 flex-1 gap-0"
       >
         <WorkspaceLayout
-          header={
-            <ProjectTabBar
-              actions={region('shell.header.actions')}
-              state={projectTabsOf([checkout, docs, billing])}
-              path={path}
-              projects={[checkout, docs, billing]}
-              navigate={(path) => console.info('Story navigate', path)}
-              close={(id) => console.info('Story close tab', id)}
-              closeMany={(ids) => console.info('Story close tabs', ids)}
-              move={(from, to) => console.info('Story move tab', from, to)}
-              onNewProject={workspaceActions.beginProject}
-              onNewThread={(project) =>
-                workspaceActions.beginThread(project.id)
-              }
-              setColor={workspaceActions.setProjectColor}
-              rename={(project, name) =>
-                workspaceActions.rename(
-                  { kind: 'project', value: project },
-                  name,
-                )
-              }
-            />
-          }
+          header={<Placeholder tag="workspace-project-tabs" />}
           viewerTabs={
             viewer ? (
               <WorkspaceTabBar state={tabs} threadId={owner} />
@@ -154,17 +117,7 @@ export function WorkspaceShell({
             // As the conversation form draws its column: the frame's panes
             // and notice under the sidebar's own content.
             <ProjectSidebarColumn>
-              <ProjectSidebar
-                header={
-                  <SidebarHeader
-                    onDashboard={() =>
-                      console.info('Story navigate', '/projects')
-                    }
-                  />
-                }
-                actions={sidebarActions}
-                model={model}
-              />
+              <Placeholder tag="workspace-sidebar" />
             </ProjectSidebarColumn>
           }
         >

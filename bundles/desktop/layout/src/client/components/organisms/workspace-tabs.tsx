@@ -20,7 +20,6 @@ import type {
   WorkspaceTab,
 } from '../../domain/workspace-tabs.js';
 import { layoutServices } from '../../services/layout-services.js';
-import { workspaceStore } from '../../stores/workspace.js';
 import { workspaceTabsStore } from '../../stores/workspace-tabs.js';
 
 export function WorkspaceTabBar({
@@ -35,7 +34,9 @@ export function WorkspaceTabBar({
     void layoutServices()
       .use(LayoutTabsV2)
       .close({ id, threadId })
-      .catch((reason: unknown) => workspaceStore.getState().fail(reason));
+      .catch((reason: unknown) => {
+        console.error('Doric: the tab could not close:', reason);
+      });
   };
   return (
     <TabStrip
