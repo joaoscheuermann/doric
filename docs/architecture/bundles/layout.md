@@ -86,10 +86,11 @@ export function activate({ services }: ClientContext) {
 ### 3. O template do workspace
 
 > **Desatualizado.** O layout não lê mais Projects e Threads por
-> `runtime.threads/v1` nem por `runtime/v1`. Desde a fase 3 do isolamento de
-> bundles, o layout 3.2.3 lê o espelho de registros do runtime,
-> `runtime.records/v1`, e o adaptador do host e o watch de Project pertencem à
-> parte client do runtime. O comportamento atual está em
+> `runtime.threads/v1` nem por `runtime/v1`. Na fase 3 do isolamento de
+> bundles, o layout 3.2.3 passou a ler o espelho de registros do runtime,
+> `runtime.records/v1`, e o adaptador do host e o watch de Project passaram à
+> parte client do runtime. Desde o passo 4(c), o layout 5.0.0 não lê
+> registros: quem lê o espelho é o bundle `workspace`. O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
@@ -130,17 +131,11 @@ Quando a rota ativa é `/`, o `<core-outlet>` de `<main>` fica vazio e o layout 
 
 ### 4. A sidebar navega
 
-> **Desatualizado.** Desde o passo 4(c) do isolamento de bundles, a navegação
-> não é mais do layout: o bundle `workspace` 0.1.0 desenha a sidebar de Projects
-> e Threads, as abas de Project e o Dashboard nos slots `shell.sidebar`,
-> `shell.sidebar.footer`, `shell.titlebar.tabs` e `shell.page`, registra
-> `/projects` e `/projects/:projectId` com `parent: '/'` e publica a seleção
-> (`workspace.selection/v1`); o `chat` 1.8.4 abre as abas de Thread e segura as
-> views das Threads na tela. O layout 5.0.0 é a moldura e seus slots e não lê
-> registros; o `workspace` fornece `layout.workspace/v1`, `layout.sidebar/v1` e
-> `layout.dashboard/v1` até o passo 4(e). O comportamento atual está em
-> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
-> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+> **Desatualizado.** Desde o passo 4(c) do isolamento de bundles, a sidebar
+> descrita nesta seção é a `<workspace-sidebar>` do bundle `workspace`, e não
+> mais um componente de `<layout-workspace>`: é ela que segue a rota e publica
+> a seleção em `workspace.selection/v1`. Veja o aviso de [O que o layout
+> fornece](#o-que-o-layout-fornece).
 
 A seleção de Project e Thread é a rota ativa. A sidebar não guarda seleção própria:
 
@@ -308,10 +303,11 @@ services.whenAvailable(LayoutTabsV1, (tabs) =>
 ```
 
 > **Desatualizado.** O layout não lê mais Projects e Threads por
-> `runtime.threads/v1` nem por `runtime/v1`. Desde a fase 3 do isolamento de
-> bundles, o layout 3.2.3 lê o espelho de registros do runtime,
-> `runtime.records/v1`, e o adaptador do host e o watch de Project pertencem à
-> parte client do runtime. O comportamento atual está em
+> `runtime.threads/v1` nem por `runtime/v1`. Na fase 3 do isolamento de
+> bundles, o layout 3.2.3 passou a ler o espelho de registros do runtime,
+> `runtime.records/v1`, e o adaptador do host e o watch de Project passaram à
+> parte client do runtime. Desde o passo 4(c), o layout 5.0.0 não lê
+> registros: quem lê o espelho é o bundle `workspace`. O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 

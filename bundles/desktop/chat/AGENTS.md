@@ -2,7 +2,8 @@
 
 These instructions apply to `bundles/desktop/chat` and narrow the root `AGENTS.md`.
 The chat is the conversation of one Thread: its transcript, the composer and
-its queue, the trail and the footer composer controls. It moved here from
+its queue, the trail and the footer composer controls, and, since 1.8.4, the
+Thread tabs and the views of the Threads on screen. It moved here from
 `app/desktop/doric-renderer` in stage 9 and must keep that renderer's visible text,
 roles, layout and quirks.
 
@@ -45,6 +46,9 @@ src/client/
   services, never to an element's services (D9-17).
 - `chat.lexical/v1` freezes when the first editor is created; nodes and
   extensions registered later are refused.
+- `workspace.hooks/v1` is observed through a structural copy
+  (`src/client/api/workspace-hooks.ts`); nothing imports `workspace/contracts`
+  and `package.json` lists no `workspace` (OD40 O2).
 
 ## Styling
 

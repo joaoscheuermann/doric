@@ -33,7 +33,7 @@ Every Thread of the selected Project stayed in the sidebar tree for as long as t
   - `archiveThread({ id })` answers `{ status: 'archived', batch, threads }` (target first) or `missing`, `busy`, `already_archived`.
   - `restoreThread({ id, batch? })` answers `{ status: 'restored', threads }` or `missing`, `not_archived`; without `batch` it uses the Thread's own.
   - `setThreadPinned({ id, pinned })` answers the Thread, or `undefined` when missing.
-  - `viewThread({ threadId }, listener)` emits one `{ kind: 'viewing', threadId }` and holds a view until disposed, the host link closes, the host drains (`unavailable`) or the Thread is missing (`not_found`); a failed record read logs `Thread view failed` and ends the stream with `internal`, and the layout does not reopen it.
+  - `viewThread({ threadId }, listener)` emits one `{ kind: 'viewing', threadId }` and holds a view until disposed, the host link closes, the host drains (`unavailable`) or the Thread is missing (`not_found`); a failed record read logs `Thread view failed` and ends the stream with `internal`, and the chat, which holds the Thread views, does not reopen it.
   - `deleteThread` deletes an archived agent thread; a non-archived agent thread is still refused, and the subtree must be terminal.
 - The fence and question-line rules are shared code in `runtime/contracts` (`src/contracts/fences.ts`), used by the host, `chat` and `openui`. `completedStatements` drops one trailing newline of an unclosed fence.
 - Host configuration: optional, strict `threads: { autoArchive: { agentThreads, mainThreadsAfter } }`; absent keys mean `agentThreads: true` and `mainThreadsAfter: '7d'` (`'1d' | '7d' | '30d' | 'never'`).

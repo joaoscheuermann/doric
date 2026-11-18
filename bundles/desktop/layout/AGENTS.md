@@ -22,7 +22,6 @@ src/client/
   domain/      the vocabulary of the product (pure, tested)
   utility/     helpers stated only in terms of their arguments
   services/    the layout's own contract providers and activation services
-  provisional/ stage-10 features kept in the layout's geometry
 ```
 
 - A rule that can be stated in terms of its arguments belongs in `domain/` or

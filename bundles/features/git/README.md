@@ -109,7 +109,7 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   repository row's menu stays.
 
 The client reads the selected Project and Thread through `layout.workspace/v1`
-(required, `^1.1.0`), which the `workspace` bundle provides from 1.2.10 (bundle
+(required, `^1.1.0`), which the `workspace` bundle provides from git 1.2.10 (bundle
 isolation step 4(c)) until step 4(e); the bundle imports `LayoutWorkspaceV1`
 from `workspace/contracts`. Without `workspace` the bundle is quarantined.
 

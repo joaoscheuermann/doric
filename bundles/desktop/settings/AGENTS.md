@@ -2,8 +2,9 @@
 
 These instructions apply to `bundles/desktop/settings` and narrow the root
 `AGENTS.md`. The settings bundle is the application-global settings page
-(`/settings` and its sections) and the execution picker of the workspace
-footer. It moved here from `app/desktop/doric-renderer` in stage 9 and must keep that
+(`/settings` and its sections), the execution picker of the workspace
+footer, and the Dashboard's entries (the Providers group, the provider page
+and "All settings"). It moved here from `app/desktop/doric-renderer` in stage 9 and must keep that
 renderer's visible text, roles, layout and quirks, including the dropped Tools
 edits and the autosave without a Save button.
 
@@ -39,6 +40,9 @@ src/client/
 - A secret is never read back: the host answers only whether one is stored.
 - Autosave is bound to the activation services and flushes in the window's
   `onFlushHook`, never through an element's services (D9-17).
+- The `layout.*` references it lists under `optional` are built from their ids
+  in `src/client/api/navigation-refs.ts`; `workspace/contracts` is imported
+  with `import type` only.
 
 ## Footers
 

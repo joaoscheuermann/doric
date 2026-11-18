@@ -6,6 +6,8 @@ These instructions apply to `bundles/desktop/workspace` and narrow
 ## Function
 
 Choosing what the window shows: Projects, Threads and the selection. A change
+must keep the `app/desktop/doric-renderer` renderer's visible text, roles,
+layout and quirks that the navigation carried when it left the layout. It
 adds no frame and no slot of the window (they belong to the bundle that draws
 the frame), and no drawing of a Thread's conversation or of its tab (they
 belong to the bundle that draws Threads, which observes `onOpenThreadHook`).
@@ -40,6 +42,22 @@ Read [`README.md`](README.md) for what it draws, its contracts and its slots.
 - Every host failure shows the message the REST path showed (R-ERR); the
   adapter in the runtime's `src/client/api/workspace-api.ts` owns those
   messages.
+
+- The shadcn primitives are `desktop/ui/<name>`; `toast` comes only from
+  `desktop/ui/sonner`, so a window has one toast store.
+- Imports are relative with `.js` extensions; the package is ESM and the part
+  is bundled by `bundle`'s build.
+- The client part never imports `bundle`, `bundle/runtime` or
+  `desktop/client`, and touches no DOM at module load.
+
+## Footers
+
+All footer text, including nested controls, uses `font-weight: 400`. Use a
+semantic `footer` element or a `data-slot` ending in `-footer` so the shell's
+footer rule (`app/desktop/doric-renderer/src/styles.css`) applies.
+
+Labels and titles are 400 and running text 300, through desktop/ui's components
+and the theme's root weight; add no per-control weight to reach them.
 
 ## Links
 

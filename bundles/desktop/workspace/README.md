@@ -125,7 +125,8 @@ Picking a footer entry executes its `command` with its `input` through
 `commands/v1`, once per pick; a pick that fails is logged with
 `console.error('Doric: the command … could not run:')`. An item is dropped
 (not drawn) when its `label` is not a string, its `command` fails
-`isContractId`, or its `input` is present but not a plain object; it is
+`isContractId`, or its `input` is present and is null, an array or not an
+object; it is
 reported once per id per activation with a `Doric:` error. Each entry is a
 button whose accessible name (`aria-label`) is its `label`; its icon element
 takes the button's colour, so the filler's SVG should take `currentColor` and
@@ -142,7 +143,8 @@ npx nx typecheck bundle-workspace
 npx nx test bundle-workspace
 ```
 
-To rebuild and stage every bundle used by the Doric host:
+Stories under `stories/` are CSF3, and `.storybook/preview.tsx` is the
+harness that wraps them. To rebuild and stage every bundle used by the Doric host:
 
 ```console
 npx nx run doric-host:build-bundles

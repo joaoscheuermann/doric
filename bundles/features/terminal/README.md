@@ -68,7 +68,7 @@ The tool runs a command in the current working directory; a relative
   elements `terminal-new-button`, `terminal-rows`, `terminal-view` and
   `terminal-tab-icon`.
   `registerTerminalSurfaces` adds the header button (`shell.header.actions`) and the
-  sidebar's terminal rows while the layout serves `layout.sidebar/v1`; from
+  sidebar's terminal rows while `workspace` serves `layout.sidebar/v1`; from
   `layout.sidebar/v1` 1.1.0 its `busy` answer keeps a Thread active while an
   agent terminal under it is busy. `terminal-rows` reads `layout.tabs/v2`
   `current()`/`subscribe()` and `navigation/v1` to mark the selected terminal

@@ -204,6 +204,17 @@ Cada conceito tem um documento próprio em `docs/architecture/bundles/`. Os grup
 > [docs/features/bundle-isolation.md](../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
+> **Desatualizado.** Desde o passo 4(b) e o passo 4(c) do isolamento de
+> bundles, o layout não desenha mais a navegação nem a conta. O bundle
+> `account` desenha o estado da conta, seu menu e o About em
+> `shell.window.actions`. O bundle `workspace` desenha a sidebar de Projects e
+> Threads, as abas de Project e o Dashboard em `shell.sidebar`,
+> `shell.sidebar.footer`, `shell.titlebar.tabs` e `shell.page`, e fornece
+> `layout.workspace/v1`, `layout.sidebar/v1` e `layout.dashboard/v1` até o passo
+> 4(e). O layout 5.0.0 é a moldura e seus slots. O comportamento atual está em
+> [docs/features/bundle-isolation.md](../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 ### Dados
 
 - [Armazenamento genérico e histórico](./bundles/storage.md): `storage/v1` como fachada sobre `storage.backend/v1`, as primitivas, o backend `postgres` de `storage.backend/v1` e `secrets.backend/v1`, a divisão do histórico, o cache local do bundle `history` em `doric.cache/v1` e os tipos registrados com `defineStorageType`.
