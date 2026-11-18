@@ -107,6 +107,9 @@ to the list, or it will not reach an older app; T-5.12 does not detect it.
 
 ## Requirements
 
+- `runtime.records/v1@^1.0.0` (runtime 2.9.0 or later) and
+  `workspace.selection/v1@^1.0.0` (the `workspace` bundle); without either,
+  the bundle is quarantined.
 - The sandbox image must provide `xpra` with its HTML5 client. The image
   `app/backend/doric-host/.sandbox.Dockerfile` builds installs it.
 - The composition must run `screen-relay` resident; without

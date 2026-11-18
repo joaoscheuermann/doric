@@ -184,7 +184,7 @@ desktop part, as Papercraft does.
 `<chat-view>` opens its Thread on the record of `runtime.records/v1`, kept
 current as the records change, and the composer acts on the Thread
 `workspace.selection/v1` selects (chat 1.9.1); without `workspace` the
-conversation asks the host for its Thread once.
+conversation asks the host for its Thread once per Thread.
 
 ## The execution picker
 

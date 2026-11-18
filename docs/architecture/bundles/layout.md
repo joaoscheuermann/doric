@@ -48,7 +48,9 @@ O `layout` é o bundle client que desenha o workspace: a moldura que hoje é `ap
 > (`workspace.selection/v1`); o `chat` 1.8.4 abre as abas de Thread e segura as
 > views das Threads na tela. O layout 5.0.0 é a moldura e seus slots e não lê
 > registros; o `workspace` fornece `layout.workspace/v1`, `layout.sidebar/v1` e
-> `layout.dashboard/v1` até o passo 4(e). O comportamento atual está em
+> `layout.dashboard/v1` até o passo 4(e), que desde o passo 4(d) nenhum bundle
+> consome (os consumidores leem `workspace.selection/v1`, `workspace.sidebar/v1`,
+> `workspace.dashboard/v1` e `runtime.records/v1`). O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 

@@ -210,8 +210,11 @@ Cada conceito tem um documento próprio em `docs/architecture/bundles/`. Os grup
 > `shell.window.actions`. O bundle `workspace` desenha a sidebar de Projects e
 > Threads, as abas de Project e o Dashboard em `shell.sidebar`,
 > `shell.sidebar.footer`, `shell.titlebar.tabs` e `shell.page`, e fornece
-> `layout.workspace/v1`, `layout.sidebar/v1` e `layout.dashboard/v1` até o passo
-> 4(e). O layout 5.0.0 é a moldura e seus slots. O comportamento atual está em
+> `layout.workspace/v1`, `layout.sidebar/v1` e `layout.dashboard/v1` até o
+> passo 4(e); desde o passo 4(d) nenhum bundle os consome: os antigos
+> consumidores leem `workspace.selection/v1`, `workspace.sidebar/v1`,
+> `workspace.dashboard/v1` e `runtime.records/v1`. O layout 5.0.0 é a moldura
+> e seus slots. O comportamento atual está em
 > [docs/features/bundle-isolation.md](../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
