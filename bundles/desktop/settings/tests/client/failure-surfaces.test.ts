@@ -4,7 +4,8 @@
 // - T-38: the provider model catalog shows a compact, announced notice whose
 //   Retry replaces the Reload button and reads the catalog again; the catalog
 //   models field of a kind whose models are its catalog shows the same notice.
-//   (The execution picker's read failure is in `execution-picker.test.ts`,
+//   (The execution picker's read failure is in the chat's
+//   `tests/client/execution-picker.test.ts`,
 //   the Claude sign-in toast in `claude-login.test.ts`, and the dashboard's
 //   Providers group and open-site toast in `dashboard-providers.test.ts`.)
 // - T-39: a refused configuration save or credential remove followed by a

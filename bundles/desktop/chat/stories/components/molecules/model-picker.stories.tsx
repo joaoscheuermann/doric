@@ -1,16 +1,9 @@
 import { useState } from 'react';
+import type { ModelGroup } from 'settings/contracts';
 
 import { ModelPicker } from '../../../src/client/components/molecules/model-picker.js';
-import {
-  type Configuration,
-  effortLabel,
-  type ModelGroup,
-  modelChoiceKey,
-  modelGroups,
-} from '../../../src/client/domain/config.js';
-import { configuration } from '../../support/fixtures.js';
+import { groups as twoProviders } from '../../support/execution.js';
 import { footerFrame } from '../../support/frames.js';
-import { storyIcons } from '../../support/icons.js';
 import { OpenOnMount } from '../../support/open-on-mount.js';
 
 const reasoningChoices = [
@@ -19,11 +12,11 @@ const reasoningChoices = [
   { label: 'High', value: 'high' },
 ];
 
-/** The picker over a configuration's groups, with its own model and effort. */
+/** The picker over literal groups, with its own model and effort. */
 function Picker({
   efforts = reasoningChoices,
-  groups = modelGroups(configuration, storyIcons),
-  initial = modelChoiceKey('openrouter', 'anthropic/claude-sonnet-4.5'),
+  groups = twoProviders,
+  initial = 'openrouter\u0000anthropic/claude-sonnet-4.5',
 }: {
   readonly efforts?: typeof reasoningChoices;
   readonly groups?: readonly ModelGroup[];
@@ -38,8 +31,7 @@ function Picker({
   const effortName =
     efforts.length === 0
       ? 'Unavailable'
-      : (efforts.find((choice) => choice.value === effort)?.label ??
-        effortLabel('none'));
+      : (efforts.find((choice) => choice.value === effort)?.label ?? 'None');
 
   return (
     <ModelPicker
@@ -59,13 +51,13 @@ function Picker({
   );
 }
 
-const single: Configuration = {
-  ...configuration,
-  providers: configuration.providers.slice(0, 1),
-};
+/** One provider holds every model, so its group carries no label. */
+const single: readonly ModelGroup[] = [
+  { choices: twoProviders[0]?.choices ?? [] },
+];
 
 export default {
-  title: 'Settings/Molecules/Model picker',
+  title: 'Chat/Molecules/Model picker',
   component: ModelPicker,
   decorators: [footerFrame],
 };
@@ -98,7 +90,7 @@ export const ReasoningOpen = {
 export const SingleProviderOpen = {
   render: () => (
     <OpenOnMount steps={[{ selector: '[aria-label="Execution model"]' }]}>
-      <Picker groups={modelGroups(single, storyIcons)} />
+      <Picker groups={single} />
     </OpenOnMount>
   ),
 };
@@ -108,7 +100,7 @@ export const ReasoningUnavailable = {
     <OpenOnMount steps={[{ selector: '[aria-label="Execution model"]' }]}>
       <Picker
         efforts={[]}
-        initial={modelChoiceKey('openrouter', 'meta-llama/llama-4-maverick')}
+        initial={'openrouter\u0000meta-llama/llama-4-maverick'}
       />
     </OpenOnMount>
   ),
@@ -132,6 +124,11 @@ export const LongModelName = {
               label:
                 'nousresearch/hermes-4-405b-instruct-preview-extended-context',
               value: 'long',
+              execution: {
+                providerId: 'openrouter',
+                model:
+                  'nousresearch/hermes-4-405b-instruct-preview-extended-context',
+              },
             },
           ],
         },

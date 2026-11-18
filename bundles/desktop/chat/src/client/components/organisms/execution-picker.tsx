@@ -1,36 +1,38 @@
 import { type ErrorInfo, errorFrom, errorInfo } from 'desktop/reads';
 import { ErrorNotice } from 'desktop/ui/error-notice';
 import { Input } from 'desktop/ui/input';
-import { useEffect, useMemo, useState } from 'react';
 import {
-  resolveThreadExecution,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import {
+  type RuntimeRecords,
+  type RuntimeThreads,
   restErrors,
   type Thread,
 } from 'runtime/contracts';
+import type {
+  ModelExecution,
+  SettingsModels,
+  StoredExecution,
+} from 'settings/contracts';
 
-import { api } from '../../api/settings-api.js';
-import {
-  type Configuration,
-  effortLabel,
-  isReasoningEffort,
-  type ModelExecution,
-  modelChoiceKey,
-  modelDefaultEffort,
-  modelEfforts,
-  modelGroups,
-  type ReasoningEffort,
-  selectModelChoice,
-  setExecutionEffort,
-  updateModel,
-  withExecution,
-} from '../../domain/config.js';
-import { settingsErrorCatalog } from '../../domain/error-catalog.js';
-import { modelIconRequests } from '../../domain/model-icons.js';
-import { useConfigSnapshot } from '../../hooks/use-config-snapshot.js';
-import { useModelIcons } from '../../hooks/use-model-icons.js';
-import { useSelectedThread } from '../../hooks/use-selected-thread.js';
+import type { WorkspaceSelectionService } from '../../api/workspace-selection.js';
+import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import { EffortPicker } from '../molecules/effort-picker.js';
 import { ModelPicker } from '../molecules/model-picker.js';
+
+export interface ExecutionPickerSources {
+  readonly models: SettingsModels;
+  /** Absent without `workspace`: the picker shows the default, locked. */
+  readonly selection?: WorkspaceSelectionService;
+  readonly records: Pick<RuntimeRecords, 'thread' | 'subscribe'>;
+  readonly setThreadExecution: RuntimeThreads['setThreadExecution'];
+}
 
 /** What the locked triggers tell the reader when no Thread is selected. */
 const LOCKED_TITLE =
@@ -51,19 +53,12 @@ type Alert = {
 const sameExecution = (a: ModelExecution, b: ModelExecution): boolean =>
   a.providerId === b.providerId && a.model === b.model && a.effort === b.effort;
 
-/** A Thread record's execution, as the picker shows it (§1 rule 1). */
-const threadExecution = (
-  thread: Thread,
-  configuration: Configuration,
-): ModelExecution => {
-  const { providerId, model, effort } = resolveThreadExecution(
-    thread,
-    configuration,
-  );
-  return effort !== undefined && isReasoningEffort(effort)
-    ? { providerId, model, effort }
-    : { providerId, model };
-};
+/** What a Thread record stores of its execution, its absent fields left out. */
+const storedOf = ({ providerId, model, effort }: Thread): StoredExecution => ({
+  ...(providerId === undefined ? {} : { providerId }),
+  ...(model === undefined ? {} : { model }),
+  ...(effort === undefined ? {} : { effort }),
+});
 
 /** Whether the record `a` is later than `b`. */
 const isLater = (a: Thread, b: Thread): boolean =>
@@ -78,15 +73,59 @@ const without = <Value,>(
   return next;
 };
 
+/** The id of the Thread the window selects; `undefined` without one or without `workspace`. */
+const useSelectedThreadId = (
+  selection: WorkspaceSelectionService | undefined,
+): string | undefined => {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (selection === undefined) return () => undefined;
+      const subscription = selection.subscribe(onChange);
+      return () => subscription.dispose();
+    },
+    [selection],
+  );
+  return useSyncExternalStore(subscribe, () => selection?.current().threadId);
+};
+
+/** The records mirror's record of `threadId`, re-read on every records change. */
+const useThreadRecord = (
+  records: ExecutionPickerSources['records'],
+  threadId: string | undefined,
+): Thread | undefined => {
+  // A record read through the service is a fresh copy on every call, so the
+  // snapshot is a version counter bumped on every notification.
+  const version = useRef(0);
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const subscription = records.subscribe(() => {
+        version.current += 1;
+        onChange();
+      });
+      return () => subscription.dispose();
+    },
+    [records],
+  );
+  useSyncExternalStore(subscribe, () => version.current);
+  return threadId === undefined ? undefined : records.thread(threadId);
+};
+
 /**
  * The selected Thread's model and reasoning effort, edited from the
- * conversation footer. A choice sets that Thread's execution through
- * `runtime.threads/v1.setThreadExecution`; the picker never writes the
- * workspace default. Without a selected Thread it shows the default, locked.
+ * conversation footer. Everything it shows, and the execution each pick
+ * yields, comes from `settings.models/v1`; a choice sets the Thread's
+ * execution through `runtime.threads/v1.setThreadExecution`, and the picker
+ * never writes the workspace default. Without a selected Thread it shows the
+ * default, locked.
  */
-export function ExecutionPicker() {
-  const { configuration, error, reload, reloading } = useConfigSnapshot();
-  const selected = useSelectedThread();
+export function ExecutionPicker({
+  sources,
+}: {
+  readonly sources: ExecutionPickerSources;
+}): ReactElement | null {
+  const { models, selection, records, setThreadExecution } = sources;
+  const threadId = useSelectedThreadId(selection);
+  const selected = useThreadRecord(records, threadId);
   /** The execution being written, per Thread id. */
   const [writes, setWrites] = useState<ReadonlyMap<string, ModelExecution>>(
     () => new Map(),
@@ -99,78 +138,61 @@ export function ExecutionPicker() {
   /** The typed model while the reader edits it; absent shows the model. */
   const [typed, setTyped] = useState<string>();
 
-  const threadId = selected?.id;
-  const writing = threadId === undefined ? undefined : writes.get(threadId);
-  const answer = threadId === undefined ? undefined : answered.get(threadId);
+  const selectedId = selected?.id;
+  const writing = selectedId === undefined ? undefined : writes.get(selectedId);
+  const answer =
+    selectedId === undefined ? undefined : answered.get(selectedId);
   const record =
     selected !== undefined && answer !== undefined && isLater(answer, selected)
       ? answer
       : selected;
 
-  // An answer is dropped once the layout's record is at least as late.
+  // An answer is dropped once the records mirror's record is at least as late.
   const selectedUpdatedAt = selected?.updatedAt;
   useEffect(() => {
-    if (threadId === undefined || selectedUpdatedAt === undefined) return;
+    if (selectedId === undefined || selectedUpdatedAt === undefined) return;
     setAnswered((entries) => {
-      const entry = entries.get(threadId);
+      const entry = entries.get(selectedId);
       return entry !== undefined &&
         Date.parse(entry.updatedAt) <= Date.parse(selectedUpdatedAt)
-        ? without(entries, threadId)
+        ? without(entries, selectedId)
         : entries;
     });
-  }, [threadId, selectedUpdatedAt]);
+  }, [selectedId, selectedUpdatedAt]);
 
-  const shown: ModelExecution | undefined =
-    configuration === undefined
-      ? undefined
-      : (writing ??
-        (record === undefined
-          ? configuration.models.execution
-          : threadExecution(record, configuration)));
-
-  // The view configuration: the picker rules read the shown execution. One
-  // per shown execution, so the icons' query key stays stable.
-  const shownProviderId = shown?.providerId;
-  const shownModel = shown?.model;
-  const shownEffort = shown?.effort;
-  const view = useMemo(
-    () =>
-      configuration === undefined ||
-      shownProviderId === undefined ||
-      shownModel === undefined
-        ? undefined
-        : withExecution(configuration, {
-            providerId: shownProviderId,
-            model: shownModel,
-            ...(shownEffort === undefined ? {} : { effort: shownEffort }),
-          }),
-    [configuration, shownProviderId, shownModel, shownEffort],
+  // The write in flight, else the record's execution, else the default.
+  const stored: StoredExecution | undefined =
+    writing ?? (record === undefined ? undefined : storedOf(record));
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const subscription = models.subscribe(onChange);
+      return () => subscription.dispose();
+    },
+    [models],
   );
-  const requests = useMemo(
-    () => (view === undefined ? [] : modelIconRequests(view)),
-    [view],
-  );
-  const icons = useModelIcons(requests);
+  const view = useSyncExternalStore(subscribe, () => models.view(stored));
+  const reload = (): void => models.reload();
 
-  if (configuration === undefined || view === undefined || shown === undefined)
-    return error === undefined ? null : (
+  if (view.status === 'loading')
+    return view.error === undefined ? null : (
       <div className="mr-auto flex items-center gap-1">
         <ErrorNotice
           announce
-          catalog={settingsErrorCatalog}
-          error={error}
+          catalog={chatErrorCatalog}
+          error={view.error}
           fallbackCode="config_read_failed"
           onRetry={reload}
-          retrying={reloading}
+          retrying={view.reloading}
           variant="inline"
         />
       </div>
     );
 
+  const shown = view.execution;
   const locked = selected === undefined;
   const disabled = locked || writing !== undefined;
   const title = locked ? LOCKED_TITLE : undefined;
-  const { providerId, model, effort } = shown;
+  const { model, effort } = shown;
 
   const write = (next: ModelExecution): void => {
     if (selected === undefined || sameExecution(next, shown)) return;
@@ -178,7 +200,7 @@ export function ExecutionPicker() {
     setAlert((current) => (current?.threadId === id ? undefined : current));
     setWrites((entries) => new Map(entries).set(id, next));
     Promise.resolve()
-      .then(() => api().threads.setExecution({ id, ...next }))
+      .then(() => setThreadExecution({ id, ...next }))
       .then(
         (result) => {
           if (result.status === 'updated') {
@@ -208,81 +230,59 @@ export function ExecutionPicker() {
     const value = typed?.trim();
     setTyped(undefined);
     if (value === undefined || value === '' || value === model) return;
-    // On the shown provider when it is configured, else on the default's.
-    const owner = configuration.providers.some(
-      (provider) => provider.id === providerId,
-    )
-      ? providerId
-      : configuration.models.execution.providerId;
-    write(
-      updateModel(view, { providerId: owner, model: value }).models.execution,
-    );
+    write({ providerId: view.typedProviderId, model: value });
   };
 
-  const efforts = modelEfforts(view, providerId, model).filter(
-    (value) => value !== 'none',
-  );
-  const groups = modelGroups(view, icons);
-  // The typed field is drawn when no provider lists a model, even though the
-  // list would hold the shown model alone.
-  const listsModels = configuration.providers.some(
-    (provider) => (provider.models?.length ?? 0) > 0,
-  );
-  const effortName =
-    efforts.length === 0 ? 'Unavailable' : effortLabel(effort ?? 'none');
-  const defaultEffort = modelDefaultEffort(view, providerId, model);
-  const effortChoices = efforts.map((value) => ({
-    label: effortLabel(value),
-    value,
-    // The level the model's own catalog names as its default is marked as such,
-    // so a reader knows which one the model asks for when nothing chooses.
-    ...(value === defaultEffort ? { note: '(default)' } : {}),
-  }));
+  const selectModel = (value: string): void => {
+    const choice = view.groups
+      .flatMap((group) => group.choices)
+      .find((candidate) => candidate.value === value);
+    if (choice !== undefined) write(choice.execution);
+  };
   const selectEffort = (value: string): void => {
-    write(setExecutionEffort(view, value as ReasoningEffort).models.execution);
+    const choice = view.efforts.find((candidate) => candidate.value === value);
+    if (choice !== undefined) write(choice.execution);
   };
   const shownAlert =
-    alert !== undefined && alert.threadId === threadId ? alert : undefined;
+    alert !== undefined && alert.threadId === selectedId ? alert : undefined;
 
   return (
     <div className="mr-auto flex items-center gap-1">
       {shownAlert !== undefined ? (
         <ErrorNotice
           announce
-          catalog={settingsErrorCatalog}
+          catalog={chatErrorCatalog}
           error={shownAlert.error}
           fallbackCode="invalid_execution"
           onRetry={() => write(shownAlert.next)}
           variant="inline"
         />
       ) : (
-        error !== undefined && (
+        view.error !== undefined && (
           <ErrorNotice
             announce
-            catalog={settingsErrorCatalog}
-            error={error}
+            catalog={chatErrorCatalog}
+            error={view.error}
             fallbackCode="config_read_failed"
             onRetry={reload}
-            retrying={reloading}
+            retrying={view.reloading}
             variant="inline"
           />
         )
       )}
-      {listsModels ? (
+      {view.listsModels ? (
         <ModelPicker
           ariaLabel="Execution model"
           disabled={disabled}
           title={title}
-          groups={groups}
+          groups={view.groups}
           label={model === '' ? 'Choose model' : model}
-          icon={icons?.model(providerId, model)}
-          value={modelChoiceKey(providerId, model)}
-          onSelect={(key) =>
-            write(selectModelChoice(view, key).models.execution)
-          }
+          icon={view.icon}
+          value={view.value}
+          onSelect={selectModel}
           reasoning={{
-            choices: effortChoices,
-            label: effortName,
+            choices: view.efforts,
+            label: view.effortLabel,
             onSelect: selectEffort,
             value: effort,
           }}
@@ -308,9 +308,9 @@ export function ExecutionPicker() {
       </span>
       <EffortPicker
         ariaLabel="Reasoning effort"
-        choices={effortChoices}
-        disabled={disabled || effortChoices.length === 0}
-        label={effortName}
+        choices={view.efforts}
+        disabled={disabled || view.efforts.length === 0}
+        label={view.effortLabel}
         title={title}
         value={effort}
         onSelect={selectEffort}

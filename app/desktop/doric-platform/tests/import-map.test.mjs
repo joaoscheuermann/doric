@@ -232,6 +232,8 @@ describe('the platform import map', () => {
       'chrome-bar',
       'element-host',
       'error-notice',
+      'model-icon',
+      'choice-list',
       'react-element',
       'utils',
       'tokens',

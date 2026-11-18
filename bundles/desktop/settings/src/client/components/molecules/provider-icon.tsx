@@ -1,6 +1,5 @@
+import { ModelIcon } from 'desktop/ui/model-icon';
 import { ServerIcon } from 'lucide-react';
-
-import { ModelIcon } from './model-icon.js';
 
 /**
  * A provider's own icon as the host answers it, hidden from assistive

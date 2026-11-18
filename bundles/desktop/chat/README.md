@@ -44,6 +44,10 @@ for how bundles work.
     Untitled Thread, else its kind's mark; the chat names it as the
     `iconTag` of the Thread tabs it opens (`layout.tabs/v2`; the element
     from chat 1.8.2, the tabs from 1.8.4);
+  - `<chat-execution-picker>`, the selected Thread's model and reasoning
+    effort, a `shell.conversation.footer` item (`execution`, order 20) the
+    chat adds while a provider of `settings.models/v1` is available (from
+    1.9.0; see [The execution picker](#the-execution-picker));
   - `<chat-readonly-markdown text>`, the conversation's read-only Markdown for
     another bundle's block element;
   - `<chat-block>`, the fallback for a block no renderer claims: its type, id,
@@ -172,8 +176,33 @@ desktop part, as Papercraft does.
   `comments/v1`, `chat.composer/v1` and, from 1.8.4, `layout.tabs/v2`.
 - **Optional:** `history.snapshots/v1`, `models/v1`, `layout.workspace/v1`,
   `comments.added/v1`, `comments.resolved/v1`, `runtime.prompt-finished/v1`,
-  `workspace.hooks/v1`, and `terminal/v1` or `runtime.terminals/v1` for live
-  terminal output. Without them the conversation still works.
+  `workspace.hooks/v1`, `settings.models/v1` and `workspace.selection/v1`
+  (from 1.9.0, for the execution picker), and `terminal/v1` or
+  `runtime.terminals/v1` for live terminal output. Without them the
+  conversation still works.
+
+## The execution picker
+
+From 1.9.0 the chat draws the footer's model and effort picker, which
+`settings` drew before (bundle isolation 6(c)). Everything it shows — the
+models grouped by provider with their icons, the efforts the shown model
+accepts and their labels — and the execution each choice runs on come from
+`settings.models/v1`, reached by its id (`src/client/api/settings-models.ts`,
+types from `settings/contracts`); the chat applies no rule of its own. It
+asks `view` for the write in flight, else the selected Thread's stored
+`providerId`, `model` and `effort` from `runtime.records/v1`, else nothing,
+and writes a choice through `runtime.threads/v1.setThreadExecution`; it never
+writes the workspace default. A refused write is an inline, announced notice
+in the picker ("Model not accepted", "Thread not found", or Retry for an
+unavailable host); a failed configuration read is "Settings not loaded" with
+a Retry that calls `reload`.
+
+- Without `settings` the footer has no picker: the `execution` item is added
+  only while a provider of `settings.models/v1` is available.
+- Without `workspace` (`workspace.selection/v1`, a structural copy in
+  `src/client/api/workspace-selection.ts`) no Thread is selected, so the
+  picker shows the workspace default, locked and titled "New threads start
+  on the workspace default. Change it in Settings."
 
 ## Thread tabs and the Threads on screen
 

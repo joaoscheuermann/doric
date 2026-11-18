@@ -179,10 +179,12 @@ test('a window opened at /settings shows the Providers section and names itself'
   assert.equal(activeRow(opened), 'Providers');
 });
 
-test('the settings window opens with the client part importing runtime/contracts and requiring runtime.threads/v1 (T-36)', async () => {
+test('the settings window opens with the client part importing runtime/contracts and requiring no runtime.threads/v1 (T-36)', async () => {
   // The part as the build ships it: the window's import map must resolve
-  // `runtime/contracts` and the host must stage `runtime.threads/v1`, or the
-  // window opens blank.
+  // `runtime/contracts` (the Thread execution rules `settings.models/v1`
+  // applies), or the window opens blank. From bundle isolation 6(c) the chat
+  // writes a Thread's execution, so `settings` no longer requires
+  // `runtime.threads/v1`.
   const dist = new URL('../../../dist/', import.meta.url);
   const part = await readFile(new URL('client/index.js', dist), 'utf8');
   const manifest = JSON.parse(
@@ -193,7 +195,7 @@ test('the settings window opens with the client part importing runtime/contracts
     'The shipped client part does not import runtime/contracts.',
   );
   assert.ok(
-    manifest.requires.includes('runtime.threads/v1@^1.7.0'),
+    !manifest.requires.some((entry) => entry.startsWith('runtime.threads/v1@')),
     `requires ${manifest.requires.join(', ')}`,
   );
 

@@ -38,6 +38,7 @@ import {
   type WindowCatalog,
 } from 'desktop/client';
 import { Window } from 'happy-dom';
+import { type RuntimeRecords, runtimeRecordsService } from 'runtime/contracts';
 import { createRecordsFake, type RecordsFakeOptions } from 'runtime/testing';
 import { z } from 'zod';
 
@@ -76,6 +77,9 @@ const threadMethods: Readonly<Record<string, number | null>> = {
   resumeQueue: 1,
   // 1.4.0: sends the Thread's last prompt again.
   retry: null,
+  // 1.7.0: sets the Thread's provider, model and effort (the footer's
+  // execution picker, drawn by the chat from bundle isolation 6(c)).
+  setThreadExecution: null,
 };
 
 /** `chat.composer/v1` as main routes it: tuple length per method. */
@@ -457,6 +461,12 @@ export const openChatWindow = async (input: {
   readonly modelsV1?: ModelsV1Version;
   /** What the window's `runtime.records/v1` fake holds; empty without it. */
   readonly records?: RecordsFakeOptions;
+  /**
+   * The window's `runtime.records/v1` itself, in place of a fake built from
+   * `records`: a test that publishes record updates the fake cannot make
+   * (a Thread's stored execution) answers the reads it needs.
+   */
+  readonly recordsApi?: RuntimeRecords;
 }): Promise<ChatWindow> => {
   const window = new Window({ url: input.url, width: 1280, height: 800 });
   // happy-dom runs no Web Animations and implements `getAnimations` on shadow
@@ -758,7 +768,11 @@ export const openChatWindow = async (input: {
     [partUrl('chat', chatManifest.version)]: chat,
     [partUrl('records', '1.0.0')]: {
       activate: ({ services }) => {
-        services.provide(createRecordsFake(input.records));
+        services.provide(
+          input.recordsApi === undefined
+            ? createRecordsFake(input.records)
+            : runtimeRecordsService(input.recordsApi),
+        );
         services.provide(tabsFake(tabCalls));
       },
     },

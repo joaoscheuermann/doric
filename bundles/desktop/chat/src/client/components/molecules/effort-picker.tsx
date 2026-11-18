@@ -1,8 +1,7 @@
 import { Button } from 'desktop/ui/button';
+import { ChoiceList } from 'desktop/ui/choice-list';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
 import { useState } from 'react';
-
-import { ChoiceList } from './choice-list.js';
 
 type EffortPickerProps = {
   readonly ariaLabel: string;

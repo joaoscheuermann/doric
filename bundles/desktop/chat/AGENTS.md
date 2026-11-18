@@ -2,8 +2,10 @@
 
 These instructions apply to `bundles/desktop/chat` and narrow the root `AGENTS.md`.
 The chat is the conversation of one Thread: its transcript, the composer and
-its queue, the trail and the footer composer controls, and, since 1.8.4, the
-Thread tabs and the views of the Threads on screen. It moved here from
+its queue, the trail and the footer composer controls, since 1.8.4 the
+Thread tabs and the views of the Threads on screen, and, since 1.9.0, the
+footer execution picker, drawn over `settings.models/v1` (no rule of its own:
+the groups, the efforts and the execution of each choice are `settings`'). It moved here from
 `app/desktop/doric-renderer` in stage 9 and must keep that renderer's visible text,
 roles, layout and quirks.
 

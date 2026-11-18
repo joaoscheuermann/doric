@@ -2,7 +2,10 @@ import type { ErrorCatalog } from 'desktop/reads';
 
 /**
  * The chat's error catalog (§2.2): the entries of the codes the chat defines,
- * and the chat's own wording of the shared `auth_*` codes, which point the
+ * the codes the footer execution picker names (`invalid_execution` and
+ * `thread_not_found`, from `restErrors.setThreadExecution`, and
+ * `config_read_failed`, a failed read of `settings.models/v1`), and the chat's
+ * own wording of the shared `auth_*` codes, which point the
  * reader to Settings — a place the shared entries may not name (D3).
  *
  * Passed as `catalog` to every `ErrorNotice` and `toastError` the chat draws;
@@ -43,6 +46,9 @@ export const chatErrorCatalog: ErrorCatalog = {
   queue_edit_failed: { title: 'Prompt not edited', retryable: false },
   command_failed: { title: 'Action failed', retryable: false },
   attach_failed: { title: 'Image not attached', retryable: false },
+  invalid_execution: { title: 'Model not accepted', retryable: false },
+  thread_not_found: { title: 'Thread not found', retryable: false },
+  config_read_failed: { title: 'Settings not loaded', retryable: true },
   auth_failed: {
     title: 'Sign-in rejected',
     explanation:

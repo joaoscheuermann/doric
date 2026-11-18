@@ -94,7 +94,11 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   `git-file-diff-icon` icon) is a `shell.panel` item, the working directory and branch (`git-workspace-cwd`)
   a `shell.panel.footer` item (the change counts stay in the Changes tab's
   badge), and the Versioning section (`/settings/git`) chooses
-  which stored credentials the agent commits and pushes with.
+  which stored credentials the agent commits and pushes with. The section
+  edits the settings window's draft through `settings.config/v1`, whose ref
+  it imports from `settings/contracts` (from 1.2.11; `settings` is a dev
+  dependency), and its link's
+  `settings.sections` literal is checked against `SETTINGS_SECTIONS`.
 - In the Changes view a changed file's row has a context menu with "Discard
   changes" and the repository row one with "Discard all changes" (directory
   rows have none; both entries are destructive). Either opens a confirmation

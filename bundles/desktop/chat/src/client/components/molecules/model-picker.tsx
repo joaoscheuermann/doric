@@ -1,13 +1,14 @@
 import { Button } from 'desktop/ui/button';
+import { ChoiceList } from 'desktop/ui/choice-list';
 import { Input } from 'desktop/ui/input';
+import { ModelIcon } from 'desktop/ui/model-icon';
 import { Popover, PopoverContent, PopoverTrigger } from 'desktop/ui/popover';
 import { Separator } from 'desktop/ui/separator';
 import { ChevronRightIcon, SearchIcon } from 'lucide-react';
 import { useState } from 'react';
+import type { ModelGroup } from 'settings/contracts';
 
-import { type ModelGroup, searchModelGroups } from '../../domain/config.js';
-import { ChoiceList } from './choice-list.js';
-import { ModelIcon } from './model-icon.js';
+import { searchModelGroups } from '../../domain/model-search.js';
 
 /** Reasoning stays visible even when the selected model cannot use it. */
 type Reasoning = {

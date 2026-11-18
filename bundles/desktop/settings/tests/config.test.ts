@@ -51,7 +51,6 @@ import {
   removeModel,
   removeProvider,
   replaceProvider,
-  searchModelGroups,
   selectModelChoice,
   setExecutionEffort,
   timeZoneChoices,
@@ -1199,23 +1198,6 @@ describe('the models the execution picker offers', () => {
     });
   });
 
-  test('narrows the groups to a matching name, and drops the emptied ones', () => {
-    const base = withProviders(configuration(), [
-      { ...provider('openai'), models: [{ name: 'gpt-5' }] },
-      { ...provider('anthropic'), models: [{ name: 'claude-sonnet' }] },
-    ]);
-    const groups = modelGroups(base);
-
-    assert.deepEqual(
-      searchModelGroups(groups, 'gpt').map((group) =>
-        group.choices.map((choice) => choice.label),
-      ),
-      [['gpt-5']],
-    );
-    assert.deepEqual(searchModelGroups(groups, '  '), groups);
-    assert.deepEqual(searchModelGroups(groups, 'nope'), []);
-  });
-
   test("model groups put each model's icon on its choice, and on the added row of an unlisted execution model", () => {
     const listedSvg = '<svg id="listed"></svg>';
     const unlistedSvg = '<svg id="unlisted"></svg>';
@@ -1257,34 +1239,6 @@ describe('the models the execution picker offers', () => {
       { label: 'gpt-5-mini', value: modelChoiceKey('openai', 'gpt-5-mini') },
     ]);
     assert.equal('icon' in (choices[2] ?? {}), false);
-  });
-
-  test('searching model groups keeps their icons', () => {
-    const svg = '<svg id="gpt"></svg>';
-    const icons: IconLookup = {
-      provider: () => undefined,
-      model: (providerId, model) =>
-        providerId === 'openai' && model === 'gpt-5' ? svg : undefined,
-    };
-    const base = withProviders(configuration(), [
-      { ...provider('openai'), models: [{ name: 'gpt-5' }] },
-      { ...provider('anthropic'), models: [{ name: 'claude-sonnet' }] },
-    ]);
-
-    assert.deepEqual(
-      searchModelGroups(modelGroups(base, icons), 'gpt').map(
-        (group) => group.choices,
-      ),
-      [
-        [
-          {
-            label: 'gpt-5',
-            value: modelChoiceKey('openai', 'gpt-5'),
-            icon: svg,
-          },
-        ],
-      ],
-    );
   });
 
   test("names the effort a model's own catalog calls its default, and none otherwise", () => {

@@ -34,9 +34,6 @@ import { ClientError } from 'desktop/reads';
 import type {
   ConfigReplaceResult,
   Configuration as HostConfiguration,
-  RuntimeThreads,
-  Thread,
-  ThreadExecutionResult,
 } from 'runtime/contracts';
 
 import {
@@ -67,16 +64,13 @@ import {
   type ToolConfigFieldKind,
 } from '../domain/config.js';
 import type { IconRequest } from '../domain/model-icons.js';
-import { LayoutDashboardV1, LayoutWorkspaceV1 } from './navigation-refs.js';
+import { LayoutDashboardV1 } from './navigation-refs.js';
 
 /**
  * `host-config/v1` (the `/config` pipeline), referenced by id with the
  * runtime's `HostConfiguration` type.
  */
 export const HostConfigurationV1 = ref<HostConfiguration>('host-config/v1');
-
-/** `runtime.threads/v1`, referenced by id with the runtime's type, as the layout does. */
-export const RuntimeThreadsV1 = ref<RuntimeThreads>('runtime.threads/v1');
 
 /**
  * The rejection of every settings adapter call: a `ClientError` whose
@@ -1223,31 +1217,6 @@ export interface SettingsApi {
     show(id: string): void;
     subscribe(listener: () => void): Disposable;
   };
-  /**
-   * The workspace window's selected Thread (`layout.workspace/v1`, optional).
-   * Without a provider, `selectedThread` answers `undefined`.
-   */
-  readonly workspace: {
-    selectedThread(): Thread | undefined;
-    /**
-     * Called on every selection or record change the provider reports, and
-     * once more whenever the provider appears or goes. Disposing stops every
-     * call; it never throws, even after the provider went.
-     */
-    subscribe(listener: () => void): Disposable;
-  };
-  readonly threads: {
-    /**
-     * `runtime.threads/v1.setThreadExecution`. Answers every outcome as a
-     * value; rejects only when the call itself fails.
-     */
-    setExecution(input: {
-      readonly id: string;
-      readonly providerId: string;
-      readonly model: string;
-      readonly effort?: ReasoningEffort;
-    }): Promise<ThreadExecutionResult>;
-  };
   /** Opens an https page in the system browser, outside the app. */
   openBrowser(url: string): Promise<void>;
 }
@@ -1407,46 +1376,6 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
         ? services.use(LayoutDashboardV1).subscribe(listener)
         : { dispose: () => undefined },
   },
-  workspace: {
-    selectedThread: () =>
-      workspaceAvailable
-        ? services.use(LayoutWorkspaceV1).selectedThread()
-        : undefined,
-    subscribe: (listener) => {
-      let inner: Disposable | undefined;
-      const detach = (): void => {
-        const current = inner;
-        inner = undefined;
-        try {
-          current?.dispose();
-        } catch {
-          // The provider may already be gone; its subscription went with it.
-        }
-      };
-      const attach = (): void => {
-        if (workspaceAvailable) {
-          inner = services.use(LayoutWorkspaceV1).subscribe(listener);
-        }
-      };
-      const refresh = (): void => {
-        detach();
-        attach();
-        listener();
-      };
-      attach();
-      workspaceRefreshes.add(refresh);
-      return {
-        dispose: () => {
-          workspaceRefreshes.delete(refresh);
-          detach();
-        },
-      };
-    },
-  },
-  threads: {
-    setExecution: (input) =>
-      services.use(RuntimeThreadsV1).setThreadExecution(input),
-  },
   openBrowser: async (url) => {
     await services.use(DoricBrowserV1).open(url);
   },
@@ -1463,23 +1392,6 @@ let dashboardAvailable = false;
 /** Records whether a `layout.dashboard/v1` provider is active. */
 export const setDashboardAvailable = (available: boolean): void => {
   dashboardAvailable = available;
-};
-
-/**
- * Whether a `layout.workspace/v1` provider answers; optional like the
- * dashboard. Unlike it, a change also refreshes every workspace subscription.
- */
-let workspaceAvailable = false;
-const workspaceRefreshes = new Set<() => void>();
-
-/**
- * Records whether a `layout.workspace/v1` provider is active, then refreshes
- * every `workspace.subscribe` subscription, so each re-attaches to the
- * provider and hears once that it appeared or went.
- */
-export const setWorkspaceAvailable = (available: boolean): void => {
-  workspaceAvailable = available;
-  for (const refresh of [...workspaceRefreshes]) refresh();
 };
 
 let active: SettingsApi | undefined;

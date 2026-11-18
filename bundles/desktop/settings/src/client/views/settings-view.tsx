@@ -6,6 +6,7 @@ import { AlertCircleIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
+import { SETTINGS_SECTIONS } from '../../contracts/index.js';
 import { AppearanceV1 } from '../api/appearance.js';
 import { sectionIcon } from '../components/molecules/section-icon.js';
 import { SettingsAppearance } from '../components/organisms/settings-appearance.js';
@@ -333,7 +334,7 @@ export function Settings({ services }: { readonly services: Services }) {
       onBack={provider === undefined ? undefined : page.close}
       nav={
         <>
-          <core-region name="settings.sections" />
+          <core-region name={SETTINGS_SECTIONS} />
           {links.map((link, index) => {
             if (!matching.has(link)) return null;
             const LinkIcon = sectionIcon(link.props.icon);

@@ -1,8 +1,8 @@
 // The settings bundle's client part (stage 9, design §6): the settings window
 // at `/settings`, its own five sections as child routes (Versioning is the git bundle's since WP-10N), the nav as the
-// `settings.sections` region, the footer execution picker in
-// `shell.conversation.footer`, the account menu's "Settings" entry in
-// `account.menu` and the Dashboard's "All settings" entry in
+// `settings.sections` region, `settings.models/v1` for the chat's footer
+// execution picker (bundle isolation 6(c)), the account menu's "Settings"
+// entry in `account.menu` and the Dashboard's "All settings" entry in
 // `workspace.dashboard.footer`, both drawn with `settings-entry-icon`.
 
 import type { ACCOUNT_MENU, AccountMenuItemProps } from 'account/contracts';
@@ -13,7 +13,6 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import { ClaudeLoginV1 } from 'claude-login/contracts';
-import type { SHELL_CONVERSATION_FOOTER } from 'layout/contracts';
 import type {
   DashboardFooterItemProps,
   WORKSPACE_DASHBOARD_FOOTER,
@@ -21,12 +20,9 @@ import type {
   WORKSPACE_DASHBOARD_PAGE,
 } from 'workspace/contracts';
 
-import { LayoutDashboardV1, LayoutWorkspaceV1 } from './api/navigation-refs.js';
-import {
-  initSettingsApi,
-  setDashboardAvailable,
-  setWorkspaceAvailable,
-} from './api/settings-api.js';
+import { SETTINGS_SECTIONS } from '../contracts/index.js';
+import { LayoutDashboardV1 } from './api/navigation-refs.js';
+import { initSettingsApi, setDashboardAvailable } from './api/settings-api.js';
 import { registerAppearanceSection } from './appearance-section.js';
 import { createSectionRoute, sectionPath } from './domain/section-route.js';
 import { sectionLink, sections } from './domain/sections.js';
@@ -37,19 +33,31 @@ import {
   sectionHosts,
 } from './elements.js';
 import { setClaudeLoginAvailable } from './hooks/use-claude-login.js';
-import { clearSettingsQueryClient } from './queries/client.js';
+import {
+  clearSettingsQueryClient,
+  settingsQueryClient,
+} from './queries/client.js';
 import { createSettingsConfig } from './services/settings-config.js';
+import { createSettingsModels } from './services/settings-models.js';
 import { DashboardProvidersElement } from './views/dashboard-providers.js';
 import { EntryIconElement } from './views/entry-icon.js';
-import {
-  ExecutionPickerElement,
-  SettingsPageElement,
-} from './views/settings-page.js';
+import { SettingsPageElement } from './views/settings-page.js';
 
 export function activate({ services }: ClientContext): () => void {
   initSettingsApi(services);
   // R-9.8: the window's autosave draft for sections other bundles draw.
   services.provide(createSettingsConfig());
+  // The footer execution picker's data, for the chat that draws it.
+  const models = createSettingsModels({
+    queryClient: settingsQueryClient,
+    onFocus: (listener) => {
+      window.addEventListener('focus', listener);
+      return {
+        dispose: () => window.removeEventListener('focus', listener),
+      };
+    },
+  });
+  services.provide(models.service);
 
   const ui = services.use(UiV1);
   const navigation = services.use(NavigationV1);
@@ -60,7 +68,6 @@ export function activate({ services }: ClientContext): () => void {
     ...sections.map((section) =>
       ui.define(`settings-${section.id}`, sectionHosts[section.id].Element),
     ),
-    ui.define('settings-execution-picker', ExecutionPickerElement),
     ui.define('settings-dashboard-providers', DashboardProvidersElement),
     ui.define('settings-dashboard-provider', providerPageHosts.Element),
     ui.define('settings-entry-icon', EntryIconElement),
@@ -78,17 +85,9 @@ export function activate({ services }: ClientContext): () => void {
           parent: '/settings',
           create: () => ui.create(`settings-${section.id}`),
         }),
-        regions.add('settings.sections', sectionLink(section)),
+        regions.add(SETTINGS_SECTIONS, sectionLink(section)),
       ]),
     registerAppearanceSection({ services, ui, navigation, regions }),
-    regions.add(
-      'shell.conversation.footer' satisfies typeof SHELL_CONVERSATION_FOOTER,
-      {
-        id: 'execution',
-        tag: 'settings-execution-picker',
-        order: 20,
-      },
-    ),
     // The account menu's "Settings" entry, which opens this window.
     regions.add('account.menu' satisfies typeof ACCOUNT_MENU, {
       id: 'settings',
@@ -141,16 +140,11 @@ export function activate({ services }: ClientContext): () => void {
       setDashboardAvailable(true);
       return () => setDashboardAvailable(false);
     }),
-    // `layout.workspace/v1` is optional: without the workspace window the
-    // footer picker has no selected Thread and shows the default, disabled.
-    services.whenAvailable(LayoutWorkspaceV1, () => {
-      setWorkspaceAvailable(true);
-      return () => setWorkspaceAvailable(false);
-    }),
   ];
 
   return () => {
     for (const registration of registrations.reverse()) registration.dispose();
+    models.dispose();
     clearSettingsQueryClient();
     initSettingsApi(undefined);
   };

@@ -24,6 +24,7 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import type { SHELL_PANEL, SHELL_PANEL_FOOTER } from 'layout/contracts';
+import type { SETTINGS_SECTIONS } from 'settings/contracts';
 
 import { gitApiOf } from './api/git-api.js';
 import { type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
@@ -66,7 +67,7 @@ export const gitRegions: readonly {
     item: { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10 },
   },
   {
-    region: 'settings.sections',
+    region: 'settings.sections' satisfies typeof SETTINGS_SECTIONS,
     item: {
       id: 'versioning',
       tag: 'settings-link',

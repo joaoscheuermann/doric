@@ -1,11 +1,11 @@
 {
   "manifestVersion": 1,
   "id": "chat",
-  "version": "1.8.4",
+  "version": "1.9.0",
   "engines": {
-    "doric": "^1.7.0"
+    "doric": "^1.9.0"
   },
-  "description": "The conversation: chat-view, its store, projection, composer and trail.",
+  "description": "The conversation: transcript, composer and the execution picker.",
   "provides": [
     "chat.views/v1@1.1.0",
     "chat.lexical/v1@1.0.0",
@@ -23,7 +23,9 @@
     "comments.added/v1",
     "comments.resolved/v1",
     "runtime.prompt-finished/v1",
-    "workspace.hooks/v1"
+    "workspace.hooks/v1",
+    "settings.models/v1",
+    "workspace.selection/v1"
   ],
   "requires": [
     "hooks/v1@^1.0.0",

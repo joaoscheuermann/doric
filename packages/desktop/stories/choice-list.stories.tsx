@@ -1,8 +1,5 @@
-import { useState } from 'react';
-
-import { ChoiceList } from '../../../src/client/components/molecules/choice-list.js';
-import { modelChoiceKey } from '../../../src/client/domain/config.js';
-import { controlFrame } from '../../support/frames.js';
+import { ChoiceList } from 'desktop/ui/choice-list';
+import { type ComponentType, useState } from 'react';
 
 const efforts = [
   { label: 'Minimal', value: 'minimal' },
@@ -15,10 +12,14 @@ const models = [
   'anthropic/claude-sonnet-4.5',
   'deepseek/deepseek-v3.2',
   'meta-llama/llama-4-maverick',
-].map((model) => ({
-  label: model,
-  value: modelChoiceKey('openrouter', model),
-}));
+].map((model) => ({ label: model, value: `openrouter/${model}` }));
+
+/** A small control on its own, with room for the menu it opens. */
+const controlFrame = (Story: ComponentType) => (
+  <div className="min-h-80 p-6">
+    <Story />
+  </div>
+);
 
 /** The list with its own selection, so a click moves the check. */
 function Selectable({
@@ -49,7 +50,7 @@ function Selectable({
 }
 
 export default {
-  title: 'Settings/Molecules/Choice list',
+  title: 'Desktop/Choice list',
   component: ChoiceList,
   decorators: [controlFrame],
 };
@@ -62,7 +63,7 @@ export const ModelList = {
   render: () => (
     <Selectable
       choices={models}
-      initial={modelChoiceKey('openrouter', 'anthropic/claude-sonnet-4.5')}
+      initial="openrouter/anthropic/claude-sonnet-4.5"
     />
   ),
 };

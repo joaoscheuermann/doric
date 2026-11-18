@@ -1,8 +1,8 @@
 // The optional and client peers of the git client, as structural copies of
 // their contracts by ID: a composition without files would not map
-// `files/contracts`, and the settings bundle publishes no contracts module.
-// Each is reached through `whenAvailable`, or used only by the element that
-// a peer's own window shows.
+// `files/contracts`. Each is reached through `whenAvailable`, or used only by
+// the element that a peer's own window shows. `settings.config/v1` is not
+// here: git requires it, and takes it from `settings/contracts`.
 
 import { type CallArg, type Disposable, ref } from 'bundle/contracts';
 import type { ProjectTreeNode, ReadState } from 'files/contracts';
@@ -50,15 +50,3 @@ export interface VersioningDraft {
   readonly gitCredentialId?: string;
   readonly githubCredentialId?: string;
 }
-
-/** settings.config/v1 (client, local, R-9.8): the settings window's one autosave draft. */
-export interface SettingsConfig {
-  draft(call?: CallArg): VersioningDraft | undefined;
-  setDraft(
-    update: <D extends VersioningDraft>(draft: D) => D,
-    call?: CallArg,
-  ): void;
-  subscribe(listener: () => void, call?: CallArg): Disposable;
-}
-
-export const SettingsConfigV1 = ref<SettingsConfig>('settings.config/v1');

@@ -42,8 +42,8 @@ const manifests = (): Map<string, { engines?: { doric?: string } }> => {
 };
 
 describe('the platform version', () => {
-  test('T-9, T4.1: is 1.8.0 once desktop/ui/element-host is platform API', () => {
-    assert.equal(PLATFORM_VERSION, '1.8.0');
+  test('T-9, AC6.6: is 1.9.0 once desktop/ui/model-icon and desktop/ui/choice-list are platform API', () => {
+    assert.equal(PLATFORM_VERSION, '1.9.0');
   });
 
   test('leaves the folders and URLs at 1.0.0', () => {
@@ -52,10 +52,10 @@ describe('the platform version', () => {
 });
 
 describe('the platform each bundle asks for', () => {
-  test('layout, account and workspace ask for ^1.8.0, chat and settings for ^1.7.0 and every other bundle for ^1.0.0', () => {
+  test('chat and settings ask for ^1.9.0, layout, account and workspace for ^1.8.0 and every other bundle for ^1.0.0', () => {
     const asked = new Map([
-      ['desktop/chat', '^1.7.0'],
-      ['desktop/settings', '^1.7.0'],
+      ['desktop/chat', '^1.9.0'],
+      ['desktop/settings', '^1.9.0'],
       ['desktop/layout', '^1.8.0'],
       ['desktop/account', '^1.8.0'],
       ['desktop/workspace', '^1.8.0'],

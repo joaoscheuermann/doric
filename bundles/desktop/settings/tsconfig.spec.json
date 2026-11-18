@@ -16,6 +16,7 @@
     "src/client/appearance-section.ts",
     "src/client/domain/*.ts",
     "src/client/services/*.ts",
+    "src/contracts/**/*.ts",
     "tests/*.ts",
     "tests/support/**/*.ts"
   ],

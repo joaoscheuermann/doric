@@ -45,6 +45,10 @@ export const noticesTitled = (
 export const retryOf = (notice: HTMLElement): HTMLButtonElement | null =>
   notice.querySelector<HTMLButtonElement>('button[aria-label="Retry"]');
 
+/** Whether the notice announces itself (`announce`, §3.6). */
+export const announced = (notice: HTMLElement): boolean =>
+  notice.getAttribute('role') === 'alert';
+
 /**
  * The notice a tool row draws inside `row` (§5.1): compact, not announced, no
  * Retry, titled by its first known level or `tool_failed`'s "Tool failed", and

@@ -3,30 +3,23 @@
 `settings` is where you connect Doric to your models. Its settings window lets
 you add providers, pick the workspace default model and reasoning effort that
 new top-level Threads start on, set the turn limit and store credentials, and
-every change saves itself as you type. The conversation footer carries a quick
-model and effort picker for the selected Thread, so you can switch its model
-without leaving the chat.
+every change saves itself as you type. It also tells the conversation footer's
+model and effort picker, which the [`chat`](../chat/README.md) bundle draws,
+what to offer and what each choice runs on (`settings.models/v1`).
 
-It is a desktop bundle with one client part (the settings window and the
-footer picker), loaded by the `bundle` platform. See the
+It is a desktop bundle with one client part (the settings window), loaded by
+the `bundle` platform. See the
 [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
 
 ## What it provides
 
 - **UI:** `<settings-page>` at `/settings`, the settings window's one React
-  root, and `<settings-execution-picker>`, a `shell.conversation.footer` item (order 20)
-  in the [`layout`](../layout/README.md) bundle's conversation footer. It
-  edits the selected Thread's provider, model and effort through
-  `runtime.threads/v1.setThreadExecution`. With no Thread selected it shows
-  the workspace default read-only, titled "New threads start on the workspace
-  default. Change it in Settings." It never writes `models.execution`: the workspace default
-  changes only in Settings. The bundle requires `runtime.threads/v1` and
-  reads `layout.workspace/v1` optionally, which the `workspace` bundle
-  provides until step 4(e) of bundle isolation; `core.open-settings/v1` and
-  `layout.dashboard/v1` are `optional` too. It builds the references of the
-  two `layout.*` contracts from their ids (`src/client/api/navigation-refs.ts`)
-  and imports only their types from `workspace/contracts`.
+  root. `core.open-settings/v1` and `layout.dashboard/v1` are `optional`; the
+  bundle builds the reference of `layout.dashboard/v1` from its id
+  (`src/client/api/navigation-refs.ts`) and imports only its type from
+  `workspace/contracts`, which the `workspace` bundle provides until step 4(e)
+  of bundle isolation.
 - **Sections:** six child routes of `/settings`, each listed in the window's
   nav through the `settings.sections` region.
 - **Region:** `settings.sections`, where other bundles add their own sections.
@@ -44,8 +37,23 @@ footer picker), loaded by the `bundle` platform. See the
   loads without `workspace`, and then the Dashboard has no settings entry.
   `<settings-entry-icon>` draws the settings glyph at 16 px in the colour of
   the entry that hosts it (from 1.10.0).
-- **Contract:** `settings.config/v1` (client), the window's one autosave draft
-  for sections other bundles draw.
+- **Contracts:** `settings.config/v1` (client, 1.1.0), the window's one
+  autosave draft for sections other bundles draw, and, from 1.11.0,
+  `settings.models/v1` (client, 1.0.0): for one stored execution, or for the
+  workspace default, the picker's groups of models with their icons, the
+  efforts the shown model accepts and their labels, and the execution each
+  pick yields. Every rule behind it is this bundle's (`domain/config.ts`,
+  `domain/model-icons.ts`, and `resolveThreadExecution` of
+  `runtime/contracts`); the chat applies none. It is read only: the chat
+  writes a Thread's execution through `runtime.threads/v1`, and nothing
+  writes the default through it. The view reads the window's
+  `['config', 'snapshot']` query, read again on a window focus and after a
+  save, so a model the provider page adds reaches the footer at once.
+- **Contracts module:** `settings/contracts` (`src/contracts/`, emitted to
+  `dist/contracts/`): the two contracts, the eight types a configuration draft
+  is made of, and `SETTINGS_SECTIONS`, the name of the `settings.sections`
+  slot. No file of it imports `src/client`; `git` imports
+  `SettingsConfigV1` from it, and the chat its types.
 
 The window is opened by `core`'s `core.open-settings/v1` command, which two
 entries run: the Dashboard's "All settings", which this bundle adds to
@@ -97,9 +105,6 @@ carries `profile` in the shared draft.
   failure toast.
 - `domain/config.ts` mirrors the host's validation, so a draft the host would
   refuse is never sent; the host validates again.
-- The footer picker writes each choice at once through `setThreadExecution`,
-  without a toast; a typed model commits on blur or Enter, and a refused write
-  shows an inline error notice with its reason.
 - A section from another bundle edits through `settings.config/v1` (`draft`,
   `setDraft`, `subscribe`), so it shares the window's one draft, debounce and
   save.

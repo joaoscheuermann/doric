@@ -10,7 +10,6 @@ import {
   type CredentialDescription,
   type CredentialRef,
   type CredentialUpdate,
-  type Disposable,
   defineMethod,
   defineService,
   type ModelIconAnswers,
@@ -27,14 +26,10 @@ import {
 import { createTestServices } from 'bundle/testing';
 import { ClaudeLoginV1, claudeLoginMethods } from 'claude-login/contracts';
 import { configurationMethods } from 'host-config/contracts';
-import {
-  type ConfigReplaceResult,
-  type DoricConfiguration,
-  runtimeThreadsMethods,
-  type Thread,
-  type ThreadExecutionResult,
+import type {
+  ConfigReplaceResult,
+  DoricConfiguration,
 } from 'runtime/contracts';
-import { LayoutWorkspaceV1, layoutWorkspaceMethods } from 'workspace/contracts';
 import type { z } from 'zod';
 
 import {
@@ -67,17 +62,6 @@ export interface FakeHost {
     input: CredentialUpdate,
   ) => CredentialDescription;
   delete?: (ref: CredentialRef) => 'deleted' | 'missing' | 'referenced';
-  /** `layout.workspace/v1.selectedThread`: the workspace's selection. */
-  selectedThread?: () => Thread | undefined;
-  /** `layout.workspace/v1.subscribe`: the layout's change notifications. */
-  workspaceSubscribe?: (listener: () => void) => Disposable;
-  /** `runtime.threads/v1.setThreadExecution`. */
-  setThreadExecution?: (input: {
-    readonly id: string;
-    readonly providerId: string;
-    readonly model: string;
-    readonly effort?: string;
-  }) => ThreadExecutionResult | Promise<ThreadExecutionResult>;
 }
 
 const unanswered = (): never => {
@@ -88,16 +72,11 @@ type Specs = Readonly<
   Record<string, { readonly input: z.ZodType; readonly output: z.ZodType }>
 >;
 
-/**
- * A provider of every method of a contract; the unlisted ones answer nothing.
- * `answer` follows the contract: `async` methods answer a promise, `sync`
- * methods (such as `layout.workspace/v1`) answer their value directly.
- */
+/** A provider of every method of a contract; the unlisted ones answer nothing. */
 const fake = (
   id: string,
   specs: Specs,
   handlers: Readonly<Record<string, (input: never) => unknown>>,
-  answer: 'async' | 'sync' = 'async',
 ): AnyServiceDefinition =>
   defineService(
     id as `${string}/v${number}`,
@@ -107,12 +86,8 @@ const fake = (
         defineMethod({
           input: spec.input,
           output: spec.output,
-          execute:
-            answer === 'sync'
-              ? (input: unknown) =>
-                  (handlers[name] ?? unanswered)(input as never)
-              : async (input: unknown) =>
-                  (handlers[name] ?? unanswered)(input as never),
+          execute: async (input: unknown) =>
+            (handlers[name] ?? unanswered)(input as never),
         }),
       ]),
     ),
@@ -151,25 +126,6 @@ export const settingsOver = async (
       update: ([ref, input]: [CredentialRef, CredentialUpdate]) =>
         (host.update ?? unanswered)(ref, input),
       delete: (ref: CredentialRef) => (host.delete ?? unanswered)(ref),
-    }),
-    fake(
-      LayoutWorkspaceV1.id,
-      layoutWorkspaceMethods,
-      {
-        selectedThread: () => (host.selectedThread ?? unanswered)(),
-        subscribe: (listener: () => void) =>
-          (host.workspaceSubscribe ?? unanswered)(listener),
-      },
-      'sync',
-    ),
-    // Referenced by its id, as the settings adapter references it.
-    fake('runtime.threads/v1', runtimeThreadsMethods as unknown as Specs, {
-      setThreadExecution: (input: {
-        id: string;
-        providerId: string;
-        model: string;
-        effort?: string;
-      }) => (host.setThreadExecution ?? unanswered)(input),
     }),
   ];
   const test = createTestServices({ bundle: { id: 'settings' }, provide });

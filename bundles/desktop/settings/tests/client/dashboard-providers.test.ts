@@ -180,8 +180,27 @@ const LayoutDashboardV1 = ref<LayoutDashboard>('layout.dashboard/v1');
  * schemas the layout declares, the dashboard route mounting the Providers
  * group, and the provider page's host mounted while that page is active.
  */
-const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
+/** The part of `settings.models/v1` T-40 reads, by id as the chat reads it. */
+interface SettingsModels {
+  view(): {
+    readonly status: string;
+    readonly listsModels?: boolean;
+    readonly groups?: readonly {
+      readonly choices: readonly { readonly label: string }[];
+    }[];
+  };
+  subscribe(listener: () => void): Disposable;
+}
+
+const SettingsModelsV1 = ref<SettingsModels>('settings.models/v1');
+
+/**
+ * The layout's side of the dashboard; with `models`, the probe also plays the
+ * chat's footer picker in the same window: it requires `settings.models/v1`.
+ */
+const layoutProbe = (options: { readonly models?: boolean } = {}) => {
   let active: string | undefined;
+  let models: SettingsModels | undefined;
   const shown: string[] = [];
   const listeners = new Set<() => void>();
   let root: HTMLElement | undefined;
@@ -210,10 +229,17 @@ const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
   };
 
   const probe: ProbeBundle = {
-    requires: ['ui/v1@^1.0.0', 'navigation/v1@^1.0.0'],
+    requires: [
+      'ui/v1@^1.0.0',
+      'navigation/v1@^1.0.0',
+      ...(options.models === true ? ['settings.models/v1@^1.0.0'] : []),
+    ],
     provides: ['layout.dashboard/v1@1.0.0'],
     activate: (context) => {
       services = context.services;
+      if (options.models === true) {
+        models = context.services.use(SettingsModelsV1);
+      }
       context.services.provide(
         defineService(LayoutDashboardV1, {
           active: defineMethod({
@@ -249,10 +275,6 @@ const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
         create: () => {
           root = document.createElement('div');
           root.append(create('settings-dashboard-providers'));
-          // The conversation footer's picker, mounted in the same window.
-          if (options.picker === true) {
-            root.append(create('settings-execution-picker'));
-          }
           drawPage();
           return root;
         },
@@ -267,6 +289,8 @@ const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
     shown: (): readonly string[] => [...shown],
     /** The layout closing the page, as the dashboard's own controls do. */
     close: (): void => services?.use(LayoutDashboardV1).close(),
+    /** `settings.models/v1` as the probe received it, with `models`. */
+    models: (): SettingsModels | undefined => models,
   };
 };
 
@@ -283,7 +307,7 @@ afterEach(async () => {
 
 const openDashboard = async (
   options: {
-    readonly picker?: boolean;
+    readonly models?: boolean;
     readonly stored?: unknown;
     /** Host answers over the defaults. */
     readonly answers?: Readonly<Record<string, HostAnswer>>;
@@ -445,8 +469,8 @@ test('a change on the provider page saves itself once typing settles', async () 
   );
 });
 
-test("a model the provider page adds reaches the footer picker's list without a window focus, with no Thread selected (T-40)", async () => {
-  // No provider lists a model, so the picker offers a typed field; the
+test("a model the provider page adds reaches settings.models/v1's groups without a window focus, and its subscribers are called (T-40)", async () => {
+  // No provider lists a model, so the view asks for a typed model; the
   // default runs on a typed model of the local server.
   const stored = {
     ...configuration,
@@ -456,18 +480,24 @@ test("a model the provider page adds reaches the footer picker's list without a 
     })),
     models: { execution: { providerId: 'lmstudio', model: 'local-1' } },
   };
-  const { window } = await openDashboard({ picker: true, stored });
+  const { window, layout } = await openDashboard({ models: true, stored });
+  const models = layout.models();
+  assert.ok(
+    models !== undefined,
+    'No provider of settings.models/v1 reached a bundle that requires it.',
+  );
+  let heard = 0;
+  const subscription = models.subscribe(() => {
+    heard += 1;
+  });
+  await settle(20);
   rowOf(window, 'openrouter').click();
   await settle(20);
 
-  const picker = (): HTMLElement => {
-    const trigger = window.document.querySelector<HTMLElement>(
-      'settings-execution-picker [aria-label="Execution model"]',
-    );
-    assert.ok(trigger !== null, 'The footer picker is not drawn.');
-    return trigger;
-  };
-  assert.equal(picker().tagName, 'INPUT');
+  const before = models.view();
+  assert.equal(before.status, 'ready');
+  assert.equal(before.listsModels, false);
+  heard = 0;
 
   const add = [
     ...window.document.querySelectorAll<HTMLElement>(
@@ -486,17 +516,19 @@ test("a model the provider page adds reaches the footer picker's list without a 
   assert.equal(window.received('host-config/v1.replace').length, 1);
   await settle(20);
 
-  // The provider now lists a model: the picker draws its list's trigger, still
-  // locked on the workspace default since no Thread is selected.
-  assert.equal(picker().tagName, 'BUTTON');
+  // The provider now lists a model: the view's groups hold it, and it got
+  // there with no window focus (the test dispatches none).
+  const after = models.view();
+  assert.equal(after.status, 'ready');
+  assert.equal(after.listsModels, true);
   assert.ok(
-    picker().hasAttribute('disabled') || picker().hasAttribute('data-disabled'),
-    'The picker is not locked without a selected Thread.',
+    (after.groups ?? []).some((group) =>
+      group.choices.some((choice) => choice.label === 'deepseek/v4'),
+    ),
+    'The added model is not among the groups.',
   );
-  assert.equal(
-    picker().getAttribute('title'),
-    'New threads start on the workspace default. Change it in Settings.',
-  );
+  assert.ok(heard > 0, 'No subscriber heard the saved configuration.');
+  subscription.dispose();
 });
 
 test('renaming a provider on its page renames its row', async () => {

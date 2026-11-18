@@ -2,8 +2,8 @@
 
 These instructions apply to `bundles/desktop/settings` and narrow the root
 `AGENTS.md`. The settings bundle is the application-global settings page
-(`/settings` and its sections), the execution picker of the workspace
-footer, and the Dashboard's entries (the Providers group, the provider page
+(`/settings` and its sections), `settings.models/v1` (what the chat's footer
+execution picker offers), and the Dashboard's entries (the Providers group, the provider page
 and "All settings"). It moved here from `app/desktop/doric-renderer` in stage 9 and must keep that
 renderer's visible text, roles, layout and quirks, including the dropped Tools
 edits and the autosave without a Save button.
@@ -21,7 +21,13 @@ src/client/
   queries/     TanStack Query keys and the client
   domain/      the configuration rules and the settings search (pure, tested)
   api/         the host adapter: the only code that calls host contracts
+  services/    the providers of `settings.config/v1` and `settings.models/v1`
 ```
+
+`src/contracts/` is the contracts module `settings/contracts` (built by
+`tsconfig.json` to `dist/contracts/`): contract declarations, types and slot
+names only. No file of it imports `src/client`; the client reaches it by the
+relative path `../contracts/index.js`.
 
 - A rule that can be stated in terms of its arguments belongs in `domain/` and
   has a test; code that needs React or the DOM is proven by the window tests in
@@ -40,9 +46,11 @@ src/client/
 - A secret is never read back: the host answers only whether one is stored.
 - Autosave is bound to the activation services and flushes in the window's
   `onFlushHook`, never through an element's services (D9-17).
-- The `layout.*` references it lists under `optional` are built from their ids
-  in `src/client/api/navigation-refs.ts`; `workspace/contracts` is imported
-  with `import type` only.
+- The `layout.dashboard/v1` reference it lists under `optional` is built from
+  its id in `src/client/api/navigation-refs.ts`; `workspace/contracts` is
+  imported with `import type` only.
+- `settings.models/v1` holds every rule the footer picker shows: the chat
+  draws the view and writes the Thread, and computes nothing of it.
 
 ## Footers
 

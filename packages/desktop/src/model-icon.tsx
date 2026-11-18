@@ -1,5 +1,5 @@
-import { svgMask } from 'desktop/ui/svg-mask';
-import { cn } from 'desktop/ui/utils';
+import { cn } from './lib/utils.js';
+import { svgMask } from './svg-mask.js';
 
 /**
  * A model's or a provider's 16px icon, drawn as a mask in the text colour and

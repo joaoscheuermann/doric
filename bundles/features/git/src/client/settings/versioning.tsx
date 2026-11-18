@@ -6,8 +6,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { SecretsV1, type Services } from 'bundle/contracts';
+import { SettingsConfigV1 } from 'settings/contracts';
 
-import { SettingsConfigV1 } from '../api/peers.js';
 import { gitKeys } from '../changes/store.js';
 import { credentialsFrom } from '../domain/credentials.js';
 import { useService, useSubscribed } from '../hooks/use-service.js';

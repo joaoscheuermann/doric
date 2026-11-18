@@ -1,10 +1,10 @@
-import { Button } from 'desktop/ui/button';
-import { cn } from 'desktop/ui/utils';
 import { CheckIcon } from 'lucide-react';
 
+import { Button } from './components/button.js';
+import { cn } from './lib/utils.js';
 import { ModelIcon } from './model-icon.js';
 
-type ChoiceListProps = {
+export interface ChoiceListProps {
   readonly choices: readonly {
     readonly label: string;
     /** A mark the row wears beside its label, such as the model's own default. */
@@ -23,7 +23,7 @@ type ChoiceListProps = {
   readonly iconSlot?: boolean;
   /** The current value, checked in the list. */
   readonly value?: string;
-};
+}
 
 /**
  * The rows of one choice: each a ghost button that commits its value on click,

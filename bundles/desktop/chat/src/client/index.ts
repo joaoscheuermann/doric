@@ -1,7 +1,8 @@
 // The chat bundle's client part (stage 9, §7.3): the conversation's store,
 // host adapters, `chat.views/v1`, `chat.lexical/v1`, `chat.send/v1` and
 // `chat.hooks/v1`, the
-// conversation route and the footer composer item. Persistent work runs on
+// conversation route, the footer composer item and, while `settings.models/v1`
+// is available, the footer execution picker item. Persistent work runs on
 // the activation services (D9-17).
 
 import {
@@ -21,15 +22,18 @@ import { RuntimeTerminalsV1 } from 'runtime/contracts';
 import { ChatHooksV1, SEND_PROMPT_COMMAND } from '../contracts/index.js';
 import { HistorySnapshotsV1 } from './api/history-contract.js';
 import { setModelsApi } from './api/model-icons.js';
+import { SettingsModelsV1 } from './api/settings-models.js';
 import {
   fromRuntimeTerminals,
   fromTerminalService,
   TerminalServiceV1,
 } from './api/terminals-contract.js';
 import { LayoutWorkspaceV1 } from './api/workspace-contract.js';
+import { WorkspaceSelectionV1 } from './api/workspace-selection.js';
 import { THREAD_ROUTE } from './domain/thread-route.js';
 import {
   ChatComposerElement,
+  ChatExecutionPickerElement,
   ChatGenericBlockElement,
   ChatReadonlyMarkdownElement,
   ChatThreadPanelElement,
@@ -60,6 +64,10 @@ import { resetComposers } from './stores/composer.js';
 import { resetComposerStack } from './stores/composer-stack.js';
 import { resetConnectionStore } from './stores/connection.js';
 import {
+  setSettingsModels,
+  setWorkspaceSelection,
+} from './stores/execution-sources.js';
+import {
   resetLiveTerminalsStore,
   setRuntimeTerminalsApi,
   setTerminalServiceApi,
@@ -88,6 +96,7 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define(GENERIC_BLOCK_TAG, ChatGenericBlockElement),
     ui.define('chat-readonly-markdown', ChatReadonlyMarkdownElement),
     ui.define('chat-thread-tab-icon', ChatThreadTabIconElement),
+    ui.define('chat-execution-picker', ChatExecutionPickerElement),
   ];
   const route = services.use(NavigationV1).register({
     path: THREAD_ROUTE,
@@ -114,6 +123,26 @@ export function activate({ services }: ClientContext): Cleanup {
   const workspace = services.whenAvailable(LayoutWorkspaceV1, (api) => {
     setWorkspace(api);
     return () => setWorkspace(undefined);
+  });
+  // The footer's execution picker reads the selection while `workspace`
+  // answers, and is a footer item only while `settings` answers its view
+  // (bundle isolation 6(c), decisions O2 and O4).
+  const selection = services.whenAvailable(WorkspaceSelectionV1, (api) => {
+    setWorkspaceSelection(api);
+    return () => setWorkspaceSelection(undefined);
+  });
+  const settingsModels = services.whenAvailable(SettingsModelsV1, (api) => {
+    setSettingsModels(api);
+    const item = services
+      .use(RegionsV1)
+      .add(
+        'shell.conversation.footer' satisfies typeof SHELL_CONVERSATION_FOOTER,
+        { id: 'execution', tag: 'chat-execution-picker', order: 20 },
+      );
+    return () => {
+      item.dispose();
+      setSettingsModels(undefined);
+    };
   });
   const history = services.whenAvailable(HistorySnapshotsV1, (api) => {
     setHistory(api);
@@ -146,6 +175,8 @@ export function activate({ services }: ClientContext): Cleanup {
     terminalService.dispose();
     history.dispose();
     models.dispose();
+    settingsModels.dispose();
+    selection.dispose();
     workspace.dispose();
     composer.dispose();
     sendCommand.dispose();

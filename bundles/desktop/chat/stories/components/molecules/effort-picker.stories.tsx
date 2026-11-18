@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import { EffortPicker } from '../../../src/client/components/molecules/effort-picker.js';
-import { effortLabel } from '../../../src/client/domain/config.js';
 import { footerFrame } from '../../support/frames.js';
 import { OpenOnMount } from '../../support/open-on-mount.js';
 
@@ -20,7 +19,7 @@ function Picker({ initial = 'medium' }: { readonly initial?: string }) {
     <EffortPicker
       ariaLabel="Reasoning effort"
       choices={choices}
-      label={current?.label ?? effortLabel('none')}
+      label={current?.label ?? 'None'}
       value={value}
       onSelect={setValue}
     />
@@ -28,7 +27,7 @@ function Picker({ initial = 'medium' }: { readonly initial?: string }) {
 }
 
 export default {
-  title: 'Settings/Molecules/Effort picker',
+  title: 'Chat/Molecules/Effort picker',
   component: EffortPicker,
   decorators: [footerFrame],
 };
