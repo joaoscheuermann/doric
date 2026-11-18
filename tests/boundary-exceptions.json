@@ -121,27 +121,6 @@
     },
     {
       "check": "core",
-      "bundle": "core",
-      "target": "models/v1:projectId",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 2(b)"
-    },
-    {
-      "check": "core",
-      "bundle": "core",
-      "target": "models/v1:threadId",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 2(b)"
-    },
-    {
-      "check": "core",
-      "bundle": "core",
-      "target": "models/v1:promptId",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 2(b)"
-    },
-    {
-      "check": "core",
       "bundle": "doric-host",
       "target": "runtime/contracts",
       "decision": "docs/features/bundle-isolation.md",

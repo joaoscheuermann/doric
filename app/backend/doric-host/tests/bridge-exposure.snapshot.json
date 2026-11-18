@@ -121,6 +121,7 @@
   "scopeKeys": ["projectId", "threadId", "promptId"],
   "$scopeKeysByContractComment": "Exposed bundle contracts whose provider declares other window scope keys than scopeKeys; an empty list means no desktopScope entry (a global space).",
   "scopeKeysByContract": {
+    "models/v1": [],
     "openui.programs/v1": ["projectId", "threadId"],
     "openui.questions/v1": ["projectId", "threadId"],
     "papercraft.cache/v1": ["projectId", "threadId"],

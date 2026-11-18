@@ -50,7 +50,12 @@ const SCOPED_IN_PHASE_0 = [
 type ScopeFree = (typeof SCOPED_IN_PHASE_0)[number];
 
 /** The core contracts that accept no scope key from a window, in spec order. */
-const SCOPE_FREE: readonly ScopeFree[] = ['windows/v1', 'menus/v1', 'tools/v1'];
+const SCOPE_FREE: readonly ScopeFree[] = [
+  'windows/v1',
+  'menus/v1',
+  'tools/v1',
+  'models/v1',
+];
 
 /**
  * One desktop-exposed method per contract, with an input its real schema
