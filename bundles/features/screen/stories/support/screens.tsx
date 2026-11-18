@@ -1,26 +1,31 @@
 // The Screens pane's elements, mounted the way the layout mounts them: the
 // activation's mirror store seeded with views, the elements built by
 // `defineScreenElements` and defined, once mounted, under a free tag, and
-// fake `screen.views/v1` and `layout.workspace/v1` services in place of the
-// desktop part and the layout.
+// fake `screen.views/v1`, `workspace.selection/v1` and `runtime.records/v1`
+// services in place of the desktop part, the workspace and the runtime.
 
 import type { Services } from 'bundle/contracts';
 import type { ReactElementInstance } from 'desktop/ui';
 import { useEffect, useRef, useState } from 'react';
+import { createRecordsApi } from 'runtime/testing';
 
 import { defineScreenElements } from '../../src/client/elements.js';
-import type {
-  LayoutWorkspace,
-  WorkspaceSelection,
-} from '../../src/client/peers.js';
+import type { WorkspaceSelectionService } from '../../src/client/peers.js';
 import { createScreenViewsStore } from '../../src/client/store.js';
 import type { ScreenView, ScreenViews } from '../../src/contracts/index.js';
+import { projects } from './fixtures.js';
+
+/** The ids `workspace.selection/v1` answers. */
+export interface StorySelection {
+  readonly projectId?: string;
+  readonly threadId?: string;
+}
 
 export interface ScreensSetup {
   /** Every view the desktop part mirrors, of any Project. */
   readonly views: readonly ScreenView[];
-  /** The workspace's selection; absent, no layout is active. */
-  readonly selection?: WorkspaceSelection;
+  /** The workspace's selection; absent, no workspace is active. */
+  readonly selection?: StorySelection;
   /** Whether the desktop part serves `screen.views/v1` (default `true`). */
   readonly desktop?: boolean;
 }
@@ -49,10 +54,11 @@ const fakeScreens = (views: readonly ScreenView[]): ScreenViews => {
   };
 };
 
-const fakeWorkspace = (selection: WorkspaceSelection): LayoutWorkspace => ({
-  selectedThread: () => selection.thread,
-  // The layout builds a new record on every call; the pane reads its fields.
-  selection: () => ({ ...selection }),
+const fakeSelection = (
+  selection: StorySelection,
+): WorkspaceSelectionService => ({
+  // A new object on every call; the pane reads its fields.
+  current: () => ({ ...selection }),
   subscribe: () => ({ dispose: () => undefined }),
 });
 
@@ -62,8 +68,9 @@ const servicesOf = (setup: ScreensSetup): Services => {
     apis['screen.views/v1'] = fakeScreens(setup.views);
   }
   if (setup.selection !== undefined) {
-    apis['layout.workspace/v1'] = fakeWorkspace(setup.selection);
+    apis['workspace.selection/v1'] = fakeSelection(setup.selection);
   }
+  apis['runtime.records/v1'] = createRecordsApi({ projects });
   return {
     provide: () => {
       throw new Error('The screen stories provide no services.');

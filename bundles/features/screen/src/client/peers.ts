@@ -1,36 +1,26 @@
 // The client contracts the screen part calls, built from their IDs with the
 // owner's shape narrowed to what it reads (as `terminal` reaches the
-// layout's peers). Importing `layout/contracts` here would close a cycle:
-// the layout sits above and screen only reads the selection.
+// layout's peers): the workspace's selection and the layout's stack.
+// Importing `layout/contracts` here would close a cycle, as the layout sits
+// above; the selection's copy avoids a `workspace` package line. The Project's
+// name comes from `runtime.records/v1`, imported from `runtime/contracts`.
 
 import { type CallArg, type Disposable, ref } from 'bundle/contracts';
 
-/** The fields of a Thread record this part reads. */
-export interface ThreadRecord {
-  readonly id: string;
-  readonly projectId: string;
-}
-
-/** The fields of a Project record this part reads (its name labels a view). */
-export interface ProjectRecord {
-  readonly id: string;
-  readonly name?: string;
-}
-
-/** The selection the workspace shows; a Project-only selection has no Thread. */
+/** The selection the workspace shows; this part reads its Project's id only. */
 export interface WorkspaceSelection {
-  readonly project?: ProjectRecord;
-  readonly thread?: ThreadRecord;
+  readonly projectId?: string;
 }
 
-/** `layout.workspace/v1` (1.1.0), for the selection only. */
-export interface LayoutWorkspace {
-  selectedThread(call?: CallArg): ThreadRecord | undefined;
-  selection(call?: CallArg): WorkspaceSelection;
+/** `workspace.selection/v1` (1.0.0), for the Project's id only. */
+export interface WorkspaceSelectionService {
+  current(call?: CallArg): WorkspaceSelection;
   subscribe(listener: () => void, call?: CallArg): Disposable;
 }
 
-export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
+export const WorkspaceSelectionV1 = ref<WorkspaceSelectionService>(
+  'workspace.selection/v1',
+);
 
 /**
  * The group this part puts in the sidebar's stack (`layout.stack/v2`): the

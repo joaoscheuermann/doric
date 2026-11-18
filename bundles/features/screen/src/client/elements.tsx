@@ -27,6 +27,7 @@ import {
   RotateCcwIcon,
   XIcon,
 } from 'lucide-react';
+import { type RuntimeRecords, RuntimeRecordsV1 } from 'runtime/contracts';
 
 import {
   type ScreenView,
@@ -35,7 +36,10 @@ import {
   ScreenViewsV1,
 } from '../contracts/index.js';
 import { useService, useSubscribed } from './hooks.js';
-import { type LayoutWorkspace, LayoutWorkspaceV1 } from './peers.js';
+import {
+  type WorkspaceSelectionService,
+  WorkspaceSelectionV1,
+} from './peers.js';
 import type { ScreenViewsStore } from './store.js';
 
 export const SCREEN_SIDEBAR_TAG = 'screen-sidebar';
@@ -54,31 +58,35 @@ const NO_VIEWS: readonly ScreenView[] = Object.freeze([]);
  * reads below use.
  *
  * Every snapshot a subscribed read returns must keep its identity while nothing
- * changed: the layout builds a new selection record on every call, and a
+ * changed: the selection may answer a new object on every call, and a
  * snapshot whose identity changes on every read makes `useSyncExternalStore`
- * re-render without end (React's "Maximum update depth exceeded"). A field of a
- * record the layout rebuilds is a primitive, so it is what a read returns.
+ * re-render without end (React's "Maximum update depth exceeded"). A field of
+ * that object is a primitive, so it is what a read returns.
  */
 const currentProjectIdOf = (
-  workspace: LayoutWorkspace | undefined,
+  selection: WorkspaceSelectionService | undefined,
 ): string | undefined =>
-  workspace === undefined ? undefined : workspace.selection().project?.id;
+  selection === undefined ? undefined : selection.current().projectId;
 
 /**
- * The name of the selected Project while it is the Project a new view would
- * watch, else undefined: the selection is what knows a Project's name, and only
- * when it is that same Project.
+ * The name of the selected Project, from its record, while it is the Project a
+ * new view would watch, else undefined.
  */
 const projectLabelOf = (
-  workspace: LayoutWorkspace | undefined,
+  selection: WorkspaceSelectionService | undefined,
+  records: Pick<RuntimeRecords, 'project'> | undefined,
   projectId: string | undefined,
 ): string | undefined => {
-  if (workspace === undefined || projectId === undefined) return undefined;
+  if (
+    selection === undefined ||
+    records === undefined ||
+    projectId === undefined
+  ) {
+    return undefined;
+  }
 
-  const { project } = workspace.selection();
-
-  return project !== undefined && project.id === projectId
-    ? project.name
+  return selection.current().projectId === projectId
+    ? records.project(projectId)?.name
     : undefined;
 };
 
@@ -240,10 +248,10 @@ export const defineScreenElements = (client: ScreenClient) => {
   function ScreenSidebar({ services }: { readonly services: Services }) {
     const views = useSubscribed(store, () => store.views(), NO_VIEWS);
     const screens = useService(services, ScreenViewsV1);
-    const workspace = useService(services, LayoutWorkspaceV1);
+    const selection = useService(services, WorkspaceSelectionV1);
     const projectId = useSubscribed(
-      workspace,
-      () => currentProjectIdOf(workspace),
+      selection,
+      () => currentProjectIdOf(selection),
       undefined,
     );
     // The pane lists the views of the Project the reader is looking at, never
@@ -271,17 +279,18 @@ export const defineScreenElements = (client: ScreenClient) => {
 
   function ScreenGroupAction({ services }: { readonly services: Services }) {
     const screens = useService(services, ScreenViewsV1);
-    const workspace = useService(services, LayoutWorkspaceV1);
+    const selection = useService(services, WorkspaceSelectionV1);
+    const records = useService(services, RuntimeRecordsV1);
     const projectId = useSubscribed(
-      workspace,
-      () => currentProjectIdOf(workspace),
+      selection,
+      () => currentProjectIdOf(selection),
       undefined,
     );
     // The label names the Project the view watches, and only while the
-    // selection is that same Project.
+    // selection is that same Project; it follows the record's renames.
     const label = useSubscribed(
-      workspace,
-      () => projectLabelOf(workspace, projectId),
+      records,
+      () => projectLabelOf(selection, records, projectId),
       undefined,
     );
 

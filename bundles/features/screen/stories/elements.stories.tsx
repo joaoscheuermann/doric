@@ -92,7 +92,7 @@ export const ProjectOnlySelection = {
     <ScreensPane
       setup={{
         views: [readyView, waitingView],
-        selection: { project: checkoutProject },
+        selection: { projectId: checkoutProject.id },
       }}
     />
   ),
