@@ -42,10 +42,6 @@ real files before acting.
   unless the user explicitly approves them.
 - Use `GROUNDING.md` for hard constraints, scope gates, and architecture
   validity.
-- Update `GROUNDING.md` when the task intentionally changes product scope,
-  package responsibilities, dependency direction, provider composition,
-  built-in tools, event streaming, user-input handling, session persistence,
-  config schema, runtime behavior, or vendored dependency strategy.
 
 ## Testing
 
@@ -102,6 +98,9 @@ After every file-editing task, format changed code with
 `npx biome format --write <files>` and changed supported files Biome cannot
 format with `npx prettier --write <files>`, then always
 run `npm run format:check` and `npm run lint` before the final response.
+After a change to a manifest, a `package.json` or an import between bundles,
+also run `npm run lint:test`; tolerated violations are in
+`tests/boundary-exceptions.json`.
 Fix violations introduced by the task and rerun the checks after corrections.
 Do not run workspace-wide autofixes or reformat unrelated files unless asked.
 If existing violations or tooling failures prevent a clean result, report

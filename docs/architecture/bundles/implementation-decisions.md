@@ -1,6 +1,6 @@
 # Decisões de implementação da migração para bundles
 
-**Estado:** registro das decisões tomadas durante a implementação da [arquitetura de bundles](../bundles.md). Resolve os pontos que os documentos de conceito deixam em aberto ou contraditórios. Quando um documento de conceito e este registro divergirem, este registro vale para o código; `GROUNDING.md` continua sendo o contrato do comportamento implementado e é atualizado à medida que cada fase entra.
+**Estado:** registro das decisões tomadas durante a implementação da [arquitetura de bundles](../bundles.md). Resolve os pontos que os documentos de conceito deixam em aberto ou contraditórios. Quando um documento de conceito e este registro divergirem, este registro vale para o código; `GROUNDING.md` está congelado desde a fase 0 do isolamento de bundles.
 
 ## Princípios
 

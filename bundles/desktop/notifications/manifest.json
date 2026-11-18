@@ -1,11 +1,12 @@
 {
   "manifestVersion": 1,
   "id": "notifications",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engines": { "doric": "^1.0.0" },
   "description": "Native notice when a prompt finishes outside the reader's view.",
   "provides": ["notifications.observations/v1@1.0.0"],
   "requires": ["hooks/v1@^1.0.0", "navigation/v1@^1.0.0"],
+  "optional": ["chat.hooks/v1", "runtime.prompt-finished/v1"],
   "desktopScope": {
     "notifications.observations/v1": ["projectId", "threadId", "promptId"]
   }

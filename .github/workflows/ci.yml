@@ -44,7 +44,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Test Biome configuration
+      - name: Test Biome configuration and bundle boundaries
         run: npm run lint:test
 
       - name: Check formatting

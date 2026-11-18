@@ -45,7 +45,7 @@ Every Thread of the selected Project stayed in the sidebar tree for as long as t
   - Open Threads report presence through `viewThread`.
   - Navigation is unchanged: an archived child opens in the viewer tab under its main thread, and an archived main thread resolves its own route.
 - Settings: a "Threads" section (order 25, between Execution and Tools) with the "Auto-archive" group: the switch "Archive finished agent threads" and the choice "Archive inactive main threads after" (1 day, 7 days, 30 days, Never).
-- Versions: `runtime` 2.8.0 (`runtime.threads/v1` 1.8.0, `runtime.thread/v1` 1.3.0), `host-config` 0.2.0 (`host-config/v1` and `host-config.configuration/v1` 1.2.0), `layout` 3.2.0, `settings` 1.8.0, `chat` 1.8.0, `openui` 2.3.0 (the last four require the new contract minors).
+- Shipped in: `runtime` 2.8.0 (`runtime.threads/v1` 1.8.0, `runtime.thread/v1` 1.3.0), `host-config` 0.2.0 (`host-config/v1` and `host-config.configuration/v1` 1.2.0), `layout` 3.2.0, `settings` 1.8.0, `chat` 1.8.0, `openui` 2.3.0 (the last four require the new contract minors).
 
 ## Evolution
 

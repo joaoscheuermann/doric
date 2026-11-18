@@ -60,7 +60,7 @@ reaches the calling prompt's children through `runtime.threads/v1`
 (`runtime/contracts`), scoped by the prompt `Call` it runs under, and returns
 the serialized result. The bundle never imports `app/backend/doric-host`
 internals: it requires `runtime.threads/v1@^1.7.0` beside `tools/v1`, `ui/v1`
-and `navigation/v1`, and optionally `default.agents/v1`: without a provider, `thread-spawn` fails a call that names an agent with "Agent types are
+and `navigation/v1`, and optionally `chat.views/v1`, `layout.workspace/v1` and `default.agents/v1`. Without a provider of `default.agents/v1`, `thread-spawn` fails a call that names an agent with "Agent types are
 unavailable in this runtime." and spawns every other one.
 
 ## Skills

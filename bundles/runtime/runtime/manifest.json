@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "runtime",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -34,6 +34,7 @@
     "executor/v1@^1.4.0",
     "sandbox/v1@^1.0.0"
   ],
+  "optional": ["resources/v1", "terminal/v1"],
   "desktopScope": {
     "runtime/v1": ["projectId", "threadId", "promptId"],
     "runtime.threads/v1": ["projectId", "threadId", "promptId"],

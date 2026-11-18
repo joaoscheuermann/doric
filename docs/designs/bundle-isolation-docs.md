@@ -293,7 +293,7 @@ The phase has five steps.
 - **(d) The files with many contributors,** each by one writer: the overview `bundles.md`, the bundle map `feature-split.md` and the root `AGENTS.md`. The review of the whole set runs here.
 - **(e) Retirement:** every reference to `GROUNDING.md` is updated, and the file is reduced to a pointer.
 
-From phase 0 of Spec 1, `GROUNDING.md` is frozen: phase 0 puts a notice at its top that names the spec and HC-002, and no later phase edits its body. The repository's rule that each step updates `GROUNDING.md` (`docs/architecture/bundles/migration.md:112`, `AGENTS.md:45-48`) ends there.
+From phase 0 of Spec 1, `GROUNDING.md` is frozen: phase 0 puts a notice at its top that names the spec and HC-002, and no later phase edits its body. The repository's rule that each step updates `GROUNDING.md` (`docs/architecture/bundles/migration.md:112`, `AGENTS.md:45-48`) ends there, and so do the clauses of `docs/architecture/bundles/implementation-decisions.md:3` and `docs/architecture/bundles.md:3` that have it updated phase by phase.
 
 - Phase 12 is a phase of its own and the last before Close. It is last because the documents describe the result, and every code phase changes the result: a document written earlier is written twice. It is separate from Close because of its size and because each of its documents needs a review against the merged code.
 - **Whether documentation can run per phase instead.** Three courses were weighed, and OD24 takes the first.

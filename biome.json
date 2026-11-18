@@ -92,6 +92,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["bundles/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredDependencies": "error"
+          }
+        }
+      }
     }
   ]
 }

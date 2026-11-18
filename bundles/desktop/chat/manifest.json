@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "chat",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "engines": {
     "doric": "^1.7.0"
   },
@@ -18,7 +18,11 @@
     "history.snapshots/v1",
     "terminal/v1",
     "runtime.terminals/v1",
-    "models/v1"
+    "models/v1",
+    "layout.workspace/v1",
+    "comments.added/v1",
+    "comments.resolved/v1",
+    "runtime.prompt-finished/v1"
   ],
   "requires": [
     "hooks/v1@^1.0.0",

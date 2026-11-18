@@ -1,6 +1,6 @@
 # Arquitetura de bundles do Doric — proposta
 
-**Estado:** desenho de destino e plano de migração; nada aqui descreve comportamento já implementado. `GROUNDING.md` continua sendo o contrato da implementação atual até que cada etapa seja aprovada, entregue e refletida nele.
+**Estado:** desenho de destino e plano de migração; nada aqui descreve comportamento já implementado. `GROUNDING.md` está congelado desde a fase 0 do isolamento de bundles.
 
 ## Objetivo e alcance
 

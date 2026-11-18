@@ -109,7 +109,6 @@ O core passa a fornecer no host `settings/v1`, `secrets/v1`, `storage/v1` e `eve
 ## Regras das etapas
 
 - As etapas são cortes de revisão, não obrigação de criar todas as interfaces de uma vez.
-- Cada etapa atualiza `GROUNDING.md` quando passar a alterar o comportamento ou as responsabilidades reais.
 - O caminho antigo só é removido depois da evidência de paridade da etapa.
 - A prova deve observar contratos públicos e cenários de uso, incluindo replay, interrupção, bundles ausentes, conflitos de provedor e ordem de ativação da fundação, sem fixar detalhes privados da implementação.
 - Cada etapa entrega a observabilidade do que extrai: a primeira traz log estruturado, rastreio no dispatcher e o diagnóstico do catálogo, e as seguintes acrescentam as métricas das partes extraídas. Ver [observabilidade](./observability.md).

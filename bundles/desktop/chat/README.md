@@ -162,10 +162,12 @@ desktop part, as Papercraft does.
 ## Dependencies
 
 - **Required:** `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
-  `commands/v1`, `runtime.threads/v1`, `comments/v1` and `chat.composer/v1`.
-- **Optional:** `history.snapshots/v1`, and `terminal/v1` or
-  `runtime.terminals/v1` for live terminal output. Without them the
-  conversation still works.
+  `commands/v1`, `menus/v1`, `runtime.threads/v1`, `runtime.attachments/v1`,
+  `comments/v1` and `chat.composer/v1`.
+- **Optional:** `history.snapshots/v1`, `models/v1`, `layout.workspace/v1`,
+  `comments.added/v1`, `comments.resolved/v1`, `runtime.prompt-finished/v1`,
+  and `terminal/v1` or `runtime.terminals/v1` for live terminal output.
+  Without them the conversation still works.
 
 ## Design
 

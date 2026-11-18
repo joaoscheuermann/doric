@@ -370,6 +370,13 @@ in conversation events.
 - Errors use `{ error: { code, message } }`. Invalid IDs and cursors return
   400, invalid bodies 422, missing resources 404, and lifecycle conflicts 409.
 - Names are trimmed, reject NUL, and contain 1–80 Unicode characters.
+- An answer may gain optional fields in any release. A client ignores the
+  fields it does not know. A field is not removed or renamed, and does not
+  change its type or meaning, without a notice in the release notes of an
+  earlier release.
+
+A later release adds the optional field `site`, `{ url, label }`, to the
+objects of `GET /providers/kinds`.
 
 ### Configuration and providers
 

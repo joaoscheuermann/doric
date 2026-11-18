@@ -18,8 +18,8 @@ process), loaded by the `bundle` platform. See the
 - **Contract:** `notifications.observations/v1` (desktopMain), whose one method
   `report(observation)` is exposed to windows over the desktop bridge.
 
-The bundle requires `hooks/v1` and `navigation/v1` and has no settings or
-tools.
+The bundle requires `hooks/v1` and `navigation/v1`, optionally `chat.hooks/v1`
+and `runtime.prompt-finished/v1`, and has no settings or tools.
 
 ## How it works
 

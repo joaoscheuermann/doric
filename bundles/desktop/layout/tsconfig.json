@@ -15,16 +15,13 @@
   "exclude": ["src/client/**"],
   "references": [
     {
-      "path": "../../features/resources"
-    },
-    {
       "path": "../../runtime/runtime"
     },
     {
-      "path": "../../../packages/desktop"
+      "path": "../../../packages/bundle"
     },
     {
-      "path": "../../../packages/bundle"
+      "path": "../../../packages/desktop"
     }
   ]
 }

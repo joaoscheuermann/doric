@@ -25,6 +25,7 @@
     "@tanstack/query-core": "^5.104.1",
     "@tanstack/react-query": "^5.104.1",
     "desktop": "1.0.0",
+    "happy-dom": "20.8.9",
     "layout": "0.0.1",
     "lucide-react": "^0.544.0",
     "pino": "^10.3.1",

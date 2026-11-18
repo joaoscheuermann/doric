@@ -23,7 +23,8 @@ for how bundles work.
 - **Regions:** named slots where other bundles add elements.
 
 The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
-`commands/v1`, `runtime/v1` and `runtime.threads/v1`, and has no settings.
+`commands/v1`, `runtime/v1` and `runtime.threads/v1`, optionally
+`core.open-settings/v1`, and has no settings.
 
 ## What you see
 

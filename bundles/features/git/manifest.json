@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "git",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -23,6 +23,12 @@
     "layout.tabs/v1@^1.2.0",
     "settings.config/v1@^1.0.0",
     "secrets/v1@^1.0.0"
+  ],
+  "optional": [
+    "files.sandbox/v1",
+    "files.refresh/v1",
+    "files.open-file/v1",
+    "runtime.terminals/v1"
   ],
   "desktopScope": {
     "git.commands/v1": ["projectId", "threadId", "promptId"]

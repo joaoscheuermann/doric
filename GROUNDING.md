@@ -1,5 +1,20 @@
 # Doric Grounding
 
+> **Frozen.** This file is not updated any more. Phase 0 of the bundle
+> isolation work ([docs/designs/bundle-isolation.md](docs/designs/bundle-isolation.md))
+> froze it, and the last step of that work's documentation phase reduces it to
+> a pointer.
+>
+> It describes the system as it was when it was frozen, and it is wrong
+> wherever a later change altered the system. Where this file and the
+> repository disagree, the repository is right: HC-002, "Current Repository
+> State Is Authoritative", below.
+>
+> The Authority order, the Hard Constraints and the Convention Parameters of
+> this file stay in force until they move to the root `AGENTS.md`. Do not edit
+> this file to record a change. The documents that replace it are planned in
+> [docs/designs/bundle-isolation-docs.md](docs/designs/bundle-isolation-docs.md).
+
 Last reviewed: 2026-11-03
 
 This is Doric's repository validity contract. Every agent working in this
