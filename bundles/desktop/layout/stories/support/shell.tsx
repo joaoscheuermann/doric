@@ -141,7 +141,7 @@ export function WorkspaceShell({
           }
           filesFooter={
             <div className="flex h-7 min-w-0 flex-1 items-center gap-1">
-              {region('layout.panel.footer')}
+              {region('shell.panel.footer')}
             </div>
           }
           fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}

@@ -201,7 +201,7 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
   'shell.conversation.footer': [
     { id: 'usage', tag: 'usage-summary', order: 30, owner: 'usage' },
   ],
-  'layout.panel.footer': [
+  'shell.panel.footer': [
     { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10, owner: 'git' },
   ],
   'layout.account.status': [

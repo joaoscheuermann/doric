@@ -23,7 +23,7 @@ import {
   type Ui,
   UiV1,
 } from 'bundle/contracts';
-import type { SHELL_PANEL } from 'layout/contracts';
+import type { SHELL_PANEL, SHELL_PANEL_FOOTER } from 'layout/contracts';
 
 import { gitApiOf } from './api/git-api.js';
 import { type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
@@ -62,7 +62,7 @@ export const gitRegions: readonly {
   },
   {
     // The working directory and branch, in the Files column footer (§2.6, S9).
-    region: 'layout.panel.footer',
+    region: 'shell.panel.footer' satisfies typeof SHELL_PANEL_FOOTER,
     item: { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10 },
   },
   {

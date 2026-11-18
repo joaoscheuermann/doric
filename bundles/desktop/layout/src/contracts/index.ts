@@ -37,6 +37,8 @@ export const SHELL_CONVERSATION_BOTTOM = 'shell.conversation.bottom';
 export const SHELL_CONVERSATION_OVERLAY = 'shell.conversation.overlay';
 /** The Project panel's views; an item's props are a `PanelItemProps` (4.6.0). */
 export const SHELL_PANEL = 'shell.panel';
+/** The Files column footer, one 28 px row under the Project panel (4.7.0). */
+export const SHELL_PANEL_FOOTER = 'shell.panel.footer';
 
 /** One entry of a viewer tab's context menu (1.2.0). */
 export interface TabMenuItem {

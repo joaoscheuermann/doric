@@ -1173,12 +1173,12 @@ const oneAccount = (workspace: RenderedWorkspace, when: string): void => {
 };
 
 // T-2.5, layout half
-test('layout.panel.footer items render in the Files footer, shell.conversation.footer items in the conversation band', async () => {
+test('shell.panel.footer items render in the Files footer, shell.conversation.footer items in the conversation band', async () => {
   rendered = await renderWorkspace({
     projects: [project],
     path: `/projects/${project.id}`,
     regions: {
-      'layout.panel.footer': [
+      'shell.panel.footer': [
         { id: 'panel-footer-probe', tag: 'panel-footer-probe', order: 10 },
       ],
       'shell.conversation.footer': [
@@ -1194,7 +1194,7 @@ test('layout.panel.footer items render in the Files footer, shell.conversation.f
   assert.equal(
     standIns(filesFooter, 'panel-footer-probe').length,
     1,
-    'The layout.panel.footer item is not in the Files footer.',
+    'The shell.panel.footer item is not in the Files footer.',
   );
   assert.equal(
     standIns(filesFooter, 'footer-probe').length,
@@ -1210,7 +1210,7 @@ test('layout.panel.footer items render in the Files footer, shell.conversation.f
   assert.equal(
     standIns(band, 'panel-footer-probe').length,
     0,
-    'The layout.panel.footer item is in the conversation band.',
+    'The shell.panel.footer item is in the conversation band.',
   );
 });
 
@@ -2363,7 +2363,7 @@ test('T4.2: the frame is in the page form exactly while shell.page holds an item
 
 const quarantined: CatalogSnapshot = (() => {
   const bundles: readonly CatalogBundle[] = [
-    { id: 'layout', version: '4.6.0', state: 'active', reasons: [] },
+    { id: 'layout', version: '4.7.0', state: 'active', reasons: [] },
     {
       id: 'terminal',
       version: '2.0.1',

@@ -88,7 +88,7 @@ the outage message "Doric backend is unavailable.".
   whose footer band stands on the card's bottom edge; any other tab keeps the
   card's 8 px, whatever its icon
   ([SR12](../../../docs/designs/conversation-footer.md#risks)). The Files column
-  footer (`layout.panel.footer`) is one 28 px row under the Project panel.
+  footer (`shell.panel.footer`) is one 28 px row under the Project panel.
   Settings open from two entries, the dashboard's "All settings" and the
   account status, each of which runs `core`'s `core.open-settings/v1` with
   `defaultPath: '/settings'` and no `path`: the command (1.1.0) focuses an open
@@ -149,7 +149,7 @@ tab with no Thread or Project selected fails with `unavailable`.
 | `shell.header.actions`       | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
 | `shell.panel`                | the Project panel's views                                                              | `files`, `git`                                                 |
 | `shell.conversation.footer`  | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
-| `layout.panel.footer`        | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
+| `shell.panel.footer`         | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
 | `layout.account.status`      | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
 | `shell.conversation.bottom`  | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
 | `shell.conversation.overlay` | a floating layer over the conversation                                                 | items place themselves; the layer never intercepts a pointer   |

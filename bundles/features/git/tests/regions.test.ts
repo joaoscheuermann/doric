@@ -1,5 +1,5 @@
 // Where git's region items go (T-2.5, spec §2.6, S9): the working directory
-// and branch sit in the Files column's footer (`layout.panel.footer`), no
+// and branch sit in the Files column's footer (`shell.panel.footer`), no
 // longer in the conversation's footer band (`shell.conversation.footer`).
 //
 // `gitRegions` lives in the client entry point, whose import graph reaches the
@@ -21,7 +21,7 @@ const regionsOf = (id: string): string[] =>
     .map((entry) => entry.region);
 
 test('the working directory item is in the Files footer, not the conversation footer', () => {
-  assert.deepEqual(regionsOf('git-cwd'), ['layout.panel.footer']);
+  assert.deepEqual(regionsOf('git-cwd'), ['shell.panel.footer']);
 });
 
 // Bundle isolation 4(a) change 4: the Changes view's icon is the element

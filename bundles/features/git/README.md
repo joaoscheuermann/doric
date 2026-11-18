@@ -92,7 +92,7 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   says the file cannot be shown.
 - The Changes view (`git-changes`, with its `git-changes-badge` and the
   `git-file-diff-icon` icon) is a `shell.panel` item, the working directory and branch (`git-workspace-cwd`)
-  a `layout.panel.footer` item (the change counts stay in the Changes tab's
+  a `shell.panel.footer` item (the change counts stay in the Changes tab's
   badge), and the Versioning section (`/settings/git`) chooses
   which stored credentials the agent commits and pushes with.
 - In the Changes view a changed file's row has a context menu with "Discard

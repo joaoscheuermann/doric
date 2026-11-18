@@ -37,6 +37,7 @@ import {
   SHELL_CONVERSATION_OVERLAY,
   SHELL_PAGE,
   SHELL_PANEL,
+  SHELL_PANEL_FOOTER,
   SHELL_SIDEBAR,
   SHELL_SIDEBAR_FOOTER,
   SHELL_TITLEBAR_TABS,
@@ -184,7 +185,7 @@ function Workspace() {
             }
             filesFooter={
               <div className="flex h-7 min-w-0 flex-1 items-center gap-1">
-                <Region name="layout.panel.footer" />
+                <Region name={SHELL_PANEL_FOOTER} />
               </div>
             }
             fileViewer={
