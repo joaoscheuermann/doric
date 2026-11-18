@@ -30,8 +30,11 @@ footer picker), loaded by the `bundle` platform. See the
   for sections other bundles draw.
 
 The window is opened by `core`'s `core.open-settings/v1` command, which the
-layout's settings button runs. It opens at `/settings` and moves to the last
-section that window showed, or Providers.
+layout's settings button runs. In 1.1.0 the command focuses an open settings
+window when it gets no `path`; otherwise it opens one at `path ?? defaultPath`,
+and with neither it fails with `invalid_input`. The layout passes
+`defaultPath: '/settings'`, so the window opens at `/settings` and moves to the
+last section that window showed, or Providers.
 
 ## Sections
 

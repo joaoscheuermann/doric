@@ -83,7 +83,9 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   ([SR12](../../../docs/designs/conversation-footer.md#risks)). The Files column
   footer (`layout.panel.footer`) is one 28 px row under the Project panel.
   Settings open from the account avatar, which runs `core`'s
-  `core.open-settings/v1`. Layout 3.0.3 needs
+  `core.open-settings/v1` with `defaultPath: '/settings'`: the command (1.1.0)
+  focuses an open settings window, and otherwise opens one at
+  `path ?? defaultPath`. Layout 3.0.3 needs
   chat 1.6.2 or later in the same bundle set.
 
 The selection is the window path (`/`, `/projects/<projectId>` or
