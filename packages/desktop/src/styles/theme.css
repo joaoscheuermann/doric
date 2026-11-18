@@ -13,6 +13,7 @@
 
 @source '../components';
 @source '../chrome-bar.tsx';
+@source '../element-host.tsx';
 @source '../error-notice.tsx';
 
 /*

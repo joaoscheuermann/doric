@@ -1,4 +1,6 @@
+import { UiV1 } from 'bundle/contracts';
 import { Button } from 'desktop/ui/button';
+import { ElementHost } from 'desktop/ui/element-host';
 import {
   InputGroup,
   InputGroupAddon,
@@ -46,10 +48,10 @@ import type {
 import { openThreadTab } from '../../hooks/thread-navigation.js';
 import { usePaneOpen, useStackPanes } from '../../hooks/use-stack-panes.js';
 import { useThreadRows } from '../../hooks/use-thread-rows.js';
+import { layoutServices } from '../../services/layout-services.js';
 import { togglePane } from '../../stores/stack.js';
 import { threadRowsBusy } from '../../stores/thread-rows.js';
 import { BundleHealthNotice } from '../molecules/bundle-health-notice.js';
-import { ElementHost } from '../molecules/element-host.js';
 import { SEARCH_FIELD } from '../molecules/search-field.js';
 import { SidebarTabs } from '../molecules/sidebar-tabs.js';
 import {
@@ -172,6 +174,7 @@ function StackPaneGroup({
         <SidebarGroupContent className="min-h-0 w-full flex-1 overflow-y-auto px-1.5">
           {pane.tag !== undefined && (
             <ElementHost
+              ui={layoutServices().use(UiV1)}
               tag={pane.tag}
               {...(pane.props === undefined ? {} : { props: pane.props })}
             />
@@ -440,7 +443,9 @@ export function ProjectSidebar({
   );
 
   const paneAction = (pane: StackPane): ReactNode =>
-    pane.headerTag === undefined ? null : <ElementHost tag={pane.headerTag} />;
+    pane.headerTag === undefined ? null : (
+      <ElementHost ui={layoutServices().use(UiV1)} tag={pane.headerTag} />
+    );
 
   return (
     <Sidebar collapsible="none" className="overflow-hidden font-normal">

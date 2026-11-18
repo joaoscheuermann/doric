@@ -1,3 +1,5 @@
+import { UiV1 } from 'bundle/contracts';
+import { ElementHost } from 'desktop/ui/element-host';
 import { indentation, TreeGuides, treeClassName } from 'desktop/ui/panels';
 import {
   SidebarMenuSub,
@@ -32,11 +34,11 @@ import {
 } from '../../domain/thread-tree.js';
 import type { Thread } from '../../domain/workspace.js';
 import { useThreadRows } from '../../hooks/use-thread-rows.js';
+import { layoutServices } from '../../services/layout-services.js';
 import { hasThreadRows } from '../../stores/thread-rows.js';
 import { duration } from '../../utility/duration.js';
 import { DraftName } from './draft-name.js';
 import { EditableName } from './editable-name.js';
-import { ElementHost } from './element-host.js';
 import { ItemContextMenu } from './item-context-menu.js';
 import { RowAddAction } from './row-add-action.js';
 import { ThreadKindIcon } from './thread-mark.js';
@@ -308,6 +310,7 @@ export function ThreadBranches({
                 {!archivedTab &&
                   rows.map((entry) => (
                     <ElementHost
+                      ui={layoutServices().use(UiV1)}
                       key={entry.id}
                       tag={entry.tag}
                       props={{ 'thread-id': thread.id }}

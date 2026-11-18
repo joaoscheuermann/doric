@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
+import { RegionsV1, UiV1 } from 'bundle/contracts';
 import { ClientError, type ErrorInfo, errorInfo } from 'desktop/reads';
+import { ElementHost, useRegionItems } from 'desktop/ui/element-host';
 import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   InputGroup,
@@ -25,11 +27,10 @@ import {
 } from '../../domain/dashboard.js';
 import { layoutErrorCatalog } from '../../domain/error-catalog.js';
 import { useDashboardPage } from '../../hooks/use-dashboard-page.js';
-import { useRegionItems } from '../../hooks/use-region-items.js';
 import type { Workspace } from '../../hooks/use-workspace.js';
+import { layoutServices } from '../../services/layout-services.js';
 import { dashboardStore } from '../../stores/dashboard.js';
 import { boundRecords } from '../../stores/workspace.js';
-import { ElementHost } from '../molecules/element-host.js';
 import { type ProjectEntry, ProjectItem } from '../molecules/project-item.js';
 import { SEARCH_FIELD } from '../molecules/search-field.js';
 import { WorkspaceErrorNotice } from '../molecules/workspace-error-notice.js';
@@ -100,9 +101,12 @@ export function Dashboard({
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
   const list = useRef<HTMLDivElement>(null);
-  const navItems = useRegionItems('layout.dashboard.nav');
+  const navItems = useRegionItems(
+    layoutServices().use(RegionsV1),
+    'layout.dashboard.nav',
+  );
   const page = dashboardPage(
-    useRegionItems('layout.dashboard.page'),
+    useRegionItems(layoutServices().use(RegionsV1), 'layout.dashboard.page'),
     useDashboardPage(),
   );
   const beginCreation = useCallback(() => {
@@ -440,7 +444,12 @@ export function Dashboard({
   const listBody =
     page !== undefined ? (
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <ElementHost key={page.id} tag={page.tag} className="block h-full" />
+        <ElementHost
+          ui={layoutServices().use(UiV1)}
+          key={page.id}
+          tag={page.tag}
+          className="block h-full"
+        />
       </main>
     ) : (
       <main

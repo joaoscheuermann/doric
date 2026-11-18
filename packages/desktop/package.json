@@ -59,6 +59,12 @@
       "import": "./dist/chrome-bar.js",
       "default": "./dist/chrome-bar.js"
     },
+    "./ui/element-host": {
+      "@org/source": "./src/element-host.tsx",
+      "types": "./dist/element-host.d.ts",
+      "import": "./dist/element-host.js",
+      "default": "./dist/element-host.js"
+    },
     "./ui/error-notice": {
       "@org/source": "./src/error-notice.tsx",
       "types": "./dist/error-notice.d.ts",

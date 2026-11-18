@@ -1,9 +1,10 @@
-import type { RegionEntry } from 'bundle/contracts';
+import { type RegionEntry, UiV1 } from 'bundle/contracts';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from 'desktop/ui/collapsible';
+import { ElementHost } from 'desktop/ui/element-host';
 import {
   Sidebar,
   SidebarContent,
@@ -28,8 +29,8 @@ import {
 import type { JSX, ReactNode } from 'react';
 
 import type { Project } from '../../domain/workspace.js';
+import { layoutServices } from '../../services/layout-services.js';
 import { BundleHealthNotice } from '../molecules/bundle-health-notice.js';
-import { ElementHost } from '../molecules/element-host.js';
 import { ProjectAvatar } from '../molecules/project-avatar.js';
 
 /** A 28 px sidebar row: 6 px padding and gap, 13 px regular text (`85:7520`). */
@@ -140,7 +141,11 @@ export function DashboardSidebar({
             </SidebarGroup>
           </Collapsible>
           {navItems.map((item) => (
-            <ElementHost key={`${item.owner}:${item.id}`} tag={item.tag} />
+            <ElementHost
+              ui={layoutServices().use(UiV1)}
+              key={`${item.owner}:${item.id}`}
+              tag={item.tag}
+            />
           ))}
         </SidebarContent>
         <BundleHealthNotice className="mx-2 shrink-0" />

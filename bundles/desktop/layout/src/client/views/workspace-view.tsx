@@ -6,7 +6,8 @@
 // region is the floating layer over the conversation area.
 
 import { QueryClientProvider } from '@tanstack/react-query';
-import { CommandsV1 } from 'bundle/contracts';
+import { CommandsV1, RegionsV1 } from 'bundle/contracts';
+import { useRegionItems } from 'desktop/ui/element-host';
 import {
   Empty,
   EmptyDescription,
@@ -56,7 +57,6 @@ import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
 import { descendantsInChat, isArchived } from '../domain/thread-archive.js';
 import { isThreadPanelTab } from '../domain/workspace-tabs.js';
 import { useProjectTabs } from '../hooks/use-project-tabs.js';
-import { useRegionItems } from '../hooks/use-region-items.js';
 import { useWorkspace } from '../hooks/use-workspace.js';
 import { useWorkspaceTabs } from '../hooks/use-workspace-tabs.js';
 import { layoutQueryClient } from '../queries/client.js';
@@ -127,7 +127,10 @@ function Workspace() {
     () => panelStore.getState().active,
   );
   const panel = panelStore.getState();
-  const panelItems = useRegionItems('layout.panel');
+  const panelItems = useRegionItems(
+    layoutServices().use(RegionsV1),
+    'layout.panel',
+  );
   const bottomVisible = useSyncExternalStore(
     bottomStore.subscribe,
     () => bottomStore.getState().visible.size > 0,

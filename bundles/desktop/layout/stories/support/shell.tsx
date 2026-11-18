@@ -4,6 +4,8 @@
 // inside a `LayoutHost`, whose fake host answers the panel's region items and
 // the elements other bundles draw.
 
+import { RegionsV1 } from 'bundle/contracts';
+import { useRegionItems } from 'desktop/ui/element-host';
 import { SidebarInset, SidebarProvider } from 'desktop/ui/sidebar';
 import { Tabs } from 'desktop/ui/tabs';
 import { cn } from 'desktop/ui/utils';
@@ -31,8 +33,8 @@ import { ConversationFrame } from '../../src/client/components/templates/convers
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import { WorkspaceLayout } from '../../src/client/components/templates/workspace-layout.js';
 import { isThreadPanelTab } from '../../src/client/domain/workspace-tabs.js';
-import { useRegionItems } from '../../src/client/hooks/use-region-items.js';
 import { useWorkspaceTabs } from '../../src/client/hooks/use-workspace-tabs.js';
+import { layoutServices } from '../../src/client/services/layout-services.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
 import { billing, checkout, docs, planThread, threadRoute } from './data.js';
 import {
@@ -76,7 +78,7 @@ export function WorkspaceShell({
   readonly model?: SidebarModel;
 }) {
   const [active, setActive] = useState('files');
-  const items = useRegionItems('layout.panel');
+  const items = useRegionItems(layoutServices().use(RegionsV1), 'layout.panel');
   const tabs = useWorkspaceTabs(owner);
   const viewer = tabs.items.length > 0;
   const openSettings = () => console.info('Story open settings');

@@ -6,9 +6,9 @@
  * and the basic contracts' `optional` methods; 1.5.0: the `desktop/ui/panels`
  * row and tab menus, `FileTree.rowMenu`, `FileTree.pending` and
  * `TabStrip.tabMenu`; 1.6.0: `ScrollArea.scrollbars`; 1.7.0:
- * `desktop/ui/error-notice`).
+ * `desktop/ui/error-notice`; 1.8.0: `desktop/ui/element-host`).
  */
-export const PLATFORM_VERSION = '1.7.0';
+export const PLATFORM_VERSION = '1.8.0';
 
 /**
  * The version segment of the platform folders and URLs (`desktop@<v>`,

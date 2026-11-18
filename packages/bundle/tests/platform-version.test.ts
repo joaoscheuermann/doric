@@ -42,8 +42,8 @@ const manifests = (): Map<string, { engines?: { doric?: string } }> => {
 };
 
 describe('the platform version', () => {
-  test('T-9: is 1.7.0 once desktop/ui/error-notice is platform API', () => {
-    assert.equal(PLATFORM_VERSION, '1.7.0');
+  test('T-9, T4.1: is 1.8.0 once desktop/ui/element-host is platform API', () => {
+    assert.equal(PLATFORM_VERSION, '1.8.0');
   });
 
   test('leaves the folders and URLs at 1.0.0', () => {
@@ -52,24 +52,20 @@ describe('the platform version', () => {
 });
 
 describe('the platform each bundle asks for', () => {
-  test('chat, settings and layout ask for ^1.7.0 and every other bundle for ^1.0.0', () => {
-    const onMinorSeven = new Set([
-      'desktop/chat',
-      'desktop/settings',
-      'desktop/layout',
+  test('layout asks for ^1.8.0, chat and settings for ^1.7.0 and every other bundle for ^1.0.0', () => {
+    const asked = new Map([
+      ['desktop/chat', '^1.7.0'],
+      ['desktop/settings', '^1.7.0'],
+      ['desktop/layout', '^1.8.0'],
     ]);
     const found = manifests();
-    for (const name of onMinorSeven) {
+    for (const name of asked.keys()) {
       assert.ok(found.has(name), [...found.keys()].join(', '));
     }
-    assert.ok(found.size > onMinorSeven.size, [...found.keys()].join(', '));
+    assert.ok(found.size > asked.size, [...found.keys()].join(', '));
 
     for (const [name, manifest] of found) {
-      assert.equal(
-        manifest.engines?.doric,
-        onMinorSeven.has(name) ? '^1.7.0' : '^1.0.0',
-        name,
-      );
+      assert.equal(manifest.engines?.doric, asked.get(name) ?? '^1.0.0', name);
     }
   });
 });

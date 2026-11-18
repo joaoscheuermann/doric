@@ -2,7 +2,7 @@ import type { ErrorCatalog } from 'desktop/reads';
 
 /**
  * The layout's error catalog (§2.2): the entries of the codes the layout
- * defines for the workspace sidebar, the dashboard and the hosted elements.
+ * defines for the workspace sidebar and the dashboard.
  *
  * Passed as `catalog` to every `ErrorNotice` the layout draws except the
  * quarantine notice, which carries its own counted `bundle_quarantined` entry
@@ -23,5 +23,4 @@ export const layoutErrorCatalog: ErrorCatalog = {
     retryable: false,
   },
   clipboard_failed: { title: 'Could not copy', retryable: false },
-  element_failed: { title: 'View failed to open', retryable: false },
 };

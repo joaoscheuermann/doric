@@ -1,7 +1,8 @@
 // The Project panel's content and its compact controls. The controls live in
 // the Files column header; the panel itself starts directly with its content.
 
-import type { RegionEntry } from 'bundle/contracts';
+import { type RegionEntry, UiV1 } from 'bundle/contracts';
+import { ElementHost } from 'desktop/ui/element-host';
 import { TabStrip } from 'desktop/ui/panels';
 import {
   Sidebar,
@@ -13,7 +14,7 @@ import { FileDiffIcon, FileIcon, FilesIcon, TerminalIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 import { movedPanelOrder, panelOrder } from '../../domain/panel-order.js';
-import { ElementHost } from '../molecules/element-host.js';
+import { layoutServices } from '../../services/layout-services.js';
 
 /** A view the layout draws itself (a provisional feature). */
 export interface PanelBuiltIn {
@@ -101,7 +102,7 @@ export function ProjectPanelTabs({
               icon: panelIcon(entry.props?.icon),
               badge:
                 typeof badgeTag === 'string' && badgeTag !== '' ? (
-                  <ElementHost tag={badgeTag} />
+                  <ElementHost ui={layoutServices().use(UiV1)} tag={badgeTag} />
                 ) : undefined,
             },
           ];
@@ -130,6 +131,7 @@ export function ProjectPanel({
               ? builtInContent
               : item !== undefined && (
                   <ElementHost
+                    ui={layoutServices().use(UiV1)}
                     key={item.id}
                     tag={item.tag}
                     {...(item.props === undefined ? {} : { props: item.props })}
