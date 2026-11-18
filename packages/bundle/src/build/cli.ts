@@ -307,7 +307,9 @@ export const buildBundle = async (
  * a `manifest.json`, sorted by path in code-unit order. Files, and
  * directories without a manifest such as `node_modules`, are skipped.
  */
-const bundleDirectories = async (root: string): Promise<readonly string[]> => {
+export const bundleDirectories = async (
+  root: string,
+): Promise<readonly string[]> => {
   const found: string[] = [];
 
   for (const group of await readdir(root, { withFileTypes: true })) {

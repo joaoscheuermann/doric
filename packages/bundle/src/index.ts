@@ -5,6 +5,7 @@ export {
   type BuildOptions,
   type BuildResult,
   buildBundle,
+  bundleDirectories,
   runCli,
   stageBundles,
 } from './build/cli.js';

@@ -75,6 +75,9 @@ jobs:
           DORIC_TEST_DATABASE_URL: postgresql://doric:doric@127.0.0.1:5432/doric
         run: npx nx run-many -t test --projects=tag:type:bundle
 
+      - name: Test the fake host's bundle staging
+        run: npm run test:fake-host
+
       - name: Run Agent tests
         run: npx nx test agent
 
