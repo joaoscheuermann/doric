@@ -40,7 +40,10 @@ src/client/
   records mirror; the layout calls no method of `runtime/v1` or
   `runtime.threads/v1`. The host adapter, the Project watch and the Thread
   views live in the runtime's client part.
-- Persistent work (the selection route, timers) is bound to the
+- `runtime/contracts` is imported for types only; contract references are
+  built from their IDs (D32).
+- Persistent work (the selection route, timers, watches such as
+  `watchThreadViews`, `watchThreadTabs` and the `bindRecords` subscription) is bound to the
   activation services, never to an element's services (D9-17).
 - `src/client/styles.css` holds only the Monaco and xterm slider rules and the
   conversation footer's height, fill and blur (one rule keyed on

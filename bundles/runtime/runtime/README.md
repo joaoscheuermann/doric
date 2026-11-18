@@ -7,7 +7,9 @@ work after a restart or an upgrade of the host's bundles.
 
 It provides the runtime's contracts over stores built on `storage/v1`, and
 publishes the `runtime/contracts` entrypoint that tools and feature bundles
-use to reach a prompt's Thread, working directory and sandbox. See the
+use to reach a prompt's Thread, working directory and sandbox. Its client part
+activates in each desktop window and provides `runtime.records/v1`, the
+window's records mirror, over `runtime/v1` and `runtime.threads/v1`. See the
 [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
 
@@ -77,18 +79,24 @@ use to reach a prompt's Thread, working directory and sandbox. See the
 - `runtime.records/v1` 1.0.0 (runtime 2.9.0) — the records mirror, provided
   by the runtime's client part (`src/client/`) in each desktop window. It owns
   the window's Projects and Threads: the reads (`projects`, `project`,
-  `threads`, `thread`, `connection`, `subscribe`, `findThread`, `activity`)
-  answer from memory; `follow` keeps a Project current through its watch, and
+  `threads`, `thread`, `connection`, `subscribe`) answer from memory;
+  `findThread` and `activity` each ask the host once; `follow` keeps a Project current through its watch, and
   `reload` always loads; the twelve writes (create, rename, color, terminate
   and delete a Project; create, rename, terminate, delete, archive, restore
   and pin a Thread) put the host's answer in the mirror before they resolve;
   `view` holds a Thread's presence while open. A failed read keeps the
-  rejection object as its `error`. `threadSubtreeIds` and
-  `runtimeRecordsService(records)` are exported from `src/contracts/records.ts`.
+  rejection object as its `error`. Consumers import its types,
+  `threadSubtreeIds` and `runtimeRecordsService(records)` from
+  `runtime/contracts`.
 - `runtime/testing` — `createRecordsApi` and `createRecordsFake`, a fake of
-  the records mirror for the tests of the bundles that read it.
+  the records mirror for the tests of the bundles that read it, with
+  `RecordsOperation` and `RecordsFakeOptions` (`pending` and `failing`). A
+  fake read answers `ready` from its options, unless the operation is pending
+  or failing; a failing read uses the code `unavailable`. A fake write changes
+  the records and calls the subscribers.
 
-Every method is scoped by the `Call` it receives. Record schemas are loose, so
+Every method of the host contracts is scoped by the `Call` it receives;
+`runtime.records/v1` lives in one window and ignores it. Record schemas are loose, so
 records with more fields than the contract names travel unchanged.
 
 ### Thread kinds
@@ -138,6 +146,9 @@ compacts on the Thread's own provider, and an older executor would ignore it.
 
 ## How it works
 
+- **Client part:** `src/client/` activates in each desktop window and
+  provides `runtime.records/v1` over `runtime/v1` and `runtime.threads/v1`. It
+  calls no host method at activation.
 - **Prompts:** the runner executes each prompt through `executor/v1` (the
   [`default`](../default/README.md) bundle in the shipped host) with the
   runtime's `PromptSession`, and the executor's checkpoint patch marks the turn

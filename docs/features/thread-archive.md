@@ -50,3 +50,4 @@ Every Thread of the selected Project stayed in the sidebar tree for as long as t
 ## Evolution
 
 - 2026-11-17: implemented ([spec](../designs/thread-archive.md) version 5). Archive, restore, pin and presence in the runtime with the 10 s archiver; `threads.autoArchive` in the host configuration; the Chat and Archived sidebar tabs, archive, pin, restore and delete in the layout; the Threads section in Settings; fence rules shared through `runtime/contracts`.
+- 2026-11-18: presence (`viewThread`) and the archive, restore and pin calls of the layout now go through the runtime's records mirror, `runtime.records/v1`, from layout 3.2.3 and runtime 2.9.0 ([bundle isolation](./bundle-isolation.md), phase 3).

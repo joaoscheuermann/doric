@@ -53,6 +53,14 @@ export function activate({ services }: ClientContext) {
 
 ### 3. O template do workspace
 
+> **Desatualizado.** O layout não lê mais Projects e Threads por
+> `runtime.threads/v1` nem por `runtime/v1`. Desde a fase 3 do isolamento de
+> bundles, o layout 3.2.3 lê o espelho de registros do runtime,
+> `runtime.records/v1`, e o adaptador do host e o watch de Project pertencem à
+> parte client do runtime. O comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 `<layout-workspace>` é escrito em React montado dentro do Web Component, como em [React dentro de Web Components](./react-web-components.md), e reaproveita os componentes atuais (`WorkspaceLayout`, `ProjectSidebar`, `WorkspaceHeader`, `WorkspaceTabs`) e os componentes shadcn dos [pacotes compartilhados](./platform-packages.md). A estrutura que ele monta é esta:
 
 ```text
@@ -229,13 +237,13 @@ services.whenAvailable(LayoutTabsV1, (tabs) =>
 }
 ```
 
-> **Out of date.** The layout no longer reads Projects and Threads through
-> `runtime.threads/v1` or `runtime/v1`. Since phase 3 of the bundle isolation
-> work, layout 3.2.3 reads the runtime's records mirror, `runtime.records/v1`,
-> and its host adapter and Project watch belong to the runtime's client part.
-> The current behavior is in
+> **Desatualizado.** O layout não lê mais Projects e Threads por
+> `runtime.threads/v1` nem por `runtime/v1`. Desde a fase 3 do isolamento de
+> bundles, o layout 3.2.3 lê o espelho de registros do runtime,
+> `runtime.records/v1`, e o adaptador do host e o watch de Project pertencem à
+> parte client do runtime. O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
-> the documentation phase of that work (phase 12) rewrites this document.
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
 O layout só tem parte `client`. Ele lê Projects e Threads por `runtime.threads/v1`, pela ponte client → host, e despacha `core.open-settings/v1` por `commands/v1`.
 

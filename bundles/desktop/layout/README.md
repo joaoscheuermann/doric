@@ -28,7 +28,10 @@ and `commands/v1`, optionally `core.open-settings/v1` and
 Threads from the runtime's records mirror, `runtime.records/v1`, and calls no
 method of `runtime/v1` or `runtime.threads/v1`; both left its `requires`.
 Layout 3.2.3 needs runtime 2.9.0 or later in the same bundle set, which the
-resolver does not check because `optional` carries no range.
+resolver does not check because `optional` carries no range. Without a
+`runtime.records/v1` provider (an older runtime, or a quarantined runtime
+client part) every layout load fails with `unavailable`, and the layout shows
+the outage message "Doric backend is unavailable.".
 
 ## What you see
 
