@@ -80,27 +80,6 @@
     {
       "check": "core",
       "bundle": "core",
-      "target": "menus/v1:projectId",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 2(b)"
-    },
-    {
-      "check": "core",
-      "bundle": "core",
-      "target": "menus/v1:threadId",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 2(b)"
-    },
-    {
-      "check": "core",
-      "bundle": "core",
-      "target": "menus/v1:promptId",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 2(b)"
-    },
-    {
-      "check": "core",
-      "bundle": "core",
       "target": "core.commands/v1:projectId",
       "decision": "docs/features/bundle-isolation.md",
       "until": "step 2(b)"
