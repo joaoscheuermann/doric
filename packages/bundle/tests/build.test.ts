@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -14,6 +14,7 @@ import {
   type HostContext,
 } from '../src/contracts/index.js';
 import {
+  BuildError,
   buildBundle,
   checkRecording,
   contractDocument,
@@ -423,6 +424,88 @@ void test('staging replaces each bundle directory with its dist', async () => {
     assert.equal(
       await exists(join(destination, 'demo', 'leftover.txt')),
       false,
+    );
+  });
+});
+
+const writeBuiltDemo = async (root: string, directory: string, id: string) => {
+  const dir = await writeDemo(root, {
+    directory,
+    manifest: { ...demoManifest(), id },
+  });
+
+  await buildBundle(dir);
+
+  return dir;
+};
+
+void test('stage --all stages every <group>/<id> with a manifest and skips the rest', async () => {
+  await withRoot(async (root) => {
+    const bundles = join(root, 'bundles');
+    const destination = join(root, 'staged');
+
+    await writeBuiltDemo(bundles, join('g1', 'a'), 'a');
+    await writeBuiltDemo(bundles, join('g1', 'b'), 'b');
+    await writeBuiltDemo(bundles, join('g2', 'c'), 'c');
+    await mkdir(join(bundles, 'g1', 'node_modules', 'dep'), {
+      recursive: true,
+    });
+    await writeFile(join(bundles, 'g1', 'node_modules', 'dep', 'index.js'), '');
+    await writeFile(join(bundles, 'g2', 'x.txt'), 'x\n');
+
+    await runCli(['stage', destination, '--all', bundles]);
+
+    const staged = await readdir(destination, { withFileTypes: true });
+
+    assert.deepEqual(
+      staged
+        .map((entry) => [entry.name, entry.isDirectory()] as const)
+        .sort(([left], [right]) => (left < right ? -1 : 1)),
+      [
+        ['a', true],
+        ['b', true],
+        ['c', true],
+      ],
+    );
+    assert.equal(
+      await exists(join(destination, 'c', 'host', 'index.js')),
+      true,
+    );
+  });
+});
+
+void test('stage --all names a bundle directory whose dist manifest is missing', async () => {
+  await withRoot(async (root) => {
+    const bundles = join(root, 'bundles');
+
+    await writeBuiltDemo(bundles, join('g1', 'a'), 'a');
+    await writeBundle(join(bundles, 'g1'), 'z', {
+      manifest: { ...demoManifest(), id: 'z' },
+    });
+
+    await assert.rejects(
+      runCli(['stage', join(root, 'staged'), '--all', bundles]),
+      (error: unknown) => {
+        assert.ok(error instanceof BuildError);
+        assert.match(error.message, /g1\/z/);
+
+        return true;
+      },
+    );
+  });
+});
+
+void test('stage --all takes exactly a destination and a root', async () => {
+  await withRoot(async (root) => {
+    const destination = join(root, 'staged');
+
+    await assert.rejects(
+      runCli(['stage', destination, '--all']),
+      /Usage: cli\.js/,
+    );
+    await assert.rejects(
+      runCli(['stage', destination, '--all', root, 'extra']),
+      /Usage: cli\.js/,
     );
   });
 });

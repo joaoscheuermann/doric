@@ -209,6 +209,7 @@ Every contract documents its error codes beside it; they are listed in
 ```console
 node packages/bundle/dist/build/cli.js build [--development] <bundleDir>
 node packages/bundle/dist/build/cli.js stage <dest> <bundleDir...>
+node packages/bundle/dist/build/cli.js stage <dest> --all <root>
 node packages/bundle/dist/build/cli.js copy-md <from> <to>
 ```
 
@@ -224,7 +225,10 @@ against a published baseline yet: `contracts.published.json` files and the
 `baseline` command were removed until publishing exists (stage 11), and a
 leftover file is ignored.
 
-`stage` copies each `dist` into `<dest>/<id>`.
+`stage` copies each `dist` into `<dest>/<id>`, and fails naming the bundle
+directory when its `dist/manifest.json` is missing. With `--all <root>` it
+stages every `<root>/<group>/<id>` that holds a `manifest.json`, in path
+order, and skips files and other directories such as `node_modules`.
 
 `copy-md` mirrors the `.md` files below `<from>` into `<to>` the same way
 `build` does: it removes every `.md` below `<to>`, then copies each one from

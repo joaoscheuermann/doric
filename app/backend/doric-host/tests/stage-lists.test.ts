@@ -1,8 +1,8 @@
 // H1: every bundle the shipped composition names is staged and compiled in
-// every build path of the host: the Nx `build-bundles` stage command and the
-// image's `.Dockerfile` (`tsc` and `stage`). A bundle missing from one list
-// boots in one build and is absent in another (the image once omitted
-// `openui`). `openui` is listed before `papercraft`, which builds on it.
+// every build path of the host: the image's `.Dockerfile` (`tsc` and
+// `stage`). A bundle missing from one list boots in one build and is absent
+// in another (the image once omitted `openui`). `openui` is listed before
+// `papercraft`, which builds on it.
 
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
@@ -75,22 +75,6 @@ const stagedIn = (command: string): string[] => {
   return (match[1] ?? '').trim().split(/\s+/);
 };
 
-const nxStageList = async (): Promise<string[]> => {
-  const project = (await readJson(join(hostDir, 'project.json'))) as {
-    readonly targets: Record<
-      string,
-      { readonly options?: { readonly commands?: readonly string[] } }
-    >;
-  };
-  const command = Object.values(project.targets)
-    .flatMap((target) => target.options?.commands ?? [])
-    .find((line) => line.includes('cli.js stage '));
-
-  assert.ok(command !== undefined, 'project.json has a stage command');
-
-  return stagedIn(command);
-};
-
 /** The Dockerfile with its line continuations joined. */
 const dockerfile = async (): Promise<string> =>
   (await readFile(join(hostDir, '.Dockerfile'), 'utf8')).replace(
@@ -154,16 +138,6 @@ void test('H1: the shipped composition enables openui before papercraft', async 
 
   assert.ok(ids.includes('openui'), ids.join(', '));
   assert.ok(ids.indexOf('openui') < ids.indexOf('papercraft'), ids.join(', '));
-});
-
-void test('H1: the Nx stage command stages every bundle of the composition, openui before papercraft', async () => {
-  const staged = await nxStageList();
-
-  for (const [id, path] of await expectedPaths()) {
-    assert.ok(staged.includes(path), `${id} (${path}) is staged`);
-  }
-
-  assertOpenuiBeforePapercraft(staged, 'project.json stage');
 });
 
 void test('H1: the image stages every bundle of the composition, openui before papercraft', async () => {

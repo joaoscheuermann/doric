@@ -44,6 +44,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Check Nx sync
+        run: npx nx sync:check
+
       - name: Test Biome configuration and bundle boundaries
         run: npm run lint:test
 

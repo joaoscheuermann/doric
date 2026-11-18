@@ -80,13 +80,6 @@
     {
       "check": "lists",
       "bundle": "doric-host",
-      "target": "app/backend/doric-host/project.json",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 11(a)"
-    },
-    {
-      "check": "lists",
-      "bundle": "doric-host",
       "target": "app/backend/doric-host/.Dockerfile",
       "decision": "docs/features/bundle-isolation.md",
       "until": "step 11(b)"
