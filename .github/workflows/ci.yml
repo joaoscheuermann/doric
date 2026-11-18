@@ -63,6 +63,15 @@ jobs:
           DORIC_TEST_DATABASE_URL: postgresql://doric:doric@127.0.0.1:5432/doric
         run: npx nx test doric-host
 
+      # Gate variables left unset, so their tests skip:
+      # DORIC_TEST_SANDBOX: needs the sandbox image, which CI does not build.
+      # DORIC_TEST_COALESCE_SIZE: a size measurement, not a correctness test.
+      # DORIC_TEST_ADAPTER_CAPTURE: records a live provider and needs a key.
+      - name: Run bundle tests
+        env:
+          DORIC_TEST_DATABASE_URL: postgresql://doric:doric@127.0.0.1:5432/doric
+        run: npx nx run-many -t test --projects=tag:type:bundle
+
       - name: Run Agent tests
         run: npx nx test agent
 
