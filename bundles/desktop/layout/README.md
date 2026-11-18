@@ -82,11 +82,14 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   card's 8 px, whatever its icon
   ([SR12](../../../docs/designs/conversation-footer.md#risks)). The Files column
   footer (`layout.panel.footer`) is one 28 px row under the Project panel.
-  Settings open from the account avatar, which runs `core`'s
-  `core.open-settings/v1` with `defaultPath: '/settings'`: the command (1.1.0)
-  focuses an open settings window, and otherwise opens one at
-  `path ?? defaultPath`. Layout 3.0.3 needs
-  chat 1.6.2 or later in the same bundle set.
+  Settings open from two entries, the dashboard's "All settings" and the
+  account status, each of which runs `core`'s `core.open-settings/v1` with
+  `defaultPath: '/settings'` and no `path`: the command (1.1.0) focuses an open
+  settings window, and otherwise opens one at `defaultPath`. Layout 3.0.3 needs
+  chat 1.6.2 or later in the same bundle set. Layout 3.2.2 needs core 1.15.0 or
+  later in the same bundle set: an older core rejects `defaultPath`, so
+  settings do not open, and the resolver does not catch it because the layout
+  lists `core.open-settings/v1` under `optional`, which carries no range.
 
 The selection is the window path (`/`, `/projects/<projectId>` or
 `/projects/<projectId>/threads/<threadId>`); a saved selection is validated

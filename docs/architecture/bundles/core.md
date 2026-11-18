@@ -77,6 +77,13 @@ Cada contrato tem cardinalidade `one` (padrão; um provedor ativo, escolhido pel
 
 Qualquer bundle, não só o core, registra handlers dos hooks do app. O core registra os seus como qualquer consumidor, sem atalho no contexto:
 
+> **Out of date.** The `openSettings` below no longer matches the code. Since
+> step 2(a) of the bundle isolation work, `core.open-settings/v1` 1.1.0 takes
+> `path` and `defaultPath`, and the core no longer falls back to
+> `path ?? '/settings'`. The current behavior is in
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> the documentation phase of that work (phase 12) rewrites this document.
+
 ```ts
 // core, parte desktopMain
 import {
