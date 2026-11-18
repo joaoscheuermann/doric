@@ -15,7 +15,8 @@ the `bundle` platform. See the
 ## What it provides
 
 - **UI:** `<settings-page>` at `/settings`, the settings window's one React
-  root. `core.open-settings/v1` and `layout.dashboard/v1` are `optional`; the
+  root. `claude.login/v1`, `core.open-settings/v1` and `layout.dashboard/v1` are
+  `optional`; the
   bundle builds the reference of `layout.dashboard/v1` from its id
   (`src/client/api/navigation-refs.ts`) and imports only its type from
   `workspace/contracts`, which the `workspace` bundle provides until step 4(e)
