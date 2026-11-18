@@ -35,6 +35,8 @@ export const SHELL_CONVERSATION_FOOTER = 'shell.conversation.footer';
 export const SHELL_CONVERSATION_BOTTOM = 'shell.conversation.bottom';
 /** A floating layer over the conversation; its items place themselves (4.5.0). */
 export const SHELL_CONVERSATION_OVERLAY = 'shell.conversation.overlay';
+/** The Project panel's views; an item's props are a `PanelItemProps` (4.6.0). */
+export const SHELL_PANEL = 'shell.panel';
 
 /** One entry of a viewer tab's context menu (1.2.0). */
 export interface TabMenuItem {
@@ -260,14 +262,14 @@ export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
 
 /**
  * The Project panel beside the conversation (2.0.0, ui-redesign S36). Its
- * views are the `layout.panel` region items `{ id, tag, order, props: { label,
+ * views are the `shell.panel` region items `{ id, tag, order, props: { label,
  * iconTag?, badgeTag? } }`, drawn as the icon-only "Project views" tab strip; the
  * selected item's element is mounted. The panel is always shown: it has no
  * open state, and nothing about it is persisted.
  */
 export interface LayoutPanel {
   /**
-   * Selects the view whose `layout.panel` item id is `id`. An id no item has
+   * Selects the view whose `shell.panel` item id is `id`. An id no item has
    * is kept: the panel draws no view until an item with that id registers.
    * Selecting the selected view changes nothing; an empty id is refused
    * (`invalid_input`).
@@ -275,7 +277,7 @@ export interface LayoutPanel {
   select(id: string, call?: CallArg): void;
 }
 
-/** The props of a `layout.panel` region item. */
+/** The props of a `shell.panel` region item. */
 export interface PanelItemProps {
   readonly label: string;
   /** An element drawn as the view's icon. */

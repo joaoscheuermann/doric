@@ -6,7 +6,7 @@ import { createStore } from 'zustand/vanilla';
  * with no view, until `select` names one, and nothing is persisted.
  */
 export type PanelState = {
-  /** The selected `layout.panel` item id, if any; it may name no registered item. */
+  /** The selected `shell.panel` item id, if any; it may name no registered item. */
   readonly active: string | undefined;
   /** Selects the view; selecting the selected view notifies no one. */
   select(id: string): void;

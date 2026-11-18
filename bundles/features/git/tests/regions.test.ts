@@ -29,7 +29,7 @@ test('the working directory item is in the Files footer, not the conversation fo
 // layout drew; its badge stays.
 test('the Changes view is drawn with the git-file-diff-icon element', () => {
   const changes = gitRegions.find(
-    (entry) => entry.region === 'layout.panel' && entry.item.id === 'changes',
+    (entry) => entry.region === 'shell.panel' && entry.item.id === 'changes',
   );
   assert.deepEqual(changes?.item.props, {
     label: 'Changes',

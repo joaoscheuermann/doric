@@ -80,7 +80,7 @@ export function WorkspaceShell({
   readonly model?: SidebarModel;
 }) {
   const [active, setActive] = useState('files');
-  const items = useRegionItems(layoutServices().use(RegionsV1), 'layout.panel');
+  const items = useRegionItems(layoutServices().use(RegionsV1), 'shell.panel');
   const tabs = useWorkspaceTabs(owner);
   const viewer = tabs.items.length > 0;
   const openSettings = () => console.info('Story open settings');

@@ -33,7 +33,7 @@ function Panel({
   const [active, setActive] = useState(initial);
   const registered = useRegionItems(
     layoutServices().use(RegionsV1),
-    'layout.panel',
+    'shell.panel',
   );
   const items = regions ? registered : [];
   return (

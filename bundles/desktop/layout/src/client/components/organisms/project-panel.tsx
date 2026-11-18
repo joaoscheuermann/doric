@@ -32,7 +32,7 @@ type ProjectPanelProps = {
   readonly builtIns?: readonly PanelBuiltIn[];
   /** What a built-in view shows; drawn while one is selected. */
   readonly builtInContent?: ReactNode;
-  /** The `layout.panel` region items. */
+  /** The `shell.panel` region items. */
   readonly items: readonly RegionEntry[];
 };
 

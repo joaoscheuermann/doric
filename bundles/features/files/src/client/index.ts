@@ -18,6 +18,7 @@ import {
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
+import type { SHELL_PANEL } from 'layout/contracts';
 import { LayoutPanelV3, LayoutWorkspaceV1 } from 'layout/contracts';
 
 import { ChatHooksV1 } from './api/peers.js';
@@ -55,7 +56,7 @@ export const filesRegions: readonly {
   readonly item: RegionItem;
 }[] = [
   {
-    region: 'layout.panel',
+    region: 'shell.panel' satisfies typeof SHELL_PANEL,
     item: {
       id: 'files',
       tag: 'files-tree',

@@ -1,5 +1,5 @@
 // layout.panel/v3 (spec part 2i, S36; bundle isolation 4a T4.5): the Project
-// panel always shows; the contract only selects which `layout.panel` view it
+// panel always shows; the contract only selects which `shell.panel` view it
 // draws, and a window's panel starts with no view selected.
 
 import assert from 'node:assert/strict';

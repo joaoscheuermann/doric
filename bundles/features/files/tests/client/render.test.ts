@@ -203,7 +203,7 @@ test('the Files panel item is drawn with the files-file-icon element the client 
   );
   assert.deepEqual(
     activation.added
-      .filter(({ region }) => region === 'layout.panel')
+      .filter(({ region }) => region === 'shell.panel')
       .map(({ item }) => (item as { readonly props?: unknown }).props),
     [{ label: 'Files', iconTag: 'files-file-icon' }],
   );

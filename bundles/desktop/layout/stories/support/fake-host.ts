@@ -170,7 +170,7 @@ const glyphElement = (icon: LucideIcon): HTMLElement => {
 
 /** The region items the running app adds, by the bundles that add them. */
 export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
-  'layout.panel': [
+  'shell.panel': [
     {
       id: 'files',
       tag: 'files-tree',

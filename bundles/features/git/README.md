@@ -91,7 +91,7 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   when the tab opens, so a deleted file's tab has it too, and the file tab then
   says the file cannot be shown.
 - The Changes view (`git-changes`, with its `git-changes-badge` and the
-  `git-file-diff-icon` icon) is a `layout.panel` item, the working directory and branch (`git-workspace-cwd`)
+  `git-file-diff-icon` icon) is a `shell.panel` item, the working directory and branch (`git-workspace-cwd`)
   a `layout.panel.footer` item (the change counts stay in the Changes tab's
   badge), and the Versioning section (`/settings/git`) chooses
   which stored credentials the agent commits and pushes with.

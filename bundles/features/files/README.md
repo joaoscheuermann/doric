@@ -107,7 +107,7 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   file's ancestor directories under the tree's root, selects the Files view
   (`select('files')`) and selects the tab, so the tree selects the file's row. A
   file outside the root only selects the Files view.
-- The Files view (`files-tree`) is a `layout.panel` region item, selected from
+- The Files view (`files-tree`) is a `shell.panel` region item, selected from
   the Files column header's tab strip, whose icon is the `files-file-icon`
   element. The bundle defines no panel toggle; it requires `layout.panel/v3`,
   which starts with no view, and selects the Files view when it activates and

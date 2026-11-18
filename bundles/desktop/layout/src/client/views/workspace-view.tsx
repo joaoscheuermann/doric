@@ -36,6 +36,7 @@ import {
   SHELL_CONVERSATION_FOOTER,
   SHELL_CONVERSATION_OVERLAY,
   SHELL_PAGE,
+  SHELL_PANEL,
   SHELL_SIDEBAR,
   SHELL_SIDEBAR_FOOTER,
   SHELL_TITLEBAR_TABS,
@@ -112,7 +113,7 @@ function Workspace() {
     () => panelStore.getState().active,
   );
   const panel = panelStore.getState();
-  const panelItems = useRegionItems(regions, 'layout.panel');
+  const panelItems = useRegionItems(regions, SHELL_PANEL);
   const bottomVisible = useSyncExternalStore(
     bottomStore.subscribe,
     () => bottomStore.getState().visible.size > 0,

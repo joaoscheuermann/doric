@@ -23,6 +23,7 @@ import {
   type Ui,
   UiV1,
 } from 'bundle/contracts';
+import type { SHELL_PANEL } from 'layout/contracts';
 
 import { gitApiOf } from './api/git-api.js';
 import { type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
@@ -47,7 +48,7 @@ export const gitRegions: readonly {
   readonly item: RegionItem;
 }[] = [
   {
-    region: 'layout.panel',
+    region: 'shell.panel' satisfies typeof SHELL_PANEL,
     item: {
       id: 'changes',
       tag: 'git-changes',

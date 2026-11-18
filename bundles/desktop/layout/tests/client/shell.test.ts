@@ -1120,7 +1120,7 @@ test('opening the first file shows the viewer', async () => {
 // shows; nothing hides or collapses it, and `layout.panel/v3` only selects
 // the view it draws.
 
-/** The Project views the app's `layout.panel` region lists (fake-host.ts). */
+/** The Project views the app's `shell.panel` region lists (fake-host.ts). */
 const panelViews = [
   {
     id: 'files',
@@ -1140,7 +1140,7 @@ const panelViews = [
 const withHeaderItems = (fixture: LayoutFixture): LayoutFixture => ({
   ...fixture,
   regions: {
-    'layout.panel': panelViews,
+    'shell.panel': panelViews,
     'shell.header.actions': [
       { id: 'header-probe', tag: 'header-probe', order: 10 },
     ],
@@ -1386,15 +1386,15 @@ test('the layout provides neither layout.tabs/v1 nor layout.panel/v2', async () 
   assert.ok(services.use(LayoutPanelV3));
 });
 
-// bundle isolation T4.5: a layout.panel item's iconTag draws that element as
+// bundle isolation T4.5: a shell.panel item's iconTag draws that element as
 // the view's icon.
-test('a layout.panel item with props.iconTag draws that element as its icon', async () => {
+test('a shell.panel item with props.iconTag draws that element as its icon', async () => {
   rendered = await renderWorkspace({
     projects: [project],
     projectTabs: [project],
     path: `/projects/${project.id}`,
     regions: {
-      'layout.panel': [
+      'shell.panel': [
         {
           id: 'files',
           tag: 'files-tree',
@@ -1442,7 +1442,7 @@ test('selecting the Changes tab draws the Changes view and keeps the Files heade
   single(rendered.root, '[data-slot="workspace-files-footer"]');
 });
 
-// T-2.17, UR28: without the files bundle `layout.panel` lists only Changes.
+// T-2.17, UR28: without the files bundle `shell.panel` lists only Changes.
 // The panel still selects `files`, which no item has, so it draws no view.
 test('without the files bundle the Files header holds the Changes tab and Account only', async () => {
   rendered = await renderWorkspace({
@@ -1450,7 +1450,7 @@ test('without the files bundle the Files header holds the Changes tab and Accoun
     projectTabs: [project],
     path: `/projects/${project.id}`,
     regions: {
-      'layout.panel': panelViews.filter((view) => view.id === 'changes'),
+      'shell.panel': panelViews.filter((view) => view.id === 'changes'),
     },
   });
 
@@ -2363,7 +2363,7 @@ test('T4.2: the frame is in the page form exactly while shell.page holds an item
 
 const quarantined: CatalogSnapshot = (() => {
   const bundles: readonly CatalogBundle[] = [
-    { id: 'layout', version: '4.5.0', state: 'active', reasons: [] },
+    { id: 'layout', version: '4.6.0', state: 'active', reasons: [] },
     {
       id: 'terminal',
       version: '2.0.1',

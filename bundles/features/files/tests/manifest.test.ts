@@ -31,15 +31,15 @@ describe('the files manifest', () => {
 
   // Part 2i (S36): the panel no longer opens or closes; Reveal in Files only
   // selects the Files view, through `layout.panel/v3`.
-  test('requires layout.panel/v3@^3.0.0 and no other layout.panel contract', () => {
+  test('requires layout.panel/v3@^3.0.0 and no other layout.panel/* contract', () => {
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('layout.panel/')),
       ['layout.panel/v3@^3.0.0'],
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.7.4 and keeps engines.doric', () => {
-    assert.equal(manifest.version, '1.7.4');
+  test('provides files/v1@1.3.0 at version 1.7.5 and keeps engines.doric', () => {
+    assert.equal(manifest.version, '1.7.5');
     assert.ok(manifest.provides.includes('files/v1@1.3.0'));
     assert.equal(manifest.engines.doric, '^1.0.0');
   });
