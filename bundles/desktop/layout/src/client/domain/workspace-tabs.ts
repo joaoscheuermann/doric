@@ -3,61 +3,27 @@ import { moveItem } from '../utility/move-item.js';
 import type { ProjectTree } from './project-tree.js';
 import { THREAD_TAB_ICON } from './thread-navigation.js';
 
-export type WorkspaceTab =
-  | {
-      readonly id: string;
-      readonly kind: 'diff';
-      readonly projectId: string;
-      readonly repository: string;
-      readonly path: string;
-    }
-  | {
-      readonly id: string;
-      readonly kind: 'file';
-      readonly path: string;
-      readonly projectId: string;
-    }
-  | {
-      readonly id: string;
-      readonly kind: 'terminal';
-      readonly terminalId: string;
-    }
-  /**
-   * A tab another bundle opened through `layout.tabs/v1` or `v2`: the element it
-   * asked for, created by `ui/v1` and labelled with its title.
-   */
-  | {
-      readonly id: string;
-      readonly kind: 'element';
-      /** The `ui/v1` tag the element was created from (`layout.tabs/v1` `open`). */
-      readonly tag: string;
-      readonly title: string;
-      readonly element: object;
-      readonly props?: Readonly<Record<string, unknown>>;
-      /** `layout.tabs/v1@1.1.0`: the trigger's icon, aria label and tooltip. */
-      readonly icon?: 'file' | 'file-diff' | 'terminal' | 'thread';
-      /** `layout.tabs/v2`: the element drawn as the trigger's icon. */
-      readonly iconTag?: string;
-      /** `layout.tabs/v2`: the viewer card draws no bottom padding while it is selected. */
-      readonly openBottom?: boolean;
-      readonly ariaLabel?: string;
-      readonly tooltip?: string;
-      /** `layout.tabs/v1@1.2.0`: the entries above "Close tab" in its menu. */
-      readonly menu?: readonly TabMenuItem[];
-    };
-
 /**
- * Whether a tab reads the Project's sandbox, which keeps the files and Git
- * refresh going. Terminal and conversation tabs do not read that sandbox.
+ * A tab another bundle opened through `layout.tabs/v2`: the element it asked
+ * for, created by `ui/v1` and labelled with its title.
  */
-export const readsSandbox = (tab: WorkspaceTab): boolean =>
-  tab.kind !== 'terminal' &&
-  !(
-    tab.kind === 'element' &&
-    (tab.icon === 'terminal' ||
-      tab.icon === 'thread' ||
-      tab.iconTag === THREAD_TAB_ICON)
-  );
+export type WorkspaceTab = {
+  readonly id: string;
+  readonly kind: 'element';
+  /** The `ui/v1` tag the element was created from (`layout.tabs/v2` `open`). */
+  readonly tag: string;
+  readonly title: string;
+  readonly element: object;
+  readonly props?: Readonly<Record<string, unknown>>;
+  /** The element drawn as the trigger's icon. */
+  readonly iconTag?: string;
+  /** The viewer card draws no bottom padding while it is selected. */
+  readonly openBottom?: boolean;
+  readonly ariaLabel?: string;
+  readonly tooltip?: string;
+  /** The entries above "Close tab" in its menu. */
+  readonly menu?: readonly TabMenuItem[];
+};
 
 export type WorkspaceTabs = {
   readonly items: readonly WorkspaceTab[];

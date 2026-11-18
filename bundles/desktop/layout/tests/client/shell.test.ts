@@ -23,12 +23,11 @@ import { NavigationV1 } from 'bundle/contracts';
 
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
+import { resetPanel } from '../../src/client/stores/panel.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
 import {
-  LayoutPanelV2,
   LayoutPanelV3,
   LayoutStackV2,
-  LayoutTabsV1,
   LayoutTabsV2,
 } from '../../src/contracts/index.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
@@ -398,7 +397,7 @@ const shownFiles = (workspace: RenderedWorkspace): string[] =>
 // file, which adds the viewer's panel to a mounted group, is covered by
 // "opening the first file shows the viewer" (render-workspace.ts stands in
 // the `offsetLeft` react-resizable-panels orders panels by).
-test('a file opened through layout.tabs/v1 gets a viewer tab and shows; closing the last tab removes the viewer', async () => {
+test('a file opened through layout.tabs/v2 gets a viewer tab and shows; closing the last tab removes the viewer', async () => {
   rendered = await renderWorkspace({
     projects: [project],
     path: `/projects/${project.id}`,
@@ -409,18 +408,16 @@ test('a file opened through layout.tabs/v1 gets a viewer tab and shows; closing 
           title: 'README.md',
           tag: 'files-viewer',
           props: { path: 'README.md' },
-          icon: 'file',
         },
       ],
     },
   });
 
-  await rendered.services.use(LayoutTabsV1).open({
+  await rendered.services.use(LayoutTabsV2).open({
     id: 'file:src/index.ts',
     title: 'index.ts',
     tag: 'files-viewer',
     props: { path: 'src/index.ts' },
-    icon: 'file',
   });
   await settle();
 
@@ -548,7 +545,6 @@ const withViewer: LayoutFixture = {
         title: 'README.md',
         tag: 'files-viewer',
         props: { path: 'README.md' },
-        icon: 'file',
       },
     ],
   },
@@ -661,7 +657,8 @@ test('the viewer card keeps its bottom padding for a chat-thread-panel tab witho
   );
 });
 
-// conversation-footer T-11.4 (D15): the element's tag decides, not the icon.
+// conversation-footer T-11.4 (D15), bundle isolation 4a change 6: the Thread
+// icon element does not decide; only `openBottom` does.
 test('the viewer card keeps its bottom padding for another element with the Thread icon', async () => {
   rendered = await renderWorkspace({
     ...withViewer,
@@ -672,7 +669,7 @@ test('the viewer card keeps its bottom padding for another element with the Thre
           title: 'README.md',
           tag: 'files-viewer',
           props: { path: 'README.md' },
-          icon: 'thread',
+          iconTag: 'chat-thread-tab-icon',
         },
       ],
     },
@@ -1078,12 +1075,11 @@ test('opening the first file shows the viewer', async () => {
     'A viewer is open before any file is.',
   );
 
-  await rendered.services.use(LayoutTabsV1).open({
+  await rendered.services.use(LayoutTabsV2).open({
     id: 'file:README.md',
     title: 'README.md',
     tag: 'files-viewer',
     props: { path: 'README.md' },
-    icon: 'file',
   });
   await settle();
 
@@ -1104,7 +1100,7 @@ test('opening the first file shows the viewer', async () => {
 // Phase 2d-2: the Files column gets its own header and footer (spec §2.6,
 // S9; contracts 2d-2 §2.3–2.6). The header holds the view controls ("Project
 // views") and the account status. Part 2i (S36, T-2.17): the column always
-// shows; nothing hides or collapses it, and `layout.panel/v2` only selects
+// shows; nothing hides or collapses it, and `layout.panel/v3` only selects
 // the view it draws.
 
 /** The Project views the app's `layout.panel` region lists (fake-host.ts). */
@@ -1113,13 +1109,13 @@ const panelViews = [
     id: 'files',
     tag: 'files-tree',
     order: 100,
-    props: { label: 'Files', icon: 'files' },
+    props: { label: 'Files' },
   },
   {
     id: 'changes',
     tag: 'git-changes',
     order: 200,
-    props: { label: 'Changes', icon: 'file-diff' },
+    props: { label: 'Changes' },
   },
 ];
 
@@ -1286,8 +1282,9 @@ for (const [label, fixture] of [
   });
 }
 
-// T-2.17: `layout.panel/v2` `select` only selects a view; the column stays.
-test('layout.panel/v2 select selects the view and the Files column stays', async () => {
+// T-2.17, bundle isolation T4.5: `layout.panel/v3` `select` only selects a
+// view; the column stays.
+test('layout.panel/v3 select selects the view and the Files column stays', async () => {
   rendered = await renderWorkspace(
     withHeaderItems({
       projects: [project],
@@ -1296,9 +1293,10 @@ test('layout.panel/v2 select selects the view and the Files column stays', async
       panel: { active: 'changes' },
     }),
   );
+
   assert.ok(isSelectedView(filesHeader(rendered), 'Changes'));
 
-  rendered.services.use(LayoutPanelV2).select('files');
+  rendered.services.use(LayoutPanelV3).select('files');
   await settle();
 
   assert.equal(rendered.errors().length, 0, 'Selecting Files failed.');
@@ -1310,24 +1308,61 @@ test('layout.panel/v2 select selects the view and the Files column stays', async
   single(rendered.root, '[data-slot="workspace-files-footer"]');
 });
 
-// bundle isolation T4.5: layout.panel/v3 selects as v2 does.
-test('layout.panel/v3 select selects the view', async () => {
+// bundle isolation T4.5, the last part (step 4(a) change 6): under
+// `layout.panel/v3` a window's panel starts with no view selected, so it
+// draws none until the files bundle selects Files as it activates.
+test('a fresh panel draws no view until layout.panel/v3 selects Files', async () => {
   rendered = await renderWorkspace(
     withHeaderItems({
       projects: [project],
       projectTabs: [project],
       path: `/projects/${project.id}`,
-      panel: { active: 'changes' },
     }),
+  );
+  resetPanel();
+  await settle();
+
+  assert.equal(rendered.errors().length, 0, 'The fresh panel failed.');
+  const fresh = filesHeader(rendered);
+  assert.ok(!isSelectedView(fresh, 'Files'), 'A fresh panel selects Files.');
+  assert.ok(
+    !isSelectedView(fresh, 'Changes'),
+    'A fresh panel selects Changes.',
+  );
+  assert.equal(
+    standIns(rendered.root, 'files-tree').length +
+      standIns(rendered.root, 'git-changes').length,
+    0,
+    'A fresh panel draws a view.',
   );
 
   rendered.services.use(LayoutPanelV3).select('files');
   await settle();
 
-  assert.equal(rendered.errors().length, 0, 'Selecting Files failed.');
-  const header = filesHeader(rendered);
-  assert.ok(isSelectedView(header, 'Files'), 'Files is not the selected view.');
-  assert.ok(!isSelectedView(header, 'Changes'), 'Changes is still selected.');
+  assert.ok(
+    isSelectedView(filesHeader(rendered), 'Files'),
+    'Files is not the selected view.',
+  );
+  assert.equal(standIns(rendered.root, 'files-tree').length, 1);
+});
+
+// step 4(a) change 6: the layout provides layout.tabs/v2 and layout.panel/v3
+// alone; a bundle asking for the old ids finds nothing.
+test('the layout provides neither layout.tabs/v1 nor layout.panel/v2', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    path: `/projects/${project.id}`,
+  });
+  const services = rendered.services;
+
+  for (const id of ['layout.tabs/v1', 'layout.panel/v2']) {
+    assert.throws(
+      () => services.use({ id } as unknown as typeof LayoutTabsV2),
+      `The layout still provides ${id}.`,
+    );
+  }
+  assert.ok(services.use(LayoutTabsV2));
+  assert.ok(services.use(LayoutPanelV3));
 });
 
 // bundle isolation T4.5: a layout.panel item's iconTag draws that element as
@@ -1931,7 +1966,7 @@ const withThreadTabs = (
       id: `thread:${tabThread.id}`,
       title: tabThread.name || 'Untitled',
       tag: 'chat-thread-panel',
-      icon: 'thread' as const,
+      iconTag: 'chat-thread-tab-icon',
       props: { projectId, threadId: tabThread.id },
     })),
   },

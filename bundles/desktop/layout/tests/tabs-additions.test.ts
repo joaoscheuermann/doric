@@ -1,22 +1,18 @@
-// layout.tabs/v1@1.1.0 (R-9.3): a tab's trigger carries the icon, aria label
-// and tooltip it was opened with; a tab is closed in a named owner without a
-// selection; `current` is the active owner's selected tab with the props it
-// was opened with; and subscribers hear tab and owner changes. A terminal
-// element tab does not keep the sandbox refresh going, as a built-in
-// terminal tab never did.
+// layout.tabs/v2 (R-9.3, bundle isolation 4a T4.5): a tab's trigger carries
+// the icon element (`iconTag`), aria label and tooltip it was opened with; a
+// tab is closed in a named owner without a selection; `current` is the active
+// owner's selected tab with the props it was opened with; and subscribers hear
+// tab and owner changes.
 
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
 
 import { createTestServices } from 'bundle/testing';
 
-import {
-  emptyTabs,
-  readsSandbox,
-} from '../src/client/domain/workspace-tabs.js';
-import { createLegacyLayoutTabs } from '../src/client/services/layout-tabs.js';
+import { emptyTabs } from '../src/client/domain/workspace-tabs.js';
+import { createLayoutTabs } from '../src/client/services/layout-tabs.js';
 import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
-import { LayoutTabsV1 } from '../src/contracts/index.js';
+import { LayoutTabsV2 } from '../src/contracts/index.js';
 
 const ui = {
   disposed: [] as object[],
@@ -33,10 +29,10 @@ const setup = (initialOwner: string | undefined) => {
   workspaceTabsStore.getState().setOwner(initialOwner);
   const harness = createTestServices({
     bundle: { id: 'files' },
-    provide: [createLegacyLayoutTabs({ ui })],
+    provide: [createLayoutTabs({ ui })],
   });
   return {
-    tabs: harness.services.use(LayoutTabsV1),
+    tabs: harness.services.use(LayoutTabsV2),
     setOwner: (next: string | undefined) => {
       workspaceTabsStore.getState().setOwner(next);
     },
@@ -51,18 +47,21 @@ beforeEach(() => {
   ui.disposed = [];
 });
 
-describe('layout.tabs/v1@1.1.0', () => {
+describe('layout.tabs/v2', () => {
   test('opens and disposes a thread tab through the public contract', async () => {
     const { tabs, tabsOf, dispose } = setup('parent');
     await tabs.open({
       id: 'thread:child',
       title: 'Child',
       tag: 'chat-thread-panel',
-      icon: 'thread',
+      iconTag: 'chat-thread-tab-icon',
       props: { projectId: 'project', threadId: 'child' },
     });
     const tab = tabsOf('parent').items[0];
-    assert.equal(tab?.kind === 'element' && tab.icon, 'thread');
+    assert.equal(
+      tab?.kind === 'element' && tab.iconTag,
+      'chat-thread-tab-icon',
+    );
     // conversation-footer T-11.7 (D15): the tab keeps the tag it was opened with.
     assert.equal(tab?.kind === 'element' && tab.tag, 'chat-thread-panel');
     await tabs.close({ id: 'thread:child', threadId: 'parent' });
@@ -71,7 +70,8 @@ describe('layout.tabs/v1@1.1.0', () => {
     await dispose();
   });
 
-  test('the tab keeps the icon, aria label, tooltip and props it was opened with', async () => {
+  // T4.5: the trigger's icon is the element `iconTag` names.
+  test('the tab keeps the iconTag, aria label, tooltip and props it was opened with', async () => {
     const { tabs, tabsOf, dispose } = setup('t1');
 
     await tabs.open({
@@ -79,7 +79,7 @@ describe('layout.tabs/v1@1.1.0', () => {
       title: 'a.ts',
       tag: 'git-file-diff',
       props: { projectId: 'p1', repository: '/workspace', path: 'src/a.ts' },
-      icon: 'file-diff',
+      iconTag: 'git-file-diff-icon',
       ariaLabel: 'a.ts changes',
       tooltip: 'src/a.ts',
     });
@@ -87,7 +87,7 @@ describe('layout.tabs/v1@1.1.0', () => {
     const tab = tabsOf('t1').items[0];
     assert.equal(tab?.kind, 'element');
     if (tab?.kind !== 'element') return;
-    assert.equal(tab.icon, 'file-diff');
+    assert.equal(tab.iconTag, 'git-file-diff-icon');
     assert.equal(tab.ariaLabel, 'a.ts changes');
     assert.equal(tab.tooltip, 'src/a.ts');
     assert.deepEqual(tab.props, {
@@ -104,7 +104,7 @@ describe('layout.tabs/v1@1.1.0', () => {
       id: 'terminal:x',
       title: 'npm test',
       tag: 'terminal-view',
-      icon: 'terminal',
+      iconTag: 'terminal-tab-icon',
     });
     setOwner(undefined);
 
@@ -124,7 +124,7 @@ describe('layout.tabs/v1@1.1.0', () => {
       title: 'a.ts',
       tag: 'files-file-view',
       props: { projectId: 'p1', path: 'src/a.ts' },
-      icon: 'file',
+      iconTag: 'files-file-icon',
     });
     await tabs.open({ id: 'plain', title: 'Plain', tag: 'x-plain' });
     assert.deepEqual(tabs.current(), { id: 'plain' });
@@ -159,29 +159,5 @@ describe('layout.tabs/v1@1.1.0', () => {
     assert.ok(afterOwner > afterOpen);
     assert.equal(heard, afterOwner);
     await dispose();
-  });
-});
-
-describe('sandbox-reading tabs', () => {
-  test('file, diff and other element tabs read the sandbox; terminals and threads do not', () => {
-    assert.equal(
-      readsSandbox({ id: 'f', kind: 'file', path: 'a', projectId: 'p' }),
-      true,
-    );
-    assert.equal(
-      readsSandbox({ id: 't', kind: 'terminal', terminalId: 'x' }),
-      false,
-    );
-    const element = {
-      id: 'e',
-      kind: 'element' as const,
-      tag: 'x-element',
-      title: 'E',
-      element: {},
-    };
-    assert.equal(readsSandbox(element), true);
-    assert.equal(readsSandbox({ ...element, icon: 'file-diff' }), true);
-    assert.equal(readsSandbox({ ...element, icon: 'terminal' }), false);
-    assert.equal(readsSandbox({ ...element, icon: 'thread' }), false);
   });
 });

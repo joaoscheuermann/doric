@@ -10,7 +10,6 @@ import {
   SidebarGroup,
   SidebarGroupContent,
 } from 'desktop/ui/sidebar';
-import { FileDiffIcon, FileIcon, FilesIcon, TerminalIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 import { movedPanelOrder, panelOrder } from '../../domain/panel-order.js';
@@ -24,27 +23,12 @@ export interface PanelBuiltIn {
   readonly badge?: ReactNode;
 }
 
-/** The icon names a `layout.panel` item may carry. */
-export const panelIcon = (name: unknown): ReactNode => {
-  switch (name) {
-    case 'files':
-      return <FilesIcon />;
-    case 'file-diff':
-      return <FileDiffIcon />;
-    case 'file':
-      return <FileIcon />;
-    case 'terminal':
-      return <TerminalIcon />;
-    default:
-      return null;
-  }
-};
-
 const text = (value: unknown): string =>
   typeof value === 'string' ? value : '';
 
 type ProjectPanelProps = {
-  readonly active: string;
+  /** The selected view; absent, no view is drawn. */
+  readonly active: string | undefined;
   readonly builtIns?: readonly PanelBuiltIn[];
   /** What a built-in view shows; drawn while one is selected. */
   readonly builtInContent?: ReactNode;
@@ -103,9 +87,7 @@ export function ProjectPanelTabs({
               icon:
                 typeof iconTag === 'string' && iconTag !== '' ? (
                   <ElementHost ui={layoutServices().use(UiV1)} tag={iconTag} />
-                ) : (
-                  panelIcon(entry.props?.icon)
-                ),
+                ) : null,
               badge:
                 typeof badgeTag === 'string' && badgeTag !== '' ? (
                   <ElementHost ui={layoutServices().use(UiV1)} tag={badgeTag} />

@@ -261,14 +261,14 @@ export const checkoutTabs = {
       id: 'file:src/components/Checkout.tsx',
       title: 'Checkout.tsx',
       tag: 'files-viewer',
-      icon: 'file',
+      iconTag: 'files-file-icon',
       props: { path: 'src/components/Checkout.tsx' },
     },
     {
       id: 'diff:src/components/PaymentForm.tsx',
       title: 'PaymentForm.tsx',
       tag: 'git-diff-viewer',
-      icon: 'file-diff',
+      iconTag: 'git-file-diff-icon',
       props: { path: 'src/components/PaymentForm.tsx' },
     },
     {

@@ -3,7 +3,8 @@
 // `layout.tabs/v2@2.0.0` accepts, so the bundle requires it; Reveal in Files
 // and the activation select the Files view through `layout.panel/v3`; it
 // provides `files/v1@1.3.0` (the per-directory `directories` read the Files
-// tree loads with) at version 1.7.3 and keeps `engines.doric`.
+// tree loads with) at version 1.7.4 (change 6: the Monaco rule in its sheet)
+// and keeps `engines.doric`.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -37,8 +38,8 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.7.3 and keeps engines.doric', () => {
-    assert.equal(manifest.version, '1.7.3');
+  test('provides files/v1@1.3.0 at version 1.7.4 and keeps engines.doric', () => {
+    assert.equal(manifest.version, '1.7.4');
     assert.ok(manifest.provides.includes('files/v1@1.3.0'));
     assert.equal(manifest.engines.doric, '^1.0.0');
   });

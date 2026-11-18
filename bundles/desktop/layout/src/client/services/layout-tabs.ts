@@ -7,7 +7,8 @@
 // (S15): a tab's own menu entries, and `retitle`. layout.tabs/v2 (bundle
 // isolation 4a): the owner lives in the tabs store and is named through
 // `setOwner`; the trigger's icon is an element (`iconTag`), a tab may ask for
-// an open bottom, and `close` and `retitle` can reach every owner.
+// an open bottom, and `close` and `retitle` can reach every owner. v1 is no
+// longer provided.
 
 import {
   ContractError,
@@ -18,11 +19,8 @@ import {
 
 import {
   type CurrentTab,
-  LayoutTabsV1,
   LayoutTabsV2,
-  type LegacyTabRequest,
   layoutTabsMethods,
-  legacyLayoutTabsMethods,
   type TabRequest,
 } from '../../contracts/index.js';
 import type { WorkspaceTab } from '../domain/workspace-tabs.js';
@@ -61,13 +59,13 @@ const tabOf = (tabOwner: string, id: string) =>
     .getState()
     .threads[tabOwner]?.items.find((tab) => tab.id === id);
 
-/** The operations v1 and v2 share, over the owner the tabs store names. */
+/** The tab operations, over the owner the tabs store names. */
 const operations = ({ ui }: LayoutTabsOptions) => {
   const dispose = (tab: WorkspaceTab) => {
     if (tab.kind === 'element') ui.dispose(tab.element);
   };
   return {
-    open: (input: TabRequest | LegacyTabRequest) =>
+    open: (input: TabRequest) =>
       settled(() => {
         const tabOwner = activeOwner();
         const tabs = workspaceTabsStore.getState();
@@ -83,15 +81,10 @@ const operations = ({ ui }: LayoutTabsOptions) => {
           title: input.title,
           element,
           ...(input.props === undefined ? {} : { props: input.props }),
-          ...('icon' in input && input.icon !== undefined
-            ? { icon: input.icon }
-            : {}),
-          ...('iconTag' in input && input.iconTag !== undefined
-            ? { iconTag: input.iconTag }
-            : {}),
-          ...('openBottom' in input && input.openBottom !== undefined
-            ? { openBottom: input.openBottom }
-            : {}),
+          ...(input.iconTag === undefined ? {} : { iconTag: input.iconTag }),
+          ...(input.openBottom === undefined
+            ? {}
+            : { openBottom: input.openBottom }),
           ...(input.ariaLabel === undefined
             ? {}
             : { ariaLabel: input.ariaLabel }),
@@ -185,34 +178,6 @@ export const createLayoutTabs = (options: LayoutTabsOptions) => {
       ...layoutTabsMethods.setOwner,
       execute: ({ owner }: { readonly owner?: string }) =>
         workspaceTabsStore.getState().setOwner(owner),
-    }),
-  });
-};
-
-/** Provides `layout.tabs/v1` over the same tabs and owner as v2. */
-export const createLegacyLayoutTabs = (options: LayoutTabsOptions) => {
-  const tabs = operations(options);
-  return defineService(LayoutTabsV1, {
-    open: defineMethod({ ...legacyLayoutTabsMethods.open, execute: tabs.open }),
-    close: defineMethod({
-      ...legacyLayoutTabsMethods.close,
-      execute: tabs.close,
-    }),
-    focus: defineMethod({
-      ...legacyLayoutTabsMethods.focus,
-      execute: tabs.focus,
-    }),
-    retitle: defineMethod({
-      ...legacyLayoutTabsMethods.retitle,
-      execute: tabs.retitle,
-    }),
-    current: defineMethod({
-      ...legacyLayoutTabsMethods.current,
-      execute: tabs.current,
-    }),
-    subscribe: defineMethod({
-      ...legacyLayoutTabsMethods.subscribe,
-      execute: tabs.subscribe,
     }),
   });
 };

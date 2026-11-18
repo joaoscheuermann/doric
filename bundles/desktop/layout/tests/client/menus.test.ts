@@ -1,7 +1,7 @@
 // The layout's ◆ menu entries and the viewer tab menu (§4.4 A1–A4, S15;
 // T-4.4.1 for A1–A4, T-4.4.9), as the reader meets them in the workspace:
 // - a viewer tab's context menu shows the opener's non-destructive entries
-//   (`layout.tabs/v1@1.2.0` `menu`), a separator, "Close tab", then the
+//   (`layout.tabs/v2` `menu`), a separator, "Close tab", then the
 //   opener's destructive entries behind a separator; a tab opened without
 //   `menu` shows only "Close tab"; an entry's `icon` leads it;
 // - A1 "Open in new tab" on a main Thread row ("Open in viewer" on a
@@ -199,8 +199,8 @@ const tabsService = async () => {
   const { layoutServices } = await import(
     '../../src/client/services/layout-services.js'
   );
-  const { LayoutTabsV1 } = await import('../../src/contracts/index.js');
-  return layoutServices().use(LayoutTabsV1);
+  const { LayoutTabsV2 } = await import('../../src/contracts/index.js');
+  return layoutServices().use(LayoutTabsV2);
 };
 
 describe('the viewer tab menu', () => {
@@ -301,8 +301,8 @@ describe('the viewer tab menu', () => {
       path: planPath,
       tabs: {
         [plan.id]: [
-          { id: 'file:a', title: 'a.ts', tag: 'file-view', icon: 'file' },
-          { id: 'file:b', title: 'b.ts', tag: 'file-view', icon: 'file' },
+          { id: 'file:a', title: 'a.ts', tag: 'file-view' },
+          { id: 'file:b', title: 'b.ts', tag: 'file-view' },
         ],
       },
     });

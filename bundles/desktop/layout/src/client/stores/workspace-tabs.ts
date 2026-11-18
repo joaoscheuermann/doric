@@ -15,7 +15,7 @@ type TabsState = {
   open(threadId: string, tab: WorkspaceTab): void;
   close(threadId: string, id: string): void;
   select(threadId: string, id: string): void;
-  /** Sets an element tab's title (`layout.tabs/v1@1.2.0` `retitle`). */
+  /** Sets an element tab's title (`layout.tabs/v2` `retitle`). */
   retitle(threadId: string, id: string, title: string): void;
   move(threadId: string, from: string, to: string): void;
   /**
@@ -90,7 +90,7 @@ export const workspaceTabsStore = createStore<TabsState>()((set, get) => ({
         [threadId]: retitleTab(state.threads[threadId] ?? emptyTabs, id, title),
       },
     })),
-  // Reselecting the selected tab (reopening it through `layout.tabs/v1`)
+  // Reselecting the selected tab (reopening it through `layout.tabs/v2`)
   // changes nothing, so it notifies no one.
   select: (threadId, id) =>
     set((state) =>

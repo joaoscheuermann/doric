@@ -1,5 +1,5 @@
 // The tab panel beside the conversation: every tab is another bundle's
-// element (`layout.tabs/v1` or `v2`) since WP-10N moved the file, diff and terminal
+// element (`layout.tabs/v2`) since WP-10N moved the file, diff and terminal
 // tabs to the files, git and terminal bundles.
 
 import { UiV1 } from 'bundle/contracts';
@@ -11,15 +11,10 @@ import {
 import { ElementHost } from 'desktop/ui/element-host';
 import { TabStrip } from 'desktop/ui/panels';
 import { TabsContent } from 'desktop/ui/tabs';
-import { FileDiffIcon, FileIcon, TerminalIcon, XIcon } from 'lucide-react';
+import { XIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 import { LayoutTabsV2, type TabMenuItem } from '../../../contracts/index.js';
-import {
-  isUntitled,
-  type ThreadKind,
-  threadKind,
-} from '../../domain/thread-kind.js';
 import type {
   WorkspaceTabs as TabsState,
   WorkspaceTab,
@@ -27,7 +22,6 @@ import type {
 import { layoutServices } from '../../services/layout-services.js';
 import { workspaceStore } from '../../stores/workspace.js';
 import { workspaceTabsStore } from '../../stores/workspace-tabs.js';
-import { ThreadKindIcon } from '../molecules/thread-mark.js';
 
 export function WorkspaceTabBar({
   state,
@@ -60,7 +54,7 @@ export function WorkspaceTabBar({
         tab.kind === 'element'
           ? [
               {
-                // Another bundle's tab (layout.tabs/v1): its title, and
+                // Another bundle's tab (layout.tabs/v2): its title, and
                 // from 1.1.0 the icon, aria label and tooltip it asked for.
                 id: tab.id,
                 label: tab.title,
@@ -96,7 +90,7 @@ const OpenerEntry = ({ item }: { readonly item: TabMenuItem }) => (
 
 /**
  * A viewer tab's context menu (S15, Figma `layout/ContextMenu` 29:5570): the
- * opener's non-destructive entries (`layout.tabs/v1@1.2.0` `menu`), a
+ * opener's non-destructive entries (`layout.tabs/v2` `menu`), a
  * separator, "Close tab" (which closes it as its close button does), then the
  * opener's destructive entries last, behind a separator. "Close tab" carries
  * an icon, so an entry without one is inset to align with the labels.
@@ -173,56 +167,19 @@ export function WorkspaceTabs({ state }: { readonly state: TabsState }) {
 }
 
 /**
- * The trigger icon of an element tab. A conversation tab wears the mark of the
- * Thread it shows — the bubble, the bubble with a plus or the bot, sized with
- * the label — read from the tree the window already holds, so the strip says
- * which Threads are agent Threads. A `layout.tabs/v2` tab with `iconTag`
- * wears the element `ui/v1` creates for that tag with the tab's props.
+ * The trigger icon of an element tab: the element `ui/v1` creates for the
+ * tab's `iconTag`, with the tab's props; without `iconTag`, none.
  */
-function tabIcon(tab: Extract<WorkspaceTab, { readonly kind: 'element' }>) {
-  if (tab.iconTag !== undefined)
-    return (
-      <ElementHost
-        ui={layoutServices().use(UiV1)}
-        tag={tab.iconTag}
-        {...(tab.props === undefined ? {} : { props: tab.props })}
-      />
-    );
-  switch (tab.icon) {
-    case 'file':
-      return <FileIcon />;
-    case 'file-diff':
-      return <FileDiffIcon />;
-    case 'terminal':
-      return <TerminalIcon />;
-    case 'thread': {
-      const thread = threadOfTab(tab);
-      const kind: ThreadKind =
-        thread === undefined ? 'main' : threadKind(thread);
-      return (
-        <ThreadKindIcon
-          kind={kind}
-          untitled={thread !== undefined && isUntitled(thread)}
-        />
-      );
-    }
-    default:
-      return null;
-  }
+function tabIcon(tab: WorkspaceTab) {
+  if (tab.iconTag === undefined) return null;
+  return (
+    <ElementHost
+      ui={layoutServices().use(UiV1)}
+      tag={tab.iconTag}
+      {...(tab.props === undefined ? {} : { props: tab.props })}
+    />
+  );
 }
-
-/** The Thread a conversation tab names, when the window's tree holds it. */
-const threadOfTab = (
-  tab: Extract<WorkspaceTab, { readonly kind: 'element' }>,
-) => {
-  const projectId = tab.props?.projectId;
-  const threadId = tab.props?.threadId;
-  if (typeof projectId !== 'string' || typeof threadId !== 'string')
-    return undefined;
-  return workspaceStore
-    .getState()
-    .tree.threadsByProject[projectId]?.find((thread) => thread.id === threadId);
-};
 
 /** Keeps another bundle's tab element mounted in a host of this panel. */
 function ElementTab({ element }: { readonly element: object }) {

@@ -191,7 +191,7 @@ test("opening a fetched child keeps the main conversation, reloads its Project's
     // chat's icon element and an open bottom, and no v1 icon.
     assert.equal(tab.iconTag, 'chat-thread-tab-icon');
     assert.equal(tab.openBottom, true);
-    assert.equal(tab.icon, undefined);
+    assert.equal('icon' in tab, false);
     await navigate(child, true);
     assert.equal(workspaceTabsStore.getState().threads.root.items.length, 1);
     assert.equal(workspaceTabsStore.getState().threads.root.items[0], tab);

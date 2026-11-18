@@ -130,14 +130,11 @@ void test('the runtime activates after its providers and before the bundles that
     candidate(provider('default', ['executor/v1@1.4.0'])),
     candidate(provider('docker', ['sandbox/v1@1.0.0'])),
     // The window surfaces the stage-10 client parts of files and git require:
-    // the new ids files moves to in bundle isolation 4(a), beside the old ones
-    // until that step removes them.
+    // the ids they use since bundle isolation 4(a), which removed the old ones.
     candidate(
       provider('desktop-surfaces', [
         'layout.workspace/v1@1.1.0',
-        'layout.panel/v2@2.0.0',
         'layout.panel/v3@3.0.0',
-        'layout.tabs/v1@1.2.0',
         'layout.tabs/v2@2.0.0',
         'settings.config/v1@1.0.0',
       ]),

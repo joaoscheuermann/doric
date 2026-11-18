@@ -1,8 +1,9 @@
-// layout.tabs/v1 as another bundle calls it: tabs belong to the active owner
+// layout.tabs/v2 as another bundle calls it: tabs belong to the active owner
 // (the route's Thread, else the selected Project), an open id only focuses,
 // closing disposes the element, and without an owner opening is refused.
-// layout.tabs/v2 (bundle isolation 4a, T4.3, T4.4): the owner is named through
-// `setOwner`, and `close` and `retitle` can reach every owner.
+// Bundle isolation 4a (T4.3, T4.4): the owner is named through `setOwner`,
+// and `close` and `retitle` can reach every owner. Change 6: the layout's
+// contracts no longer state `layout.tabs/v1` or `layout.panel/v2`.
 
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
@@ -12,12 +13,9 @@ import { createTestServices } from 'bundle/testing';
 
 import { tabOwnerOf } from '../src/client/domain/route-selection.js';
 import { emptyTabs } from '../src/client/domain/workspace-tabs.js';
-import {
-  createLayoutTabs,
-  createLegacyLayoutTabs,
-} from '../src/client/services/layout-tabs.js';
+import { createLayoutTabs } from '../src/client/services/layout-tabs.js';
 import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
-import { LayoutTabsV1, LayoutTabsV2 } from '../src/contracts/index.js';
+import * as contracts from '../src/contracts/index.js';
 
 class FakeUi {
   readonly created: { tag: string; props?: unknown }[] = [];
@@ -39,12 +37,13 @@ const setup = (initialOwner: string | undefined) => {
   workspaceTabsStore.getState().setOwner(initialOwner);
   const harness = createTestServices({
     bundle: { id: 'probe' },
-    provide: [createLegacyLayoutTabs({ ui }), createLayoutTabs({ ui })],
+    provide: [createLayoutTabs({ ui })],
   });
+  const v2 = harness.services.use(contracts.LayoutTabsV2);
   return {
     ui,
-    tabs: harness.services.use(LayoutTabsV1),
-    v2: harness.services.use(LayoutTabsV2),
+    tabs: v2,
+    v2,
     setOwner: (next: string | undefined) => {
       workspaceTabsStore.getState().setOwner(next);
     },
@@ -64,7 +63,7 @@ beforeEach(() => {
   workspaceTabsStore.setState({ threads: {} });
 });
 
-describe('layout.tabs/v1', () => {
+describe('layout.tabs/v2 open, focus and close', () => {
   test('opens an element tab in the owner tabs and selects it', async () => {
     const { ui, tabs, tabsOf, dispose } = setup('thread-1');
 
@@ -208,19 +207,6 @@ describe('layout.tabs/v2', () => {
     await dispose();
   });
 
-  test('a tab opened through v1 is answered and closed through v2 (T4.3)', async () => {
-    const { ui, tabs, v2, tabsOf, dispose } = setup(undefined);
-    v2.setOwner({ owner: 'a' });
-
-    await tabs.open({ id: 'x', title: 'X', tag: 'x-view' });
-
-    assert.equal(v2.current()?.id, 'x');
-    await v2.close({ id: 'x' });
-    assert.deepEqual(tabsOf('a').items, []);
-    assert.deepEqual(ui.disposed, [ui.created[0]]);
-    await dispose();
-  });
-
   test('setting the current owner again notifies no subscriber (T4.3)', async () => {
     const { v2, dispose } = setup(undefined);
     v2.setOwner({ owner: 'a' });
@@ -319,6 +305,35 @@ describe('layout.tabs/v2 across owners (T4.4)', () => {
     );
     assert.deepEqual(ui.disposed, [ui.created[1]]);
     await dispose();
+  });
+});
+
+describe('the layout contracts (bundle isolation 4a, change 6)', () => {
+  test('state neither layout.tabs/v1 nor layout.panel/v2', () => {
+    const removed = [
+      'LayoutTabsV1',
+      'LegacyLayoutTabs',
+      'legacyTabRequestSchema',
+      'legacyLayoutTabsMethods',
+      'LayoutPanelV2',
+    ];
+
+    assert.deepEqual(
+      removed.filter((name) => name in contracts),
+      [],
+      'The layout contracts still export the old ids.',
+    );
+    assert.deepEqual(
+      Object.values(contracts)
+        .map((value) =>
+          typeof value === 'object' && value !== null && 'id' in value
+            ? (value as { id: unknown }).id
+            : undefined,
+        )
+        .filter((id) => id === 'layout.tabs/v1' || id === 'layout.panel/v2'),
+      [],
+      'A contract reference still names layout.tabs/v1 or layout.panel/v2.',
+    );
   });
 });
 

@@ -55,6 +55,8 @@ const workspace: LayoutFixture = {
   path: threadRoute(planThread),
   projectTabs: [checkout, docs, billing],
   tabs: checkoutTabs,
+  // The files bundle selects its view through `layout.panel/v3` as it activates.
+  panel: { active: 'files' },
 };
 
 const dashboard: LayoutFixture = { ...workspace, path: '/projects' };

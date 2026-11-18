@@ -59,9 +59,11 @@ const threadTab = (id: string, threadId: string): WorkspaceTab => ({
 });
 const fileTab: WorkspaceTab = {
   id: 'file',
-  kind: 'file',
-  path: 'README.md',
-  projectId,
+  kind: 'element',
+  tag: 'files-file-view',
+  title: 'README.md',
+  element: {},
+  props: { projectId, path: 'README.md' },
 };
 const otherElementTab: WorkspaceTab = {
   id: 'other',

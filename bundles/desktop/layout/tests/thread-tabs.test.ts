@@ -45,7 +45,7 @@ const file: WorkspaceTab = {
   kind: 'element',
   id: 'file:index',
   tag: 'files-viewer',
-  icon: 'file',
+  iconTag: 'files-file-icon',
   title: 'index.ts',
   element: {},
 };

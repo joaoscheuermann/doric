@@ -23,6 +23,8 @@ const workspace: LayoutFixture = {
   projectTabs: [checkout, docs, billing],
   tabs: checkoutTabs,
   terminalRows: { [formThread.id]: 1 },
+  // The files bundle selects its view through `layout.panel/v3` as it activates.
+  panel: { active: 'files' },
 };
 
 const fixtures = {

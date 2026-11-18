@@ -38,7 +38,6 @@ export interface TabSeed {
   readonly id: string;
   readonly title: string;
   readonly tag: string;
-  readonly icon?: 'file' | 'file-diff' | 'terminal' | 'thread';
   /** `layout.tabs/v2`: the element drawn as the trigger's icon. */
   readonly iconTag?: string;
   /** `layout.tabs/v2`: the viewer card draws no bottom padding under it. */
@@ -49,7 +48,7 @@ export interface TabSeed {
 export interface LayoutFixture extends HostOptions {
   /** Open tabs by owner (a Thread id or `project:<id>`); the last is selected. */
   readonly tabs?: Readonly<Record<string, readonly TabSeed[]>>;
-  /** The Project panel's selected view: Files unless a story says otherwise. */
+  /** The Project panel's selected view; absent, none, as `layout.panel/v3` starts. */
   readonly panel?: { readonly active?: string };
   /** Whether an item asked for the `layout.main.bottom` split. */
   readonly bottom?: boolean;
@@ -95,7 +94,6 @@ const tabsOf = (
           title: seed.title,
           element: placeholderElement(seed.tag, seed.props, seed.title),
           ...(seed.props === undefined ? {} : { props: seed.props }),
-          ...(seed.icon === undefined ? {} : { icon: seed.icon }),
           ...(seed.iconTag === undefined ? {} : { iconTag: seed.iconTag }),
           ...(seed.openBottom === undefined
             ? {}
@@ -181,7 +179,7 @@ export const bindLayout = (
     busy: (threadId) => busySet.has(threadId),
     subscribe: () => ({ dispose: () => undefined }),
   });
-  panelStore.setState({ active: fixture.panel?.active ?? 'files' });
+  panelStore.setState({ active: fixture.panel?.active });
   if (fixture.bottom) bottomStore.getState().set('terminals', true);
 
   const unbind = () => {

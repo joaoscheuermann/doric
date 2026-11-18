@@ -1,4 +1,4 @@
-// layout.tabs/v1@1.2.0 (S15, T-4.4.7 layout part, T-4.4.9): a tab carries the
+// layout.tabs/v2 (S15, T-4.4.7 layout part, T-4.4.9): a tab carries the
 // menu entries its opener states, and `retitle` changes an open tab's title,
 // since `open` with an open id only selects it.
 
@@ -11,9 +11,9 @@ import { createTestServices } from 'bundle/testing';
 import { createElement, type ReactElement } from 'react';
 
 import { emptyTabs } from '../src/client/domain/workspace-tabs.js';
-import { createLegacyLayoutTabs } from '../src/client/services/layout-tabs.js';
+import { createLayoutTabs } from '../src/client/services/layout-tabs.js';
 import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
-import { LayoutTabsV1 } from '../src/contracts/index.js';
+import { LayoutTabsV2 } from '../src/contracts/index.js';
 
 const ui = {
   create: (tag: string): object => ({ tag }),
@@ -24,10 +24,10 @@ const setup = (owner: string | undefined = 'thread-1') => {
   workspaceTabsStore.getState().setOwner(owner);
   const harness = createTestServices({
     bundle: { id: 'probe' },
-    provide: [createLegacyLayoutTabs({ ui })],
+    provide: [createLayoutTabs({ ui })],
   });
   return {
-    tabs: harness.services.use(LayoutTabsV1),
+    tabs: harness.services.use(LayoutTabsV2),
     tabOf: (key: string, id: string) =>
       (workspaceTabsStore.getState().threads[key] ?? emptyTabs).items.find(
         (item) => item.id === id,
@@ -46,7 +46,7 @@ beforeEach(() => {
   workspaceTabsStore.setState({ threads: {} });
 });
 
-describe('layout.tabs/v1@1.2.0 menu', () => {
+describe('layout.tabs/v2 menu', () => {
   test('a tab keeps the menu entries it was opened with, in order', async () => {
     const { tabs, tabOf, dispose } = setup();
     const ran: string[] = [];
@@ -153,7 +153,7 @@ describe('layout.tabs/v1@1.2.0 menu', () => {
   }
 });
 
-describe('layout.tabs/v1@1.2.0 retitle', () => {
+describe('layout.tabs/v2 retitle', () => {
   test('changes the title of an open tab of the active owner', async () => {
     const { tabs, tabOf, dispose } = setup();
     await tabs.open({ id: 'terminal:1', title: 'npm test', tag: 'x-term' });
@@ -213,7 +213,7 @@ describe('layout.tabs/v1@1.2.0 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v1@1.2.0 and layout.tabs/v2@2.0.0, layout.panel/v2@2.0.0 and layout.panel/v3@3.0.0 (not v1), layout.conversation/v1@1.0.0, layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.3.0, requires neither runtime/v1 nor runtime.threads/v1, and takes runtime.records/v1 as optional (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive, bundle isolation AC3.1, S12)', () => {
+  test('provides layout.tabs/v2@2.0.0 and layout.panel/v3@3.0.0 (neither layout.tabs/v1 nor layout.panel/v1 or v2), layout.conversation/v1@1.0.0, layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 4.0.0, requires neither runtime/v1 nor runtime.threads/v1, and takes runtime.records/v1 as optional (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive, bundle isolation AC3.1, S12, step 4(a) change 6)', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
     ) as {
@@ -223,7 +223,7 @@ describe('the layout manifest', () => {
       optional: string[];
     };
 
-    assert.equal(manifest.version, '3.3.0');
+    assert.equal(manifest.version, '4.0.0');
     assert.ok(
       !manifest.requires.some(
         (entry) =>
@@ -241,10 +241,16 @@ describe('the layout manifest', () => {
       !manifest.provides.some((entry) => entry.startsWith('layout.stack/v1@')),
       'The layout still provides layout.stack/v1.',
     );
-    assert.ok(manifest.provides.includes('layout.tabs/v1@1.2.0'));
+    assert.ok(
+      !manifest.provides.some((entry) => entry.startsWith('layout.tabs/v1@')),
+      'The layout still provides layout.tabs/v1.',
+    );
     assert.ok(manifest.provides.includes('layout.sidebar/v1@1.1.0'));
     assert.ok(!manifest.provides.includes('layout.sidebar/v1@1.0.0'));
-    assert.ok(manifest.provides.includes('layout.panel/v2@2.0.0'));
+    assert.ok(
+      !manifest.provides.some((entry) => entry.startsWith('layout.panel/v2@')),
+      'The layout still provides layout.panel/v2.',
+    );
     assert.ok(!manifest.provides.includes('layout.panel/v1@1.0.0'));
     assert.ok(manifest.provides.includes('layout.tabs/v2@2.0.0'));
     assert.ok(manifest.provides.includes('layout.panel/v3@3.0.0'));

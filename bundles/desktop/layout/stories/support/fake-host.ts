@@ -4,8 +4,7 @@
 // `runtime/testing`: they can be created, renamed, colored and deleted; a read
 // can be held pending or made to fail, which is how the loading and error
 // states are drawn. The
-// services the layout itself provides (`layout.tabs/v1`, `layout.tabs/v2` and
-// the rest) are kept and answered in process, so a child Thread still opens
+// services the layout itself provides (`layout.tabs/v2` and the rest) are kept and answered in process, so a child Thread still opens
 // its tab.
 
 import type {
@@ -15,6 +14,7 @@ import type {
   Navigation,
   ProviderInfo,
 } from 'bundle/contracts';
+import { FileDiffIcon, FileIcon, type LucideIcon } from 'lucide-react';
 import { type ComponentProps, createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -152,6 +152,22 @@ const threadTabIconElement = (thread: Thread | undefined): HTMLElement => {
   return element;
 };
 
+/**
+ * The icon elements `files` and `git` define (`files-file-icon`,
+ * `git-file-diff-icon`), as the running app draws them: a 16 px glyph.
+ */
+const glyphIcons: Readonly<Record<string, LucideIcon>> = {
+  'files-file-icon': FileIcon,
+  'git-file-diff-icon': FileDiffIcon,
+};
+
+const glyphElement = (icon: LucideIcon): HTMLElement => {
+  const element = document.createElement('span');
+  element.style.display = 'contents';
+  createRoot(element).render(createElement(icon));
+  return element;
+};
+
 /** The region items the running app adds, by the bundles that add them. */
 export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
   'layout.panel': [
@@ -160,7 +176,7 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
       tag: 'files-tree',
       order: 100,
       owner: 'files',
-      props: { label: 'Files', icon: 'files' },
+      props: { label: 'Files', iconTag: 'files-file-icon' },
     },
     {
       id: 'changes',
@@ -169,7 +185,7 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
       owner: 'git',
       props: {
         label: 'Changes',
-        icon: 'file-diff',
+        iconTag: 'git-file-diff-icon',
         badgeTag: 'git-changes-badge',
       },
     },
@@ -417,6 +433,8 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
           return threadTabIconElement(
             options.threads?.find((thread) => thread.id === props?.threadId),
           );
+        const glyph = glyphIcons[tag];
+        if (glyph !== undefined) return glyphElement(glyph);
         const threadId = props?.['thread-id'];
         return tag === 'terminal-rows' && typeof threadId === 'string'
           ? terminalRowsElement(

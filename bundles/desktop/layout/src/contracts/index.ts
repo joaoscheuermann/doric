@@ -30,78 +30,11 @@ export interface TabMenuItem {
   readonly run: () => void;
 }
 
-/** The icons a `layout.tabs/v1` trigger may carry (1.1.0). Deleted in the step's sixth change. */
-export type TabIcon = 'file' | 'file-diff' | 'terminal' | 'thread';
-
 /** The selected tab of the active owner (1.1.0). */
 export interface CurrentTab {
   readonly id: string;
   /** The props an element tab was opened with. */
   readonly props?: Readonly<Record<string, unknown>>;
-}
-
-/** A tab request of `layout.tabs/v1` 1.2.0; kept until the step's sixth change. */
-export interface LegacyTabRequest {
-  /** Unique among the tabs of one owner; opening an open id focuses it. */
-  readonly id: string;
-  readonly title: string;
-  /** The custom element `ui/v1` creates for the tab's content. */
-  readonly tag: string;
-  readonly props?: Readonly<Record<string, unknown>>;
-  /** 1.1.0: the trigger's icon; absent, the trigger shows only its title. */
-  readonly icon?: TabIcon;
-  /** 1.1.0: the trigger's accessible name; defaults to `title`. */
-  readonly ariaLabel?: string;
-  /** 1.1.0: the trigger's tooltip (`title` attribute); defaults to `title`. */
-  readonly tooltip?: string;
-  /**
-   * 1.2.0: the entries the tab's context menu shows besides "Close tab". The
-   * non-destructive ones come first, in order, then a separator and "Close
-   * tab"; the destructive ones come last, in order, behind a separator. The
-   * tab keeps them for its life: they are fixed when it opens.
-   */
-  readonly menu?: readonly TabMenuItem[];
-}
-
-/**
- * `layout.tabs/v1` 1.2.0, unchanged in meaning; kept until the step's sixth
- * change. The tabs of the owner `layout.tabs/v2` `setOwner` last named: the
- * layout names the active route's Thread, else `project:<selected Project>`.
- */
-export interface LegacyLayoutTabs {
-  /**
-   * Opens the tab, or only focuses it when its id is open. With no Thread
-   * and no Project selected it fails with
-   * `ContractError('unavailable', 'No thread or project is selected.')`.
-   */
-  open(input: LegacyTabRequest, call?: CallArg): Promise<void>;
-  /**
-   * Closes the tab and disposes its element (`ui.dispose`). 1.1.0: with
-   * `threadId` it closes the tab of that owner, without needing a selection.
-   */
-  close(
-    input: { readonly id: string; readonly threadId?: string },
-    call?: CallArg,
-  ): Promise<void>;
-  focus(input: { readonly id: string }, call?: CallArg): Promise<void>;
-  /**
-   * 1.2.0: sets the title of the tab with that id among the tabs of the owner
-   * `threadId` names, else the active owner (as `close` resolves it). Without
-   * such a tab it does nothing. `open` with an open id only selects the tab, so
-   * this is how a tab's title follows its content.
-   */
-  retitle(
-    input: {
-      readonly id: string;
-      readonly title: string;
-      readonly threadId?: string;
-    },
-    call?: CallArg,
-  ): Promise<void>;
-  /** 1.1.0: the selected tab of the active owner, if any (local). */
-  current(call?: CallArg): CurrentTab | undefined;
-  /** 1.1.0: called after every change of the tabs or of the owner (local). */
-  subscribe(listener: () => void, call?: CallArg): Disposable;
 }
 
 const tabMenuSchema = z
@@ -122,33 +55,7 @@ const tabMenuSchema = z
   )
   .optional();
 
-/** The `layout.tabs/v1` request, with its `icon` enum. */
-export const legacyTabRequestSchema = z
-  .object({
-    id: z.string().min(1),
-    title: z.string(),
-    tag: z.string().min(1),
-    props: z.record(z.string(), z.unknown()).optional(),
-    icon: z.enum(['file', 'file-diff', 'terminal', 'thread']).optional(),
-    ariaLabel: z.string().optional(),
-    tooltip: z.string().optional(),
-    menu: tabMenuSchema,
-  })
-  .strict();
-
-const legacyTabRetitleSchema = z
-  .object({
-    id: z.string().min(1),
-    title: z.string(),
-    threadId: z.string().optional(),
-  })
-  .strict();
-
 const tabIdSchema = z.object({ id: z.string().min(1) }).strict();
-
-const legacyTabCloseSchema = z
-  .object({ id: z.string().min(1), threadId: z.string().min(1).optional() })
-  .strict();
 
 const currentTabSchema = z.custom<CurrentTab | undefined>(
   (value) =>
@@ -157,18 +64,6 @@ const currentTabSchema = z.custom<CurrentTab | undefined>(
 );
 
 const listenerSchema = functionSchema<() => void>();
-
-/** The methods of `layout.tabs/v1`, with `legacyTabRequestSchema` as the `open` input. */
-export const legacyLayoutTabsMethods = {
-  open: { input: legacyTabRequestSchema, output: z.void() },
-  close: { input: legacyTabCloseSchema, output: z.void() },
-  focus: { input: tabIdSchema, output: z.void() },
-  retitle: { input: legacyTabRetitleSchema, output: z.void() },
-  current: { input: noInput, output: currentTabSchema },
-  subscribe: { input: listenerSchema, output: disposableSchema },
-} as const;
-
-export const LayoutTabsV1 = ref<LegacyLayoutTabs>('layout.tabs/v1');
 
 /** A tab another bundle asks the shell to show (`layout.tabs/v2` 2.0.0). */
 export interface TabRequest {
@@ -186,7 +81,7 @@ export interface TabRequest {
   readonly ariaLabel?: string;
   /** The trigger's tooltip (`title` attribute); defaults to `title`. */
   readonly tooltip?: string;
-  /** The entries the tab's context menu shows besides "Close tab", as in v1. */
+  /** The entries the tab's context menu shows besides "Close tab". */
   readonly menu?: readonly TabMenuItem[];
 }
 
@@ -227,7 +122,7 @@ export interface LayoutTabs {
   setOwner(input: { readonly owner?: string }, call?: CallArg): void;
 }
 
-/** The `layout.tabs/v2` request. Strict: v1's `icon` fails validation. */
+/** The `layout.tabs/v2` request. Strict: an unknown key, such as `icon`, fails validation. */
 export const tabRequestSchema = z
   .object({
     id: z.string().min(1),
@@ -343,7 +238,7 @@ export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
 /**
  * The Project panel beside the conversation (2.0.0, ui-redesign S36). Its
  * views are the `layout.panel` region items `{ id, tag, order, props: { label,
- * icon, badgeTag? } }`, drawn as the icon-only "Project views" tab strip; the
+ * iconTag?, badgeTag? } }`, drawn as the icon-only "Project views" tab strip; the
  * selected item's element is mounted. The panel is always shown: it has no
  * open state, and nothing about it is persisted.
  */
@@ -360,8 +255,6 @@ export interface LayoutPanel {
 /** The props of a `layout.panel` region item. */
 export interface PanelItemProps {
   readonly label: string;
-  /** Until the step's sixth change: `files`, `file-diff`, `file` or `terminal`, drawn when `iconTag` is absent. */
-  readonly icon?: string;
   /** An element drawn as the view's icon. */
   readonly iconTag?: string;
   /** An element drawn inside the view's tab trigger (a badge). */
@@ -372,9 +265,7 @@ export const layoutPanelMethods = {
   select: { input: z.string().min(1), output: z.void() },
 } as const;
 
-/** `layout.panel/v2` (2.0.0); provided until the step's sixth change. */
-export const LayoutPanelV2 = ref<LayoutPanel>('layout.panel/v2');
-/** `layout.panel/v3` (3.0.0): as v2, except that from the step's sixth change the panel starts with no view selected. */
+/** `layout.panel/v3` (3.0.0): the panel starts with no view selected; `select` names the first. */
 export const LayoutPanelV3 = ref<LayoutPanel>('layout.panel/v3');
 
 /** `layout.conversation/v1` (1.0.0). */
