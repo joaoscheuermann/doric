@@ -52,11 +52,13 @@ describe('the platform version', () => {
 });
 
 describe('the platform each bundle asks for', () => {
-  test('layout asks for ^1.8.0, chat and settings for ^1.7.0 and every other bundle for ^1.0.0', () => {
+  test('layout, account and workspace ask for ^1.8.0, chat and settings for ^1.7.0 and every other bundle for ^1.0.0', () => {
     const asked = new Map([
       ['desktop/chat', '^1.7.0'],
       ['desktop/settings', '^1.7.0'],
       ['desktop/layout', '^1.8.0'],
+      ['desktop/account', '^1.8.0'],
+      ['desktop/workspace', '^1.8.0'],
     ]);
     const found = manifests();
     for (const name of asked.keys()) {
