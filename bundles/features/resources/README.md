@@ -35,8 +35,8 @@ The client part defines `<resources-monitor>`. Its activation adds it to the
 slot name is the literal `'account.status' satisfies typeof ACCOUNT_STATUS`,
 with an `import type` of `account/contracts` (resources 1.1.2). Without
 `account` the badge is not drawn, and nothing reports it. The selected Project
-comes from `layout.workspace/v1`, which the `workspace` bundle provides since
-bundle isolation step 4(c) (resources 1.1.3); while none is selected, only the
+comes from `workspace.selection/v1` and the connection from
+`runtime.records/v1` (resources 1.1.4); while none is selected, only the
 machine reading is shown.
 
 ## Development

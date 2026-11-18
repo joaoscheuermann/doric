@@ -26,8 +26,8 @@ export interface ConnectionBadgeProps {
   /** The Project whose sandbox is read. Without one, only the machine is polled. */
   readonly projectId?: string;
   /**
-   * `layout.workspace/v1.connected()`. Callers pass `false` when that contract
-   * has no provider (G10).
+   * Whether `runtime.records/v1.connection()` is `'connected'`. Callers pass
+   * `false` when that contract has no provider (G10).
    */
   readonly connected: boolean;
 }

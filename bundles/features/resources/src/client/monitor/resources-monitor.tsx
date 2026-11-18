@@ -1,35 +1,37 @@
 import type { Services } from 'bundle/contracts';
 import { useMemo } from 'react';
+import { RuntimeRecordsV1 } from 'runtime/contracts';
 
 import { ResourcesV1 } from '../../contracts/index.js';
-import { LayoutWorkspaceV1 } from '../api/peers.js';
+import { WorkspaceSelectionV1 } from '../api/peers.js';
 import { createResourcesReads } from '../api/resources.js';
 import { useService, useSubscribed } from '../hooks/use-service.js';
 import { ConnectionBadge } from './connection-badge.js';
 
 /**
  * `<resources-monitor>`: the connection badge for the Project the workspace
- * shows. It reads `layout.workspace/v1` for the selection (`selection()`) and
- * the connection (`connected()`) through `useSubscribed`, so both follow
- * `subscribe`.
+ * shows. It reads the selection from `workspace.selection/v1` (`current()`)
+ * and the connection from `runtime.records/v1` (`connection()`) through
+ * `useSubscribed`, so each follows its contract's `subscribe`.
  *
- * Without a `layout.workspace/v1` provider, `useService` answers `undefined`.
- * The badge then shows Disconnected and polls the machine only (G10).
+ * Without a `runtime.records/v1` provider the badge shows Disconnected; without
+ * a `workspace.selection/v1` provider it polls the machine only (G10).
  */
 export function ResourcesMonitorView({
   services,
 }: {
   readonly services: Services;
 }) {
-  const workspace = useService(services, LayoutWorkspaceV1);
+  const selection = useService(services, WorkspaceSelectionV1);
   const projectId = useSubscribed(
-    workspace,
-    () => workspace?.selection().project?.id,
+    selection,
+    () => selection?.current().projectId,
     undefined,
   );
+  const records = useService(services, RuntimeRecordsV1);
   const connected = useSubscribed(
-    workspace,
-    () => workspace?.connected() ?? false,
+    records,
+    () => records?.connection() === 'connected',
     false,
   );
   const reads = useMemo(

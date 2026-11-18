@@ -1,7 +1,7 @@
 import { ResourcesMonitorView } from '../../src/client/monitor/resources-monitor.js';
 import { WithQueryClient } from '../support/query.js';
 import { readyProject, saturatedContainer } from '../support/resources.js';
-import { fixtureWorkspace, monitorServices } from '../support/workspace.js';
+import { fixtureSelection, monitorServices } from '../support/workspace.js';
 
 export default {
   title: 'Resources/Monitor/Resources monitor',
@@ -44,7 +44,7 @@ export const DashboardWithoutProject = {
   render: () => (
     <WithQueryClient>
       <ResourcesMonitorView
-        services={monitorServices({ workspace: fixtureWorkspace(undefined) })}
+        services={monitorServices({ selection: fixtureSelection(undefined) })}
       />
     </WithQueryClient>
   ),
@@ -53,7 +53,9 @@ export const DashboardWithoutProject = {
 export const WithoutLayout = {
   render: () => (
     <WithQueryClient>
-      <ResourcesMonitorView services={monitorServices({ workspace: null })} />
+      <ResourcesMonitorView
+        services={monitorServices({ selection: null, records: null })}
+      />
     </WithQueryClient>
   ),
 };
