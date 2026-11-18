@@ -1,6 +1,7 @@
 // The git bundle's client part (stage 10, §3.8): `git.changes/v1`, the
-// `git.open-comparison/v1` command and the five elements — the Changes panel
-// view and its trigger badge, the comparison tab, the footer's working
+// `git.open-comparison/v1` command and the six elements — the Changes panel
+// view and its trigger badge, the comparison tab, the diff icon
+// (`git-file-diff-icon`) the layout draws for both, the footer's working
 // directory and branch, and the Versioning settings section. All of it is
 // bound to the activation services, never to an element's (D9-17).
 //
@@ -26,7 +27,11 @@ import {
 import { gitApiOf } from './api/git-api.js';
 import { type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
 import { createGitChanges, createGitStore } from './changes/store.js';
-import { FILE_DIFF_TAG, openComparisonCommand } from './commands.js';
+import {
+  FILE_DIFF_ICON_TAG,
+  FILE_DIFF_TAG,
+  openComparisonCommand,
+} from './commands.js';
 import { defineGitElements } from './elements.js';
 import { setGitClient } from './state.js';
 
@@ -49,7 +54,7 @@ export const gitRegions: readonly {
       order: 200,
       props: {
         label: 'Changes',
-        icon: 'file-diff',
+        iconTag: FILE_DIFF_ICON_TAG,
         badgeTag: 'git-changes-badge',
       },
     },
@@ -115,6 +120,7 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define('git-changes', elements.changes),
     ui.define('git-changes-badge', elements.badge),
     ui.define(FILE_DIFF_TAG, elements.fileDiff),
+    ui.define(FILE_DIFF_ICON_TAG, elements.fileDiffIcon),
     ui.define('git-workspace-cwd', elements.cwd),
     ui.define(VERSIONING_TAG, elements.versioning),
   ];

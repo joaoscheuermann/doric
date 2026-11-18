@@ -84,13 +84,14 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   working directory, shared with the bundles that decorate from it, such as
   the files tree.
 - `git.open-comparison/v1` opens one file's comparison as a workspace tab
-  (`git-file-diff`). The tab's context menu holds "Open file", which runs
-  `files.open-file/v1` as the diff toolbar's button does (`layout.tabs/v1@1.2.0`
-  `menu`, so the bundle requires `layout.tabs/v1@^1.2.0`). The entry is fixed
+  (`git-file-diff`), whose trigger draws the `git-file-diff-icon` element
+  (`iconTag`). The tab's context menu holds "Open file", which runs
+  `files.open-file/v1` as the diff toolbar's button does (`layout.tabs/v2@2.0.0`
+  `menu`, so the bundle requires `layout.tabs/v2@^2.0.0`). The entry is fixed
   when the tab opens, so a deleted file's tab has it too, and the file tab then
   says the file cannot be shown.
-- The Changes view (`git-changes`, with its `git-changes-badge`) is a
-  `layout.panel` item, the working directory and branch (`git-workspace-cwd`)
+- The Changes view (`git-changes`, with its `git-changes-badge` and the
+  `git-file-diff-icon` icon) is a `layout.panel` item, the working directory and branch (`git-workspace-cwd`)
   a `layout.panel.footer` item (the change counts stay in the Changes tab's
   badge), and the Versioning section (`/settings/git`) chooses
   which stored credentials the agent commits and pushes with.

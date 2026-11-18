@@ -124,7 +124,7 @@ export const windowServices = (fixture: WindowFixture = {}): Services => {
       selection: () => selection,
       subscribe: still,
     },
-    'layout.tabs/v1': {
+    'layout.tabs/v2': {
       current: () =>
         comparing === undefined || selectedProject === undefined
           ? undefined

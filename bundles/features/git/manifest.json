@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "git",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -20,7 +20,7 @@
     "navigation/v1@^1.0.0",
     "commands/v1@^1.0.0",
     "layout.workspace/v1@^1.1.0",
-    "layout.tabs/v1@^1.2.0",
+    "layout.tabs/v2@^2.0.0",
     "settings.config/v1@^1.0.0",
     "secrets/v1@^1.0.0"
   ],

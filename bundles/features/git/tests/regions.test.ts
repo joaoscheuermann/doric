@@ -23,3 +23,17 @@ const regionsOf = (id: string): string[] =>
 test('the working directory item is in the Files footer, not the conversation footer', () => {
   assert.deepEqual(regionsOf('git-cwd'), ['layout.panel.footer']);
 });
+
+// Bundle isolation 4(a) change 4: the Changes view's icon is the element
+// `git-file-diff-icon` git defines (`iconTag`), no longer the `icon` kind the
+// layout drew; its badge stays.
+test('the Changes view is drawn with the git-file-diff-icon element', () => {
+  const changes = gitRegions.find(
+    (entry) => entry.region === 'layout.panel' && entry.item.id === 'changes',
+  );
+  assert.deepEqual(changes?.item.props, {
+    label: 'Changes',
+    iconTag: 'git-file-diff-icon',
+    badgeTag: 'git-changes-badge',
+  });
+});

@@ -2,13 +2,16 @@
 // activation calls, so importing this module touches no DOM global [D10-7].
 // Each renders in light DOM with `display: contents` over the git bundle's
 // one query client and its own tooltip provider; none mounts a toaster,
-// since the window's single toaster belongs to the layout.
+// since the window's single toaster belongs to the layout. The diff icon
+// (bundle isolation 4a) is the mark the layout draws on a diff tab and on the
+// Changes view's selector.
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
 import { defineReactElement } from 'desktop/ui/react-element';
 import { SidebarScope } from 'desktop/ui/sidebar';
 import { TooltipProvider } from 'desktop/ui/tooltip';
+import { FileDiffIcon } from 'lucide-react';
 import { type ReactNode, StrictMode } from 'react';
 
 import { ChangesBadge } from './changes/changes-badge.js';
@@ -76,6 +79,10 @@ export const defineGitElements = (store: GitStore) => {
       render: ({ services }: { readonly services: Services }) => (
         <VersioningView services={services} />
       ),
+    }),
+    fileDiffIcon: defineReactElement<object>({
+      props: [],
+      render: () => <FileDiffIcon />,
     }),
   };
 };
