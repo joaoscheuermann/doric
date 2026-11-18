@@ -37,8 +37,8 @@ export interface TerminalStoreOptions {
     readonly threadId: string;
   }) => void;
   /**
-   * `layout.tabs/v1.retitle` of the tab `terminal:<id>` of the terminal's
-   * Thread (1.2.0); nothing happens without such a tab.
+   * `layout.tabs/v2.retitle` of the tab `terminal:<id>` of the terminal's
+   * Thread; nothing happens without such a tab.
    */
   readonly retitleTab: (input: {
     readonly id: string;

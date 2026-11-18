@@ -14,7 +14,7 @@ import type { Terminal } from './domain/terminals.js';
 import { useService, useSubscribed } from './hooks.js';
 import type { TerminalWatchApi } from './output-watch.js';
 import {
-  LayoutTabsV1,
+  LayoutTabsV2,
   type LayoutWorkspace,
   LayoutWorkspaceV1,
   type ThreadRecord,
@@ -91,7 +91,7 @@ export const defineTerminalElements = (client: TerminalClient) => {
     readonly 'thread-id'?: string;
   }) {
     const workspace = useService(services, LayoutWorkspaceV1);
-    const tabs = useService(services, LayoutTabsV1);
+    const tabs = useService(services, LayoutTabsV2);
     const navigation = useService(services, NavigationV1);
     const terminals = useTerminals();
     const own = terminals.filter((item) => item.threadId === threadId);
@@ -161,6 +161,11 @@ export const defineTerminalElements = (client: TerminalClient) => {
     }>({
       props: ['terminalId', 'showHeader'],
       render: View,
+    }),
+    // The mark the layout draws on a terminal's tab (`iconTag`).
+    tabIcon: defineReactElement<object>({
+      props: [],
+      render: () => <TerminalIcon />,
     }),
   };
 };

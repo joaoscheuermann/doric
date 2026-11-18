@@ -1,6 +1,7 @@
 // The terminal bundle's client part (stage 10, §3.10): the window's terminal
 // store over `terminal/v1`, and the header's "New terminal" button,
-// sidebar terminal rows and shared workspace terminal view. All are bound to the
+// sidebar terminal rows, shared workspace terminal view and the terminal tab's
+// icon (`terminal-tab-icon`). All are bound to the
 // activation services, never to an element's (D9-17).
 //
 // The header region item and the sidebar rows are registered by
@@ -30,12 +31,16 @@ import {
   FilesRefreshV1,
   type LayoutSidebar,
   LayoutSidebarV1,
-  LayoutTabsV1,
+  LayoutTabsV2,
   type LayoutWorkspace,
   LayoutWorkspaceV1,
 } from './peers.js';
 import { createTerminalStore, type TerminalStore } from './store.js';
-import { TERMINAL_VIEW_TAG, terminalTab } from './tab.js';
+import {
+  TERMINAL_TAB_ICON_TAG,
+  TERMINAL_VIEW_TAG,
+  terminalTab,
+} from './tab.js';
 
 /** The region item of the header's new-terminal button. */
 export const terminalRegions: readonly {
@@ -131,7 +136,7 @@ const opener =
       services
         .use(NavigationV1)
         .navigate(threadRoute(thread.projectId, thread.id));
-    await services.use(LayoutTabsV1).open(terminalTab(terminal, kill));
+    await services.use(LayoutTabsV2).open(terminalTab(terminal, kill));
   };
 
 export function activate({ services }: ClientContext): Cleanup {
@@ -153,14 +158,14 @@ export function activate({ services }: ClientContext): Cleanup {
     toastError: (message) => toast.error(message),
     closeTab: (input) => {
       void services
-        .use(LayoutTabsV1)
+        .use(LayoutTabsV2)
         .close(input)
         .catch(() => undefined);
     },
     retitleTab: (input) => {
       try {
         void services
-          .use(LayoutTabsV1)
+          .use(LayoutTabsV2)
           .retitle(input)
           .catch(() => undefined);
       } catch {
@@ -194,6 +199,7 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define('terminal-new-button', elements.newButton),
     ui.define('terminal-rows', elements.rows),
     ui.define(TERMINAL_VIEW_TAG, elements.view),
+    ui.define(TERMINAL_TAB_ICON_TAG, elements.tabIcon),
   ];
 
   const surfaces = services.whenAvailable(LayoutSidebarV1, (sidebar) => {

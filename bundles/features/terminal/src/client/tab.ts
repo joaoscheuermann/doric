@@ -1,5 +1,5 @@
-// The workspace tab of a terminal (`layout.tabs/v1`): its id, title, element
-// and, from layout.tabs/v1 1.2.0, its context menu (A7, §4.4).
+// The workspace tab of a terminal (`layout.tabs/v2`): its id, title, element,
+// icon element (`terminal-tab-icon`) and context menu (A7, §4.4).
 
 import { OctagonXIcon } from 'lucide-react';
 import { createElement } from 'react';
@@ -9,6 +9,9 @@ import type { TabRequest } from './peers.js';
 
 /** The element a terminal's workspace tab shows. */
 export const TERMINAL_VIEW_TAG = 'terminal-view';
+
+/** The element drawn as a terminal tab's icon. */
+export const TERMINAL_TAB_ICON_TAG = 'terminal-tab-icon';
 
 /** The id of a terminal's workspace tab. */
 export const terminalTabId = (terminalId: string): string =>
@@ -28,7 +31,7 @@ export const terminalIdOfTab = (
 };
 
 /**
- * What `layout.tabs/v1.open` receives for a terminal: titled by its name, else
+ * What `layout.tabs/v2.open` receives for a terminal: titled by its name, else
  * its command; the menu holds Kill terminal (A7), which runs `kill`.
  */
 export const terminalTab = (
@@ -39,7 +42,7 @@ export const terminalTab = (
   title: terminalTitle(terminal),
   tag: TERMINAL_VIEW_TAG,
   props: { terminalId: terminal.id, showHeader: terminal.origin !== 'user' },
-  icon: 'terminal',
+  iconTag: TERMINAL_TAB_ICON_TAG,
   menu: [
     {
       id: 'kill',

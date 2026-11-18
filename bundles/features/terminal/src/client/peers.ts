@@ -23,59 +23,73 @@ export interface LayoutWorkspace {
 
 export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
 
-/** One entry of a viewer tab's context menu (`layout.tabs/v1` 1.2.0). */
+/** One entry of a viewer tab's context menu (`layout.tabs/v2` 2.0.0). */
 export interface TabMenuItem {
   readonly id: string;
   readonly label: string;
   readonly destructive?: boolean;
-  /** 1.2.0: the item's 16 px leading icon, a React element. */
+  /** The item's 16 px leading icon, a React element. */
   readonly icon?: ReactNode;
   readonly run: () => void;
 }
 
-/** What `layout.tabs/v1.open` takes from this part. */
+/** What `layout.tabs/v2.open` takes from this part. */
 export interface TabRequest {
   readonly id: string;
   readonly title: string;
   readonly tag: string;
   readonly props?: Readonly<Record<string, unknown>>;
-  readonly icon?: 'file' | 'file-diff' | 'terminal';
-  /** 1.2.0: the entries the tab's context menu shows above "Close tab". */
+  /** The element drawn as the trigger's 16 px icon, created with the tab's `props`. */
+  readonly iconTag?: string;
+  /** The viewer card draws no bottom padding while this tab is selected. */
+  readonly openBottom?: boolean;
+  /** The entries the tab's context menu shows above "Close tab". */
   readonly menu?: readonly TabMenuItem[];
 }
 
-/** The selected tab of the active owner (`layout.tabs/v1` 1.1.0). */
+/** The selected tab of the active owner (`layout.tabs/v2` 2.0.0). */
 export interface CurrentTab {
   readonly id: string;
   readonly props?: Readonly<Record<string, unknown>>;
 }
 
-/** `layout.tabs/v1` (1.2.0). */
+/** `layout.tabs/v2` (2.0.0). */
 export interface LayoutTabs {
   open(input: TabRequest, call?: CallArg): Promise<void>;
+  /**
+   * Closes the tab with that id among that owner's tabs (the active owner's
+   * without `threadId`), or in every owner with `everyOwner`.
+   */
   close(
-    input: { readonly id: string; readonly threadId?: string },
+    input: {
+      readonly id: string;
+      readonly threadId?: string;
+      readonly everyOwner?: boolean;
+    },
     call?: CallArg,
   ): Promise<void>;
   /**
-   * 1.2.0: sets the title of the tab with that id among that Thread's tabs
-   * (the active Thread's without `threadId`); nothing without such a tab.
+   * Sets the title of the tab with that id, in the owners `close` would
+   * reach; nothing without such a tab.
    */
   retitle(
     input: {
       readonly id: string;
       readonly title: string;
       readonly threadId?: string;
+      readonly everyOwner?: boolean;
     },
     call?: CallArg,
   ): Promise<void>;
-  /** 1.1.0: the selected tab of the active owner, if any (local). */
+  /** The selected tab of the active owner, if any (local). */
   current(call?: CallArg): CurrentTab | undefined;
-  /** 1.1.0: called after every change of the tabs or of the owner (local). */
+  /** Called after every change of the tabs or of the owner (local). */
   subscribe(listener: () => void, call?: CallArg): Disposable;
+  /** Names the set of tabs the frame shows; absent, no set (local). */
+  setOwner(input: { readonly owner?: string }, call?: CallArg): void;
 }
 
-export const LayoutTabsV1 = ref<LayoutTabs>('layout.tabs/v1');
+export const LayoutTabsV2 = ref<LayoutTabs>('layout.tabs/v2');
 
 /** Rows a bundle adds under each Thread of the sidebar tree. */
 export interface ThreadRows {

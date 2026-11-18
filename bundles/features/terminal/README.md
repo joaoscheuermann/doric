@@ -29,19 +29,20 @@ See the [main README](../../../README.md) for Doric as a whole and
   session's `updated` notice; `false` means no such session.
 - A row and its tab show the name, else the command (a tab with neither says
   "Terminal"). On each `updated` notice the client retitles the terminal's tab
-  through `layout.tabs/v1.retitle`, so the tab follows a rename, a cleared
+  through `layout.tabs/v2.retitle`, so the tab follows a rename, a cleared
   name and the command a manual shell runs.
-- The terminal tab's context menu holds Kill terminal (destructive), above
-  the layout's "Close tab". Close tab only closes the tab; the process keeps
-  running and its row stays. Kill terminal stops it, as the row's stop button
+- The terminal tab's icon is the `terminal-tab-icon` element (`iconTag`),
+  which draws the terminal mark. Its context menu holds Kill terminal
+  (destructive), above the layout's "Close tab". Close tab only closes the
+  tab; the process keeps running and its row stays. Kill terminal stops it, as the row's stop button
   does.
 - A terminal row's context menu holds Rename, Copy command and Kill terminal.
   Rename turns the row into a name field: Enter sends the trimmed text (empty
   clears the name), Escape or leaving the field cancels. The field closes
   whatever the answer; a failed call keeps the old name and shows a toast.
   Copy command puts the session's command on the clipboard.
-- The bundle requires `layout.tabs/v1@^1.2.0`, whose tabs take a `menu` and
-  `retitle`; the terminal rows also read its `current()` and `subscribe()` to
+- The bundle requires `layout.tabs/v2@^2.0.0`, whose tabs take an `iconTag`, a
+  `menu` and `retitle`; the terminal rows also read its `current()` and `subscribe()` to
   mark the selected terminal row.
 
 ## The `terminal` tool
@@ -64,11 +65,12 @@ The tool runs a command in the current working directory; a relative
   markers and redacts stored secrets from the stream chunk by chunk, with the
   list `secrets/v1` delivers, read again right before a terminal starts.
 - **Client part** (`src/client`): the window's terminal store and the
-  elements `terminal-new-button`, `terminal-rows` and `terminal-view`.
+  elements `terminal-new-button`, `terminal-rows`, `terminal-view` and
+  `terminal-tab-icon`.
   `registerTerminalSurfaces` adds the header button (`layout.header`) and the
   sidebar's terminal rows while the layout serves `layout.sidebar/v1`; from
   `layout.sidebar/v1` 1.1.0 its `busy` answer keeps a Thread active while an
-  agent terminal under it is busy. `terminal-rows` reads `layout.tabs/v1`
+  agent terminal under it is busy. `terminal-rows` reads `layout.tabs/v2`
   `current()`/`subscribe()` and `navigation/v1` to mark the selected terminal
   row (`aria-current="true"`), subscribing only while its Thread has terminals.
 - `create` opens a manual bash PTY in a Thread's working directory, bringing

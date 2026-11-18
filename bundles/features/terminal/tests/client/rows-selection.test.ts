@@ -1,10 +1,10 @@
 // The terminal rows element as the layout mounts it under a Thread (spec
 // docs/designs/sidebar-alignment.md §11.4, D23; T-5.6b): a terminal row is
 // selected while the route names the element's Thread and the selected tab
-// (`layout.tabs/v1.current()`) is that terminal's tab, `terminal:<id>`. The
+// (`layout.tabs/v2.current()`) is that terminal's tab, `terminal:<id>`. The
 // element subscribes to the tabs only while its Thread has terminals.
 //
-// The store, `layout.workspace/v1`, `layout.tabs/v1` and `navigation/v1` are
+// The store, `layout.workspace/v1`, `layout.tabs/v2` and `navigation/v1` are
 // fakes the test drives; happy-dom renders the element.
 
 import assert from 'node:assert/strict';
@@ -132,7 +132,7 @@ const fakeServices = ({ tabs = true, navigation = true }: Peers = {}) => {
     },
   };
   if (tabs) {
-    apis['layout.tabs/v1'] = {
+    apis['layout.tabs/v2'] = {
       open: unused,
       close: unused,
       retitle: unused,
@@ -186,7 +186,7 @@ const fakeServices = ({ tabs = true, navigation = true }: Peers = {}) => {
 
   return {
     services,
-    /** The listeners `layout.tabs/v1.subscribe` holds now. */
+    /** The listeners `layout.tabs/v2.subscribe` holds now. */
     tabListenerCount: (): number => tabListeners.size,
     setRoute: (threadId: string): void => {
       route = threadId;
@@ -356,7 +356,7 @@ describe('T-5.6b: the selected terminal row follows the route and the selected t
     }
   });
 
-  test('without layout.tabs/v1, or without navigation/v1, no row is selected', async () => {
+  test('without layout.tabs/v2, or without navigation/v1, no row is selected', async () => {
     for (const missing of [{ tabs: false }, { navigation: false }] as const) {
       const { store } = fakeStore();
       const peers = fakeServices(missing);
