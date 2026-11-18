@@ -58,8 +58,6 @@ export type WorkspaceState = {
 
   /** The Projects whose Threads the layout reads from the mirror (R5). */
   readonly requested: ReadonlySet<string>;
-  /** Whether the mirror bound with `bindRecords` is connected to the host. */
-  readonly connected: boolean;
   /**
    * Adds `projectId` to `requested` and syncs with the bound mirror, which
    * reads its Threads and so starts their first load.
@@ -67,10 +65,9 @@ export type WorkspaceState = {
   readonly request: (projectId: string) => void;
   /**
    * Rebuilds the tree's records from `records`: its Projects and the Threads
-   * of every requested Project it describes (`withRecords`), and the
-   * connection. Answers the same state when nothing changed. A
-   * `project_stream_failed` read of the selected Project is reported once.
-   * Without a mirror the window is disconnected and the tree stays.
+   * of every requested Project it describes (`withRecords`). Answers the same
+   * state when nothing changed. A `project_stream_failed` read of the selected
+   * Project is reported once. Without a mirror the tree stays.
    */
   readonly sync: (records: RuntimeRecords | undefined) => void;
   readonly select: (selection: Selection) => void;
@@ -131,7 +128,6 @@ export const workspaceStore = createStore<WorkspaceState>()((set, get) => ({
   loadingProjectThreads: new Set<string>(),
 
   requested: new Set<string>(),
-  connected: false,
 
   request: (projectId) => {
     const state = get();
@@ -144,11 +140,7 @@ export const workspaceStore = createStore<WorkspaceState>()((set, get) => ({
     // The reads are made before the state is set: a first read starts a load,
     // and the mirror may answer it with a notice of its own.
     const state = get();
-    if (records === undefined) {
-      if (state.connected) set({ connected: false });
-      return;
-    }
-    const connected = records.connection() === 'connected';
+    if (records === undefined) return;
     const projectsRead = records.projects();
     const projects = projectsRead.value ?? [];
     const listed =
@@ -177,15 +169,9 @@ export const workspaceStore = createStore<WorkspaceState>()((set, get) => ({
         ? streamFailure.error
         : undefined;
     if (failure !== undefined) reportedFailure = failure;
-    if (
-      tree === current.tree &&
-      connected === current.connected &&
-      failure === undefined
-    )
-      return;
+    if (tree === current.tree && failure === undefined) return;
     set({
       tree,
-      connected,
       ...(failure === undefined
         ? {}
         : sidebarState(report(current.sidebar, errorInfo(failure)))),
@@ -271,7 +257,7 @@ export const workspaceStore = createStore<WorkspaceState>()((set, get) => ({
 /**
  * Binds the workspace to `records`, the window's `runtime.records/v1`: the
  * store syncs at once and on every notice of the mirror. `undefined` unbinds
- * it, and the window is then disconnected.
+ * it.
  */
 export const bindRecords = (records: RuntimeRecords | undefined): void => {
   boundSubscription?.dispose();

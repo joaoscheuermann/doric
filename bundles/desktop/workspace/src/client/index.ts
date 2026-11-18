@@ -23,13 +23,7 @@ import {
 } from 'layout/contracts';
 import { RuntimeRecordsV1 } from 'runtime/contracts';
 
-import {
-  LayoutDashboardV1,
-  LayoutSidebarV1,
-  WorkspaceDashboardV1,
-  WorkspaceHooksV1,
-  WorkspaceSidebarV1,
-} from '../contracts/index.js';
+import { WorkspaceHooksV1 } from '../contracts/index.js';
 import {
   PROJECT_ROUTE,
   PROJECTS_ROUTE,
@@ -52,7 +46,6 @@ import { createWorkspaceDashboard } from './services/workspace-dashboard.js';
 import { createWorkspaceSelection } from './services/workspace-selection.js';
 import { setWorkspaceServices } from './services/workspace-services.js';
 import { createWorkspaceSidebar } from './services/workspace-sidebar.js';
-import { createLayoutWorkspace } from './services/workspace-workspace.js';
 import { resetDashboard } from './stores/dashboard.js';
 import { resetNewTab } from './stores/new-tab.js';
 import { restoreProjectTabs } from './stores/project-tabs.js';
@@ -148,12 +141,8 @@ export function activate({ services }: ClientContext): Cleanup {
   const ownerTree = workspaceStore.subscribe(followOwner);
 
   services.provide(createWorkspaceSelection());
-  services.provide(createWorkspaceSidebar(WorkspaceSidebarV1));
-  services.provide(createWorkspaceDashboard(WorkspaceDashboardV1));
-  // The transition (until step 4(e)): the three ids the layout provided.
-  services.provide(createLayoutWorkspace());
-  services.provide(createWorkspaceSidebar(LayoutSidebarV1));
-  services.provide(createWorkspaceDashboard(LayoutDashboardV1));
+  services.provide(createWorkspaceSidebar());
+  services.provide(createWorkspaceDashboard());
 
   return () => {
     dashboardRoute.dispose();

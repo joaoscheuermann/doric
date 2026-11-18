@@ -1,4 +1,4 @@
-// layout.dashboard/v1: the /projects dashboard starts on the project list,
+// workspace.dashboard/v1: the /projects dashboard starts on the project list,
 // `show` opens a page another bundle added to `workspace.dashboard.page`,
 // `close` goes back to the list, and subscribers hear each change of the
 // shown page until they dispose.
@@ -11,22 +11,22 @@ import { createTestServices } from 'bundle/testing';
 
 import { createWorkspaceDashboard } from '../src/client/services/workspace-dashboard.js';
 import { resetDashboard } from '../src/client/stores/dashboard.js';
-import { LayoutDashboardV1 } from '../src/contracts/index.js';
+import { WorkspaceDashboardV1 } from '../src/contracts/index.js';
 
 const setup = () => {
   const harness = createTestServices({
     bundle: { id: 'settings' },
-    provide: [createWorkspaceDashboard(LayoutDashboardV1)],
+    provide: [createWorkspaceDashboard()],
   });
   return {
-    dashboard: harness.services.use(LayoutDashboardV1),
+    dashboard: harness.services.use(WorkspaceDashboardV1),
     dispose: harness.dispose,
   };
 };
 
 beforeEach(resetDashboard);
 
-describe('layout.dashboard/v1', () => {
+describe('workspace.dashboard/v1', () => {
   test('a fresh dashboard shows the project list', async () => {
     const { dashboard, dispose } = setup();
     assert.equal(dashboard.active(), undefined);

@@ -1,7 +1,6 @@
 // The sidebar's and the dashboard's services, moved from `layout/contracts`
-// with no member changed (bundle isolation 4(c)). One file holds them so both
-// `index.ts` (the `workspace.*` ids) and `transition.ts` (the `layout.*` ids)
-// read them without importing each other.
+// with no member changed (bundle isolation 4(c)); `index.ts` gives them their
+// `workspace.*` ids.
 
 import {
   type CallArg,

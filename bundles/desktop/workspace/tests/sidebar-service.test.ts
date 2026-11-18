@@ -1,4 +1,4 @@
-// layout.sidebar/v1 (R-9.4): a bundle adds rows under each Thread; a Thread
+// workspace.sidebar/v1 (R-9.4): a bundle adds rows under each Thread; a Thread
 // with rows counted is expandable, the tree re-reads counts when the owner
 // says they changed, and a duplicate id is a registration conflict.
 
@@ -15,11 +15,7 @@ import {
   threadRowsBusy,
   threadRowsStore,
 } from '../src/client/stores/thread-rows.js';
-import {
-  LayoutSidebarV1,
-  type ThreadRows,
-  WorkspaceSidebarV1,
-} from '../src/contracts/index.js';
+import { type ThreadRows, WorkspaceSidebarV1 } from '../src/contracts/index.js';
 
 const counted = (counts: Record<string, number>) => {
   const listeners = new Set<() => void>();
@@ -44,17 +40,17 @@ const counted = (counts: Record<string, number>) => {
 const setup = () => {
   const harness = createTestServices({
     bundle: { id: 'terminal' },
-    provide: [createWorkspaceSidebar(LayoutSidebarV1)],
+    provide: [createWorkspaceSidebar()],
   });
   return {
-    sidebar: harness.services.use(LayoutSidebarV1),
+    sidebar: harness.services.use(WorkspaceSidebarV1),
     dispose: harness.dispose,
   };
 };
 
 beforeEach(resetThreadRows);
 
-describe('layout.sidebar/v1', () => {
+describe('workspace.sidebar/v1', () => {
   test('a Thread with rows counted is expandable; others are not', async () => {
     const { sidebar, dispose } = setup();
     const owner = counted({ t1: 2 });
@@ -155,52 +151,6 @@ describe('layout.sidebar/v1', () => {
       await dispose();
     });
   }
-});
-
-// Bundle isolation 4(c), section 6 "transition": one service backs both
-// ids, `layout.sidebar/v1` (until 4(e)) and its successor
-// `workspace.sidebar/v1`, so rows added through either are drawn from one
-// store and an id is unique across the two.
-describe('layout.sidebar/v1 and workspace.sidebar/v1 during the transition', () => {
-  const both = () => {
-    const harness = createTestServices({
-      bundle: { id: 'terminal' },
-      provide: [
-        createWorkspaceSidebar(LayoutSidebarV1),
-        createWorkspaceSidebar(WorkspaceSidebarV1),
-      ],
-    });
-    return {
-      legacy: harness.services.use(LayoutSidebarV1),
-      successor: harness.services.use(WorkspaceSidebarV1),
-      dispose: harness.dispose,
-    };
-  };
-
-  test('rows added through each id are drawn by one store', async () => {
-    const { legacy, successor, dispose } = both();
-    legacy.addThreadRows({ ...counted({ t1: 1 }).rows, id: 'terminals' });
-    successor.addThreadRows({ ...counted({ t2: 3 }).rows, id: 'screens' });
-
-    const { rows } = threadRowsStore.getState();
-    assert.equal(hasThreadRows(rows, 't1'), true);
-    assert.equal(hasThreadRows(rows, 't2'), true);
-    assert.equal(hasThreadRows(rows, 't3'), false);
-    await dispose();
-  });
-
-  test('an id added through one id and again through the other is a conflict', async () => {
-    const { legacy, successor, dispose } = both();
-    legacy.addThreadRows(counted({}).rows);
-
-    assert.throws(
-      () => successor.addThreadRows(counted({}).rows),
-      (error: unknown) =>
-        error instanceof ContractError &&
-        error.code === 'registration_conflict',
-    );
-    await dispose();
-  });
 });
 
 describe('threadRowsBusy', () => {

@@ -80,5 +80,3 @@ export const WorkspaceSidebarV1 = ref<WorkspaceSidebar>('workspace.sidebar/v1');
 export const WorkspaceDashboardV1 = ref<WorkspaceDashboard>(
   'workspace.dashboard/v1',
 );
-
-export * from './transition.js';

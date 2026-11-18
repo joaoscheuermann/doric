@@ -1,7 +1,5 @@
 // layout.conversation/v1@1.0.0 (bundle isolation 4a, O8): the bottom split's
-// visibility requests. The `layout.workspace/v1` cases moved to the
-// `workspace` bundle with their provider in step 4(c)
-// (`bundles/desktop/workspace/tests/workspace-service.test.ts`).
+// visibility requests.
 
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';

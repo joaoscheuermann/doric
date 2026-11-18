@@ -10,9 +10,8 @@
 //   items, as `account`'s host does);
 // - `hooks/v1`, an in-memory hooks provider, so `workspace.hooks/v1` can be
 //   defined and observed (decision S5);
-// - recording fakes of the shell's `layout.tabs/v2` and
-//   `layout.conversation/v1`, which the workspace now calls across a bundle
-//   boundary.
+// - a recording fake of the shell's `layout.tabs/v2`, which the workspace
+//   calls across a bundle boundary.
 
 import type {
   CatalogSnapshot,
@@ -89,12 +88,6 @@ export interface ExecutedCommand {
 export interface TabsCall {
   readonly method: 'open' | 'close' | 'focus' | 'retitle' | 'setOwner';
   readonly input: unknown;
-}
-
-/** One `layout.conversation/v1.setBottomVisible` call. */
-export interface BottomCall {
-  readonly itemId: string;
-  readonly visible: boolean;
 }
 
 const terminalCommands = ['npm run dev', 'npm test -- --watch', 'tsc --watch'];
@@ -214,8 +207,7 @@ export interface FakeHost {
    * `use(ref)` answers an id the workspace provided, then the host's own
    * answers: `runtime.records/v1` (`records`), `doric.connection/v1`,
    * `doric.catalog/v1` (with `catalog`), `ui/v1`, `navigation/v1`,
-   * `regions/v1`, `commands/v1`, `hooks/v1`, `layout.tabs/v2` and
-   * `layout.conversation/v1`. It throws for an id in `absent` or unknown.
+   * `regions/v1`, `commands/v1`, `hooks/v1` and `layout.tabs/v2`. It throws for an id in `absent` or unknown.
    * `ui/v1` creates each element defined through it under its own tag, with
    * these services and its props; any other tag is a placeholder.
    *
@@ -234,8 +226,6 @@ export interface FakeHost {
   executed(): readonly ExecutedCommand[];
   /** The calls `layout.tabs/v2` received so far, in order; a new array each call. */
   tabCalls(): readonly TabsCall[];
-  /** The calls `layout.conversation/v1.setBottomVisible` received, in order. */
-  bottomCalls(): readonly BottomCall[];
   /** The routes registered through `navigation/v1` and not disposed, in order. */
   routes(): readonly RouteRegistration[];
   /**
@@ -368,7 +358,6 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
   const absent = new Set(options.absent ?? []);
   const commandsExecuted: ExecutedCommand[] = [];
   const tabsReceived: TabsCall[] = [];
-  const bottomReceived: BottomCall[] = [];
 
   const records = createRecordsApi({
     projects: options.projects ?? [],
@@ -593,11 +582,6 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
     },
     'hooks/v1': createHooks(),
     'layout.tabs/v2': tabs,
-    'layout.conversation/v1': {
-      setBottomVisible: (itemId: string, visible: boolean) => {
-        bottomReceived.push({ itemId, visible });
-      },
-    },
   };
 
   /** What the workspace provides, answered in process. */
@@ -671,7 +655,6 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
     regionItems,
     executed: () => [...commandsExecuted],
     tabCalls: () => [...tabsReceived],
-    bottomCalls: () => [...bottomReceived],
     routes: () => [...registeredRoutes],
     records,
     notifyRecords,

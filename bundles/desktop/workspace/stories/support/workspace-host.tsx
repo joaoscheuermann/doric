@@ -106,7 +106,6 @@ export const bindWorkspace = (
     loadingProjects: tree === undefined,
     loadingProjectThreads: new Set(),
     requested: new Set(Object.keys(tree?.threadsByProject ?? {})),
-    connected: false,
   });
   seedProjectTabs(fixture.projectTabs);
 

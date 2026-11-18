@@ -40,3 +40,26 @@ describe('the workspace reaches the host records only through runtime.records/v1
     assert.deepEqual(found, []);
   });
 });
+
+// Bundle isolation AC4.12 (step 4(e), O5): the layout's navigation contracts
+// left with workspace 1.0.0, and with them the one contracts module that read
+// the record types, so `workspace/contracts` imports nothing of
+// `runtime/contracts`.
+describe('the workspace contracts do not depend on runtime/contracts (AC4.12)', () => {
+  test('no file under src/contracts imports runtime/contracts', () => {
+    const files = filesUnder('bundles/desktop/workspace/src/contracts');
+    assert.ok(files.length > 0, 'The workspace has no contracts file to read.');
+
+    const found = files.flatMap((file) =>
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .flatMap((line, index) =>
+          /from 'runtime\/contracts'/.test(line)
+            ? [`${file}:${index + 1}: ${line.trim()}`]
+            : [],
+        ),
+    );
+
+    assert.deepEqual(found, []);
+  });
+});

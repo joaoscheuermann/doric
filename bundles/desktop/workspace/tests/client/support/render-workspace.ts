@@ -9,7 +9,7 @@
 // cases are the layout's (`L/tests/client/shell.test.ts`). A test reads the
 // DOM and what the host was asked; the host is the stories' fake host
 // (`stories/support/fake-host.ts`), which records the calls of the shell's
-// `layout.tabs/v2` and `layout.conversation/v1`.
+// `layout.tabs/v2`.
 
 import { Window } from 'happy-dom';
 
@@ -352,7 +352,6 @@ export const renderWorkspace = async (
     regionItems: bound.regionItems,
     executed: bound.executed,
     tabCalls: bound.tabCalls,
-    bottomCalls: bound.bottomCalls,
     routes: bound.routes,
     records: bound.records,
     notifyRecords: bound.notifyRecords,

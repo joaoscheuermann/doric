@@ -82,7 +82,7 @@ type ThreadBranchesProps = {
   readonly editingThreadId?: string;
   /**
    * The sidebar's search (§4.3), passed down to every level. While set, a
-   * Thread not in `shown` is not drawn (its `layout.sidebar/v1` rows with it),
+   * Thread not in `shown` is not drawn (its `workspace.sidebar/v1` rows with it),
    * a Thread in `expanded` is drawn expanded whatever `collapsed` holds, and
    * toggling a row does not write `collapsed`, so clearing the filter draws
    * the tree as it was. Absent: the whole tree, drawn from `collapsed`.
@@ -118,7 +118,7 @@ export function ThreadBranches({
   onToggle,
   selectedThreadId,
 }: ThreadBranchesProps) {
-  // Rows other bundles add under each Thread (`layout.sidebar/v1`).
+  // Rows other bundles add under each Thread (`workspace.sidebar/v1`).
   const rows = useThreadRows();
   return (
     <>

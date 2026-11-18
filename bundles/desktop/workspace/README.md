@@ -85,7 +85,7 @@ and offers `+` only where the reader may open a sub-thread. The trailing slot
 shows only the elapsed badge and that `+`, which hover or keyboard focus
 reveals. An Untitled Thread wears `message-circle-dashed` on its row, the
 breadcrumb and its tab. A row is active while its Thread or any descendant runs,
-or while a `busy` registration (`workspace.sidebar/v1`, or `layout.sidebar/v1` 1.1.0) answers true; the
+or while a `busy` registration (`workspace.sidebar/v1`) answers true; the
 badge times from the Thread's own last start. Rename/delete stay hidden where the kind forbids
 them, and the row's tooltip names the kind. The breadcrumb and a conversation tab
 wear the same mark. The reader's three levers on an agent Thread live in `chat`'s
@@ -100,13 +100,12 @@ footer, where the composer would be.
 | `workspace.sidebar/v1`   | add rows under each Thread of the tree (`addThreadRows`), with an optional `busy(threadId)`                |
 | `workspace.dashboard/v1` | read, show or close the `workspace.dashboard.page` item the Dashboard draws instead of its Project list    |
 
-Until the bundles that read them move, `workspace` also provides
-`layout.workspace/v1`, `layout.sidebar/v1` and `layout.dashboard/v1`,
-unchanged; `workspace/contracts` declares them (`src/contracts/transition.ts`,
-the only file of the module that imports `runtime/contracts`). Step 4(e) of
-bundle isolation deletes them, and `workspace` becomes 1.0.0. The sidebar's and
-the dashboard's interfaces live in `src/contracts/navigation.ts`, which both
-`index.ts` and `transition.ts` read.
+The navigation contracts the layout provided before its 5.0.0 are gone since
+`workspace` 1.0.0 (bundle isolation step 4(e)); a consumer reads the ids from
+`workspace.selection/v1` and the records from `runtime.records/v1`. No file of
+`workspace/contracts` imports `runtime/contracts`. The sidebar's and the
+dashboard's interfaces live in `src/contracts/navigation.ts`, which `index.ts`
+reads.
 The chat observes `onOpenThreadHook` and opens its Thread tab; without the
 chat the hook opens nothing.
 

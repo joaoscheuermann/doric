@@ -8,8 +8,28 @@ import {
   WorkspaceSelectionV1,
   workspaceSelectionMethods,
 } from '../../contracts/index.js';
+import { type ProjectTree, threadsOf } from '../domain/project-tree.js';
+import type { Project, Thread } from '../domain/workspace.js';
 import { workspaceStore } from '../stores/workspace.js';
-import { selectionOf } from './workspace-workspace.js';
+
+const selectedThreadOf = (tree: ProjectTree): Thread | undefined => {
+  const { projectId, threadId } = tree.selection;
+  return threadsOf(tree, projectId).find((thread) => thread.id === threadId);
+};
+
+/** The selection `views/workspace-view.tsx` shows: only described records. */
+const selectionOf = (
+  tree: ProjectTree,
+): { readonly project?: Project; readonly thread?: Thread } => {
+  const project = tree.projects.find(
+    (candidate) => candidate.id === tree.selection.projectId,
+  );
+  const thread = selectedThreadOf(tree);
+  return {
+    ...(project === undefined ? {} : { project }),
+    ...(thread === undefined ? {} : { thread }),
+  };
+};
 
 export const createWorkspaceSelection = () => {
   let last: WorkspaceSelection = {};

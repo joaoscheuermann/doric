@@ -15,10 +15,9 @@ Read [`README.md`](README.md) for what it draws, its contracts and its slots.
 
 ## Layers
 
-- `src/contracts/`: the slot names, `DashboardFooterItemProps`, the
+- `src/contracts/`: the slot names, `DashboardFooterItemProps` and the
   `workspace.*` contracts (`index.ts`, with the sidebar's and the dashboard's
-  in `navigation.ts`), and the three `layout.*` ids of the transition
-  (`transition.ts`, the only file that imports `runtime/contracts`).
+  in `navigation.ts`); no file of it imports `runtime/contracts`.
 - `src/client/elements/`: the six elements, each a React root of its own.
 - `src/client/components/`, `hooks/`, `stores/`, `queries/`: the sidebar, the
   tabs and the Dashboard, as they left the layout.

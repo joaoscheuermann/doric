@@ -24,8 +24,8 @@ export const COMMENTS_DIST = resolve('bundles/features/comments/dist');
 /** The real settings bundle: the settings window and the execution picker. */
 export const SETTINGS_DIST = resolve('bundles/desktop/settings/dist');
 /**
- * The real workspace bundle (bundle isolation 4(c)): the navigation, and the
- * three transition contracts `files`, `git` and the chat reach.
+ * The real workspace bundle (bundle isolation 4(c)): the navigation and the
+ * `workspace.*` contracts `files`, `git` and the chat read.
  */
 export const WORKSPACE_DIST = resolve('bundles/desktop/workspace/dist');
 /** The real account bundle (bundle isolation 4(b)): the account menu. */

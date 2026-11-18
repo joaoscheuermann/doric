@@ -5,7 +5,7 @@ import type { ThreadRows } from '../../contracts/index.js';
 
 /**
  * The rows other bundles add under each Thread of the sidebar tree
- * (`layout.sidebar/v1.addThreadRows`), in registration order. `revision`
+ * (`workspace.sidebar/v1.addThreadRows`), in registration order. `revision`
  * moves whenever a registration changes or one of its counts does, so the
  * tree re-reads `count`.
  */
@@ -63,7 +63,7 @@ export const hasThreadRows = (
 
 /**
  * Whether any registration's `busy` answers `true` for the Thread
- * (`layout.sidebar/v1` 1.1.0). A registration without `busy`, or whose `busy`
+ * (`workspace.sidebar/v1`). A registration without `busy`, or whose `busy`
  * throws, counts as not busy, and nothing is logged, as `hasThreadRows` treats
  * a throwing `count`. Registrations are asked in order and asking stops at the
  * first `true`. It never throws.

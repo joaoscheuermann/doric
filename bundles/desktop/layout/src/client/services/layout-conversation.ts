@@ -1,5 +1,5 @@
 // layout.conversation/v1 (bundle isolation 4a): the `shell.conversation.bottom`
-// visibility requests, over the bottom store `layout.workspace/v1` also sets.
+// visibility requests, over the bottom store the frame reads.
 
 import { defineMethod, defineService } from 'bundle/contracts';
 

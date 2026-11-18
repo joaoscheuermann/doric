@@ -213,7 +213,7 @@ describe('layout.tabs/v2 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('is the frame and its slots only at version 5.0.0: provides exactly layout.tabs/v2, layout.panel/v3, layout.stack/v2 and layout.conversation/v1, requires nothing of the runtime and lists nothing optional (bundle isolation AC4.7, step 4(c))', () => {
+  test('is the frame and its slots only at version 5.0.1: provides exactly layout.tabs/v2, layout.panel/v3, layout.stack/v2 and layout.conversation/v1, requires nothing of the runtime and lists nothing optional (bundle isolation AC4.7, step 4(c))', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
     ) as {
@@ -224,7 +224,7 @@ describe('the layout manifest', () => {
       optional?: string[];
     };
 
-    assert.equal(manifest.version, '5.0.0');
+    assert.equal(manifest.version, '5.0.1');
     assert.equal(
       manifest.description,
       "The workspace window's frame and its slots.",
