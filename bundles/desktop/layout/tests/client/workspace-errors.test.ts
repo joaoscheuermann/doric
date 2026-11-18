@@ -14,8 +14,20 @@
 // - `ElementHost` shows a compact notice when `ui.create` throws (T-34).
 //
 // The host is the boundary these tests control: a read is made to fail or to
-// answer later by replacing that one method of the fake host's contract api,
-// and the clipboard by replacing `navigator.clipboard`.
+// answer later by replacing members of the fake host's records mirror, and the
+// clipboard by replacing `navigator.clipboard`.
+//
+// The fake host's records mirror (bundle isolation phase 3), the shape these
+// tests need from `stories/support/fake-host.ts`:
+// - `FakeHost.records: RuntimeRecords` is the object the fake host answers
+//   `use('runtime.records/v1')` with, built by `createRecordsApi` from the
+//   host options (`projects`, `threads`, `connection`, `pending`, `failing`;
+//   the operation `thread` is `findThread`). Every `use` returns this same
+//   object, so a test replaces its members (`projects`, `threads`, `reload`,
+//   `activity`, a write) and the layout calls the replacement;
+// - `FakeHost.notifyRecords(): void` calls every listener subscribed through
+//   that object's `subscribe`, as the mirror does when a read changes. It
+//   reaches the listeners subscribed before a test replaced a member.
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
@@ -27,9 +39,13 @@ import {
   ref,
   UiV1,
 } from 'bundle/contracts';
-import type { Page, ProjectActivity } from 'runtime/contracts';
+import { ClientError } from 'desktop/reads';
+import type {
+  ProjectActivity,
+  RecordsRead,
+  RuntimeRecords,
+} from 'runtime/contracts';
 
-import type { RuntimeHost, ThreadsHost } from '../../src/client/api/host.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
 import {
@@ -99,15 +115,40 @@ const render = async (fixture: LayoutFixture): Promise<RenderedWorkspace> => {
   return rendered;
 };
 
-// The host's contract apis, as the layout calls them -------------------------
+// The records mirror, as the layout reads it ----------------------------------
 
-type Mutable<Value> = { -readonly [Key in keyof Value]: Value[Key] };
+/** The mirror the fake host answers `runtime.records/v1` with; its members are replaceable. */
+const recordsOf = (workspace: RenderedWorkspace): RuntimeRecords => {
+  const records = workspace.records;
+  assert.equal(
+    workspace.services.use(ref<RuntimeRecords>('runtime.records/v1')),
+    records,
+    'The fake host does not answer runtime.records/v1 with its records.',
+  );
+  return records;
+};
 
-const runtimeOf = (workspace: RenderedWorkspace): Mutable<RuntimeHost> =>
-  workspace.services.use(ref<Mutable<RuntimeHost>>('runtime/v1'));
+type ReloadInput = Parameters<RuntimeRecords['reload']>[0];
 
-const threadsOf = (workspace: RenderedWorkspace): Mutable<ThreadsHost> =>
-  workspace.services.use(ref<Mutable<ThreadsHost>>('runtime.threads/v1'));
+/**
+ * Replaces `reload` of the mirror: `load(input)` runs in its place and changes
+ * what the replaced reads answer, and the mirror tells its subscribers once
+ * the call has returned, as it does when a load settles.
+ */
+const onReload = (
+  workspace: RenderedWorkspace,
+  load: (input: ReloadInput) => void = () => undefined,
+): void => {
+  recordsOf(workspace).reload = (input) => {
+    load(input);
+    queueMicrotask(() => workspace.notifyRecords());
+  };
+};
+
+const ready = <Value>(value: Value): RecordsRead<Value> => ({
+  status: 'ready',
+  value,
+});
 
 /** A host answer the test settles when it chooses. */
 interface Deferred<Value> {
@@ -126,10 +167,55 @@ const deferred = <Value>(): Deferred<Value> => {
   return { promise, resolve, reject };
 };
 
-/** The failure an unreachable host answers with, as the fake host fails. */
-const unreachable = (): Error => new Error('The host is unreachable.');
+/**
+ * A failure the host names no known code for: `internal`, which the layout
+ * titles with its own fallback ("Projects not loaded", "Change not saved").
+ * A rejection keeps the host's code, so `unavailable` would be titled by the
+ * shared catalog instead.
+ */
+const hostFailure = (): ClientError =>
+  new ClientError('internal', 'The host failed.');
 
-const projectsPage = (...items: Project[]): Page<Project> => ({ items });
+/** A read whose load failed with `hostFailure`. */
+const failedRead = <Value>(): RecordsRead<Value> => ({
+  status: 'failed',
+  error: hostFailure(),
+});
+
+/** The mirror's reads a test makes fail with `hostFailure`. */
+type FailedRead = 'projects' | 'threads' | 'activity';
+
+/**
+ * Renders `fixture` with each read of `failed` failing with `hostFailure`.
+ * The fake host's `failing` option fails with `unavailable`, so instead:
+ * - `projects` and `threads` start pending, and their members are then
+ *   replaced with ones that answer `failed`; the mirror's subscribers are
+ *   told, as when a load settles;
+ * - `activity` is replaced before the dashboard first asks for it: a render
+ *   at `/projects` starts on a Project and then navigates to the dashboard.
+ */
+const renderFailing = async (
+  fixture: LayoutFixture & { readonly path: string },
+  failed: readonly FailedRead[],
+): Promise<RenderedWorkspace> => {
+  const laterDashboard =
+    failed.includes('activity') && fixture.path === '/projects';
+  const workspace = await render({
+    ...fixture,
+    path: laterDashboard ? projectPath(project) : fixture.path,
+    pending: failed.filter((read) => read !== 'activity'),
+  });
+  const records = recordsOf(workspace);
+  if (failed.includes('projects')) records.projects = () => failedRead();
+  if (failed.includes('threads')) records.threads = () => failedRead();
+  if (failed.includes('activity')) {
+    records.activity = () => Promise.reject(hostFailure());
+  }
+  workspace.notifyRecords();
+  await settle();
+  if (laterDashboard) await navigate(workspace, '/projects');
+  return workspace;
+};
 
 // The DOM a reader sees ------------------------------------------------------
 
@@ -319,7 +405,7 @@ const quietConsoleError = (): void => {
  * intent.)
  */
 const failedProjectsLoad = async (): Promise<RenderedWorkspace> => {
-  const workspace = await render({ path: '/projects', failing: ['projects'] });
+  const workspace = await renderFailing({ path: '/projects' }, ['projects']);
   await navigate(workspace, projectPath(project));
   return workspace;
 };
@@ -337,10 +423,14 @@ describe('the workspace notice in the project sidebar (T-28)', () => {
     assert.ok(retry, 'A failed Projects load offers no Retry.');
 
     let reads = 0;
-    runtimeOf(workspace).projects = async () => {
+    const records = recordsOf(workspace);
+    let listed = records.projects();
+    records.projects = () => listed;
+    onReload(workspace, (input) => {
+      if (input.target !== 'projects') return;
       reads += 1;
-      return projectsPage(project, docs);
-    };
+      listed = ready([project, docs]);
+    });
     await click(retry);
 
     assert.equal(reads, 1, 'Retry did not load the Projects again.');
@@ -348,10 +438,12 @@ describe('the workspace notice in the project sidebar (T-28)', () => {
   });
 
   test('a failed Threads load shows "Threads not loaded", announced, with Retry; Retry loads that Project\'s Threads and the notice goes', async () => {
-    const workspace = await render({
-      path: projectPath(project),
-      failing: ['threads'],
-    });
+    const workspace = await renderFailing(
+      {
+        path: projectPath(project),
+      },
+      ['threads'],
+    );
 
     const notice = workspaceNotice(projectSidebar(workspace));
     assert.equal(titleOf(notice), 'Threads not loaded');
@@ -360,10 +452,15 @@ describe('the workspace notice in the project sidebar (T-28)', () => {
     assert.ok(retry, 'A failed Threads load offers no Retry.');
 
     const asked: string[] = [];
-    threadsOf(workspace).threads = async ({ projectId }) => {
-      asked.push(projectId);
-      return { items: [plan] };
-    };
+    const records = recordsOf(workspace);
+    const own = records.threads.bind(records);
+    const answered = new Map<string, RecordsRead<readonly Thread[]>>();
+    records.threads = (projectId) => answered.get(projectId) ?? own(projectId);
+    onReload(workspace, (input) => {
+      if (input.target !== 'threads') return;
+      asked.push(input.projectId);
+      answered.set(input.projectId, ready([plan]));
+    });
     await click(retry);
 
     assert.deepEqual(asked, [project.id]);
@@ -371,10 +468,12 @@ describe('the workspace notice in the project sidebar (T-28)', () => {
   });
 
   test('a Retry whose load fails again shows the notice again, with Retry', async () => {
-    const workspace = await render({
-      path: '/projects',
-      failing: ['projects'],
-    });
+    const workspace = await renderFailing(
+      {
+        path: '/projects',
+      },
+      ['projects'],
+    );
     const retry = retryOf(workspaceNotice(workspace.root));
     assert.ok(retry, 'A failed Projects load offers no Retry.');
 
@@ -389,8 +488,8 @@ describe('the workspace notice in the project sidebar (T-28)', () => {
 describe('retry targets and what clears them (T-27)', () => {
   test('a failed rename stores no target: "Change not saved" with no Retry', async () => {
     const workspace = await render({ path: projectPath(project) });
-    threadsOf(workspace).renameThread = async () => {
-      throw unreachable();
+    recordsOf(workspace).renameThread = async () => {
+      throw hostFailure();
     };
 
     const field = await openThreadRename(workspace, plan.name);
@@ -434,22 +533,26 @@ describe('retry targets and what clears them (T-27)', () => {
   });
 
   test("another Project's Threads loading leaves a Threads error; its own Project's loading clears it", async () => {
-    const workspace = await render({
-      path: projectPath(project),
-      failing: ['threads'],
-    });
+    const workspace = await renderFailing(
+      {
+        path: projectPath(project),
+      },
+      ['threads'],
+    );
     assert.equal(
       titleOf(workspaceNotice(workspace.root)),
       'Threads not loaded',
     );
 
     const loaded = new Set([docs.id]);
-    threadsOf(workspace).threads = async ({ projectId }) => {
-      if (!loaded.has(projectId)) throw unreachable();
-      return {
-        items: [plan, guide].filter((item) => item.projectId === projectId),
-      };
-    };
+    const answers = new Map<string, RecordsRead<readonly Thread[]>>([
+      [project.id, ready([plan])],
+      [docs.id, ready([guide])],
+    ]);
+    const failed = failedRead<readonly Thread[]>();
+    recordsOf(workspace).threads = (projectId) =>
+      loaded.has(projectId) ? (answers.get(projectId) ?? failed) : failed;
+    onReload(workspace);
 
     await navigate(workspace, projectPath(docs));
     assert.equal(
@@ -496,8 +599,12 @@ describe('retry targets and what clears them (T-27)', () => {
 
   test('a reader action during a Retry keeps its failure from landing', async () => {
     const workspace = await failedProjectsLoad();
-    const answer = deferred<Page<Project>>();
-    runtimeOf(workspace).projects = () => answer.promise;
+    const records = recordsOf(workspace);
+    let listed = records.projects();
+    records.projects = () => listed;
+    onReload(workspace, (input) => {
+      if (input.target === 'projects') listed = { status: 'loading' };
+    });
     const retry = retryOf(workspaceNotice(workspace.root));
     assert.ok(retry, 'A failed Projects load offers no Retry.');
 
@@ -509,7 +616,8 @@ describe('retry targets and what clears them (T-27)', () => {
     );
 
     await navigate(workspace, projectPath(docs));
-    answer.reject(unreachable());
+    listed = failedRead();
+    workspace.notifyRecords();
     await settle();
 
     assert.deepEqual(workspaceNotices(workspace.root).map(titleOf), []);
@@ -521,8 +629,8 @@ describe('retry targets and what clears them (T-27)', () => {
 describe('a rename that fails (T-29)', () => {
   test('a refused request shows the workspace notice, keeps the mark, and no toast or text under the name', async () => {
     const workspace = await render({ path: projectPath(project) });
-    threadsOf(workspace).renameThread = async () => {
-      throw unreachable();
+    recordsOf(workspace).renameThread = async () => {
+      throw hostFailure();
     };
 
     const field = await openThreadRename(workspace, plan.name);
@@ -570,10 +678,12 @@ const DASHBOARD = 'aside[aria-label="Dashboard navigation"]';
 
 describe('the dashboard (T-30, T-31)', () => {
   test('on /projects a workspace failure shows in the body, once, with Retry', async () => {
-    const workspace = await render({
-      path: '/projects',
-      failing: ['projects'],
-    });
+    const workspace = await renderFailing(
+      {
+        path: '/projects',
+      },
+      ['projects'],
+    );
 
     const notice = workspaceNotice(workspace.root);
     assert.equal(titleOf(notice), 'Projects not loaded');
@@ -583,17 +693,24 @@ describe('the dashboard (T-30, T-31)', () => {
     const retry = retryOf(notice);
     assert.ok(retry, 'The dashboard notice offers no Retry.');
 
-    runtimeOf(workspace).projects = async () => projectsPage(project, docs);
+    const records = recordsOf(workspace);
+    let listed = records.projects();
+    records.projects = () => listed;
+    onReload(workspace, (input) => {
+      if (input.target === 'projects') listed = ready([project, docs]);
+    });
     await click(retry);
 
     assert.deepEqual(workspaceNotices(workspace.root).map(titleOf), []);
   });
 
   test('a failed projects list load shows an announced notice whose Retry refetches, busy while it runs', async () => {
-    const workspace = await render({
-      path: '/projects',
-      failing: ['activity'],
-    });
+    const workspace = await renderFailing(
+      {
+        path: '/projects',
+      },
+      ['activity'],
+    );
 
     const notice = workspaceNotice(workspace.root);
     assert.equal(titleOf(notice), 'Projects not loaded');
@@ -605,7 +722,7 @@ describe('the dashboard (T-30, T-31)', () => {
 
     const answer = deferred<readonly ProjectActivity[]>();
     let reads = 0;
-    runtimeOf(workspace).projectActivity = () => {
+    recordsOf(workspace).activity = () => {
       reads += 1;
       return answer.promise;
     };

@@ -2,13 +2,17 @@ import { errorFrom } from 'desktop/reads';
 import type { RefObject } from 'react';
 
 import { LayoutTabsV1 } from '../../contracts/index.js';
-import { isDescribed, type Selection } from '../domain/project-tree.js';
+import {
+  isDescribed,
+  type Selection,
+  threadsOf,
+} from '../domain/project-tree.js';
 import { mainThreadFor } from '../domain/thread-navigation.js';
 import type { Thread } from '../domain/workspace.js';
 import { THREAD_PANEL_TAG } from '../domain/workspace-tabs.js';
 import { layoutServices } from '../services/layout-services.js';
 import { rewriteRoute } from '../stores/route-selection.js';
-import { workspaceStore } from '../stores/workspace.js';
+import { boundRecords, workspaceStore } from '../stores/workspace.js';
 
 /**
  * Opens `thread` in a viewer tab of the active owner, as a sub-thread opens
@@ -48,12 +52,21 @@ export function createThreadNavigation({
     const requestIntent = intent.current;
     const store = workspaceStore.getState();
     let described = isDescribed(store.tree, target.projectId);
-    if (
-      !store.tree.threadsByProject[target.projectId]?.some(
-        (thread) => thread.id === target.id,
+    // A fetched Thread of a Project not described yet: reading that Project's
+    // Threads starts the mirror's load. A described Project that does not hold
+    // it: the mirror reloads that Project's Threads. Either way the record
+    // reaches the tree when the load settles.
+    if (!described) store.request(target.projectId);
+    else if (
+      !threadsOf(store.tree, target.projectId).some(
+        (row) => row.id === target.id,
       )
-    )
-      store.applyThread(target);
+    ) {
+      boundRecords()?.reload({
+        target: 'threads',
+        projectId: target.projectId,
+      });
+    }
     let main = mainThreadFor(store.tree, target);
     if (main === undefined) {
       await loadThreads(target.projectId);

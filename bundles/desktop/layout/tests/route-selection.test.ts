@@ -10,8 +10,8 @@ import type { RouteMatch } from 'bundle/contracts';
 import {
   emptyTree,
   type ProjectTree,
+  withRecords,
   withSelection,
-  withThreads,
 } from '../src/client/domain/project-tree.js';
 import {
   pathFor,
@@ -364,10 +364,10 @@ describe('startup restore', () => {
     const store = routeSelectionStore.getState();
     const selected = withSelection(emptyTree, { projectId: 'p1' });
     store.changeSelection(selected.selection);
-    const loaded = withThreads(selected, 'p1', [
-      thread('first'),
-      thread('second'),
-    ]);
+    const loaded = withRecords(selected, {
+      projects: selected.projects,
+      threadsByProject: { p1: [thread('first'), thread('second')] },
+    });
     store.changeSelection(loaded.selection);
 
     assert.deepEqual(window.writes, [
@@ -392,8 +392,10 @@ describe('startup restore', () => {
     store.markUserSelection(selected.selection);
     store.changeSelection(selected.selection);
     store.changeSelection(
-      withThreads(selected, 'p1', [thread('first'), thread('second')])
-        .selection,
+      withRecords(selected, {
+        projects: selected.projects,
+        threadsByProject: { p1: [thread('first'), thread('second')] },
+      }).selection,
     );
 
     assert.deepEqual(window.writes, [

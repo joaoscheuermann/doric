@@ -1,19 +1,13 @@
-import { type ErrorInfo, errorInfo } from 'desktop/reads';
+import type { Disposable } from 'bundle/contracts';
+import { ClientError, type ErrorInfo, errorInfo } from 'desktop/reads';
 import { createStore } from 'zustand/vanilla';
 
 import {
-  applyUpdate as applyTreeUpdate,
   emptyTree,
-  forgetProject as forgetTreeProject,
-  forgetThread as forgetTreeThread,
   type ProjectTree,
   type Selection,
-  type TreeUpdate,
-  withProject,
-  withProjects,
+  withRecords,
   withSelection,
-  withThread,
-  withThreads,
 } from '../domain/project-tree.js';
 import {
   beginDelete,
@@ -39,14 +33,22 @@ import {
   startRename,
   type WorkspaceRetry,
 } from '../domain/sidebar.js';
-import type { Draft, Entity, Project, Thread } from '../domain/workspace.js';
+import type {
+  Draft,
+  Entity,
+  Project,
+  RecordsRead,
+  RuntimeRecords,
+  Thread,
+} from '../domain/workspace.js';
 
 /**
  * The workspace sidebar's copy of the host's Project tree and its transient
  * state: the dialogs in progress, the one error a failed request surfaces, and
- * how much of the tree is still arriving. Every transition is one of the pure
- * rules in `@/domain/project-tree` or `@/domain/sidebar`; this store only
- * decides which rule a step applies.
+ * how much of the tree is still arriving. The tree's records are a projection
+ * of `runtime.records/v1` (bundle isolation phase 3), rebuilt by `sync`; every
+ * other transition is one of the pure rules in `@/domain/project-tree` or
+ * `@/domain/sidebar`.
  */
 export type WorkspaceState = {
   readonly tree: ProjectTree;
@@ -54,18 +56,23 @@ export type WorkspaceState = {
   readonly loadingProjects: boolean;
   readonly loadingProjectThreads: ReadonlySet<string>;
 
-  readonly applyProjects: (projects: readonly Project[]) => void;
-  readonly applyProject: (project: Project) => void;
-  /** A created Project arrives described, with no Threads yet. */
-  readonly applyCreatedProject: (project: Project) => void;
-  readonly applyThreads: (
-    projectId: string,
-    threads: readonly Thread[],
-  ) => void;
-  readonly applyThread: (thread: Thread) => void;
-  readonly applyUpdate: (update: TreeUpdate) => void;
-  readonly forgetProject: (projectId: string) => void;
-  readonly forgetThread: (projectId: string, threadId: string) => void;
+  /** The Projects whose Threads the layout reads from the mirror (R5). */
+  readonly requested: ReadonlySet<string>;
+  /** Whether the mirror bound with `bindRecords` is connected to the host. */
+  readonly connected: boolean;
+  /**
+   * Adds `projectId` to `requested` and syncs with the bound mirror, which
+   * reads its Threads and so starts their first load.
+   */
+  readonly request: (projectId: string) => void;
+  /**
+   * Rebuilds the tree's records from `records`: its Projects and the Threads
+   * of every requested Project it describes (`withRecords`), and the
+   * connection. Answers the same state when nothing changed. A
+   * `project_stream_failed` read of the selected Project is reported once.
+   * Without a mirror the window is disconnected and the tree stays.
+   */
+  readonly sync: (records: RuntimeRecords | undefined) => void;
   readonly select: (selection: Selection) => void;
   readonly selectProject: (project: Project) => void;
   readonly selectThread: (thread: Thread) => void;
@@ -107,36 +114,83 @@ const sidebarState = (sidebar: Sidebar): Pick<WorkspaceState, 'sidebar'> => ({
   sidebar,
 });
 
+/** The mirror `bindRecords` bound, if any. */
+let bound: RuntimeRecords | undefined;
+let boundSubscription: Disposable | undefined;
+/** The stream failure `sync` reported last, so it is reported once. */
+let reportedFailure: unknown;
+
 const treeState = (tree: ProjectTree): Pick<WorkspaceState, 'tree'> => ({
   tree,
 });
 
-export const workspaceStore = createStore<WorkspaceState>()((set) => ({
+export const workspaceStore = createStore<WorkspaceState>()((set, get) => ({
   tree: emptyTree,
   sidebar: emptySidebar,
   loadingProjects: true,
   loadingProjectThreads: new Set<string>(),
 
-  applyProjects: (projects) =>
-    set((state) => treeState(withProjects(state.tree, projects))),
-  applyProject: (project) =>
-    set((state) => treeState(withProject(state.tree, project))),
-  applyCreatedProject: (project) =>
-    set((state) =>
-      treeState(withThreads(withProject(state.tree, project), project.id, [])),
-    ),
-  applyThreads: (projectId, threads) =>
-    set((state) => treeState(withThreads(state.tree, projectId, threads))),
-  applyThread: (thread) =>
-    set((state) => treeState(withThread(state.tree, thread))),
-  applyUpdate: (update) =>
-    set((state) => treeState(applyTreeUpdate(state.tree, update))),
-  forgetProject: (projectId) =>
-    set((state) => treeState(forgetTreeProject(state.tree, projectId))),
-  forgetThread: (projectId, threadId) =>
-    set((state) =>
-      treeState(forgetTreeThread(state.tree, projectId, threadId)),
-    ),
+  requested: new Set<string>(),
+  connected: false,
+
+  request: (projectId) => {
+    const state = get();
+    if (!state.requested.has(projectId)) {
+      set({ requested: new Set([...state.requested, projectId]) });
+    }
+    get().sync(bound);
+  },
+  sync: (records) => {
+    // The reads are made before the state is set: a first read starts a load,
+    // and the mirror may answer it with a notice of its own.
+    const state = get();
+    if (records === undefined) {
+      if (state.connected) set({ connected: false });
+      return;
+    }
+    const connected = records.connection() === 'connected';
+    const projectsRead = records.projects();
+    const projects = projectsRead.value ?? [];
+    const listed =
+      projectsRead.status === 'ready'
+        ? new Set(projects.map((project) => project.id))
+        : undefined;
+    const threadsByProject: Record<string, readonly Thread[]> = {};
+    let streamFailure: RecordsRead<unknown> | undefined;
+    for (const projectId of state.requested) {
+      // A Project the loaded list no longer holds is not read again.
+      if (listed !== undefined && !listed.has(projectId)) continue;
+      const read = records.threads(projectId);
+      if (read.value !== undefined) threadsByProject[projectId] = read.value;
+      if (
+        projectId === state.tree.selection.projectId &&
+        read.status === 'failed' &&
+        read.error.code === 'project_stream_failed'
+      )
+        streamFailure = read;
+    }
+    const current = get();
+    const tree = withRecords(current.tree, { projects, threadsByProject });
+    const failure =
+      streamFailure?.status === 'failed' &&
+      streamFailure.error !== reportedFailure
+        ? streamFailure.error
+        : undefined;
+    if (failure !== undefined) reportedFailure = failure;
+    if (
+      tree === current.tree &&
+      connected === current.connected &&
+      failure === undefined
+    )
+      return;
+    set({
+      tree,
+      connected,
+      ...(failure === undefined
+        ? {}
+        : sidebarState(report(current.sidebar, errorInfo(failure)))),
+    });
+  },
   select: (selection) =>
     set((state) => {
       const tree = withSelection(state.tree, selection);
@@ -213,3 +267,62 @@ export const workspaceStore = createStore<WorkspaceState>()((set) => ({
       return { loadingProjectThreads: next };
     }),
 }));
+
+/**
+ * Binds the workspace to `records`, the window's `runtime.records/v1`: the
+ * store syncs at once and on every notice of the mirror. `undefined` unbinds
+ * it, and the window is then disconnected.
+ */
+export const bindRecords = (records: RuntimeRecords | undefined): void => {
+  boundSubscription?.dispose();
+  boundSubscription = undefined;
+  bound = records;
+  if (records !== undefined) {
+    boundSubscription = records.subscribe(() =>
+      workspaceStore.getState().sync(records),
+    );
+  }
+  workspaceStore.getState().sync(records);
+};
+
+/** The mirror `bindRecords` bound; read it anew at each call. */
+export const boundRecords = (): RuntimeRecords | undefined => bound;
+
+/** The failure a read answers when no mirror is bound. */
+const unavailable = (): ClientError =>
+  new ClientError('unavailable', 'Doric backend is unavailable.');
+
+/**
+ * Calls reload(target) and resolves with the read's first state that is not
+ * `loading`. With no mirror bound, the state is `failed` with
+ * ClientError('unavailable', …).
+ */
+export const awaitRead = (
+  target:
+    | { readonly target: 'projects' }
+    | { readonly target: 'threads'; readonly projectId: string },
+): Promise<RecordsRead<readonly unknown[]>> => {
+  const records = bound;
+  if (records === undefined) {
+    return Promise.resolve({ status: 'failed', error: unavailable() });
+  }
+  const read = (): RecordsRead<readonly unknown[]> =>
+    target.target === 'projects'
+      ? records.projects()
+      : records.threads(target.projectId);
+  return new Promise((resolve) => {
+    let subscription: Disposable | undefined;
+    let settled = false;
+    const check = () => {
+      if (settled) return;
+      const answer = read();
+      if (answer.status === 'loading') return;
+      settled = true;
+      subscription?.dispose();
+      resolve(answer);
+    };
+    subscription = records.subscribe(check);
+    records.reload(target);
+    check();
+  });
+};

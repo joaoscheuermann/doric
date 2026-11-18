@@ -11,6 +11,7 @@
       "options": {
         "commands": [
           "tsc --build bundles/runtime/runtime/tsconfig.json",
+          "tsc -p bundles/runtime/runtime/tsconfig.client.json",
           "node packages/bundle/dist/build/cli.js build bundles/runtime/runtime"
         ],
         "parallel": false
@@ -20,7 +21,11 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc --build bundles/runtime/runtime/tsconfig.json --emitDeclarationOnly"
+        "commands": [
+          "tsc --build bundles/runtime/runtime/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/runtime/runtime/tsconfig.client.json"
+        ],
+        "parallel": false
       }
     },
     "test": {
@@ -30,6 +35,7 @@
       "options": {
         "commands": [
           "tsc -p bundles/runtime/runtime/tsconfig.spec.json",
+          "tsc -p bundles/runtime/runtime/tsconfig.client-spec.json",
           "node --test 'bundles/runtime/runtime/dist-tests/tests/**/*.test.js'"
         ],
         "parallel": false

@@ -1,15 +1,29 @@
 // The Project and Thread records are the runtime's (`runtime/contracts`),
 // imported as types only: a window's import map is not guaranteed to serve a
 // host bundle's contracts module.
-import type { ErrorInfo } from 'desktop/reads';
-import type { Project, ProjectColor, Thread } from 'runtime/contracts';
+import { ref } from 'bundle/contracts';
+import type {
+  Project,
+  ProjectColor,
+  RuntimeRecords,
+  Thread,
+} from 'runtime/contracts';
 
 export type {
   Project,
   ProjectColor,
+  RecordsRead,
+  RuntimeRecords,
   Thread,
   ThreadEvent,
 } from 'runtime/contracts';
+
+/**
+ * The window's mirror of the host's Projects and Threads, which the runtime's
+ * client part provides (bundle isolation phase 3). Optional for the layout:
+ * it is reached only through `whenAvailable`.
+ */
+export const RecordsV1 = ref<RuntimeRecords>('runtime.records/v1');
 
 /**
  * The colors a Project can be marked with, in palette order. The vocabulary is
@@ -52,26 +66,6 @@ export const projectColorValue: Record<ProjectColor, string> = {
   pink: '#ec4899',
 };
 
-export type ProjectUpdate =
-  | {
-      readonly kind: 'snapshot';
-      readonly snapshot: {
-        readonly projectId: string;
-        readonly project: Project | null;
-        readonly threads: readonly Thread[];
-      };
-    }
-  | { readonly kind: 'thread-updated'; readonly thread: Thread }
-  | {
-      readonly kind: 'thread-deleted';
-      readonly projectId: string;
-      readonly threadId: string;
-    }
-  | { readonly kind: 'project-updated'; readonly project: Project }
-  | { readonly kind: 'project-deleted'; readonly projectId: string }
-  /** The stream ended with a failure: `project_stream_failed` over its cause. */
-  | { readonly kind: 'error'; readonly error: ErrorInfo };
-
 export type Draft =
   | { readonly kind: 'project' }
   | {
@@ -83,26 +77,6 @@ export type Draft =
 export type Entity =
   | { readonly kind: 'project'; readonly value: Project }
   | { readonly kind: 'thread'; readonly value: Thread };
-
-export const threadsForProject = (
-  threads: readonly Thread[],
-  projectId: string,
-): readonly Thread[] =>
-  threads.filter((thread) => thread.projectId === projectId);
-
-export const upsert = <Value extends { readonly id: string }>(
-  values: readonly Value[],
-  value: Value,
-  position: 'first' | 'last' = 'first',
-): readonly Value[] => {
-  const index = values.findIndex((candidate) => candidate.id === value.id);
-  if (index === -1) {
-    return position === 'last' ? [...values, value] : [value, ...values];
-  }
-  return values.map((candidate, candidateIndex) =>
-    candidateIndex === index ? value : candidate,
-  );
-};
 
 export const threadSubtreeIds = (
   threads: readonly Thread[],
@@ -124,14 +98,6 @@ export const threadSubtreeIds = (
     }
   }
   return ids;
-};
-
-export const withoutThreadSubtree = (
-  threads: readonly Thread[],
-  rootId: string,
-): readonly Thread[] => {
-  const ids = threadSubtreeIds(threads, rootId);
-  return threads.filter((thread) => !ids.has(thread.id));
 };
 
 export const limitName = (value: string): string =>

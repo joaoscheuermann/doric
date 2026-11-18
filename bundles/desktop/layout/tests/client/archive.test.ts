@@ -14,13 +14,18 @@
 // - an archived Thread stays selectable and its route resolves.
 // happy-dom draws no hover: a hover action is read as the button its row
 // holds, as `thread-rows.test.ts` reads the plus.
+//
+// The host is the fake host's records mirror (bundle isolation phase 3):
+// `FakeHost.records` is the `RuntimeRecords` object the fake host answers
+// `use('runtime.records/v1')` with, the same object on every `use`, so a test
+// wraps one of its members to see what the layout asked.
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
 
 import { NavigationV1, ref } from 'bundle/contracts';
+import type { RuntimeRecords } from 'runtime/contracts';
 
-import type { ThreadsHost } from '../../src/client/api/host.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
 import {
@@ -145,11 +150,16 @@ const render = async (
   return rendered;
 };
 
-type Mutable<Value> = { -readonly [Key in keyof Value]: Value[Key] };
-
-/** The host's `runtime.threads/v1`, which a test may wrap to see what it was asked. */
-const threadsOf = (workspace: RenderedWorkspace): Mutable<ThreadsHost> =>
-  workspace.services.use(ref<Mutable<ThreadsHost>>('runtime.threads/v1'));
+/** The fake host's `runtime.records/v1`, which a test may wrap to see what it was asked. */
+const recordsOf = (workspace: RenderedWorkspace): RuntimeRecords => {
+  const records = workspace.records;
+  assert.equal(
+    workspace.services.use(ref<RuntimeRecords>('runtime.records/v1')),
+    records,
+    'The fake host does not answer runtime.records/v1 with its records.',
+  );
+  return records;
+};
 
 const pathOf = (workspace: RenderedWorkspace): string | undefined =>
   workspace.services.use(NavigationV1).current()?.path;
@@ -646,7 +656,7 @@ describe('the Archived tab (AC16, AC19, AC20)', () => {
       'The deleted Thread is still drawn.',
     );
     assert.equal(
-      await threadsOf(workspace).thread(ids.validate),
+      await recordsOf(workspace).findThread({ threadId: ids.validate }),
       undefined,
       'The host still holds the Thread.',
     );
@@ -759,14 +769,14 @@ describe('archive with Undo (AC17)', () => {
 
   test('Archive moves the row to Archived and shows the toast; Undo restores its batch', async () => {
     const workspace = await render();
-    const host = threadsOf(workspace);
+    const host = recordsOf(workspace);
     const archive = host.archiveThread.bind(host);
     const restore = host.restoreThread.bind(host);
     const batches: string[] = [];
     const undone: (string | undefined)[] = [];
     host.archiveThread = async (input, call) => {
       const answer = await archive(input, call);
-      if (answer.status === 'archived') batches.push(answer.batch);
+      batches.push(answer.batch);
       return answer;
     };
     host.restoreThread = async (input, call) => {

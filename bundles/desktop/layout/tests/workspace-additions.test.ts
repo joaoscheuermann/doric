@@ -1,14 +1,17 @@
 // layout.workspace/v1@1.1.0 (R-9.1, R-9.5): the validated selection the
 // workspace shows, a Project's loaded Threads, the connection the sidebar
-// footer states, and the bottom split's visibility requests.
+// footer states, and the bottom split's visibility requests. The connection
+// is the one of the records mirror (`runtime.records/v1`) bound with
+// `bindRecords` (bundle isolation phase 3).
 
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 
 import type { Disposable } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
+import type { RuntimeRecords } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
-import type { ConnectionStatus } from '../src/client/domain/connection.js';
 import {
   emptyTree,
   type ProjectTree,
@@ -16,11 +19,7 @@ import {
 import type { Project, Thread } from '../src/client/domain/workspace.js';
 import { createLayoutWorkspace } from '../src/client/services/layout-workspace.js';
 import { bottomStore, resetBottom } from '../src/client/stores/bottom.js';
-import {
-  disposeConnection,
-  initConnection,
-} from '../src/client/stores/connection.js';
-import { workspaceStore } from '../src/client/stores/workspace.js';
+import { bindRecords, workspaceStore } from '../src/client/stores/workspace.js';
 import { LayoutWorkspaceV1 } from '../src/contracts/index.js';
 
 const project = (id: string): Project =>
@@ -46,19 +45,25 @@ const thread = (id: string, projectId: string): Thread => ({
 const setTree = (tree: Partial<ProjectTree>) =>
   workspaceStore.setState({ tree: { ...emptyTree, ...tree } });
 
+type Connection = ReturnType<RuntimeRecords['connection']>;
+
+/**
+ * Binds a records mirror whose connection the test sets: its `connection()`
+ * answers the last status set, and setting one calls its subscribers.
+ */
 const connection = () => {
-  let status: ConnectionStatus = 'disconnected';
-  const listeners = new Set<(status: ConnectionStatus) => void>();
-  initConnection({
-    status: () => status,
-    subscribe: (listener): Disposable => {
-      listeners.add(listener);
-      return { dispose: () => listeners.delete(listener) };
-    },
-  });
-  return (next: ConnectionStatus) => {
+  let status: Connection = 'disconnected';
+  const listeners = new Set<() => void>();
+  const records = createRecordsApi({ connection: 'disconnected' });
+  records.connection = () => status;
+  records.subscribe = (listener): Disposable => {
+    listeners.add(listener);
+    return { dispose: () => void listeners.delete(listener) };
+  };
+  bindRecords(records);
+  return (next: Connection) => {
     status = next;
-    for (const listener of listeners) listener(next);
+    for (const listener of [...listeners]) listener();
   };
 };
 
@@ -77,7 +82,7 @@ beforeEach(() => {
   setTree({});
   resetBottom();
 });
-afterEach(disposeConnection);
+afterEach(() => bindRecords(undefined));
 
 describe('layout.workspace/v1@1.1.0', () => {
   test('a Project-only selection names the Project and no Thread', async () => {

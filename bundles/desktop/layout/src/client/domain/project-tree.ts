@@ -1,6 +1,5 @@
 import { isArchived } from './thread-archive.js';
-import type { Project, ProjectUpdate, Thread } from './workspace.js';
-import { threadSubtreeIds, threadsForProject, upsert } from './workspace.js';
+import type { Project, Thread } from './workspace.js';
 
 /**
  * The Project the user selected and the Thread selected inside it. A selected
@@ -31,9 +30,6 @@ export const emptyTree: ProjectTree = {
   threadsByProject: {},
   selection: {},
 };
-
-/** The Project updates that describe the tree; a failure is reported, not reduced. */
-export type TreeUpdate = Exclude<ProjectUpdate, { readonly kind: 'error' }>;
 
 /** Whether the host has described a Project's Threads. */
 export const isDescribed = (tree: ProjectTree, projectId: string): boolean =>
@@ -98,153 +94,83 @@ export const withProjectToggled = (
   return next;
 };
 
+/** Whether two lists hold the same values, in the same order. */
+const sameList = <Value>(
+  left: readonly Value[] | undefined,
+  right: readonly Value[],
+): boolean =>
+  left !== undefined &&
+  left.length === right.length &&
+  left.every((value, index) => value === right[index]);
+
+const holds = (
+  values: readonly { readonly id: string }[] | undefined,
+  id: string,
+): boolean => values?.some((value) => value.id === id) ?? false;
+
 /**
- * The Projects the host listed, keeping the ones already known ahead of the new
- * ones, so a live addition never reorders the sidebar under the user.
+ * The tree with the records of `runtime.records/v1`: its Projects and the
+ * Threads of the Projects it described. A list equal to the one the tree
+ * holds keeps the tree's own array, and a tree that changes nothing is
+ * answered itself (the same object).
+ *
+ * The selection is repaired as the record rules did (R6):
+ * - the selected Project leaving the Projects empties the selection;
+ * - the selected Thread leaving its Project's described Threads keeps the
+ *   Project alone;
+ * - when the selected Project's Threads change, a selection with no Thread
+ *   takes the first main Thread that is not archived (`withSelection`).
+ * Pure; never throws.
  */
-export const withProjects = (
+export const withRecords = (
   tree: ProjectTree,
-  projects: readonly Project[],
+  records: Pick<ProjectTree, 'projects' | 'threadsByProject'>,
 ): ProjectTree => {
-  const known = new Set(tree.projects.map((project) => project.id));
-  return {
-    ...tree,
-    projects: [
-      ...tree.projects,
-      ...projects.filter((project) => !known.has(project.id)),
-    ],
-  };
-};
-
-export const withProject = (
-  tree: ProjectTree,
-  project: Project,
-): ProjectTree => ({ ...tree, projects: upsert(tree.projects, project) });
-
-/**
- * A Project's Threads as the host described them. This is what makes a Project
- * ready, so it is the only way a Project's Threads become trusted.
- */
-export const withThreads = (
-  tree: ProjectTree,
-  projectId: string,
-  threads: readonly Thread[],
-): ProjectTree =>
-  withSelection(
-    {
-      ...tree,
-      threadsByProject: {
-        ...tree.threadsByProject,
-        [projectId]: threadsForProject(threads, projectId),
-      },
+  const projects = sameList(tree.projects, records.projects)
+    ? tree.projects
+    : records.projects;
+  const entries = Object.entries(records.threadsByProject).map(
+    ([projectId, threads]): [string, readonly Thread[]] => {
+      const known = tree.threadsByProject[projectId];
+      return [
+        projectId,
+        known !== undefined && sameList(known, threads) ? known : threads,
+      ];
     },
-    tree.selection,
   );
+  const threadsByProject =
+    entries.length === Object.keys(tree.threadsByProject).length &&
+    entries.every(
+      ([projectId, threads]) => tree.threadsByProject[projectId] === threads,
+    )
+      ? tree.threadsByProject
+      : Object.fromEntries(entries);
 
-/**
- * One Thread, added or replaced. A new Thread lands where the caller asks,
- * because the host lists Threads in creation order.
- */
-export const withThread = (
-  tree: ProjectTree,
-  thread: Thread,
-  position: 'first' | 'last' = 'first',
-): ProjectTree => ({
-  ...tree,
-  threadsByProject: {
-    ...tree.threadsByProject,
-    [thread.projectId]: upsert(
-      threadsForProject(
-        tree.threadsByProject[thread.projectId] ?? [],
-        thread.projectId,
-      ),
-      thread,
-      position,
-    ),
-  },
-});
-
-/**
- * Replaces the Threads of a Project the host already described. A Project whose
- * Threads were never described stays undescribed rather than being filled in
- * with what a removal guessed.
- */
-const replaceThreads = (
-  tree: ProjectTree,
-  projectId: string,
-  threads: readonly Thread[],
-): ProjectTree =>
-  tree.threadsByProject[projectId] === undefined
-    ? tree
-    : {
-        ...tree,
-        threadsByProject: { ...tree.threadsByProject, [projectId]: threads },
-      };
-
-/**
- * A Project and everything that belonged to it. Ownership decides: the Project
- * goes, its described Threads go, and a selection pointing at it goes too,
- * even when no loaded list ever named the selected Thread. Nothing here reads
- * a Thread list to decide what the Project owned, so a stale or absent cache
- * cannot leave a selection behind.
- */
-export const forgetProject = (
-  tree: ProjectTree,
-  projectId: string,
-): ProjectTree => ({
-  projects: tree.projects.filter((project) => project.id !== projectId),
-  threadsByProject: Object.fromEntries(
-    Object.entries(tree.threadsByProject).filter(([id]) => id !== projectId),
-  ),
-  selection: tree.selection.projectId === projectId ? {} : tree.selection,
-});
-
-/**
- * A Thread and its subtree. The subtree comes from the Threads that were
- * described, and the selection loses the Thread while keeping its Project.
- */
-export const forgetThread = (
-  tree: ProjectTree,
-  projectId: string,
-  threadId: string,
-): ProjectTree => {
-  const described = threadsOf(tree, projectId);
-  const threadIds = threadSubtreeIds(described, threadId);
-  return {
-    ...replaceThreads(
-      tree,
-      projectId,
-      described.filter((thread) => !threadIds.has(thread.id)),
-    ),
-    selection:
-      tree.selection.threadId !== undefined &&
-      threadIds.has(tree.selection.threadId)
-        ? { projectId: tree.selection.projectId }
-        : tree.selection,
-  };
-};
-
-/** The transition a live Project update makes. */
-export const applyUpdate = (
-  tree: ProjectTree,
-  update: TreeUpdate,
-): ProjectTree => {
-  switch (update.kind) {
-    case 'snapshot':
-      return withThreads(
-        tree,
-        update.snapshot.projectId,
-        update.snapshot.threads,
-      );
-    case 'thread-updated':
-      // An agent-created Thread lands after its siblings instead of jumping to
-      // the top, matching the creation order the server lists them in.
-      return withThread(tree, update.thread, 'last');
-    case 'thread-deleted':
-      return forgetThread(tree, update.projectId, update.threadId);
-    case 'project-updated':
-      return withProject(tree, update.project);
-    case 'project-deleted':
-      return forgetProject(tree, update.projectId);
+  const { projectId, threadId } = tree.selection;
+  let selection = tree.selection;
+  if (projectId !== undefined) {
+    const described = threadsByProject[projectId];
+    if (holds(tree.projects, projectId) && !holds(projects, projectId)) {
+      selection = {};
+    } else if (
+      threadId !== undefined &&
+      described !== undefined &&
+      holds(tree.threadsByProject[projectId], threadId) &&
+      !holds(described, threadId)
+    ) {
+      selection = { projectId };
+    }
   }
+  const next: ProjectTree = { projects, threadsByProject, selection };
+  const changed =
+    selection.projectId !== undefined &&
+    threadsByProject[selection.projectId] !==
+      tree.threadsByProject[selection.projectId];
+  const repaired = changed ? withSelection(next, selection) : next;
+  return repaired.projects === tree.projects &&
+    repaired.threadsByProject === tree.threadsByProject &&
+    repaired.selection.projectId === tree.selection.projectId &&
+    repaired.selection.threadId === tree.selection.threadId
+    ? tree
+    : repaired;
 };

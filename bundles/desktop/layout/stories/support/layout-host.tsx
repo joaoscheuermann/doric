@@ -9,9 +9,7 @@ import { projectIdFromPath } from '../../src/client/domain/project-tabs.js';
 import {
   emptyTree,
   type ProjectTree,
-  withProjects,
   withSelection,
-  withThreads,
 } from '../../src/client/domain/project-tree.js';
 import { emptySidebar } from '../../src/client/domain/sidebar.js';
 import { mainThreadFor } from '../../src/client/domain/thread-navigation.js';
@@ -113,14 +111,16 @@ const treeOf = (fixture: LayoutFixture): ProjectTree | undefined => {
   if (fixture.projects === undefined || unready.includes('projects'))
     return undefined;
   const threads = fixture.threads ?? [];
-  let tree = withProjects(emptyTree, fixture.projects);
-  for (const project of fixture.projects) {
-    tree = withThreads(
-      tree,
-      project.id,
-      threads.filter((thread) => thread.projectId === project.id),
-    );
-  }
+  const tree: ProjectTree = {
+    ...emptyTree,
+    projects: fixture.projects,
+    threadsByProject: Object.fromEntries(
+      fixture.projects.map((project) => [
+        project.id,
+        threads.filter((thread) => thread.projectId === project.id),
+      ]),
+    ),
+  };
   const path = fixture.path ?? '/';
   const projectId = projectIdFromPath(path);
   if (projectId === undefined) return tree;
@@ -148,11 +148,15 @@ export const bindLayout = (
   unbindCurrent?.();
   const created = createFakeHost({ regions: appRegions, ...fixture });
   const tree = treeOf(fixture);
+  // The records fake describes every Project the seeded tree describes: the
+  // workspace reads their Threads from the mirror once `activate` binds it.
   workspaceStore.setState({
     tree: tree ?? emptyTree,
     sidebar: emptySidebar,
     loadingProjects: tree === undefined,
     loadingProjectThreads: new Set(),
+    requested: new Set(Object.keys(tree?.threadsByProject ?? {})),
+    connected: false,
   });
   workspaceTabsStore.setState({ threads: tabsOf(fixture.tabs) });
   seedProjectTabs(fixture.projectTabs);

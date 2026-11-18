@@ -21,9 +21,12 @@ import {
   type StreamObserver,
 } from 'bundle/contracts';
 import { errorFrom } from 'desktop/reads';
-import type { ProjectWatchInput, ProjectWatchItem } from 'runtime/contracts';
 
-import type { ProjectUpdate } from '../domain/workspace.js';
+import type {
+  ProjectWatchInput,
+  ProjectWatchItem,
+} from '../../contracts/index.js';
+import type { ProjectUpdate } from '../domain/tree.js';
 
 /** The only message a window ever receives for a failed Project stream. */
 export const projectStreamFailed = 'The Project event stream failed.';
@@ -241,20 +244,3 @@ export const createProjectWatch = ({
     close: () => stopCurrent?.(),
   };
 };
-
-let current: ProjectWatch | undefined;
-
-/** Binds the window's one Project watch to the layout's activation services. */
-export const initProjectWatch = (options: ProjectWatchOptions): void => {
-  current?.close();
-  current = createProjectWatch(options);
-};
-
-export const disposeProjectWatch = (): void => {
-  current?.close();
-  current = undefined;
-};
-
-/** The window's Project watch; a no-op before activation. */
-export const projectWatch = (): ProjectWatch =>
-  current ?? { watch: () => () => undefined, close: () => undefined };

@@ -1,21 +1,16 @@
 // The Threads a window shows and the views it holds on them
 // (docs/designs/thread-archive.md §6, §10.1, §10.8; T-23, T-24; AC4 on the
-// window's side).
+// window's side). From bundle isolation phase 3 the window holds each view
+// through `view` of `runtime.records/v1` (T3.9); the view streams themselves
+// are the runtime's.
 
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { afterEach, beforeEach, describe, test } from 'node:test';
 
-import {
-  type ConnectionStatus,
-  ContractError,
-  type Disposable,
-  type RouteMatch,
-  type StreamListener,
-  type StreamObserver,
-} from 'bundle/contracts';
-import type { ThreadViewInput, ThreadViewItem } from 'runtime/contracts';
+import type { Disposable, RouteMatch, Services } from 'bundle/contracts';
+import type { RuntimeRecords } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
-import { createThreadViews } from '../src/client/api/thread-views.js';
 import {
   PROJECT_ROUTE,
   THREAD_ROUTE,
@@ -27,6 +22,8 @@ import {
   type WorkspaceTab,
   type WorkspaceTabs,
 } from '../src/client/domain/workspace-tabs.js';
+import { watchThreadViews } from '../src/client/services/thread-views.js';
+import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
 
 const projectId = '22222222-2222-4222-8222-222222222222';
 const routeThreadId = '11111111-1111-4111-8111-111111111111';
@@ -140,194 +137,194 @@ describe('threadsOnScreen (T-23)', () => {
   });
 });
 
-interface ViewStream {
-  readonly threadId: string;
-  readonly observer: StreamObserver<ThreadViewItem>;
-  disposed: boolean;
-}
+// T3.9: watchThreadViews -----------------------------------------------------
 
-/** `runtime.threads/v1.viewThread`: the boundary the window holds views on. */
-class FakeRuntime {
-  readonly streams: ViewStream[] = [];
+/** One `view` call or the disposal of the view it returned, in order. */
+type ViewEvent = readonly ['take' | 'dispose', string];
 
-  viewThread(
-    input: ThreadViewInput,
-    listener: StreamListener<ThreadViewItem>,
-  ): Disposable {
-    const observer =
-      typeof listener === 'function' ? { next: listener } : listener;
-    const stream: ViewStream = {
-      threadId: input.threadId,
-      observer,
-      disposed: false,
-    };
-    this.streams.push(stream);
+/**
+ * A records mirror whose `view` records each call and each disposal; every
+ * other member is the in-memory fake's.
+ */
+const recordingRecords = () => {
+  const events: ViewEvent[] = [];
+  const records: RuntimeRecords = createRecordsApi();
+  records.view = ({ threadId }): Disposable => {
+    events.push(['take', threadId]);
+    let disposed = false;
     return {
       dispose: () => {
-        stream.disposed = true;
+        if (disposed) return;
+        disposed = true;
+        events.push(['dispose', threadId]);
       },
     };
-  }
-
-  /** The ids with an open stream, one entry per open stream. */
-  get open(): readonly string[] {
-    return this.streams
-      .filter((stream) => !stream.disposed)
-      .map((stream) => stream.threadId)
-      .sort();
-  }
-
-  /** The open stream of `threadId`. */
-  openOf(threadId: string): ViewStream {
-    const stream = this.streams.find(
-      (candidate) => candidate.threadId === threadId && !candidate.disposed,
-    );
-    assert.ok(stream !== undefined, `no open stream for ${threadId}`);
-    return stream;
-  }
-
-  /** The provider ends the open stream of `threadId`. */
-  end(threadId: string, error?: ContractError): void {
-    const stream = this.openOf(threadId);
-    stream.disposed = true;
-    stream.observer.end?.(error);
-  }
-
-  opened(threadId: string): number {
-    return this.streams.filter((stream) => stream.threadId === threadId).length;
-  }
-}
-
-class FakeConnection {
-  current: ConnectionStatus = 'connected';
-  private readonly listeners = new Set<(status: ConnectionStatus) => void>();
-
-  status(): ConnectionStatus {
-    return this.current;
-  }
-
-  subscribe(listener: (status: ConnectionStatus) => void): Disposable {
-    this.listeners.add(listener);
-    return { dispose: () => void this.listeners.delete(listener) };
-  }
-
-  report(status: ConnectionStatus): void {
-    this.current = status;
-    for (const listener of [...this.listeners]) listener(status);
-  }
-}
-
-const setup = () => {
-  const runtime = new FakeRuntime();
-  const connection = new FakeConnection();
-  const timers: (() => void)[] = [];
-  const views = createThreadViews({
-    runtime,
-    connection,
-    schedule: (run) => {
-      timers.push(run);
-      return () => {
-        const index = timers.indexOf(run);
-        if (index >= 0) timers.splice(index, 1);
-      };
-    },
-  });
-  const fireTimers = () => {
-    for (const run of timers.splice(0)) run();
   };
-  return { runtime, connection, views, fireTimers };
+  /** The ids with a view held now, one entry per held view, sorted. */
+  const held = (): readonly string[] => {
+    const counts = new Map<string, number>();
+    for (const [kind, threadId] of events) {
+      counts.set(
+        threadId,
+        (counts.get(threadId) ?? 0) + (kind === 'take' ? 1 : -1),
+      );
+    }
+    return [...counts]
+      .flatMap(([threadId, count]) =>
+        Array.from({ length: count }, () => threadId),
+      )
+      .sort();
+  };
+  return { records, events, held };
 };
 
-describe('createThreadViews (T-24)', () => {
-  test('set opens one view per new id and ends the views of ids it no longer names', () => {
-    const { runtime, views } = setup();
+type WhenAvailableCallback = Parameters<Services['whenAvailable']>[1];
 
-    views.set(new Set(['a', 'b']));
-    assert.deepEqual(runtime.open, ['a', 'b']);
+/**
+ * The services `watchThreadViews` is bound to: `navigation/v1` answered from
+ * `route`, and `runtime.records/v1` reached only through `whenAvailable`,
+ * whose callback runs once the test makes the provider available. `use`
+ * throws for every id but `navigation/v1`, as it does for a contract the
+ * window has no provider of.
+ */
+const fakeServices = (records: RuntimeRecords) => {
+  let route: RouteMatch | undefined;
+  const routeListeners = new Set<(match: RouteMatch | undefined) => void>();
+  const navigation = {
+    current: () => route,
+    subscribe: (
+      listener: (match: RouteMatch | undefined) => void,
+    ): Disposable => {
+      routeListeners.add(listener);
+      return { dispose: () => void routeListeners.delete(listener) };
+    },
+  };
+  const waiting: ((api: RuntimeRecords) => void)[] = [];
+  const used: string[] = [];
+  const services = {
+    provide: () => {
+      throw new Error('watchThreadViews provides nothing.');
+    },
+    use: (contract: { readonly id: string }) => {
+      used.push(contract.id);
+      if (contract.id === 'navigation/v1') return navigation;
+      throw new Error(`No provider of ${contract.id}.`);
+    },
+    whenAvailable: (
+      contract: { readonly id: string },
+      callback: WhenAvailableCallback,
+    ): Disposable => {
+      if (contract.id !== 'runtime.records/v1')
+        return { dispose: () => undefined };
+      let cleanup: ReturnType<WhenAvailableCallback>;
+      let live = true;
+      const start = (api: RuntimeRecords) => {
+        if (live)
+          cleanup = callback(api, { bundleId: 'runtime', version: '2.9.0' });
+      };
+      waiting.push(start);
+      return {
+        dispose: () => {
+          if (!live) return;
+          live = false;
+          if (typeof cleanup === 'function') void cleanup();
+        },
+      };
+    },
+  } as unknown as Services;
+  return {
+    services,
+    used,
+    /** The runtime's client part provides `runtime.records/v1`. */
+    provideRecords: () => {
+      for (const start of waiting.splice(0)) start(records);
+    },
+    navigate: (next: RouteMatch | undefined) => {
+      route = next;
+      for (const listener of [...routeListeners]) listener(next);
+    },
+  };
+};
 
-    views.set(new Set(['b', 'c']));
-    assert.deepEqual(runtime.open, ['b', 'c']);
-    assert.equal(runtime.opened('b'), 1, 'a kept id keeps its stream');
+describe('watchThreadViews (T3.9)', () => {
+  beforeEach(() => {
+    workspaceTabsStore.setState({ threads: {} });
+  });
+  afterEach(() => {
+    workspaceTabsStore.setState({ threads: {} });
   });
 
-  test('the view item changes nothing', () => {
-    const { runtime, views } = setup();
-    views.set(new Set(['a']));
+  test('holds no view without a provider of runtime.records/v1, and takes them once one is available', () => {
+    const { records, held } = recordingRecords();
+    const host = fakeServices(records);
+    host.navigate(threadRoute(routeThreadId));
 
-    runtime.openOf('a').observer.next({ kind: 'viewing', threadId: 'a' });
+    const stop = watchThreadViews(host.services);
+    try {
+      host.navigate(threadRoute(tabThreadId));
+      assert.deepEqual(held(), []);
+      assert.deepEqual(
+        host.used.filter((id) => id !== 'navigation/v1'),
+        [],
+        'The watch reached a runtime contract outside whenAvailable.',
+      );
 
-    assert.deepEqual(runtime.open, ['a']);
-    assert.equal(runtime.opened('a'), 1);
+      host.provideRecords();
+      assert.deepEqual(held(), [tabThreadId]);
+    } finally {
+      stop();
+    }
   });
 
-  for (const code of [
-    'unavailable',
-    'disconnected',
-    'generation_lost',
-  ] as const) {
-    test(`a silent ${code} end opens the view again once the connection reports connected`, () => {
-      const { runtime, connection, views } = setup();
-      views.set(new Set(['a']));
-
-      connection.current = 'disconnected';
-      runtime.end('a', new ContractError(code, 'gone for now'));
-      assert.deepEqual(runtime.open, []);
-
-      connection.report('connected');
-      assert.deepEqual(runtime.open, ['a']);
+  test('a Thread on screen before and after a change keeps its view: the new views are taken before the old ones are disposed', () => {
+    const { records, events, held } = recordingRecords();
+    const host = fakeServices(records);
+    workspaceTabsStore.setState({
+      threads: {
+        [routeThreadId]: tabs([threadTab('t', tabThreadId)], 't'),
+      },
     });
-  }
+    host.navigate(threadRoute(routeThreadId));
+    const stop = watchThreadViews(host.services);
+    host.provideRecords();
+    try {
+      assert.deepEqual(held(), [routeThreadId, tabThreadId].sort());
+      const before = events.length;
 
-  test('a silent end while the connection stays up opens the view again after the delay', () => {
-    const { runtime, views, fireTimers } = setup();
-    views.set(new Set(['a']));
+      host.navigate(threadRoute(tabThreadId));
 
-    runtime.end('a', new ContractError('unavailable', 'the runtime drains'));
-    assert.deepEqual(runtime.open, []);
-
-    fireTimers();
-    assert.deepEqual(runtime.open, ['a']);
+      assert.deepEqual(held(), [tabThreadId]);
+      let kept = 1;
+      for (const [kind, threadId] of events.slice(before)) {
+        if (threadId !== tabThreadId) continue;
+        kept += kind === 'take' ? 1 : -1;
+        assert.ok(kept > 0, 'The Thread still on screen lost its view.');
+      }
+    } finally {
+      stop();
+    }
   });
 
-  test('a not_found end drops the id until the next set names it', () => {
-    const { runtime, connection, views, fireTimers } = setup();
-    views.set(new Set(['a']));
+  test('its cleanup disposes every view, and a later change takes none', () => {
+    const { records, held } = recordingRecords();
+    const host = fakeServices(records);
+    workspaceTabsStore.setState({
+      threads: {
+        [routeThreadId]: tabs([threadTab('t', tabThreadId)], 't'),
+      },
+    });
+    host.navigate(threadRoute(routeThreadId));
+    const stop = watchThreadViews(host.services);
+    host.provideRecords();
+    assert.deepEqual(held(), [routeThreadId, tabThreadId].sort());
 
-    runtime.end('a', new ContractError('not_found', 'no such Thread'));
-    connection.report('disconnected');
-    connection.report('connected');
-    fireTimers();
-    assert.deepEqual(runtime.open, []);
+    stop();
+    assert.deepEqual(held(), []);
 
-    views.set(new Set(['a']));
-    assert.deepEqual(runtime.open, ['a']);
-  });
-
-  test('close ends every view, and a later set follows again', () => {
-    const { runtime, connection, views, fireTimers } = setup();
-    views.set(new Set(['a', 'b']));
-
-    views.close();
-    assert.deepEqual(runtime.open, []);
-    connection.report('disconnected');
-    connection.report('connected');
-    fireTimers();
-    assert.deepEqual(runtime.open, []);
-    views.close();
-
-    views.set(new Set(['a']));
-    assert.deepEqual(runtime.open, ['a']);
-  });
-
-  test('a view that ends silently after close is not opened again', () => {
-    const { runtime, views, fireTimers } = setup();
-    views.set(new Set(['a']));
-    const stream = runtime.openOf('a');
-
-    views.close();
-    stream.observer.end?.(new ContractError('unavailable', 'late end'));
-    fireTimers();
-
-    assert.deepEqual(runtime.open, []);
+    host.navigate(threadRoute(tabThreadId));
+    workspaceTabsStore.setState({ threads: {} });
+    assert.deepEqual(held(), []);
+    stop();
+    assert.deepEqual(held(), []);
   });
 });

@@ -212,13 +212,29 @@ describe('layout.tabs/v1@1.2.0 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v1@1.2.0, layout.panel/v2@2.0.0 (not v1), layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.2.2 and requires runtime.threads/v1@^1.8.0 (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive)', () => {
+  test('provides layout.tabs/v1@1.2.0, layout.panel/v2@2.0.0 (not v1), layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.2.3, requires neither runtime/v1 nor runtime.threads/v1, and takes runtime.records/v1 as optional (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive, bundle isolation AC3.1)', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
-    ) as { version: string; provides: string[]; requires: string[] };
+    ) as {
+      version: string;
+      provides: string[];
+      requires: string[];
+      optional: string[];
+    };
 
-    assert.equal(manifest.version, '3.2.2');
-    assert.ok(manifest.requires.includes('runtime.threads/v1@^1.8.0'));
+    assert.equal(manifest.version, '3.2.3');
+    assert.ok(
+      !manifest.requires.some(
+        (entry) =>
+          entry.startsWith('runtime/v1@') ||
+          entry.startsWith('runtime.threads/v1@'),
+      ),
+      'The layout still requires runtime/v1 or runtime.threads/v1.',
+    );
+    assert.deepEqual(manifest.optional, [
+      'core.open-settings/v1',
+      'runtime.records/v1',
+    ]);
     assert.ok(manifest.provides.includes('layout.stack/v2@2.0.0'));
     assert.ok(
       !manifest.provides.some((entry) => entry.startsWith('layout.stack/v1@')),

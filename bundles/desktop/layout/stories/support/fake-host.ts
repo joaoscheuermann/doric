@@ -1,24 +1,26 @@
 // A fake host for the layout stories: the services `activate` binds the
-// layout to, answered in memory from story data. Projects and Threads can be
-// created, renamed, colored and deleted; an operation can be held pending or
-// made to fail, which is how the loading and error states are drawn. The
+// layout to, answered in memory from story data. The Projects and Threads are
+// a records mirror (`runtime.records/v1`) built by `createRecordsApi` of
+// `runtime/testing`: they can be created, renamed, colored and deleted; a read
+// can be held pending or made to fail, which is how the loading and error
+// states are drawn. The
 // services the layout itself provides (`layout.tabs/v1` and the rest) are
 // kept and answered in process, so a child Thread still opens its tab.
 
-import {
-  type CatalogSnapshot,
-  ContractError,
-  type DoricAbout,
-  type Navigation,
-  type ProviderInfo,
+import type {
+  CatalogSnapshot,
+  Disposable,
+  DoricAbout,
+  Navigation,
+  ProviderInfo,
 } from 'bundle/contracts';
 import { type ComponentProps, createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
+import type { ProjectActivity, RuntimeRecords } from 'runtime/contracts';
+import { createRecordsApi, type RecordsOperation } from 'runtime/testing';
 
-import type { RuntimeHost, ThreadsHost } from '../../src/client/api/host.js';
 import type { ProjectPanel } from '../../src/client/components/organisms/project-panel.js';
-import type { ConnectionStatus } from '../../src/client/domain/connection.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { activate } from '../../src/client/index.js';
 import type { StackPane, ThreadRows } from '../../src/contracts/index.js';
@@ -36,11 +38,10 @@ export type RegionItem = Omit<RegionEntry, 'owner'> & {
   readonly owner?: string;
 };
 
-type ProjectActivity = Awaited<
-  ReturnType<RuntimeHost['projectActivity']>
->[number];
-
-/** The host reads a story can hold pending or make fail. */
+/**
+ * The host reads a story can hold pending or make fail; `thread` is the
+ * mirror's `findThread`.
+ */
 export type HostOperation = 'projects' | 'activity' | 'threads' | 'thread';
 
 export interface HostOptions {
@@ -48,7 +49,7 @@ export interface HostOptions {
   readonly threads?: readonly Thread[];
   /** The window path the story opens at. */
   readonly path?: string;
-  readonly connection?: ConnectionStatus;
+  readonly connection?: 'connected' | 'disconnected';
   /** The items other bundles added to each region. */
   readonly regions?: Readonly<Record<string, readonly RegionItem[]>>;
   /** Reads that never answer, for loading states. */
@@ -227,15 +228,6 @@ const matchPath = (path: string): RouteMatch | undefined => {
 
 const disposable = { dispose: () => undefined };
 
-/** The states in which `archiveThread` answers `busy`. */
-const busyStates: ReadonlySet<Thread['state']> = new Set([
-  'queued',
-  'running',
-  'cancelling',
-]);
-
-const never = <Value>(): Promise<Value> => new Promise<Value>(() => undefined);
-
 type Method = {
   readonly input?: { readonly def?: { readonly type?: string } };
   readonly execute: (
@@ -255,7 +247,7 @@ export interface FakeHost {
    * The services `activate` binds the layout to.
    *
    * `use(ref)` answers an id the layout provided, then the host's own
-   * answers: `runtime/v1`, `runtime.threads/v1`, `doric.connection/v1`,
+   * answers: `runtime.records/v1` (`records`), `doric.connection/v1`,
    * `doric.about/v1` (`get()` resolves `{ version: '0.0.1' }`), `ui/v1`,
    * `navigation/v1`, `regions/v1` and `commands/v1`. It throws for an id in
    * `absent` or unknown.
@@ -277,7 +269,42 @@ export interface FakeHost {
    * executions do not change an array already returned.
    */
   executed(): readonly string[];
+  /**
+   * The object the host answers `use('runtime.records/v1')` with, the same on
+   * every `use`: a `createRecordsApi` mirror of the host options (`projects`,
+   * `threads`, `connection`, `pending`, `failing`; the operation `thread` is
+   * `findThread`). A test may replace its members; the layout calls the
+   * replacement.
+   */
+  readonly records: RuntimeRecords;
+  /**
+   * Calls every listener subscribed through `records.subscribe`, as the
+   * mirror does when a read changes, including the listeners subscribed
+   * before a test replaced a member.
+   */
+  notifyRecords(): void;
 }
+
+/** The activity of every Project: its latest Thread or own update, newest first. */
+const activityOf = (
+  projects: readonly Project[],
+  threads: readonly Thread[],
+): readonly ProjectActivity[] =>
+  projects
+    .map((project) => {
+      const latest = threads
+        .filter((thread) => thread.projectId === project.id)
+        .map((thread) => thread.updatedAt)
+        .concat(project.updatedAt)
+        .sort()
+        .at(-1);
+      return { project, activityAt: latest ?? project.updatedAt };
+    })
+    .sort((left, right) => right.activityAt.localeCompare(left.activityAt));
+
+/** The mirror's name for a host read. */
+const recordsOperation = (operation: HostOperation): RecordsOperation =>
+  operation === 'thread' ? 'findThread' : operation;
 
 /** The provider a story host's `whenAvailable` callback is bound to. */
 const storyProvider: ProviderInfo = { bundleId: 'story', version: '0.0.0' };
@@ -289,272 +316,33 @@ const commandId = (command: unknown): string =>
     : String((command as { readonly id?: unknown } | undefined)?.id);
 
 export const createFakeHost = (options: HostOptions = {}): FakeHost => {
-  let projects = [...(options.projects ?? [])];
-  let threads = [...(options.threads ?? [])];
-  const pending = new Set(options.pending ?? []);
-  const failing = new Set(options.failing ?? []);
   const absent = new Set(options.absent ?? []);
   const commandsExecuted: string[] = [];
 
-  /** Answers a read, holds it, or fails it as the story asked. */
-  const read = <Value>(
-    operation: HostOperation,
-    answer: () => Value,
-  ): Promise<Value> => {
-    if (pending.has(operation)) return never();
-    if (failing.has(operation)) {
-      return Promise.reject(new Error('The host is unreachable.'));
-    }
-    return Promise.resolve(answer());
+  const records = createRecordsApi({
+    projects: options.projects ?? [],
+    threads: options.threads ?? [],
+    activity: activityOf(options.projects ?? [], options.threads ?? []),
+    connection: options.connection ?? 'connected',
+    pending: (options.pending ?? []).map(recordsOperation),
+    failing: (options.failing ?? []).map(recordsOperation),
+  });
+  // Every listener subscribed through `records`, so `notifyRecords` reaches
+  // them whatever member a test replaced since.
+  const recordsListeners = new Set<() => void>();
+  const subscribe = records.subscribe.bind(records);
+  records.subscribe = (listener, call): Disposable => {
+    recordsListeners.add(listener);
+    const subscription = subscribe(listener, call);
+    return {
+      dispose: () => {
+        recordsListeners.delete(listener);
+        subscription.dispose();
+      },
+    };
   };
-
-  const now = () => new Date().toISOString();
-  /**
-   * Each archived Thread's batch, as the stored `archive` holds it. A seeded
-   * archived Thread shares the batch of its archived ancestors with the same
-   * `archivedAt`, as one archive of that ancestor would have written.
-   */
-  const batches = new Map<string, string>();
-  {
-    const byId = new Map(threads.map((thread) => [thread.id, thread]));
-    for (const thread of threads) {
-      if (thread.archivedAt === undefined) continue;
-      let root = thread;
-      const seen = new Set([thread.id]);
-      for (
-        let parent = byId.get(root.parentThreadId ?? '');
-        parent !== undefined &&
-        parent.archivedAt === thread.archivedAt &&
-        !seen.has(parent.id);
-        parent = byId.get(root.parentThreadId ?? '')
-      ) {
-        seen.add(parent.id);
-        root = parent;
-      }
-      batches.set(thread.id, `seeded:${root.id}`);
-    }
-  }
-  /** `id` and every Thread under it. */
-  const subtreeOf = (id: string): ReadonlySet<string> => {
-    const ids = new Set([id]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const thread of threads) {
-        if (
-          thread.parentThreadId !== undefined &&
-          ids.has(thread.parentThreadId) &&
-          !ids.has(thread.id)
-        ) {
-          ids.add(thread.id);
-          grew = true;
-        }
-      }
-    }
-    return ids;
-  };
-  const updateProject = (
-    id: string,
-    change: (project: Project) => Project,
-  ): Project | undefined => {
-    const current = projects.find((candidate) => candidate.id === id);
-    if (current === undefined) return undefined;
-    const next = { ...change(current), updatedAt: now() };
-    projects = projects.map((candidate) =>
-      candidate.id === id ? next : candidate,
-    );
-    return next;
-  };
-  const updateThread = (
-    id: string,
-    change: (thread: Thread) => Thread,
-  ): Thread | undefined => {
-    const current = threads.find((candidate) => candidate.id === id);
-    if (current === undefined) return undefined;
-    const next = { ...change(current), updatedAt: now() };
-    threads = threads.map((candidate) =>
-      candidate.id === id ? next : candidate,
-    );
-    return next;
-  };
-  const activity = (): readonly ProjectActivity[] =>
-    projects
-      .map((project) => {
-        const latest = threads
-          .filter((thread) => thread.projectId === project.id)
-          .map((thread) => thread.updatedAt)
-          .concat(project.updatedAt)
-          .sort()
-          .at(-1);
-        return { project, activityAt: latest ?? project.updatedAt };
-      })
-      .sort((left, right) => right.activityAt.localeCompare(left.activityAt));
-
-  const runtime: RuntimeHost = {
-    projects: () => read('projects', () => ({ items: projects })),
-    projectActivity: () => read('activity', activity),
-    createProject: ({ name }) => {
-      const project: Project = {
-        id: crypto.randomUUID(),
-        name,
-        state: 'ready',
-        configRevision: 1,
-        createdAt: now(),
-        updatedAt: now(),
-      };
-      projects = [project, ...projects];
-      return Promise.resolve(project);
-    },
-    renameProject: ({ id, name }) =>
-      Promise.resolve(updateProject(id, (project) => ({ ...project, name }))),
-    setProjectColor: ({ id, color }) =>
-      Promise.resolve(
-        updateProject(id, ({ color: _previous, ...project }) =>
-          color === null ? project : { ...project, color },
-        ),
-      ),
-    terminateProject: (id) =>
-      Promise.resolve(updateProject(id, (project) => project)),
-    deleteProject: (id) => {
-      projects = projects.filter((project) => project.id !== id);
-      threads = threads.filter((thread) => thread.projectId !== id);
-      return Promise.resolve('deleted');
-    },
-    watchProject: () => disposable,
-  };
-
-  const threadsHost: ThreadsHost = {
-    threads: ({ projectId }) =>
-      read('threads', () =>
-        projects.some((project) => project.id === projectId)
-          ? {
-              items: threads.filter((thread) => thread.projectId === projectId),
-            }
-          : undefined,
-      ),
-    thread: (id) =>
-      read('thread', () => threads.find((thread) => thread.id === id)),
-    createThread: ({ projectId, name, parentThreadId }) => {
-      const thread: Thread = {
-        id: crypto.randomUUID(),
-        projectId,
-        ...(parentThreadId === undefined ? {} : { parentThreadId }),
-        name,
-        state: 'ready',
-        lastSequence: 0,
-        cwd: '/workspace',
-        createdAt: now(),
-        updatedAt: now(),
-      };
-      threads = [...threads, thread];
-      return Promise.resolve({ status: 'created', thread });
-    },
-    renameThread: ({ id, name }) =>
-      Promise.resolve(updateThread(id, (thread) => ({ ...thread, name }))),
-    terminateThread: (id) =>
-      Promise.resolve(updateThread(id, (thread) => thread)),
-    deleteThread: (id) => {
-      const removed = new Set([id]);
-      for (const thread of threads) {
-        if (thread.parentThreadId && removed.has(thread.parentThreadId))
-          removed.add(thread.id);
-      }
-      threads = threads.filter((thread) => !removed.has(thread.id));
-      return Promise.resolve('deleted');
-    },
-    // runtime.threads/v1 1.8.0 (thread-archive §10.6, §10.8), answered in
-    // memory. None of these writes changes `updatedAt` (D2).
-    archiveThread: ({ id }) => {
-      const target = threads.find((thread) => thread.id === id);
-      if (target === undefined) return Promise.resolve({ status: 'missing' });
-      if (target.archivedAt !== undefined)
-        return Promise.resolve({ status: 'already_archived' });
-      if (busyStates.has(target.state))
-        return Promise.resolve({ status: 'busy' });
-      const batch = crypto.randomUUID();
-      const archivedAt = now();
-      const subtree = subtreeOf(id);
-      const marked = new Set(
-        threads
-          .filter(
-            (thread) =>
-              thread.id === id ||
-              (subtree.has(thread.id) &&
-                thread.archivedAt === undefined &&
-                !busyStates.has(thread.state) &&
-                thread.pinned !== true),
-          )
-          .map((thread) => thread.id),
-      );
-      threads = threads.map((thread) =>
-        marked.has(thread.id) ? { ...thread, archivedAt } : thread,
-      );
-      for (const markedId of marked) batches.set(markedId, batch);
-      return Promise.resolve({
-        status: 'archived',
-        batch,
-        // The target first, as the contract answers.
-        threads: [
-          ...threads.filter((thread) => thread.id === id),
-          ...threads.filter(
-            (thread) => thread.id !== id && marked.has(thread.id),
-          ),
-        ],
-      });
-    },
-    restoreThread: ({ id, batch }) => {
-      if (!threads.some((thread) => thread.id === id))
-        return Promise.resolve({ status: 'missing' });
-      const restoring = batch ?? batches.get(id);
-      const subtree = subtreeOf(id);
-      const restored = threads.filter(
-        (thread) =>
-          subtree.has(thread.id) &&
-          thread.archivedAt !== undefined &&
-          restoring !== undefined &&
-          batches.get(thread.id) === restoring,
-      );
-      if (restored.length === 0)
-        return Promise.resolve({ status: 'not_archived' });
-      const ids = new Set(restored.map((thread) => thread.id));
-      threads = threads.map((thread) => {
-        if (!ids.has(thread.id)) return thread;
-        const { archivedAt: _archivedAt, ...rest } = thread;
-        return rest;
-      });
-      for (const restoredId of ids) batches.delete(restoredId);
-      return Promise.resolve({
-        status: 'restored',
-        threads: threads.filter((thread) => ids.has(thread.id)),
-      });
-    },
-    setThreadPinned: ({ id, pinned }) => {
-      const current = threads.find((thread) => thread.id === id);
-      if (current === undefined) return Promise.resolve(undefined);
-      const { pinned: _pinned, ...rest } = current;
-      const next: Thread = pinned ? { ...rest, pinned: true } : rest;
-      threads = threads.map((thread) => (thread.id === id ? next : thread));
-      return Promise.resolve(next);
-    },
-    viewThread: ({ threadId }, listener) => {
-      const observer =
-        typeof listener === 'function' ? { next: listener } : listener;
-      let open = true;
-      queueMicrotask(() => {
-        if (!open) return;
-        if (threads.some((thread) => thread.id === threadId)) {
-          observer.next({ kind: 'viewing', threadId });
-          return;
-        }
-        open = false;
-        observer.end?.(new ContractError('not_found', 'Thread not found.'));
-      });
-      return {
-        dispose: () => {
-          open = false;
-        },
-      };
-    },
+  const notifyRecords = (): void => {
+    for (const listener of [...recordsListeners]) listener();
   };
 
   let path = options.path ?? '/';
@@ -595,8 +383,7 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
 
   const status = options.connection ?? 'connected';
   const apis: Record<string, unknown> = {
-    'runtime/v1': runtime,
-    'runtime.threads/v1': threadsHost,
+    'runtime.records/v1': records,
     'doric.connection/v1': {
       status: () => status,
       subscribe: () => disposable,
@@ -699,5 +486,5 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
 
   const executed = (): readonly string[] => [...commandsExecuted];
 
-  return { services, regionItems, executed };
+  return { services, regionItems, executed, records, notifyRecords };
 };

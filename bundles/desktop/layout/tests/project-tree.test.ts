@@ -2,20 +2,15 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-  applyUpdate,
-  emptyTree,
-  forgetProject,
-  forgetThread,
   isDescribed,
   isProjectOpen,
   type ProjectTree,
   type Selection,
   threadsOf,
   withProjectOpen,
-  withProjects,
   withProjectToggled,
+  withRecords,
   withSelection,
-  withThreads,
 } from '../src/client/domain/project-tree.js';
 import type { Project, Thread } from '../src/client/domain/workspace.js';
 
@@ -74,15 +69,33 @@ describe('the Project tree', () => {
     assert.deepEqual(opened.selection, { projectId: 'one', threadId: 'a' });
   });
 
+  test('holds a Project\u2019s Threads only once the host has described them', () => {
+    const described = tree([project('one')], { one: [thread('a', 'one')] });
+
+    assert.equal(isDescribed(tree([project('one')], {}), 'one'), false);
+    assert.deepEqual(threadsOf(tree([project('one')], {}), 'one'), []);
+    assert.equal(isDescribed(described, 'one'), true);
+    assert.equal(isDescribed(described, 'other'), false);
+    assert.deepEqual(ids(threadsOf(described, 'one')), ['a']);
+  });
+});
+
+// Bundle isolation phase 3: the layout's tree is a projection of
+// runtime.records/v1. `withRecords` takes the mirror's Projects and described
+// Threads, and repairs the selection as the record rules did before (R6).
+describe('the tree takes the records of the mirror', () => {
   test('loading Threads selects the first only when the Project has no selected Thread', () => {
     const initial = tree([project('one')], {}, { projectId: 'one' });
-    const threads = [thread('a', 'one'), thread('b', 'one')];
-    assert.equal(withThreads(initial, 'one', threads).selection.threadId, 'a');
+    const records = {
+      projects: [project('one')],
+      threadsByProject: { one: [thread('a', 'one'), thread('b', 'one')] },
+    };
+    assert.equal(withRecords(initial, records).selection.threadId, 'a');
     const selected = withSelection(initial, {
       projectId: 'one',
       threadId: 'b',
     });
-    assert.equal(withThreads(selected, 'one', threads).selection.threadId, 'b');
+    assert.equal(withRecords(selected, records).selection.threadId, 'b');
   });
 
   test('a background Project load does not select its Threads', () => {
@@ -92,241 +105,113 @@ describe('the Project tree', () => {
       { projectId: 'two' },
     );
     assert.deepEqual(
-      withThreads(initial, 'one', [thread('a', 'one')]).selection,
-      {
-        projectId: 'two',
-      },
+      withRecords(initial, {
+        projects: [project('one'), project('two')],
+        threadsByProject: { one: [thread('a', 'one')] },
+      }).selection,
+      { projectId: 'two' },
     );
   });
 
-  test('holds a Project\u2019s Threads only once the host has described them', () => {
-    const described = withThreads(tree([project('one')], {}), 'one', [
-      thread('a', 'one'),
-      thread('b', 'other'),
-    ]);
+  test('takes the Projects and the described Threads it is given', () => {
+    const after = withRecords(tree([project('one')], {}), {
+      projects: [project('one'), project('two')],
+      threadsByProject: { two: [thread('b', 'two')] },
+    });
 
-    assert.equal(isDescribed(tree([project('one')], {}), 'one'), false);
-    assert.deepEqual(threadsOf(tree([project('one')], {}), 'one'), []);
-    assert.equal(isDescribed(described, 'one'), true);
-    assert.equal(isDescribed(described, 'other'), false);
-    assert.deepEqual(ids(threadsOf(described, 'one')), ['a']);
+    assert.deepEqual(after.projects, [project('one'), project('two')]);
+    assert.equal(isDescribed(after, 'one'), false);
+    assert.deepEqual(ids(threadsOf(after, 'two')), ['b']);
   });
 
-  test('keeps the Projects it knows ahead of the ones the host lists again', () => {
-    const listed = withProjects(emptyTree, [project('one'), project('two')]);
-    const refreshed = withProjects(listed, [project('two'), project('three')]);
-
-    assert.deepEqual(refreshed.projects, [
-      project('one'),
-      project('two'),
-      project('three'),
-    ]);
-  });
-
-  test('takes a snapshot as the truth about a Project\u2019s Threads', () => {
-    const before = withThreads(
-      withThreads(tree([project('one'), project('two')], {}), 'one', [
-        thread('stale', 'one'),
-      ]),
-      'two',
-      [thread('kept', 'two')],
+  test('empties the selection when the selected Project leaves', () => {
+    const before = tree(
+      [project('one'), project('two')],
+      { one: [thread('a', 'one')], two: [thread('b', 'two')] },
+      { projectId: 'one', threadId: 'a' },
     );
-    const snapshot = (threads: readonly Thread[]): ProjectTree =>
-      applyUpdate(before, {
-        kind: 'snapshot',
-        snapshot: { projectId: 'one', project: null, threads },
-      });
+    const after = withRecords(before, {
+      projects: [project('two')],
+      threadsByProject: { two: [thread('b', 'two')] },
+    });
+
+    assert.deepEqual(after.selection, {});
+    assert.deepEqual(after.projects, [project('two')]);
+    assert.equal(isDescribed(after, 'one'), false);
+  });
+
+  test('empties the selection when the selected Project leaves before its Threads were described', () => {
+    const before = tree(
+      [project('one'), project('two')],
+      {},
+      { projectId: 'one', threadId: 'ghost' },
+    );
 
     assert.deepEqual(
-      ids(threadsOf(snapshot([thread('current', 'one')]), 'one')),
-      ['current'],
-    );
-    assert.deepEqual(ids(threadsOf(snapshot([]), 'one')), []);
-    assert.equal(isDescribed(snapshot([]), 'one'), true);
-    assert.deepEqual(
-      ids(threadsOf(snapshot([thread('current', 'one')]), 'two')),
-      ['kept'],
+      withRecords(before, { projects: [project('two')], threadsByProject: {} })
+        .selection,
+      {},
     );
   });
 
-  test('adds a Thread an update describes after its siblings', () => {
-    const before = withThreads(tree([project('one')], {}), 'one', [
-      thread('first', 'one'),
-      thread('second', 'one'),
-    ]);
-    const after = applyUpdate(before, {
-      kind: 'thread-updated',
-      thread: thread('third', 'one'),
+  test('drops the selected Thread when it leaves, keeping its Project', () => {
+    const before = tree(
+      [project('one')],
+      { one: [thread('parent', 'one'), thread('child', 'one', 'parent')] },
+      { projectId: 'one', threadId: 'child' },
+    );
+    const after = withRecords(before, {
+      projects: [project('one')],
+      threadsByProject: { one: [] },
     });
 
-    assert.deepEqual(ids(threadsOf(after, 'one')), [
-      'first',
-      'second',
-      'third',
-    ]);
+    assert.deepEqual(after.selection, { projectId: 'one' });
+    assert.deepEqual(threadsOf(after, 'one'), []);
   });
 
-  test('keeps a Thread an update names in the place it already holds', () => {
-    const before = withThreads(tree([project('one')], {}), 'one', [
-      thread('first', 'one'),
-      thread('second', 'one'),
-      thread('third', 'one'),
-    ]);
-    const renamed = { ...thread('second', 'one'), name: 'second name' };
-    const after = applyUpdate(before, {
-      kind: 'thread-updated',
-      thread: renamed,
+  test('keeps the selected Thread while it stays', () => {
+    const before = tree(
+      [project('one')],
+      { one: [thread('a', 'one'), thread('b', 'one')] },
+      { projectId: 'one', threadId: 'b' },
+    );
+    const after = withRecords(before, {
+      projects: [project('one')],
+      threadsByProject: { one: [thread('b', 'one')] },
     });
 
-    assert.deepEqual(ids(threadsOf(after, 'one')), [
-      'first',
-      'second',
-      'third',
-    ]);
-    assert.equal(threadsOf(after, 'one')[1], renamed);
+    assert.deepEqual(after.selection, { projectId: 'one', threadId: 'b' });
+    assert.deepEqual(ids(threadsOf(after, 'one')), ['b']);
   });
 
-  test('renames a Project in the place it already holds', () => {
-    const before = tree([project('one'), project('two')], {});
-    const renamed = { ...project('one'), name: 'renamed' };
-    const after = applyUpdate(before, {
-      kind: 'project-updated',
-      project: renamed,
-    });
+  test('returns the same tree object when nothing changed', () => {
+    const before = tree(
+      [project('one')],
+      { one: [thread('a', 'one')] },
+      { projectId: 'one', threadId: 'a' },
+    );
 
-    assert.deepEqual(after.projects, [renamed, project('two')]);
+    assert.equal(
+      withRecords(before, {
+        projects: before.projects,
+        threadsByProject: before.threadsByProject,
+      }),
+      before,
+    );
   });
 
   test('leaves the tree it was given untouched', () => {
-    const before = withThreads(tree([project('one')], {}), 'one', [
-      thread('a', 'one'),
-      thread('b', 'one'),
-    ]);
+    const before = tree(
+      [project('one')],
+      { one: [thread('a', 'one')] },
+      { projectId: 'one', threadId: 'a' },
+    );
 
-    forgetProject(before, 'one');
-    forgetThread(before, 'one', 'a');
-    applyUpdate(before, { kind: 'thread-updated', thread: thread('c', 'one') });
+    withRecords(before, { projects: [], threadsByProject: {} });
 
     assert.deepEqual(before.projects, [project('one')]);
-    assert.deepEqual(ids(threadsOf(before, 'one')), ['a', 'b']);
-  });
-});
-
-describe('the removal of a Thread', () => {
-  const described = withThreads(
-    tree([project('one'), project('two')], {}),
-    'one',
-    [
-      thread('parent', 'one'),
-      thread('child', 'one', 'parent'),
-      thread('grandchild', 'one', 'child'),
-      thread('sibling', 'one'),
-      thread('elsewhere', 'two'),
-    ],
-  );
-
-  test('takes the Thread and its subtree out of the Threads the host described', () => {
-    const after = forgetThread(described, 'one', 'parent');
-
-    assert.deepEqual(ids(threadsOf(after, 'one')), ['sibling']);
-  });
-
-  test('leaves the selection on the Project that owned it', () => {
-    const selected = withSelection(described, {
-      projectId: 'one',
-      threadId: 'child',
-    });
-
-    assert.deepEqual(forgetThread(selected, 'one', 'parent').selection, {
-      projectId: 'one',
-    });
-    assert.deepEqual(forgetThread(selected, 'one', 'sibling').selection, {
-      projectId: 'one',
-      threadId: 'child',
-    });
-  });
-
-  test('applies a deletion update to the Thread and its subtree', () => {
-    const after = applyUpdate(described, {
-      kind: 'thread-deleted',
-      projectId: 'one',
-      threadId: 'child',
-    });
-
-    assert.deepEqual(ids(threadsOf(after, 'one')), ['parent', 'sibling']);
-  });
-
-  test('leaves a Project whose Threads were never described undescribed', () => {
-    const undescribed = tree(
-      [project('one')],
-      {},
-      {
-        projectId: 'one',
-        threadId: 'ghost',
-      },
-    );
-    const after = forgetThread(undescribed, 'one', 'ghost');
-
-    assert.equal(isDescribed(after, 'one'), false);
-    assert.deepEqual(after.selection, { projectId: 'one' });
-  });
-});
-
-describe('the removal of a Project', () => {
-  test('clears a selection pointing at it when no Thread was ever described', () => {
-    const selected = tree(
-      [project('one')],
-      {},
-      { projectId: 'one', threadId: 'thread' },
-    );
-
-    assert.deepEqual(forgetProject(selected, 'one').selection, {});
-  });
-
-  test('clears a selection pointing at it when the described Threads are stale', () => {
-    const selected = tree(
-      [project('one')],
-      { one: [] },
-      { projectId: 'one', threadId: 'thread' },
-    );
-    const withOtherThreads = tree(
-      [project('one')],
-      { one: [thread('other', 'one')] },
-      { projectId: 'one', threadId: 'thread' },
-    );
-
-    assert.deepEqual(forgetProject(selected, 'one').selection, {});
-    assert.deepEqual(forgetProject(withOtherThreads, 'one').selection, {});
-  });
-
-  test('forgets the Project and the Threads described for it', () => {
-    const after = forgetProject(
-      tree([project('one'), project('two')], {
-        one: [thread('a', 'one')],
-        two: [thread('b', 'two')],
-      }),
-      'one',
-    );
-
-    assert.deepEqual(after.projects, [project('two')]);
-    assert.equal(isDescribed(after, 'one'), false);
-    assert.deepEqual(ids(threadsOf(after, 'two')), ['b']);
-  });
-
-  test('leaves another Project\u2019s Threads and selection alone', () => {
-    const before = withSelection(
-      withThreads(tree([project('one'), project('two')], { one: [] }), 'two', [
-        thread('b', 'two'),
-      ]),
-      { projectId: 'two', threadId: 'b' },
-    );
-    const after = applyUpdate(before, {
-      kind: 'project-deleted',
-      projectId: 'one',
-    });
-
-    assert.deepEqual(ids(threadsOf(after, 'two')), ['b']);
-    assert.deepEqual(after.selection, { projectId: 'two', threadId: 'b' });
+    assert.deepEqual(ids(threadsOf(before, 'one')), ['a']);
+    assert.deepEqual(before.selection, { projectId: 'one', threadId: 'a' });
   });
 });
 

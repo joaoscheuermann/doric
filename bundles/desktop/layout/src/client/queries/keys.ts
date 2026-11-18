@@ -6,13 +6,10 @@
  * stale.
  */
 export const queryKeys = {
-  projects: ['projects'],
   /** The host machine's resources, polled by the footer's monitor. */
   hostResources: ['resources', 'host'],
   /** One Project's sandbox resources, or its lease state when there is none. */
   projectResources: (projectId: string) => ['resources', projectId],
-  /** The Threads of one Project, as the host listed them. */
-  threads: (projectId: string) => ['threads', projectId],
   /** One Thread record, read to validate a restored selection. */
   thread: (threadId: string) => ['thread', threadId],
   threadUsage: (threadId: string | undefined) => ['thread', threadId, 'usage'],

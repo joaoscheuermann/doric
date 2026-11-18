@@ -1,11 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { RouteMatch } from 'bundle/contracts';
-import { errorFrom } from 'desktop/reads';
+import { ClientError, errorFrom } from 'desktop/reads';
 import { toast } from 'desktop/ui/sonner';
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from 'zustand/react';
 
-import { api } from '../api/workspace-api.js';
 import {
   isDescribed,
   type Selection,
@@ -18,19 +17,24 @@ import type {
   Entity,
   Project,
   ProjectColor,
+  RuntimeRecords,
   Thread,
 } from '../domain/workspace.js';
 import { queryKeys } from '../queries/keys.js';
 import { rewriteRoute } from '../stores/route-selection.js';
-import { workspaceStore } from '../stores/workspace.js';
+import {
+  awaitRead,
+  boundRecords,
+  workspaceStore,
+} from '../stores/workspace.js';
 import { createThreadNavigation } from './thread-navigation.js';
-import { useProjectEvents } from './use-project-events.js';
 import { useRouteSelection } from './use-route-selection.js';
 
 export type WorkspaceActions = {
   /**
    * Archives the Thread and its idle, unpinned descendants
-   * (`api.threads.archive`), applies every answered record to the tree, then
+   * (`archiveThread` of `runtime.records/v1`), which puts every answered record
+   * into the mirror, then
    * shows the toast "Thread archived" / `"<name or Untitled>" moved to
    * Archived` whose Undo restores that batch (docs/designs/thread-archive.md
    * §10.6). A failure is stored as the workspace error (no retry target) and
@@ -50,7 +54,8 @@ export type WorkspaceActions = {
   readonly requestDelete: (entity: Entity) => void;
   /**
    * Restores the Thread's batch: `batch` when given (Undo), else the
-   * Thread's own (`api.threads.restore`), and applies every answered record.
+   * Thread's own (`restoreThread` of `runtime.records/v1`), which puts every
+   * answered record into the mirror.
    * Shows no toast. A failure is stored as the workspace error. Never
    * rejects.
    */
@@ -67,8 +72,8 @@ export type WorkspaceActions = {
   readonly selectThread: (thread: Thread) => void;
   readonly setProjectColor: (project: Project, color?: ProjectColor) => void;
   /**
-   * Pins or unpins the Thread (`api.threads.setPinned`) and applies the
-   * answered record. A failure is stored as the workspace error. Never
+   * Pins or unpins the Thread (`setThreadPinned` of `runtime.records/v1`),
+   * which puts the answered record into the mirror. A failure is stored as the workspace error. Never
    * rejects.
    */
   readonly setThreadPinned: (thread: Thread, pinned: boolean) => Promise<void>;
@@ -109,6 +114,18 @@ const nextSequence = (sequences: Map<string, number>, key: string): number => {
   return sequence;
 };
 
+/**
+ * The mirror bound now, read anew at each call; without one a call fails as
+ * an unreachable backend does.
+ */
+const records = (): RuntimeRecords => {
+  const bound = boundRecords();
+  if (bound === undefined) {
+    throw new ClientError('unavailable', 'Doric backend is unavailable.');
+  }
+  return bound;
+};
+
 const isCurrentSequence = (
   sequences: Map<string, number>,
   key: string,
@@ -147,32 +164,22 @@ export const useWorkspace = (): Workspace => {
       const requestIntent = intent.current;
       const sequence = nextSequence(loadSequences.current, projectId);
       store.beginThreadsLoad(projectId);
-      try {
-        const threads = await queryClient.fetchQuery({
-          queryKey: queryKeys.threads(projectId),
-          queryFn: () => api.threads.list(projectId),
-        });
-        if (!isCurrentSequence(loadSequences.current, projectId, sequence))
-          return;
-        store.applyThreads(projectId, threads);
-        store.settle({ kind: 'threads', projectId });
-      } catch (reason) {
-        if (
-          isCurrentSequence(loadSequences.current, projectId, sequence) &&
-          intent.current === requestIntent
-        ) {
-          store.fail(reason, { kind: 'threads', projectId });
+      store.request(projectId);
+      const read = await awaitRead({ target: 'threads', projectId });
+      if (isCurrentSequence(loadSequences.current, projectId, sequence)) {
+        if (read.status === 'failed') {
+          if (intent.current === requestIntent) {
+            store.fail(read.error, { kind: 'threads', projectId });
+          }
+        } else {
+          store.settle({ kind: 'threads', projectId });
         }
-      } finally {
-        if (isCurrentSequence(loadSequences.current, projectId, sequence)) {
-          store.endThreadsLoad(projectId);
-        }
+        store.endThreadsLoad(projectId);
       }
     },
     [
-      queryClient.fetchQuery,
       store.beginThreadsLoad,
-      store.applyThreads,
+      store.request,
       store.settle,
       store.fail,
       store.endThreadsLoad,
@@ -182,7 +189,6 @@ export const useWorkspace = (): Workspace => {
   /** Discards loads already in flight for a Project whose Threads just changed. */
   const invalidateLoads = (projectId: string): void => {
     nextSequence(loadSequences.current, projectId);
-    void queryClient.cancelQueries({ queryKey: queryKeys.threads(projectId) });
     store.endThreadsLoad(projectId);
   };
 
@@ -193,34 +199,23 @@ export const useWorkspace = (): Workspace => {
     const mount = mounts.current;
     const requestIntent = intent.current;
     const active = () => mounts.current === mount;
-    try {
-      const projects = await queryClient.fetchQuery({
-        queryKey: queryKeys.projects,
-        queryFn: () => api.projects.list(),
-      });
-      if (!active()) return;
-      store.applyProjects(projects);
+    const read = await awaitRead({ target: 'projects' });
+    if (!active()) return;
+    if (read.status === 'failed') {
+      if (intent.current === requestIntent) {
+        store.fail(read.error, { kind: 'projects' });
+      }
+    } else {
+      const projects = workspaceStore.getState().tree.projects;
       const selected = workspaceStore.getState().tree.selection.projectId;
       if (selected && !projects.some((project) => project.id === selected)) {
         store.select({});
         rewriteRoute();
       }
       store.settle({ kind: 'projects' });
-    } catch (reason) {
-      if (active() && intent.current === requestIntent) {
-        store.fail(reason, { kind: 'projects' });
-      }
-    } finally {
-      if (active()) store.setLoadingProjects(false);
     }
-  }, [
-    queryClient.fetchQuery,
-    store.applyProjects,
-    store.select,
-    store.settle,
-    store.fail,
-    store.setLoadingProjects,
-  ]);
+    store.setLoadingProjects(false);
+  }, [store.select, store.settle, store.fail, store.setLoadingProjects]);
 
   useEffect(() => {
     void loadProjects();
@@ -233,9 +228,7 @@ export const useWorkspace = (): Workspace => {
 
   const selectMissingThreadProject = (projectId: string): Selection => {
     const current = workspaceStore.getState();
-    const listed = queryClient.getQueryData<readonly Project[]>(
-      queryKeys.projects,
-    );
+    const listed = boundRecords()?.projects().value;
     const projects =
       current.loadingProjects || listed === undefined
         ? listed
@@ -276,7 +269,7 @@ export const useWorkspace = (): Workspace => {
     void queryClient
       .fetchQuery({
         queryKey: queryKeys.thread(intended.threadId),
-        queryFn: () => api.threads.get(intended.threadId),
+        queryFn: () => records().findThread({ threadId: intended.threadId }),
       })
       .then(
         (thread) => {
@@ -300,7 +293,7 @@ export const useWorkspace = (): Workspace => {
       return openThread(thread, false).then((selection) => selection ?? null);
     },
     onMissingProject: selectMissingThreadProject,
-    get: (id) => api.threads.get(id),
+    get: (id) => records().findThread({ threadId: id }),
     onRoute: followRoute,
   });
 
@@ -332,17 +325,18 @@ export const useWorkspace = (): Workspace => {
     changeSelection(current);
   }, [changeSelection, tree.selection.projectId, tree.selection.threadId]);
 
-  useProjectEvents({
-    projectId: tree.selection.projectId,
-    onUpdate: (update) =>
-      // Every transition advances the tree from its latest value, so
-      // back-to-back updates are all kept.
-      store.applyUpdate(update),
-    onError: (error) => store.report(error),
-  });
+  // The selected Project is kept current by the mirror while it is selected;
+  // its notices reach the tree through `sync`.
+  const followedProjectId = tree.selection.projectId;
+  useEffect(() => {
+    if (followedProjectId === undefined) return;
+    const follow = boundRecords()?.follow({ projectId: followedProjectId });
+    return () => follow?.dispose();
+  }, [followedProjectId]);
 
   const { mutateAsync: createProjectWrite } = useMutation({
-    mutationFn: (name: string): Promise<Project> => api.projects.create(name),
+    mutationFn: (name: string): Promise<Project> =>
+      records().createProject({ name }),
   });
   const { mutateAsync: renameProjectWrite } = useMutation({
     mutationFn: ({
@@ -351,7 +345,7 @@ export const useWorkspace = (): Workspace => {
     }: {
       id: string;
       name: string;
-    }): Promise<Project> => api.projects.rename(id, name),
+    }): Promise<Project> => records().renameProject({ projectId: id, name }),
   });
   const { mutateAsync: setProjectColorWrite } = useMutation({
     mutationFn: ({
@@ -360,12 +354,16 @@ export const useWorkspace = (): Workspace => {
     }: {
       id: string;
       color?: ProjectColor;
-    }): Promise<Project> => api.projects.setColor(id, color),
+    }): Promise<Project> =>
+      records().setProjectColor({
+        projectId: id,
+        ...(color === undefined ? {} : { color }),
+      }),
   });
   const { mutateAsync: deleteProjectWrite } = useMutation({
     mutationFn: async (id: string): Promise<void> => {
-      await api.projects.terminate(id);
-      await api.projects.delete(id);
+      await records().terminateProject({ projectId: id });
+      await records().deleteProject({ projectId: id });
     },
   });
   const { mutateAsync: createThreadWrite } = useMutation({
@@ -377,16 +375,21 @@ export const useWorkspace = (): Workspace => {
       projectId: string;
       name: string;
       parentThreadId?: string;
-    }): Promise<Thread> => api.threads.create(projectId, name, parentThreadId),
+    }): Promise<Thread> =>
+      records().createThread({
+        projectId,
+        name,
+        ...(parentThreadId === undefined ? {} : { parentThreadId }),
+      }),
   });
   const { mutateAsync: renameThreadWrite } = useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }): Promise<Thread> =>
-      api.threads.rename(id, name),
+      records().renameThread({ threadId: id, name }),
   });
   const { mutateAsync: deleteThreadWrite } = useMutation({
     mutationFn: async (id: string): Promise<void> => {
-      await api.threads.terminate(id);
-      await api.threads.delete(id);
+      await records().terminateThread({ threadId: id });
+      await records().deleteThread({ threadId: id });
     },
   });
 
@@ -419,7 +422,8 @@ export const useWorkspace = (): Workspace => {
     const sequence = nextSequence(mutationSequences.current, 'projects:create');
     try {
       const project = await createProjectWrite(name);
-      store.applyCreatedProject(project);
+      // The mirror describes the created Project with no Threads (R3).
+      store.request(project.id);
       let initialThread: Thread | undefined;
       try {
         initialThread = await createThreadWrite({
@@ -427,7 +431,6 @@ export const useWorkspace = (): Workspace => {
           name: '',
         });
         invalidateLoads(project.id);
-        store.applyThread(initialThread);
       } catch (reason) {
         // The Project exists even if its first Thread failed. Open it and
         // report the failure without asking the create form to make it again.
@@ -471,7 +474,6 @@ export const useWorkspace = (): Workspace => {
         parentThreadId: operationDraft.parentThreadId,
       });
       invalidateLoads(thread.projectId);
-      store.applyThread(thread);
       if (
         isCurrentSequence(mutationSequences.current, key, sequence) &&
         intent.current === operationIntent
@@ -490,17 +492,15 @@ export const useWorkspace = (): Workspace => {
     const operationIntent = intent.current;
     try {
       if (entity.kind === 'project') {
-        const project = await renameProjectWrite({ id: entity.value.id, name });
+        await renameProjectWrite({ id: entity.value.id, name });
         if (!isCurrentSequence(mutationSequences.current, key, sequence))
           return;
-        store.applyProject(project);
       } else {
         invalidateLoads(entity.value.projectId);
         const thread = await renameThreadWrite({ id: entity.value.id, name });
         if (!isCurrentSequence(mutationSequences.current, key, sequence))
           return;
         invalidateLoads(thread.projectId);
-        store.applyThread(thread);
       }
       if (intent.current === operationIntent) {
         store.clearRename(entity);
@@ -515,12 +515,8 @@ export const useWorkspace = (): Workspace => {
     project: Project,
     color?: ProjectColor,
   ): Promise<void> => {
-    const key = `projects:color:${project.id}`;
-    const sequence = nextSequence(mutationSequences.current, key);
     try {
-      const updated = await setProjectColorWrite({ id: project.id, color });
-      if (!isCurrentSequence(mutationSequences.current, key, sequence)) return;
-      store.applyProject(updated);
+      await setProjectColorWrite({ id: project.id, color });
     } catch (reason) {
       store.fail(reason);
     }
@@ -539,13 +535,11 @@ export const useWorkspace = (): Workspace => {
         await deleteProjectWrite(entity.value.id);
         if (!isCurrentSequence(mutationSequences.current, key, sequence))
           return;
-        store.forgetProject(entity.value.id);
       } else {
         invalidateLoads(entity.value.projectId);
         await deleteThreadWrite(entity.value.id);
         if (!isCurrentSequence(mutationSequences.current, key, sequence))
           return;
-        store.forgetThread(entity.value.projectId, entity.value.id);
         void loadThreads(entity.value.projectId);
       }
       if (intent.current === operationIntent) store.clearDeleting();
@@ -562,8 +556,10 @@ export const useWorkspace = (): Workspace => {
   ): Promise<void> => {
     invalidateLoads(thread.projectId);
     try {
-      const restored = await api.threads.restore(thread.id, batch);
-      for (const record of restored) store.applyThread(record);
+      await records().restoreThread({
+        threadId: thread.id,
+        ...(batch === undefined ? {} : { batch }),
+      });
     } catch (reason) {
       store.fail(reason);
     }
@@ -572,8 +568,7 @@ export const useWorkspace = (): Workspace => {
   const archiveThread = async (thread: Thread): Promise<void> => {
     invalidateLoads(thread.projectId);
     try {
-      const { batch, threads } = await api.threads.archive(thread.id);
-      for (const record of threads) store.applyThread(record);
+      const { batch } = await records().archiveThread({ threadId: thread.id });
       toast('Thread archived', {
         description: `"${thread.name || 'Untitled'}" moved to Archived`,
         action: {
@@ -592,7 +587,7 @@ export const useWorkspace = (): Workspace => {
   ): Promise<void> => {
     invalidateLoads(thread.projectId);
     try {
-      store.applyThread(await api.threads.setPinned(thread.id, pinned));
+      await records().setThreadPinned({ threadId: thread.id, pinned });
     } catch (reason) {
       store.fail(reason);
     }

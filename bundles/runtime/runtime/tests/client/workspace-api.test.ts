@@ -1,4 +1,4 @@
-// The layout's host adapter: every outcome shows the message the REST path
+// The records mirror's host adapter: every outcome shows the message the REST path
 // showed (R-ERR), the main process's payload guards still run first, lists
 // read every page and deletes wait for the lifecycle.
 
@@ -6,19 +6,19 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { ContractError } from 'bundle/contracts';
+
+import type { RuntimeHost, ThreadsHost } from '../../src/client/api/host.js';
+import {
+  createWorkspaceApi,
+  hostFailure,
+} from '../../src/client/api/workspace-api.js';
 import type {
   DeleteResult,
   Page,
   Project,
   Thread,
   ThreadCreateResult,
-} from 'runtime/contracts';
-
-import type { RuntimeHost, ThreadsHost } from '../src/client/api/host.js';
-import {
-  createWorkspaceApi,
-  hostFailure,
-} from '../src/client/api/workspace-api.js';
+} from '../../src/contracts/index.js';
 
 const projectId = '6f1d2c8e-4b7a-4c1e-9d2f-1a2b3c4d5e6f';
 const threadId = '0b9e8d7c-6a5f-4e3d-8c2b-1a0f9e8d7c6b';

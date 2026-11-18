@@ -12,18 +12,18 @@ import {
   type StreamObserver,
 } from 'bundle/contracts';
 import { errorFrom, sameErrorInfo } from 'desktop/reads';
+
+import {
+  createProjectWatch,
+  type ProjectWatchSource,
+} from '../../src/client/api/project-watch.js';
+import type { ProjectUpdate } from '../../src/client/domain/tree.js';
 import type {
   Project,
   ProjectWatchInput,
   ProjectWatchItem,
   Thread,
-} from 'runtime/contracts';
-
-import {
-  createProjectWatch,
-  type ProjectWatchSource,
-} from '../src/client/api/project-watch.js';
-import type { ProjectUpdate } from '../src/client/domain/workspace.js';
+} from '../../src/contracts/index.js';
 
 /**
  * The stream ended with a failure (§8): one `error` update whose error is

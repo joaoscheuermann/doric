@@ -48,7 +48,7 @@ The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   archive (hover or menu, with an Undo toast), pin and unpin; the Archived tab
   (`archived-threads.tsx`) groups archived Threads by date (Today, Last 7 days,
   Older) with Restore and Delete. Open Threads report presence through
-  `runtime.threads/v1.viewThread`
+  `view` of `runtime.records/v1`
   ([thread archive](../../../docs/features/thread-archive.md)).
 - **Errors.** A failed workspace request is shown once, by the workspace error
   notice (`workspace-error-notice.tsx`): in the sidebar on the workspace frame,

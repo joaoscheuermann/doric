@@ -6,16 +6,14 @@ import {
   ContextMenuTrigger,
 } from 'desktop/ui/context-menu';
 import { FolderOpenIcon, Trash2Icon } from 'lucide-react';
+import type { ProjectActivity } from 'runtime/contracts';
 
-import type { api } from '../../api/workspace-api.js';
 import type { Workspace } from '../../hooks/use-workspace.js';
 import { ProjectAvatar } from './project-avatar.js';
 import { ProjectColorMenu } from './project-color-menu.js';
 
 /** One row of the Projects activity read: a Project and when it was last active. */
-export type ProjectEntry = Awaited<
-  ReturnType<typeof api.projects.activity>
->[number];
+export type ProjectEntry = ProjectActivity;
 
 function relativeTime(value: string): string {
   const minutes = Math.max(

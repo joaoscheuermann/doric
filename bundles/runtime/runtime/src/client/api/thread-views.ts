@@ -3,8 +3,7 @@
 // `runtime.threads/v1.viewThread` stream per Thread on screen, followed with
 // `followStream`, so the archiver never archives a Thread a window shows.
 
-import type { RuntimeThreads } from 'runtime/contracts';
-
+import type { RuntimeThreads } from '../../contracts/index.js';
 import { type ConnectionSource, followStream } from './project-watch.js';
 
 export interface ThreadViewsOptions {

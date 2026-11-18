@@ -72,14 +72,23 @@ void test('activation provides and defines exactly what the manifest declares', 
     activate,
   });
 
-  assert.deepEqual(checkRecording(manifest, recorded), []);
+  // runtime.records/v1 is the client part's (bundle isolation phase 3): the
+  // host part records every other provided contract.
+  const hostProvides = manifest.provides.filter(
+    (entry) => idOf(entry) !== 'runtime.records/v1',
+  );
+
+  assert.deepEqual(
+    checkRecording({ ...manifest, provides: hostProvides }, recorded),
+    [],
+  );
   assert.deepEqual(
     [...new Set(recorded.map(({ id }) => id))].sort(),
-    manifest.provides.map(idOf).sort(),
+    hostProvides.map(idOf).sort(),
   );
 });
 
-void test('the built descriptor lists every provided contract on the host', async () => {
+void test('the built descriptor lists runtime.records/v1 on the client and every other provided contract on the host', async () => {
   const manifest = await manifestOf('runtime');
   const descriptor = descriptorSchema.parse(
     JSON.parse(
@@ -95,8 +104,17 @@ void test('the built descriptor lists every provided contract on the host', asyn
     descriptor.contracts.map(({ id }) => id).sort(),
     manifest.provides.map(idOf).sort(),
   );
+  // The records mirror is the client part's; every other contract is the host's.
+  assert.deepEqual(
+    descriptor.contracts
+      .filter(({ environment }) => environment === 'client')
+      .map(({ id }) => id),
+    ['runtime.records/v1'],
+  );
   assert.ok(
-    descriptor.contracts.every(({ environment }) => environment === 'host'),
+    descriptor.contracts
+      .filter(({ id }) => id !== 'runtime.records/v1')
+      .every(({ environment }) => environment === 'host'),
   );
 });
 

@@ -2,7 +2,7 @@
 // realistic workspace, the way the host describes it. Every id is a UUID,
 // because the workspace adapter checks them as the REST routes did.
 
-import type { Project, Thread } from '../../src/client/domain/workspace.js';
+import type { Project, Thread } from 'runtime/contracts';
 
 /** An ISO time `minutes` before the story loaded. */
 export const minutesAgo = (minutes: number): string =>

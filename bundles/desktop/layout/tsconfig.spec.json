@@ -13,7 +13,6 @@
   },
   "include": [
     "src/contracts/**/*.ts",
-    "src/client/api/**/*.ts",
     "src/client/domain/**/*.ts",
     "src/client/queries/**/*.ts",
     "src/client/services/**/*.ts",

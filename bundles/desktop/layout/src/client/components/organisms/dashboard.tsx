@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { type ErrorInfo, errorInfo } from 'desktop/reads';
+import { ClientError, type ErrorInfo, errorInfo } from 'desktop/reads';
 import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   InputGroup,
@@ -18,7 +18,6 @@ import {
   useState,
 } from 'react';
 
-import { api } from '../../api/workspace-api.js';
 import {
   dashboardPage,
   searchShortcutKeys,
@@ -29,6 +28,7 @@ import { useDashboardPage } from '../../hooks/use-dashboard-page.js';
 import { useRegionItems } from '../../hooks/use-region-items.js';
 import type { Workspace } from '../../hooks/use-workspace.js';
 import { dashboardStore } from '../../stores/dashboard.js';
+import { boundRecords } from '../../stores/workspace.js';
 import { ElementHost } from '../molecules/element-host.js';
 import { type ProjectEntry, ProjectItem } from '../molecules/project-item.js';
 import { SEARCH_FIELD } from '../molecules/search-field.js';
@@ -150,7 +150,14 @@ export function Dashboard({
     .join('|');
   const activity = useQuery({
     queryKey: ['project-activity', projectVersion],
-    queryFn: () => api.projects.activity(),
+    queryFn: () => {
+      const records = boundRecords();
+      return records === undefined
+        ? Promise.reject(
+            new ClientError('unavailable', 'Doric backend is unavailable.'),
+          )
+        : records.activity();
+    },
   });
   // A refetch clears the query's error while it runs; the list keeps showing
   // the last failure, with a busy Retry, until a fetch settles otherwise.

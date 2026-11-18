@@ -22,6 +22,7 @@ export * from './fences.js';
 export * from './hooks.js';
 export * from './lease.js';
 export * from './model.js';
+export * from './records.js';
 export * from './rest-errors.js';
 export * from './runtime.js';
 export * from './sandbox.js';

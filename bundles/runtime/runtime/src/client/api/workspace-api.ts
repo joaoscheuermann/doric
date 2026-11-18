@@ -1,4 +1,4 @@
-// The layout's host adapter (stage 9, §5.8): the Project and Thread reads and
+// The records mirror's host adapter (stage 9, §5.8): the Project and Thread reads and
 // writes the workspace frame makes, as the desktop main process made them
 // over REST before. Each operation runs the main process's payload guard
 // first, then the REST route's own input check, then the host contract, and
@@ -9,24 +9,19 @@
 // `retryWhileActive`), and a list reads every page, failing on a cursor
 // loop. The provisional features add their own adapters.
 
-import { isContractError, type Services } from 'bundle/contracts';
+import { isContractError } from 'bundle/contracts';
 import { ClientError } from 'desktop/reads';
-import type {
-  Page,
-  Project,
-  ProjectActivity,
-  ProjectColor,
-  Thread,
-} from 'runtime/contracts';
 import { z } from 'zod';
 
-import { projectColors } from '../domain/workspace.js';
 import {
-  type RuntimeHost,
-  RuntimeThreadsV1,
-  RuntimeV1,
-  type ThreadsHost,
-} from './host.js';
+  type Page,
+  type Project,
+  type ProjectActivity,
+  type ProjectColor,
+  projectColors,
+  type Thread,
+} from '../../contracts/index.js';
+import type { RuntimeHost, ThreadsHost } from './host.js';
 
 /** The page size of every list read. */
 const pageLimit = 100;
@@ -404,49 +399,4 @@ export const createWorkspaceApi = ({
       },
     },
   };
-};
-
-let current: WorkspaceApi | undefined;
-
-/** Binds the adapter to the layout's activation services (D9-17). */
-export const initWorkspaceApi = (services: Services): void => {
-  current = createWorkspaceApi({
-    runtime: services.use(RuntimeV1),
-    threads: services.use(RuntimeThreadsV1),
-  });
-};
-
-export const disposeWorkspaceApi = (): void => {
-  current = undefined;
-};
-
-const bound = (): WorkspaceApi => {
-  if (current === undefined) {
-    throw new ClientError('unavailable', hostMessages.unavailable);
-  }
-  return current;
-};
-
-/** The adapter the components and hooks call, once the bundle is active. */
-export const api: WorkspaceApi = {
-  projects: {
-    list: () => bound().projects.list(),
-    activity: () => bound().projects.activity(),
-    create: (name) => bound().projects.create(name),
-    rename: (id, name) => bound().projects.rename(id, name),
-    setColor: (id, color) => bound().projects.setColor(id, color),
-    terminate: (id) => bound().projects.terminate(id),
-    delete: (id) => bound().projects.delete(id),
-  },
-  threads: {
-    list: (id) => bound().threads.list(id),
-    get: (id) => bound().threads.get(id),
-    create: (id, name, parent) => bound().threads.create(id, name, parent),
-    rename: (id, name) => bound().threads.rename(id, name),
-    terminate: (id) => bound().threads.terminate(id),
-    delete: (id) => bound().threads.delete(id),
-    archive: (id) => bound().threads.archive(id),
-    restore: (id, batch) => bound().threads.restore(id, batch),
-    setPinned: (id, pinned) => bound().threads.setPinned(id, pinned),
-  },
 };

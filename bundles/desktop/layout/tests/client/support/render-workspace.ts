@@ -195,6 +195,8 @@ export const renderWorkspace = async (
     services: bound.services,
     regionItems: bound.regionItems,
     executed: bound.executed,
+    records: bound.records,
+    notifyRecords: bound.notifyRecords,
     get root() {
       return view.element;
     },

@@ -8,9 +8,6 @@ import {
   projectColors,
   type Thread,
   threadSubtreeIds,
-  threadsForProject,
-  upsert,
-  withoutThreadSubtree,
 } from '../src/client/domain/workspace.js';
 
 const thread = (id: string, projectId: string): Thread => ({
@@ -25,47 +22,7 @@ const thread = (id: string, projectId: string): Thread => ({
 });
 
 describe('workspace state helpers', () => {
-  test('filters cached threads by project', () => {
-    assert.deepEqual(
-      threadsForProject(
-        [thread('one', 'project-a'), thread('two', 'project-b')],
-        'project-a',
-      ).map(({ id }) => id),
-      ['one'],
-    );
-  });
-
-  test('replaces an older entity without duplicating it', () => {
-    assert.deepEqual(
-      upsert([thread('one', 'project-a')], {
-        ...thread('one', 'project-a'),
-        name: 'Updated',
-      }).map(({ name }) => name),
-      ['Updated'],
-    );
-  });
-
-  test('prepends a new entity by default', () => {
-    assert.deepEqual(
-      upsert([thread('one', 'project-a')], thread('two', 'project-a')).map(
-        ({ id }) => id,
-      ),
-      ['two', 'one'],
-    );
-  });
-
-  test('appends a new entity after its siblings when asked to insert last', () => {
-    assert.deepEqual(
-      upsert(
-        [thread('one', 'project-a'), thread('two', 'project-a')],
-        thread('three', 'project-a'),
-        'last',
-      ).map(({ id }) => id),
-      ['one', 'two', 'three'],
-    );
-  });
-
-  test('removes a deleted thread subtree without removing its siblings', () => {
+  test('names a Thread and its descendants without its siblings', () => {
     const root = thread('root', 'project-a');
     const child = {
       ...thread('child', 'project-a'),
@@ -83,10 +40,6 @@ describe('workspace state helpers', () => {
       'grandchild',
       'root',
     ]);
-    assert.deepEqual(
-      withoutThreadSubtree(values, root.id).map(({ id }) => id),
-      ['sibling'],
-    );
   });
 });
 

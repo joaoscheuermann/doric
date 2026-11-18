@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { emptyTree, withThreads } from '../src/client/domain/project-tree.js';
+import {
+  emptyTree,
+  type ProjectTree,
+} from '../src/client/domain/project-tree.js';
 import type { Thread } from '../src/client/domain/workspace.js';
 import {
   isThreadPanelTab,
@@ -23,6 +26,11 @@ const thread = (name: string): Thread => ({
   cwd: '/workspace',
   createdAt: '',
   updatedAt: '',
+});
+/** The empty tree once the host has described the Threads of 'project'. */
+const describedTree = (threads: readonly Thread[]): ProjectTree => ({
+  ...emptyTree,
+  threadsByProject: { project: threads },
 });
 const child: WorkspaceTab = {
   kind: 'element',
@@ -83,7 +91,7 @@ test('a tab shows a Thread exactly when its element is <chat-thread-panel>', () 
 test('renaming an open child updates its labels while preserving its mounted conversation and selection', () => {
   const renamed = reconcileThreadTabs(
     tabs,
-    withThreads(emptyTree, 'project', [thread('New name')]),
+    describedTree([thread('New name')]),
     new Set(),
   );
   const tab = renamed.items[1];
@@ -97,7 +105,7 @@ test('renaming an open child updates its labels while preserving its mounted con
   assert.equal(renamed.items[0], file);
   const unnamed = reconcileThreadTabs(
     renamed,
-    withThreads(emptyTree, 'project', [thread('')]),
+    describedTree([thread('')]),
     new Set(),
   );
   assert.equal(
@@ -108,7 +116,7 @@ test('renaming an open child updates its labels while preserving its mounted con
 
 test('only confirmed thread removal closes its tab and selects the remaining file', () => {
   assert.equal(reconcileThreadTabs(tabs, emptyTree, new Set()), tabs);
-  const described = withThreads(emptyTree, 'project', []);
+  const described = describedTree([]);
   assert.equal(
     reconcileThreadTabs(tabs, described, new Set(['project'])),
     tabs,
@@ -131,18 +139,18 @@ test('tree lifecycle disposes a deleted thread view and stops observing after cl
     },
   });
   try {
-    workspaceStore.getState().applyThreads('project', [thread('Renamed')]);
+    workspaceStore.setState({ tree: describedTree([thread('Renamed')]) });
     const renamed = workspaceTabsStore.getState().threads.parent?.items[1];
     assert.equal(renamed?.kind === 'element' && renamed.title, 'Renamed');
     assert.equal(disposed.length, 0);
-    workspaceStore.getState().forgetThread('project', 'child');
+    workspaceStore.setState({ tree: describedTree([]) });
     assert.deepEqual(workspaceTabsStore.getState().threads.parent?.items, [
       file,
     ]);
     assert.deepEqual(disposed, [child.element]);
     stop();
     workspaceTabsStore.setState({ threads: { parent: tabs } });
-    workspaceStore.getState().applyThreads('project', []);
+    workspaceStore.setState({ tree: describedTree([]) });
     assert.equal(workspaceTabsStore.getState().threads.parent, tabs);
   } finally {
     stop();

@@ -32,6 +32,7 @@ import {
   RuntimeHooksV1,
   RuntimeLeaseV1,
   type RuntimeNotice,
+  RuntimeRecordsV1,
   RuntimeTerminalsV1,
   RuntimeThreadsV1,
   RuntimeUsageV1,
@@ -45,6 +46,8 @@ import {
   runtimeWorkspaceMethods,
   SandboxV1,
   sandboxMethods,
+  type Thread,
+  threadSubtreeIds,
   threadType,
 } from '../src/contracts/index.js';
 import { readTranscript } from './support/capture-adapter.js';
@@ -199,6 +202,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     `${RuntimeHooksV1.id}@1.2.0`,
     // Stage 10 R-5.5: the unfilled usage projection.
     `${RuntimeUsageV1.id}@1.0.0`,
+    // Bundle isolation phase 3: the window's records mirror, a client
+    // contract the runtime's client part provides.
+    `${RuntimeRecordsV1.id}@1.0.0`,
     `${promptFinishedEvent.type}@1.0.0`,
     // terminal/v1 left with the stage-10 host switch: the `terminal` bundle
     // provides it, and runtime.terminals/v1 delegates to it.
@@ -228,6 +234,33 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     `${SandboxV1.id}@^1.0.0`,
   ]);
   assert.ok(isHooksContract(RuntimeHooksV1));
+});
+
+void test('runtime/contracts exports threadSubtreeIds, which names a Thread and its descendants without its siblings', () => {
+  const thread = (id: string, parentThreadId?: string): Thread => ({
+    id,
+    projectId: 'project-a',
+    ...(parentThreadId === undefined ? {} : { parentThreadId }),
+    name: id,
+    state: 'ready',
+    lastSequence: 0,
+    cwd: '/workspace/doric',
+    createdAt: '',
+    updatedAt: '',
+  });
+  const values = [
+    thread('root'),
+    thread('child', 'root'),
+    thread('grandchild', 'child'),
+    thread('sibling'),
+  ];
+
+  assert.deepEqual([...threadSubtreeIds(values, 'root')].sort(), [
+    'child',
+    'grandchild',
+    'root',
+  ]);
+  assert.deepEqual([...threadSubtreeIds(values, 'absent')], ['absent']);
 });
 
 void test('a watch listener reaches the provider and its registration is released', async () => {

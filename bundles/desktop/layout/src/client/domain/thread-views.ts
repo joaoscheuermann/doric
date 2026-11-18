@@ -1,5 +1,5 @@
 // The Threads a window shows, which the window holds a view of through
-// `runtime.threads/v1.viewThread` (docs/designs/thread-archive.md §10.1,
+// `view` of `runtime.records/v1` (docs/designs/thread-archive.md §10.1,
 // §10.8). Pure.
 
 import type { RouteMatch } from 'bundle/contracts';

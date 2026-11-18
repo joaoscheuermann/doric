@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "layout",
-  "version": "3.2.2",
+  "version": "3.2.3",
   "engines": {
     "doric": "^1.7.0"
   },
@@ -19,9 +19,7 @@
     "ui/v1@^1.0.0",
     "navigation/v1@^1.1.0",
     "regions/v1@^1.0.0",
-    "commands/v1@^1.0.0",
-    "runtime/v1@^1.3.0",
-    "runtime.threads/v1@^1.8.0"
+    "commands/v1@^1.0.0"
   ],
-  "optional": ["core.open-settings/v1"]
+  "optional": ["core.open-settings/v1", "runtime.records/v1"]
 }
