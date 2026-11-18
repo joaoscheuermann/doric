@@ -78,13 +78,6 @@
       "until": "step 5(b)"
     },
     {
-      "check": "core",
-      "bundle": "doric-host",
-      "target": "runtime/contracts",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 2(c)"
-    },
-    {
       "check": "lists",
       "bundle": "doric-host",
       "target": "app/backend/doric-host/project.json",
