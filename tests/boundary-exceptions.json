@@ -76,13 +76,6 @@
       "target": "terminal",
       "decision": "docs/features/bundle-isolation.md",
       "until": "step 5(b)"
-    },
-    {
-      "check": "lists",
-      "bundle": "doric-host",
-      "target": "app/backend/doric-host/.Dockerfile",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 11(b)"
     }
   ]
 }
