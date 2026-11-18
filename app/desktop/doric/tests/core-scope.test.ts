@@ -37,8 +37,8 @@ import {
 } from '../src/platform/windows/registry';
 import { coreDistribution } from './support/core';
 
-/** The core contracts whose window scope keys step 2(b) removes, in spec order. */
-const SCOPED_IN_PHASE_0 = [
+/** The core contracts that accept no scope key from a window, in spec order. */
+const SCOPE_FREE = [
   'windows/v1',
   'menus/v1',
   'tools/v1',
@@ -47,17 +47,14 @@ const SCOPED_IN_PHASE_0 = [
   'core.commands/v1',
 ] as const;
 
-type ScopeFree = (typeof SCOPED_IN_PHASE_0)[number];
+type ScopeFree = (typeof SCOPE_FREE)[number];
 
-/** The core contracts that accept no scope key from a window, in spec order. */
-const SCOPE_FREE: readonly ScopeFree[] = [
-  'windows/v1',
-  'menus/v1',
-  'tools/v1',
-  'models/v1',
-  'secrets/v1',
-  'core.commands/v1',
-];
+/** Each window scope key with a plausible value, as the dispatcher reads scope. */
+const SCOPE_KEYS = [
+  ['projectId', 'p1'],
+  ['threadId', 't1'],
+  ['promptId', 'pr1'],
+] as const;
 
 /**
  * One desktop-exposed method per contract, with an input its real schema
@@ -256,15 +253,17 @@ const windowCall = (contract: ScopeFree, scope?: Record<string, string>) =>
 
 describe('core contracts take no scope keys from a window (T2.2)', () => {
   for (const contract of SCOPE_FREE) {
-    test(`refuses a window call to ${contract} carrying projectId with invalid_input`, async () => {
-      const result = await windowCall(contract, { projectId: 'p1' });
+    for (const [key, value] of SCOPE_KEYS) {
+      test(`refuses a window call to ${contract} carrying ${key} with invalid_input`, async () => {
+        const result = await windowCall(contract, { [key]: value });
 
-      assert.equal(
-        (result as { error?: { code: string } }).error?.code,
-        'invalid_input',
-        JSON.stringify(result),
-      );
-    });
+        assert.equal(
+          (result as { error?: { code: string } }).error?.code,
+          'invalid_input',
+          JSON.stringify(result),
+        );
+      });
+    }
 
     test(`serves a window call to ${contract} with no scope`, async () => {
       const result = await windowCall(contract);
