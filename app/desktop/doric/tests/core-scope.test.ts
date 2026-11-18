@@ -55,6 +55,7 @@ const SCOPE_FREE: readonly ScopeFree[] = [
   'menus/v1',
   'tools/v1',
   'models/v1',
+  'secrets/v1',
 ];
 
 /**

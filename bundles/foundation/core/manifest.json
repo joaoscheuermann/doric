@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "core",
-  "version": "1.15.4",
+  "version": "1.15.5",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -31,7 +31,6 @@
   ],
   "requires": ["storage.backend/v1@^1.0.0", "secrets.backend/v1@^1.0.0"],
   "desktopScope": {
-    "core.commands/v1": ["projectId", "threadId", "promptId"],
-    "secrets/v1": ["projectId", "threadId", "promptId"]
+    "core.commands/v1": ["projectId", "threadId", "promptId"]
   }
 }
