@@ -23,14 +23,17 @@ const codeOf = async (promise: Promise<unknown>): Promise<unknown> => {
   return 'resolved';
 };
 
-void test('core.open-settings/v1 opens the settings window at /settings, or at the path it is given', async () => {
+void test('core.open-settings/v1 opens the settings window at the defaultPath it is given, or at the path it is given', async () => {
   const desktop = await bootDesktop([]);
 
   try {
     const commands = desktop.services.use(CommandsV1);
 
-    // Menus and keybindings execute with an empty input (decision 77).
-    await commands.execute('core.open-settings/v1', {}, desktop.call());
+    await commands.execute(
+      'core.open-settings/v1',
+      { defaultPath: '/settings' },
+      desktop.call(),
+    );
     await commands.execute(
       OpenSettingsCommandV1,
       { path: '/settings/providers' },
@@ -48,6 +51,41 @@ void test('core.open-settings/v1 opens the settings window at /settings, or at t
         },
       ],
     );
+  } finally {
+    await desktop.stop();
+  }
+});
+
+void test('with no settings window open, defaultPath opens the settings window at that path', async () => {
+  const desktop = await bootDesktop([]);
+
+  try {
+    await desktop.services
+      .use(CommandsV1)
+      .execute('core.open-settings/v1', { defaultPath: '/x' }, desktop.call());
+
+    assert.deepEqual(
+      desktop.received('doric.windows/v1.open').map(({ input }) => input),
+      [{ key: 'settings', path: '/x', appearance: settingsAppearance }],
+    );
+  } finally {
+    await desktop.stop();
+  }
+});
+
+void test('with no settings window open and neither path nor defaultPath, open-settings is invalid_input and nothing opens', async () => {
+  const desktop = await bootDesktop([]);
+
+  try {
+    assert.equal(
+      await codeOf(
+        desktop.services
+          .use(CommandsV1)
+          .execute('core.open-settings/v1', {}, desktop.call()),
+      ),
+      'invalid_input',
+    );
+    assert.deepEqual(desktop.received('doric.windows/v1.open'), []);
   } finally {
     await desktop.stop();
   }

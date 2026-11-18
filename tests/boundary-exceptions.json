@@ -211,13 +211,6 @@
       "until": "step 2(c)"
     },
     {
-      "check": "core",
-      "bundle": "core",
-      "target": "bundles/foundation/core/src/desktop/commands.ts",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 2(a)"
-    },
-    {
       "check": "lists",
       "bundle": "doric-host",
       "target": "app/backend/doric-host/project.json",

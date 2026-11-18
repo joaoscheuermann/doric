@@ -212,12 +212,12 @@ describe('layout.tabs/v1@1.2.0 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v1@1.2.0, layout.panel/v2@2.0.0 (not v1), layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.2.1 and requires runtime.threads/v1@^1.8.0 (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive)', () => {
+  test('provides layout.tabs/v1@1.2.0, layout.panel/v2@2.0.0 (not v1), layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.2.2 and requires runtime.threads/v1@^1.8.0 (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive)', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
     ) as { version: string; provides: string[]; requires: string[] };
 
-    assert.equal(manifest.version, '3.2.1');
+    assert.equal(manifest.version, '3.2.2');
     assert.ok(manifest.requires.includes('runtime.threads/v1@^1.8.0'));
     assert.ok(manifest.provides.includes('layout.stack/v2@2.0.0'));
     assert.ok(

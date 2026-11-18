@@ -169,7 +169,7 @@ function Workspace() {
   const openSettings = () => {
     void layoutServices()
       .use(CommandsV1)
-      .execute(OPEN_SETTINGS, {})
+      .execute(OPEN_SETTINGS, { defaultPath: '/settings' })
       .catch((error: unknown) => {
         console.error('Doric: the settings window could not open:', error);
       });

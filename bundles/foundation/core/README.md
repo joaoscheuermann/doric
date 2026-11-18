@@ -28,6 +28,13 @@ tests). See the [main README](../../../README.md) for Doric as a whole and
   `core-not-found` and `core-unavailable`; same-origin link interception and
   the menu context of the window path.
 
+`core.open-settings/v1` 1.1.0 takes `path` and `defaultPath`: `path` opens
+the settings window there; without it an open settings window is only
+focused, and otherwise a new one opens at `defaultPath`. With neither and no
+window open, the command is `invalid_input`. Dropping the implicit default
+path is a breaking change the versioning table would make a major; the id
+keeps `v1` at 1.1.0 by the owner's decision (U21).
+
 Each part's `provide` is inert when the composition chose another provider for
 that contract; the core then uses the chosen one through its contract.
 Activation does no I/O: storage types are declared to the backend on first use

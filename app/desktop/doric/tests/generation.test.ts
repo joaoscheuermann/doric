@@ -225,7 +225,11 @@ describe('a desktopMain generation (core part, real runner)', () => {
     try {
       await main.process.services
         .use(CommandsV1)
-        .execute('core.open-settings/v1', {}, main.process.call());
+        .execute(
+          'core.open-settings/v1',
+          { defaultPath: '/settings' },
+          main.process.call(),
+        );
 
       assert.deepEqual(main.opened, [
         {
