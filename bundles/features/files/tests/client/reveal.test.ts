@@ -38,7 +38,7 @@ const fakes = async (thread: Thread): Promise<Fakes> => {
   let current: string | undefined;
   const services = storyServices({
     apis: {
-      'layout.panel/v2': {
+      'layout.panel/v3': {
         ...still,
         select: (id: string) => {
           selected.push(id);
@@ -48,7 +48,7 @@ const fakes = async (thread: Thread): Promise<Fakes> => {
         ...still,
         selection: () => ({ project: fixtures.project, thread }),
       },
-      'layout.tabs/v1': {
+      'layout.tabs/v2': {
         ...still,
         focus: async ({ id }: { readonly id: string }) => {
           focused.push(id);

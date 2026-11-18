@@ -160,7 +160,7 @@ const setup = async ({
             thread: { ...fixtures.thread, cwd },
           }),
         },
-        'layout.tabs/v1': { ...still, current: () => undefined },
+        'layout.tabs/v2': { ...still, current: () => undefined },
         'commands/v1': { execute: async () => undefined },
       },
       scoped: {

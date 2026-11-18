@@ -88,11 +88,11 @@ const useElements = () =>
           ...still,
           selection: () => ({ project, thread }),
         },
-        'layout.tabs/v1': {
+        'layout.tabs/v2': {
           ...still,
           current: () => ({ id: `file:${paymentForm.path}` }),
         },
-        'layout.panel/v2': { ...still, select: () => undefined },
+        'layout.panel/v3': { ...still, select: () => undefined },
         'commands/v1': { execute: async () => undefined },
         'git.changes/v1': {
           observe: (

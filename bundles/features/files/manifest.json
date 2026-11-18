@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "files",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "engines": { "doric": "^1.0.0" },
   "description": "Core capabilities available to the Doric agent.",
   "provides": [
@@ -20,8 +20,8 @@
     "commands/v1@^1.0.0",
     "hooks/v1@^1.0.0",
     "layout.workspace/v1@^1.1.0",
-    "layout.panel/v2@^2.0.0",
-    "layout.tabs/v1@^1.2.0"
+    "layout.panel/v3@^3.0.0",
+    "layout.tabs/v2@^2.0.0"
   ],
   "optional": ["git.changes/v1", "chat.hooks/v1"],
   "desktopScope": {

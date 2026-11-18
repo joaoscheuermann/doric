@@ -22,7 +22,7 @@ import {
 } from 'desktop/ui/panels';
 import { ScrollArea } from 'desktop/ui/scroll-area';
 import { SidebarMenu } from 'desktop/ui/sidebar';
-import { LayoutTabsV1, LayoutWorkspaceV1 } from 'layout/contracts';
+import { LayoutTabsV2, LayoutWorkspaceV1 } from 'layout/contracts';
 import { CopyIcon, FolderIcon, PlusIcon } from 'lucide-react';
 import {
   memo,
@@ -86,7 +86,7 @@ const locationOf = (key: string): Location => {
 
 export function FilesTreeView({ services }: { readonly services: Services }) {
   const workspace = useService(services, LayoutWorkspaceV1);
-  const tabs = useService(services, LayoutTabsV1);
+  const tabs = useService(services, LayoutTabsV2);
   const commands = useService(services, CommandsV1);
   const git = useService(services, GitChangesV1);
   const location = locationOf(

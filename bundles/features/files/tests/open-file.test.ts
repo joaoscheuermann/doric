@@ -1,7 +1,8 @@
 // files.open-file/v1 (stage 10, §3.6): the command opens a sandbox file as a
 // tab of the active owner, with the id, title, icon and tooltip the workspace's
 // file tabs had (`file:<path>`, the file's name, the whole path), through a
-// fake layout.tabs/v1 that keeps the tabs it was asked to open.
+// fake layout.tabs/v2 that keeps the tabs it was asked to open. The icon is
+// the element `files-file-icon` (bundle isolation 4(a) change 3).
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -16,9 +17,9 @@ import {
 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import {
-  LayoutTabsV1,
-  type LegacyTabRequest,
-  legacyLayoutTabsMethods,
+  LayoutTabsV2,
+  layoutTabsMethods,
+  type TabRequest,
 } from 'layout/contracts';
 import { isValidElement } from 'react';
 
@@ -26,15 +27,15 @@ import { filePathOf, openFileCommand } from '../src/client/commands.js';
 import { OPEN_FILE_COMMAND } from '../src/contracts/index.js';
 
 const setup = (owner: string | null = 'thread-1') => {
-  const tabs: LegacyTabRequest[] = [];
+  const tabs: TabRequest[] = [];
   const commands = new Map<string, BoundCommand>();
   const harness = createTestServices({
     bundle: { id: 'files' },
     provide: [
-      defineService(LayoutTabsV1, {
+      defineService(LayoutTabsV2, {
         open: defineMethod({
-          ...legacyLayoutTabsMethods.open,
-          execute: async (input: LegacyTabRequest) => {
+          ...layoutTabsMethods.open,
+          execute: async (input: TabRequest) => {
             if (owner === null)
               throw new ContractError(
                 'unavailable',
@@ -44,27 +45,31 @@ const setup = (owner: string | null = 'thread-1') => {
           },
         }),
         close: defineMethod({
-          ...legacyLayoutTabsMethods.close,
+          ...layoutTabsMethods.close,
           execute: async () => undefined,
         }),
         focus: defineMethod({
-          ...legacyLayoutTabsMethods.focus,
+          ...layoutTabsMethods.focus,
           execute: async () => undefined,
         }),
         retitle: defineMethod({
-          ...legacyLayoutTabsMethods.retitle,
+          ...layoutTabsMethods.retitle,
           execute: async () => undefined,
         }),
         current: defineMethod({
-          ...legacyLayoutTabsMethods.current,
+          ...layoutTabsMethods.current,
           execute: () => {
             const last = tabs.at(-1);
             return last === undefined ? undefined : { id: last.id };
           },
         }),
         subscribe: defineMethod({
-          ...legacyLayoutTabsMethods.subscribe,
+          ...layoutTabsMethods.subscribe,
           execute: () => ({ dispose: () => undefined }),
+        }),
+        setOwner: defineMethod({
+          ...layoutTabsMethods.setOwner,
+          execute: () => undefined,
         }),
       }),
       defineService(CommandsV1.id, {
@@ -109,14 +114,14 @@ describe('files.open-file/v1', () => {
           title: 'b.ts',
           tag: 'files-file-view',
           props: { projectId: 'p-1', path: 'src/deep/b.ts' },
-          icon: 'file',
+          iconTag: 'files-file-icon',
           tooltip: 'src/deep/b.ts',
         },
       ],
     );
   });
 
-  test('the file tab menu holds Reveal in Files (A5, layout.tabs/v1@1.2.0)', async (t) => {
+  test('the file tab menu holds Reveal in Files (A5, layout.tabs/v2@2.0.0)', async (t) => {
     const { tabs, commands, dispose } = setup();
     t.after(dispose);
 

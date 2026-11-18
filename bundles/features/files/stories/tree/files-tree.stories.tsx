@@ -77,7 +77,7 @@ function TreeStory({
     return storyServices({
       apis: {
         'layout.workspace/v1': { ...still, selection: () => selection },
-        'layout.tabs/v1': {
+        'layout.tabs/v2': {
           ...still,
           current: () =>
             selectedPath === undefined

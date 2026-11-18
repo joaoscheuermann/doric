@@ -110,14 +110,14 @@ const setup = async (): Promise<{
             thread: { ...fixtures.thread, cwd: '/workspace' },
           }),
         },
-        'layout.tabs/v1': {
+        'layout.tabs/v2': {
           ...still,
           focus: async ({ id }: { readonly id: string }) => {
             current = id;
           },
           current: () => (current === undefined ? undefined : { id: current }),
         },
-        'layout.panel/v2': { ...still, select: () => undefined },
+        'layout.panel/v3': { ...still, select: () => undefined },
         'commands/v1': { execute: async () => undefined },
       },
     });

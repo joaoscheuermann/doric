@@ -2,18 +2,19 @@
 // active owner, as the workspace's file rows did (`app.tsx:136-151`): the tab
 // id is `file:<path>`, its title the file's name, its tooltip the whole path.
 // Opening a file whose tab is open selects that tab. The tab's context menu
-// holds "Reveal in Files" (§4.4 A5, S16, `layout.tabs/v1@1.2.0` `menu`).
+// holds "Reveal in Files" (§4.4 A5, S16, `layout.tabs/v2@2.0.0` `menu`), and
+// its trigger draws the `files-file-icon` element (`iconTag`).
 
 import { defineCommand, type Services } from 'bundle/contracts';
 import { baseName } from 'desktop/reads';
 import {
-  LayoutPanelV2,
-  LayoutTabsV1,
+  LayoutPanelV3,
+  LayoutTabsV2,
   LayoutWorkspaceV1,
-  type LegacyTabRequest as TabRequest,
+  type TabRequest,
 } from 'layout/contracts';
 import { FilesIcon } from 'lucide-react';
-import { createElement, type ReactElement } from 'react';
+import { createElement } from 'react';
 
 import {
   OPEN_FILE_COMMAND,
@@ -26,6 +27,9 @@ import { expansionScope, expansionStore } from './stores/expansion.js';
 
 /** The tag of the file tab's element. */
 export const FILE_VIEW_TAG = 'files-file-view';
+
+/** The tag of the element drawn as the file tab's and the Files view's icon. */
+export const FILE_ICON_TAG = 'files-file-icon';
 
 /** The tab id of one file; the tree selects the row of the current one. */
 export const fileTabId = (path: string): string => `file:${path}`;
@@ -60,13 +64,13 @@ export const revealFile = (
     // Without the workspace's selection there is no tree to open.
   }
   try {
-    services.use(LayoutPanelV2).select('files');
+    services.use(LayoutPanelV3).select('files');
   } catch {
     // The panel is the layout's; without it there is nothing to show.
   }
   try {
     void services
-      .use(LayoutTabsV1)
+      .use(LayoutTabsV2)
       .focus({ id: fileTabId(path) })
       .catch(() => undefined);
   } catch {
@@ -74,27 +78,16 @@ export const revealFile = (
   }
 };
 
-/**
- * A tab request whose menu entries may carry a leading `icon` element
- * (`layout.tabs/v1@1.2.0` `TabMenuItem.icon`), typed here until layout's
- * contract declares it.
- */
-type FileTabRequest = Omit<TabRequest, 'menu'> & {
-  readonly menu?: readonly (NonNullable<TabRequest['menu']>[number] & {
-    readonly icon?: ReactElement;
-  })[];
-};
-
 /** The tab a file opens as; with `services`, its menu holds Reveal in Files. */
 export const fileTab = (
   input: OpenFileInput,
   services?: Services,
-): FileTabRequest => ({
+): TabRequest => ({
   id: fileTabId(input.path),
   title: baseName(input.path),
   tag: FILE_VIEW_TAG,
   props: { projectId: input.projectId, path: input.path },
-  icon: 'file',
+  iconTag: FILE_ICON_TAG,
   tooltip: input.path,
   ...(services === undefined
     ? {}
@@ -114,6 +107,6 @@ export const openFileCommand = defineCommand({
   id: OPEN_FILE_COMMAND,
   input: openFileInput,
   execute: async (input, call, services) => {
-    await services.use(LayoutTabsV1).open(fileTab(input, services), call);
+    await services.use(LayoutTabsV2).open(fileTab(input, services), call);
   },
 });
