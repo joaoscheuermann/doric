@@ -152,8 +152,8 @@ nothing reports it.
 A custom `DORIC_COMPOSITION` lists `workspace` in `enabled`; without it the
 window has no sidebar, no Project tabs and no Dashboard, the chat opens no
 Thread tab, the footer's execution picker shows the workspace default, locked, and `files`, `git`, `terminal`, `resources`, `mcp`, `screen` and
-`usage` are quarantined (each requires `layout.workspace/v1` or
-`layout.sidebar/v1`, which `workspace` provides), and so is `papercraft`,
+`usage` are quarantined (each requires a contract that `workspace`
+provides), and so is `papercraft`,
 which requires `files/v1`; nothing else reports it.
 
 What each bundle owns:

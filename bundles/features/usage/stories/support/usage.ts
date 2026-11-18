@@ -176,9 +176,9 @@ export const fixtureUsage = (
   setCompactionTarget: (target) => Promise.resolve(target),
 });
 
-/** The layout's selection, fixed on one Thread (or none). */
-export const fixtureWorkspace = (selected: string | undefined = threadId) => ({
-  selectedThread: () => (selected === undefined ? undefined : { id: selected }),
+/** The workspace's selection, fixed on one Thread (or none). */
+export const fixtureSelection = (selected: string | undefined = threadId) => ({
+  current: () => (selected === undefined ? {} : { threadId: selected }),
   subscribe: () => ({ dispose: () => undefined }),
 });
 
@@ -192,7 +192,7 @@ export const summaryServices = (
     ...(input.usage === null
       ? {}
       : { 'usage/v1': input.usage ?? fixtureUsage() }),
-    'layout.workspace/v1': fixtureWorkspace(
+    'workspace.selection/v1': fixtureSelection(
       input.selected === null ? undefined : (input.selected ?? threadId),
     ),
   });
