@@ -29,9 +29,11 @@ RUN npm install --global npm@11.13.0
 # Prisma client is generated before compiling, and the Doric entrypoint is
 # placed at the path expected by its package metadata.
 # Nx's `build-bundles` target is the single definition of the bundle build: it
-# builds every project tagged `type:bundle` and stages each one into
+# builds every project tagged `type:bundle`, then `stage` stages every
+# `bundles/<group>/<id>` that holds a manifest into
 # `app/backend/doric-host/dist/bundles/<id>`. The Nx plugins and the task runner
-# come from the lockfile, so no lifecycle script runs; `NX_DAEMON=false` keeps
+# come from the lockfile; `--ignore-scripts` keeps any lifecycle script from
+# running. `NX_DAEMON=false` keeps
 # the build from starting a background daemon and `--skip-nx-cache` forces
 # every task to run. A failing bundle build stops the image build here rather
 # than at boot.

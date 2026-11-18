@@ -227,8 +227,10 @@ leftover file is ignored.
 
 `stage` copies each `dist` into `<dest>/<id>`, and fails naming the bundle
 directory when its `dist/manifest.json` is missing. With `--all <root>` it
-stages every `<root>/<group>/<id>` that holds a `manifest.json`, in path
-order, and skips files and other directories such as `node_modules`.
+stages every `<root>/<group>/<id>` that holds a `manifest.json`, in code-unit
+path order, and skips files and other directories such as `node_modules`.
+`stage` replaces only `<dest>/<id>` for the bundles it stages: the old
+directory of a removed or renamed bundle stays until `dist/bundles` is cleaned.
 
 `copy-md` mirrors the `.md` files below `<from>` into `<to>` the same way
 `build` does: it removes every `.md` below `<to>`, then copies each one from

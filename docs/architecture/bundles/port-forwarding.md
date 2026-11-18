@@ -197,10 +197,12 @@ O `ports-relay` declara só `ports.relay/v1` em `provides`, como `screen-relay`.
 
 ## Arquivos a criar ou alterar
 
-> **Out of date.** The `project.json` row below no longer matches the code.
-> Since step 11(a) of the bundle isolation work, `doric-host:build-bundles`
-> holds no bundle list: it builds and stages every Nx project tagged
-> `type:bundle`, so a new bundle needs only that tag. The current behavior is in
+> **Desatualizado.** A linha de `project.json` abaixo não corresponde mais ao
+> código. Desde o passo 11(a) do isolamento de bundles, `doric-host:build-bundles`
+> não tem lista de bundles: compila os projetos Nx com a tag `type:bundle` e
+> prepara cada diretório `bundles/<grupo>/<id>` que tem um `manifest.json`. Um
+> bundle novo precisa da tag, do manifesto nesse local, de `npm install`, de
+> `nx sync` e de uma linha `enabled`. O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts).
 
 | Arquivo                                                      | Mudança                                                                                                                                                                     |

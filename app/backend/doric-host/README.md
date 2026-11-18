@@ -746,10 +746,14 @@ trigger additional model/tool activity.
 
 The image builds the bundles through the same Nx target as a local build,
 `NX_DAEMON=false npx nx run doric-host:build-bundles --skip-nx-cache`: it
-builds every project tagged `type:bundle` and stages each into
-`app/backend/doric-host/dist/bundles`. Dependencies are installed with
-`npm ci --ignore-scripts`, so no lifecycle script runs; the build starts no Nx
-daemon and reads no Nx cache.
+builds every Nx project tagged `type:bundle`, then `stage --all` stages every
+directory `bundles/<group>/<id>` that holds a `manifest.json` into
+`app/backend/doric-host/dist/bundles`. A bundle needs both: a manifest with no
+tag is not built, and `stage` then fails on its missing `dist/manifest.json`,
+which fails the image build. Dependencies are installed with
+`npm ci --ignore-scripts`, so no lifecycle script runs; the image runs Nx's
+`post-install` step itself. The build starts no Nx daemon and reads no Nx
+cache.
 
 ### The sandbox image
 
@@ -793,10 +797,14 @@ Keep it off where Projects are not yours.
 
 Two traps break the image build or the deployed catalog:
 
-- Every bundle must be an Nx project tagged `type:bundle`. The host loads
-  whatever the image stages in `app/backend/doric-host/dist/bundles`, so a
-  bundle the `build-bundles` target does not build is absent at runtime (and
-  its composition entry is reported missing).
+- Every bundle must be an Nx project tagged `type:bundle` and live in
+  `bundles/<group>/<id>` with a `manifest.json`. `build-bundles` builds the
+  tagged projects; `stage --all` stages the manifest directories. A manifest
+  whose project has no tag is not built, so `stage` fails on its missing
+  `dist/manifest.json` and the image build fails (the `.dockerignore` excludes
+  `**/dist`, so no local build hides it). A tagged project outside
+  `bundles/<group>/<id>` is built but never staged, and nothing reports it: the
+  bundle is absent at runtime and its composition entry is reported missing.
 - `package-lock.json` must be generated with the npm major the build image runs
   (`node:22-bookworm-slim` ships npm 10). A lock rewritten by a newer local npm
   fails `npm ci` with `Missing: <package> from lock file`; regenerate it with
