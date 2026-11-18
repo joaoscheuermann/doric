@@ -20,10 +20,12 @@ import {
 } from 'bundle/contracts';
 import type { SHELL_PANEL } from 'layout/contracts';
 import { LayoutPanelV3 } from 'layout/contracts';
-import { LayoutWorkspaceV1 } from 'workspace/contracts';
+import { RuntimeRecordsV1 } from 'runtime/contracts';
+import { WorkspaceSelectionV1 } from 'workspace/contracts';
 
 import { ChatHooksV1 } from './api/peers.js';
 import { filesReadsOf } from './api/reads.js';
+import { refreshWorkspaceOf } from './api/selection.js';
 import { FILE_ICON_TAG, FILE_VIEW_TAG, openFileCommand } from './commands.js';
 import { defineFilesElements } from './elements.js';
 import {
@@ -104,11 +106,17 @@ export function activate({ services }: ClientContext): Cleanup {
     // The panel is the layout's; without it there is nothing to show.
   }
 
-  // The coordinator's workspace triggers, while the layout serves them.
-  const workspace = services.whenAvailable(LayoutWorkspaceV1, (api) => {
-    coordinator.setWorkspace(api);
-    return () => coordinator.setWorkspace(undefined);
-  });
+  // The coordinator's workspace triggers, while `workspace` serves the
+  // selection; the records are required, so they are there too.
+  const workspace = services.whenAvailable(
+    WorkspaceSelectionV1,
+    (selection) => {
+      coordinator.setWorkspace(
+        refreshWorkspaceOf(selection, services.use(RuntimeRecordsV1)),
+      );
+      return () => coordinator.setWorkspace(undefined);
+    },
+  );
   // D9-10: a sandbox-writing tool in any held conversation refreshes its Project.
   const activity = services.use(HooksV1).whenAvailable(ChatHooksV1, (chat) => {
     chat.onSandboxActivityHook(({ projectId }) => {

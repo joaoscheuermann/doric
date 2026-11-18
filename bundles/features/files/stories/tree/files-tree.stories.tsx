@@ -23,7 +23,7 @@ import {
   webTree,
   workspaceTree,
 } from '../support/fixtures.js';
-import { still, storyServices } from '../support/services.js';
+import { selectionApis, still, storyServices } from '../support/services.js';
 
 type Selection = {
   readonly project?: typeof project;
@@ -76,7 +76,7 @@ function TreeStory({
     }
     return storyServices({
       apis: {
-        'layout.workspace/v1': { ...still, selection: () => selection },
+        ...selectionApis(selection),
         'layout.tabs/v2': {
           ...still,
           current: () =>

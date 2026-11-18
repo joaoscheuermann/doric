@@ -32,7 +32,8 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { LayoutWorkspaceV1 } from 'workspace/contracts';
+import { RuntimeRecordsV1 } from 'runtime/contracts';
+import { WorkspaceSelectionV1 } from 'workspace/contracts';
 import { useStore } from 'zustand/react';
 
 import {
@@ -45,6 +46,7 @@ import {
   type GitChanges,
   GitChangesV1,
 } from '../api/peers.js';
+import { refreshWorkspaceOf } from '../api/selection.js';
 import { type FilesWrites, filesWritesOf } from '../api/writes.js';
 import { filePathOf } from '../commands.js';
 import { useProjectReads } from '../hooks/use-project-reads.js';
@@ -86,7 +88,16 @@ const locationOf = (key: string): Location => {
 };
 
 export function FilesTreeView({ services }: { readonly services: Services }) {
-  const workspace = useService(services, LayoutWorkspaceV1);
+  const selection = useService(services, WorkspaceSelectionV1);
+  const records = useService(services, RuntimeRecordsV1);
+  // Both contracts' notifications, through the one adapter.
+  const workspace = useMemo(
+    () =>
+      selection === undefined || records === undefined
+        ? undefined
+        : refreshWorkspaceOf(selection, records),
+    [selection, records],
+  );
   const tabs = useService(services, LayoutTabsV2);
   const commands = useService(services, CommandsV1);
   const git = useService(services, GitChangesV1);
@@ -94,10 +105,12 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
     useSubscribed(
       workspace,
       () => {
-        const { project, thread } = (
-          workspace as NonNullable<typeof workspace>
-        ).selection();
-        return locationKey({ projectId: project?.id, cwd: thread?.cwd });
+        const { projectId, threadId } = (
+          selection as NonNullable<typeof selection>
+        ).current();
+        const cwd =
+          threadId === undefined ? undefined : records?.thread(threadId)?.cwd;
+        return locationKey({ projectId, cwd });
       },
       locationKey({}),
     ),

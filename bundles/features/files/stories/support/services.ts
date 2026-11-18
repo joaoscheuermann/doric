@@ -10,6 +10,8 @@ import type {
   Disposable,
   Services,
 } from 'bundle/contracts';
+import type { Project, Thread } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
 type Provided = unknown | ((scope: CallScope | undefined) => unknown);
 
@@ -59,3 +61,28 @@ export const storyServices = ({
 
 /** A `subscribe(listener): Disposable` source whose snapshot never changes. */
 export const still = { subscribe: () => disposed };
+
+/**
+ * `workspace.selection/v1` on `project` and `thread` (either may be absent)
+ * and `runtime.records/v1` holding them, primed so it answers the Thread.
+ */
+export const selectionApis = (selection: {
+  readonly project?: Project;
+  readonly thread?: Thread;
+}): Readonly<Record<string, unknown>> => {
+  const { project, thread } = selection;
+  const ids = {
+    ...(project === undefined ? {} : { projectId: project.id }),
+    ...(thread === undefined ? {} : { threadId: thread.id }),
+  };
+  const records = createRecordsApi({
+    projects: project === undefined ? [] : [project],
+    threads: thread === undefined ? [] : [thread],
+  });
+  // The records answer a Thread of a described Project only.
+  if (thread !== undefined) records.threads(thread.projectId);
+  return {
+    'workspace.selection/v1': { ...still, current: () => ids },
+    'runtime.records/v1': records,
+  };
+};

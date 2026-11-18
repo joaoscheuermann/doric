@@ -122,10 +122,10 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   which keeps the typed name. On an app whose `FileTree` draws no row menus
   these entries are absent and the view works as before.
 
-The client reads the selected Project and Thread through `layout.workspace/v1`
-(required, `^1.1.0`), which the `workspace` bundle provides from files 1.7.7 (bundle
-isolation step 4(c)) until step 4(e); the bundle imports `LayoutWorkspaceV1`
-from `workspace/contracts`. Without `workspace` the bundle is quarantined.
+The client reads the selected Project and Thread ids through
+`workspace.selection/v1` (required, `^1.0.0`) and their records through
+`runtime.records/v1` (files 1.7.8); it imports `WorkspaceSelectionV1` from
+`workspace/contracts`. Without `workspace` the bundle is quarantined.
 
 `src/client/styles.css` ships, unlayered, the Monaco scrollbar slider rule
 (`.monaco-scrollable-element > .scrollbar > .slider`), because the file viewer

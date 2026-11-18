@@ -9,6 +9,7 @@ import { afterEach, describe, test } from 'node:test';
 
 import type { DirectoryListing } from '../../src/client/reads/project-files.js';
 import { type Rendered, render, settle } from './support/render.js';
+import { selectionApis } from './support/selection.js';
 
 let rendered: Rendered | undefined;
 
@@ -103,13 +104,10 @@ const setup = async (): Promise<{
     let current: string | undefined;
     return storyServices({
       apis: {
-        'layout.workspace/v1': {
-          ...still,
-          selection: () => ({
-            project: fixtures.project,
-            thread: { ...fixtures.thread, cwd: '/workspace' },
-          }),
-        },
+        ...selectionApis(fixtures.project, {
+          ...fixtures.thread,
+          cwd: '/workspace',
+        }),
         'layout.tabs/v2': {
           ...still,
           focus: async ({ id }: { readonly id: string }) => {

@@ -1,11 +1,12 @@
 // The Files view of the Project panel rendered in happy-dom over the stories'
-// fakes: the layout's selection, the files client's tree read and the
-// expansion store. Smoke test of the client test setup (Part 4.4b).
+// fakes: the selection (`workspace.selection/v1` and `runtime.records/v1`),
+// the files client's tree read and the expansion store. Smoke test of the client test setup (Part 4.4b).
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
 import { type Rendered, render, settle } from './support/render.js';
+import { selectionApis } from './support/selection.js';
 
 let rendered: Rendered | undefined;
 
@@ -45,10 +46,7 @@ const renderTree = async (): Promise<{
     seedExpansion(project.id, rootOf(thread.cwd), openDirectories);
     const services = storyServices({
       apis: {
-        'layout.workspace/v1': {
-          ...still,
-          selection: () => ({ project, thread }),
-        },
+        ...selectionApis(project, thread),
         'layout.tabs/v2': { ...still, current: () => undefined },
         'commands/v1': {
           execute: async (id: string, input: unknown) => {

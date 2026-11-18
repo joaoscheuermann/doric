@@ -4,7 +4,9 @@
 // and the activation select the Files view through `layout.panel/v3`; it
 // provides `files/v1@1.3.0` (the per-directory `directories` read the Files
 // tree loads with) at version 1.7.4 (change 6: the Monaco rule in its sheet)
-// and keeps `engines.doric`.
+// and keeps `engines.doric`. Bundle isolation 4(d) ships 1.7.8: the selection
+// and the records come from `workspace.selection/v1` and `runtime.records/v1`,
+// each in the section of the line it replaces (O1).
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -38,8 +40,17 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.7.7 and keeps engines.doric', () => {
-    assert.equal(manifest.version, '1.7.7');
+  test('requires workspace.selection/v1 and runtime.records/v1, and no layout.workspace/*', () => {
+    assert.ok(manifest.requires.includes('workspace.selection/v1@^1.0.0'));
+    assert.ok(manifest.requires.includes('runtime.records/v1@^1.0.0'));
+    assert.deepEqual(
+      manifest.requires.filter((ref) => ref.startsWith('layout.workspace/')),
+      [],
+    );
+  });
+
+  test('provides files/v1@1.3.0 at version 1.7.8 and keeps engines.doric', () => {
+    assert.equal(manifest.version, '1.7.8');
     assert.ok(manifest.provides.includes('files/v1@1.3.0'));
     assert.equal(manifest.engines.doric, '^1.0.0');
   });

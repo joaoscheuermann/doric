@@ -12,12 +12,13 @@ import {
   project,
   thread,
 } from './support/fixtures.js';
-import { still, storyServices } from './support/services.js';
+import { selectionApis, still, storyServices } from './support/services.js';
 
 /**
  * The three elements the files client defines, over one seeded activation:
  * its sandbox store (the tree read and the file tab's query client), the
- * layout's selection, panel and tabs, and git's changes read.
+ * workspace's selection, the records, the layout's panel and tabs, and git's
+ * changes read.
  */
 const useElements = () =>
   useState(() => {
@@ -84,10 +85,7 @@ const useElements = () =>
     seedExpansion(project.id, '', openDirectories);
     const services = storyServices({
       apis: {
-        'layout.workspace/v1': {
-          ...still,
-          selection: () => ({ project, thread }),
-        },
+        ...selectionApis({ project, thread }),
         'layout.tabs/v2': {
           ...still,
           current: () => ({ id: `file:${paymentForm.path}` }),

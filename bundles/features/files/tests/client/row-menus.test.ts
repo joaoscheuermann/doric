@@ -26,6 +26,7 @@ import type {
   TreeObservation,
 } from '../../src/contracts/index.js';
 import { type Rendered, render, settle } from './support/render.js';
+import { selectionApis } from './support/selection.js';
 
 let rendered: Rendered | undefined;
 
@@ -153,13 +154,7 @@ const setup = async ({
       };
     const services = storyServices({
       apis: {
-        'layout.workspace/v1': {
-          ...still,
-          selection: () => ({
-            project: fixtures.project,
-            thread: { ...fixtures.thread, cwd },
-          }),
-        },
+        ...selectionApis(fixtures.project, { ...fixtures.thread, cwd }),
         'layout.tabs/v2': { ...still, current: () => undefined },
         'commands/v1': { execute: async () => undefined },
       },

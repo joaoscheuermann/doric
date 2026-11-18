@@ -10,13 +10,15 @@ import { baseName } from 'desktop/reads';
 import { LayoutPanelV3, LayoutTabsV2, type TabRequest } from 'layout/contracts';
 import { FilesIcon } from 'lucide-react';
 import { createElement } from 'react';
-import { LayoutWorkspaceV1 } from 'workspace/contracts';
+import { RuntimeRecordsV1 } from 'runtime/contracts';
+import { WorkspaceSelectionV1 } from 'workspace/contracts';
 
 import {
   OPEN_FILE_COMMAND,
   type OpenFileInput,
   openFileInput,
 } from '../contracts/index.js';
+import { selectionOf } from './api/selection.js';
 import { ancestorsUnder } from './paths.js';
 import { rootOf } from './sandbox-store.js';
 import { expansionScope, expansionStore } from './stores/expansion.js';
@@ -47,7 +49,10 @@ export const revealFile = (
   { projectId, path }: OpenFileInput,
 ): void => {
   try {
-    const { project, thread } = services.use(LayoutWorkspaceV1).selection();
+    const { project, thread } = selectionOf(
+      services.use(WorkspaceSelectionV1),
+      services.use(RuntimeRecordsV1),
+    );
     const root = rootOf(thread?.cwd);
     const ancestors =
       project?.id === projectId ? ancestorsUnder(root, path) : undefined;
