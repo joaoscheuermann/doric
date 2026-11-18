@@ -134,8 +134,7 @@ let current: RenderedWorkspace | undefined;
  * - Binds the layout to a fake host built from `fixture` (`bindLayout`, with
  *   the app's region items) and renders `WorkspaceView` with `createRoot` and
  *   `flushSync`.
- * - Resolves once the first render and the answers it started have settled,
- *   so the about version is in place when the host answers it.
+ * - Resolves once the first render and the answers it started have settled.
  * - `<core-region>` is the stories' stand-in (`defineStoryElements`,
  *   `story-elements.ts:26-40`), which draws `regionItems(name)` as
  *   placeholders, so a region's seeded items appear in `root`.

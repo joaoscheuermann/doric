@@ -316,7 +316,7 @@ describe('the cloud glyphs', () => {
 });
 
 describe('the resources region (T-2.1)', () => {
-  test('the activation adds the badge to layout.account.status and nothing to layout.global-footer', async () => {
+  test('the activation adds the badge to account.status and nothing to layout.global-footer', async () => {
     installWindow();
     const { activate } = await import('../../src/client/index.js');
     const added: [string, RegionItem][] = [];
@@ -334,7 +334,7 @@ describe('the resources region (T-2.1)', () => {
     try {
       assert.deepEqual(added, [
         [
-          'layout.account.status',
+          'account.status',
           { id: 'resources', tag: 'resources-monitor', order: 10 },
         ],
       ]);

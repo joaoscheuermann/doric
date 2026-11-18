@@ -1,5 +1,5 @@
-// The navigation's slot elements (bundle isolation 4(a), decision O2): the
-// layout fills the shell's slots with them until 4(b) and 4(c) move them out.
+// The navigation's four slot elements (bundle isolation 4(a), decision O2):
+// the layout fills the shell's slots with them until 4(c) moves them out.
 // Each one is a React root of its own, so what they share lives in stores
 // (decision O1): the workspace's once-per-window effects run only in
 // `layout-sidebar`, which both forms draw; the Project tabs live in
@@ -28,7 +28,6 @@ import {
   SHELL_WINDOW_ACTIONS,
 } from '../../contracts/index.js';
 import { DeleteDialog } from '../components/molecules/delete-dialog.js';
-import { AccountStatus } from '../components/organisms/account-status.js';
 import {
   DashboardContent,
   DashboardNavigation,
@@ -282,11 +281,6 @@ function NavigationDashboard() {
   );
 }
 
-/** `layout-account-status` (`shell.window.actions` until 4(b)): the account button. */
-function NavigationAccountStatus() {
-  return <AccountStatus onOpenSettings={openSettings} />;
-}
-
 export const LayoutSidebarElement = defineReactElement({
   props: [],
   wrap,
@@ -309,10 +303,4 @@ export const LayoutDashboardElement = defineReactElement({
   props: [],
   wrap,
   render: NavigationDashboard,
-});
-
-export const LayoutAccountStatusElement = defineReactElement({
-  props: [],
-  wrap,
-  render: NavigationAccountStatus,
 });

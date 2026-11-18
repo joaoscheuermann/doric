@@ -2025,9 +2025,9 @@ test('T-1.5: the tab of a Thread missing from the tree keeps the main bubble', a
 
 // Bundle isolation step 4(a), change 7 ---------------------------------------
 // - O2: `layout/contracts` names the five new slots, and the layout fills
-//   `shell.sidebar`, `shell.titlebar.tabs` and `shell.window.actions` in every
-//   window, and `shell.page` and `shell.sidebar.footer` while the route is `/`
-//   or `/projects`.
+//   `shell.sidebar` and `shell.titlebar.tabs` in every window, and
+//   `shell.page` and `shell.sidebar.footer` while the route is `/` or
+//   `/projects`. Since step 4(b) `account` fills `shell.window.actions`.
 // - T4.2: the frame is in the page form exactly while `shell.page` holds an
 //   item; `/projects` and `/projects/:projectId` are children of `/`, and the
 //   second's element, `layout-project-empty`, draws the empty state.
@@ -2174,8 +2174,9 @@ test('layout/contracts names the five new shell slots', async () => {
   );
 });
 
-// O2: the navigation's five elements, and the two slots that follow the route.
-test('the layout fills shell.sidebar, shell.titlebar.tabs and shell.window.actions always, and shell.page and shell.sidebar.footer only on / and /projects', async () => {
+// O2: the navigation's four elements, and the two slots that follow the route;
+// since step 4(b) the layout adds nothing to shell.window.actions (AC4.6).
+test('the layout fills shell.sidebar and shell.titlebar.tabs always, nothing in shell.window.actions, and shell.page and shell.sidebar.footer only on / and /projects', async () => {
   const activation = await activateRecorded('/projects');
   try {
     for (const path of [
@@ -2198,7 +2199,7 @@ test('the layout fills shell.sidebar, shell.titlebar.tabs and shell.window.actio
         {
           'shell.sidebar': ['layout-sidebar'],
           'shell.titlebar.tabs': ['layout-project-tabs'],
-          'shell.window.actions': ['layout-account-status'],
+          'shell.window.actions': [],
           'shell.page': onDashboard ? ['layout-dashboard'] : [],
           'shell.sidebar.footer': onDashboard ? ['layout-sidebar-footer'] : [],
         },
@@ -2467,15 +2468,10 @@ const pageFormElements = [
   'layout-sidebar-footer',
   'layout-project-tabs',
   'layout-dashboard',
-  'layout-account-status',
 ];
 
 /** The navigation's elements the frame draws in the conversation form. */
-const conversationFormElements = [
-  'layout-sidebar',
-  'layout-project-tabs',
-  'layout-account-status',
-];
+const conversationFormElements = ['layout-sidebar', 'layout-project-tabs'];
 
 /** Each tag in `tags` is drawn exactly once in the window. */
 const assertMountedOnce = (
@@ -2493,7 +2489,7 @@ const assertMountedOnce = (
 
 // O1: the Projects load (`use-workspace.ts`'s mount effect) runs once per
 // window, in `layout-sidebar`, however many navigation elements mount.
-test('O1: on /projects the five navigation elements mount and the Projects load once', async () => {
+test('O1: on /projects the four navigation elements mount and the Projects load once', async () => {
   rendered = await renderWorkspace({
     projects: [project, docs],
     path: '/projects',

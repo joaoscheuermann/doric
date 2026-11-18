@@ -145,6 +145,10 @@ composition at `DORIC_COMPOSITION`. The shipped
 - offers the `sandbox` alternative (`docker` or `firecracker`) that
   `DORIC_SANDBOX_PROVIDER` selects.
 
+A custom `DORIC_COMPOSITION` lists `account` in `enabled`; without it the
+window has no account menu, no connection badge and no About line, and
+nothing reports it.
+
 What each bundle owns:
 
 - **`postgres`** (foundation) owns the Prisma schema, the migrations and the

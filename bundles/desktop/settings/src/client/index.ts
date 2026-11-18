@@ -1,8 +1,10 @@
 // The settings bundle's client part (stage 9, design §6): the settings window
 // at `/settings`, its own five sections as child routes (Versioning is the git bundle's since WP-10N), the nav as the
-// `settings.sections` region, and the footer execution picker in
-// `shell.conversation.footer`.
+// `settings.sections` region, the footer execution picker in
+// `shell.conversation.footer`, and the account menu's "Settings" entry in
+// `account.menu`, drawn with `settings-entry-icon`.
 
+import type { ACCOUNT_MENU, AccountMenuItemProps } from 'account/contracts';
 import {
   type ClientContext,
   NavigationV1,
@@ -31,6 +33,7 @@ import { setClaudeLoginAvailable } from './hooks/use-claude-login.js';
 import { clearSettingsQueryClient } from './queries/client.js';
 import { createSettingsConfig } from './services/settings-config.js';
 import { DashboardProvidersElement } from './views/dashboard-providers.js';
+import { EntryIconElement } from './views/entry-icon.js';
 import {
   ExecutionPickerElement,
   SettingsPageElement,
@@ -53,6 +56,7 @@ export function activate({ services }: ClientContext): () => void {
     ui.define('settings-execution-picker', ExecutionPickerElement),
     ui.define('settings-dashboard-providers', DashboardProvidersElement),
     ui.define('settings-dashboard-provider', providerPageHosts.Element),
+    ui.define('settings-entry-icon', EntryIconElement),
     navigation.register({
       path: '/settings',
       create: () => ui.create('settings-page'),
@@ -78,6 +82,16 @@ export function activate({ services }: ClientContext): () => void {
         order: 20,
       },
     ),
+    // The account menu's "Settings" entry, which opens this window.
+    regions.add('account.menu' satisfies typeof ACCOUNT_MENU, {
+      id: 'settings',
+      tag: 'settings-entry-icon',
+      props: {
+        label: 'Settings',
+        command: 'core.open-settings/v1',
+        input: { defaultPath: '/settings' },
+      } satisfies AccountMenuItemProps,
+    }),
     // The /projects dashboard's Providers group and the page it opens.
     regions.add('layout.dashboard.nav', {
       id: 'providers',

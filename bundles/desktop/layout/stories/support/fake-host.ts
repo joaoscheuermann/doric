@@ -153,6 +153,19 @@ const threadTabIconElement = (thread: Thread | undefined): HTMLElement => {
 };
 
 /**
+ * The `account` bundle's `<account-status>` (step 4(b), decision O1): a
+ * button named "Account", where the running app draws the avatar that opens
+ * the account menu.
+ */
+const accountStandIn = (): HTMLElement => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.setAttribute('aria-label', 'Account');
+  button.dataset.storyPlaceholder = 'account-status';
+  return button;
+};
+
+/**
  * The icon elements `files` and `git` define (`files-file-icon`,
  * `git-file-diff-icon`), as the running app draws them: a 16 px glyph.
  */
@@ -203,14 +216,6 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
   ],
   'shell.panel.footer': [
     { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10, owner: 'git' },
-  ],
-  'layout.account.status': [
-    {
-      id: 'resources',
-      tag: 'resources-monitor',
-      order: 10,
-      owner: 'resources',
-    },
   ],
   'shell.conversation.bottom': [
     { id: 'terminals', tag: 'terminal-panel', owner: 'terminal' },
@@ -482,6 +487,7 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
           Object.assign(element, { services }, props ?? {});
           return element;
         }
+        if (tag === 'account-status') return accountStandIn();
         if (tag === 'chat-thread-tab-icon')
           return threadTabIconElement(
             options.threads?.find((thread) => thread.id === props?.threadId),

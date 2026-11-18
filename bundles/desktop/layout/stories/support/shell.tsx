@@ -16,7 +16,6 @@ import {
   useState,
 } from 'react';
 
-import { AccountStatus } from '../../src/client/components/organisms/account-status.js';
 import {
   ProjectPanel,
   ProjectPanelTabs,
@@ -39,6 +38,7 @@ import { useWorkspaceTabs } from '../../src/client/hooks/use-workspace-tabs.js';
 import { layoutServices } from '../../src/client/services/layout-services.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
 import { billing, checkout, docs, planThread, threadRoute } from './data.js';
+import { Placeholder } from './placeholder.js';
 import {
   projectTabsOf,
   sidebarActions,
@@ -83,7 +83,6 @@ export function WorkspaceShell({
   const items = useRegionItems(layoutServices().use(RegionsV1), 'shell.panel');
   const tabs = useWorkspaceTabs(owner);
   const viewer = tabs.items.length > 0;
-  const openSettings = () => console.info('Story open settings');
 
   return (
     <SidebarProvider
@@ -135,7 +134,7 @@ export function WorkspaceShell({
                 items={items}
               />
               <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-                <AccountStatus onOpenSettings={openSettings} />
+                <Placeholder tag="account-status" />
               </div>
             </>
           }

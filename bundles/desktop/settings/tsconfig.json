@@ -20,6 +20,9 @@
   ],
   "references": [
     {
+      "path": "../../runtime/runtime"
+    },
+    {
       "path": "../layout"
     },
     {
@@ -29,7 +32,7 @@
       "path": "../../../packages/bundle"
     },
     {
-      "path": "../../runtime/runtime"
+      "path": "../account"
     },
     {
       "path": "../../foundation/host-config"

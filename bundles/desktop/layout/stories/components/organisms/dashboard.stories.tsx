@@ -3,7 +3,6 @@ import { errorFrom } from 'desktop/reads';
 import { Sidebar, SidebarScope } from 'desktop/ui/sidebar';
 import { useEffect, useState } from 'react';
 
-import { AccountStatus } from '../../../src/client/components/organisms/account-status.js';
 import {
   beginCreation,
   DashboardContent,
@@ -23,6 +22,7 @@ import {
   threads,
 } from '../../support/data.js';
 import { type LayoutFixture, LayoutHost } from '../../support/layout-host.js';
+import { Placeholder } from '../../support/placeholder.js';
 import { windowDecorator } from '../../support/window-frame.js';
 import {
   projectTabsOf,
@@ -99,7 +99,7 @@ function Board({
             className="flex min-w-0 flex-1 flex-col bg-sidebar"
           >
             <ProjectTabBar
-              actions={<AccountStatus onOpenSettings={() => undefined} />}
+              actions={<Placeholder tag="account-status" />}
               state={projectTabsOf([checkout, docs, billing])}
               path={all ? '/projects' : '/'}
               projects={[checkout, docs, billing]}

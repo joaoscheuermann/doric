@@ -38,8 +38,8 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.7.5 and keeps engines.doric', () => {
-    assert.equal(manifest.version, '1.7.5');
+  test('provides files/v1@1.3.0 at version 1.7.6 and keeps engines.doric', () => {
+    assert.equal(manifest.version, '1.7.6');
     assert.ok(manifest.provides.includes('files/v1@1.3.0'));
     assert.equal(manifest.engines.doric, '^1.0.0');
   });

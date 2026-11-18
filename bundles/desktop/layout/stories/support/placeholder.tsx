@@ -34,6 +34,7 @@ export const elementInfo: Readonly<Record<string, ElementInfo>> = {
     owner: 'usage',
     shape: 'inline',
   },
+  'account-status': { label: 'Account', owner: 'account', shape: 'inline' },
   'resources-monitor': {
     label: 'Connection and resources',
     owner: 'resources',

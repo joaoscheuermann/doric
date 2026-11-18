@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "account",
+  "version": "1.0.0",
+  "engines": {
+    "doric": "^1.8.0"
+  },
+  "description": "The reader's account status and menu, and About.",
+  "provides": [],
+  "requires": ["ui/v1@^1.0.0", "regions/v1@^1.0.0", "commands/v1@^1.0.0"]
+}

@@ -19,9 +19,7 @@ import {
   SHELL_SIDEBAR,
   SHELL_SIDEBAR_FOOTER,
   SHELL_TITLEBAR_TABS,
-  SHELL_WINDOW_ACTIONS,
 } from '../contracts/index.js';
-import { followAbout } from './domain/about.js';
 import {
   PROJECT_ROUTE,
   PROJECTS_ROUTE,
@@ -29,7 +27,6 @@ import {
 } from './domain/route-selection.js';
 import { RecordsV1 } from './domain/workspace.js';
 import {
-  LayoutAccountStatusElement,
   LayoutDashboardElement,
   LayoutProjectTabsElement,
   LayoutSidebarElement,
@@ -68,7 +65,6 @@ export function activate({ services }: ClientContext): Cleanup {
     bindRecords(mirror);
     return () => bindRecords(undefined);
   });
-  const about = followAbout(services);
 
   // WP-10N: the footer's working directory and usage, the header's
   // new-terminal button and the panel's views are other bundles' region items
@@ -83,7 +79,6 @@ export function activate({ services }: ClientContext): Cleanup {
   ui.define('layout-sidebar-footer', LayoutSidebarFooterElement);
   ui.define('layout-project-tabs', LayoutProjectTabsElement);
   ui.define('layout-dashboard', LayoutDashboardElement);
-  ui.define('layout-account-status', LayoutAccountStatusElement);
   restoreProjectTabs();
 
   const navigation = services.use(NavigationV1);
@@ -101,19 +96,15 @@ export function activate({ services }: ClientContext): Cleanup {
     parent: '/',
     create: (match) => ui.create('layout-project-empty', match.params),
   });
-  // The navigation's slot items (decision O2): the sidebar, the Project tabs
-  // and the account in every window; the Dashboard and its footer while the
-  // route is `/` or `/projects`, which puts the frame in the page form.
+  // The navigation's slot items (decision O2): the sidebar and the Project
+  // tabs in every window; the Dashboard and its footer while the route is `/`
+  // or `/projects`, which puts the frame in the page form.
   const regions = services.use(RegionsV1);
   const slots = [
     regions.add(SHELL_SIDEBAR, { id: 'navigation', tag: 'layout-sidebar' }),
     regions.add(SHELL_TITLEBAR_TABS, {
       id: 'project-tabs',
       tag: 'layout-project-tabs',
-    }),
-    regions.add(SHELL_WINDOW_ACTIONS, {
-      id: 'account',
-      tag: 'layout-account-status',
     }),
   ];
   let dashboard: readonly Disposable[] = [];
@@ -169,7 +160,6 @@ export function activate({ services }: ClientContext): Cleanup {
     stopThreadTabs();
     stopThreadViews();
     records.dispose();
-    about.dispose();
     resetRouteSelection();
     resetPanel();
     resetDashboard();

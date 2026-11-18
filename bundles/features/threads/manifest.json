@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "threads",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "engines": {
     "doric": "^1.0.0"
   },

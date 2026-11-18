@@ -26,16 +26,20 @@ footer picker), loaded by the `bundle` platform. See the
 - **Sections:** six child routes of `/settings`, each listed in the window's
   nav through the `settings.sections` region.
 - **Region:** `settings.sections`, where other bundles add their own sections.
+- **Account menu entry:** the "Settings" data item in the `account` bundle's
+  `account.menu` slot, drawn with `<settings-entry-icon>`; it runs
+  `core.open-settings/v1` with `defaultPath: '/settings'`.
 - **Contract:** `settings.config/v1` (client), the window's one autosave draft
   for sections other bundles draw.
 
-The window is opened by `core`'s `core.open-settings/v1` command, which the
-layout's two settings entries run: the dashboard's "All settings" and the
-account status. In 1.1.0, with no `path`, the command focuses an open settings
+The window is opened by `core`'s `core.open-settings/v1` command, which two
+entries run: the dashboard's "All settings" (the layout) and the account
+menu's "Settings", which this bundle adds to `account.menu` and `account`
+executes. In 1.1.0, with no `path`, the command focuses an open settings
 window, or opens one at `defaultPath` when none is open; with a `path`, it
 focuses an open settings window and navigates it to `path`, or opens one there;
 with neither `path` nor `defaultPath` and no window open it fails with
-`invalid_input`. The layout passes
+`invalid_input`. Both entries pass
 `defaultPath: '/settings'`, so the window opens at `/settings` and moves to the
 last section that window showed, or Providers.
 

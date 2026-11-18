@@ -73,8 +73,8 @@ src/client/
   `<layout-sidebar>` does not remount on a form switch.
 - The navigation fills the slots with the elements of
   `elements/navigation-elements.tsx` (`layout-sidebar`, `layout-project-tabs`,
-  `layout-account-status`, `layout-dashboard`, `layout-sidebar-footer`) until
-  steps 4(b) and 4(c) move them out. Each is a React root of its own, so:
+  `layout-dashboard`, `layout-sidebar-footer`) until step 4(c) moves them
+  out. Each is a React root of its own, so:
   - only `layout-sidebar` runs `useWorkspace`'s once-per-window effects
     (`useWorkspace({ effects: true })`: Projects load, follow, selection
     persistence), because both forms draw it;

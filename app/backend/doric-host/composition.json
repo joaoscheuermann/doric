@@ -24,6 +24,7 @@
     "docker",
     "notifications",
     "layout",
+    "account",
     "settings",
     "chat",
     "history",

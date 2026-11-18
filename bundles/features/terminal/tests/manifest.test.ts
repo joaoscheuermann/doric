@@ -1,5 +1,5 @@
 // The terminal manifest (G1, S15, T-4.4.9, T-1.10, T-2.11; bundle isolation
-// 4(a) change 5): terminal 1.1.6 provides terminal/v1@1.2.0 and requires
+// 4(a) change 5; 4(b)): terminal 1.1.7 provides terminal/v1@1.2.0 and requires
 // layout.tabs/v2@^2.0.0, whose tabs take an `iconTag`, a `menu` and
 // `retitle`, and still layout.sidebar/v1@^1.0.0: a 1.0.0 layout never asks
 // `busy`.
@@ -8,12 +8,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-void test('terminal 1.1.6 provides terminal/v1@1.2.0 and requires layout.tabs/v2@^2.0.0 and layout.sidebar/v1@^1.0.0', () => {
+void test('terminal 1.1.7 provides terminal/v1@1.2.0 and requires layout.tabs/v2@^2.0.0 and layout.sidebar/v1@^1.0.0', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/features/terminal/manifest.json', 'utf8'),
   ) as { version: string; provides: string[]; requires: string[] };
 
-  assert.equal(manifest.version, '1.1.6');
+  assert.equal(manifest.version, '1.1.7');
   assert.deepEqual(manifest.provides, ['terminal/v1@1.2.0']);
   assert.deepEqual(
     manifest.requires.filter((range) => range.startsWith('layout.tabs/')),

@@ -3,6 +3,7 @@
 // children render once all of it is in place. Leaving the story runs the
 // activation's cleanup, so the next story starts from nothing.
 
+import { RegionsV1 } from 'bundle/contracts';
 import { type ReactNode, useLayoutEffect, useState } from 'react';
 
 import { projectIdFromPath } from '../../src/client/domain/project-tabs.js';
@@ -169,6 +170,13 @@ export const bindLayout = (
   defineStoryElements(created);
 
   const deactivate = activate({ services: created.services });
+  // The `account` bundle's item in `shell.window.actions` (step 4(b),
+  // decision O1): the fake `ui/v1` draws `account-status` as a stand-in
+  // button named "Account", so the frame's two places for the slot show it.
+  const account = created.services.use(RegionsV1).add('shell.window.actions', {
+    id: 'account',
+    tag: 'account-status',
+  });
   const panes = (fixture.panes ?? [screenPane]).map(registerPane);
   const counts = fixture.terminalRows ?? {};
   const busySet = new Set(fixture.terminalBusy);
@@ -186,6 +194,7 @@ export const bindLayout = (
     if (unbindCurrent !== unbind) return;
     unbindCurrent = undefined;
     rows.dispose();
+    account.dispose();
     for (const pane of panes) pane.dispose();
     void deactivate();
     workspaceTabsStore.setState({ threads: {} });

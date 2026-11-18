@@ -167,6 +167,9 @@
     },
     {
       "path": "./bundles/features/mcp"
+    },
+    {
+      "path": "./bundles/desktop/account"
     }
   ]
 }

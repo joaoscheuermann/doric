@@ -1,7 +1,7 @@
 // The app's version for the account menu (S26, S35). `doric.about/v1` is a
 // platform contract of 1.2.0: an older app has no provider and its
 // `bundle/contracts` does not export `DoricAboutV1`, so the ref is declared
-// here with `ref` and the interface is imported as a type only. The layout
+// here with `ref` and the interface is imported as a type only. The account
 // follows the contract with `whenAvailable` and shows no version without it.
 
 import type { Disposable, DoricAbout, Services } from 'bundle/contracts';
@@ -10,7 +10,7 @@ import { useSyncExternalStore } from 'react';
 import { createStore } from 'zustand/vanilla';
 
 /**
- * `doric.about/v1`, built from its id so the layout loads on an app before
+ * `doric.about/v1`, built from its id so the account loads on an app before
  * 1.2.0 (S35). Never in the manifest's `requires`; never `use`d without a
  * provider. Detect it with `services.whenAvailable(AboutV1, …)`.
  */

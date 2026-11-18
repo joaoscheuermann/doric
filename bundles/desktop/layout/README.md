@@ -21,12 +21,12 @@ for how bundles work.
   two forms: the page form while `shell.page` holds an item, and the
   conversation form otherwise.
 - **Navigation elements:** until the navigation moves to its own bundles, the
-  layout fills the shell's slots with five elements of its own, defined in
+  layout fills the shell's slots with four elements of its own, defined in
   `src/client/elements/navigation-elements.tsx`: `<layout-sidebar>`
-  (`shell.sidebar`), `<layout-project-tabs>` (`shell.titlebar.tabs`),
-  `<layout-account-status>` (`shell.window.actions`), and, while the route is
-  `/` or `/projects`, `<layout-dashboard>` (`shell.page`) and
-  `<layout-sidebar-footer>` (`shell.sidebar.footer`).
+  (`shell.sidebar`), `<layout-project-tabs>` (`shell.titlebar.tabs`), and,
+  while the route is `/` or `/projects`, `<layout-dashboard>` (`shell.page`)
+  and `<layout-sidebar-footer>` (`shell.sidebar.footer`). The `account` bundle
+  fills `shell.window.actions`.
 - **Contracts:** `layout.tabs/v2`, `layout.workspace/v1`, `layout.panel/v3`,
   `layout.conversation/v1`, `layout.dashboard/v1`, `layout.sidebar/v1` and
   `layout.stack/v2`, all client contracts in the workspace window.
@@ -118,8 +118,8 @@ quarantines them along with the layout.
   any other tab keeps the card's 8 px
   ([SR12](../../../docs/designs/conversation-footer.md#risks)). The Files column
   footer (`shell.panel.footer`) is one 28 px row under the Project panel.
-  Settings open from two entries, the dashboard's "All settings" and the
-  account status, each of which runs `core`'s `core.open-settings/v1` with
+  Settings open from the dashboard's "All settings"; the account menu's entry
+  is the `settings` bundle's. Each runs `core`'s `core.open-settings/v1` with
   `defaultPath: '/settings'` and no `path`: the command (1.1.0) focuses an open
   settings window, and otherwise opens one at `defaultPath`. Layout 3.0.3 needs
   chat 1.6.2 or later in the same bundle set. Layout 3.2.2 needs core 1.15.0 or
@@ -187,14 +187,13 @@ conversation, the viewer tabs and the Project panel.
 | `shell.sidebar.footer`       | the sidebar column's foot, under the quarantine notice; drawn only while it has items                                                 | `<layout-sidebar-footer>` ("All settings"), while the route is `/` or `/projects`  |
 | `shell.titlebar.tabs`        | the title bar, in both forms                                                                                                          | `<layout-project-tabs>`                                                            |
 | `shell.page`                 | the page form's body; an item here switches the frame to the page form                                                                | `<layout-dashboard>`, while the route is `/` or `/projects`                        |
-| `shell.window.actions`       | the window's actions: the end of the Project tab bar in the page form, the end of the Project panel's header in the conversation form | `<layout-account-status>`                                                          |
+| `shell.window.actions`       | the window's actions: the end of the Project tab bar in the page form, the end of the Project panel's header in the conversation form | `account` (`<account-status>`)                                                     |
 | `shell.header.actions`       | the end of the Project tab bar, in the conversation form                                                                              | `terminal`'s "New terminal" button                                                 |
 | `shell.panel`                | the Project panel's views                                                                                                             | `files`, `git`                                                                     |
 | `shell.conversation.footer`  | the conversation footer, a 44 px band floating over the conversation's bottom                                                         | `settings`' execution picker, `chat`'s composer, `usage`                           |
 | `shell.panel.footer`         | the Files column footer, in one 28 px row                                                                                             | `git` (the working directory and branch)                                           |
 | `shell.conversation.bottom`  | a split under the conversation                                                                                                        | shown while an item asks through `layout.workspace/v1` or `layout.conversation/v1` |
 | `shell.conversation.overlay` | a floating layer over the conversation                                                                                                | items place themselves; the layer never intercepts a pointer                       |
-| `layout.account.status`      | a 14×14 slot over the account avatar's bottom-right corner, in `<layout-account-status>`                                              | `resources` (the connection badge)                                                 |
 | `layout.dashboard.nav`       | groups of the `/projects` dashboard sidebar, after Projects                                                                           | `settings`' Providers group                                                        |
 | `layout.dashboard.page`      | a page the dashboard draws instead of its project list                                                                                | `settings`' provider page, shown through `layout.dashboard/v1`                     |
 
