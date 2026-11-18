@@ -1,5 +1,5 @@
 // The conversation's footer band, where `<usage-summary>` sits in the
-// `layout.footer` region, drawn in flow at the bottom of the conversation's
+// `shell.conversation.footer` region, drawn in flow at the bottom of the conversation's
 // inset card over the window's sidebar-coloured canvas, with room above it for
 // the popovers that open upward: a borderless 36 px band, 8 px above its 28 px
 // row, with the card's 8 px padding under it. The app's band is 44 px and

@@ -861,7 +861,7 @@ const workspaceProbe = (
 
 const footer = async (window: ChatWindow): Promise<Element> => {
   const region = window.document.createElement('core-region');
-  region.setAttribute('name', 'layout.footer');
+  region.setAttribute('name', 'shell.conversation.footer');
   window.document.body.append(region);
   await settle(50);
   return region as unknown as Element;
@@ -1165,19 +1165,21 @@ const FOOTER_BAND =
   'absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 py-2 pl-2 text-[11px] font-normal';
 
 /**
- * The band's height as `<chat-view>` reads it (`--chat-footer-height`), set
+ * The band's height as `<chat-view>` reads it (`--shell-conversation-footer-height`), set
  * inline by the band's owner: the band's 44 px, which the sheet rule reads
  * as the band's height (D13).
  */
 const FOOTER_HEIGHT = '2.75rem';
 
-/** The `--chat-footer-height` an element sets in its own inline style. */
+/** The `--shell-conversation-footer-height` an element sets in its own inline style. */
 const ownFooterHeight = (element: Element | null | undefined): string => {
   const style = (element as HTMLElement | null | undefined)?.style;
-  const value = style?.getPropertyValue('--chat-footer-height').trim();
+  const value = style
+    ?.getPropertyValue('--shell-conversation-footer-height')
+    .trim();
   if (value) return value;
   return (
-    /(?:^|;)\s*--chat-footer-height\s*:\s*([^;]+)/
+    /(?:^|;)\s*--shell-conversation-footer-height\s*:\s*([^;]+)/
       .exec(element?.getAttribute('style') ?? '')?.[1]
       ?.trim() ?? ''
   );

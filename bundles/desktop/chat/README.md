@@ -18,7 +18,7 @@ for how bundles work.
   - `<chat-view>`, the conversation, at
     `/projects/:projectId/threads/:threadId`, a child route of the
     [`layout`](../layout/README.md) bundle's `/`. `<chat-view>` reads
-    `--chat-footer-height`, the height of a footer floating over its
+    `--shell-conversation-footer-height`, the height of a footer floating over its
     conversation's bottom, set by its host on an ancestor (the layout's
     conversation frame sets 2.75rem, from layout 3.0.3); its scrollbar ends
     and its scroll padding stops that far above the bottom; unset, 0. Its
@@ -28,14 +28,14 @@ for how bundles work.
     footer (a follow-up is planned), and a wheel over the footer's band does
     not scroll the conversation;
   - `<chat-composer>`, the send, stop, resume and save controls, a
-    `layout.footer` item (order 40) present with or without a Thread. On an
+    `shell.conversation.footer` item (order 40) present with or without a Thread. On an
     agent Thread — one an agent spawned — it draws the reader's three levers
     instead: pause the run, continue the prompt it left unfinished, or retry
     the last one (`domain/agent-control.ts`);
   - `<chat-thread-panel>`, a conversation with its own footer, which the layout
     uses for a child Thread's tab. `<chat-thread-panel>`'s own footer floats
     over its conversation's bottom 44 px, 8 px over and under its 28 px row,
-    as tall as the `--chat-footer-height` it sets itself (2.75rem). It ends on
+    as tall as the `--shell-conversation-footer-height` it sets itself (2.75rem). It ends on
     the card's edge while the layout's viewer card drops its bottom padding,
     as it does while that tab is selected; otherwise the band sits 8 px above
     the card's edge;

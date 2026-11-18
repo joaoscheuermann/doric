@@ -42,7 +42,7 @@ The compaction members back the footer's context popover:
 `<usage-summary>` shows the selected Thread's context window use and its whole
 subtree's cost, polling `usage/v1` every 3 s. It renders nothing without a
 selected Thread. Its popover holds the consumption bar, the compaction target
-slider and the manual compaction. Its footer item (`layout.footer`, id
+slider and the manual compaction. Its footer item (`shell.conversation.footer`, id
 `usage`, order 30) is added by `registerUsageRegion` during activation.
 
 ## Development

@@ -8,13 +8,13 @@
  * one the single renderer stylesheet had (implementation-decisions, WP6).
  */
 /* The conversation footer floats over the conversation (conversation-footer
-   spec, D2 and D13): as tall as `--chat-footer-height`, which the conversation
+   spec, D2 and D13): as tall as `--shell-conversation-footer-height`, which the conversation
    frame sets, so the band and the bar's end read one length; the card's
    background at 70 % with a 2 px backdrop blur, so the transcript shows
    through it. A rule, not utilities, because this sheet ships with the layout
    bundle whatever app runs it. */
 [data-slot='workspace-footer'] {
-  height: var(--chat-footer-height);
+  height: var(--shell-conversation-footer-height);
   background-color: color-mix(in oklab, var(--background) 70%, transparent);
   backdrop-filter: blur(2px);
 }

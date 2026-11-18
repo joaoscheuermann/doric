@@ -42,7 +42,7 @@ export const SettingsPageElement = defineReactElement({
 });
 
 /**
- * `<settings-execution-picker>`, a `layout.footer` item (D9-13): the execution
+ * `<settings-execution-picker>`, a `shell.conversation.footer` item (D9-13): the execution
  * model and effort of the conversation footer, in its own root. It autosaves
  * with no flush on close and no toast, as it always has.
  */

@@ -1,4 +1,4 @@
-// `<chat-composer>`'s content, the `layout.footer` item: the controls for the
+// `<chat-composer>`'s content, the `shell.conversation.footer` item: the controls for the
 // Thread the sidebar selects. The story host's tree selects the story's
 // Thread; its queue and draft come from the host.
 

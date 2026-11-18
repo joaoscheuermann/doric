@@ -1,6 +1,6 @@
 // Where git's region items go (T-2.5, spec §2.6, S9): the working directory
 // and branch sit in the Files column's footer (`layout.panel.footer`), no
-// longer in the conversation's footer band (`layout.footer`).
+// longer in the conversation's footer band (`shell.conversation.footer`).
 //
 // `gitRegions` lives in the client entry point, whose import graph reaches the
 // elements; they read browser globals such as `navigator` only when they run

@@ -29,6 +29,8 @@ export const SHELL_PAGE = 'shell.page';
 export const SHELL_WINDOW_ACTIONS = 'shell.window.actions';
 /** The Project tab bar's right end, in the conversation form (4.2.0). */
 export const SHELL_HEADER_ACTIONS = 'shell.header.actions';
+/** The conversation footer, a 44 px band floating over the conversation's bottom (4.3.0). */
+export const SHELL_CONVERSATION_FOOTER = 'shell.conversation.footer';
 
 /** One entry of a viewer tab's context menu (1.2.0). */
 export interface TabMenuItem {

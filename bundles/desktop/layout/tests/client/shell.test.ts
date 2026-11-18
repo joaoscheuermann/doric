@@ -855,32 +855,36 @@ const FOOTER_BAND = [
   'font-normal',
 ].sort();
 
-/** The band's 44 px, as `--chat-footer-height` states it and the sheet rule reads it (D13). */
+/** The band's 44 px, as `--shell-conversation-footer-height` states it and the sheet rule reads it (D13). */
 const FOOTER_HEIGHT = '2.75rem';
 
 /**
- * The `--chat-footer-height` an element sets on itself. happy-dom does not
+ * The `--shell-conversation-footer-height` an element sets on itself. happy-dom does not
  * always expose a custom property React sets in an inline `style` object
  * through `getPropertyValue`, though it writes it to the attribute.
  */
 const ownFooterHeight = (element: Element | null | undefined): string => {
   const style = (element as HTMLElement | null | undefined)?.style;
-  const value = style?.getPropertyValue('--chat-footer-height').trim();
+  const value = style
+    ?.getPropertyValue('--shell-conversation-footer-height')
+    .trim();
   if (value) return value;
   return (
-    /(?:^|;)\s*--chat-footer-height\s*:\s*([^;]+)/
+    /(?:^|;)\s*--shell-conversation-footer-height\s*:\s*([^;]+)/
       .exec(element?.getAttribute('style') ?? '')?.[1]
       ?.trim() ?? ''
   );
 };
 
 // G12, T-2.9.9 (band), the layout half of T-2.5, and conversation-footer T-1
-test('the conversation footer band is regular weight, borderless and draws layout.footer', async () => {
+test('the conversation footer band is regular weight, borderless and draws shell.conversation.footer', async () => {
   rendered = await renderWorkspace({
     projects: [project],
     path: `/projects/${project.id}`,
     regions: {
-      'layout.footer': [{ id: 'footer-probe', tag: 'footer-probe', order: 10 }],
+      'shell.conversation.footer': [
+        { id: 'footer-probe', tag: 'footer-probe', order: 10 },
+      ],
     },
   });
 
@@ -903,7 +907,7 @@ test('the conversation footer band is regular weight, borderless and draws layou
   assert.equal(
     standIns(footer, 'footer-probe').length,
     1,
-    'The layout.footer item is not in the footer band.',
+    'The shell.conversation.footer item is not in the footer band.',
   );
 
   // conversation-footer T-1: the band floats over the bottom of its frame,
@@ -1169,7 +1173,7 @@ const oneAccount = (workspace: RenderedWorkspace, when: string): void => {
 };
 
 // T-2.5, layout half
-test('layout.panel.footer items render in the Files footer, layout.footer items in the conversation band', async () => {
+test('layout.panel.footer items render in the Files footer, shell.conversation.footer items in the conversation band', async () => {
   rendered = await renderWorkspace({
     projects: [project],
     path: `/projects/${project.id}`,
@@ -1177,7 +1181,9 @@ test('layout.panel.footer items render in the Files footer, layout.footer items 
       'layout.panel.footer': [
         { id: 'panel-footer-probe', tag: 'panel-footer-probe', order: 10 },
       ],
-      'layout.footer': [{ id: 'footer-probe', tag: 'footer-probe', order: 10 }],
+      'shell.conversation.footer': [
+        { id: 'footer-probe', tag: 'footer-probe', order: 10 },
+      ],
     },
   });
 
@@ -1193,13 +1199,13 @@ test('layout.panel.footer items render in the Files footer, layout.footer items 
   assert.equal(
     standIns(filesFooter, 'footer-probe').length,
     0,
-    'The layout.footer item is in the Files footer.',
+    'The shell.conversation.footer item is in the Files footer.',
   );
   const band = single(rendered.root, '[data-slot="workspace-footer"]');
   assert.equal(
     standIns(band, 'footer-probe').length,
     1,
-    'The layout.footer item is not in the conversation band.',
+    'The shell.conversation.footer item is not in the conversation band.',
   );
   assert.equal(
     standIns(band, 'panel-footer-probe').length,
@@ -2357,7 +2363,7 @@ test('T4.2: the frame is in the page form exactly while shell.page holds an item
 
 const quarantined: CatalogSnapshot = (() => {
   const bundles: readonly CatalogBundle[] = [
-    { id: 'layout', version: '4.2.0', state: 'active', reasons: [] },
+    { id: 'layout', version: '4.3.0', state: 'active', reasons: [] },
     {
       id: 'terminal',
       version: '2.0.1',

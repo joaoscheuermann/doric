@@ -15,7 +15,7 @@ footer picker), loaded by the `bundle` platform. See the
 ## What it provides
 
 - **UI:** `<settings-page>` at `/settings`, the settings window's one React
-  root, and `<settings-execution-picker>`, a `layout.footer` item (order 20)
+  root, and `<settings-execution-picker>`, a `shell.conversation.footer` item (order 20)
   in the [`layout`](../layout/README.md) bundle's conversation footer. It
   edits the selected Thread's provider, model and effort through
   `runtime.threads/v1.setThreadExecution`. With no Thread selected it shows

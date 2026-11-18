@@ -1,7 +1,7 @@
 // The settings bundle's client part (stage 9, design §6): the settings window
 // at `/settings`, its own five sections as child routes (Versioning is the git bundle's since WP-10N), the nav as the
 // `settings.sections` region, and the footer execution picker in
-// `layout.footer`.
+// `shell.conversation.footer`.
 
 import {
   type ClientContext,
@@ -10,6 +10,7 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import { ClaudeLoginV1 } from 'claude-login/contracts';
+import type { SHELL_CONVERSATION_FOOTER } from 'layout/contracts';
 import { LayoutDashboardV1, LayoutWorkspaceV1 } from 'layout/contracts';
 
 import {
@@ -69,11 +70,14 @@ export function activate({ services }: ClientContext): () => void {
         regions.add('settings.sections', sectionLink(section)),
       ]),
     registerAppearanceSection({ services, ui, navigation, regions }),
-    regions.add('layout.footer', {
-      id: 'execution',
-      tag: 'settings-execution-picker',
-      order: 20,
-    }),
+    regions.add(
+      'shell.conversation.footer' satisfies typeof SHELL_CONVERSATION_FOOTER,
+      {
+        id: 'execution',
+        tag: 'settings-execution-picker',
+        order: 20,
+      },
+    ),
     // The /projects dashboard's Providers group and the page it opens.
     regions.add('layout.dashboard.nav', {
       id: 'providers',

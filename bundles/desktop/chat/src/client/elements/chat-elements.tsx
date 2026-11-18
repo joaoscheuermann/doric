@@ -1,5 +1,5 @@
 // The chat bundle's elements (§7.3-§7.7). `<chat-view>` (the Thread route)
-// and `<chat-composer>` (a `layout.footer` item) each own a React root over
+// and `<chat-composer>` (a `shell.conversation.footer` item) each own a React root over
 // the one chat query client, with a tooltip provider per root; neither
 // mounts a toaster, since the window's single toaster belongs to the layout
 // and `toast` reaches it through `desktop/ui/sonner`. `<chat-block>` draws a

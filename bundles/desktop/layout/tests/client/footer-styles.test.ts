@@ -1,5 +1,5 @@
 // The layout's own stylesheet, read from disk: the conversation footer band
-// gets its height (`--chat-footer-height`), fill and blur from an unlayered
+// gets its height (`--shell-conversation-footer-height`), fill and blur from an unlayered
 // rule keyed on its `data-slot` (conversation-footer spec, D2, D13 and §3),
 // not from utilities the layout's sheet does not emit; and that rule is the
 // sheet's only one (bundle isolation AC4.3).
@@ -58,7 +58,7 @@ const declared = (text: string, selector: string): Map<string, string> =>
   );
 
 // conversation-footer T-3
-test('the conversation footer band is as tall as --chat-footer-height, the background at 70 % under a 2 px blur, in an unlayered rule', async () => {
+test('the conversation footer band is as tall as --shell-conversation-footer-height, the background at 70 % under a 2 px blur, in an unlayered rule', async () => {
   const sheet = await readFile(stylesheet, 'utf8');
 
   assert.ok(
@@ -68,7 +68,7 @@ test('the conversation footer band is as tall as --chat-footer-height, the backg
   assert.deepEqual(
     declared(sheet, "[data-slot='workspace-footer']"),
     new Map([
-      ['height', 'var(--chat-footer-height)'],
+      ['height', 'var(--shell-conversation-footer-height)'],
       [
         'background-color',
         'color-mix(in oklab, var(--background) 70%, transparent)',

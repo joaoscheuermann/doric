@@ -198,7 +198,7 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
       owner: 'terminal',
     },
   ],
-  'layout.footer': [
+  'shell.conversation.footer': [
     { id: 'usage', tag: 'usage-summary', order: 30, owner: 'usage' },
   ],
   'layout.panel.footer': [

@@ -1,5 +1,5 @@
 // The execution picker of the conversation footer as the reader meets it: the
-// settings bundle defines `settings-execution-picker`, a `layout.footer` item.
+// settings bundle defines `settings-execution-picker`, a `shell.conversation.footer` item.
 // A probe bundle plays the layout's footer: it registers the route `/footer`,
 // which mounts that element the way the layout's footer region does, and,
 // unless a test says otherwise, provides `layout.workspace/v1` with a

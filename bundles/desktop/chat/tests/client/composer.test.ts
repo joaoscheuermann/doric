@@ -261,7 +261,7 @@ const composerWatch = (window: ChatWindow): OpenStream => {
 
 const footer = async (window: ChatWindow): Promise<Element> => {
   const region = window.document.createElement('core-region');
-  region.setAttribute('name', 'layout.footer');
+  region.setAttribute('name', 'shell.conversation.footer');
   window.document.body.append(region);
   await settle(50);
 

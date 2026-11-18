@@ -9,7 +9,7 @@ import { useThreadStop } from '../hooks/use-thread-stop.js';
 import { useSelectedThread } from '../hooks/use-workspace.js';
 
 /**
- * `<chat-composer>`'s content (§7.6), a `layout.footer` item: the composer
+ * `<chat-composer>`'s content (§7.6), a `shell.conversation.footer` item: the composer
  * controls for the Thread the window selects, with the rules the workspace
  * footer applied.
  */

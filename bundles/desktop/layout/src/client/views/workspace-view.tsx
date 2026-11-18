@@ -4,7 +4,7 @@
 // quarantine notice, `shell.sidebar.footer`) beside the title bar
 // (`shell.titlebar.tabs`) over `shell.page`. The conversation form draws the
 // sidebar column with the stack panes, the title bar, the conversation (the
-// child route in `<core-outlet>`, the `layout.footer` region floating over its
+// child route in `<core-outlet>`, the `shell.conversation.footer` region floating over its
 // bottom, the `layout.overlay` layer over it) and the side panel, whose
 // header ends with `shell.window.actions`. The navigation fills the slots
 // with elements of its own (`elements/navigation-elements.tsx`).
@@ -32,6 +32,7 @@ import {
 } from 'react';
 
 import {
+  SHELL_CONVERSATION_FOOTER,
   SHELL_PAGE,
   SHELL_SIDEBAR,
   SHELL_SIDEBAR_FOOTER,
@@ -204,7 +205,9 @@ function Workspace() {
               <ConversationTerminals
                 bottom={bottomVisible && <Region name="layout.main.bottom" />}
               >
-                <ConversationFrame footer={<Region name="layout.footer" />}>
+                <ConversationFrame
+                  footer={<Region name={SHELL_CONVERSATION_FOOTER} />}
+                >
                   <ThreadPane>{createElement('core-outlet')}</ThreadPane>
                 </ConversationFrame>
               </ConversationTerminals>

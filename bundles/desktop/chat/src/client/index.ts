@@ -15,6 +15,7 @@ import {
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
+import type { SHELL_CONVERSATION_FOOTER } from 'layout/contracts';
 import { RuntimeTerminalsV1 } from 'runtime/contracts';
 
 import { ChatHooksV1, SEND_PROMPT_COMMAND } from '../contracts/index.js';
@@ -95,7 +96,10 @@ export function activate({ services }: ClientContext): Cleanup {
   // a Thread.
   const composer = services
     .use(RegionsV1)
-    .add('layout.footer', { id: 'composer', tag: 'chat-composer', order: 40 });
+    .add(
+      'shell.conversation.footer' satisfies typeof SHELL_CONVERSATION_FOOTER,
+      { id: 'composer', tag: 'chat-composer', order: 40 },
+    );
   // The send's chord, owned by the window on the conversation's route: no
   // surface inside it answers `Cmd+Enter` on its own.
   const sendCommand = services.use(CommandsV1).register(sendPromptCommand);

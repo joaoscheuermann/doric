@@ -51,12 +51,12 @@ const panelWidth = { '--sidebar-width': '100%' } as CSSProperties;
 const region = (name: string) => createElement('core-region', { name });
 
 /**
- * The conversation frame with the `layout.footer` region floating over its
+ * The conversation frame with the `shell.conversation.footer` region floating over its
  * bottom, as the workspace view draws it inside the split's top panel.
  */
 export function ContentFrame({ children }: { readonly children: ReactNode }) {
   return (
-    <ConversationFrame footer={region('layout.footer')}>
+    <ConversationFrame footer={region('shell.conversation.footer')}>
       {children}
     </ConversationFrame>
   );

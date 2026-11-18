@@ -52,7 +52,7 @@ src/client/
 placeholder, the conversation scroll and trail, the queue-edit surface and the
 `editor-*` markdown theme) with the layering they had in the renderer, and the
 unlayered rules a floating footer needs: the conversation's vertical bar and
-scroll padding, read from `--chat-footer-height`, and the viewer footer's height,
+scroll padding, read from `--shell-conversation-footer-height`, and the viewer footer's height,
 fill and blur (conversation-footer spec, §3, §4). `.conversation-scroll` sets
 `isolation: isolate`, so the transcript's z-indexed layers (papercraft's pins
 and inputs) paint inside the scroll root and a floating footer, later in tree

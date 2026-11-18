@@ -79,10 +79,10 @@ the outage message "Doric backend is unavailable.".
   last.
 - **Project panel.** An icon tab strip of views beside the conversation, always
   shown; it resizes but cannot be hidden or collapsed.
-- **Footers.** Two footers. The conversation footer (`layout.footer`) floats
+- **Footers.** Two footers. The conversation footer (`shell.conversation.footer`) floats
   over the conversation's bottom 44 px, to the card's bottom edge (the card
   draws no bottom padding); its height, fill and blur are this bundle's sheet
-  rule, and the conversation frame sets `--chat-footer-height: 2.75rem` for
+  rule, and the conversation frame sets `--shell-conversation-footer-height: 2.75rem` for
   `<chat-view>` (see [chat's README](../chat/README.md)). The viewer card draws
   no bottom padding while its selected tab's element is `<chat-thread-panel>`,
   whose footer band stands on the card's bottom edge; any other tab keeps the
@@ -144,17 +144,17 @@ tab with no Thread or Project selected fails with `unavailable`.
 
 ## Regions
 
-| Region                  | Where                                                                                  | Items today                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `shell.header.actions`  | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
-| `layout.panel`          | the Project panel's views                                                              | `files`, `git`                                                 |
-| `layout.footer`         | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
-| `layout.panel.footer`   | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
-| `layout.account.status` | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
-| `layout.main.bottom`    | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
-| `layout.overlay`        | a floating layer over the conversation                                                 | items place themselves; the layer never intercepts a pointer   |
-| `layout.dashboard.nav`  | groups of the `/projects` dashboard sidebar, after Projects                            | `settings`' Providers group                                    |
-| `layout.dashboard.page` | a page the dashboard draws instead of its project list                                 | `settings`' provider page, shown through `layout.dashboard/v1` |
+| Region                      | Where                                                                                  | Items today                                                    |
+| --------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `shell.header.actions`      | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
+| `layout.panel`              | the Project panel's views                                                              | `files`, `git`                                                 |
+| `shell.conversation.footer` | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
+| `layout.panel.footer`       | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
+| `layout.account.status`     | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
+| `layout.main.bottom`        | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
+| `layout.overlay`            | a floating layer over the conversation                                                 | items place themselves; the layer never intercepts a pointer   |
+| `layout.dashboard.nav`      | groups of the `/projects` dashboard sidebar, after Projects                            | `settings`' Providers group                                    |
+| `layout.dashboard.page`     | a page the dashboard draws instead of its project list                                 | `settings`' provider page, shown through `layout.dashboard/v1` |
 
 A `layout.panel` item carries `{ label, icon, badgeTag? }`; its element mounts
 only while the item is selected. A `layout.dashboard.nav`
