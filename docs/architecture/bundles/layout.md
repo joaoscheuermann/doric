@@ -229,6 +229,14 @@ services.whenAvailable(LayoutTabsV1, (tabs) =>
 }
 ```
 
+> **Out of date.** The layout no longer reads Projects and Threads through
+> `runtime.threads/v1` or `runtime/v1`. Since phase 3 of the bundle isolation
+> work, layout 3.2.3 reads the runtime's records mirror, `runtime.records/v1`,
+> and its host adapter and Project watch belong to the runtime's client part.
+> The current behavior is in
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> the documentation phase of that work (phase 12) rewrites this document.
+
 O layout só tem parte `client`. Ele lê Projects e Threads por `runtime.threads/v1`, pela ponte client → host, e despacha `core.open-settings/v1` por `commands/v1`.
 
 ## O que acontece sem o layout

@@ -74,6 +74,19 @@ use to reach a prompt's Thread, working directory and sandbox. See the
   `runtime.history/v1`, `runtime.migration/v1` and the
   `runtime.prompt-finished/v1` event. Each Thread's events land in its
   `runtime.thread.events/{threadId}` stream.
+- `runtime.records/v1` 1.0.0 (runtime 2.9.0) — the records mirror, provided
+  by the runtime's client part (`src/client/`) in each desktop window. It owns
+  the window's Projects and Threads: the reads (`projects`, `project`,
+  `threads`, `thread`, `connection`, `subscribe`, `findThread`, `activity`)
+  answer from memory; `follow` keeps a Project current through its watch, and
+  `reload` always loads; the twelve writes (create, rename, color, terminate
+  and delete a Project; create, rename, terminate, delete, archive, restore
+  and pin a Thread) put the host's answer in the mirror before they resolve;
+  `view` holds a Thread's presence while open. A failed read keeps the
+  rejection object as its `error`. `threadSubtreeIds` and
+  `runtimeRecordsService(records)` are exported from `src/contracts/records.ts`.
+- `runtime/testing` — `createRecordsApi` and `createRecordsFake`, a fake of
+  the records mirror for the tests of the bundles that read it.
 
 Every method is scoped by the `Call` it receives. Record schemas are loose, so
 records with more fields than the contract names travel unchanged.

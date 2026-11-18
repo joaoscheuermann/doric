@@ -20,7 +20,6 @@ src/client/
   queries/     TanStack Query keys, the client, the refresh queue
   domain/      the vocabulary of the product (pure, tested)
   utility/     helpers stated only in terms of their arguments
-  api/         the host adapters: the only code that calls host contracts
   services/    the layout's own contract providers and activation services
   provisional/ stage-10 features kept in the layout's geometry
 ```
@@ -37,9 +36,11 @@ src/client/
 
 - The client part never imports `bundle`, `bundle/runtime` or
   `desktop/client`, and touches no DOM at module load.
-- `runtime/contracts` is imported for types only; contract references are
-  built from their IDs in `api/host.ts`.
-- Persistent work (watches, the selection route, timers) is bound to the
+- Projects and Threads are read from `runtime.records/v1`, the runtime's
+  records mirror; the layout calls no method of `runtime/v1` or
+  `runtime.threads/v1`. The host adapter, the Project watch and the Thread
+  views live in the runtime's client part.
+- Persistent work (the selection route, timers) is bound to the
   activation services, never to an element's services (D9-17).
 - `src/client/styles.css` holds only the Monaco and xterm slider rules and the
   conversation footer's height, fill and blur (one rule keyed on
@@ -47,7 +48,8 @@ src/client/
   by the shell's sorted sheet, so do not add Tailwind directives here (WP6
   decision on the cascade).
 - Every host failure shows the message the REST path showed (R-ERR); the
-  adapter in `api/workspace-api.ts` owns those messages.
+  adapter in the runtime's `src/client/api/workspace-api.ts` owns those
+  messages.
 
 ## Footers
 

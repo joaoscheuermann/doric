@@ -23,8 +23,12 @@ for how bundles work.
 - **Regions:** named slots where other bundles add elements.
 
 The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
-`commands/v1`, `runtime/v1` and `runtime.threads/v1`, optionally
-`core.open-settings/v1`, and has no settings.
+and `commands/v1`, optionally `core.open-settings/v1` and
+`runtime.records/v1`, and has no settings. Since 3.2.3 it reads Projects and
+Threads from the runtime's records mirror, `runtime.records/v1`, and calls no
+method of `runtime/v1` or `runtime.threads/v1`; both left its `requires`.
+Layout 3.2.3 needs runtime 2.9.0 or later in the same bundle set, which the
+resolver does not check because `optional` carries no range.
 
 ## What you see
 
