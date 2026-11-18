@@ -1,4 +1,4 @@
-// layout.conversation/v1 (bundle isolation 4a): the `layout.main.bottom`
+// layout.conversation/v1 (bundle isolation 4a): the `shell.conversation.bottom`
 // visibility requests, over the bottom store `layout.workspace/v1` also sets.
 
 import { defineMethod, defineService } from 'bundle/contracts';

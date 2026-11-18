@@ -212,7 +212,7 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
       owner: 'resources',
     },
   ],
-  'layout.main.bottom': [
+  'shell.conversation.bottom': [
     { id: 'terminals', tag: 'terminal-panel', owner: 'terminal' },
   ],
 };

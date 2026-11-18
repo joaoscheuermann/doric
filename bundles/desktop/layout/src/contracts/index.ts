@@ -31,6 +31,8 @@ export const SHELL_WINDOW_ACTIONS = 'shell.window.actions';
 export const SHELL_HEADER_ACTIONS = 'shell.header.actions';
 /** The conversation footer, a 44 px band floating over the conversation's bottom (4.3.0). */
 export const SHELL_CONVERSATION_FOOTER = 'shell.conversation.footer';
+/** The split under the conversation, shown while an item asks through `setBottomVisible` (4.4.0). */
+export const SHELL_CONVERSATION_BOTTOM = 'shell.conversation.bottom';
 
 /** One entry of a viewer tab's context menu (1.2.0). */
 export interface TabMenuItem {
@@ -206,7 +208,7 @@ export interface LayoutWorkspace {
   /** 1.1.0: whether the window is connected to the host (the sidebar footer). */
   connected(call?: CallArg): boolean;
   /**
-   * 1.1.0: shows (`true`) or hides the `layout.main.bottom` split for one
+   * 1.1.0: shows (`true`) or hides the `shell.conversation.bottom` split for one
    * item. The split is shown while any item asked for it; its items mount
    * only while it is shown.
    */
@@ -290,7 +292,7 @@ export const LayoutPanelV3 = ref<LayoutPanel>('layout.panel/v3');
 /** `layout.conversation/v1` (1.0.0). */
 export interface LayoutConversation {
   /**
-   * Shows (`true`) or hides the `layout.main.bottom` split for one item. The
+   * Shows (`true`) or hides the `shell.conversation.bottom` split for one item. The
    * split is shown while any item asked for it; its items mount only while it
    * is shown.
    */

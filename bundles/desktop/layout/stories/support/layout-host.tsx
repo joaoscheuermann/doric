@@ -50,7 +50,7 @@ export interface LayoutFixture extends HostOptions {
   readonly tabs?: Readonly<Record<string, readonly TabSeed[]>>;
   /** The Project panel's selected view; absent, none, as `layout.panel/v3` starts. */
   readonly panel?: { readonly active?: string };
-  /** Whether an item asked for the `layout.main.bottom` split. */
+  /** Whether an item asked for the `shell.conversation.bottom` split. */
   readonly bottom?: boolean;
   /** Sidebar groups other bundles add below the Threads list. */
   readonly panes?: readonly StackPane[];

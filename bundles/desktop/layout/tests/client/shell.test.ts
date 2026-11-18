@@ -2363,7 +2363,7 @@ test('T4.2: the frame is in the page form exactly while shell.page holds an item
 
 const quarantined: CatalogSnapshot = (() => {
   const bundles: readonly CatalogBundle[] = [
-    { id: 'layout', version: '4.3.0', state: 'active', reasons: [] },
+    { id: 'layout', version: '4.4.0', state: 'active', reasons: [] },
     {
       id: 'terminal',
       version: '2.0.1',

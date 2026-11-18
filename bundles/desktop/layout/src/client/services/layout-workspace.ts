@@ -1,7 +1,7 @@
 // layout.workspace/v1 (stage 9, D9-9, §5.7; 1.1.0 WP-10P, R-9.1): the
 // sidebar tree's records, the validated selection and the connection for
 // other client bundles, backed by the workspace store (a projection of
-// `runtime.records/v1`), and the `layout.main.bottom` visibility requests.
+// `runtime.records/v1`), and the `shell.conversation.bottom` visibility requests.
 
 import { defineMethod, defineService } from 'bundle/contracts';
 

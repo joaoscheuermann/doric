@@ -32,6 +32,7 @@ import {
 } from 'react';
 
 import {
+  SHELL_CONVERSATION_BOTTOM,
   SHELL_CONVERSATION_FOOTER,
   SHELL_PAGE,
   SHELL_SIDEBAR,
@@ -203,7 +204,9 @@ function Workspace() {
           >
             <SidebarInset className={cn(INSET_CARD, 'pb-0')}>
               <ConversationTerminals
-                bottom={bottomVisible && <Region name="layout.main.bottom" />}
+                bottom={
+                  bottomVisible && <Region name={SHELL_CONVERSATION_BOTTOM} />
+                }
               >
                 <ConversationFrame
                   footer={<Region name={SHELL_CONVERSATION_FOOTER} />}

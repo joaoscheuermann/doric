@@ -6,7 +6,7 @@ import {
 import type { ReactNode } from 'react';
 
 /**
- * The conversation over the bottom split: the `layout.main.bottom` region
+ * The conversation over the bottom split: the `shell.conversation.bottom` region
  * (WP-10P, R-9.5; the terminal bundle's manual terminals since WP-10N),
  * shown while an item asked for the split.
  */
