@@ -1,6 +1,7 @@
 import type { TabMenuItem } from '../../contracts/index.js';
 import { moveItem } from '../utility/move-item.js';
 import type { ProjectTree } from './project-tree.js';
+import { THREAD_TAB_ICON } from './thread-navigation.js';
 
 export type WorkspaceTab =
   | {
@@ -22,7 +23,7 @@ export type WorkspaceTab =
       readonly terminalId: string;
     }
   /**
-   * A tab another bundle opened through `layout.tabs/v1`: the element it
+   * A tab another bundle opened through `layout.tabs/v1` or `v2`: the element it
    * asked for, created by `ui/v1` and labelled with its title.
    */
   | {
@@ -35,22 +36,15 @@ export type WorkspaceTab =
       readonly props?: Readonly<Record<string, unknown>>;
       /** `layout.tabs/v1@1.1.0`: the trigger's icon, aria label and tooltip. */
       readonly icon?: 'file' | 'file-diff' | 'terminal' | 'thread';
+      /** `layout.tabs/v2`: the element drawn as the trigger's icon. */
+      readonly iconTag?: string;
+      /** `layout.tabs/v2`: the viewer card draws no bottom padding while it is selected. */
+      readonly openBottom?: boolean;
       readonly ariaLabel?: string;
       readonly tooltip?: string;
       /** `layout.tabs/v1@1.2.0`: the entries above "Close tab" in its menu. */
       readonly menu?: readonly TabMenuItem[];
     };
-
-/** The element the layout opens a Thread in (`openThreadTab`). */
-export const THREAD_PANEL_TAG = 'chat-thread-panel';
-
-/**
- * Whether a tab shows a Thread: its element is `<chat-thread-panel>`, whose
- * footer band floats over its own bottom. The viewer card draws no bottom
- * padding while such a tab is selected (conversation-footer spec, D15).
- */
-export const isThreadPanelTab = (tab: WorkspaceTab): boolean =>
-  tab.kind === 'element' && tab.tag === THREAD_PANEL_TAG;
 
 /**
  * Whether a tab reads the Project's sandbox, which keeps the files and Git
@@ -60,7 +54,9 @@ export const readsSandbox = (tab: WorkspaceTab): boolean =>
   tab.kind !== 'terminal' &&
   !(
     tab.kind === 'element' &&
-    (tab.icon === 'terminal' || tab.icon === 'thread')
+    (tab.icon === 'terminal' ||
+      tab.icon === 'thread' ||
+      tab.iconTag === THREAD_TAB_ICON)
   );
 
 export type WorkspaceTabs = {
@@ -78,7 +74,7 @@ export const reconcileThreadTabs = (
 ): WorkspaceTabs => {
   let next = state;
   for (const tab of state.items) {
-    if (tab.kind !== 'element' || tab.icon !== 'thread') continue;
+    if (tab.kind !== 'element' || tab.iconTag !== THREAD_TAB_ICON) continue;
     const projectId = tab.props?.projectId;
     const threadId = tab.props?.threadId;
     if (typeof projectId !== 'string' || typeof threadId !== 'string') continue;

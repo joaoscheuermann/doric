@@ -10,7 +10,7 @@ import {
   LayoutPanelV2,
   LayoutTabsV1,
   LayoutWorkspaceV1,
-  type TabRequest,
+  type LegacyTabRequest as TabRequest,
 } from 'layout/contracts';
 import { FilesIcon } from 'lucide-react';
 import { createElement, type ReactElement } from 'react';

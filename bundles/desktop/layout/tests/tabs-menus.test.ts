@@ -11,7 +11,7 @@ import { createTestServices } from 'bundle/testing';
 import { createElement, type ReactElement } from 'react';
 
 import { emptyTabs } from '../src/client/domain/workspace-tabs.js';
-import { createLayoutTabs } from '../src/client/services/layout-tabs.js';
+import { createLegacyLayoutTabs } from '../src/client/services/layout-tabs.js';
 import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
 import { LayoutTabsV1 } from '../src/contracts/index.js';
 
@@ -21,9 +21,10 @@ const ui = {
 };
 
 const setup = (owner: string | undefined = 'thread-1') => {
+  workspaceTabsStore.getState().setOwner(owner);
   const harness = createTestServices({
     bundle: { id: 'probe' },
-    provide: [createLayoutTabs({ ui, owner: () => owner })],
+    provide: [createLegacyLayoutTabs({ ui })],
   });
   return {
     tabs: harness.services.use(LayoutTabsV1),
@@ -212,7 +213,7 @@ describe('layout.tabs/v1@1.2.0 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v1@1.2.0, layout.panel/v2@2.0.0 (not v1), layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.2.4, requires neither runtime/v1 nor runtime.threads/v1, and takes runtime.records/v1 as optional (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive, bundle isolation AC3.1)', () => {
+  test('provides layout.tabs/v1@1.2.0 and layout.tabs/v2@2.0.0, layout.panel/v2@2.0.0 and layout.panel/v3@3.0.0 (not v1), layout.conversation/v1@1.0.0, layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.3.0, requires neither runtime/v1 nor runtime.threads/v1, and takes runtime.records/v1 as optional (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive, bundle isolation AC3.1, S12)', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
     ) as {
@@ -222,7 +223,7 @@ describe('the layout manifest', () => {
       optional: string[];
     };
 
-    assert.equal(manifest.version, '3.2.4');
+    assert.equal(manifest.version, '3.3.0');
     assert.ok(
       !manifest.requires.some(
         (entry) =>
@@ -245,5 +246,8 @@ describe('the layout manifest', () => {
     assert.ok(!manifest.provides.includes('layout.sidebar/v1@1.0.0'));
     assert.ok(manifest.provides.includes('layout.panel/v2@2.0.0'));
     assert.ok(!manifest.provides.includes('layout.panel/v1@1.0.0'));
+    assert.ok(manifest.provides.includes('layout.tabs/v2@2.0.0'));
+    assert.ok(manifest.provides.includes('layout.panel/v3@3.0.0'));
+    assert.ok(manifest.provides.includes('layout.conversation/v1@1.0.0'));
   });
 });

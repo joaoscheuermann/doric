@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "chat",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "engines": {
     "doric": "^1.7.0"
   },
@@ -33,6 +33,7 @@
     "menus/v1@^1.0.0",
     "runtime.threads/v1@^1.8.0",
     "runtime.attachments/v1@^1.0.0",
+    "runtime.records/v1@^1.0.0",
     "comments/v1@^1.0.0",
     "chat.composer/v1@^1.0.0"
   ],

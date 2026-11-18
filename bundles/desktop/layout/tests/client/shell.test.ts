@@ -26,8 +26,10 @@ import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
 import {
   LayoutPanelV2,
+  LayoutPanelV3,
   LayoutStackV2,
   LayoutTabsV1,
+  LayoutTabsV2,
 } from '../../src/contracts/index.js';
 import type { LayoutFixture } from '../../stories/support/layout-host.js';
 import {
@@ -612,25 +614,50 @@ test('an open viewer is drawn as an inset card', async () => {
   );
 });
 
-/** A Thread's tab, as the layout opens a child Thread in the viewer. */
+/**
+ * A Thread's tab, as the layout opens a child Thread in the viewer through
+ * `layout.tabs/v2` (bundle isolation 4a, T4.5): it asks for an open bottom.
+ */
 const threadTab = {
   id: 'thread:child',
   title: 'Child',
   tag: 'chat-thread-panel',
   props: { projectId: project.id, threadId: 'child' },
+  openBottom: true,
 } as const;
 
-// conversation-footer T-11.3 (D15)
-test('the viewer card draws no bottom padding while a Thread tab is selected', async () => {
-  rendered = await renderWorkspace({
-    ...withViewer,
-    tabs: { [`project:${project.id}`]: [threadTab] },
-  });
+// conversation-footer T-11.3 (D15), bundle isolation T4.5: `openBottom`
+// decides.
+test('the viewer card draws no bottom padding while a tab with openBottom is selected', async () => {
+  rendered = await renderWorkspace(withViewer);
 
+  await rendered.services.use(LayoutTabsV2).open(threadTab);
+  await settle();
+
+  assert.equal(rendered.errors().length, 0, 'Opening the Thread tab failed.');
   const viewer = viewerCard(rendered);
   assert.ok(
     viewer.classList.contains('pb-0'),
-    `The viewer card keeps its bottom padding under a Thread (D15): ${viewer.className}`,
+    `The viewer card keeps its bottom padding under an openBottom tab (D15): ${viewer.className}`,
+  );
+});
+
+// bundle isolation T4.5: the tag no longer decides.
+test('the viewer card keeps its bottom padding for a chat-thread-panel tab without openBottom', async () => {
+  rendered = await renderWorkspace(withViewer);
+  await rendered.services.use(LayoutTabsV2).open({
+    id: threadTab.id,
+    title: threadTab.title,
+    tag: threadTab.tag,
+    props: threadTab.props,
+  });
+  await settle();
+
+  assert.equal(rendered.errors().length, 0, 'Opening the Thread tab failed.');
+  const viewer = viewerCard(rendered);
+  assert.ok(
+    !viewer.classList.contains('pb-0'),
+    `The viewer card drops its bottom padding without openBottom: ${viewer.className}`,
   );
 });
 
@@ -659,26 +686,46 @@ test('the viewer card keeps its bottom padding for another element with the Thre
 });
 
 // conversation-footer T-11.5 (D15): the selected tab decides, not any open tab.
-test('the viewer card drops its bottom padding only while the Thread tab is selected', async () => {
+test('the viewer card drops its bottom padding only while the openBottom tab is selected', async () => {
   const owner = `project:${project.id}`;
-  const fileTab = withViewer.tabs?.[owner]?.[0];
-  assert.ok(fileTab !== undefined, 'withViewer has no file tab.');
-  rendered = await renderWorkspace({
-    ...withViewer,
-    tabs: { [owner]: [threadTab, fileTab] },
-  });
+  rendered = await renderWorkspace(withViewer);
+  await rendered.services.use(LayoutTabsV2).open(threadTab);
+  await settle();
+  assert.ok(
+    viewerCard(rendered).classList.contains('pb-0'),
+    `The viewer card keeps its bottom padding once the Thread tab is selected (D15): ${viewerCard(rendered).className}`,
+  );
+
+  workspaceTabsStore.getState().select(owner, 'file:README.md');
+  await settle();
 
   assert.ok(
     !viewerCard(rendered).classList.contains('pb-0'),
     `The viewer card drops its bottom padding while a file tab is selected (D15): ${viewerCard(rendered).className}`,
   );
+});
 
-  workspaceTabsStore.getState().select(owner, 'thread:child');
+// bundle isolation T4.5: a v2 tab's trigger draws the element its iconTag
+// names, created through `ui/v1` with the tab's props.
+test('a layout.tabs/v2 tab with iconTag draws that element in its trigger', async () => {
+  rendered = await renderWorkspace(withViewer);
+
+  await rendered.services.use(LayoutTabsV2).open({
+    id: 'probe',
+    title: 'Probe',
+    tag: 'x-view',
+    props: { probe: 1 },
+    iconTag: 'x-icon',
+    ariaLabel: 'Probe',
+  });
   await settle();
 
-  assert.ok(
-    viewerCard(rendered).classList.contains('pb-0'),
-    `The viewer card keeps its bottom padding once the Thread tab is selected (D15): ${viewerCard(rendered).className}`,
+  assert.equal(rendered.errors().length, 0, 'Opening the probe tab failed.');
+  const tab = only(rendered.root, '[role="tab"]', 'Probe');
+  assert.equal(
+    standIns(tab, 'x-icon').length,
+    1,
+    'The trigger does not draw the x-icon element.',
   );
 });
 
@@ -1261,6 +1308,60 @@ test('layout.panel/v2 select selects the view and the Files column stays', async
   assert.equal(standIns(rendered.root, 'files-tree').length, 1);
   assert.equal(standIns(rendered.root, 'git-changes').length, 0);
   single(rendered.root, '[data-slot="workspace-files-footer"]');
+});
+
+// bundle isolation T4.5: layout.panel/v3 selects as v2 does.
+test('layout.panel/v3 select selects the view', async () => {
+  rendered = await renderWorkspace(
+    withHeaderItems({
+      projects: [project],
+      projectTabs: [project],
+      path: `/projects/${project.id}`,
+      panel: { active: 'changes' },
+    }),
+  );
+
+  rendered.services.use(LayoutPanelV3).select('files');
+  await settle();
+
+  assert.equal(rendered.errors().length, 0, 'Selecting Files failed.');
+  const header = filesHeader(rendered);
+  assert.ok(isSelectedView(header, 'Files'), 'Files is not the selected view.');
+  assert.ok(!isSelectedView(header, 'Changes'), 'Changes is still selected.');
+});
+
+// bundle isolation T4.5: a layout.panel item's iconTag draws that element as
+// the view's icon.
+test('a layout.panel item with props.iconTag draws that element as its icon', async () => {
+  rendered = await renderWorkspace({
+    projects: [project],
+    projectTabs: [project],
+    path: `/projects/${project.id}`,
+    regions: {
+      'layout.panel': [
+        {
+          id: 'files',
+          tag: 'files-tree',
+          order: 100,
+          props: { label: 'Files', iconTag: 'files-icon-probe' },
+        },
+        ...panelViews.filter((view) => view.id === 'changes'),
+      ],
+    },
+  });
+
+  const header = filesHeader(rendered);
+  const files = only(header, 'button', 'Files');
+  assert.equal(
+    standIns(files, 'files-icon-probe').length,
+    1,
+    'The Files view does not draw its iconTag element.',
+  );
+  assert.equal(
+    standIns(only(header, 'button', 'Changes'), 'files-icon-probe').length,
+    0,
+    'The Changes view draws the Files icon element.',
+  );
 });
 
 // T-2.17, regression guard: choosing a view in the header keeps the column.

@@ -94,12 +94,18 @@ export function ProjectPanelTabs({
           const entry = items.find((candidate) => candidate.id === id);
           if (entry === undefined) return [];
           const badgeTag = entry.props?.badgeTag;
+          const iconTag = entry.props?.iconTag;
           return [
             {
               id,
               label: text(entry.props?.label),
               iconOnly: true,
-              icon: panelIcon(entry.props?.icon),
+              icon:
+                typeof iconTag === 'string' && iconTag !== '' ? (
+                  <ElementHost ui={layoutServices().use(UiV1)} tag={iconTag} />
+                ) : (
+                  panelIcon(entry.props?.icon)
+                ),
               badge:
                 typeof badgeTag === 'string' && badgeTag !== '' ? (
                   <ElementHost ui={layoutServices().use(UiV1)} tag={badgeTag} />

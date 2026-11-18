@@ -10,8 +10,8 @@ import { defineMethod, defineService } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import {
   LayoutTabsV1,
-  layoutTabsMethods,
-  type TabRequest,
+  type LegacyTabRequest,
+  legacyLayoutTabsMethods,
 } from 'layout/contracts';
 
 import {
@@ -21,14 +21,14 @@ import {
 
 describe('git.open-comparison/v1', () => {
   test('opens the comparison tab of one changed file', async (t) => {
-    const opened: TabRequest[] = [];
+    const opened: LegacyTabRequest[] = [];
     const harness = createTestServices({
       bundle: { id: 'git-client' },
       provide: [
         defineService(LayoutTabsV1.id, {
           open: defineMethod({
-            ...layoutTabsMethods.open,
-            execute: async (request: TabRequest) => {
+            ...legacyLayoutTabsMethods.open,
+            execute: async (request: LegacyTabRequest) => {
               opened.push(request);
             },
           }),
@@ -49,7 +49,7 @@ describe('git.open-comparison/v1', () => {
 
     assert.equal(opened.length, 1);
     // Its context menu (A6) is checked in `tests/client/open-file.test.ts`.
-    const { menu: _menu, ...tab } = opened[0] as TabRequest;
+    const { menu: _menu, ...tab } = opened[0] as LegacyTabRequest;
     assert.deepEqual(tab, {
       id: '["diff","project-1","packages/app","src/main.ts"]',
       title: 'main.ts',

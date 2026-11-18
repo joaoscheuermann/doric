@@ -32,7 +32,6 @@ import {
 import { ConversationFrame } from '../../src/client/components/templates/conversation-frame.js';
 import { INSET_CARD } from '../../src/client/components/templates/inset-card.js';
 import { WorkspaceLayout } from '../../src/client/components/templates/workspace-layout.js';
-import { isThreadPanelTab } from '../../src/client/domain/workspace-tabs.js';
 import { useWorkspaceTabs } from '../../src/client/hooks/use-workspace-tabs.js';
 import { layoutServices } from '../../src/client/services/layout-services.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
@@ -144,7 +143,10 @@ export function WorkspaceShell({
           }
           fileViewer={viewer ? <WorkspaceTabs state={tabs} /> : undefined}
           viewerOpenBottom={tabs.items.some(
-            (tab) => tab.id === tabs.selected && isThreadPanelTab(tab),
+            (tab) =>
+              tab.id === tabs.selected &&
+              tab.kind === 'element' &&
+              tab.openBottom === true,
           )}
           sidebar={
             <ProjectSidebar

@@ -17,8 +17,8 @@ import {
 import { createTestServices } from 'bundle/testing';
 import {
   LayoutTabsV1,
-  layoutTabsMethods,
-  type TabRequest,
+  type LegacyTabRequest,
+  legacyLayoutTabsMethods,
 } from 'layout/contracts';
 import { FileIcon } from 'lucide-react';
 import { isValidElement } from 'react';
@@ -26,15 +26,15 @@ import { isValidElement } from 'react';
 import { openComparisonCommand } from '../../src/client/commands.js';
 
 const setup = () => {
-  const opened: TabRequest[] = [];
+  const opened: LegacyTabRequest[] = [];
   const executed: (readonly [unknown, unknown])[] = [];
   const harness = createTestServices({
     bundle: { id: 'git-client' },
     provide: [
       defineService(LayoutTabsV1.id, {
         open: defineMethod({
-          ...layoutTabsMethods.open,
-          execute: async (request: TabRequest) => {
+          ...legacyLayoutTabsMethods.open,
+          execute: async (request: LegacyTabRequest) => {
             opened.push(request);
           },
         }),
@@ -56,7 +56,7 @@ const setup = () => {
   const open = async (input: {
     readonly repository: string;
     readonly path: string;
-  }): Promise<TabRequest> => {
+  }): Promise<LegacyTabRequest> => {
     await openComparisonCommand.execute(
       openComparisonCommand.input.parse({ projectId: 'project-1', ...input }),
       harness.call({}),

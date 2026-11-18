@@ -16,11 +16,14 @@ import {
   THREAD_ROUTE,
   WORKSPACE_ROUTE,
 } from '../src/client/domain/route-selection.js';
-import { threadsOnScreen } from '../src/client/domain/thread-views.js';
 import {
   THREAD_PANEL_TAG,
-  type WorkspaceTab,
-  type WorkspaceTabs,
+  THREAD_TAB_ICON,
+} from '../src/client/domain/thread-navigation.js';
+import { threadsOnScreen } from '../src/client/domain/thread-views.js';
+import type {
+  WorkspaceTab,
+  WorkspaceTabs,
 } from '../src/client/domain/workspace-tabs.js';
 import { watchThreadViews } from '../src/client/services/thread-views.js';
 import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
@@ -52,7 +55,7 @@ const threadTab = (id: string, threadId: string): WorkspaceTab => ({
   title: 'Thread',
   element: {},
   props: { threadId },
-  icon: 'thread',
+  iconTag: THREAD_TAB_ICON,
 });
 const fileTab: WorkspaceTab = {
   id: 'file',

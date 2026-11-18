@@ -17,12 +17,19 @@ import { tabOwnerOf } from './domain/route-selection.js';
 import { RecordsV1 } from './domain/workspace.js';
 import { LayoutWorkspaceElement } from './elements/workspace-element.js';
 import { resetLayoutQueryClient } from './queries/client.js';
+import { createLayoutConversation } from './services/layout-conversation.js';
 import { createLayoutDashboard } from './services/layout-dashboard.js';
-import { createLayoutPanel } from './services/layout-panel.js';
+import {
+  createLayoutPanel,
+  createLayoutPanelV3,
+} from './services/layout-panel.js';
 import { setLayoutServices } from './services/layout-services.js';
 import { createLayoutSidebar } from './services/layout-sidebar.js';
 import { createLayoutStack } from './services/layout-stack.js';
-import { createLayoutTabs } from './services/layout-tabs.js';
+import {
+  createLayoutTabs,
+  createLegacyLayoutTabs,
+} from './services/layout-tabs.js';
 import { createLayoutWorkspace } from './services/layout-workspace.js';
 import { watchThreadTabs } from './services/thread-tabs.js';
 import { watchThreadViews } from './services/thread-views.js';
@@ -34,6 +41,7 @@ import { resetRouteSelection } from './stores/route-selection.js';
 import { resetStack } from './stores/stack.js';
 import { resetThreadRows } from './stores/thread-rows.js';
 import { bindRecords, workspaceStore } from './stores/workspace.js';
+import { workspaceTabsStore } from './stores/workspace-tabs.js';
 
 export function activate({ services }: ClientContext): Cleanup {
   setLayoutServices(services);
@@ -59,34 +67,36 @@ export function activate({ services }: ClientContext): Cleanup {
   for (const path of ['/projects', '/projects/:projectId']) {
     navigation.register({ path, create: () => ui.create('layout-workspace') });
   }
-  services.provide(
-    createLayoutTabs({
-      ui,
-      owner: () =>
+  // The tab owner (bundle isolation 4a): the route's Thread, else the
+  // selected Project, pushed into the tabs store that both tab services read.
+  const followOwner = () =>
+    workspaceTabsStore
+      .getState()
+      .setOwner(
         tabOwnerOf(
           navigation.current(),
           workspaceStore.getState().tree.selection.projectId,
         ),
-      watchOwner: (listener) => {
-        const route = navigation.subscribe(listener);
-        const tree = workspaceStore.subscribe(listener);
-        return () => {
-          route.dispose();
-          tree();
-        };
-      },
-    }),
-  );
+      );
+  followOwner();
+  const ownerRoute = navigation.subscribe(followOwner);
+  const ownerTree = workspaceStore.subscribe(followOwner);
+  services.provide(createLegacyLayoutTabs({ ui }));
+  services.provide(createLayoutTabs({ ui }));
   // WP-10P: the Project panel and the sidebar's Thread rows. The stack carries
   // the groups bundles register under the sidebar's Thread region (the
   // Screens and MCP panes today).
   services.provide(createLayoutWorkspace());
   services.provide(createLayoutPanel());
+  services.provide(createLayoutPanelV3());
+  services.provide(createLayoutConversation());
   services.provide(createLayoutDashboard());
   services.provide(createLayoutSidebar());
   services.provide(createLayoutStack());
 
   return () => {
+    ownerRoute.dispose();
+    ownerTree();
     stopThreadTabs();
     stopThreadViews();
     records.dispose();

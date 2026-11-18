@@ -29,6 +29,7 @@ import {
   type WindowCatalog,
 } from 'desktop/client';
 import { Window } from 'happy-dom';
+import { createRecordsFake } from 'runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const THREADS_DIST = resolve(here, '../../../../dist');
@@ -216,6 +217,39 @@ const probeCandidate = (probe: Probe): CatalogCandidate => ({
   errors: [],
 });
 
+/**
+ * The records bundle: a client part that provides `runtime.records/v1` from
+ * `createRecordsFake`, which the chat requires (bundle isolation 4a, O7).
+ */
+const recordsCandidate: CatalogCandidate = {
+  id: 'records',
+  source: { kind: 'installed', dir: 'records@1.0.0' },
+  manifest: {
+    manifestVersion: 1,
+    id: 'records',
+    version: '1.0.0',
+    engines: { doric: '^1.0.0' },
+    provides: ['runtime.records/v1@1.0.0'],
+    requires: [],
+  },
+  descriptor: {
+    descriptorVersion: 1,
+    bundle: { id: 'records', version: '1.0.0' },
+    contracts: [
+      {
+        id: 'runtime.records/v1',
+        version: '1.0.0',
+        kind: 'service' as const,
+        environment: 'client' as const,
+        cardinality: 'one' as const,
+        local: true,
+        schema: 'schemas/runtime.records/v1.json',
+      },
+    ],
+  },
+  errors: [],
+};
+
 const partUrl = (id: string, version: string): string =>
   `doric://app/bundles/${id}@${version}/client/index.js`;
 
@@ -345,6 +379,7 @@ export const openThreadsWindow = async (input: {
       errors: [],
     },
     hostCandidate,
+    recordsCandidate,
     {
       id: 'chat',
       source: { kind: 'installed', dir: `chat@${chatManifest.version}` },
@@ -381,6 +416,7 @@ export const openThreadsWindow = async (input: {
     parts: {
       core: { entry: partUrl('core', coreManifest.version) },
       chat: { entry: partUrl('chat', chatManifest.version) },
+      records: { entry: partUrl('records', '1.0.0') },
       threads: { entry: partUrl('threads', threadsManifest.version) },
       ...(input.probe === undefined
         ? {}
@@ -502,6 +538,11 @@ export const openThreadsWindow = async (input: {
   const modules: Record<string, { activate?: Activate }> = {
     [partUrl('core', coreManifest.version)]: core,
     [partUrl('chat', chatManifest.version)]: chat,
+    [partUrl('records', '1.0.0')]: {
+      activate: ({ services }) => {
+        services.provide(createRecordsFake());
+      },
+    },
     [partUrl('threads', threadsManifest.version)]: threads,
     ...(input.probe === undefined
       ? {}

@@ -1,15 +1,18 @@
 import { errorFrom } from 'desktop/reads';
 import type { RefObject } from 'react';
 
-import { LayoutTabsV1 } from '../../contracts/index.js';
+import { LayoutTabsV2 } from '../../contracts/index.js';
 import {
   isDescribed,
   type Selection,
   threadsOf,
 } from '../domain/project-tree.js';
-import { mainThreadFor } from '../domain/thread-navigation.js';
+import {
+  mainThreadFor,
+  THREAD_PANEL_TAG,
+  THREAD_TAB_ICON,
+} from '../domain/thread-navigation.js';
 import type { Thread } from '../domain/workspace.js';
-import { THREAD_PANEL_TAG } from '../domain/workspace-tabs.js';
 import { layoutServices } from '../services/layout-services.js';
 import { rewriteRoute } from '../stores/route-selection.js';
 import { boundRecords, workspaceStore } from '../stores/workspace.js';
@@ -22,13 +25,14 @@ import { boundRecords, workspaceStore } from '../stores/workspace.js';
 export const openThreadTab = async (thread: Thread): Promise<void> => {
   try {
     await layoutServices()
-      .use(LayoutTabsV1)
+      .use(LayoutTabsV2)
       .open({
         id: `thread:${thread.id}`,
         title: thread.name || 'Untitled',
         tag: THREAD_PANEL_TAG,
         props: { projectId: thread.projectId, threadId: thread.id },
-        icon: 'thread',
+        iconTag: THREAD_TAB_ICON,
+        openBottom: true,
       });
   } catch (reason) {
     workspaceStore.getState().fail(reason);

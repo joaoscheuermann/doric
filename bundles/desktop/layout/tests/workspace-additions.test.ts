@@ -17,10 +17,14 @@ import {
   type ProjectTree,
 } from '../src/client/domain/project-tree.js';
 import type { Project, Thread } from '../src/client/domain/workspace.js';
+import { createLayoutConversation } from '../src/client/services/layout-conversation.js';
 import { createLayoutWorkspace } from '../src/client/services/layout-workspace.js';
 import { bottomStore, resetBottom } from '../src/client/stores/bottom.js';
 import { bindRecords, workspaceStore } from '../src/client/stores/workspace.js';
-import { LayoutWorkspaceV1 } from '../src/contracts/index.js';
+import {
+  LayoutConversationV1,
+  LayoutWorkspaceV1,
+} from '../src/contracts/index.js';
 
 const project = (id: string): Project =>
   ({
@@ -165,5 +169,27 @@ describe('layout.workspace/v1@1.1.0', () => {
     workspace.setBottomVisible('other', false);
     assert.equal(shown(), false);
     await dispose();
+  });
+});
+
+// layout.conversation/v1@1.0.0 (bundle isolation 4a, O8): the bottom split's
+// visibility requests, as layout.workspace/v1 answers them.
+describe('layout.conversation/v1', () => {
+  test('the bottom split shows while any item asks for it', async () => {
+    const harness = createTestServices({
+      bundle: { id: 'terminal' },
+      provide: [createLayoutConversation()],
+    });
+    const conversation = harness.services.use(LayoutConversationV1);
+    const shown = () => bottomStore.getState().visible.size > 0;
+
+    conversation.setBottomVisible('terminal-manual', true);
+    conversation.setBottomVisible('other', true);
+    conversation.setBottomVisible('terminal-manual', false);
+    assert.equal(shown(), true);
+
+    conversation.setBottomVisible('other', false);
+    assert.equal(shown(), false);
+    await harness.dispose();
   });
 });

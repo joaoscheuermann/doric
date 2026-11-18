@@ -22,6 +22,7 @@ import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
 beforeEach(() => {
   workspaceStore.setState({ tree: emptyTree });
   workspaceTabsStore.setState({ threads: {} });
+  workspaceTabsStore.getState().setOwner(undefined);
 });
 afterEach(() => {
   setLayoutServices(undefined);
@@ -145,8 +146,10 @@ test("opening a fetched child keeps the main conversation, reloads its Project's
     path: () => path,
     navigate: (next) => {
       path = next;
+      workspaceTabsStore.getState().setOwner(next.split('/').at(-1));
     },
   });
+  workspaceTabsStore.getState().setOwner(path.split('/').at(-1));
   const harness = createTestServices({
     bundle: { id: 'probe' },
     provide: [
@@ -155,7 +158,6 @@ test("opening a fetched child keeps the main conversation, reloads its Project's
           create: (tag, props) => ({ tag, props }),
           dispose: () => undefined,
         },
-        owner: () => path.split('/').at(-1),
       }),
     ],
   });
@@ -185,6 +187,11 @@ test("opening a fetched child keeps the main conversation, reloads its Project's
       tag: 'chat-thread-panel',
       props: { projectId: 'project', threadId: 'child' },
     });
+    // bundle isolation 4a: the tab is opened through layout.tabs/v2 with the
+    // chat's icon element and an open bottom, and no v1 icon.
+    assert.equal(tab.iconTag, 'chat-thread-tab-icon');
+    assert.equal(tab.openBottom, true);
+    assert.equal(tab.icon, undefined);
     await navigate(child, true);
     assert.equal(workspaceTabsStore.getState().threads.root.items.length, 1);
     assert.equal(workspaceTabsStore.getState().threads.root.items[0], tab);
@@ -203,8 +210,10 @@ test('a fresh child visit loads ancestors before opening a tab owned by the root
     path: () => path,
     navigate: (next) => {
       path = next;
+      workspaceTabsStore.getState().setOwner(next.split('/').at(-1));
     },
   });
+  workspaceTabsStore.getState().setOwner(path.split('/').at(-1));
   const harness = createTestServices({
     bundle: { id: 'probe' },
     provide: [
@@ -213,7 +222,6 @@ test('a fresh child visit loads ancestors before opening a tab owned by the root
           create: (tag, props) => ({ tag, props }),
           dispose: () => undefined,
         },
-        owner: () => path.split('/').at(-1),
       }),
     ],
   });

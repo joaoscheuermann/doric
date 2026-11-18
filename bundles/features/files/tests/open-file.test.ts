@@ -17,8 +17,8 @@ import {
 import { createTestServices } from 'bundle/testing';
 import {
   LayoutTabsV1,
-  layoutTabsMethods,
-  type TabRequest,
+  type LegacyTabRequest,
+  legacyLayoutTabsMethods,
 } from 'layout/contracts';
 import { isValidElement } from 'react';
 
@@ -26,15 +26,15 @@ import { filePathOf, openFileCommand } from '../src/client/commands.js';
 import { OPEN_FILE_COMMAND } from '../src/contracts/index.js';
 
 const setup = (owner: string | null = 'thread-1') => {
-  const tabs: TabRequest[] = [];
+  const tabs: LegacyTabRequest[] = [];
   const commands = new Map<string, BoundCommand>();
   const harness = createTestServices({
     bundle: { id: 'files' },
     provide: [
       defineService(LayoutTabsV1, {
         open: defineMethod({
-          ...layoutTabsMethods.open,
-          execute: async (input: TabRequest) => {
+          ...legacyLayoutTabsMethods.open,
+          execute: async (input: LegacyTabRequest) => {
             if (owner === null)
               throw new ContractError(
                 'unavailable',
@@ -44,26 +44,26 @@ const setup = (owner: string | null = 'thread-1') => {
           },
         }),
         close: defineMethod({
-          ...layoutTabsMethods.close,
+          ...legacyLayoutTabsMethods.close,
           execute: async () => undefined,
         }),
         focus: defineMethod({
-          ...layoutTabsMethods.focus,
+          ...legacyLayoutTabsMethods.focus,
           execute: async () => undefined,
         }),
         retitle: defineMethod({
-          ...layoutTabsMethods.retitle,
+          ...legacyLayoutTabsMethods.retitle,
           execute: async () => undefined,
         }),
         current: defineMethod({
-          ...layoutTabsMethods.current,
+          ...legacyLayoutTabsMethods.current,
           execute: () => {
             const last = tabs.at(-1);
             return last === undefined ? undefined : { id: last.id };
           },
         }),
         subscribe: defineMethod({
-          ...layoutTabsMethods.subscribe,
+          ...legacyLayoutTabsMethods.subscribe,
           execute: () => ({ dispose: () => undefined }),
         }),
       }),

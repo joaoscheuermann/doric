@@ -1,18 +1,20 @@
 // The tab panel beside the conversation: every tab is another bundle's
-// element (`layout.tabs/v1`) since WP-10N moved the file, diff and terminal
+// element (`layout.tabs/v1` or `v2`) since WP-10N moved the file, diff and terminal
 // tabs to the files, git and terminal bundles.
 
+import { UiV1 } from 'bundle/contracts';
 import {
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
 } from 'desktop/ui/context-menu';
+import { ElementHost } from 'desktop/ui/element-host';
 import { TabStrip } from 'desktop/ui/panels';
 import { TabsContent } from 'desktop/ui/tabs';
 import { FileDiffIcon, FileIcon, TerminalIcon, XIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
-import { LayoutTabsV1, type TabMenuItem } from '../../../contracts/index.js';
+import { LayoutTabsV2, type TabMenuItem } from '../../../contracts/index.js';
 import {
   isUntitled,
   type ThreadKind,
@@ -37,7 +39,7 @@ export function WorkspaceTabBar({
   const actions = workspaceTabsStore.getState();
   const close = (id: string) => {
     void layoutServices()
-      .use(LayoutTabsV1)
+      .use(LayoutTabsV2)
       .close({ id, threadId })
       .catch((reason: unknown) => workspaceStore.getState().fail(reason));
   };
@@ -174,9 +176,18 @@ export function WorkspaceTabs({ state }: { readonly state: TabsState }) {
  * The trigger icon of an element tab. A conversation tab wears the mark of the
  * Thread it shows — the bubble, the bubble with a plus or the bot, sized with
  * the label — read from the tree the window already holds, so the strip says
- * which Threads are agent Threads.
+ * which Threads are agent Threads. A `layout.tabs/v2` tab with `iconTag`
+ * wears the element `ui/v1` creates for that tag with the tab's props.
  */
 function tabIcon(tab: Extract<WorkspaceTab, { readonly kind: 'element' }>) {
+  if (tab.iconTag !== undefined)
+    return (
+      <ElementHost
+        ui={layoutServices().use(UiV1)}
+        tag={tab.iconTag}
+        {...(tab.props === undefined ? {} : { props: tab.props })}
+      />
+    );
   switch (tab.icon) {
     case 'file':
       return <FileIcon />;

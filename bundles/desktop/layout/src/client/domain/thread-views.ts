@@ -5,7 +5,8 @@
 import type { RouteMatch } from 'bundle/contracts';
 
 import { routeThread, tabOwnerOf } from './route-selection.js';
-import { isThreadPanelTab, type WorkspaceTabs } from './workspace-tabs.js';
+import { THREAD_TAB_ICON } from './thread-navigation.js';
+import type { WorkspaceTabs } from './workspace-tabs.js';
 
 /**
  * The Threads a window shows: the Thread route's Thread, and the Thread of
@@ -15,7 +16,7 @@ import { isThreadPanelTab, type WorkspaceTabs } from './workspace-tabs.js';
  * - The owner is `tabOwnerOf(match, selectedProjectId)`; its tabs are
  *   `tabs[owner]`; the selected tab is the item whose `id` equals their
  *   `selected`. That tab adds `props.threadId` only when it is a Thread tab
- *   (`isThreadPanelTab`) and `props.threadId` is a string.
+ *   (its `iconTag` is `THREAD_TAB_ICON`) and `props.threadId` is a string.
  * - A route that is neither the Thread route nor the Project route has no
  *   owner and answers the route's Thread alone, or nothing.
  *
@@ -34,7 +35,7 @@ export const threadsOnScreen = (
   const owner = tabOwnerOf(match, selectedProjectId);
   const ownerTabs = owner === undefined ? undefined : tabs[owner];
   const tab = ownerTabs?.items.find(({ id }) => id === ownerTabs.selected);
-  if (tab !== undefined && isThreadPanelTab(tab) && tab.kind === 'element') {
+  if (tab?.kind === 'element' && tab.iconTag === THREAD_TAB_ICON) {
     const threadId = tab.props?.threadId;
     if (typeof threadId === 'string') shown.add(threadId);
   }

@@ -1,6 +1,12 @@
 import { type ProjectTree, threadsOf } from './project-tree.js';
 import type { Thread } from './workspace.js';
 
+/** The element the layout opens a Thread in (`openThreadTab`). */
+export const THREAD_PANEL_TAG = 'chat-thread-panel';
+
+/** The chat's element the layout draws as a Thread tab's icon; it tells a Thread tab. */
+export const THREAD_TAB_ICON = 'chat-thread-tab-icon';
+
 /** A child opens beside the current root, or beside its own root on a fresh visit. */
 export const mainThreadFor = (
   tree: ProjectTree,

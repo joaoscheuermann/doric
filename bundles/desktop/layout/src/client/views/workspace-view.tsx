@@ -55,7 +55,6 @@ import { INSET_CARD } from '../components/templates/inset-card.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
 import { descendantsInChat, isArchived } from '../domain/thread-archive.js';
-import { isThreadPanelTab } from '../domain/workspace-tabs.js';
 import { useProjectTabs } from '../hooks/use-project-tabs.js';
 import { useWorkspace } from '../hooks/use-workspace.js';
 import { useWorkspaceTabs } from '../hooks/use-workspace-tabs.js';
@@ -115,11 +114,12 @@ function Workspace() {
   useEffect(() => {
     if (projectTabs.path !== '/') setNewTab(false);
   }, [projectTabs.path]);
-  const tabOwner =
-    workspace.selectedThreadId ??
-    (workspace.selectedProjectId
-      ? `project:${workspace.selectedProjectId}`
-      : undefined);
+  // The owner the layout's watcher names in the tabs store (bundle isolation
+  // 4a, O9): `layout.tabs/v2` `setOwner` switches what the frame shows.
+  const tabOwner = useSyncExternalStore(
+    workspaceTabsStore.subscribe,
+    () => workspaceTabsStore.getState().owner,
+  );
   const tabs = useWorkspaceTabs(tabOwner);
   const { actions } = workspace;
   const panelView = useSyncExternalStore(
@@ -305,7 +305,10 @@ function Workspace() {
               )
             }
             viewerOpenBottom={tabs.items.some(
-              (tab) => tab.id === tabs.selected && isThreadPanelTab(tab),
+              (tab) =>
+                tab.id === tabs.selected &&
+                tab.kind === 'element' &&
+                tab.openBottom === true,
             )}
             sidebar={
               <ProjectSidebar

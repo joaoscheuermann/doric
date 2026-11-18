@@ -9,7 +9,7 @@ import { CommandsV1, defineCommand } from 'bundle/contracts';
 import { baseName, joinPath } from 'desktop/reads';
 import {
   type CurrentTab,
-  type TabRequest as LayoutTabRequest,
+  type LegacyTabRequest as LayoutTabRequest,
   LayoutTabsV1,
 } from 'layout/contracts';
 import { FileIcon } from 'lucide-react';

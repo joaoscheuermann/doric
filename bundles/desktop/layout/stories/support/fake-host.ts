@@ -4,8 +4,9 @@
 // `runtime/testing`: they can be created, renamed, colored and deleted; a read
 // can be held pending or made to fail, which is how the loading and error
 // states are drawn. The
-// services the layout itself provides (`layout.tabs/v1` and the rest) are
-// kept and answered in process, so a child Thread still opens its tab.
+// services the layout itself provides (`layout.tabs/v1`, `layout.tabs/v2` and
+// the rest) are kept and answered in process, so a child Thread still opens
+// its tab.
 
 import type {
   CatalogSnapshot,
@@ -20,7 +21,9 @@ import { createRoot } from 'react-dom/client';
 import type { ProjectActivity, RuntimeRecords } from 'runtime/contracts';
 import { createRecordsApi, type RecordsOperation } from 'runtime/testing';
 
+import { ThreadKindIcon } from '../../src/client/components/molecules/thread-mark.js';
 import type { ProjectPanel } from '../../src/client/components/organisms/project-panel.js';
+import { isUntitled, threadKind } from '../../src/client/domain/thread-kind.js';
 import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { activate } from '../../src/client/index.js';
 import type { StackPane, ThreadRows } from '../../src/contracts/index.js';
@@ -129,6 +132,22 @@ const terminalRowsElement = (count: number, depth: number): HTMLElement => {
         terminals: fixtureTerminals(count),
       }),
     ),
+  );
+  return element;
+};
+
+/**
+ * The chat's `<chat-thread-tab-icon>` as the running app draws it: the mark of
+ * the Thread its props name, the bubble for a Thread the story does not hold.
+ */
+const threadTabIconElement = (thread: Thread | undefined): HTMLElement => {
+  const element = document.createElement('span');
+  element.style.display = 'contents';
+  createRoot(element).render(
+    createElement(ThreadKindIcon, {
+      kind: thread === undefined ? 'main' : threadKind(thread),
+      untitled: thread !== undefined && isUntitled(thread),
+    }),
   );
   return element;
 };
@@ -394,6 +413,10 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
     'ui/v1': {
       define: () => disposable,
       create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
+        if (tag === 'chat-thread-tab-icon')
+          return threadTabIconElement(
+            options.threads?.find((thread) => thread.id === props?.threadId),
+          );
         const threadId = props?.['thread-id'];
         return tag === 'terminal-rows' && typeof threadId === 'string'
           ? terminalRowsElement(

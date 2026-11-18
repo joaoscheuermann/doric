@@ -5,17 +5,22 @@
 // and `toast` reaches it through `desktop/ui/sonner`. `<chat-block>` draws a
 // block no renderer claims. `<chat-readonly-markdown text>` (R-9.9) is the
 // conversation's read-only Markdown for another bundle's block element.
+// `<chat-thread-tab-icon projectId threadId>` (bundle isolation 4a) is the
+// mark the layout draws on a Thread's tab.
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { defineReactElement } from 'desktop/ui/react-element';
 import { TooltipProvider } from 'desktop/ui/tooltip';
-import { type ReactNode, StrictMode } from 'react';
+import { type ReactNode, StrictMode, useSyncExternalStore } from 'react';
+import { RuntimeRecordsV1 } from 'runtime/contracts';
 
 import type { RenderBlock } from '../../contracts/index.js';
 import { GenericBlock } from '../components/molecules/generic-block.js';
+import { ThreadTabIcon } from '../components/molecules/thread-tab-icon.js';
 import { ReadonlyMarkdownView } from '../components/organisms/conversation/readonly-markdown.js';
 import { conversationTheme } from '../components/organisms/conversation/theme.js';
 import { chatQueryClient } from '../queries/client.js';
+import { chatServices } from '../services/chat-services.js';
 import { ChatComposer } from '../views/chat-composer.js';
 import { ChatView, type ChatViewProps } from '../views/chat-view.js';
 
@@ -65,4 +70,46 @@ export const ChatReadonlyMarkdownElement = defineReactElement<{
   render: ({ text }) => (
     <ReadonlyMarkdownView text={text ?? ''} theme={conversationTheme} />
   ),
+});
+
+/**
+ * The Thread's tab mark, read from `runtime.records/v1` and kept current. A
+ * Thread of a Project the mirror does not describe yet is looked up in that
+ * Project's Threads, which starts their load.
+ */
+function RecordsThreadTabIcon({
+  projectId,
+  threadId,
+}: {
+  readonly projectId?: string;
+  readonly threadId?: string;
+}) {
+  const records = chatServices().use(RuntimeRecordsV1);
+  const thread = useSyncExternalStore(
+    (listener) => {
+      const subscription = records.subscribe(listener);
+      return () => subscription.dispose();
+    },
+    () => {
+      if (threadId === undefined) return undefined;
+      const described = records.thread(threadId);
+      if (described !== undefined || projectId === undefined) return described;
+      return records
+        .threads(projectId)
+        .value?.find((candidate) => candidate.id === threadId);
+    },
+  );
+  return <ThreadTabIcon thread={thread} />;
+}
+
+/**
+ * `<chat-thread-tab-icon projectId threadId>` (bundle isolation 4a): the mark
+ * of the Thread the records describe, which the layout draws on its tab.
+ */
+export const ChatThreadTabIconElement = defineReactElement<{
+  readonly projectId?: string;
+  readonly threadId?: string;
+}>({
+  props: ['projectId', 'threadId'],
+  render: (props) => <RecordsThreadTabIcon {...props} />,
 });

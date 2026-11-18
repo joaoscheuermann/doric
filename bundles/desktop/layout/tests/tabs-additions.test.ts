@@ -14,7 +14,7 @@ import {
   emptyTabs,
   readsSandbox,
 } from '../src/client/domain/workspace-tabs.js';
-import { createLayoutTabs } from '../src/client/services/layout-tabs.js';
+import { createLegacyLayoutTabs } from '../src/client/services/layout-tabs.js';
 import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
 import { LayoutTabsV1 } from '../src/contracts/index.js';
 
@@ -30,26 +30,15 @@ const ui = {
 };
 
 const setup = (initialOwner: string | undefined) => {
-  let owner = initialOwner;
-  const ownerListeners = new Set<() => void>();
+  workspaceTabsStore.getState().setOwner(initialOwner);
   const harness = createTestServices({
     bundle: { id: 'files' },
-    provide: [
-      createLayoutTabs({
-        ui,
-        owner: () => owner,
-        watchOwner: (listener) => {
-          ownerListeners.add(listener);
-          return () => ownerListeners.delete(listener);
-        },
-      }),
-    ],
+    provide: [createLegacyLayoutTabs({ ui })],
   });
   return {
     tabs: harness.services.use(LayoutTabsV1),
     setOwner: (next: string | undefined) => {
-      owner = next;
-      for (const listener of ownerListeners) listener();
+      workspaceTabsStore.getState().setOwner(next);
     },
     tabsOf: (key: string) =>
       workspaceTabsStore.getState().threads[key] ?? emptyTabs,

@@ -32,6 +32,7 @@ import {
   ChatGenericBlockElement,
   ChatReadonlyMarkdownElement,
   ChatThreadPanelElement,
+  ChatThreadTabIconElement,
   ChatViewElement,
 } from './elements/chat-elements.js';
 import { setChatHooks } from './services/chat-hooks.js';
@@ -83,6 +84,7 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define('chat-thread-panel', ChatThreadPanelElement),
     ui.define(GENERIC_BLOCK_TAG, ChatGenericBlockElement),
     ui.define('chat-readonly-markdown', ChatReadonlyMarkdownElement),
+    ui.define('chat-thread-tab-icon', ChatThreadTabIconElement),
   ];
   const route = services.use(NavigationV1).register({
     path: THREAD_ROUTE,

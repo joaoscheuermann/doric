@@ -39,6 +39,10 @@ export interface TabSeed {
   readonly title: string;
   readonly tag: string;
   readonly icon?: 'file' | 'file-diff' | 'terminal' | 'thread';
+  /** `layout.tabs/v2`: the element drawn as the trigger's icon. */
+  readonly iconTag?: string;
+  /** `layout.tabs/v2`: the viewer card draws no bottom padding under it. */
+  readonly openBottom?: boolean;
   readonly props?: Readonly<Record<string, unknown>>;
 }
 
@@ -92,6 +96,10 @@ const tabsOf = (
           element: placeholderElement(seed.tag, seed.props, seed.title),
           ...(seed.props === undefined ? {} : { props: seed.props }),
           ...(seed.icon === undefined ? {} : { icon: seed.icon }),
+          ...(seed.iconTag === undefined ? {} : { iconTag: seed.iconTag }),
+          ...(seed.openBottom === undefined
+            ? {}
+            : { openBottom: seed.openBottom }),
           ariaLabel: seed.title,
           tooltip: seed.title,
         }),

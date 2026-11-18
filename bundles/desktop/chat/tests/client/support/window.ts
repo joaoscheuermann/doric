@@ -31,6 +31,7 @@ import {
   type WindowCatalog,
 } from 'desktop/client';
 import { Window } from 'happy-dom';
+import { createRecordsFake, type RecordsFakeOptions } from 'runtime/testing';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CHAT_DIST = resolve(here, '../../../../dist');
@@ -270,6 +271,39 @@ const probeCandidate = (probe: Probe): CatalogCandidate => ({
   errors: [],
 });
 
+/**
+ * The records bundle: a client part that provides `runtime.records/v1` from
+ * `createRecordsFake`, which the chat requires (bundle isolation 4a, O7).
+ */
+const recordsCandidate: CatalogCandidate = {
+  id: 'records',
+  source: { kind: 'installed', dir: 'records@1.0.0' },
+  manifest: {
+    manifestVersion: 1,
+    id: 'records',
+    version: '1.0.0',
+    engines: { doric: '^1.0.0' },
+    provides: ['runtime.records/v1@1.0.0'],
+    requires: [],
+  },
+  descriptor: {
+    descriptorVersion: 1,
+    bundle: { id: 'records', version: '1.0.0' },
+    contracts: [
+      {
+        id: 'runtime.records/v1',
+        version: '1.0.0',
+        kind: 'service' as const,
+        environment: 'client' as const,
+        cardinality: 'one' as const,
+        local: true,
+        schema: 'schemas/runtime.records/v1.json',
+      },
+    ],
+  },
+  errors: [],
+};
+
 const partUrl = (id: string, version: string): string =>
   `doric://app/bundles/${id}@${version}/client/index.js`;
 
@@ -335,6 +369,8 @@ export const openChatWindow = async (input: {
    * `models/v1.<method>` handlers of `host`; without it the host has none.
    */
   readonly modelsV1?: ModelsV1Version;
+  /** What the window's `runtime.records/v1` fake holds; empty without it. */
+  readonly records?: RecordsFakeOptions;
 }): Promise<ChatWindow> => {
   const window = new Window({ url: input.url, width: 1280, height: 800 });
   // happy-dom runs no Web Animations and implements `getAnimations` on shadow
@@ -399,6 +435,7 @@ export const openChatWindow = async (input: {
       errors: [],
     },
     hostCandidateFor(input.modelsV1),
+    recordsCandidate,
     {
       id: 'chat',
       source: { kind: 'installed', dir: `chat@${chatManifest.version}` },
@@ -425,6 +462,7 @@ export const openChatWindow = async (input: {
     parts: {
       core: { entry: partUrl('core', coreManifest.version) },
       chat: { entry: partUrl('chat', chatManifest.version) },
+      records: { entry: partUrl('records', '1.0.0') },
       ...(input.probe === undefined
         ? {}
         : { probe: { entry: partUrl('probe', '1.0.0') } }),
@@ -631,6 +669,11 @@ export const openChatWindow = async (input: {
   const modules: Record<string, { activate?: Activate }> = {
     [partUrl('core', coreManifest.version)]: core,
     [partUrl('chat', chatManifest.version)]: chat,
+    [partUrl('records', '1.0.0')]: {
+      activate: ({ services }) => {
+        services.provide(createRecordsFake(input.records));
+      },
+    },
     ...(input.probe === undefined
       ? {}
       : { [partUrl('probe', '1.0.0')]: { activate: input.probe.activate } }),
