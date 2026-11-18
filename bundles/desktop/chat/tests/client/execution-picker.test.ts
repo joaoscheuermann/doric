@@ -13,8 +13,8 @@
 // keep their DOM assertions. What changed with the move (decision O5): what a
 // case reads of the host's configuration is now what the fake view carries;
 // "no replace" and "reads nothing else" are T6.3's; a read failure is counted
-// in `reload` calls; the layout's record is the records mirror; "without
-// layout.workspace/v1" is "without workspace.selection/v1".
+// in `reload` calls; the layout's record is the records mirror; a window
+// without the layout's selection is one without workspace.selection/v1.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -1291,7 +1291,7 @@ test("the read notice's Retry calls settings.models/v1.reload once and writes no
 /* New with the move                                                   */
 /* ------------------------------------------------------------------ */
 
-test('T6.4-23, AC6.4: the chat manifest is 1.9.0 on platform ^1.9.0, names the picker, takes settings.models/v1 and workspace.selection/v1 as optional and requires what it required', () => {
+test('T6.4-23, AC6.4: the chat manifest is 1.9.1 on platform ^1.9.0, names the picker, takes settings.models/v1 and workspace.selection/v1 as optional, no layout.* contract, and requires what it required', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as {
@@ -1302,7 +1302,7 @@ test('T6.4-23, AC6.4: the chat manifest is 1.9.0 on platform ^1.9.0, names the p
     readonly optional: readonly string[];
   };
 
-  assert.equal(manifest.version, '1.9.0');
+  assert.equal(manifest.version, '1.9.1');
   assert.equal(manifest.engines.doric, '^1.9.0');
   assert.equal(
     manifest.description,
@@ -1310,6 +1310,12 @@ test('T6.4-23, AC6.4: the chat manifest is 1.9.0 on platform ^1.9.0, names the p
   );
   assert.ok(manifest.optional.includes('settings.models/v1'));
   assert.ok(manifest.optional.includes('workspace.selection/v1'));
+  // Bundle isolation 4(d): the Threads come from runtime.records/v1, so the
+  // layout's transition line leaves.
+  assert.deepEqual(
+    manifest.optional.filter((id) => id.startsWith('layout.')),
+    [],
+  );
   assert.deepEqual(
     [...manifest.requires].sort(),
     [

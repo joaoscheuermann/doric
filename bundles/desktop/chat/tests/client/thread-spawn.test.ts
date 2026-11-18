@@ -7,21 +7,9 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
-import {
-  type ClientContext,
-  defineMethod,
-  defineService,
-  ref,
-} from 'bundle/contracts';
-import { z } from 'zod';
-
 import { assertToolNotice } from './support/notices.js';
-import {
-  type ChatWindow,
-  openChatWindow,
-  type Probe,
-  settle,
-} from './support/window.js';
+import { selectionProbe } from './support/selection.js';
+import { type ChatWindow, openChatWindow, settle } from './support/window.js';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const threadId = '22222222-2222-4222-8222-222222222222';
@@ -36,7 +24,8 @@ const thread = (overrides: Record<string, unknown> = {}) => ({
   id: threadId,
   name: 'Fix the parser',
   projectId,
-  state: 'idle',
+  state: 'ready',
+  lastSequence: 0,
   cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -98,36 +87,11 @@ const host = (record: unknown) => ({
   'runtime.threads/v1.queue': () => emptyQueue,
 });
 
-/** A probe standing in for the layout's `layout.workspace/v1` tree. */
-const workspaceProbe = (): Probe => ({
-  provides: ['layout.workspace/v1'],
-  activate: ({ services }: ClientContext) => {
-    const LayoutWorkspaceV1 = ref<{
-      thread(id: string): unknown;
-      selectedThread(): unknown;
-      subscribe(listener: () => void): { dispose(): void };
-    }>('layout.workspace/v1');
-    services.provide(
-      defineService(LayoutWorkspaceV1, {
-        thread: defineMethod({
-          input: z.string(),
-          output: z.unknown(),
-          execute: (id: string) => records.find((entry) => entry.id === id),
-        }),
-        selectedThread: defineMethod({
-          input: z.tuple([]),
-          output: z.unknown(),
-          execute: () => records[0],
-        }),
-        subscribe: defineMethod({
-          input: z.custom<() => void>((value) => typeof value === 'function'),
-          output: z.custom<{ dispose(): void }>(),
-          execute: () => ({ dispose: () => undefined }),
-        }),
-      }) as never,
-    );
-  },
-});
+/** A probe that provides `workspace.selection/v1`; `recordsApi` holds the records. */
+const workspace = selectionProbe(
+  () => records[0],
+  (id) => records.find((entry) => entry.id === id),
+);
 
 let opened: ChatWindow | undefined;
 
@@ -162,7 +126,8 @@ const open = async (): Promise<ChatWindow> => {
   opened = await openChatWindow({
     url,
     host: host(thread()),
-    probe: workspaceProbe(),
+    probe: workspace,
+    recordsApi: workspace.recordsApi,
   });
   return opened;
 };

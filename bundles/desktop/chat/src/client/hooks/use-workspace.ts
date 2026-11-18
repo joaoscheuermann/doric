@@ -1,19 +1,23 @@
-// The chat's reading of `layout.workspace/v1` (D9-9): the sidebar tree's
-// records, re-read whenever the tree, the selection or the provider itself
-// changes. Without a layout bundle every read is `undefined`.
+// The chat's reading of the window's Threads: their records from
+// `runtime.records/v1` and the selected Thread's id from
+// `workspace.selection/v1`, re-read whenever the records, the selection or
+// the selection's provider change. Without a `workspace.selection/v1`
+// provider nothing is selected and `useHasWorkspace` is false.
 
 import { useRef, useSyncExternalStore } from 'react';
+import { RuntimeRecordsV1 } from 'runtime/contracts';
 
-import type { LayoutWorkspace } from '../api/workspace-contract.js';
 import type { Thread } from '../domain/workspace.js';
+import { chatServices } from '../services/chat-services.js';
 import {
-  currentWorkspace,
-  subscribeWorkspaceProvider,
-} from '../services/chat-services.js';
+  currentWorkspaceSelection,
+  subscribeExecutionSources,
+} from '../stores/execution-sources.js';
 
 let version = 0;
 const listeners = new Set<() => void>();
-let attached: { dispose(): void } | undefined;
+let selectionAttached: { dispose(): void } | undefined;
+let recordsAttached: { dispose(): void } | undefined;
 let detachProvider: (() => void) | undefined;
 
 const bump = (): void => {
@@ -21,14 +25,14 @@ const bump = (): void => {
   for (const listener of [...listeners]) listener();
 };
 
-/** Follows the current provider while anything listens. */
-const attach = (): void => {
-  attached?.dispose();
-  attached = undefined;
-  const workspace = currentWorkspace();
-  if (workspace === undefined) return;
+/** Follows the current selection provider while anything listens. */
+const attachSelection = (): void => {
+  selectionAttached?.dispose();
+  selectionAttached = undefined;
+  const selection = currentWorkspaceSelection();
+  if (selection === undefined) return;
   try {
-    attached = workspace.subscribe(bump);
+    selectionAttached = selection.subscribe(bump);
   } catch {
     // A provider that cannot be followed is read on the next provider change.
   }
@@ -37,45 +41,63 @@ const attach = (): void => {
 const subscribe = (listener: () => void): (() => void) => {
   listeners.add(listener);
   if (listeners.size === 1) {
-    detachProvider = subscribeWorkspaceProvider(() => {
-      attach();
+    let selection = currentWorkspaceSelection();
+    detachProvider = subscribeExecutionSources(() => {
+      if (currentWorkspaceSelection() === selection) return;
+      selection = currentWorkspaceSelection();
+      attachSelection();
       bump();
     });
-    attach();
+    attachSelection();
+    try {
+      recordsAttached = chatServices().use(RuntimeRecordsV1).subscribe(bump);
+    } catch {
+      // Records that cannot be followed are read on the next selection change.
+    }
   }
   return () => {
     listeners.delete(listener);
     if (listeners.size > 0) return;
     detachProvider?.();
     detachProvider = undefined;
-    attached?.dispose();
-    attached = undefined;
+    selectionAttached?.dispose();
+    selectionAttached = undefined;
+    recordsAttached?.dispose();
+    recordsAttached = undefined;
   };
 };
 
 const snapshot = (): number => version;
 
-const read = <T>(run: (workspace: LayoutWorkspace) => T): T | undefined => {
-  const workspace = currentWorkspace();
-  if (workspace === undefined) return undefined;
+/** The records' Thread of an id, when they hold it. */
+const recordOf = (threadId: string): Thread | undefined => {
   try {
-    return run(workspace);
+    return chatServices().use(RuntimeRecordsV1).thread(threadId);
+  } catch {
+    return undefined;
+  }
+};
+
+/** The id of the Thread the window selects, while a provider answers. */
+const selectedThreadId = (): string | undefined => {
+  try {
+    return currentWorkspaceSelection()?.current().threadId;
   } catch {
     return undefined;
   }
 };
 
 /**
- * Re-renders on every workspace change and returns its version, so a reader
- * can memoize what it derives from the tree.
+ * Re-renders on every change of the records or the selection and returns its
+ * version, so a reader can memoize what it derives from them.
  */
 export const useWorkspaceVersion = (): number =>
   useSyncExternalStore(subscribe, snapshot, snapshot);
 
-/** Whether a `layout.workspace/v1` provider is available. */
+/** Whether a `workspace.selection/v1` provider answers. */
 export const useHasWorkspace = (): boolean => {
   useWorkspaceVersion();
-  return currentWorkspace() !== undefined;
+  return currentWorkspaceSelection() !== undefined;
 };
 
 const same = (left: Thread | undefined, right: Thread | undefined): boolean =>
@@ -96,20 +118,21 @@ const useStableThread = (next: Thread | undefined): Thread | undefined => {
   return previous.current;
 };
 
-/** The tree's record of one Thread, when the tree holds it. */
+/** The records' Thread of an id, when they hold it. */
 export const useWorkspaceThread = (
   threadId: string | undefined,
 ): Thread | undefined => {
   useWorkspaceVersion();
   return useStableThread(
-    threadId === undefined
-      ? undefined
-      : read((workspace) => workspace.thread(threadId)),
+    threadId === undefined ? undefined : recordOf(threadId),
   );
 };
 
-/** The record of the Thread the window selects. */
+/** The records' Thread the window selects. */
 export const useSelectedThread = (): Thread | undefined => {
   useWorkspaceVersion();
-  return useStableThread(read((workspace) => workspace.selectedThread()));
+  const threadId = selectedThreadId();
+  return useStableThread(
+    threadId === undefined ? undefined : recordOf(threadId),
+  );
 };

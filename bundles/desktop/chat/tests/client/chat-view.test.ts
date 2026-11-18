@@ -12,11 +12,8 @@ import {
   type ClientContext,
   CommandsV1,
   defineCommand,
-  defineMethod,
-  defineService,
   HooksV1,
   isContractError,
-  ref,
   UiV1,
 } from 'bundle/contracts';
 import {
@@ -45,6 +42,7 @@ import {
   noticesTitled,
   retryOf,
 } from './support/notices.js';
+import { selectionProbe } from './support/selection.js';
 import {
   type ChatWindow,
   openChatWindow,
@@ -62,7 +60,8 @@ const thread = (overrides: Record<string, unknown> = {}) => ({
   id: threadId,
   name: 'Fix the parser',
   projectId,
-  state: 'idle',
+  state: 'ready',
+  lastSequence: 0,
   cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -601,6 +600,50 @@ test('T4.11: mounted for a Thread the records mirror does not describe yet, chat
   );
 });
 
+// Bundle isolation 4(d), O3: the conversation's Thread comes from
+// `runtime.records/v1` while a `workspace.selection/v1` provider answers (the
+// navigation that describes the Projects is there); without one the host is
+// asked once.
+test('without a workspace.selection/v1 provider, chat-view asks the host once for its Thread', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await settle(50);
+
+  assert.deepEqual(
+    opened
+      .received('runtime.threads/v1.thread')
+      .map((envelope) => envelope.input),
+    [[threadId]],
+  );
+  assert.equal(opened.watches().length, 1);
+});
+
+test("with a workspace.selection/v1 provider, chat-view opens on the records' Thread once they hold it, without asking the host", async () => {
+  let held = false;
+  const workspace = selectionProbe(
+    () => thread(),
+    (id) => (held && id === threadId ? thread() : undefined),
+  );
+  opened = await openChatWindow({
+    url,
+    host: host(thread()),
+    probe: workspace,
+    recordsApi: workspace.recordsApi,
+  });
+  await settle(50);
+  assert.equal(
+    opened.watches().length,
+    0,
+    'the conversation opened before the records held its Thread',
+  );
+
+  held = true;
+  workspace.notify();
+  await settle(50);
+
+  assert.equal(opened.watches().length, 1);
+  assert.deepEqual(opened.received('runtime.threads/v1.thread'), []);
+});
+
 test('a versioned event nobody projects is drawn as a generic block', async () => {
   opened = await openChatWindow({ url, host: host(thread()) });
   await deliver(opened, [
@@ -842,45 +885,8 @@ test('editor nodes are accepted until the first conversation editor exists, then
   );
 });
 
-// The footer composer, with a probe standing in for the layout's
-// `layout.workspace/v1` (the selected Thread).
-
-const workspaceProbe = (
-  selected: () => unknown,
-  record?: (id: string) => unknown,
-): Probe => ({
-  provides: ['layout.workspace/v1'],
-  activate: ({ services }: ClientContext) => {
-    const LayoutWorkspaceV1 = ref<{
-      thread(id: string): unknown;
-      selectedThread(): unknown;
-      subscribe(listener: () => void): { dispose(): void };
-    }>('layout.workspace/v1');
-    services.provide(
-      defineService(LayoutWorkspaceV1, {
-        thread: defineMethod({
-          input: z.string(),
-          output: z.unknown(),
-          execute: (id: string) => {
-            if (record) return record(id);
-            const current = selected() as { id?: string } | undefined;
-            return current?.id === id ? current : undefined;
-          },
-        }),
-        selectedThread: defineMethod({
-          input: z.tuple([]),
-          output: z.unknown(),
-          execute: () => selected(),
-        }),
-        subscribe: defineMethod({
-          input: z.custom<() => void>((value) => typeof value === 'function'),
-          output: z.custom<{ dispose(): void }>(),
-          execute: () => ({ dispose: () => undefined }),
-        }),
-      }) as never,
-    );
-  },
-});
+// The footer composer, with a probe that provides `workspace.selection/v1`
+// (the selected Thread) and the window's `runtime.records/v1` (its record).
 
 const footer = async (window: ChatWindow): Promise<Element> => {
   const region = window.document.createElement('core-region');
@@ -906,14 +912,16 @@ test('without a selected Thread the composer offers a disabled send', async () =
 });
 
 test('while the selected Thread runs, the composer stops its active prompt', async () => {
+  const running = selectionProbe(() =>
+    thread({ state: 'running', activePromptId: promptId }),
+  );
   opened = await openChatWindow({
     url: 'doric://app/elsewhere',
     host: host(thread(), {
       'runtime.threads/v1.pause': () => 'interrupted',
     }),
-    probe: workspaceProbe(() =>
-      thread({ state: 'running', activePromptId: promptId }),
-    ),
+    probe: running,
+    recordsApi: running.recordsApi,
   });
   const region = await footer(opened);
 
@@ -935,7 +943,7 @@ test('two conversations keep their drafts and footer sends scoped to their own T
   let create:
     | ((tag: string, props: Record<string, string>) => HTMLElement)
     | undefined;
-  const workspace = workspaceProbe(
+  const workspace = selectionProbe(
     () => records[0],
     (id) => records.find((entry) => entry.id === id),
   );
@@ -944,6 +952,7 @@ test('two conversations keep their drafts and footer sends scoped to their own T
     host: host(thread(), {
       'runtime.threads/v1.prompt': () => ({ status: 'accepted', promptId }),
     }),
+    recordsApi: workspace.recordsApi,
     probe: {
       provides: workspace.provides,
       requires: ['chat.lexical/v1@^1.0.0', 'ui/v1@^1.0.0'],
@@ -1032,7 +1041,7 @@ test('Cmd+Enter sends the Thread of the conversation holding the focus', async (
   let create:
     | ((tag: string, props: Record<string, string>) => HTMLElement)
     | undefined;
-  const workspace = workspaceProbe(
+  const workspace = selectionProbe(
     () => records[0],
     (id) => records.find((entry) => entry.id === id),
   );
@@ -1042,6 +1051,7 @@ test('Cmd+Enter sends the Thread of the conversation holding the focus', async (
     host: host(thread(), {
       'runtime.threads/v1.prompt': () => ({ status: 'accepted', promptId }),
     }),
+    recordsApi: workspace.recordsApi,
     probe: {
       provides: workspace.provides,
       requires: ['chat.lexical/v1@^1.0.0', 'ui/v1@^1.0.0'],
@@ -1134,13 +1144,14 @@ test('a child conversation footer stops its Thread while the main Thread stays s
     thread({ state: 'running', activePromptId: promptId }),
     thread({ id: childId, state: 'running', activePromptId: childPrompt }),
   ];
-  const workspace = workspaceProbe(
+  const workspace = selectionProbe(
     () => records[0],
     (id) => records.find((entry) => entry.id === id),
   );
   opened = await openChatWindow({
     url,
     host: host(thread(), { 'runtime.threads/v1.pause': () => 'interrupted' }),
+    recordsApi: workspace.recordsApi,
     probe: {
       provides: workspace.provides,
       requires: ['ui/v1@^1.0.0'],
@@ -1237,13 +1248,14 @@ test('a sub-thread viewer draws its composer in its floating footer band', async
     | ((tag: string, props: Record<string, string>) => HTMLElement)
     | undefined;
   const records = [thread(), thread({ id: childId })];
-  const workspace = workspaceProbe(
+  const workspace = selectionProbe(
     () => records[0],
     (id) => records.find((entry) => entry.id === id),
   );
   opened = await openChatWindow({
     url: 'doric://app/elsewhere',
     host: host(thread()),
+    recordsApi: workspace.recordsApi,
     probe: {
       provides: workspace.provides,
       requires: ['ui/v1@^1.0.0'],

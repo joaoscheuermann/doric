@@ -174,12 +174,17 @@ desktop part, as Papercraft does.
   `commands/v1`, `menus/v1`, `runtime.threads/v1`, `runtime.attachments/v1`,
   `runtime.records/v1` (from 1.8.2, for `<chat-thread-tab-icon>`),
   `comments/v1`, `chat.composer/v1` and, from 1.8.4, `layout.tabs/v2`.
-- **Optional:** `history.snapshots/v1`, `models/v1`, `layout.workspace/v1`,
+- **Optional:** `history.snapshots/v1`, `models/v1`,
   `comments.added/v1`, `comments.resolved/v1`, `runtime.prompt-finished/v1`,
   `workspace.hooks/v1`, `settings.models/v1` and `workspace.selection/v1`
-  (from 1.9.0, for the execution picker), and `terminal/v1` or
-  `runtime.terminals/v1` for live terminal output. Without them the
-  conversation still works.
+  (from 1.9.0, for the execution picker; from 1.9.1, for the conversation
+  too), and `terminal/v1` or `runtime.terminals/v1` for live terminal output.
+  Without them the conversation still works.
+
+`<chat-view>` opens its Thread on the record of `runtime.records/v1`, kept
+current as the records change, and the composer acts on the Thread
+`workspace.selection/v1` selects (chat 1.9.1); without `workspace` the
+conversation asks the host for its Thread once.
 
 ## The execution picker
 

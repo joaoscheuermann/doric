@@ -27,12 +27,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
-import {
-  type ClientContext,
-  defineMethod,
-  defineService,
-  ref,
-} from 'bundle/contracts';
+import type { ClientContext } from 'bundle/contracts';
 import {
   $createRangeSelection,
   $createTextNode,
@@ -48,9 +43,9 @@ import {
   type LexicalEditor,
   UNDO_COMMAND,
 } from 'lexical';
-import { z } from 'zod';
 
 import { ChatLexicalV1, READER_NAME } from '../../src/contracts/index.js';
+import { selectionProbe } from './support/selection.js';
 import {
   type ChatWindow,
   type OpenStream,
@@ -68,7 +63,8 @@ const thread = () => ({
   id: threadId,
   name: 'Review the parser',
   projectId,
-  state: 'idle',
+  state: 'ready',
+  lastSequence: 0,
   cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -148,13 +144,16 @@ afterEach(async () => {
   editors.clear();
 });
 
-/** A probe standing in for the layout's `layout.workspace/v1` (the selected
- * Thread), so the composer binds to the Thread the test opens, and collecting
- * every editor the window creates. */
+const workspace = selectionProbe(thread);
+
+/** A probe that provides `workspace.selection/v1` (the selected Thread, whose
+ * record `workspace.recordsApi` answers), so the composer binds to the Thread
+ * the test opens, and collecting every editor the window creates. */
 const workspaceProbe = (): Probe => ({
-  provides: ['layout.workspace/v1'],
+  provides: workspace.provides,
   requires: ['chat.lexical/v1@^1.0.0'],
-  activate: ({ services }: ClientContext) => {
+  activate: (context: ClientContext) => {
+    const { services } = context;
     services.use(ChatLexicalV1).registerExtension(
       defineExtension({
         name: 'test/comment-selection',
@@ -166,30 +165,7 @@ const workspaceProbe = (): Probe => ({
         },
       }),
     );
-    const LayoutWorkspaceV1 = ref<{
-      thread(id: string): unknown;
-      selectedThread(): unknown;
-      subscribe(listener: () => void): { dispose(): void };
-    }>('layout.workspace/v1');
-    services.provide(
-      defineService(LayoutWorkspaceV1, {
-        thread: defineMethod({
-          input: z.string(),
-          output: z.unknown(),
-          execute: (id: string) => (id === threadId ? thread() : undefined),
-        }),
-        selectedThread: defineMethod({
-          input: z.tuple([]),
-          output: z.unknown(),
-          execute: () => thread(),
-        }),
-        subscribe: defineMethod({
-          input: z.custom<() => void>((value) => typeof value === 'function'),
-          output: z.custom<{ dispose(): void }>(),
-          execute: () => ({ dispose: () => undefined }),
-        }),
-      }) as never,
-    );
+    return workspace.activate(context);
   },
 });
 
@@ -209,6 +185,7 @@ const open = async (
   opened = await openChatWindow({
     url,
     probe: workspaceProbe(),
+    recordsApi: workspace.recordsApi,
     host: {
       'runtime.threads/v1.thread': () => thread(),
       'runtime.threads/v1.queue': () => emptyQueue,

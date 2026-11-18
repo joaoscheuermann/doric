@@ -28,7 +28,6 @@ import {
   fromTerminalService,
   TerminalServiceV1,
 } from './api/terminals-contract.js';
-import { LayoutWorkspaceV1 } from './api/workspace-contract.js';
 import { WorkspaceSelectionV1 } from './api/workspace-selection.js';
 import { THREAD_ROUTE } from './domain/thread-route.js';
 import {
@@ -41,11 +40,7 @@ import {
   ChatViewElement,
 } from './elements/chat-elements.js';
 import { setChatHooks } from './services/chat-hooks.js';
-import {
-  initChat,
-  setHistory,
-  setWorkspace,
-} from './services/chat-services.js';
+import { initChat, setHistory } from './services/chat-services.js';
 import {
   createChatLexical,
   setChatLexicalRegistry,
@@ -120,10 +115,6 @@ export function activate({ services }: ClientContext): Cleanup {
     when: { path: THREAD_ROUTE },
   });
 
-  const workspace = services.whenAvailable(LayoutWorkspaceV1, (api) => {
-    setWorkspace(api);
-    return () => setWorkspace(undefined);
-  });
   // The footer's execution picker reads the selection while `workspace`
   // answers, and is a footer item only while `settings` answers its view
   // (bundle isolation 6(c), decisions O2 and O4).
@@ -177,7 +168,6 @@ export function activate({ services }: ClientContext): Cleanup {
     models.dispose();
     settingsModels.dispose();
     selection.dispose();
-    workspace.dispose();
     composer.dispose();
     sendCommand.dispose();
     route.dispose();

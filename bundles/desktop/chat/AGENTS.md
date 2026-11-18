@@ -51,6 +51,8 @@ src/client/
 - `workspace.hooks/v1` is observed through a structural copy
   (`src/client/api/workspace-hooks.ts`); nothing imports `workspace/contracts`
   and `package.json` lists no `workspace` (OD40 O2).
+- `workspace.selection/v1` is read through the copy
+  `src/client/api/workspace-selection.ts` by the picker and the conversation.
 
 ## Styling
 

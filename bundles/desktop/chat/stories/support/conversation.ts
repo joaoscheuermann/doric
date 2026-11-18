@@ -2,7 +2,7 @@
 // against: one realistic Thread whose durable log covers every kind of turn
 // the transcript draws, small logs for the node stories, and the window state
 // the conversation reads (the opened-Thread store, the queue query, the
-// composer's stack and draft, the sidebar tree, the live terminals and the
+// composer's stack and draft, the Thread records, the live terminals and the
 // queue edit). Every shape is the host's, so the projection, the stores and
 // the nodes read exactly what a window fed by the host would.
 //
@@ -11,13 +11,13 @@
 // write, so a click in a story never leaves the page.
 
 import { QueryClient } from '@tanstack/react-query';
+import { createRecordsApi } from 'runtime/testing';
 
 import { setModelsApi } from '../../src/client/api/model-icons.js';
 import type {
   ChatTerminalsApi,
   Terminal,
 } from '../../src/client/api/terminals-contract.js';
-import type { LayoutWorkspace } from '../../src/client/api/workspace-contract.js';
 import { READER_NAME } from '../../src/client/domain/conversation-authors.js';
 import {
   emptyProjection,
@@ -29,10 +29,8 @@ import type { QueueItem, ThreadQueue } from '../../src/client/domain/queue.js';
 import { emptyThreadChats } from '../../src/client/domain/thread-chats.js';
 import type { Thread, ThreadEvent } from '../../src/client/domain/workspace.js';
 import { queryKeys } from '../../src/client/queries/keys.js';
-import {
-  initChat,
-  setWorkspace,
-} from '../../src/client/services/chat-services.js';
+import { initChat } from '../../src/client/services/chat-services.js';
+import { setWorkspaceSelection } from '../../src/client/stores/execution-sources.js';
 import { setTerminalServiceApi } from '../../src/client/stores/live-terminals.js';
 import {
   type QueueEdit,
@@ -134,7 +132,7 @@ export const idleThread: Thread = {
   state: 'idle',
 };
 
-/** The sidebar tree the stories' delegated rows name their senders from. */
+/** The Thread records the stories' delegated rows name their senders from. */
 export const workspaceThreads: readonly Thread[] = [
   redesignThread,
   childThread,
@@ -580,8 +578,8 @@ export interface StoryHost {
 /**
  * Hands the chat the activation services a story runs on: the connection is
  * up, the queue answers from the fixtures, the composer keeps a draft seeded
- * from them, and every other call is refused. The sidebar tree and the live
- * terminals are set too.
+ * from them, and every other call is refused. The Thread records, an empty
+ * selection and the live terminals are set too.
  */
 export const installStoryHost = (host: StoryHost = {}): void => {
   const queues = host.queues ?? {};
@@ -617,6 +615,12 @@ export const installStoryHost = (host: StoryHost = {}): void => {
   /** The ids the composer's stack hands the items a story adds. */
   let added = 0;
   const apis: Readonly<Record<string, object>> = {
+    'runtime.records/v1': {
+      ...createRecordsApi(),
+      thread: (threadId: string) =>
+        workspaceThreads.find((thread) => thread.id === threadId),
+      subscribe: () => disposable,
+    },
     // A link to another Thread goes nowhere: the story has no router.
     'navigation/v1': fake({ navigate: () => Promise.resolve() }),
     'doric.connection/v1': fake({
@@ -720,13 +724,7 @@ export const installStoryHost = (host: StoryHost = {}): void => {
   initChat(services);
   setModelsApi(storyModels);
 
-  const workspace: LayoutWorkspace = {
-    thread: (threadId) =>
-      workspaceThreads.find((thread) => thread.id === threadId),
-    selectedThread: () => undefined,
-    subscribe: () => disposable,
-  };
-  setWorkspace(workspace);
+  setWorkspaceSelection({ current: () => ({}), subscribe: () => disposable });
 
   const api: ChatTerminalsApi = {
     snapshot: (terminalId) => {

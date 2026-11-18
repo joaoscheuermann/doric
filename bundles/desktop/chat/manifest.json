@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "chat",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "engines": {
     "doric": "^1.9.0"
   },
@@ -19,7 +19,6 @@
     "terminal/v1",
     "runtime.terminals/v1",
     "models/v1",
-    "layout.workspace/v1",
     "comments.added/v1",
     "comments.resolved/v1",
     "runtime.prompt-finished/v1",
