@@ -3,8 +3,9 @@
 `layout` is the Doric workspace window you work in: a dashboard of your
 Projects, a tab per open Project, a sidebar with each Project's tree of
 Threads, the conversation in the middle, a Project panel and tabs beside it,
-and footers for status. It draws no feature of its own. Files, Git, terminals,
-usage and resources are other bundles that fill the slots it offers.
+and footers for status. It draws no feature of its own. Files, Git, terminals
+and usage are other bundles that fill the slots it offers; `resources` fills
+`account`'s `account.status` slot, not a layout slot.
 
 It is a desktop bundle with one client part (the frame and its contracts),
 loaded by the `bundle` platform. See the [main README](../../../README.md) for
@@ -198,7 +199,9 @@ conversation, the viewer tabs and the Project panel.
 | `layout.dashboard.page`      | a page the dashboard draws instead of its project list                                                                                | `settings`' provider page, shown through `layout.dashboard/v1`                     |
 
 Layout 4.2.0 to 4.7.0 gave the six slots that existed before these names, one
-slot per version; an item added under an old name is not drawn. The CSS
+slot per version; an item added under an old name is not drawn. Layout 4.7.1
+dropped `layout.account.status`, which became `account`'s `account.status`
+(see [account's README](../account/README.md)). The CSS
 variable the conversation frame sets is `--shell-conversation-footer-height`
 (it was `--chat-footer-height`).
 

@@ -1,7 +1,12 @@
 # account
 
-The account status, its menu and About. Read `README.md` for what it draws
-and its slots.
+These instructions apply to `bundles/desktop/account` and narrow
+`bundles/AGENTS.md` (once it exists) and the root [`AGENTS.md`](../../../AGENTS.md).
+
+## Function
+
+The reader's account status, its menu and About. Read [`README.md`](README.md)
+for what it draws and its slots.
 
 ## Layers
 
@@ -14,17 +19,10 @@ and its slots.
 - `src/client/domain/`: pure modules (`menu-items.ts`, the props check) and
   the About store (`about.ts`).
 
-## Boundaries
+## Links
 
-- No value import of another bundle's contracts (D32); slot names of other
-  bundles are `import type` with `satisfies typeof`.
-- No `<core-region>`: slot items are drawn with `useRegionItems` and
-  `ElementHost`.
-- Only `ui/v1`, `regions/v1`, `commands/v1` and `doric.about/v1` (followed
-  with `whenAvailable`).
-
-## Tests
-
-Each client test renders `account-status` alone through `renderAccount`
-(`tests/client/support/render-account.ts`), on the fake host of
-`stories/support/fake-host.ts`.
+- [`manifest.json`](manifest.json): the contracts it provides, requires and
+  may use.
+- [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json):
+  its entries, by the id `account`.
+- Feature doc: [bundle isolation](../../../docs/features/bundle-isolation.md).

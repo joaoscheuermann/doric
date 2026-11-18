@@ -22,13 +22,16 @@ footer picker), loaded by the `bundle` platform. See the
   the workspace default read-only, titled "New threads start on the workspace
   default. Change it in Settings." It never writes `models.execution`: the workspace default
   changes only in Settings. The bundle requires `runtime.threads/v1` and
-  reads `layout.workspace/v1` optionally.
+  reads `layout.workspace/v1` optionally; `core.open-settings/v1` is
+  `optional` too.
 - **Sections:** six child routes of `/settings`, each listed in the window's
   nav through the `settings.sections` region.
 - **Region:** `settings.sections`, where other bundles add their own sections.
 - **Account menu entry:** the "Settings" data item in the `account` bundle's
   `account.menu` slot, drawn with `<settings-entry-icon>`; it runs
-  `core.open-settings/v1` with `defaultPath: '/settings'`.
+  `core.open-settings/v1` with `defaultPath: '/settings'`. `settings` loads
+  without `account`: it imports `account/contracts` as a type only
+  (`import type`), so the entry is simply not drawn.
 - **Contract:** `settings.config/v1` (client), the window's one autosave draft
   for sections other bundles draw.
 

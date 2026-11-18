@@ -8,8 +8,15 @@ export const ACCOUNT_STATUS = 'account.status';
 /**
  * The entries of the account menu, between its header (the reader's name and
  * "Local account") and its About line. Items are data items: `props` are
- * `AccountMenuItemProps`, and `tag` is the filler's icon element, drawn at
- * 16 px before the label. An item whose props fail the type is not drawn.
+ * `AccountMenuItemProps`, and `tag` is the filler's icon element, drawn before
+ * the label. The owner does not size it: the filler's element should draw an
+ * SVG at 16 px (`size-4`); the menu item's `svg` size rule is the only sizing.
+ *
+ * An item is dropped (not drawn) when its `label` is not a string, its
+ * `command` fails `isContractId`, or its `input` is present but not a plain
+ * object. It is reported once per id per activation with a `Doric:` error
+ * (`console.error`). A pick that fails is logged with
+ * `console.error('Doric: the command … could not run:')`.
  */
 export const ACCOUNT_MENU = 'account.menu';
 
