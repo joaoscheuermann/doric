@@ -1,22 +1,25 @@
-// The layout's client contracts the MCP part calls, built from their IDs with
-// the owner's shape narrowed to what it reads (as `screen` reaches them).
-// Importing `layout/contracts` here would close a cycle: the layout sits above
-// and this part only reads the selection and registers its pane.
+// The client contracts the MCP part calls, built from their IDs with the
+// owner's shape narrowed to what it reads (as `screen` reaches them): the
+// workspace's selection and the layout's stack. Importing `layout/contracts`
+// here would close a cycle, as the layout sits above; the selection's copy
+// avoids a `workspace` package line.
 
 import { type CallArg, type Disposable, ref } from 'bundle/contracts';
 
 /** The selection the workspace shows; this part reads its Project's id only. */
-interface WorkspaceSelection {
-  readonly project?: { readonly id: string };
+export interface WorkspaceSelection {
+  readonly projectId?: string;
 }
 
-/** `layout.workspace/v1` (1.1.0), for the selection only. */
-export interface LayoutWorkspace {
-  selection(call?: CallArg): WorkspaceSelection;
+/** `workspace.selection/v1` (1.0.0), for the Project's id only. */
+export interface WorkspaceSelectionService {
+  current(call?: CallArg): WorkspaceSelection;
   subscribe(listener: () => void, call?: CallArg): Disposable;
 }
 
-export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
+export const WorkspaceSelectionV1 = ref<WorkspaceSelectionService>(
+  'workspace.selection/v1',
+);
 
 /**
  * The group this part puts in the sidebar's stack (`layout.stack/v2`): the

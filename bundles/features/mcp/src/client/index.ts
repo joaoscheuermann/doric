@@ -20,7 +20,11 @@ import {
   MCP_GROUP_ACTION_TAG,
   MCP_SIDEBAR_TAG,
 } from './elements.js';
-import { LayoutStackV2, LayoutWorkspaceV1, type StackPane } from './peers.js';
+import {
+  LayoutStackV2,
+  type StackPane,
+  WorkspaceSelectionV1,
+} from './peers.js';
 import { createMcpSignIns } from './sign-in.js';
 import { createMcpServersStore } from './store.js';
 
@@ -55,15 +59,15 @@ export function activate({ services }: ClientContext): Cleanup {
     return () => registration.dispose();
   });
 
-  // The selection is read as the Project's id, a primitive: the layout builds
-  // a new record on every read. A new Project replaces the watch.
+  // The selection is read as the Project's id, a primitive. A new Project
+  // replaces the watch.
   const following: Disposable = services.whenAvailable(
-    LayoutWorkspaceV1,
-    (workspace) => {
+    WorkspaceSelectionV1,
+    (selected) => {
       let watching: Disposable | undefined;
 
       const follow = (): void => {
-        const projectId = workspace.selection().project?.id;
+        const projectId = selected.current().projectId;
         if (projectId === store.projectId() && watching !== undefined) return;
         watching?.dispose();
         watching = undefined;
@@ -75,7 +79,7 @@ export function activate({ services }: ClientContext): Cleanup {
         });
       };
 
-      const selection = workspace.subscribe(follow);
+      const selection = selected.subscribe(follow);
       follow();
 
       return () => {

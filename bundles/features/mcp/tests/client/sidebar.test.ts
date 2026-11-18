@@ -225,17 +225,11 @@ const createHost = (options: HostOptions = {}) => {
   /** The sign-in's steps across contracts, in the order the window took them. */
   const steps: string[] = [];
 
-  const workspace = {
-    selectedThread: () =>
-      project === undefined ? undefined : { id: 't1', projectId: project.id },
-    // A fresh record on every read, as the layout builds them.
-    selection: () =>
-      project === undefined
-        ? {}
-        : {
-            project: { ...project },
-            thread: { id: 't1', projectId: project.id },
-          },
+  // `workspace.selection/v1`: the selected ids, a fresh object on every
+  // read, so the cases prove the part follows the Project's id, not the object.
+  const selection = {
+    current: () =>
+      project === undefined ? {} : { projectId: project.id, threadId: 't1' },
     subscribe: (listener: () => void) => {
       selectionListeners.add(listener);
       return { dispose: () => selectionListeners.delete(listener) };
@@ -354,8 +348,8 @@ const createHost = (options: HostOptions = {}) => {
 
   const apiOf = (id: string, scope: CallScope | undefined): unknown => {
     switch (id) {
-      case 'layout.workspace/v1':
-        return workspace;
+      case 'workspace.selection/v1':
+        return selection;
       case 'layout.stack/v2':
         return stack;
       case 'ui/v1':
@@ -403,7 +397,7 @@ const createHost = (options: HostOptions = {}) => {
     },
   } as unknown as Services;
 
-  /** Selects another Project and tells the subscribers, as the layout does. */
+  /** Selects another Project and tells the subscribers, as `workspace.selection/v1` does. */
   const select = async (next: HostOptions['project']): Promise<void> => {
     project = next;
     await act(() => {
@@ -2660,12 +2654,12 @@ test('W9 a watch lost with the host generation subscribes again', async () => {
 // T-3.8 (sidebar alignment §9.4): the pane is registered through
 // `layout.stack/v2`, so the manifest requires it and no longer v1.
 
-test('the MCP manifest is 1.2.4 and requires layout.stack/v2@^2.0.0, not v1', () => {
+test('the MCP manifest is 1.2.5 and requires layout.stack/v2@^2.0.0, not v1', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/features/mcp/manifest.json', 'utf8'),
   ) as { version: string; requires: string[] };
 
-  assert.equal(manifest.version, '1.2.4');
+  assert.equal(manifest.version, '1.2.5');
   assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
   assert.ok(
     !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),
