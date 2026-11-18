@@ -48,7 +48,7 @@ export const terminalRegions: readonly {
   readonly item: RegionItem;
 }[] = [
   {
-    region: 'layout.header',
+    region: 'shell.header.actions',
     item: { id: 'terminal-new', tag: 'terminal-new-button', order: 10 },
   },
 ];

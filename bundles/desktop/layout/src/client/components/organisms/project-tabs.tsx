@@ -275,7 +275,7 @@ export function ProjectTabBar({
   /**
    * What the bar draws at its right end, after "New project", outside the drag
    * region, in `div[data-slot="project-tab-actions"]`. The workspace view
-   * passes the `layout.header` region alone: the Files column, which is always
+   * passes the `shell.header.actions` region alone: the Files column, which is always
    * shown, holds the account status (S36). On the Dashboard it passes the
    * account status alone (G13). Absent: nothing is drawn.
    */

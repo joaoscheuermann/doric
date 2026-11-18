@@ -4,7 +4,7 @@
 //   projects"; "All settings" stays in its footer;
 // - the Project tab bar, with the account status at its right end, is the top
 //   row of the content column, not of the window, and it holds no
-//   `layout.header` item (G13);
+//   `shell.header.actions` item (G13);
 // - the home body (`/` reached through "New project", Figma `85:7726`) shows
 //   the same Dashboard sidebar with no row selected, so no Dashboard form
 //   keeps the macOS inset in the tab bar (UR1 over G3);
@@ -116,13 +116,13 @@ const forms = {
 } as const;
 type Form = keyof typeof forms;
 
-/** Renders the Dashboard in `form`, with a `layout.header` item seeded. */
+/** Renders the Dashboard in `form`, with a `shell.header.actions` item seeded. */
 const renderDashboard = async (form: Form): Promise<RenderedWorkspace> => {
   const { path, newTab } = forms[form];
   const fixture: LayoutFixture = {
     projects: [project],
     path,
-    regions: { 'layout.header': [probe] },
+    regions: { 'shell.header.actions': [probe] },
   };
   const workspace = await renderWorkspace(fixture);
   if (newTab) {
@@ -191,7 +191,7 @@ test("on /projects Ctrl+F focuses the sidebar's Search projects field", async ()
 
 // §2.8, G4, G13: the tab bar is the content column's top row
 for (const form of Object.keys(forms) as Form[]) {
-  test(`on ${form} the content column holds the window's one tab bar, which ends with Account and no layout.header item`, async () => {
+  test(`on ${form} the content column holds the window's one tab bar, which ends with Account and no shell.header.actions item`, async () => {
     rendered = await renderDashboard(form);
 
     assert.equal(
@@ -211,7 +211,7 @@ for (const form of Object.keys(forms) as Form[]) {
       rendered.root.querySelectorAll('[data-story-placeholder="header-probe"]')
         .length,
       0,
-      'A layout.header item shows on the Dashboard.',
+      'A shell.header.actions item shows on the Dashboard.',
     );
   });
 }

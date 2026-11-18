@@ -27,6 +27,8 @@ export const SHELL_TITLEBAR_TABS = 'shell.titlebar.tabs';
 export const SHELL_PAGE = 'shell.page';
 /** The window's actions: the title bar's end (page form) or the side panel's header (conversation form). */
 export const SHELL_WINDOW_ACTIONS = 'shell.window.actions';
+/** The Project tab bar's right end, in the conversation form (4.2.0). */
+export const SHELL_HEADER_ACTIONS = 'shell.header.actions';
 
 /** One entry of a viewer tab's context menu (1.2.0). */
 export interface TabMenuItem {

@@ -146,7 +146,7 @@ tab with no Thread or Project selected fails with `unavailable`.
 
 | Region                  | Where                                                                                  | Items today                                                    |
 | ----------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `layout.header`         | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
+| `shell.header.actions`  | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
 | `layout.panel`          | the Project panel's views                                                              | `files`, `git`                                                 |
 | `layout.footer`         | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
 | `layout.panel.footer`   | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |

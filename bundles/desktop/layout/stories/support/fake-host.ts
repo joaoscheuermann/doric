@@ -190,7 +190,7 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
       },
     },
   ],
-  'layout.header': [
+  'shell.header.actions': [
     {
       id: 'terminal-new',
       tag: 'terminal-new-button',

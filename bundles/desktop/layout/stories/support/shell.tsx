@@ -98,7 +98,7 @@ export function WorkspaceShell({
         <WorkspaceLayout
           header={
             <ProjectTabBar
-              actions={region('layout.header')}
+              actions={region('shell.header.actions')}
               state={projectTabsOf([checkout, docs, billing])}
               path={path}
               projects={[checkout, docs, billing]}

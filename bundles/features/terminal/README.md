@@ -67,7 +67,7 @@ The tool runs a command in the current working directory; a relative
 - **Client part** (`src/client`): the window's terminal store and the
   elements `terminal-new-button`, `terminal-rows`, `terminal-view` and
   `terminal-tab-icon`.
-  `registerTerminalSurfaces` adds the header button (`layout.header`) and the
+  `registerTerminalSurfaces` adds the header button (`shell.header.actions`) and the
   sidebar's terminal rows while the layout serves `layout.sidebar/v1`; from
   `layout.sidebar/v1` 1.1.0 its `busy` answer keeps a Thread active while an
   agent terminal under it is busy. `terminal-rows` reads `layout.tabs/v2`

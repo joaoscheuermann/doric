@@ -22,7 +22,11 @@ import {
 } from 'react';
 import { useStore } from 'zustand/react';
 
-import { SHELL_PAGE, SHELL_WINDOW_ACTIONS } from '../../contracts/index.js';
+import {
+  SHELL_HEADER_ACTIONS,
+  SHELL_PAGE,
+  SHELL_WINDOW_ACTIONS,
+} from '../../contracts/index.js';
 import { DeleteDialog } from '../components/molecules/delete-dialog.js';
 import { AccountStatus } from '../components/organisms/account-status.js';
 import {
@@ -219,7 +223,7 @@ function NavigationSidebarFooter() {
 
 /**
  * `layout-project-tabs` (`shell.titlebar.tabs`): the Project tab bar. Its end
- * holds the window's actions in the page form and the `layout.header` items
+ * holds the window's actions in the page form and the `shell.header.actions` items
  * in the conversation form.
  */
 function NavigationProjectTabs() {
@@ -234,7 +238,7 @@ function NavigationProjectTabs() {
   useEffect(() => {
     if (projectTabs.path !== '/') setNewTab(false);
   }, [projectTabs.path]);
-  const end = pageForm ? SHELL_WINDOW_ACTIONS : 'layout.header';
+  const end = pageForm ? SHELL_WINDOW_ACTIONS : SHELL_HEADER_ACTIONS;
 
   return (
     <ProjectTabBar

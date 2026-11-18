@@ -807,7 +807,7 @@ test('the window names one control "Dashboard"', async () => {
 });
 
 // One header row: the tab bar keeps "New project", and its right end holds
-// the `layout.header` items. The account status sits in the Files header
+// the `shell.header.actions` items. The account status sits in the Files header
 // (contracts 2d-2 §2.3; part 2i, S36).
 test('the tab bar keeps New project and ends with the header items; Account is in the Files header', async () => {
   rendered = await renderWorkspace({
@@ -815,7 +815,9 @@ test('the tab bar keeps New project and ends with the header items; Account is i
     projectTabs: [project],
     path: `/projects/${project.id}`,
     regions: {
-      'layout.header': [{ id: 'header-probe', tag: 'header-probe', order: 10 }],
+      'shell.header.actions': [
+        { id: 'header-probe', tag: 'header-probe', order: 10 },
+      ],
     },
   });
 
@@ -830,7 +832,7 @@ test('the tab bar keeps New project and ends with the header items; Account is i
   assert.equal(
     standIns(end, 'header-probe').length,
     1,
-    'The layout.header item is not at the tab bar right end.',
+    'The shell.header.actions item is not at the tab bar right end.',
   );
 });
 
@@ -1130,12 +1132,14 @@ const panelViews = [
   },
 ];
 
-/** A Project view with the panel's views and one `layout.header` item. */
+/** A Project view with the panel's views and one `shell.header.actions` item. */
 const withHeaderItems = (fixture: LayoutFixture): LayoutFixture => ({
   ...fixture,
   regions: {
     'layout.panel': panelViews,
-    'layout.header': [{ id: 'header-probe', tag: 'header-probe', order: 10 }],
+    'shell.header.actions': [
+      { id: 'header-probe', tag: 'header-probe', order: 10 },
+    ],
   },
 });
 
@@ -1239,7 +1243,7 @@ test('the Files header holds the Project views and Account; the tab bar holds ne
   assert.equal(
     standIns(end, 'header-probe').length,
     1,
-    'The layout.header item left the tab bar.',
+    'The shell.header.actions item left the tab bar.',
   );
 });
 
@@ -2353,7 +2357,7 @@ test('T4.2: the frame is in the page form exactly while shell.page holds an item
 
 const quarantined: CatalogSnapshot = (() => {
   const bundles: readonly CatalogBundle[] = [
-    { id: 'layout', version: '4.1.0', state: 'active', reasons: [] },
+    { id: 'layout', version: '4.2.0', state: 'active', reasons: [] },
     {
       id: 'terminal',
       version: '2.0.1',
