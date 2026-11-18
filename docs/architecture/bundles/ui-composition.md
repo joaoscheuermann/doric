@@ -32,9 +32,9 @@ As **fronteiras públicas da UI são Web Components** definidos pelos bundles. O
 
 > **Desatualizado.** Desde o passo 4(c) do isolamento de bundles, a sidebar de
 > Projects e Threads, as abas de Project e o Dashboard não são mais do layout: o
-> bundle `workspace` 0.1.0 os desenha nos slots `shell.sidebar`,
+> bundle `workspace` os desenha nos slots `shell.sidebar`,
 > `shell.sidebar.footer`, `shell.titlebar.tabs` e `shell.page` do
-> `<layout-workspace>`, que é só a moldura (layout 5.0.0), e o `chat` 1.8.4 abre
+> `<layout-workspace>`, que é só a moldura (layout 5.0.1), e o `chat` 1.9.1 abre
 > as abas de Thread. As regiões do Dashboard são `workspace.dashboard.nav`,
 > `workspace.dashboard.page` e `workspace.dashboard.footer`. O comportamento
 > atual está em

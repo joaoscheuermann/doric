@@ -41,16 +41,17 @@ O `layout` é o bundle client que desenha o workspace: a moldura que hoje é `ap
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
 > **Desatualizado.** Desde o passo 4(c) do isolamento de bundles, a navegação
-> não é mais do layout: o bundle `workspace` 0.1.0 desenha a sidebar de Projects
+> não é mais do layout: o bundle `workspace` desenha a sidebar de Projects
 > e Threads, as abas de Project e o Dashboard nos slots `shell.sidebar`,
 > `shell.sidebar.footer`, `shell.titlebar.tabs` e `shell.page`, registra
 > `/projects` e `/projects/:projectId` com `parent: '/'` e publica a seleção
-> (`workspace.selection/v1`); o `chat` 1.8.4 abre as abas de Thread e segura as
-> views das Threads na tela. O layout 5.0.0 é a moldura e seus slots e não lê
-> registros; o `workspace` fornece `layout.workspace/v1`, `layout.sidebar/v1` e
-> `layout.dashboard/v1` até o passo 4(e), que desde o passo 4(d) nenhum bundle
-> consome (os consumidores leem `workspace.selection/v1`, `workspace.sidebar/v1`,
-> `workspace.dashboard/v1` e `runtime.records/v1`). O comportamento atual está em
+> (`workspace.selection/v1`); o `chat` 1.9.1 abre as abas de Thread e segura as
+> views das Threads na tela. O layout 5.0.1 é a moldura e seus slots e não lê
+> registros. Desde o passo 4(e), `layout.workspace/v1`, `layout.sidebar/v1` e
+> `layout.dashboard/v1` não existem mais: quem os usava lê
+> `workspace.selection/v1`, `workspace.sidebar/v1`, `workspace.dashboard/v1` e
+> `runtime.records/v1`, e a tabela acima cita `layout.sidebar/v1` só como
+> histórico. O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 

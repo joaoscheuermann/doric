@@ -2,6 +2,13 @@
 
 **Estado:** registro das decisões tomadas durante a implementação da [arquitetura de bundles](../bundles.md). Resolve os pontos que os documentos de conceito deixam em aberto ou contraditórios. Quando um documento de conceito e este registro divergirem, este registro vale para o código; `GROUNDING.md` está congelado desde a fase 0 do isolamento de bundles.
 
+> **Desatualizado** (2026-11-18). Desde o passo 4(e) do isolamento de bundles,
+> `layout.workspace/v1`, `layout.sidebar/v1` e `layout.dashboard/v1` não existem
+> mais: os contratos `workspace.selection/v1`, `workspace.sidebar/v1` e
+> `workspace.dashboard/v1`, do bundle `workspace`, os substituem. As entradas
+> abaixo que os citam são histórico. O comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts).
+
 ## Princípios
 
 - **Paridade 1:1.** A migração preserva o comportamento atual observável, inclusive peculiaridades documentadas no inventário (por exemplo `POST /threads/:id/interrupt` ignora `promptId`, a seção Tools das settings não chega ao host, só a seleção de Thread persiste no renderer, o app só tem tema escuro, `alwaysAvailable` não filtra tools nem skills, a mensagem `resume_exhausted` em português). Nenhuma funcionalidade nova de produto entra; correções de bugs ficam fora desta migração.

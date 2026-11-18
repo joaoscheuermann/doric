@@ -37,10 +37,10 @@ Em cada ambiente, o loader ativa primeiro a **fundação**: os bundles escolhido
 
 > **Desatualizado.** A linha do `layout` na tabela abaixo ainda põe no layout a
 > sidebar e a seleção de Project/Thread. Desde o passo 4(c) do isolamento de
-> bundles, elas são do bundle `workspace` 0.1.0, que desenha a sidebar, as abas
+> bundles, elas são do bundle `workspace` 1.0.0, que desenha a sidebar, as abas
 > de Project e o Dashboard nos slots do layout e registra `/projects` e
-> `/projects/:projectId`; o `chat` 1.8.4 abre as abas de Thread, e o layout
-> 5.0.0 é a moldura e seus slots. O comportamento atual está em
+> `/projects/:projectId`; o `chat` 1.9.1 abre as abas de Thread, e o layout
+> 5.0.1 é a moldura e seus slots. O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
