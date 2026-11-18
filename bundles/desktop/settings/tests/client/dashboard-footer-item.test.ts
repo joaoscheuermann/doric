@@ -130,7 +130,7 @@ test("the settings client part's shipped modules import nothing from workspace/c
   assert.deepEqual(importing, []);
 });
 
-test('settings ships the new settings.models/v1 contract as a minor, 1.11.0 (6(c) O11)', async () => {
+test('settings ships settings.models/v1 as the minor 1.11.0 (6(c) O11), then the patch 1.11.1 (4(d))', async () => {
   const manifest = JSON.parse(
     await readFile(
       resolve(
@@ -141,5 +141,5 @@ test('settings ships the new settings.models/v1 contract as a minor, 1.11.0 (6(c
     ),
   ) as { version: string };
 
-  assert.equal(manifest.version, '1.11.0');
+  assert.equal(manifest.version, '1.11.1');
 });

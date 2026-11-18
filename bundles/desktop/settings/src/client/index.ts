@@ -21,7 +21,7 @@ import type {
 } from 'workspace/contracts';
 
 import { SETTINGS_SECTIONS } from '../contracts/index.js';
-import { LayoutDashboardV1 } from './api/navigation-refs.js';
+import { WorkspaceDashboardV1 } from './api/navigation-refs.js';
 import { initSettingsApi, setDashboardAvailable } from './api/settings-api.js';
 import { registerAppearanceSection } from './appearance-section.js';
 import { createSectionRoute, sectionPath } from './domain/section-route.js';
@@ -134,9 +134,9 @@ export function activate({ services }: ClientContext): () => void {
       setClaudeLoginAvailable(true);
       return () => setClaudeLoginAvailable(false);
     }),
-    // `layout.dashboard/v1` is optional too: without the workspace's dashboard
+    // `workspace.dashboard/v1` is optional too: without the workspace's dashboard
     // the Providers group has nowhere to open its page.
-    services.whenAvailable(LayoutDashboardV1, () => {
+    services.whenAvailable(WorkspaceDashboardV1, () => {
       setDashboardAvailable(true);
       return () => setDashboardAvailable(false);
     }),

@@ -4,7 +4,9 @@
 // still loads the settings part (bundle isolation 4(c)).
 
 import { ref } from 'bundle/contracts';
-import type { LayoutDashboard } from 'workspace/contracts';
+import type { WorkspaceDashboard } from 'workspace/contracts';
 
-/** `layout.dashboard/v1`, provided by `workspace` until step 4(e). */
-export const LayoutDashboardV1 = ref<LayoutDashboard>('layout.dashboard/v1');
+/** `workspace.dashboard/v1`, provided by `workspace`. */
+export const WorkspaceDashboardV1 = ref<WorkspaceDashboard>(
+  'workspace.dashboard/v1',
+);

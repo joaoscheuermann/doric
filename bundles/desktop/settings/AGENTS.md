@@ -46,7 +46,7 @@ relative path `../contracts/index.js`.
 - A secret is never read back: the host answers only whether one is stored.
 - Autosave is bound to the activation services and flushes in the window's
   `onFlushHook`, never through an element's services (D9-17).
-- The `layout.dashboard/v1` reference it lists under `optional` is built from
+- The `workspace.dashboard/v1` reference it lists under `optional` is built from
   its id in `src/client/api/navigation-refs.ts`; `workspace/contracts` is
   imported with `import type` only.
 - `settings.models/v1` holds every rule the footer picker shows: the chat

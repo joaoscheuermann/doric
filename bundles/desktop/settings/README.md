@@ -15,12 +15,11 @@ the `bundle` platform. See the
 ## What it provides
 
 - **UI:** `<settings-page>` at `/settings`, the settings window's one React
-  root. `claude.login/v1`, `core.open-settings/v1` and `layout.dashboard/v1` are
-  `optional`; the
-  bundle builds the reference of `layout.dashboard/v1` from its id
-  (`src/client/api/navigation-refs.ts`) and imports only its type from
-  `workspace/contracts`, which the `workspace` bundle provides until step 4(e)
-  of bundle isolation.
+  root. `claude.login/v1`, `core.open-settings/v1` and `workspace.dashboard/v1`
+  are `optional`; the bundle builds the reference of `workspace.dashboard/v1`
+  from its id (`src/client/api/navigation-refs.ts`) and imports only its type
+  from `workspace/contracts`, which the `workspace` bundle provides (settings
+  1.11.1).
 - **Sections:** six child routes of `/settings`, each listed in the window's
   nav through the `settings.sections` region.
 - **Region:** `settings.sections`, where other bundles add their own sections.

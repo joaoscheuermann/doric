@@ -2,8 +2,8 @@
 // settings bundle draws one row per configured provider into the dashboard's
 // side menu (`workspace.dashboard.nav`) and a provider's page into the
 // dashboard's main area (`workspace.dashboard.page`), opened through
-// `layout.dashboard/v1`. A probe bundle plays the layout: it provides that
-// contract and mounts the two settings elements the way the layout's
+// `workspace.dashboard/v1`. A probe bundle plays `workspace`: it provides
+// that contract and mounts the two settings elements the way the workspace's
 // dashboard does, the nav element always and the page element while the page
 // it names is the active one.
 
@@ -166,18 +166,18 @@ const host = (initial: unknown = configuration): Record<string, HostAnswer> => {
   };
 };
 
-interface LayoutDashboard {
+interface WorkspaceDashboard {
   active(): string | undefined;
   show(id: string): void;
   close(): void;
   subscribe(listener: () => void): Disposable;
 }
 
-const LayoutDashboardV1 = ref<LayoutDashboard>('layout.dashboard/v1');
+const WorkspaceDashboardV1 = ref<WorkspaceDashboard>('workspace.dashboard/v1');
 
 /**
- * The layout's side of the dashboard: `layout.dashboard/v1` with the method
- * schemas the layout declares, the dashboard route mounting the Providers
+ * The workspace's side of the dashboard: `workspace.dashboard/v1` with the
+ * method schemas `workspace` declares, the dashboard route mounting the Providers
  * group, and the provider page's host mounted while that page is active.
  */
 /** The part of `settings.models/v1` T-40 reads, by id as the chat reads it. */
@@ -195,10 +195,10 @@ interface SettingsModels {
 const SettingsModelsV1 = ref<SettingsModels>('settings.models/v1');
 
 /**
- * The layout's side of the dashboard; with `models`, the probe also plays the
+ * `workspace`'s side of the dashboard; with `models`, the probe also plays the
  * chat's footer picker in the same window: it requires `settings.models/v1`.
  */
-const layoutProbe = (options: { readonly models?: boolean } = {}) => {
+const dashboardProbe = (options: { readonly models?: boolean } = {}) => {
   let active: string | undefined;
   let models: SettingsModels | undefined;
   const shown: string[] = [];
@@ -234,14 +234,14 @@ const layoutProbe = (options: { readonly models?: boolean } = {}) => {
       'navigation/v1@^1.0.0',
       ...(options.models === true ? ['settings.models/v1@^1.0.0'] : []),
     ],
-    provides: ['layout.dashboard/v1@1.0.0'],
+    provides: ['workspace.dashboard/v1@1.0.0'],
     activate: (context) => {
       services = context.services;
       if (options.models === true) {
         models = context.services.use(SettingsModelsV1);
       }
       context.services.provide(
-        defineService(LayoutDashboardV1, {
+        defineService(WorkspaceDashboardV1, {
           active: defineMethod({
             input: noInput,
             output: z.string().optional(),
@@ -287,8 +287,8 @@ const layoutProbe = (options: { readonly models?: boolean } = {}) => {
     probe,
     /** The pages `show` was asked for, in order. */
     shown: (): readonly string[] => [...shown],
-    /** The layout closing the page, as the dashboard's own controls do. */
-    close: (): void => services?.use(LayoutDashboardV1).close(),
+    /** `workspace` closing the page, as the dashboard's own controls do. */
+    close: (): void => services?.use(WorkspaceDashboardV1).close(),
     /** `settings.models/v1` as the probe received it, with `models`. */
     models: (): SettingsModels | undefined => models,
   };
@@ -313,14 +313,14 @@ const openDashboard = async (
     readonly answers?: Readonly<Record<string, HostAnswer>>;
   } = {},
 ) => {
-  const layout = layoutProbe(options);
+  const dashboard = dashboardProbe(options);
   opened = await openSettingsWindow({
     url: 'doric://app/projects',
     host: { ...host(options.stored), ...options.answers },
-    probe: layout.probe,
+    probe: dashboard.probe,
   });
   await settle(20);
-  return { window: opened, layout };
+  return { window: opened, dashboard };
 };
 
 const rows = (window: SettingsWindow): HTMLElement[] => [
@@ -416,9 +416,9 @@ test("the Providers group draws the host's icon for a provider, a server for one
 });
 
 test('a provider row opens its page in the dashboard and is the active row', async () => {
-  const { window, layout } = await openProviderPage('openrouter');
+  const { window, dashboard } = await openProviderPage('openrouter');
 
-  assert.deepEqual(layout.shown(), [PAGE_ID]);
+  assert.deepEqual(dashboard.shown(), [PAGE_ID]);
   assert.equal(pageHeading(window), 'openrouter');
   assert.deepEqual(activeRows(window), ['openrouter']);
   assert.equal(field(window, 'provider-name').value, 'openrouter');
@@ -480,8 +480,8 @@ test("a model the provider page adds reaches settings.models/v1's groups without
     })),
     models: { execution: { providerId: 'lmstudio', model: 'local-1' } },
   };
-  const { window, layout } = await openDashboard({ models: true, stored });
-  const models = layout.models();
+  const { window, dashboard } = await openDashboard({ models: true, stored });
+  const models = dashboard.models();
   assert.ok(
     models !== undefined,
     'No provider of settings.models/v1 reached a bundle that requires it.',
@@ -566,7 +566,7 @@ test('closing the window within the debounce saves the pending provider change',
 });
 
 test('the add-provider action opens a new provider page with its kind picker', async () => {
-  const { window, layout } = await openDashboard();
+  const { window, dashboard } = await openDashboard();
 
   const add = window.document.querySelector<HTMLElement>(
     'settings-dashboard-providers [aria-label="Add provider"]',
@@ -576,7 +576,7 @@ test('the add-provider action opens a new provider page with its kind picker', a
   add.click();
   await settle(20);
 
-  assert.deepEqual(layout.shown(), [PAGE_ID]);
+  assert.deepEqual(dashboard.shown(), [PAGE_ID]);
   assert.equal(pageHeading(window), 'Add provider');
   assert.ok(
     window.document.getElementById('provider-kind') !== null,
@@ -585,10 +585,10 @@ test('the add-provider action opens a new provider page with its kind picker', a
 });
 
 test('the dashboard closing the page leaves no provider open', async () => {
-  const { window, layout } = await openProviderPage('openrouter');
+  const { window, dashboard } = await openProviderPage('openrouter');
   assert.deepEqual(activeRows(window), ['openrouter']);
 
-  layout.close();
+  dashboard.close();
   await settle(20);
 
   assert.deepEqual(activeRows(window), []);

@@ -968,7 +968,7 @@ test('T6.3-14: a ready view carries exactly the keys of its type, and so do its 
   watch.dispose();
 });
 
-test('T6.3-15, AC6.4: the settings manifest is 1.11.0, "The settings window.", provides settings.models/v1@1.0.0, requires no runtime.threads/v1 and asks for platform ^1.9.0', async () => {
+test('T6.3-15, AC6.4: the settings manifest is 1.11.1, "The settings window.", provides settings.models/v1@1.0.0, requires no runtime.threads/v1 and asks for platform ^1.9.0', async () => {
   const manifest = JSON.parse(
     await readFile(
       resolve(
@@ -986,7 +986,7 @@ test('T6.3-15, AC6.4: the settings manifest is 1.11.0, "The settings window.", p
     readonly engines: { readonly doric: string };
   };
 
-  assert.equal(manifest.version, '1.11.0');
+  assert.equal(manifest.version, '1.11.1');
   assert.equal(manifest.description, 'The settings window.');
   assert.ok(
     manifest.provides.includes('settings.models/v1@1.0.0'),
@@ -1000,8 +1000,10 @@ test('T6.3-15, AC6.4: the settings manifest is 1.11.0, "The settings window.", p
     !manifest.requires.some((entry) => entry.startsWith('runtime.threads/v1@')),
     `requires ${manifest.requires.join(', ')}`,
   );
+  // Bundle isolation 4(d): the dashboard is `workspace`'s; no optional line
+  // names a contract of the layout.
   assert.ok(
-    !(manifest.optional ?? []).includes('layout.workspace/v1'),
+    !(manifest.optional ?? []).some((id) => id.startsWith('layout.')),
     `optional ${(manifest.optional ?? []).join(', ')}`,
   );
   assert.equal(manifest.engines.doric, '^1.9.0');

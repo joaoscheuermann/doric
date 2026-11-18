@@ -64,7 +64,7 @@ import {
   type ToolConfigFieldKind,
 } from '../domain/config.js';
 import type { IconRequest } from '../domain/model-icons.js';
-import { LayoutDashboardV1 } from './navigation-refs.js';
+import { WorkspaceDashboardV1 } from './navigation-refs.js';
 
 /**
  * `host-config/v1` (the `/config` pipeline), referenced by id with the
@@ -1208,7 +1208,7 @@ export interface SettingsApi {
     finish(options?: CallArg): Promise<Credential>;
   };
   /**
-   * The /projects dashboard's shown page (`layout.dashboard/v1`, optional).
+   * The /projects dashboard's shown page (`workspace.dashboard/v1`, optional).
    * Without a provider no page is shown: `active` is `undefined`, `show` does
    * nothing, and a subscription never hears a change.
    */
@@ -1367,13 +1367,15 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
   },
   dashboard: {
     active: () =>
-      dashboardAvailable ? services.use(LayoutDashboardV1).active() : undefined,
+      dashboardAvailable
+        ? services.use(WorkspaceDashboardV1).active()
+        : undefined,
     show: (id) => {
-      if (dashboardAvailable) services.use(LayoutDashboardV1).show(id);
+      if (dashboardAvailable) services.use(WorkspaceDashboardV1).show(id);
     },
     subscribe: (listener) =>
       dashboardAvailable
-        ? services.use(LayoutDashboardV1).subscribe(listener)
+        ? services.use(WorkspaceDashboardV1).subscribe(listener)
         : { dispose: () => undefined },
   },
   openBrowser: async (url) => {
@@ -1382,14 +1384,14 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
 });
 
 /**
- * Whether a `layout.dashboard/v1` provider answers: the contract is optional,
- * so a composition without the layout keeps working settings and simply has
+ * Whether a `workspace.dashboard/v1` provider answers: the contract is optional,
+ * so a composition without `workspace` keeps working settings and simply has
  * no dashboard to draw into. The client part's activation sets it through
  * `whenAvailable`.
  */
 let dashboardAvailable = false;
 
-/** Records whether a `layout.dashboard/v1` provider is active. */
+/** Records whether a `workspace.dashboard/v1` provider is active. */
 export const setDashboardAvailable = (available: boolean): void => {
   dashboardAvailable = available;
 };
