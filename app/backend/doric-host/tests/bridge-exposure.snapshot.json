@@ -124,6 +124,7 @@
     "openui.programs/v1": ["projectId", "threadId"],
     "openui.questions/v1": ["projectId", "threadId"],
     "papercraft.cache/v1": ["projectId", "threadId"],
-    "papercraft.programs/v1": ["projectId", "threadId"]
+    "papercraft.programs/v1": ["projectId", "threadId"],
+    "tools/v1": []
   }
 }
