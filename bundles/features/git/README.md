@@ -112,10 +112,10 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   whose `FileTree` predates `rowMenu` drops the file rows' menu; the
   repository row's menu stays.
 
-The client reads the selected Project and Thread through `layout.workspace/v1`
-(required, `^1.1.0`), which the `workspace` bundle provides from git 1.2.10 (bundle
-isolation step 4(c)) until step 4(e); the bundle imports `LayoutWorkspaceV1`
-from `workspace/contracts`. Without `workspace` the bundle is quarantined.
+The client reads the selected Project and Thread ids through
+`workspace.selection/v1` (required, `^1.0.0`) and their records through
+`runtime.records/v1` (git 1.2.12); it imports `WorkspaceSelectionV1` from
+`workspace/contracts`. Without `workspace` the bundle is quarantined.
 
 `src/client/styles.css` ships, unlayered, the Monaco scrollbar slider rule
 (`.monaco-scrollable-element > .scrollbar > .slider`), because the diff editor

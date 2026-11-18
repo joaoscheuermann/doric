@@ -1,6 +1,7 @@
 // The Changes view rendered in happy-dom over the stories' fakes: the git
-// store over a fake `GitApi`, the layout's selection and the files tree read
-// the view is gated by. Smoke test of the client test setup (Part 4.4b).
+// store over a fake `GitApi`, the selection (`workspace.selection/v1`), the
+// records (`runtime.records/v1`) and the files tree read the view is gated
+// by. Smoke test of the client test setup (Part 4.4b).
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
@@ -45,6 +46,36 @@ test('the Changes view lists the changed files the host answers', async () => {
   for (const name of ['Checkout.tsx', 'pricing.ts', 'checkout-flow.md']) {
     assert.ok(text.includes(name), `${name} is listed`);
   }
+});
+
+test('the Changes view draws while workspace.selection/v1 answers, and nothing without it', async () => {
+  const view = (withoutSelection: boolean) =>
+    render(async () => {
+      const { createElement } = await import('react');
+      const { GitChangesView } = await import(
+        '../../src/client/changes/git-changes.js'
+      );
+      const { fakeGitApi, GitHarness, readyTree, windowServices } =
+        await import('../../stories/support/git-harness.js');
+      const { changes } = await import('../../stories/support/fixtures.js');
+      const api = fakeGitApi({
+        changes: async () => ({ status: 'ready', changes }),
+      });
+      return createElement(
+        GitHarness,
+        { api },
+        createElement(GitChangesView, {
+          services: windowServices({ tree: readyTree, withoutSelection }),
+        }),
+      );
+    });
+
+  rendered = await view(false);
+  assert.match(rendered.root.textContent ?? '', /Checkout\.tsx/);
+  rendered.cleanup();
+
+  rendered = await view(true);
+  assert.equal(rendered.root.textContent ?? '', '');
 });
 
 test('T-4.6: the Changes tree scrolls sideways: no clipped viewport and a list as wide as its rows', async () => {

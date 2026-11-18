@@ -1,11 +1,12 @@
-import type { Services } from 'bundle/contracts';
-import type { Project, Thread } from 'runtime/contracts';
-import { LayoutWorkspaceV1 } from 'workspace/contracts';
+import type { Disposable, Services } from 'bundle/contracts';
+import { useMemo } from 'react';
+import { type Project, RuntimeRecordsV1, type Thread } from 'runtime/contracts';
+import { WorkspaceSelectionV1 } from 'workspace/contracts';
 
 import { useService, useSubscribed } from './use-service.js';
 
 export interface Selection {
-  /** False while the layout does not serve `layout.workspace/v1`. */
+  /** False while `workspace` does not serve `workspace.selection/v1`. */
   readonly available: boolean;
   readonly project?: Project;
   readonly thread?: Thread;
@@ -13,16 +14,46 @@ export interface Selection {
 
 const none: Selection = { available: false };
 
-/** The workspace's validated selection, re-read after every change. */
+/**
+ * The workspace's selection with its records, re-read after every change of
+ * the selected ids (`workspace.selection/v1`) or of the records
+ * (`runtime.records/v1`).
+ */
 export const useSelection = (services: Services): Selection => {
-  const workspace = useService(services, LayoutWorkspaceV1);
+  const selection = useService(services, WorkspaceSelectionV1);
+  const records = useService(services, RuntimeRecordsV1);
+  // Both contracts' notifications, as one source.
+  const source = useMemo(
+    () =>
+      selection === undefined
+        ? undefined
+        : {
+            subscribe: (listener: () => void): Disposable => {
+              const subscriptions = [
+                selection.subscribe(listener),
+                ...(records === undefined ? [] : [records.subscribe(listener)]),
+              ];
+              return {
+                dispose: () => {
+                  for (const subscription of subscriptions) {
+                    subscription.dispose();
+                  }
+                },
+              };
+            },
+          },
+    [selection, records],
+  );
   return useSubscribed<Selection>(
-    workspace,
+    source,
     () => {
-      const { project, thread } = (
-        workspace as NonNullable<typeof workspace>
-      ).selection();
-      return selectionOf(project, thread);
+      const { projectId, threadId } = (
+        selection as NonNullable<typeof selection>
+      ).current();
+      return selectionOf(
+        projectId === undefined ? undefined : records?.project(projectId),
+        threadId === undefined ? undefined : records?.thread(threadId),
+      );
     },
     none,
   );

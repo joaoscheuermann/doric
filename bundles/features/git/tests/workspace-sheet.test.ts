@@ -2,12 +2,14 @@
 // the `workspace` bundle with its files, so this bundle's sheet scans them
 // (R18), and the bundle ships it as a patch, 1.2.10; 6(c) ships the next
 // patch, 1.2.11.
+// Step 4(d) moves the bundle to the workspace and runtime contracts, the
+// next patch, 1.2.12.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-test('the git sheet scans the workspace client sources, at version 1.2.11', () => {
+test('the git sheet scans the workspace client sources, at version 1.2.12', () => {
   const sheet = readFileSync(
     'bundles/features/git/src/client/styles.css',
     'utf8',
@@ -26,5 +28,5 @@ test('the git sheet scans the workspace client sources, at version 1.2.11', () =
     1,
     'The sheet does not scan the workspace client sources once.',
   );
-  assert.equal(manifest.version, '1.2.11');
+  assert.equal(manifest.version, '1.2.12');
 });
