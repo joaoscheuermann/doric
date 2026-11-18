@@ -1,14 +1,9 @@
-// layout.tabs/v1 (stage 9, §5.6): other bundles open tabs in the workspace's
-// tab strip. The tabs belong to the active route's Thread, else to the
-// selected Project, exactly as the workspace's own file, diff and terminal
-// tabs do; an element tab shows the element `ui/v1` created for it. 1.1.0
-// (WP-10P, R-9.3): the trigger's icon, aria label and tooltip, closing in a
-// named owner, and the current tab with its change notifications. 1.2.0
-// (S15): a tab's own menu entries, and `retitle`. layout.tabs/v2 (bundle
-// isolation 4a): the owner lives in the tabs store and is named through
-// `setOwner`; the trigger's icon is an element (`iconTag`), a tab may ask for
-// an open bottom, and `close` and `retitle` can reach every owner. v1 is no
-// longer provided.
+// layout.tabs/v2 (bundle isolation 4a): other bundles open tabs in the
+// workspace's tab strip. The tabs belong to the owner the tabs store names
+// through `setOwner` — the active route's Thread, else the selected Project —
+// and each tab shows the element `ui/v1` created for it. The trigger's icon is
+// an element (`iconTag`), a tab may ask for an open bottom, a tab carries its
+// own menu entries, and `close` and `retitle` can reach every owner.
 
 import {
   ContractError,

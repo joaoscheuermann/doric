@@ -357,6 +357,12 @@ export const activate = ({ services }: HostContext) => {
 };
 ```
 
+> **Desatualizado.** A região `layout.panel` do parágrafo abaixo se chama
+> `shell.panel` desde o passo 4(a) do isolamento de bundles. O comportamento
+> atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 O manifesto do Git declara as duas coisas: o hook que ele define em `provides` e o que ele consome em `requires`. Como em [manifesto v1](./manifest.md), ele também lista os demais contratos que o código do Git usa com `use`: `hooks/v1`, `events/v1` (o evento `git.branch-switched/v1`, que o Git fornece), `settings/v1`, `tools/v1` e `runtime.workspace/v1` (usado pela tool do Git em [contextos](./contexts.md)) no host; `ui/v1`, `navigation/v1` (rotas `/git/diff/:threadId/:repository` e `/settings/git`), `regions/v1` (o item em `layout.panel`), `windows/v1` e `menus/v1` no client; e `runtime.lease/v1`, que o `execute` de `switchBranch` usa. `commands/v1` e `git.commands/v1` entram pela parte client, como em [chat](./chat.md): `commands/v1` existe no `desktopMain` e no client, não no host, então o comando `git.open-comparison/v1` e o `switchBranchCommand` são registrados no client, que chama `git.commands/v1` do host pela ponte. `git.commands/v1` entra em `requires` embora o próprio Git o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client; o manifesto completo está em [chat](./chat.md). `chat.hooks/v1`, consumido pela parte client com `whenAvailable` no exemplo 4, não entra em `requires`.
 
 ```json

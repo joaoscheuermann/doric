@@ -193,6 +193,15 @@ Os elementos do core (`<core-outlet>`, `<core-region>`, `<core-not-found>` e `<c
 
 ### `regions/v1`: lugares com nome
 
+> **Desatualizado.** O exemplo `layout.panel` abaixo não corresponde mais ao
+> código. Desde o passo 4(a) do isolamento de bundles, as regiões que o layout
+> desenha têm nomes `shell.*`, dados pelo lugar na tela e não pelo ID do bundle
+> (`shell.panel`, por exemplo), exportados como constantes `SHELL_*` de
+> `layout/contracts`; quem preenche escreve
+> `'shell.panel' satisfies typeof SHELL_PANEL`. O comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 Uma região é um `<core-region name="…">` que um bundle põe no template do seu elemento. O dono do template escolhe os nomes, com o próprio ID como prefixo (`layout.panel`, `settings.sections`). Outros bundles adicionam elementos:
 
 ```ts

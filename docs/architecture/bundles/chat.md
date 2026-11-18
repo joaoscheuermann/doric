@@ -281,6 +281,12 @@ O manifesto completo do `git`, no formato de [manifesto v1](./manifest.md), cobr
 }
 ```
 
+> **Desatualizado.** A região `layout.panel` do parágrafo abaixo se chama
+> `shell.panel` desde o passo 4(a) do isolamento de bundles. O comportamento
+> atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 No client, `ui/v1` e `commands/v1` entram pelo código acima; `navigation/v1`, porque a parte client registra as rotas `/git/diff/:threadId/:repository` e `/settings/git` com `services.use(NavigationV1)` (ver [navegação e rotas](./navigation.md)); `regions/v1`, pelo item `<git-changes>` que ela põe na região `layout.panel` do [layout](./layout.md) e pelo link `{ id: 'git', tag: 'settings-link', props: { label: 'Git', path: '/settings/git' } }` na região `settings.sections`; `windows/v1`, porque `openComparisonCommand` abre a comparação com `services.use(WindowsV1)` (ver [abrir um path numa janela](./navigation.md#abrir-um-path-numa-janela)); `menus/v1`, pelo item de menu que a parte client pede; e `hooks/v1`, também usado pela parte client para consumir `chat.hooks/v1` com `whenAvailable`. `git.commands/v1` entra em `requires` embora o próprio `git` o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client, como no [documento principal](../bundles.md). `chat.views/v1` e `chat.hooks/v1` ficam fora por serem usados com `whenAvailable`. `commands/v1` existe no `desktopMain` e no client, não no host, por isso os comandos ficam na parte client.
 
 Um clique em `<git-branch-event>` emite uma intenção DOM, e a conversa despacha o comando `git.open-comparison/v1`, definido pelo `git` com `defineCommand` e registrado em `commands/v1`, para abrir a comparação. A ação é um comando, não um serviço.

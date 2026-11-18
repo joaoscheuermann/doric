@@ -205,6 +205,13 @@ export const activate = ({ services }: ClientContext) => {
 
 ### IDs, ordem de ativação e descarte
 
+> **Desatualizado.** O exemplo de região `layout.panel` abaixo não corresponde
+> mais ao código. Desde o passo 4(a) do isolamento de bundles, as regiões que o
+> layout desenha têm nomes `shell.*`, dados pelo lugar na tela e não pelo ID do
+> bundle (`shell.panel`, por exemplo). O comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 IDs de contribuição de um bundle começam com o ID dele: contratos no formato `<bundle>.<nome>/vN` ou `<bundle>/vN` (`git.settings/v1`, `runtime/v1`), tags de custom elements no formato `<bundle>-<nome>` (`git-branch-event`) e regiões no formato `<bundle>.<nome>` (`layout.panel`, `settings.sections`). Itens de região têm IDs sem versão (`providers`, na região `settings.sections`), distintos do path da rota `/settings/providers`; rotas são paths de URL e não levam prefixo de bundle (veja [navegação e rotas](./navigation.md)). Há duas exceções ao prefixo: os contratos básicos, que só levam o domínio (`hooks/v1`, `settings/v1`, `ui/v1`, `navigation/v1`, `regions/v1`, `storage.backend/v1` e os demais); e os nomes de tools já públicos, cuja unicidade global precisa ser preservada durante a migração.
 
 Em cada ambiente, o loader ativa nesta ordem:

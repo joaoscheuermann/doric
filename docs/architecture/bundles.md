@@ -185,6 +185,25 @@ Cada conceito tem um documento próprio em `docs/architecture/bundles/`. Os grup
 - [O bundle layout](./bundles/layout.md): o workspace `<layout-workspace>` na rota `/`, o `<core-outlet>` da área principal, as regiões `layout.sidebar`, `layout.header`, `layout.panel` e `layout.footer` e as abas de `layout.tabs/v1`.
 - [O bundle chat](./bundles/chat.md): o que `chat` possui, requer e fornece, a rota `/projects/:projectId/threads/:threadId`, o elemento `<chat-view>`, projetores e renderizadores registrados com `registerRenderer({ blockType, elementTag })`, o serviço Lexical `chat.lexical/v1` e o exemplo do Git.
 
+> **Desatualizado.** A entrada do bundle layout acima ainda cita as regiões
+> `layout.*` e as abas de `layout.tabs/v1`. Desde o passo 4(a) do isolamento de
+> bundles, o layout 4.7.0 desenha as regiões do shell com nomes `shell.*`, dados
+> pelo lugar na tela e exportados como constantes `SHELL_*` de
+> `layout/contracts`: `layout.header` virou `shell.header.actions`,
+> `layout.footer` virou `shell.conversation.footer`, `layout.main.bottom` virou
+> `shell.conversation.bottom`, `layout.overlay` virou
+> `shell.conversation.overlay`, `layout.panel` virou `shell.panel` e
+> `layout.panel.footer` virou `shell.panel.footer`; um item sob o nome antigo
+> não aparece. O shell ganhou também `shell.sidebar`, `shell.sidebar.footer`,
+> `shell.titlebar.tabs`, `shell.page` e `shell.window.actions`. `layout.tabs/v1`
+> e `layout.panel/v2` não existem mais: o layout 4.0.0 fornece `layout.tabs/v2`,
+> em que o ícone de uma aba é o elemento que `iconTag` nomeia, no lugar dos
+> tipos de ícone de antes, e o dono das abas é o que `setOwner` nomeia, e
+> `layout.panel/v3`, em que o painel começa sem view selecionada. O
+> comportamento atual está em
+> [docs/features/bundle-isolation.md](../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 ### Dados
 
 - [Armazenamento genérico e histórico](./bundles/storage.md): `storage/v1` como fachada sobre `storage.backend/v1`, as primitivas, o backend `postgres` de `storage.backend/v1` e `secrets.backend/v1`, a divisão do histórico, o cache local do bundle `history` em `doric.cache/v1` e os tipos registrados com `defineStorageType`.
@@ -250,5 +269,14 @@ O bundle `git` mostra como os conceitos se combinam numa funcionalidade. Os trec
 6. **Projeção na conversa.** Na parte client, o Git registra, com `whenAvailable(ChatViewsV1, ...)` por ser dependência opcional, um projetor e o renderizador `<git-branch-event>` em `chat.views/v1` com `registerRenderer({ blockType, elementTag: 'git-branch-event' })`. O stream entrega o evento ao `chat`, o projetor produz o bloco e o replay percorre o mesmo projetor sem repetir a troca. Ver [o bundle chat](./bundles/chat.md) e [UI composta por bundles](./bundles/ui-composition.md).
 7. **Janela e menu do core.** Um clique no bloco emite uma intenção DOM local; o `chat` recebe a intenção e despacha o comando `git.open-comparison/v1`, definido pelo Git com `defineCommand`; não é um serviço. O comando decide onde abrir a comparação, numa aba de `layout.tabs/v1` ou numa janela; uma das opções é a parte client do Git pedir ao core, por `windows/v1`, alcançável pela ponte, uma janela com a chave `diff:<threadId>:<repository>` e o path `/git/diff/<threadId>/<repository>`, que casa com a rota `/git/diff/:threadId/:repository` que o Git registra com `<git-diff>`. Para o menu, a parte client do Git pede ao serviço `menus/v1` um item que aponta para `switchBranchCommand`; o core monta o menu nativo por `doric.menus/v1` e despacha o comando à janela em foco. Ver [janelas abertas pelo core](./bundles/windows.md), [menus nativos e atalhos](./bundles/menus-and-keybindings.md) e [navegação e rotas](./bundles/navigation.md).
 8. **Recuperação em caso de falha.** Se `git` falhar na validação ou na ativação, só ele e quem exige seus contratos por `requires` entram em quarentena, com motivo no catálogo; quem só consulta `git.hooks/v1` por `whenAvailable` degrada a funcionalidade dependente. O app continua com o core e o `chat`, que não depende do Git, e o splash e a recuperação mostram o motivo e oferecem as ações sobre a composição. Os eventos `git.branch-switched/v1` já gravados ficam preservados no log e, sem projetor conhecido, aparecem como bloco genérico com tipo, ID, horário e payload. Ver [bundle core e quarentena](./bundles/core.md), [splash e recuperação](./bundles/splash-and-recovery.md) e [observabilidade e diagnóstico](./bundles/observability.md).
+
+> **Desatualizado.** O passo 7 acima cita as abas de `layout.tabs/v1`.
+> `layout.tabs/v1` e `layout.panel/v2` não existem mais: o layout 4.0.0 fornece
+> `layout.tabs/v2`, em que o ícone de uma aba é o elemento que `iconTag` nomeia,
+> no lugar dos tipos de ícone de antes, e o dono das abas é o que `setOwner`
+> nomeia, e `layout.panel/v3`, em que o painel começa sem view selecionada. O
+> comportamento atual está em
+> [docs/features/bundle-isolation.md](../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
 O plano para chegar a esse desenho a partir do código atual está em [divisão das funcionalidades atuais](./bundles/feature-split.md) e [migração em entregas verificáveis](./bundles/migration.md).

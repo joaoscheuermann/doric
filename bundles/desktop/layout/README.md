@@ -13,13 +13,31 @@ for how bundles work.
 
 ## What it provides
 
-- **UI:** `<layout-workspace>`, registered at `/`, `/projects` and
-  `/projects/:projectId`. The [`chat`](../chat/README.md) bundle mounts the
-  conversation inside it as the child route
-  `/projects/:projectId/threads/:threadId`.
-- **Contracts:** `layout.tabs/v1`, `layout.workspace/v1`, `layout.panel/v2`,
-  `layout.dashboard/v1`, `layout.sidebar/v1` and `layout.stack/v2`, all client
-  contracts in the workspace window.
+- **UI:** `<layout-workspace>`, the frame, registered at `/`. `/projects`
+  (`<layout-projects-route>`, which draws nothing) and `/projects/:projectId`
+  (`<layout-project-empty>`, the Project's empty state) are its child routes,
+  and the [`chat`](../chat/README.md) bundle mounts the conversation inside it
+  as the child route `/projects/:projectId/threads/:threadId`. The frame has
+  two forms: the page form while `shell.page` holds an item, and the
+  conversation form otherwise.
+- **Navigation elements:** until the navigation moves to its own bundles, the
+  layout fills the shell's slots with five elements of its own, defined in
+  `src/client/elements/navigation-elements.tsx`: `<layout-sidebar>`
+  (`shell.sidebar`), `<layout-project-tabs>` (`shell.titlebar.tabs`),
+  `<layout-account-status>` (`shell.window.actions`), and, while the route is
+  `/` or `/projects`, `<layout-dashboard>` (`shell.page`) and
+  `<layout-sidebar-footer>` (`shell.sidebar.footer`).
+- **Contracts:** `layout.tabs/v2`, `layout.workspace/v1`, `layout.panel/v3`,
+  `layout.conversation/v1`, `layout.dashboard/v1`, `layout.sidebar/v1` and
+  `layout.stack/v2`, all client contracts in the workspace window.
+- **Slot names:** `layout/contracts` exports one constant per shell slot
+  (`SHELL_SIDEBAR`, `SHELL_SIDEBAR_FOOTER`, `SHELL_TITLEBAR_TABS`,
+  `SHELL_PAGE`, `SHELL_WINDOW_ACTIONS`, `SHELL_HEADER_ACTIONS`,
+  `SHELL_CONVERSATION_FOOTER`, `SHELL_CONVERSATION_BOTTOM`,
+  `SHELL_CONVERSATION_OVERLAY`, `SHELL_PANEL` and `SHELL_PANEL_FOOTER`). A
+  filler writes the name as a literal checked against it:
+  `'shell.panel' satisfies typeof SHELL_PANEL`, with
+  `import type { SHELL_PANEL } from 'layout/contracts'`.
 - **Regions:** named slots where other bundles add elements.
 
 The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
@@ -32,6 +50,11 @@ resolver does not check because `optional` carries no range. Without a
 `runtime.records/v1` provider (an older runtime, or a quarantined runtime
 client part) every layout load fails with `unavailable`, and the layout shows
 the outage message "Doric backend is unavailable.".
+
+Since 3.2.4 the layout imports `ElementHost` and `useRegionItems` from the
+platform's `desktop/ui/element-host` and has `engines.doric` `^1.8.0`: a
+desktop app older than platform 1.8.0 cannot load it and lists it on its start
+screen.
 
 ## What you see
 
@@ -76,17 +99,22 @@ the outage message "Doric backend is unavailable.".
   opens as a tab beside its root Thread instead of replacing it. Each of these
   viewer tabs has a context menu: the entries the bundle that opened it
   stated, each with its icon, then "Close tab", then its destructive entries
-  last.
+  last. A tab's icon is the element its opener names (`iconTag`); the frame
+  shows the tabs of the owner `layout.tabs/v2` `setOwner` last named, which
+  the layout sets from the route's Thread, else the selected Project.
 - **Project panel.** An icon tab strip of views beside the conversation, always
-  shown; it resizes but cannot be hidden or collapsed.
+  shown; it resizes but cannot be hidden or collapsed. It starts with no view
+  selected (`layout.panel/v3`); `files` selects the Files view when it
+  activates.
 - **Footers.** Two footers. The conversation footer (`shell.conversation.footer`) floats
   over the conversation's bottom 44 px, to the card's bottom edge (the card
   draws no bottom padding); its height, fill and blur are this bundle's sheet
   rule, and the conversation frame sets `--shell-conversation-footer-height: 2.75rem` for
   `<chat-view>` (see [chat's README](../chat/README.md)). The viewer card draws
-  no bottom padding while its selected tab's element is `<chat-thread-panel>`,
-  whose footer band stands on the card's bottom edge; any other tab keeps the
-  card's 8 px, whatever its icon
+  no bottom padding while its selected tab was opened with `openBottom`
+  (`layout.tabs/v2`), as the layout opens a child Thread's
+  `<chat-thread-panel>`, whose footer band stands on the card's bottom edge;
+  any other tab keeps the card's 8 px
   ([SR12](../../../docs/designs/conversation-footer.md#risks)). The Files column
   footer (`shell.panel.footer`) is one 28 px row under the Project panel.
   Settings open from two entries, the dashboard's "All settings" and the
@@ -130,36 +158,55 @@ footer, where the composer would be.
 
 ## Contracts
 
-| Contract              | What another bundle can do                                                                                                                                                                                                                              | Used by                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `layout.tabs/v1`      | open, focus or close a tab drawn by its own element (with icon, aria label, tooltip and, from 1.2.0, its context-menu entries, each with an optional React-element icon) in the active Thread's or Project's tabs; retitle it (1.2.0); read the current | `files`, `git`, `terminal`                                                    |
-| `layout.workspace/v1` | read the tree, the selection, a Project's Threads and the connection; subscribe; show or hide the `shell.conversation.bottom` split                                                                                                                     | `chat`, `files`, `git`, `resources`, `screen`, `terminal`, `threads`, `usage` |
-| `layout.panel/v2`     | select the Project panel's view                                                                                                                                                                                                                         | `files`                                                                       |
-| `layout.dashboard/v1` | read, show or close the `layout.dashboard.page` item the `/projects` dashboard draws instead of its project list; subscribe                                                                                                                             | `settings`                                                                    |
-| `layout.sidebar/v1`   | add rows under each Thread of the sidebar tree (`addThreadRows`); since 1.1.0 a registration may answer `busy(threadId)`, which keeps the Thread and its ancestors active                                                                               | `terminal`                                                                    |
-| `layout.stack/v2`     | register a sidebar pane with title, order, header action and collapse state; panes are pinned to the column's bottom, with no sizes                                                                                                                     | `screen`, `mcp`                                                               |
+| Contract                 | What another bundle can do                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Used by                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `layout.tabs/v2`         | open, focus or close a tab drawn by its own element in the tabs of the active owner, with an icon element (`iconTag`, created with the tab's props), `openBottom`, an aria label, a tooltip and context-menu entries, each with an optional React-element icon; retitle it; read the current tab; subscribe; name the owner whose tabs the frame shows (`setOwner`); close a tab in every owner (`everyOwner`). The request is strict: an unknown key, such as v1's `icon`, fails `invalid_input` | `files`, `git`, `terminal`, and the layout's own Thread tabs                  |
+| `layout.workspace/v1`    | read the tree, the selection, a Project's Threads and the connection; subscribe; show or hide the `shell.conversation.bottom` split                                                                                                                                                                                                                                                                                                                                                               | `chat`, `files`, `git`, `resources`, `screen`, `terminal`, `threads`, `usage` |
+| `layout.panel/v3`        | select the Project panel's view; the panel starts with no view selected, and an id no item has yet is kept until that item registers                                                                                                                                                                                                                                                                                                                                                              | `files`                                                                       |
+| `layout.conversation/v1` | show or hide the `shell.conversation.bottom` split for one item (`setBottomVisible`)                                                                                                                                                                                                                                                                                                                                                                                                              | none yet                                                                      |
+| `layout.dashboard/v1`    | read, show or close the `layout.dashboard.page` item the `/projects` dashboard draws instead of its project list; subscribe                                                                                                                                                                                                                                                                                                                                                                       | `settings`                                                                    |
+| `layout.sidebar/v1`      | add rows under each Thread of the sidebar tree (`addThreadRows`); since 1.1.0 a registration may answer `busy(threadId)`, which keeps the Thread and its ancestors active                                                                                                                                                                                                                                                                                                                         | `terminal`                                                                    |
+| `layout.stack/v2`        | register a sidebar pane with title, order, header action and collapse state; panes are pinned to the column's bottom, with no sizes                                                                                                                                                                                                                                                                                                                                                               | `screen`, `mcp`                                                               |
 
 A duplicate pane or row id fails with `registration_conflict`, and opening a
-tab with no Thread or Project selected fails with `unavailable`.
+tab with no owner fails with `unavailable`. Since layout 4.0.0 the tabs and
+the panel are provided only at these major versions; a bundle that requires an
+older one is quarantined with `missing_dependency`.
 
 ## Regions
 
-| Region                       | Where                                                                                  | Items today                                                    |
-| ---------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `shell.header.actions`       | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
-| `shell.panel`                | the Project panel's views                                                              | `files`, `git`                                                 |
-| `shell.conversation.footer`  | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
-| `shell.panel.footer`         | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
-| `layout.account.status`      | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
-| `shell.conversation.bottom`  | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
-| `shell.conversation.overlay` | a floating layer over the conversation                                                 | items place themselves; the layer never intercepts a pointer   |
-| `layout.dashboard.nav`       | groups of the `/projects` dashboard sidebar, after Projects                            | `settings`' Providers group                                    |
-| `layout.dashboard.page`      | a page the dashboard draws instead of its project list                                 | `settings`' provider page, shown through `layout.dashboard/v1` |
+The frame draws the slots of its current form. The page form, while
+`shell.page` holds an item, draws the sidebar column beside the title bar over
+the page. The conversation form draws the sidebar column, the title bar, the
+conversation, the viewer tabs and the Project panel.
 
-A `shell.panel` item carries `{ label, icon, badgeTag? }`; its element mounts
-only while the item is selected. A `layout.dashboard.nav`
-item draws its own `SidebarGroup`; a `layout.dashboard.page` item mounts only
-while `layout.dashboard/v1` shows it.
+| Region                       | Where                                                                                                                                 | Items today                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `shell.sidebar`              | the sidebar column, in both forms; one region element moves between the forms, so its items do not remount on a switch                | `<layout-sidebar>`                                                                 |
+| `shell.sidebar.footer`       | the sidebar column's foot, under the quarantine notice; drawn only while it has items                                                 | `<layout-sidebar-footer>` ("All settings"), while the route is `/` or `/projects`  |
+| `shell.titlebar.tabs`        | the title bar, in both forms                                                                                                          | `<layout-project-tabs>`                                                            |
+| `shell.page`                 | the page form's body; an item here switches the frame to the page form                                                                | `<layout-dashboard>`, while the route is `/` or `/projects`                        |
+| `shell.window.actions`       | the window's actions: the end of the Project tab bar in the page form, the end of the Project panel's header in the conversation form | `<layout-account-status>`                                                          |
+| `shell.header.actions`       | the end of the Project tab bar, in the conversation form                                                                              | `terminal`'s "New terminal" button                                                 |
+| `shell.panel`                | the Project panel's views                                                                                                             | `files`, `git`                                                                     |
+| `shell.conversation.footer`  | the conversation footer, a 44 px band floating over the conversation's bottom                                                         | `settings`' execution picker, `chat`'s composer, `usage`                           |
+| `shell.panel.footer`         | the Files column footer, in one 28 px row                                                                                             | `git` (the working directory and branch)                                           |
+| `shell.conversation.bottom`  | a split under the conversation                                                                                                        | shown while an item asks through `layout.workspace/v1` or `layout.conversation/v1` |
+| `shell.conversation.overlay` | a floating layer over the conversation                                                                                                | items place themselves; the layer never intercepts a pointer                       |
+| `layout.account.status`      | a 14×14 slot over the account avatar's bottom-right corner, in `<layout-account-status>`                                              | `resources` (the connection badge)                                                 |
+| `layout.dashboard.nav`       | groups of the `/projects` dashboard sidebar, after Projects                                                                           | `settings`' Providers group                                                        |
+| `layout.dashboard.page`      | a page the dashboard draws instead of its project list                                                                                | `settings`' provider page, shown through `layout.dashboard/v1`                     |
+
+Layout 4.2.0 to 4.7.0 gave the six slots that existed before these names, one
+slot per version; an item added under an old name is not drawn. The CSS
+variable the conversation frame sets is `--shell-conversation-footer-height`
+(it was `--chat-footer-height`).
+
+A `shell.panel` item carries `{ label, iconTag?, badgeTag? }` (`PanelItemProps`):
+its tab trigger draws the `iconTag` element as the view's icon and the
+`badgeTag` element inside it, and its element mounts only while the item is
+selected. A `layout.dashboard.nav` item draws its own `SidebarGroup`; a
+`layout.dashboard.page` item mounts only while `layout.dashboard/v1` shows it.
 
 ## Development
 

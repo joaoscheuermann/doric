@@ -39,6 +39,10 @@ for how bundles work.
     the card's edge while the layout's viewer card drops its bottom padding,
     as it does while that tab is selected; otherwise the band sits 8 px above
     the card's edge;
+  - `<chat-thread-tab-icon projectId threadId>`, the mark of the Thread the
+    records mirror (`runtime.records/v1`) describes: the dashed bubble for an
+    Untitled Thread, else its kind's mark; the layout names it as the
+    `iconTag` of a Thread's tab (`layout.tabs/v2`, from chat 1.8.2);
   - `<chat-readonly-markdown text>`, the conversation's read-only Markdown for
     another bundle's block element;
   - `<chat-block>`, the fallback for a block no renderer claims: its type, id,
@@ -163,6 +167,7 @@ desktop part, as Papercraft does.
 
 - **Required:** `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
   `commands/v1`, `menus/v1`, `runtime.threads/v1`, `runtime.attachments/v1`,
+  `runtime.records/v1` (from 1.8.2, for `<chat-thread-tab-icon>`),
   `comments/v1` and `chat.composer/v1`.
 - **Optional:** `history.snapshots/v1`, `models/v1`, `layout.workspace/v1`,
   `comments.added/v1`, `comments.resolved/v1`, `runtime.prompt-finished/v1`,

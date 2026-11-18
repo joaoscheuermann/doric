@@ -20,6 +20,26 @@ O `layout` é o bundle client que desenha o workspace: a moldura que hoje é `ap
 | Abas                     | `layout.tabs/v1`: `open`, `close` e `focus` de abas, num painel ao lado da área principal.                                                                |
 | Abrir settings           | O botão do rodapé da sidebar despacha o comando `core.open-settings/v1`.                                                                                  |
 
+> **Desatualizado.** As regiões `layout.header`, `layout.panel` e
+> `layout.footer` e o contrato `layout.tabs/v1` deste documento não correspondem
+> mais ao código. Desde o passo 4(a) do isolamento de bundles, o layout 4.7.0
+> desenha as regiões do shell com nomes `shell.*`, dados pelo lugar na tela e
+> exportados como constantes `SHELL_*` de `layout/contracts`: `layout.header`
+> virou `shell.header.actions`, `layout.footer` virou
+> `shell.conversation.footer`, `layout.main.bottom` virou
+> `shell.conversation.bottom`, `layout.overlay` virou
+> `shell.conversation.overlay`, `layout.panel` virou `shell.panel` e
+> `layout.panel.footer` virou `shell.panel.footer`; um item sob o nome antigo
+> não aparece. O shell ganhou também `shell.sidebar`, `shell.sidebar.footer`,
+> `shell.titlebar.tabs`, `shell.page` e `shell.window.actions`. `layout.tabs/v1`
+> e `layout.panel/v2` não existem mais: o layout 4.0.0 fornece `layout.tabs/v2`,
+> em que o ícone de uma aba é o elemento que `iconTag` nomeia, no lugar dos
+> tipos de ícone de antes, e o dono das abas é o que `setOwner` nomeia, e
+> `layout.panel/v3`, em que o painel começa sem view selecionada. O
+> comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 O layout não fornece mais `layout.stack/v1`: `layout.stack/v2` o substitui, e um bundle que ainda exige a v1 fica em quarentena.
 
 ## Como funciona
@@ -58,6 +78,14 @@ export function activate({ services }: ClientContext) {
 > bundles, o layout 3.2.3 lê o espelho de registros do runtime,
 > `runtime.records/v1`, e o adaptador do host e o watch de Project pertencem à
 > parte client do runtime. O comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
+> **Desatualizado.** Os nomes de região do template abaixo mudaram no passo 4(a)
+> do isolamento de bundles, e o template tem duas formas: a forma de página
+> enquanto `shell.page` tem um item, e a forma de conversa nos outros casos. Os
+> nomes atuais estão no aviso de [O que o layout
+> fornece](#o-que-o-layout-fornece). O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
@@ -119,6 +147,16 @@ O `chat` registra `/projects/:projectId/threads/:threadId` com `parent: '/'`. Na
 
 ### 6. Outros bundles preenchem as regiões
 
+> **Desatualizado.** As regiões `layout.header`, `layout.panel` e
+> `layout.footer` desta seção mudaram de nome no passo 4(a) do isolamento de
+> bundles: hoje são `shell.header.actions`, `shell.panel` e
+> `shell.conversation.footer`, e quem as preenche escreve
+> `'shell.panel' satisfies typeof SHELL_PANEL`, com `import type` de
+> `layout/contracts`. O
+> comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 Uma região é um lugar com nome no template, marcado com `<core-region name="…">`. Um bundle põe um elemento seu nela com `regions.add`:
 
 ```ts
@@ -145,6 +183,14 @@ Na composição padrão:
 O composer não é do layout: ele faz parte de `<chat-view>`, no bundle `chat`.
 
 ### 7. Abas: `layout.tabs/v1`
+
+> **Desatualizado.** `layout.tabs/v1` e `layout.panel/v2` não existem mais: o
+> layout 4.0.0 fornece `layout.tabs/v2`, em que o ícone de uma aba é o elemento
+> que `iconTag` nomeia, no lugar dos tipos de ícone de antes, e o dono das abas
+> é o que `setOwner` nomeia, e `layout.panel/v3`, em que o painel começa sem
+> view selecionada. O comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
 Abas mantêm várias views vivas ao mesmo tempo, como o `WorkspaceTabs` atual. O outlet mostra uma rota por vez, então abas não são rotas: são elementos que o layout cria e guarda.
 
@@ -248,6 +294,12 @@ services.whenAvailable(LayoutTabsV1, (tabs) =>
 O layout só tem parte `client`. Ele lê Projects e Threads por `runtime.threads/v1`, pela ponte client → host, e despacha `core.open-settings/v1` por `commands/v1`.
 
 ## O que acontece sem o layout
+
+> **Desatualizado.** As regiões são `shell.*` desde o passo 4(a) do isolamento
+> de bundles, e `layout.tabs/v1` foi substituído por `layout.tabs/v2`. O
+> comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
 - O path `/` fica sem rota e o outlet de topo mostra `<core-not-found>`.
 - Uma rota cujo `parent` não está registrado aparece direto no outlet de topo. Sem o layout, `/projects/p1/threads/t1` mostra só o `<chat-view>`, ocupando a janela.

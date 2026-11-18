@@ -10,6 +10,26 @@ A UI do Doric passa a ser inteiramente composta por bundles: as fronteiras públ
 
 As **fronteiras públicas da UI são Web Components** definidos pelos bundles. O bootstrap do renderer, implementado em `packages/desktop` (o runtime client do loader que `app/doric-renderer` carrega; bundles não o importam), ativa as partes client, com o core primeiro, e põe um `<core-outlet>` no `body`. O outlet mostra a rota que casa com `location.pathname` chamando o `create` dela, que normalmente usa `ui.create` para entregar ao elemento os serviços do bundle dono por propriedade JavaScript. O bootstrap não contém `App`, `Settings`, sidebar, conversa, janelas nem lista fixa de nodes; carrega apenas o import map e o CSS base dos [pacotes compartilhados](./platform-packages.md).
 
+> **Desatualizado.** Este documento ainda cita as regiões `layout.sidebar`,
+> `layout.header`, `layout.panel` e `layout.footer` e as abas de
+> `layout.tabs/v1`. Desde o passo 4(a) do isolamento de bundles, o layout 4.7.0
+> desenha as regiões do shell com nomes `shell.*`, dados pelo lugar na tela e
+> exportados como constantes `SHELL_*` de `layout/contracts`: `layout.header`
+> virou `shell.header.actions`, `layout.footer` virou
+> `shell.conversation.footer`, `layout.main.bottom` virou
+> `shell.conversation.bottom`, `layout.overlay` virou
+> `shell.conversation.overlay`, `layout.panel` virou `shell.panel` e
+> `layout.panel.footer` virou `shell.panel.footer`; um item sob o nome antigo
+> não aparece. O shell ganhou também `shell.sidebar`, `shell.sidebar.footer`,
+> `shell.titlebar.tabs`, `shell.page` e `shell.window.actions`. `layout.tabs/v1`
+> e `layout.panel/v2` não existem mais: o layout 4.0.0 fornece `layout.tabs/v2`,
+> em que o ícone de uma aba é o elemento que `iconTag` nomeia, no lugar dos
+> tipos de ícone de antes, e o dono das abas é o que `setOwner` nomeia, e
+> `layout.panel/v3`, em que o painel começa sem view selecionada. O
+> comportamento atual está em
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+
 O core client não desenha telas de produto: define só `<core-outlet>`, `<core-region>`, `<core-not-found>` e `<core-unavailable>`. O workspace é o `<layout-workspace>` do bundle [layout](./layout.md), na rota `/`; o template dele tem as regiões `layout.sidebar`, `layout.header`, `layout.panel` e `layout.footer` e um `<core-outlet>` na área principal, onde `<chat-view>`, do bundle `chat`, aparece pela rota filha `/projects/:projectId/threads/:threadId`. A página de settings é o `<settings-page>` do bundle `settings`, na rota `/settings`, com a região `settings.sections` e um `<core-outlet>` para as seções. Outra composição pode registrar outras rotas ou dispensar a conversa.
 
 Itens de região têm IDs sem versão, como `providers` na região `settings.sections`; são distintos das rotas, que são paths como `/settings/providers` ou `/projects/:projectId/threads/:threadId`.
