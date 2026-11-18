@@ -1,7 +1,7 @@
 // The threads bundle's client part: `<threads-delegated-turn>`, registered as
 // chat's renderer for another Thread's input (`chat.delegated-input/v1`); the
 // projector that keeps old ask rows from drawing (D30); and the sender's
-// record read from `layout.workspace/v1` when a layout is available.
+// record read from `runtime.records/v1` when it is available.
 
 import {
   type Cleanup,
@@ -16,14 +16,14 @@ import {
   defineDelegatedTurnElement,
 } from './delegated-turn.js';
 import { oldAskProjector } from './old-asks.js';
-import { LayoutWorkspaceV1, setWorkspace } from './source.js';
+import { RuntimeRecordsV1, setRecords } from './source.js';
 
 export function activate({ services }: ClientContext): Cleanup {
   const ui = services.use(UiV1);
   const element = ui.define(DELEGATED_TURN_TAG, defineDelegatedTurnElement());
-  const workspace = services.whenAvailable(LayoutWorkspaceV1, (api) => {
-    setWorkspace(api);
-    return () => setWorkspace(undefined);
+  const records = services.whenAvailable(RuntimeRecordsV1, (api) => {
+    setRecords(api);
+    return () => setRecords(undefined);
   });
   const renderer = services.whenAvailable(ChatViewsV1, (views) => {
     const registrations: Disposable[] = [
@@ -44,7 +44,7 @@ export function activate({ services }: ClientContext): Cleanup {
 
   return () => {
     renderer.dispose();
-    workspace.dispose();
+    records.dispose();
     element.dispose();
   };
 }

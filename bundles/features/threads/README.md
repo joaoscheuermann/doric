@@ -60,7 +60,7 @@ reaches the calling prompt's children through `runtime.threads/v1`
 (`runtime/contracts`), scoped by the prompt `Call` it runs under, and returns
 the serialized result. The bundle never imports `app/backend/doric-host`
 internals: it requires `runtime.threads/v1@^1.7.0` beside `tools/v1`, `ui/v1`
-and `navigation/v1`, and optionally `chat.views/v1`, `layout.workspace/v1` and `default.agents/v1`. Without a provider of `default.agents/v1`, `thread-spawn` fails a call that names an agent with "Agent types are
+and `navigation/v1`, and optionally `chat.views/v1`, `runtime.records/v1` and `default.agents/v1`. Without a provider of `default.agents/v1`, `thread-spawn` fails a call that names an agent with "Agent types are
 unavailable in this runtime." and spawns every other one.
 
 ## Skills
@@ -82,7 +82,7 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
 instruction or result) as `<threads-delegated-turn>`, registered as chat's
 renderer for `chat.delegated-input/v1` when `chat.views/v1` is available. It
 shows `Instruction from:` or `Result from:`, the sender (its name from
-`layout.workspace/v1` when the tree knows it, as a link to its conversation,
+`runtime.records/v1` when the records hold it, as a link to its conversation,
 else its short id), `Status: …` and the text through chat's
 `<chat-readonly-markdown>`. An instruction starts open and a result closed.
 

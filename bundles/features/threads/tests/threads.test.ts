@@ -60,7 +60,7 @@ void test('activation provides no service and registers no event', async () => {
   assert.deepEqual(record.events, []);
 });
 
-void test('the manifest is 2.0.4 and declares no provided contract', async () => {
+void test('the manifest is 2.0.5 and declares no provided contract', async () => {
   const manifest = JSON.parse(
     await readFile(new URL('../../manifest.json', import.meta.url), 'utf8'),
   ) as {
@@ -69,7 +69,7 @@ void test('the manifest is 2.0.4 and declares no provided contract', async () =>
     readonly desktopScope?: Record<string, unknown>;
   };
 
-  assert.equal(manifest.version, '2.0.4');
+  assert.equal(manifest.version, '2.0.5');
   assert.deepEqual(manifest.provides ?? [], []);
   assert.equal(
     JSON.stringify(manifest).includes('threads.ask/v1'),

@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "threads",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -13,5 +13,5 @@
     "ui/v1@^1.0.0",
     "navigation/v1@^1.0.0"
   ],
-  "optional": ["default.agents/v1", "chat.views/v1", "layout.workspace/v1"]
+  "optional": ["default.agents/v1", "chat.views/v1", "runtime.records/v1"]
 }

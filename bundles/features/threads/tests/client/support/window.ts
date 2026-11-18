@@ -1,11 +1,11 @@
 // One real workspace window in this process (after chat's own test window):
 // a happy-dom window as the globals, the window platform of `desktop/client`,
 // the core's, chat's and this bundle's client parts exactly as their builds
-// ship them, plus an optional in-memory "probe" bundle standing for the
-// layout's `layout.workspace/v1`. The boundaries faked are the preload API
-// (`window.doric.desktop`) and, behind it, the host's `runtime.threads/v1`
-// and main's shell streams: a test answers them as the host would and reads
-// what they were asked.
+// ship them, a records bundle that provides `runtime.records/v1` (a fake, or
+// the test's own records), plus an optional in-memory "probe" bundle. The
+// boundaries faked are the preload API (`window.doric.desktop`) and, behind
+// it, the host's `runtime.threads/v1` and main's shell streams: a test answers
+// them as the host would and reads what they were asked.
 
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -36,7 +36,8 @@ import {
   type WindowCatalog,
 } from 'desktop/client';
 import { Window } from 'happy-dom';
-import { createRecordsFake } from 'runtime/testing';
+import { type RuntimeRecords, runtimeRecordsService } from 'runtime/contracts';
+import { createRecordsFake, type RecordsFakeOptions } from 'runtime/testing';
 import { z } from 'zod';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -357,6 +358,14 @@ export const openThreadsWindow = async (input: {
   readonly url: string;
   readonly host: Readonly<Record<string, HostAnswer>>;
   readonly probe?: Probe;
+  /** What the window's `runtime.records/v1` fake holds; empty without it. */
+  readonly records?: RecordsFakeOptions;
+  /**
+   * The window's `runtime.records/v1` itself, in place of a fake built from
+   * `records`: a test that changes what the records hold after the window
+   * opened answers the reads it needs.
+   */
+  readonly recordsApi?: RuntimeRecords;
 }): Promise<ThreadsWindow> => {
   const window = new Window({ url: input.url, width: 1280, height: 800 });
   // happy-dom runs no Web Animations and implements `getAnimations` on shadow
@@ -589,7 +598,11 @@ export const openThreadsWindow = async (input: {
     [partUrl('chat', chatManifest.version)]: chat,
     [partUrl('records', '1.0.0')]: {
       activate: ({ services }) => {
-        services.provide(createRecordsFake());
+        services.provide(
+          input.recordsApi === undefined
+            ? createRecordsFake(input.records)
+            : runtimeRecordsService(input.recordsApi),
+        );
         services.provide(tabsFake());
       },
     },
