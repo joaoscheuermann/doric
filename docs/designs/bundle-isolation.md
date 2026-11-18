@@ -2286,6 +2286,14 @@ The options the owner did not choose are in [Alternatives considered](#alternati
 
 ## Revisions
 
+- Implementation findings of step 11 (2026-11-18). Recorded during the implementation on the branch `feat/bundle-isolation`, commits `40651839` (11(a)) and `38f360c2` (11(b)). The version stays 7. Each finding names the body passage it supersedes, or says it fills a gap; the body text is left as accepted.
+  - **`packages/bundle/README.md`.** Step 11(a) also changes the package README, which documents `stage --all`. Supersedes Files to change for phase 11 (`:2026`), which does not name it.
+  - **AC11.2 from a clean `dist/bundles`.** `stage` never removes a directory it does not stage, so a stale directory left under `app/backend/doric-host/dist/bundles` survives `build-bundles`. AC11.2 holds only when the run starts from a clean `dist/bundles`, and was checked that way (31 manifest ids). Refines AC11.2 (`:2117`).
+  - **The order of `stage --all`.** "The order of the directory paths" is code-unit order of the paths. Fills a gap in section 17 (`:1579`).
+  - **`platform-schemas.js` in the `.Dockerfile`.** The line is kept, as section 17 decides (`:1585`), although `bundle:build`, which `build-bundles` now runs, already writes the schemas, so it is redundant. Fills a gap; no body passage weighs it.
+  - **No CI job builds the image.** CI runs the Nx targets but no `docker build`, so AC11.4 (`docker build` and `GET /config`) is checked by the owner on the branch's pull request (OD37). Supersedes the mitigation of R10 (`:1887`) as far as it reads as a check CI makes.
+  - **The host README's "Build traps".** The item that told a new bundle to be added to the hand-written lists is rewritten: a bundle must be an Nx project tagged `type:bundle` to be built and staged. Fills a gap in Files to change for phase 11 (`:2027`), which names only how the image builds the bundles.
+
 - Implementation findings of phase 3 (2026-11-18). Recorded during the implementation on the branch `feat/bundle-isolation`, commit `c01705c8`. The version stays 7. The design of the code does not change; each finding below names the body passage it supersedes, or says it fills a gap with no body passage; the body text is left as accepted. MR1–MR6 are the mirror rules, which the coordinator decided during the implementation under the owner's instruction (2026-11-18) to implement without stopping; they are not the risks R1–R20 nor the model rules M1–M11.
   - **OD36, `threadSubtreeIds`.** The layout keeps its own `threadSubtreeIds` until step 4(c), because of D32. This deviates from Files to change for phase 3 (`:1993`), which has the layout use the one in `runtime/contracts`.
   - **MR1, a failed read.** A failed load's `error` is the `ClientError` it rejected with; a rejection that is not a `ClientError` is first converted by `hostFailure`. A failed watch stores a `project_stream_failed` error. The schema is loose. Fills a gap; no body passage.

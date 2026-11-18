@@ -197,6 +197,12 @@ O `ports-relay` declara só `ports.relay/v1` em `provides`, como `screen-relay`.
 
 ## Arquivos a criar ou alterar
 
+> **Out of date.** The `project.json` row below no longer matches the code.
+> Since step 11(a) of the bundle isolation work, `doric-host:build-bundles`
+> holds no bundle list: it builds and stages every Nx project tagged
+> `type:bundle`, so a new bundle needs only that tag. The current behavior is in
+> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts).
+
 | Arquivo                                                      | Mudança                                                                                                                                                                     |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bundles/features/ports/**`                                  | Bundle novo: `manifest.json`, `contracts/`, `host/`, `client/`, `desktop/`, `tests/`, `project.json`, `package.json`, `tsconfig*.json`, seguindo `bundles/features/screen`. |
