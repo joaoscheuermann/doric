@@ -4,8 +4,9 @@
 // (`layout.tabs/v2.current()`) is that terminal's tab, `terminal:<id>`. The
 // element subscribes to the tabs only while its Thread has terminals.
 //
-// The store, `layout.workspace/v1`, `layout.tabs/v2` and `navigation/v1` are
-// fakes the test drives; happy-dom renders the element.
+// The store, `workspace.selection/v1`, `runtime.records/v1`, `layout.tabs/v2`
+// and `navigation/v1` are fakes the test drives; happy-dom renders the
+// element.
 
 import assert from 'node:assert/strict';
 import * as nodeModule from 'node:module';
@@ -125,9 +126,12 @@ const fakeServices = ({ tabs = true, navigation = true }: Peers = {}) => {
       ? { id, projectId: PROJECT }
       : undefined;
   const apis: Record<string, unknown> = {
-    'layout.workspace/v1': {
+    'runtime.records/v1': {
       thread: (id: string) => record(id),
-      selectedThread: () => record(route),
+      subscribe: (): Disposable => ({ dispose: () => undefined }),
+    },
+    'workspace.selection/v1': {
+      current: () => ({ projectId: PROJECT, threadId: route }),
       subscribe: (): Disposable => ({ dispose: () => undefined }),
     },
   };

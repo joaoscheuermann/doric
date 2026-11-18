@@ -5,7 +5,7 @@
 // activation services, never to an element's (D9-17).
 //
 // The header region item and the sidebar rows are registered by
-// `registerTerminalSurfaces` while the layout serves `layout.sidebar/v1`,
+// `registerTerminalSurfaces` while `workspace` serves `workspace.sidebar/v1`,
 // since WP-10N removed the layout's provisional terminals.
 
 import {
@@ -29,11 +29,11 @@ import { defineTerminalElements, type TerminalClient } from './elements.js';
 import { createTerminalWatches } from './output-watch.js';
 import {
   FilesRefreshV1,
-  type LayoutSidebar,
-  LayoutSidebarV1,
   LayoutTabsV2,
-  type LayoutWorkspace,
-  LayoutWorkspaceV1,
+  type RecordsSource,
+  RuntimeRecordsV1,
+  type WorkspaceSidebar,
+  WorkspaceSidebarV1,
 } from './peers.js';
 import { createTerminalStore, type TerminalStore } from './store.js';
 import {
@@ -60,22 +60,22 @@ export const terminalRegions: readonly {
  */
 export const registerTerminalSurfaces = (
   regions: Pick<Regions, 'add'>,
-  sidebar: LayoutSidebar,
+  sidebar: WorkspaceSidebar,
   store: TerminalStore,
-  workspace: () => Pick<LayoutWorkspace, 'thread'> | undefined,
+  records: () => Pick<RecordsSource, 'thread'> | undefined,
 ): Disposable => {
   const added = terminalRegions.map(({ region, item }) =>
     regions.add(region, item),
   );
   // `busy` runs for every Thread on every render of the tree, so it answers
   // from memory: each Thread's Project is resolved once (again only while the
-  // workspace does not know the Thread yet), and the busy Thread ids are
+  // records do not hold the Thread yet), and the busy Thread ids are
   // rebuilt only after the store changed.
   const projects = new Map<string, string>();
   const projectOf = (threadId: string): string | undefined => {
     const known = projects.get(threadId);
     if (known !== undefined) return known;
-    const projectId = workspace()?.thread(threadId)?.projectId;
+    const projectId = records()?.thread(threadId)?.projectId;
     if (projectId !== undefined) projects.set(threadId, projectId);
     return projectId;
   };
@@ -90,7 +90,7 @@ export const registerTerminalSurfaces = (
       id: 'terminals',
       tag: 'terminal-rows',
       count: (threadId) => {
-        const projectId = workspace()?.thread(threadId)?.projectId;
+        const projectId = records()?.thread(threadId)?.projectId;
         if (projectId !== undefined) store.follow(projectId);
         return store.threadTerminals(threadId).length;
       },
@@ -125,13 +125,13 @@ const threadRoute = (projectId: string, threadId: string): string =>
 const opener =
   (services: Services, kill: (terminalId: string) => void) =>
   async (terminal: Terminal) => {
-    let workspace: LayoutWorkspace | undefined;
+    let records: RecordsSource | undefined;
     try {
-      workspace = services.use(LayoutWorkspaceV1);
+      records = services.use(RuntimeRecordsV1);
     } catch {
-      workspace = undefined;
+      records = undefined;
     }
-    const thread = workspace?.thread(terminal.threadId);
+    const thread = records?.thread(terminal.threadId);
     if (thread !== undefined)
       services
         .use(NavigationV1)
@@ -202,14 +202,14 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define(TERMINAL_TAB_ICON_TAG, elements.tabIcon),
   ];
 
-  const surfaces = services.whenAvailable(LayoutSidebarV1, (sidebar) => {
+  const surfaces = services.whenAvailable(WorkspaceSidebarV1, (sidebar) => {
     const registered = registerTerminalSurfaces(
       services.use(RegionsV1),
       sidebar,
       store,
       () => {
         try {
-          return services.use(LayoutWorkspaceV1);
+          return services.use(RuntimeRecordsV1);
         } catch {
           return undefined;
         }

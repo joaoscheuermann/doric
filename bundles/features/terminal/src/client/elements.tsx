@@ -15,9 +15,9 @@ import { useService, useSubscribed } from './hooks.js';
 import type { TerminalWatchApi } from './output-watch.js';
 import {
   LayoutTabsV2,
-  type LayoutWorkspace,
-  LayoutWorkspaceV1,
-  type ThreadRecord,
+  type RecordsSource,
+  RuntimeRecordsV1,
+  WorkspaceSelectionV1,
 } from './peers.js';
 import { TerminalRows } from './rows/terminal-rows.js';
 import type { TerminalStore } from './store.js';
@@ -36,14 +36,14 @@ export interface TerminalClient {
 
 /** Terminal rows sit one level below their owning Thread. */
 export const rowsDepth = (
-  workspace: Pick<LayoutWorkspace, 'thread'>,
+  records: Pick<RecordsSource, 'thread'>,
   threadId: string,
 ): number => {
   let depth = 1;
   const seen = new Set<string>([threadId]);
-  let parent = workspace.thread(threadId)?.parentThreadId;
+  let parent = records.thread(threadId)?.parentThreadId;
   while (parent !== undefined && !seen.has(parent)) {
-    const record = workspace.thread(parent);
+    const record = records.thread(parent);
     if (record === undefined) break;
     seen.add(parent);
     depth += 1;
@@ -52,11 +52,17 @@ export const rowsDepth = (
   return depth;
 };
 
-const useSelectedThread = (services: Services): ThreadRecord | undefined => {
-  const workspace = useService(services, LayoutWorkspaceV1);
+/** The selected Thread's id, while a Project and a Thread are selected. */
+const useSelectedThreadId = (services: Services): string | undefined => {
+  const selection = useService(services, WorkspaceSelectionV1);
   return useSubscribed(
-    workspace,
-    () => (workspace as LayoutWorkspace).selectedThread(),
+    selection,
+    () => {
+      const { projectId, threadId } = (
+        selection as NonNullable<typeof selection>
+      ).current();
+      return projectId === undefined ? undefined : threadId;
+    },
     undefined,
   );
 };
@@ -67,7 +73,7 @@ export const defineTerminalElements = (client: TerminalClient) => {
     useSubscribed(store, () => store.terminals(), []);
 
   function NewTerminalButton({ services }: { readonly services: Services }) {
-    const thread = useSelectedThread(services);
+    const threadId = useSelectedThreadId(services);
     return (
       <Button
         variant="ghost"
@@ -75,8 +81,8 @@ export const defineTerminalElements = (client: TerminalClient) => {
         className="mr-2 shrink-0 [app-region:no-drag]"
         aria-label="New terminal"
         title="Open terminal"
-        disabled={!thread}
-        onClick={thread ? () => void store.create(thread.id) : undefined}
+        disabled={!threadId}
+        onClick={threadId ? () => void store.create(threadId) : undefined}
       >
         <TerminalIcon />
       </Button>
@@ -90,7 +96,7 @@ export const defineTerminalElements = (client: TerminalClient) => {
     readonly services: Services;
     readonly 'thread-id'?: string;
   }) {
-    const workspace = useService(services, LayoutWorkspaceV1);
+    const records = useService(services, RuntimeRecordsV1);
     const tabs = useService(services, LayoutTabsV2);
     const navigation = useService(services, NavigationV1);
     const terminals = useTerminals();
@@ -106,11 +112,11 @@ export const defineTerminalElements = (client: TerminalClient) => {
           : terminalIdOfTab(tabs?.current()?.id),
       undefined,
     );
-    if (threadId === undefined || workspace === undefined) return null;
+    if (threadId === undefined || records === undefined) return null;
     return (
       <TerminalRows
         terminals={own}
-        depth={rowsDepth(workspace, threadId)}
+        depth={rowsDepth(records, threadId)}
         selectedId={selectedId}
         onOpen={client.open}
         onStop={store.stop}

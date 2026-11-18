@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "terminal",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "engines": { "doric": "^1.0.0" },
   "description": "Tracked shell commands and manual terminal sessions.",
   "provides": ["terminal/v1@1.2.0"],
@@ -16,9 +16,10 @@
     "ui/v1@^1.0.0",
     "regions/v1@^1.0.0",
     "navigation/v1@^1.0.0",
-    "layout.workspace/v1@^1.1.0",
+    "workspace.selection/v1@^1.0.0",
+    "runtime.records/v1@^1.0.0",
     "layout.tabs/v2@^2.0.0",
-    "layout.sidebar/v1@^1.0.0"
+    "workspace.sidebar/v1@^1.0.0"
   ],
   "optional": ["files.refresh/v1"],
   "desktopScope": {

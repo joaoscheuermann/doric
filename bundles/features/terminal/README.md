@@ -68,9 +68,11 @@ The tool runs a command in the current working directory; a relative
   elements `terminal-new-button`, `terminal-rows`, `terminal-view` and
   `terminal-tab-icon`.
   `registerTerminalSurfaces` adds the header button (`shell.header.actions`) and the
-  sidebar's terminal rows while `workspace` serves `layout.sidebar/v1`; from
-  `layout.sidebar/v1` 1.1.0 its `busy` answer keeps a Thread active while an
-  agent terminal under it is busy. `terminal-rows` reads `layout.tabs/v2`
+  sidebar's terminal rows while `workspace` serves `workspace.sidebar/v1`;
+  its `busy` answer keeps a Thread active while an agent terminal under it is
+  busy. The button reads the selected Thread from `workspace.selection/v1`,
+  and the rows and a row's click read the Thread records from
+  `runtime.records/v1` (terminal 1.1.9). `terminal-rows` reads `layout.tabs/v2`
   `current()`/`subscribe()` and `navigation/v1` to mark the selected terminal
   row (`aria-current="true"`), subscribing only while its Thread has terminals.
 - `create` opens a manual bash PTY in a Thread's working directory, bringing

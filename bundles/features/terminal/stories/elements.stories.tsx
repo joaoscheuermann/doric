@@ -34,10 +34,14 @@ const useElements = (selected: boolean) =>
     const record = { id: threadId, projectId: 'prj_checkout' };
     const services = storyServices({
       apis: {
-        'layout.workspace/v1': {
+        'runtime.records/v1': {
           ...still,
           thread: (id: string) => (id === threadId ? record : undefined),
-          selectedThread: () => (selected ? record : undefined),
+        },
+        'workspace.selection/v1': {
+          ...still,
+          current: () =>
+            selected ? { projectId: record.projectId, threadId } : {},
         },
       },
     });

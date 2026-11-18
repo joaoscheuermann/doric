@@ -1,8 +1,8 @@
 // The client contracts this part calls, built from their IDs with the owners'
 // shapes narrowed to what it reads (as `layout` and `notifications` reach
-// their peers): `layout` and `files` sit above the runtime, which imports
-// `terminal/contracts`, so importing their contracts modules would close a
-// cycle between the projects.
+// their peers): `layout`, `files` and `workspace` sit above the runtime, which
+// imports `terminal/contracts`, so importing their contracts modules, or the
+// runtime's, would close a cycle between the projects (until step 7(c)).
 
 import { type CallArg, type Disposable, ref } from 'bundle/contracts';
 import type { ReactNode } from 'react';
@@ -14,14 +14,29 @@ export interface ThreadRecord {
   readonly parentThreadId?: string;
 }
 
-/** `layout.workspace/v1` (1.1.0). */
-export interface LayoutWorkspace {
-  thread(threadId: string, call?: CallArg): ThreadRecord | undefined;
-  selectedThread(call?: CallArg): ThreadRecord | undefined;
+/** The selected ids `workspace.selection/v1` answers. */
+export interface WorkspaceSelection {
+  readonly projectId?: string;
+  readonly threadId?: string;
+}
+
+/** `workspace.selection/v1` (1.0.0). */
+export interface WorkspaceSelectionService {
+  current(call?: CallArg): WorkspaceSelection;
   subscribe(listener: () => void, call?: CallArg): Disposable;
 }
 
-export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
+export const WorkspaceSelectionV1 = ref<WorkspaceSelectionService>(
+  'workspace.selection/v1',
+);
+
+/** `runtime.records/v1` (1.0.0), for the Thread records only. */
+export interface RecordsSource {
+  thread(threadId: string, call?: CallArg): ThreadRecord | undefined;
+  subscribe(listener: () => void, call?: CallArg): Disposable;
+}
+
+export const RuntimeRecordsV1 = ref<RecordsSource>('runtime.records/v1');
 
 /** One entry of a viewer tab's context menu (`layout.tabs/v2` 2.0.0). */
 export interface TabMenuItem {
@@ -98,18 +113,18 @@ export interface ThreadRows {
   count(threadId: string): number;
   subscribe(listener: () => void): Disposable;
   /**
-   * `layout.sidebar/v1` 1.1.0: whether an agent terminal directly under the
-   * Thread keeps it active. A 1.0.0 layout never calls it and ignores it.
+   * `workspace.sidebar/v1` 1.0.0: whether an agent terminal directly under
+   * the Thread keeps it active.
    */
   busy?(threadId: string): boolean;
 }
 
-/** `layout.sidebar/v1` (1.0.0). */
-export interface LayoutSidebar {
+/** `workspace.sidebar/v1` (1.0.0). */
+export interface WorkspaceSidebar {
   addThreadRows(rows: ThreadRows, call?: CallArg): Disposable;
 }
 
-export const LayoutSidebarV1 = ref<LayoutSidebar>('layout.sidebar/v1');
+export const WorkspaceSidebarV1 = ref<WorkspaceSidebar>('workspace.sidebar/v1');
 
 /** `files.refresh/v1` (1.0.0), for `request` only. */
 export interface FilesRefresh {
