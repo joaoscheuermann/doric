@@ -5,7 +5,7 @@
 // (`shell.titlebar.tabs`) over `shell.page`. The conversation form draws the
 // sidebar column with the stack panes, the title bar, the conversation (the
 // child route in `<core-outlet>`, the `shell.conversation.footer` region floating over its
-// bottom, the `layout.overlay` layer over it) and the side panel, whose
+// bottom, the `shell.conversation.overlay` layer over it) and the side panel, whose
 // header ends with `shell.window.actions`. The navigation fills the slots
 // with elements of its own (`elements/navigation-elements.tsx`).
 
@@ -34,6 +34,7 @@ import {
 import {
   SHELL_CONVERSATION_BOTTOM,
   SHELL_CONVERSATION_FOOTER,
+  SHELL_CONVERSATION_OVERLAY,
   SHELL_PAGE,
   SHELL_SIDEBAR,
   SHELL_SIDEBAR_FOOTER,
@@ -215,7 +216,7 @@ function Workspace() {
                 </ConversationFrame>
               </ConversationTerminals>
               {/*
-                The floating layer over the conversation area: `layout.overlay`
+                The floating layer over the conversation area: `shell.conversation.overlay`
                 items place themselves, and the layer itself never intercepts
                 a pointer.
               */}
@@ -223,7 +224,7 @@ function Workspace() {
                 data-slot="workspace-overlay"
                 className="pointer-events-none absolute inset-0 z-20"
               >
-                <Region name="layout.overlay" />
+                <Region name={SHELL_CONVERSATION_OVERLAY} />
               </div>
             </SidebarInset>
           </WorkspaceLayout>

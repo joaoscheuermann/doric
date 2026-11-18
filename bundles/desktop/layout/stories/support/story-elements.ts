@@ -23,7 +23,7 @@ import { placeholderElement } from './placeholder.js';
 let current: FakeHost | undefined;
 
 /** Regions whose items place themselves; their stand-in draws nothing. */
-const silentRegions = new Set(['layout.overlay']);
+const silentRegions = new Set(['shell.conversation.overlay']);
 
 const defineOnce = (
   tag: string,

@@ -144,17 +144,17 @@ tab with no Thread or Project selected fails with `unavailable`.
 
 ## Regions
 
-| Region                      | Where                                                                                  | Items today                                                    |
-| --------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `shell.header.actions`      | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
-| `layout.panel`              | the Project panel's views                                                              | `files`, `git`                                                 |
-| `shell.conversation.footer` | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
-| `layout.panel.footer`       | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
-| `layout.account.status`     | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
-| `shell.conversation.bottom` | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
-| `layout.overlay`            | a floating layer over the conversation                                                 | items place themselves; the layer never intercepts a pointer   |
-| `layout.dashboard.nav`      | groups of the `/projects` dashboard sidebar, after Projects                            | `settings`' Providers group                                    |
-| `layout.dashboard.page`     | a page the dashboard draws instead of its project list                                 | `settings`' provider page, shown through `layout.dashboard/v1` |
+| Region                       | Where                                                                                  | Items today                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `shell.header.actions`       | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
+| `layout.panel`               | the Project panel's views                                                              | `files`, `git`                                                 |
+| `shell.conversation.footer`  | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
+| `layout.panel.footer`        | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
+| `layout.account.status`      | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
+| `shell.conversation.bottom`  | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
+| `shell.conversation.overlay` | a floating layer over the conversation                                                 | items place themselves; the layer never intercepts a pointer   |
+| `layout.dashboard.nav`       | groups of the `/projects` dashboard sidebar, after Projects                            | `settings`' Providers group                                    |
+| `layout.dashboard.page`      | a page the dashboard draws instead of its project list                                 | `settings`' provider page, shown through `layout.dashboard/v1` |
 
 A `layout.panel` item carries `{ label, icon, badgeTag? }`; its element mounts
 only while the item is selected. A `layout.dashboard.nav`

@@ -33,6 +33,8 @@ export const SHELL_HEADER_ACTIONS = 'shell.header.actions';
 export const SHELL_CONVERSATION_FOOTER = 'shell.conversation.footer';
 /** The split under the conversation, shown while an item asks through `setBottomVisible` (4.4.0). */
 export const SHELL_CONVERSATION_BOTTOM = 'shell.conversation.bottom';
+/** A floating layer over the conversation; its items place themselves (4.5.0). */
+export const SHELL_CONVERSATION_OVERLAY = 'shell.conversation.overlay';
 
 /** One entry of a viewer tab's context menu (1.2.0). */
 export interface TabMenuItem {
