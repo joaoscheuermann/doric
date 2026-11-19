@@ -3,6 +3,7 @@
 // uses instead of importing the chat package; the IDs and shapes are chat's.
 
 import { type CallArg, type Disposable, ref } from 'bundle/contracts';
+import type { ErrorInfo } from 'desktop/reads';
 
 import type { DelegatedInput } from './domain/delegated.js';
 
@@ -42,6 +43,48 @@ export interface ProjectorSpec<S = unknown> {
   ): { readonly state: S; readonly blocks: readonly ChatBlock[] };
 }
 
+/** 1.2.0: how the chat draws the calls of one tool (chat's `ToolRendererSpec`). */
+export interface ToolRendererSpec {
+  /** The tool's name, as the agent calls it. */
+  readonly toolName: string;
+  /**
+   * The element that draws each call, created through `ui/v1`, one per call,
+   * with `view` (`ChatToolView`). Absent, the chat's generic row draws it.
+   */
+  readonly elementTag?: string;
+  /** `true`: the call is a block of its own, outside the activity group. Default `false`. */
+  readonly standalone?: boolean;
+  /** `true`: the call's block is open until the reader closes it. Default `false`. */
+  readonly openByDefault?: boolean;
+}
+
+/**
+ * The `view` property the chat sets on a tool element (chat's `ChatToolView`):
+ * before it connects, and again (as a new object) whenever a field changes.
+ * `key` does not change for the call's life; `status` moves only from
+ * `running` to `finished` or `failed`.
+ */
+export interface ChatToolView {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly promptId: string;
+  /** `${promptId}/${callId}`: stable for the call's life and unique in the Thread. */
+  readonly key: string;
+  /** The tool's name, as registered. */
+  readonly name: string;
+  /** One-line JSON of the call's payload. */
+  readonly args: string;
+  /** The finished call's serialized output; absent while running or when there is none. */
+  readonly result?: string;
+  /** Why the call failed, whole (causes and time included); absent unless `status` is `failed`. */
+  readonly error?: ErrorInfo;
+  readonly status: 'running' | 'finished' | 'failed';
+  /** The reader's choice of open or closed; `null` while the reader has not chosen. */
+  readonly chosen: boolean | null;
+  /** Whether the caret rests on the block. */
+  readonly focused: boolean;
+}
+
 export interface ChatViews {
   registerRenderer(
     spec: { readonly blockType: string; readonly elementTag: string },
@@ -54,9 +97,22 @@ export interface ChatViews {
    * Disposing releases the claim.
    */
   registerProjector(spec: ProjectorSpec, call?: CallArg): Disposable;
+  /**
+   * 1.2.0. While the returned `Disposable` lives, every call of
+   * `spec.toolName` is drawn by one `spec.elementTag` element per call, with
+   * its `view`. Throws `registration_conflict` when another bundle holds the
+   * name.
+   */
+  registerToolRenderer(spec: ToolRendererSpec, call?: CallArg): Disposable;
 }
 
 export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');
+
+/**
+ * The one event a tool element dispatches when the reader opens or closes its
+ * block, `detail: { chosen }` (chat's `CHAT_BLOCK_CHOSEN_EVENT`).
+ */
+export const CHAT_BLOCK_CHOSEN_EVENT = 'chat-block-chosen';
 
 /** The block type of another Thread's input in this one. */
 export const DELEGATED_INPUT_BLOCK = 'chat.delegated-input/v1';

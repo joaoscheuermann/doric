@@ -7,6 +7,12 @@
 
 import { type Services, UiV1 } from 'bundle/contracts';
 import { Button } from 'desktop/ui/button';
+import {
+  blockOpen,
+  type Chosen,
+  CollapsibleBlock,
+  type Openness,
+} from 'desktop/ui/collapsible-block';
 import { defineReactElement } from 'desktop/ui/react-element';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import { cn } from 'desktop/ui/utils';
@@ -14,14 +20,13 @@ import { BotIcon } from 'lucide-react';
 import { type ReactNode, StrictMode, useEffect, useRef } from 'react';
 
 import { blockInput, type ChatBlockElement } from './chat-contract.js';
-import { CollapsibleBlock } from './collapsible-block.js';
 import type { DelegatedInput } from './domain/delegated.js';
 import { useDelegatedSource } from './source.js';
 
 export const DELEGATED_TURN_TAG = 'threads-delegated-turn';
 
 /** Chat's read-only Markdown element, in the conversation's theme. */
-function ReadonlyMarkdown({
+export function ReadonlyMarkdown({
   text,
   services,
 }: {
@@ -71,17 +76,28 @@ function ReadonlyMarkdown({
   return <div ref={frame} style={{ display: 'contents' }} />;
 }
 
+/**
+ * When a delegated input is open while the reader has not chosen: settled,
+ * never in progress, an instruction starts open and a result starts closed.
+ */
+const delegatedOpenness = (input: DelegatedInput): Openness => ({
+  active: false,
+  hasContent: true,
+  defaultOpen: input.kind === 'parent',
+});
+
 export function DelegatedTurn({
   input,
-  open,
+  chosen,
   focused,
-  onOpenChange,
+  onChosenChange,
   services,
 }: {
   readonly input: DelegatedInput;
-  readonly open: boolean;
+  /** The reader's choice of open/closed; `null` until they make one. */
+  readonly chosen: Chosen;
   readonly focused: boolean;
-  readonly onOpenChange: (open: boolean) => void;
+  readonly onChosenChange: (chosen: boolean) => void;
   readonly services: Services;
 }) {
   const source = useDelegatedSource(input.threadId, services);
@@ -127,9 +143,10 @@ export function DelegatedTurn({
           </span>
         ),
       }}
-      open={open}
+      openness={delegatedOpenness(input)}
+      chosen={chosen}
       focused={focused}
-      onOpenChange={onOpenChange}
+      onChosenChange={onChosenChange}
     >
       {input.status === undefined ? null : (
         <div className="mb-2">Status: {input.status}</div>
@@ -168,9 +185,9 @@ export const defineDelegatedTurnElement = () => {
       return (
         <DelegatedTurn
           input={input}
-          open={chosenState ?? input.kind === 'parent'}
+          chosen={chosenState ?? null}
           focused={focused === true}
-          onOpenChange={(next) => onChosenChange?.(next)}
+          onChosenChange={(next) => onChosenChange?.(next)}
           services={services}
         />
       );
@@ -195,7 +212,9 @@ export const defineDelegatedTurnElement = () => {
     }
 
     get chosen(): boolean {
-      return this.chosenState ?? blockInput(this.block)?.kind === 'parent';
+      const input = blockInput(this.block);
+      if (input === undefined) return this.chosenState ?? false;
+      return blockOpen(this.chosenState ?? null, delegatedOpenness(input));
     }
 
     toggle(): void {
