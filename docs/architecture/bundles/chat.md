@@ -27,7 +27,7 @@ O bundle `threads` continua dono das tools de delegação e dos cards de Thread 
 - `runtime.threads/v1` (`RuntimeThreadsV1`), fornecido pelo `runtime` no host, para enviar prompts, ler Threads e assinar o stream durável; ele também cobre os controles de Threads filhas do `Host` atual. O contrato `threads.commands/v1` (`ThreadsCommandsV1`) deixa de existir. Como é fornecido no host, a parte client do `chat` o alcança pela ponte client→host ao declará-lo em `requires` (ver [serviços e canais](./services-and-channels.md)).
 - `ui/v1`, fornecido pelo core no client, para definir `<chat-view>` e criá-lo com `ui.create` (ver [UI no client](./core.md#ui-no-client)). O `chat` não adiciona item de região: a conversa aparece na área principal do workspace porque a rota tem `parent: '/'` e é mostrada no `<core-outlet>` que o [layout](./layout.md) põe no seu template.
 - `commands/v1`, fornecido pelo core no client, para despachar comandos a partir de intenções DOM dos blocos da conversa, como `git.open-comparison/v1`.
-- `hooks/v1`, fornecido pelo core por padrão, no qual a parte client do `chat` define e executa os próprios hooks, `chat.hooks/v1` (`ChatHooksV1`), como `onBeforeRenderBlockHook` (ver [hooks](./hooks.md)).
+- `hooks/v1`, fornecido pelo core por padrão, no qual a parte client do `chat` define e executa os próprios hooks, `chat.hooks/v2` (`ChatHooksV2`), como `onBeforeRenderBlockHook` (ver [hooks](./hooks.md)).
 - `navigation/v1`, fornecido pelo core no client, para registrar a rota `/projects/:projectId/threads/:threadId` (ver [navegação e rotas](./navigation.md)).
 - `history` é uma otimização opcional, não um requisito (ver [armazenamento](./storage.md)).
 
@@ -41,7 +41,7 @@ Pela regra de `requires`, a parte client do `chat` declara todo contrato que usa
   - `chat.views/v1` (`ChatViewsV1`), independente de editor;
   - `chat.lexical/v1`, específico da implementação padrão.
 - O serviço client `chat.send/v1`, em toda janela: `send({ projectId, threadId })` envia a pilha de comentários do compositor, com o texto de rascunho que o host guarda, como um prompt pelo mesmo caminho de envio, e limpa o rascunho depois do aceite. O prompt de todo envio usa o envelope XML `<comments>`/`<message>` ([comentários](./comments.md#o-prompt-o-envelope-xml)), e o `chat` lê o corpo de `<message>` onde mostra um prompt guardado. A projeção embutida dele reivindica `comments.added/v1` e `comments.resolved/v1` e as dobra em threads com estado ([comentários](./comments.md#threads-estados-e-respostas-do-agente)).
-- Os hooks `chat.hooks/v1` (`ChatHooksV1`), definidos e executados pela parte client no `hooks/v1` do client; outros bundles registram handlers neles, por exemplo com `whenAvailable` (ver [hooks](./hooks.md)).
+- Os hooks `chat.hooks/v2` (`ChatHooksV2`), definidos e executados pela parte client no `hooks/v1` do client; outros bundles registram handlers neles, por exemplo com `whenAvailable` (ver [hooks](./hooks.md)). Desde o `chat` 2.0.0 (passo 5(c) do [isolamento de bundles](../../features/bundle-isolation.md)) o `chat` fornece só `chat.hooks/v2`, que substitui `chat.hooks/v1`: `onSandboxActivityHook` dispara quando o `chat` passa a manter uma Thread, quando o diretório de trabalho dela muda ou quando o estado dela muda para qualquer um exceto `running`, e nunca depois de uma tool terminada. O bundle dono de uma tool que escreve no sandbox observa `onThreadUpdateHook` e pede o próprio refresh, como o `files` faz para `edit` e `write` e o `git` para `git`.
 
 Uma conversa alternativa substitui o bundle `chat` na composição: registra o mesmo path com o próprio elemento e pode fornecer `chat.views/v1` sem Lexical. Dois bundles que registram o mesmo path produzem um conflito de rota, e o segundo vai para quarentena com motivo. `chat.views/v1` tem cardinalidade `one`, a padrão de `defineService`; se dois bundles habilitados o fornecem, a composição escolhe o provedor em `providers`, e a escolha vale no ambiente client. Sem escolha, o segundo provedor vai para quarentena com motivo (ver [composição e distribuição](./composition-and-distribution.md)).
 
@@ -59,13 +59,13 @@ import {
   UiV1,
   type ClientContext,
 } from 'bundle/contracts';
-import { ChatHooksV1 } from '../contracts/index.js';
+import { ChatHooksV2 } from '../contracts/index.js';
 import { chatLexical } from './lexical.js'; // defineService('chat.lexical/v1', { ... })
 import { chatViews } from './views.js'; // defineService('chat.views/v1', { ... })
 
 export function activate({ services }: ClientContext) {
   // o dono define os próprios hooks e os executa antes de renderizar cada bloco
-  const chatHooks = services.use(HooksV1).define(ChatHooksV1);
+  const chatHooks = services.use(HooksV1).define(ChatHooksV2);
   renderer.beforeRender = (block, call) =>
     chatHooks.onBeforeRenderBlockHook.execute(block, call);
 
@@ -88,10 +88,10 @@ import type { chatLexical } from '../client/lexical.js';
 import type { chatViews } from '../client/views.js';
 export const ChatViewsV1 = ref<typeof chatViews>('chat.views/v1');
 export const ChatLexicalV1 = ref<typeof chatLexical>('chat.lexical/v1');
-export { ChatHooksV1 } from './hooks.js'; // chat, contracts/hooks.ts (ver hooks)
+export { ChatHooksV2 } from './hooks.js'; // chat, contracts/hooks.ts (ver hooks)
 ```
 
-`chat/contracts` exporta essas referências, com `ref` de `bundle/contracts`, e as definições sem lógica, como `ChatHooksV1`; o `import type` some no build. Quem estende a conversa usa `services.whenAvailable(ChatViewsV1, ...)`.
+`chat/contracts` exporta essas referências, com `ref` de `bundle/contracts`, e as definições sem lógica, como `ChatHooksV2`; o `import type` some no build. Quem estende a conversa usa `services.whenAvailable(ChatViewsV1, ...)`.
 
 Dentro de `<chat-view>`, o envio de prompt usa o stub remoto no escopo da janela, por exemplo `await services.use(RuntimeThreadsV1, { projectId }).sendPrompt({ threadId, text }, { signal })`; o dispatcher preenche `call.caller` com o `chat` e `call.scope.windowKey` com a janela de origem.
 
@@ -106,7 +106,7 @@ O manifesto, no formato de [manifesto v1](./manifest.md), lista em `provides` os
   "provides": [
     "chat.views/v1@1.0.0",
     "chat.lexical/v1@1.0.0",
-    "chat.hooks/v1@1.0.0"
+    "chat.hooks/v2@2.0.0"
   ],
   "requires": [
     "hooks/v1@^1.0.0",
@@ -277,9 +277,12 @@ O manifesto completo do `git`, no formato de [manifesto v1](./manifest.md), cobr
     "runtime.lease/v1@^1.0.0",
     "runtime.workspace/v1@^1.0.0",
     "runtime.hooks/v1@^1.0.0"
-  ]
+  ],
+  "optional": ["chat.hooks/v2"]
 }
 ```
+
+O manifesto acima é ilustrativo. O do `git` 1.2.13 (`bundles/features/git/manifest.json`) traz as mesmas duas linhas para o hook do `chat`: `hooks/v1@^1.0.0` em `requires`, porque o observador usa `services.use(HooksV1).whenAvailable`, e `chat.hooks/v2` em `optional`, porque o `chat` pode faltar na composição.
 
 > **Desatualizado.** A região `layout.panel` do parágrafo abaixo se chama
 > `shell.panel` desde o passo 4(a) do isolamento de bundles. O comportamento
@@ -287,13 +290,13 @@ O manifesto completo do `git`, no formato de [manifesto v1](./manifest.md), cobr
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
-No client, `ui/v1` e `commands/v1` entram pelo código acima; `navigation/v1`, porque a parte client registra as rotas `/git/diff/:threadId/:repository` e `/settings/git` com `services.use(NavigationV1)` (ver [navegação e rotas](./navigation.md)); `regions/v1`, pelo item `<git-changes>` que ela põe na região `layout.panel` do [layout](./layout.md) e pelo link `{ id: 'git', tag: 'settings-link', props: { label: 'Git', path: '/settings/git' } }` na região `settings.sections`; `windows/v1`, porque `openComparisonCommand` abre a comparação com `services.use(WindowsV1)` (ver [abrir um path numa janela](./navigation.md#abrir-um-path-numa-janela)); `menus/v1`, pelo item de menu que a parte client pede; e `hooks/v1`, também usado pela parte client para consumir `chat.hooks/v1` com `whenAvailable`. `git.commands/v1` entra em `requires` embora o próprio `git` o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client, como no [documento principal](../bundles.md). `chat.views/v1` e `chat.hooks/v1` ficam fora por serem usados com `whenAvailable`. `commands/v1` existe no `desktopMain` e no client, não no host, por isso os comandos ficam na parte client.
+No client, `ui/v1` e `commands/v1` entram pelo código acima; `navigation/v1`, porque a parte client registra as rotas `/git/diff/:threadId/:repository` e `/settings/git` com `services.use(NavigationV1)` (ver [navegação e rotas](./navigation.md)); `regions/v1`, pelo item `<git-changes>` que ela põe na região `layout.panel` do [layout](./layout.md) e pelo link `{ id: 'git', tag: 'settings-link', props: { label: 'Git', path: '/settings/git' } }` na região `settings.sections`; `windows/v1`, porque `openComparisonCommand` abre a comparação com `services.use(WindowsV1)` (ver [abrir um path numa janela](./navigation.md#abrir-um-path-numa-janela)); `menus/v1`, pelo item de menu que a parte client pede; e `hooks/v1`, também usado pela parte client para consumir `chat.hooks/v2` com `whenAvailable`. `git.commands/v1` entra em `requires` embora o próprio `git` o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client, como no [documento principal](../bundles.md). `chat.views/v1` e `chat.hooks/v2` ficam fora por serem usados com `whenAvailable`. `commands/v1` existe no `desktopMain` e no client, não no host, por isso os comandos ficam na parte client.
 
 Um clique em `<git-branch-event>` emite uma intenção DOM, e a conversa despacha o comando `git.open-comparison/v1`, definido pelo `git` com `defineCommand` e registrado em `commands/v1`, para abrir a comparação. A ação é um comando, não um serviço.
 
 ## Relações
 
-- [Hooks](./hooks.md): define `chat.hooks/v1`, executado pelo `chat`, e o consumo opcional pelo `git`.
+- [Hooks](./hooks.md): define `chat.hooks/v2`, executado pelo `chat`, e o consumo opcional pelo `git`.
 - [Contratos e a família define\*](./contracts.md): define `defineService`, `defineMethod`, `ref`, `defineEvent` e os schemas com `z.custom` usados por `chat` e por quem o estende.
 - [Contextos de ativação](./contexts.md): define `ClientContext` e `HostContext` só com `services`, o `call` recebido pelos handlers, sua propagação entre saltos e a função de limpeza devolvida por `activate`.
 - [Manifesto](./manifest.md): define `requires` e `provides` por ambiente, como nos manifestos de exemplo.

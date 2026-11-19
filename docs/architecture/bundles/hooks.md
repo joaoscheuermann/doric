@@ -363,7 +363,7 @@ export const activate = ({ services }: HostContext) => {
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
-O manifesto do Git declara as duas coisas: o hook que ele define em `provides` e o que ele consome em `requires`. Como em [manifesto v1](./manifest.md), ele também lista os demais contratos que o código do Git usa com `use`: `hooks/v1`, `events/v1` (o evento `git.branch-switched/v1`, que o Git fornece), `settings/v1`, `tools/v1` e `runtime.workspace/v1` (usado pela tool do Git em [contextos](./contexts.md)) no host; `ui/v1`, `navigation/v1` (rotas `/git/diff/:threadId/:repository` e `/settings/git`), `regions/v1` (o item em `layout.panel`), `windows/v1` e `menus/v1` no client; e `runtime.lease/v1`, que o `execute` de `switchBranch` usa. `commands/v1` e `git.commands/v1` entram pela parte client, como em [chat](./chat.md): `commands/v1` existe no `desktopMain` e no client, não no host, então o comando `git.open-comparison/v1` e o `switchBranchCommand` são registrados no client, que chama `git.commands/v1` do host pela ponte. `git.commands/v1` entra em `requires` embora o próprio Git o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client; o manifesto completo está em [chat](./chat.md). `chat.hooks/v1`, consumido pela parte client com `whenAvailable` no exemplo 4, não entra em `requires`.
+O manifesto do Git declara as duas coisas: o hook que ele define em `provides` e o que ele consome em `requires`. Como em [manifesto v1](./manifest.md), ele também lista os demais contratos que o código do Git usa com `use`: `hooks/v1`, `events/v1` (o evento `git.branch-switched/v1`, que o Git fornece), `settings/v1`, `tools/v1` e `runtime.workspace/v1` (usado pela tool do Git em [contextos](./contexts.md)) no host; `ui/v1`, `navigation/v1` (rotas `/git/diff/:threadId/:repository` e `/settings/git`), `regions/v1` (o item em `layout.panel`), `windows/v1` e `menus/v1` no client; e `runtime.lease/v1`, que o `execute` de `switchBranch` usa. `commands/v1` e `git.commands/v1` entram pela parte client, como em [chat](./chat.md): `commands/v1` existe no `desktopMain` e no client, não no host, então o comando `git.open-comparison/v1` e o `switchBranchCommand` são registrados no client, que chama `git.commands/v1` do host pela ponte. `git.commands/v1` entra em `requires` embora o próprio Git o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client; o manifesto completo está em [chat](./chat.md). `chat.hooks/v2`, consumido pela parte client com `whenAvailable` no exemplo 4, não entra em `requires`: fica em `optional`.
 
 ```json
 {
@@ -392,13 +392,16 @@ O manifesto do Git declara as duas coisas: o hook que ele define em `provides` e
     "runtime.lease/v1@^1.0.0",
     "runtime.workspace/v1@^1.0.0",
     "runtime.hooks/v1@^1.0.0"
-  ]
+  ],
+  "optional": ["chat.hooks/v2"]
 }
 ```
 
+O manifesto acima é ilustrativo. O do `git` 1.2.13 (`bundles/features/git/manifest.json`) traz as mesmas duas linhas para o hook do `chat`: `hooks/v1@^1.0.0` em `requires`, porque o observador usa `services.use(HooksV1).whenAvailable`, e `chat.hooks/v2` em `optional`, porque o `chat` pode faltar na composição.
+
 ### 4. Definir um hook na UI e consumi-lo como dependência opcional (`transform`, client)
 
-O `chat` define `onBeforeRenderBlockHook` para que outros bundles acrescentem ações a um bloco antes de ele ser renderizado. O Git acrescenta “Abrir comparação” aos blocos da tool `git`, mas só se o `chat` existir na composição.
+O `chat` define `onBeforeRenderBlockHook` para que outros bundles acrescentem ações a um bloco antes de ele ser renderizado. O Git acrescenta “Abrir comparação” aos blocos da tool `git`, mas só se o `chat` existir na composição. Este exemplo é uma ilustração: a cópia de `chat.hooks/v2` que o `git` 1.2.13 guarda define só `onThreadUpdateHook`, e nenhum bundle registra `onBeforeRenderBlockHook`.
 
 ```ts
 // chat, contracts/hooks.ts: o dono define o hook.
@@ -410,7 +413,7 @@ export const onBeforeRenderBlockHook = defineHook({
   input: renderBlockSchema,
 });
 
-export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
+export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
   onBeforeRenderBlockHook,
 });
 ```
@@ -418,22 +421,22 @@ export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
 ```ts
 // chat, parte client: o dono executa o hook; hooks/v1 está em requires.
 import { type ClientContext, HooksV1 } from 'bundle/contracts';
-import { ChatHooksV1 } from '../contracts/index.js';
+import { ChatHooksV2 } from '../contracts/index.js';
 
 export const activate = ({ services }: ClientContext) => {
-  const chatHooks = services.use(HooksV1).define(ChatHooksV1);
+  const chatHooks = services.use(HooksV1).define(ChatHooksV2);
   renderer.beforeRender = (block, call) =>
     chatHooks.onBeforeRenderBlockHook.execute(block, call);
 };
 ```
 
 ```ts
-// git, parte client: consumo opcional, sem requires de chat.hooks/v1.
+// git, parte client: consumo opcional; chat.hooks/v2 fica em optional, não em requires.
 import { type ClientContext, HooksV1 } from 'bundle/contracts';
-import { ChatHooksV1 } from 'chat/contracts';
+import { ChatHooksV2 } from 'chat/contracts';
 
 export const activate = ({ services }: ClientContext) => {
-  services.use(HooksV1).whenAvailable(ChatHooksV1, (h) =>
+  services.use(HooksV1).whenAvailable(ChatHooksV2, (h) =>
     h.onBeforeRenderBlockHook((block) =>
       block.tool === 'git'
         ? {

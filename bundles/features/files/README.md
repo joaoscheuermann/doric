@@ -101,8 +101,10 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   `onThreadUpdateHook`), when the chat starts to hold a Thread, a held
   Thread's working directory changes or its run ends, not when it starts
   (chat's `onSandboxActivityHook`), when the selected Project or Thread
-  changes, on window focus, and every 15 s while the window is visible and
-  connected. Both hooks are `chat.hooks/v2`'s, listed under `optional`
+  changes, when `git` asks for it after a finished `git` call (its
+  `requestProjectRefresh`), when the terminal store asks for it because a
+  followed Project's terminals changed id, state, command or cwd, on window
+  focus, and every 15 s while the window is visible and connected. Both hooks are `chat.hooks/v2`'s, listed under `optional`
   (files 1.8.1).
 - `files.open-file/v1` opens a file as a workspace tab (`files-file-view`).
   The tab's trigger draws the `files-file-icon` element (`iconTag`). Its
