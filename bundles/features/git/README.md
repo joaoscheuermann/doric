@@ -36,6 +36,10 @@ an argument array inside the sandbox:
   default 120 s timeout, at most 600 s;
 - it bounds captured stdout and stderr.
 
+When a `git` call finishes in a conversation the chat holds, the client asks
+for the Project's refresh (`chat.hooks/v2` `onThreadUpdateHook`, optional;
+through `files.refresh/v1`, or its own reads without `files`).
+
 Authentication must be provided by the runtime; credentials do not belong in
 tool arguments. The tool reaches the working directory through
 `runtime.workspace/v1` and the sandbox through `runtime.lease/v1`, and

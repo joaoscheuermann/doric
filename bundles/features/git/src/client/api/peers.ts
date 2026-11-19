@@ -1,11 +1,50 @@
 // The optional and client peers of the git client, as structural copies of
-// their contracts by ID: a composition without files would not map
-// `files/contracts`. Each is reached through `whenAvailable`, or used only by
-// the element that a peer's own window shows. `settings.config/v1` is not
-// here: git requires it, and takes it from `settings/contracts`.
+// their contracts by ID: a composition without files or chat would not map
+// `files/contracts` or `chat/contracts`. Each is reached through
+// `whenAvailable`, or used only by the element that a peer's own window shows.
+// `settings.config/v1` is not here: git requires it, and takes it from
+// `settings/contracts`.
 
-import { type CallArg, type Disposable, ref } from 'bundle/contracts';
+import {
+  type CallArg,
+  type Disposable,
+  defineHook,
+  defineHooks,
+  ref,
+} from 'bundle/contracts';
 import type { ProjectTreeNode, ReadState } from 'files/contracts';
+import { z } from 'zod';
+
+/** What chat's `onThreadUpdateHook` hands git: a live event, or an updated record. */
+export type ChatThreadUpdate =
+  | { readonly kind: 'event'; readonly event: { readonly event: unknown } }
+  | { readonly kind: 'updated'; readonly thread: unknown };
+
+/**
+ * chat.hooks/v2 (D12): the one hook git observes, matched by contract ID only
+ * and reached through `HooksV1.whenAvailable`; git has no chat package line.
+ */
+export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
+  onThreadUpdateHook: defineHook({
+    kind: 'observe',
+    input: z.object({
+      projectId: z.string(),
+      threadId: z.string(),
+      threadName: z.string(),
+      update: z.custom<ChatThreadUpdate>(
+        (value) =>
+          typeof value === 'object' &&
+          value !== null &&
+          'kind' in value &&
+          (value.kind === 'event' || value.kind === 'updated'),
+      ),
+    }),
+  }),
+});
+
+export type ThreadUpdateInput = z.output<
+  (typeof ChatHooksV2)['hooks']['onThreadUpdateHook']['input']
+>;
 
 /** files.sandbox/v1 (client, local): the tree read the Changes view is gated by. */
 export interface TreeObservation {

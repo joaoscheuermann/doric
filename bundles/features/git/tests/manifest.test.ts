@@ -6,7 +6,9 @@
 // and at 1.2.11 from bundle isolation 6(c) (a patch: its copy of
 // `settings.config/v1` becomes an import of `settings/contracts`), and at
 // 1.2.12 from bundle isolation 4(d) (a patch: the selection and the records
-// come from `workspace.selection/v1` and `runtime.records/v1`).
+// come from `workspace.selection/v1` and `runtime.records/v1`), and at
+// 1.2.13 from bundle isolation 5(c) change 2 (a patch: it observes
+// `chat.hooks/v2` to refresh after its own tool).
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -18,7 +20,7 @@ describe('the git manifest', () => {
       readFileSync('bundles/features/git/manifest.json', 'utf8'),
     ) as { version: string; provides: string[]; requires: string[] };
 
-    assert.equal(manifest.version, '1.2.12');
+    assert.equal(manifest.version, '1.2.13');
     assert.ok(manifest.provides.includes('git.commands/v1@1.1.0'));
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('layout.tabs/')),
@@ -38,6 +40,21 @@ describe('the git manifest', () => {
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('layout.workspace/')),
       [],
+    );
+  });
+
+  // Bundle isolation 5(c) change 2 (OD-1, S-1): git observes
+  // `chat.hooks/v2` `onThreadUpdateHook` through `hooks/v1`, so it requires
+  // `hooks/v1` and takes `chat.hooks/v2` as optional.
+  test('requires hooks/v1@^1.0.0 and takes chat.hooks/v2, not chat.hooks/v1, as optional', () => {
+    const manifest = JSON.parse(
+      readFileSync('bundles/features/git/manifest.json', 'utf8'),
+    ) as { requires: string[]; optional: string[] };
+
+    assert.ok(manifest.requires.includes('hooks/v1@^1.0.0'));
+    assert.deepEqual(
+      manifest.optional.filter((ref) => ref.startsWith('chat.hooks/')),
+      ['chat.hooks/v2'],
     );
   });
 

@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "git",
-  "version": "1.2.12",
+  "version": "1.2.13",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -23,13 +23,15 @@
     "runtime.records/v1@^1.0.0",
     "layout.tabs/v2@^2.0.0",
     "settings.config/v1@^1.0.0",
-    "secrets/v1@^1.0.0"
+    "secrets/v1@^1.0.0",
+    "hooks/v1@^1.0.0"
   ],
   "optional": [
     "files.sandbox/v1",
     "files.refresh/v1",
     "files.open-file/v1",
-    "runtime.terminals/v1"
+    "runtime.terminals/v1",
+    "chat.hooks/v2"
   ],
   "desktopScope": {
     "git.commands/v1": ["projectId", "threadId", "promptId"]

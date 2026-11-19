@@ -15,6 +15,7 @@ import {
   type ClientContext,
   CommandsV1,
   type Disposable,
+  HooksV1,
   type Navigation,
   NavigationV1,
   type RegionItem,
@@ -27,7 +28,7 @@ import type { SHELL_PANEL, SHELL_PANEL_FOOTER } from 'layout/contracts';
 import type { SETTINGS_SECTIONS } from 'settings/contracts';
 
 import { gitApiOf } from './api/git-api.js';
-import { type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
+import { ChatHooksV2, type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
 import { createGitChanges, createGitStore } from './changes/store.js';
 import {
   FILE_DIFF_ICON_TAG,
@@ -35,7 +36,8 @@ import {
   openComparisonCommand,
 } from './commands.js';
 import { defineGitElements } from './elements.js';
-import { setGitClient } from './state.js';
+import { requestProjectRefresh, setGitClient } from './state.js';
+import { refreshAfterGit } from './tool-refresh.js';
 
 /** The tag of the Versioning section's element. */
 export const VERSIONING_TAG = 'git-settings-versioning';
@@ -114,6 +116,16 @@ export function activate({ services }: ClientContext): Cleanup {
     };
   });
   setGitClient({ store, refresh: () => refresh });
+  // A finished `git` call in a held conversation refreshes its Project
+  // (`chat.hooks/v2`, bundle isolation 5(c)).
+  const toolRefresh = services
+    .use(HooksV1)
+    .whenAvailable(ChatHooksV2, (chat) => {
+      const registration = chat.onThreadUpdateHook(
+        refreshAfterGit(requestProjectRefresh),
+      );
+      return () => registration.dispose();
+    });
   services.provide(createGitChanges(store));
 
   const ui = services.use(UiV1);
@@ -137,6 +149,7 @@ export function activate({ services }: ClientContext): Cleanup {
     surfaces.dispose();
     command.dispose();
     for (const element of defined.reverse()) element.dispose();
+    toolRefresh.dispose();
     coordinator.dispose();
     store.dispose();
     setGitClient(undefined);
