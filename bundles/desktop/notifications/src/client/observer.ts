@@ -12,7 +12,7 @@ import type { PromptObservation, ThreadEvent } from '../contracts/index.js';
  * matched by contract ID only, so this avoids importing `chat/contracts`,
  * which a composition without chat would not map.
  */
-export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
+export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
   onThreadUpdateHook: defineHook({
     kind: 'observe',
     input: z.object({
@@ -34,7 +34,7 @@ export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
 });
 
 export type ThreadUpdateInput = z.output<
-  (typeof ChatHooksV1)['hooks']['onThreadUpdateHook']['input']
+  (typeof ChatHooksV2)['hooks']['onThreadUpdateHook']['input']
 >;
 
 export interface ObserverSources {

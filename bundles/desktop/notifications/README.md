@@ -18,13 +18,13 @@ process), loaded by the `bundle` platform. See the
 - **Contract:** `notifications.observations/v1` (desktopMain), whose one method
   `report(observation)` is exposed to windows over the desktop bridge.
 
-The bundle requires `hooks/v1` and `navigation/v1`, optionally `chat.hooks/v1`
+The bundle requires `hooks/v1` and `navigation/v1`, optionally `chat.hooks/v2`
 and `runtime.prompt-finished/v1`, and has no settings or tools.
 
 ## How it works
 
 1. **The window observes.** The client part registers on the
-   [`chat`](../chat/README.md) bundle's `chat.hooks/v1` `onThreadUpdateHook`
+   [`chat`](../chat/README.md) bundle's `chat.hooks/v2` `onThreadUpdateHook`
    once chat is available. For every live event of a Thread the chat holds, it
    samples the Thread shown by the route (`navigation/v1`) and whether the
    window has focus, and reports both with the event and the Thread's name.
