@@ -26,6 +26,8 @@ type ToolItemProps = {
   readonly focused?: boolean;
   /** Whether the settled block stays open until the reader closes it; `toolDrawing`'s answer. */
   readonly openByDefault?: boolean;
+  /** Whether a registration owns the name, so the generic row draws it whatever the name. */
+  readonly generic?: boolean;
 };
 
 /**
@@ -38,13 +40,14 @@ export function ToolItem({
   chosen,
   error,
   focused,
+  generic = false,
   name,
   onChosenChange,
   openByDefault = false,
   result,
   status,
 }: ToolItemProps) {
-  if (name === 'terminal') {
+  if (!generic && name === 'terminal') {
     return (
       <TerminalToolItem
         args={args}
@@ -57,7 +60,7 @@ export function ToolItem({
       />
     );
   }
-  if (name === 'edit' || name === 'write') {
+  if (!generic && (name === 'edit' || name === 'write')) {
     return (
       <EditToolItem
         args={args}
@@ -71,7 +74,7 @@ export function ToolItem({
       />
     );
   }
-  if (name === LOAD_SKILL_TOOL) {
+  if (!generic && name === LOAD_SKILL_TOOL) {
     return (
       <SkillToolItem
         args={args}

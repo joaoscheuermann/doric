@@ -369,6 +369,43 @@ describe('T5.1 a registered tool element draws each call', () => {
     assert.ok(state.disposed.includes(element), 'the element was disposed');
     assert.match(transcriptText(window), /Calling probe tool/);
   });
+
+  test('a registration of `edit` with no element draws its call with the generic row, not the diff block; disposing it brings the diff block back', async () => {
+    const { probe, state } = rendererProbe({ tools: [{ toolName: 'edit' }] });
+    const window = await openWith(probe, [asked, started(2, 'c1', 'edit')]);
+    assertReady(state);
+    const editBlocks = () =>
+      window.document.querySelectorAll('[data-slot="edit-tool"]').length;
+    assert.equal(editBlocks(), 0, 'the built-in diff block is not drawn');
+    assert.match(transcriptText(window), /Calling edit/);
+
+    state.tools.get('edit')?.dispose();
+    await settle(150);
+    assert.equal(editBlocks(), 1, 'the built-in diff block is back');
+    assert.doesNotMatch(transcriptText(window), /Calling edit/);
+  });
+
+  test('a registration of `load_skill` with no element draws its call with the generic row, not the skill block; disposing it brings the skill block back', async () => {
+    const { probe, state } = rendererProbe({
+      tools: [{ toolName: 'load_skill' }],
+    });
+    const window = await openWith(probe, [
+      asked,
+      started(2, 'c1', 'load_skill'),
+    ]);
+    assertReady(state);
+    const skillNames = () =>
+      window.document.querySelectorAll('[data-slot="skill-name"]').length;
+    assert.equal(skillNames(), 0, 'the built-in skill block is not drawn');
+    assert.doesNotMatch(transcriptText(window), /Loading skill/);
+    assert.match(transcriptText(window), /Calling load skill/);
+
+    state.tools.get('load_skill')?.dispose();
+    await settle(150);
+    assert.equal(skillNames(), 1, 'the built-in skill block is back');
+    assert.match(transcriptText(window), /Loading skill/);
+    assert.doesNotMatch(transcriptText(window), /Calling load skill/);
+  });
 });
 
 describe('T5.3 the reader’s choice on an element block', () => {

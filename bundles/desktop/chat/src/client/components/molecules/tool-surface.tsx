@@ -42,7 +42,8 @@ export function ToolSurface({
   readonly toggleKey: string;
   readonly onChosenChange: (chosen: boolean) => void;
 }): JSX.Element {
-  const drawing = toolDrawing(name, useToolRenderers());
+  const renderers = useToolRenderers();
+  const drawing = toolDrawing(name, renderers);
   const { projectId, threadId } = useContext(ChatBlocksContext);
   // One `view` per change of a field the element reads, so an element is not
   // handed a new object on every render of its block.
@@ -82,6 +83,7 @@ export function ToolSurface({
         chosen={chosen}
         error={error}
         focused={focused}
+        generic={renderers.has(name)}
         name={name}
         onChosenChange={onChosenChange}
         openByDefault={drawing.openByDefault}
