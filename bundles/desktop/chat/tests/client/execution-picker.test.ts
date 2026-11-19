@@ -1291,7 +1291,7 @@ test("the read notice's Retry calls settings.models/v1.reload once and writes no
 /* New with the move                                                   */
 /* ------------------------------------------------------------------ */
 
-test('T6.4-23, AC6.4: the chat manifest is 1.11.0 on platform ^1.10.0, names the picker, takes settings.models/v1 and workspace.selection/v1 as optional, no layout.* contract, and requires what it required', () => {
+test('T6.4-23, AC6.4: the chat manifest is 2.0.0 on platform ^1.10.0, names the picker, takes settings.models/v1 and workspace.selection/v1 as optional, no layout.* contract, and requires what it required', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as {
@@ -1302,7 +1302,7 @@ test('T6.4-23, AC6.4: the chat manifest is 1.11.0 on platform ^1.10.0, names the
     readonly optional: readonly string[];
   };
 
-  assert.equal(manifest.version, '1.11.0');
+  assert.equal(manifest.version, '2.0.0');
   assert.equal(manifest.engines.doric, '^1.10.0');
   assert.equal(
     manifest.description,

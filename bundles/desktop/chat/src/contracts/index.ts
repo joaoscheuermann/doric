@@ -390,36 +390,9 @@ const threadUpdateInput = z
   .strict();
 
 /**
- * @deprecated Use `ChatHooksV2`. 1.1.0: `onSandboxActivityHook` also fires
- * after a finished `edit`, `write`, `terminal` or `git` call. Removed in
- * bundle isolation step 5(c).
- */
-export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
-  onMountHook: defineHook({ kind: 'observe', input: threadRef }),
-  onUnmountHook: defineHook({ kind: 'observe', input: threadRef }),
-  onBeforeRenderBlockHook: defineHook({
-    kind: 'transform',
-    input: renderBlockSchema,
-  }),
-  /** D9-10: a held conversation saw a sandbox-writing tool or lifecycle change. */
-  onSandboxActivityHook: defineHook({
-    kind: 'observe',
-    input: sandboxActivityInput,
-  }),
-  /**
-   * 1.1.0 (R-9.6): every live event of a held Thread as it is received
-   * (before the 100 ms flush; never a snapshot or history), and every
-   * `updated` record. Chat does not await it.
-   */
-  onThreadUpdateHook: defineHook({
-    kind: 'observe',
-    input: threadUpdateInput,
-  }),
-});
-
-/**
- * 2.0.0 (U27, D12): the hooks of `chat.hooks/v1` 1.1.0, with the same names,
- * kinds and inputs. Only `onSandboxActivityHook` differs, in when it fires.
+ * 2.0.0 (U27, D12): the chat's hooks. `onSandboxActivityHook` fires for a
+ * Thread's lifecycle only, never after a finished tool call; the hooks of the
+ * id before it had the same names, kinds and inputs.
  */
 export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
   /** A conversation opened on a Thread. */

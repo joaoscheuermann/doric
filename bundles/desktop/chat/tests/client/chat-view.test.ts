@@ -30,7 +30,6 @@ import { z } from 'zod';
 
 import {
   CHAT_INTENT_EVENT,
-  ChatHooksV1,
   ChatHooksV2,
   ChatLexicalV1,
   ChatViewsV1,
@@ -732,7 +731,7 @@ const notesProjector = {
 const notesProbe = (opened: unknown[]): Probe => ({
   requires: [
     'chat.views/v1@^1.0.0',
-    'chat.hooks/v1@^1.0.0',
+    'chat.hooks/v2@^2.0.0',
     'ui/v1@^1.0.0',
     'hooks/v1@^1.0.0',
     'commands/v1@^1.0.0',
@@ -745,7 +744,7 @@ const notesProbe = (opened: unknown[]): Probe => ({
       blockType: 'probe.note',
       elementTag: 'probe-card',
     });
-    services.use(HooksV1).whenAvailable(ChatHooksV1, (hooks) => {
+    services.use(HooksV1).whenAvailable(ChatHooksV2, (hooks) => {
       hooks.onBeforeRenderBlockHook((block) => ({
         ...block,
         actions: [{ id: 'open', label: 'Open note' }],
@@ -837,35 +836,6 @@ test("a card's intent runs its command with the card's input", async () => {
 });
 
 test('opening and leaving a conversation runs the mount hooks with its Thread', async () => {
-  const seen: string[] = [];
-  opened = await openChatWindow({
-    url,
-    host: host(thread()),
-    probe: {
-      requires: ['chat.hooks/v1@^1.0.0', 'hooks/v1@^1.0.0'],
-      activate: ({ services }: ClientContext) => {
-        services.use(HooksV1).whenAvailable(ChatHooksV1, (hooks) => {
-          hooks.onMountHook((input) => {
-            seen.push(`mount ${input.projectId} ${input.threadId}`);
-          });
-          hooks.onUnmountHook((input) => {
-            seen.push(`unmount ${input.projectId} ${input.threadId}`);
-          });
-        });
-      },
-    },
-  });
-  await settle(50);
-  assert.equal(seen.at(-1), `mount ${projectId} ${threadId}`);
-
-  opened.window.history.pushState(null, '', '/elsewhere');
-  opened.window.dispatchEvent(new opened.window.PopStateEvent('popstate'));
-  await settle(50);
-  assert.equal(seen.at(-1), `unmount ${projectId} ${threadId}`);
-});
-
-// Bundle isolation 5(c) change 1: the surfaces execute both chat.hooks ids.
-test('opening and leaving a conversation runs the chat.hooks/v2 mount hooks with its Thread', async () => {
   const seen: string[] = [];
   opened = await openChatWindow({
     url,

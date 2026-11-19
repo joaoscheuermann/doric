@@ -1,9 +1,8 @@
 // The chat bundle's client part (stage 9, §7.3): the conversation's store,
 // host adapters, `chat.views/v1`, `chat.lexical/v1`, `chat.send/v1` and
-// `chat.hooks/v1` and `chat.hooks/v2`, the
-// conversation route, the footer composer item and, while `settings.models/v1`
-// is available, the footer execution picker item. Persistent work runs on
-// the activation services (D9-17).
+// `chat.hooks/v2`, the conversation route, the footer composer item and,
+// while `settings.models/v1` is available, the footer execution picker item.
+// Persistent work runs on the activation services (D9-17).
 
 import {
   type Cleanup,
@@ -18,11 +17,7 @@ import {
 } from 'bundle/contracts';
 import type { SHELL_CONVERSATION_FOOTER } from 'layout/contracts';
 
-import {
-  ChatHooksV1,
-  ChatHooksV2,
-  SEND_PROMPT_COMMAND,
-} from '../contracts/index.js';
+import { ChatHooksV2, SEND_PROMPT_COMMAND } from '../contracts/index.js';
 import { HistorySnapshotsV1 } from './api/history-contract.js';
 import { setModelsApi } from './api/model-icons.js';
 import { SettingsModelsV1 } from './api/settings-models.js';
@@ -37,7 +32,7 @@ import {
   ChatThreadTabIconElement,
   ChatViewElement,
 } from './elements/chat-elements.js';
-import { bothChatHooks, setChatHooks } from './services/chat-hooks.js';
+import { setChatHooks } from './services/chat-hooks.js';
 import { initChat, setHistory } from './services/chat-services.js';
 import {
   createChatLexical,
@@ -64,9 +59,8 @@ import { threadChatsStore } from './stores/thread-chats.js';
 
 export function activate({ services }: ClientContext): Cleanup {
   initChat(services);
-  const hooksV1 = services.use(HooksV1).define(ChatHooksV1);
-  const hooksV2 = services.use(HooksV1).define(ChatHooksV2);
-  setChatHooks(bothChatHooks(hooksV1, hooksV2));
+  const hooks = services.use(HooksV1).define(ChatHooksV2);
+  setChatHooks(hooks);
 
   const views = createChatViews();
   services.provide(views.service);
@@ -137,7 +131,7 @@ export function activate({ services }: ClientContext): Cleanup {
     setModelsApi(api);
     return () => setModelsApi(undefined);
   });
-  const stopActivity = watchSandboxActivity(threadChatsStore, hooksV1, hooksV2);
+  const stopActivity = watchSandboxActivity(threadChatsStore, hooks);
   // The Thread tabs the chat opens beside the conversation, and the views of
   // the Threads the window shows (bundle isolation 4(c)).
   const stopThreadTabs = watchThreadTabs(services);

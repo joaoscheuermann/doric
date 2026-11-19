@@ -142,8 +142,7 @@ export interface ThreadChatsDependencies {
   readonly comments?: (id: string, text: string) => readonly TurnComment[];
   /**
    * R-9.6: told every live event of a held Thread as it is received, and
-   * every `updated` record (`onThreadUpdateHook` of `chat.hooks/v1` and
-   * `/v2`).
+   * every `updated` record (`chat.hooks/v2.onThreadUpdateHook`).
    */
   readonly observe?: ObserveUpdate;
 }

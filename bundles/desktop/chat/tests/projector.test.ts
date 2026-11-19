@@ -10,7 +10,6 @@ import {
   groupTurns,
   type LifecycleTurn,
   projectEvents,
-  sandboxWrites,
   type ToolTurn,
   type Turn,
 } from '../src/client/domain/projector.js';
@@ -1784,61 +1783,6 @@ describe('a compaction bracket in the log', () => {
     assert.deepEqual(types(step.turns), ['compaction']);
     assert.equal(compactionOf(step.turns[0])?.status, 'completed');
     assert.equal(compactionOf(step.turns[0])?.tokensFreed, 1200);
-  });
-});
-
-describe('sandbox writes in the log', () => {
-  const finished = (sequence: number, name: string): ThreadEvent =>
-    event(sequence, 'one', {
-      type: 'tool.finished',
-      call: call(`c${sequence}`, name),
-      record: { output: 'ok' },
-    });
-
-  test('counts the finished calls that can change the sandbox', () => {
-    assert.equal(
-      sandboxWrites([
-        finished(1, 'write'),
-        finished(2, 'edit'),
-        finished(3, 'terminal'),
-        finished(4, 'grep'),
-        finished(5, 'tree'),
-        finished(6, 'git'),
-      ]),
-      4,
-    );
-  });
-
-  test('counts a call only once it has finished', () => {
-    assert.equal(
-      sandboxWrites([
-        event(1, 'one', {
-          type: 'tool.started',
-          call: call('c1', 'write'),
-        }),
-        event(2, 'one', {
-          type: 'tool.failed',
-          call: call('c1', 'write'),
-          error: { message: 'no' },
-        }),
-      ]),
-      0,
-    );
-  });
-
-  test('counts no write in a log that has none', () => {
-    assert.equal(
-      sandboxWrites([
-        event(1, 'one', {
-          type: 'prompt.accepted',
-          text: 'hi',
-          source: { kind: 'user' },
-        }),
-        event(2, 'one', { type: 'text.delta', delta: 'hello' }),
-      ]),
-      0,
-    );
-    assert.equal(sandboxWrites([]), 0);
   });
 });
 

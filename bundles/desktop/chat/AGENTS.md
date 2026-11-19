@@ -65,6 +65,11 @@ src/client/
   it: `tool-drawing.ts` answers from the registrations only, and the bundle
   that owns a tool registers its drawing. Never add a built-in drawing or
   placement fact for a tool name back here.
+- Since 2.0.0 (bundle isolation 5(c)) the chat provides `chat.hooks/v2` only,
+  and names no tool to decide a refresh: `onSandboxActivityHook` fires for a
+  Thread's lifecycle only (`src/client/domain/project-refresh.ts`), and the
+  bundle that owns a sandbox-writing tool observes `onThreadUpdateHook` and
+  asks for its own refresh. Never add a tool-call cause back here.
 - A terminal prompt is told by its source kind (`fromTerminal` in
   `src/client/domain/projector-input.ts`), never by parsing its text: the
   `terminal` bundle reads the host's frame. The chat lists neither

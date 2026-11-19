@@ -1255,19 +1255,3 @@ export const emptyProjection: Projection = {
   threads: new Map(),
   answers: new Map(),
 };
-
-/** The tool calls that can change the sandbox a Project's Threads share. */
-const sandboxTools = ['write', 'edit', 'terminal', 'git'];
-
-/**
- * How many times the log records the agent finishing a write to the sandbox.
- * The count, not the events, is what a files surface needs: it moves whenever
- * the sandbox may have changed, which is exactly when to read it again.
- */
-export const sandboxWrites = (events: readonly ThreadEvent[]): number =>
-  events.filter((item) => {
-    const event = record(item.event);
-    if (event?.type !== 'tool.finished') return false;
-    const name = record(event.call)?.name;
-    return typeof name === 'string' && sandboxTools.includes(name);
-  }).length;
