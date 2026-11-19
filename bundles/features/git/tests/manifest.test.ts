@@ -46,7 +46,7 @@ describe('the git manifest', () => {
   // Bundle isolation 5(c) change 2 (OD-1, S-1): git observes
   // `chat.hooks/v2` `onThreadUpdateHook` through `hooks/v1`, so it requires
   // `hooks/v1` and takes `chat.hooks/v2` as optional.
-  test('requires hooks/v1@^1.0.0 and takes chat.hooks/v2, not chat.hooks/v1, as optional', () => {
+  test('requires hooks/v1@^1.0.0 and takes chat.hooks/v2 as its only optional chat hooks', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/features/git/manifest.json', 'utf8'),
     ) as { requires: string[]; optional: string[] };

@@ -49,8 +49,8 @@ test('B10′: no Generative UI settings section and no /settings/generative-ui r
 });
 
 // Bundle isolation 5(c) change 5: the client observes the chat's Thread
-// updates through `chat.hooks/v2`, and no longer through `chat.hooks/v1`.
-test('the client registers onThreadUpdateHook on chat.hooks/v2 and nothing on chat.hooks/v1', async () => {
+// updates through `chat.hooks/v2`, and through no other chat hooks id.
+test('the client registers onThreadUpdateHook on chat.hooks/v2 and on no other chat.hooks id', async () => {
   const world = await activateClient();
   await settle();
 

@@ -188,7 +188,7 @@ const activate = async (): Promise<Activation> => {
 };
 
 describe('the activation on chat.hooks/v2', () => {
-  test('registers onSandboxActivityHook and onThreadUpdateHook on chat.hooks/v2 and nothing on chat.hooks/v1', async () => {
+  test('registers onSandboxActivityHook and onThreadUpdateHook on chat.hooks/v2 and on no other chat.hooks id', async () => {
     activation = await activate();
 
     assert.deepEqual(
