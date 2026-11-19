@@ -1,14 +1,16 @@
 import type { Services } from 'bundle/contracts';
 import {
+  Component,
   type ComponentType,
   createElement,
   type ReactNode,
   useSyncExternalStore,
 } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 
 export interface ReactElementOptions<P extends object> {
-  /** Renders inside the element's own root, with the owner's services. */
+  /** Renders in the element, through the root its class shares, with the owner's services. */
   readonly render: ComponentType<P & { readonly services: Services }>;
   /** Property names copied from the element to the component props. */
   readonly props: readonly (keyof P & string)[];
@@ -23,22 +25,59 @@ export interface ReactElementOptions<P extends object> {
 export interface ReactElementInstance extends HTMLElement {
   /** The services of the bundle that created the element. */
   services: Services;
-  /** Unmounts the element's root. Idempotent; a later connect mounts again. */
+  /** Unmounts the element's content. Idempotent; a later connect mounts again. */
   dispose(): void;
 }
 
+/** Renders nothing in place of a host whose content threw; reports the error. */
+class HostBoundary extends Component<
+  { readonly children?: ReactNode },
+  { readonly failed: boolean }
+> {
+  override state = { failed: false };
+
+  static getDerivedStateFromError(): { readonly failed: boolean } {
+    return { failed: true };
+  }
+
+  override render(): ReactNode {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 /**
- * A custom element class that renders a React component into its own root, in
- * the element's light DOM. Setting `services` or a listed property re-renders;
- * the root is created on connect and disposed when the element stays
- * disconnected past the current task, so moving it in the document keeps it.
+ * A custom element class that renders a React component in the element's light
+ * DOM. Setting `services` or a listed property re-renders; the content mounts on
+ * connect and unmounts when the element stays disconnected past the current
+ * task, so moving it in the document keeps it.
+ *
+ * Every element of one class renders through a portal of one React root the
+ * class shares, so the elements a commit of the page connects together render
+ * and commit together, as one tree would, rather than one root and one commit
+ * each. A content that throws empties its own element only.
  */
 export const defineReactElement = <P extends object>(
   options: ReactElementOptions<P>,
 ): (new () => ReactElementInstance) => {
+  /** The mounted elements, in mount order, and what each renders. */
+  const mounted = new Map<
+    ReactElement,
+    { readonly key: string; content: ReactNode }
+  >();
+  let shared: Root | undefined;
+  let keys = 0;
+
+  const commit = (): void => {
+    shared ??= createRoot(document.createElement('div'));
+    shared.render(
+      [...mounted].map(([element, { key, content }]) =>
+        createPortal(createElement(HostBoundary, null, content), element, key),
+      ),
+    );
+  };
+
   class ReactElement extends HTMLElement implements ReactElementInstance {
     #services: Services | undefined;
-    #root: Root | undefined;
     #wrapper: ComponentType<{ readonly children?: ReactNode }> | undefined;
     readonly #values = new Map<string, unknown>();
 
@@ -83,16 +122,16 @@ export const defineReactElement = <P extends object>(
     }
 
     dispose(): void {
-      const root = this.#root;
-      if (root === undefined) return;
-      this.#root = undefined;
-      root.unmount();
+      if (!mounted.delete(this)) return;
+      // At once, as unmounting an own root did: what the content placed
+      // outside the element (a popup in `document.body`) goes before its
+      // owner tears down the surroundings.
+      flushSync(commit);
     }
 
     #render(): void {
       const services = this.#services;
       if (!this.isConnected || services === undefined) return;
-      this.#root ??= createRoot(this);
       if (options.wrap !== undefined && this.#wrapper === undefined) {
         this.#wrapper = options.wrap(services);
       }
@@ -100,11 +139,16 @@ export const defineReactElement = <P extends object>(
         options.props.map((name) => [name, this.#values.get(name)]),
       ) as P;
       const content = createElement(options.render, { ...props, services });
-      this.#root.render(
+      const wrapped =
         this.#wrapper === undefined
           ? content
-          : createElement(this.#wrapper, null, content),
-      );
+          : createElement(this.#wrapper, null, content);
+      const entry = mounted.get(this);
+      if (entry === undefined) {
+        keys += 1;
+        mounted.set(this, { key: String(keys), content: wrapped });
+      } else entry.content = wrapped;
+      commit();
     }
   }
 
