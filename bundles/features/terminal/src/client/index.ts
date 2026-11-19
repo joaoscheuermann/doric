@@ -4,6 +4,10 @@
 // icon (`terminal-tab-icon`). All are bound to the
 // activation services, never to an element's (D9-17).
 //
+// Bundle isolation 5(b): the chat's drawings of a `terminal` call
+// (`terminal-tool-call`) and of a background terminal's answer, the source
+// `terminal` (`terminal-result`), registered while `chat.views/v1` is served.
+//
 // The header region item and the sidebar rows are registered by
 // `registerTerminalSurfaces` while `workspace` serves `workspace.sidebar/v1`,
 // since WP-10N removed the layout's provisional terminals.
@@ -24,10 +28,21 @@ import { toast } from 'desktop/ui/sonner';
 
 import { TerminalServiceV1 } from '../contracts/index.js';
 import { createTerminalApi } from './api.js';
+import {
+  defineTerminalCallElement,
+  TERMINAL_CALL_TAG,
+  TERMINAL_TOOL,
+} from './chat/terminal-call.js';
+import {
+  defineTerminalResultElement,
+  TERMINAL_RESULT_TAG,
+  TERMINAL_SOURCE,
+} from './chat/terminal-result.js';
 import { isAgentBusy, type Terminal } from './domain/terminals.js';
 import { defineTerminalElements, type TerminalClient } from './elements.js';
 import { createTerminalWatches } from './output-watch.js';
 import {
+  ChatViewsV1,
   FilesRefreshV1,
   LayoutTabsV2,
   type RecordsSource,
@@ -200,6 +215,28 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define('terminal-rows', elements.rows),
     ui.define(TERMINAL_VIEW_TAG, elements.view),
     ui.define(TERMINAL_TAB_ICON_TAG, elements.tabIcon),
+    ui.define(TERMINAL_CALL_TAG, defineTerminalCallElement(client)),
+    ui.define(TERMINAL_RESULT_TAG, defineTerminalResultElement(client)),
+  ];
+
+  // The chat's drawings of the `terminal` tool and of the source `terminal`
+  // (chat.views/v1 1.2.0), each in a callback of its own: a refused
+  // registration leaves the other.
+  const chatViews = [
+    services.whenAvailable(ChatViewsV1, (views) => {
+      const registered = views.registerToolRenderer({
+        toolName: TERMINAL_TOOL,
+        elementTag: TERMINAL_CALL_TAG,
+      });
+      return () => registered.dispose();
+    }),
+    services.whenAvailable(ChatViewsV1, (views) => {
+      const registered = views.registerInputRenderer({
+        source: TERMINAL_SOURCE,
+        elementTag: TERMINAL_RESULT_TAG,
+      });
+      return () => registered.dispose();
+    }),
   ];
 
   const surfaces = services.whenAvailable(WorkspaceSidebarV1, (sidebar) => {
@@ -219,6 +256,7 @@ export function activate({ services }: ClientContext): Cleanup {
   });
 
   return () => {
+    for (const registration of chatViews.reverse()) registration.dispose();
     surfaces.dispose();
     for (const element of defined.reverse()) element.dispose();
     store.dispose();

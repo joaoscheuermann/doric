@@ -21,8 +21,15 @@
 // - A dropped connection bumps the generation (a snapshot read in flight is
 //   ignored) and buffers again until the next snapshot.
 //
-// Both: one listener per Project or terminal, the newest replacing the older
-// (the preload kept one listener per id). A dropped connection
+// Project watches keep one listener per Project, the newest replacing the
+// older (the preload kept one listener per id). Output watches of one terminal
+// share one watch (bundle isolation 5(b)): a chat row and a workspace tab may
+// watch the same terminal at once. Every watcher gets every update; one that
+// joins after the shared watch sent its snapshot makes it read the snapshot
+// again (as a reconnect does), or gets the error that ended it; the stream
+// closes when the last watcher stops.
+//
+// Both: a dropped connection
 // (`disconnected`, `unavailable`) or a lost host generation (`generation_lost`)
 // reports nothing and subscribes again when the connection reports
 // `connected`, or after one second when it never went down, as Socket.IO
@@ -67,6 +74,17 @@ export type TerminalWatchApi = {
     listener: (update: TerminalOutputUpdate) => void,
   ): () => void;
 };
+
+/** One watcher of a terminal's output. */
+type OutputListener = (update: TerminalOutputUpdate) => void;
+
+/** The one watch of a terminal's output its watchers share. */
+interface SharedOutput {
+  readonly listeners: Set<OutputListener>;
+  readonly stop: () => void;
+  /** Brings a watcher that joined after the watch started up to date. */
+  readonly rejoin: (listener: OutputListener) => void;
+}
 
 export const terminalMessages = {
   listUnreadable: 'The terminal list could not be read.',
@@ -186,7 +204,7 @@ export const createTerminalWatches = (
   options: TerminalWatchOptions,
 ): TerminalWatches => {
   const projectWatches = new Map<string, () => void>();
-  const outputWatches = new Map<string, () => void>();
+  const outputWatches = new Map<string, SharedOutput>();
 
   const replace = (
     watches: Map<string, () => void>,
@@ -260,20 +278,30 @@ export const createTerminalWatches = (
     return stop;
   };
 
-  const watch = (
+  /**
+   * One watch of a terminal's output, sending every update to each of
+   * `listeners`: a watcher joining late gets the error that ended the watch,
+   * or a snapshot read again for all (a reconnect sends one the same way).
+   */
+  const openOutput = (
     id: string,
-    _afterSequence: number,
-    listener: (update: TerminalOutputUpdate) => void,
-  ): (() => void) => {
+    listeners: ReadonlySet<OutputListener>,
+  ): Omit<SharedOutput, 'listeners'> => {
     let active = true;
     let unsubscribe: (() => void) | undefined;
     let generation = 0;
     let cursor = 0;
     let pending: { data: string; offset: number }[] | undefined = [];
     let pendingLength = 0;
+    let snapshotSent = false;
+    let ended: TerminalOutputUpdate | undefined;
 
     const send = (update: TerminalOutputUpdate) => {
-      if (active) listener(update);
+      if (!active) return;
+      if (update.kind === 'snapshot') snapshotSent = true;
+      ended = update.kind === 'error' ? update : undefined;
+      for (const listener of [...listeners])
+        if (listeners.has(listener)) listener(update);
     };
     const output = (chunk: { data: string; offset: number }) => {
       if (chunk.offset <= cursor) return;
@@ -351,26 +379,57 @@ export const createTerminalWatches = (
       })
       .catch(() => send({ kind: 'error', message: terminalMessages.gone }));
 
-    const stop = () => {
+    return {
+      stop: () => {
+        if (!active) return;
+        active = false;
+        generation++;
+        unsubscribe?.();
+      },
+      rejoin: (listener) => {
+        if (ended !== undefined) listener(ended);
+        else if (snapshotSent) void refresh();
+      },
+    };
+  };
+
+  const watch = (
+    id: string,
+    _afterSequence: number,
+    listener: OutputListener,
+  ): (() => void) => {
+    let shared = outputWatches.get(id);
+    const joined = shared !== undefined;
+    if (shared === undefined) {
+      const listeners = new Set<OutputListener>();
+      shared = { listeners, ...openOutput(id, listeners) };
+      outputWatches.set(id, shared);
+    }
+    const entry = shared;
+    // A listener passed twice is two watchers.
+    const own = (update: TerminalOutputUpdate) => listener(update);
+    entry.listeners.add(own);
+    if (joined) entry.rejoin(own);
+    let active = true;
+    return () => {
       if (!active) return;
       active = false;
-      generation++;
-      unsubscribe?.();
-      if (outputWatches.get(id) === stop) outputWatches.delete(id);
+      entry.listeners.delete(own);
+      if (entry.listeners.size > 0) return;
+      entry.stop();
+      if (outputWatches.get(id) === entry) outputWatches.delete(id);
     };
-    replace(outputWatches, id, stop);
-    return stop;
   };
 
   return {
     watchProject,
     watch,
     close: () => {
-      for (const stop of [
-        ...projectWatches.values(),
-        ...outputWatches.values(),
-      ])
-        stop();
+      for (const stop of [...projectWatches.values()]) stop();
+      for (const entry of [...outputWatches.values()]) {
+        entry.listeners.clear();
+        entry.stop();
+      }
       projectWatches.clear();
       outputWatches.clear();
     },

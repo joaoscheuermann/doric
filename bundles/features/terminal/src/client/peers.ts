@@ -1,10 +1,11 @@
 // The client contracts this part calls, built from their IDs with the owners'
 // shapes narrowed to what it reads (as `layout` and `notifications` reach
-// their peers): `layout`, `files` and `workspace` sit above the runtime, which
+// their peers): `layout`, `files`, `workspace` and `chat` sit above the runtime, which
 // imports `terminal/contracts`, so importing their contracts modules, or the
 // runtime's, would close a cycle between the projects (until step 7(c)).
 
 import { type CallArg, type Disposable, ref } from 'bundle/contracts';
+import type { ErrorInfo } from 'desktop/reads';
 import type { ReactNode } from 'react';
 
 /** The fields of a Thread record this part reads. */
@@ -136,3 +137,106 @@ export interface FilesRefresh {
 }
 
 export const FilesRefreshV1 = ref<FilesRefresh>('files.refresh/v1');
+
+/**
+ * 1.2.0: how the chat draws the calls of one tool (`chat.views/v1`'s
+ * `ToolRendererSpec`). The chat sits above this bundle (until step 7(c)), so
+ * these are structural copies of the shapes the terminal's registrations use.
+ */
+export interface ToolRendererSpec {
+  /** The tool's name, as the agent calls it. */
+  readonly toolName: string;
+  /**
+   * The element that draws each call, created through `ui/v1`, one per call,
+   * with `view` (`ChatToolView`). Absent, the chat's generic row draws it.
+   */
+  readonly elementTag?: string;
+  /** `true`: the call is a block of its own, outside the activity group. Default `false`. */
+  readonly standalone?: boolean;
+  /** `true`: the call's block is open until the reader closes it. Default `false`. */
+  readonly openByDefault?: boolean;
+}
+
+/** 1.2.0: how the chat draws the prompts of one input source (chat's `InputRendererSpec`). */
+export interface InputRendererSpec {
+  /** A lowercase input source kind other than `user`. */
+  readonly source: string;
+  /** The element that draws each prompt of the source, created through `ui/v1`. */
+  readonly elementTag: string;
+}
+
+/**
+ * The `view` property the chat sets on a tool element (chat's `ChatToolView`):
+ * before it connects, and again (as a new object) whenever a field changes.
+ * `key` does not change for the call's life; `status` moves only from
+ * `running` to `finished` or `failed`.
+ */
+export interface ChatToolView {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly promptId: string;
+  /** `${promptId}/${callId}`: stable for the call's life and unique in the Thread. */
+  readonly key: string;
+  /** The tool's name, as registered. */
+  readonly name: string;
+  /** One-line JSON of the call's payload. */
+  readonly args: string;
+  /** The finished call's serialized output; absent while running or when there is none. */
+  readonly result?: string;
+  /** Why the call failed, whole (causes and time included); absent unless `status` is `failed`. */
+  readonly error?: ErrorInfo;
+  readonly status: 'running' | 'finished' | 'failed';
+  /** The reader's choice of open or closed; `null` while the reader has not chosen. */
+  readonly chosen: boolean | null;
+  /** Whether the caret rests on the block. */
+  readonly focused: boolean;
+}
+
+/**
+ * The `view` property the chat sets on an input element (chat's
+ * `ChatInputView`): before it connects, and again (as a new object) whenever a
+ * field changes.
+ */
+export interface ChatInputView {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly promptId: string;
+  /** The prompt's source, as the log records it; `kind` is never `user`. */
+  readonly source: {
+    readonly kind: string;
+    readonly threadId?: string;
+    readonly terminalId?: string;
+    readonly bundleId?: string;
+    readonly reason?: string;
+  };
+  /** The prompt's text as the log holds it, framing included. */
+  readonly text: string;
+  /** The reader's choice of open or closed; `null` while the reader has not chosen. */
+  readonly chosen: boolean | null;
+  /** Whether the caret rests on the block. */
+  readonly focused: boolean;
+}
+
+/** `chat.views/v1` (1.2.0), for the two registrations this part makes. */
+export interface ChatViews {
+  /**
+   * While the returned `Disposable` lives, every call of `spec.toolName` is
+   * drawn by one `spec.elementTag` element per call. Throws
+   * `registration_conflict` when another bundle holds the name.
+   */
+  registerToolRenderer(spec: ToolRendererSpec, call?: CallArg): Disposable;
+  /**
+   * While the returned `Disposable` lives, every prompt of `spec.source` is
+   * drawn by one `spec.elementTag` element. Throws `registration_conflict`
+   * when the source already has a registration.
+   */
+  registerInputRenderer(spec: InputRendererSpec, call?: CallArg): Disposable;
+}
+
+export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');
+
+/**
+ * The one event a chat element dispatches when the reader opens or closes its
+ * block, `detail: { chosen }` (chat's `CHAT_BLOCK_CHOSEN_EVENT`).
+ */
+export const CHAT_BLOCK_CHOSEN_EVENT = 'chat-block-chosen';
