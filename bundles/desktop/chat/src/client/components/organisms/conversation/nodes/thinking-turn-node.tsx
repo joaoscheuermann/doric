@@ -1,3 +1,4 @@
+import { blockToggled, type Chosen } from 'desktop/ui/collapsible-block';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -9,11 +10,7 @@ import {
 } from 'lexical';
 import type { JSX } from 'react/jsx-runtime';
 
-import {
-  blockToggled,
-  type Chosen,
-  thinkingOpenness,
-} from '../../../../domain/collapsible.js';
+import { thinkingOpenness } from '../../../../domain/collapsible.js';
 import { THINKING_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { ThinkingTurn } from '../../../../domain/projector.js';
 import { reasoningText } from '../../../../utility/reasoning-text.js';

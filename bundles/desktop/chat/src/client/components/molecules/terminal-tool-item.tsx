@@ -1,15 +1,16 @@
 import type { ErrorInfo } from 'desktop/reads';
+import {
+  blockOpen,
+  type Chosen,
+  CollapsibleBlock,
+  type Openness,
+} from 'desktop/ui/collapsible-block';
 import { ErrorNotice } from 'desktop/ui/error-notice';
 import { cn } from 'desktop/ui/utils';
 import { SquareIcon } from 'lucide-react';
 import { memo, type ReactNode, useMemo } from 'react';
 
-import {
-  blockOpen,
-  type Chosen,
-  type Openness,
-  toolOpenness,
-} from '../../domain/collapsible.js';
+import { toolOpenness } from '../../domain/collapsible.js';
 import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import {
@@ -19,7 +20,6 @@ import {
 } from '../../domain/terminal-tool.js';
 import { useLiveTerminal } from '../../hooks/use-live-terminal.js';
 import { stopLiveTerminal } from '../../stores/live-terminals.js';
-import { CollapsibleBlock } from './collapsible-block.js';
 
 /** The verbs a terminal block's header names its command's state with. */
 export type TerminalVerbs = {
@@ -290,7 +290,7 @@ export const TerminalToolItem = memo(function TerminalToolItem({
     hasStderr ||
     (parsed.rawOutput !== undefined && parsed.rawOutput.length > 0);
   const liveOutput = !hasSettledOutput && live ? live.output : '';
-  const baseOpenness = toolOpenness(status, args, result, error, 'terminal');
+  const baseOpenness = toolOpenness(status, args, result, error, false);
   const openness = liveActive
     ? { active: true, hasContent: true, defaultOpen: true }
     : baseOpenness;

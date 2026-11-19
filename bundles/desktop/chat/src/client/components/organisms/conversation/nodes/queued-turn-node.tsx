@@ -1,3 +1,4 @@
+import { type Chosen, CollapsibleBlock } from 'desktop/ui/collapsible-block';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -11,13 +12,9 @@ import {
 import type { JSX } from 'react';
 import { withAttachmentPlaceholders } from 'runtime/contracts';
 
-import {
-  type Chosen,
-  settledOpenness,
-} from '../../../../domain/collapsible.js';
+import { settledOpenness } from '../../../../domain/collapsible.js';
 import { QUEUED_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { QueuedTurn } from '../../../../domain/projector.js';
-import { CollapsibleBlock } from '../../../molecules/collapsible-block.js';
 import { PromptAuthor } from '../../../molecules/prompt-author.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 

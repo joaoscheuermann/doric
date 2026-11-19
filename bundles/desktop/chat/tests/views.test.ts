@@ -332,3 +332,186 @@ describe('chat.views/v1 fence renderers (openui.md D1, B3)', () => {
     await dispose();
   });
 });
+
+describe('chat.views/v1 tool and input renderers (1.2.0)', () => {
+  const invalid = (error: unknown) =>
+    isContractError(error) && error.code === 'invalid_input';
+  /** `registration_conflict` naming the bundle that holds the registration. */
+  const conflictWith = (owner: string) => (error: unknown) =>
+    conflict(error) && (error as Error).message.includes(owner);
+
+  test('T5.1: a second tool renderer of one name is registration_conflict naming the owner, until the first is disposed', async () => {
+    const { registry, api, dispose } = setup(['x-tool', 'y-tool']);
+    const first = api.registerToolRenderer({
+      toolName: 'probe_tool',
+      elementTag: 'x-tool',
+    });
+    assert.throws(
+      () =>
+        api.registerToolRenderer({
+          toolName: 'probe_tool',
+          elementTag: 'y-tool',
+        }),
+      conflictWith('extension'),
+    );
+    // The first registration still holds the name.
+    assert.equal(
+      registry.toolRenderers().get('probe_tool')?.elementTag,
+      'x-tool',
+    );
+    // Another name is free.
+    api.registerToolRenderer({ toolName: 'other_tool', standalone: true });
+
+    first.dispose();
+    assert.equal(registry.toolRenderers().has('probe_tool'), false);
+    api.registerToolRenderer({ toolName: 'probe_tool', elementTag: 'y-tool' });
+    assert.equal(
+      registry.toolRenderers().get('probe_tool')?.elementTag,
+      'y-tool',
+    );
+    await dispose();
+  });
+
+  test('T5.1: a tool spec with an empty name, an unknown key, a non-boolean flag or an undefined element is invalid_input and registers nothing', async () => {
+    const { registry, api, dispose } = setup(['x-tool']);
+    const specs = [
+      { toolName: '', elementTag: 'x-tool' },
+      { toolName: 'probe_tool', elementTag: 'x-tool', extra: true },
+      { toolName: 'probe_tool', standalone: 'yes' },
+      { toolName: 'probe_tool', openByDefault: 1 },
+      { toolName: 'probe_tool', elementTag: 'x-missing' },
+    ];
+    for (const spec of specs) {
+      assert.throws(
+        () => api.registerToolRenderer(spec as never),
+        invalid,
+        JSON.stringify(spec),
+      );
+    }
+    assert.equal(registry.toolRenderers().size, 0);
+    // None left a registration behind.
+    api.registerToolRenderer({ toolName: 'probe_tool', elementTag: 'x-tool' });
+    await dispose();
+  });
+
+  test('T5.1: a tool spec with no element registers, with its flags', async () => {
+    const { registry, api, dispose } = setup([]);
+    api.registerToolRenderer({ toolName: 'probe_view', openByDefault: true });
+    const registered = registry.toolRenderers().get('probe_view');
+    assert.equal(registered?.elementTag, undefined);
+    assert.equal(registered?.openByDefault, true);
+    await dispose();
+  });
+
+  test('T5.2: an input renderer of the source user, a bare bundle, bundle: or an undefined element is invalid_input', async () => {
+    const { registry, api, dispose } = setup(['x-input']);
+    const specs = [
+      { source: 'user', elementTag: 'x-input' },
+      { source: 'bundle', elementTag: 'x-input' },
+      { source: 'bundle:', elementTag: 'x-input' },
+      { source: 'terminal', elementTag: 'x-missing' },
+      { source: 'terminal', elementTag: '' },
+      { source: 'terminal', elementTag: 'x-input', extra: true },
+    ];
+    for (const spec of specs) {
+      assert.throws(
+        () => api.registerInputRenderer(spec as never),
+        invalid,
+        JSON.stringify(spec),
+      );
+    }
+    assert.equal(registry.inputRenderers().size, 0);
+    await dispose();
+  });
+
+  test('T5.2: an input renderer registers under its source, and a second of one source is registration_conflict naming the owner', async () => {
+    const { registry, api, dispose } = setup(['x-input', 'y-input']);
+    const first = api.registerInputRenderer({
+      source: 'terminal',
+      elementTag: 'x-input',
+    });
+    api.registerInputRenderer({
+      source: 'bundle:probe',
+      elementTag: 'y-input',
+    });
+    assert.equal(registry.inputRenderers().get('terminal'), 'x-input');
+    assert.equal(registry.inputRenderers().get('bundle:probe'), 'y-input');
+    assert.throws(
+      () =>
+        api.registerInputRenderer({
+          source: 'terminal',
+          elementTag: 'y-input',
+        }),
+      conflictWith('extension'),
+    );
+    first.dispose();
+    assert.equal(registry.inputRenderers().has('terminal'), false);
+    api.registerInputRenderer({ source: 'terminal', elementTag: 'y-input' });
+    assert.equal(registry.inputRenderers().get('terminal'), 'y-input');
+    await dispose();
+  });
+
+  test('disposing a tool or input renderer twice is harmless', async () => {
+    const { registry, api, dispose } = setup(['x-tool', 'x-input']);
+    const tool = api.registerToolRenderer({
+      toolName: 'probe_tool',
+      elementTag: 'x-tool',
+    });
+    const input = api.registerInputRenderer({
+      source: 'terminal',
+      elementTag: 'x-input',
+    });
+    tool.dispose();
+    input.dispose();
+    // A later registration of the same keys is not undone by a second dispose.
+    api.registerToolRenderer({ toolName: 'probe_tool', elementTag: 'x-tool' });
+    api.registerInputRenderer({ source: 'terminal', elementTag: 'x-input' });
+    tool.dispose();
+    input.dispose();
+    assert.equal(registry.toolRenderers().has('probe_tool'), true);
+    assert.equal(registry.inputRenderers().has('terminal'), true);
+    await dispose();
+  });
+
+  test('toolRenderers() and inputRenderers() answer a new map per change and the same map between changes, and notify subscribers', async () => {
+    const { registry, api, dispose } = setup(['x-tool', 'x-input']);
+    let notified = 0;
+    const stop = registry.subscribe(() => {
+      notified += 1;
+    });
+    const tools0 = registry.toolRenderers();
+    const inputs0 = registry.inputRenderers();
+    assert.equal(registry.toolRenderers(), tools0);
+    assert.equal(registry.inputRenderers(), inputs0);
+
+    const tool = api.registerToolRenderer({
+      toolName: 'probe_tool',
+      elementTag: 'x-tool',
+    });
+    const tools1 = registry.toolRenderers();
+    assert.notEqual(tools1, tools0);
+    assert.equal(registry.toolRenderers(), tools1);
+    assert.ok(notified > 0, 'no notification on a tool registration');
+    let seen = notified;
+
+    const input = api.registerInputRenderer({
+      source: 'terminal',
+      elementTag: 'x-input',
+    });
+    const inputs1 = registry.inputRenderers();
+    assert.notEqual(inputs1, inputs0);
+    assert.equal(registry.inputRenderers(), inputs1);
+    assert.ok(notified > seen, 'no notification on an input registration');
+    seen = notified;
+
+    tool.dispose();
+    assert.notEqual(registry.toolRenderers(), tools1);
+    assert.ok(notified > seen, 'no notification on a tool removal');
+    seen = notified;
+    input.dispose();
+    assert.notEqual(registry.inputRenderers(), inputs1);
+    assert.ok(notified > seen, 'no notification on an input removal');
+    stop();
+    await dispose();
+  });
+});

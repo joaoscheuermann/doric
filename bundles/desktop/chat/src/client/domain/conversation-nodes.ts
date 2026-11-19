@@ -27,6 +27,12 @@ export const DELEGATED_TURN_BLOCK = 'delegated-turn-node';
 export const TERMINAL_RESULT_TURN_BLOCK = 'terminal-result-node';
 
 /**
+ * An input whose source a bundle draws (`chat.views/v1` 1.2.0): the block hosts
+ * that bundle's element in place of the chat's own drawing.
+ */
+export const INPUT_TURN_BLOCK = 'input-turn-node';
+
+/**
  * The time a turn was last written, drawn under its block. It is the footer's
  * text alone; the block order it is placed by is unchanged.
  */
@@ -92,6 +98,7 @@ const UNDELETABLE = new Set([
   USER_TURN_BLOCK,
   DELEGATED_TURN_BLOCK,
   TERMINAL_RESULT_TURN_BLOCK,
+  INPUT_TURN_BLOCK,
   USER_PROMPT_BLOCK,
   ACTIVITY_TURN_BLOCK,
   LIFECYCLE_TURN_BLOCK,
@@ -110,6 +117,7 @@ const READ_ONLY = new Set([
   AGENT_TURN_BLOCK,
   DELEGATED_TURN_BLOCK,
   TERMINAL_RESULT_TURN_BLOCK,
+  INPUT_TURN_BLOCK,
   COMPACTION_TURN_BLOCK,
 ]);
 

@@ -30,10 +30,12 @@ import type { Turn } from './projector.js';
  * opened it. A run that keeps streaming keeps its first event, so its key is
  * stable while its text grows, which is what lets an update land on the block
  * already in the editor. The kind is part of it because one block stands in for
- * a burst of steps the reader watched as thinking and tool turns.
+ * a burst of steps the reader watched as thinking and tool turns. A user turn a
+ * bundle's element draws is keyed `input:`, so its block is replaced when that
+ * drawing arrives or leaves.
  */
 export const turnKey = (turn: Turn): string =>
-  `${turn.type}:${turn.promptId}:${turn.events[0]?.sequence ?? 0}`;
+  `${turn.type === 'user' && turn.element !== undefined ? 'input' : turn.type}:${turn.promptId}:${turn.events[0]?.sequence ?? 0}`;
 
 /**
  * A block that reads as chrome between the run's turns rather than as a turn of

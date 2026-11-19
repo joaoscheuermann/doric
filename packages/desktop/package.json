@@ -71,6 +71,12 @@
       "import": "./dist/model-icon.js",
       "default": "./dist/model-icon.js"
     },
+    "./ui/collapsible-block": {
+      "@org/source": "./src/collapsible-block.tsx",
+      "types": "./dist/collapsible-block.d.ts",
+      "import": "./dist/collapsible-block.js",
+      "default": "./dist/collapsible-block.js"
+    },
     "./ui/choice-list": {
       "@org/source": "./src/choice-list.tsx",
       "types": "./dist/choice-list.d.ts",

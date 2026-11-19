@@ -234,6 +234,7 @@ describe('the platform import map', () => {
       'error-notice',
       'model-icon',
       'choice-list',
+      'collapsible-block',
       'react-element',
       'utils',
       'tokens',

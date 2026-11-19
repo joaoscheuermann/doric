@@ -9,6 +9,7 @@
     "rootDir": ".",
     "tsBuildInfoFile": "dist-tests/tsconfig.spec.tsbuildinfo",
     "lib": ["es2022", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
     "types": ["node"]
   },
   "include": [

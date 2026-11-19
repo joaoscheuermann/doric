@@ -249,7 +249,12 @@ export function StoryWindow({
     threadId: thread.id,
     projectId: thread.projectId,
   }));
-  const [blocksSource] = useState(() => ({ blocks, ui: storyUi }));
+  const [blocksSource] = useState(() => ({
+    blocks,
+    ui: storyUi,
+    projectId: null,
+    threadId: null,
+  }));
 
   return (
     <QueryClientProvider client={client}>

@@ -13,6 +13,11 @@
 
 import { type ErrorInfo, sameErrorInfo } from 'desktop/reads';
 import { Button } from 'desktop/ui/button';
+import {
+  blockToggled,
+  type Chosen,
+  CollapsibleBlock,
+} from 'desktop/ui/collapsible-block';
 import { ErrorNotice } from 'desktop/ui/error-notice';
 import {
   $getNodeByKey,
@@ -25,11 +30,7 @@ import {
 } from 'lexical';
 import type { JSX } from 'react/jsx-runtime';
 
-import {
-  blockToggled,
-  type Chosen,
-  spawnOpenness,
-} from '../../../../domain/collapsible.js';
+import { spawnOpenness } from '../../../../domain/collapsible.js';
 import { THREAD_SPAWN_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import type { ToolStatus, ToolTurn } from '../../../../domain/projector.js';
@@ -38,7 +39,6 @@ import {
   THREAD_SPAWN_TOOL,
 } from '../../../../domain/thread-spawn.js';
 import { useDelegatedSource } from '../../../../hooks/use-delegated-source.js';
-import { CollapsibleBlock } from '../../../molecules/collapsible-block.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { ReadonlyMarkdown } from '../readonly-markdown.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';

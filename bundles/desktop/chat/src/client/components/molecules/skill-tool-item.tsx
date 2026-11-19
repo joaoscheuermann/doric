@@ -1,8 +1,9 @@
 import type { ErrorInfo } from 'desktop/reads';
+import { type Chosen, CollapsibleBlock } from 'desktop/ui/collapsible-block';
 import { ErrorNotice } from 'desktop/ui/error-notice';
 import { memo, useMemo } from 'react';
 
-import { type Chosen, skillOpenness } from '../../domain/collapsible.js';
+import { skillOpenness } from '../../domain/collapsible.js';
 import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import {
@@ -10,7 +11,6 @@ import {
   parseSkillLoad,
   skillSourceLabel,
 } from '../../domain/skill-load.js';
-import { CollapsibleBlock } from './collapsible-block.js';
 
 type SkillToolItemProps = {
   readonly args: string;

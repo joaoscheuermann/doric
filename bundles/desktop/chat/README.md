@@ -112,13 +112,13 @@ batch.
 
 ## Extension points
 
-| Contract           | Where       | What another bundle can do                                                                                                         | Used by                           |
-| ------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `chat.views/v1`    | client      | `registerProjector` for event types the built-in projection does not claim, and `registerRenderer` for the element of a block type | `openui`, `papercraft`, `threads` |
-| `chat.hooks/v1`    | client      | observe `onMountHook`, `onUnmountHook`, `onSandboxActivityHook` and `onThreadUpdateHook`; transform `onBeforeRenderBlockHook`      | `files`, `notifications`          |
-| `chat.composer/v1` | desktopMain | read and watch a Thread's draft, add or remove stack items, and `registerFlush` for the comment kind it owns                       | `papercraft`                      |
-| `chat.send/v1`     | client      | send a Thread's held draft now, exactly as the composer does; `sendAction` sends a control's text                                  | `openui`, `papercraft`            |
-| `chat.lexical/v1`  | client      | add Lexical nodes and extensions to the conversation editor                                                                        | none outside chat today           |
+| Contract           | Where       | What another bundle can do                                                                                                                                                                                                                                                    | Used by                           |
+| ------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `chat.views/v1`    | client      | `registerProjector` for event types the built-in projection does not claim, `registerRenderer` for the element of a block type, `registerFenceRenderer`, and `registerToolRenderer`/`registerInputRenderer` for the drawing of a tool's calls or of an input source's prompts | `openui`, `papercraft`, `threads` |
+| `chat.hooks/v1`    | client      | observe `onMountHook`, `onUnmountHook`, `onSandboxActivityHook` and `onThreadUpdateHook`; transform `onBeforeRenderBlockHook`                                                                                                                                                 | `files`, `notifications`          |
+| `chat.composer/v1` | desktopMain | read and watch a Thread's draft, add or remove stack items, and `registerFlush` for the comment kind it owns                                                                                                                                                                  | `papercraft`                      |
+| `chat.send/v1`     | client      | send a Thread's held draft now, exactly as the composer does; `sendAction` sends a control's text                                                                                                                                                                             | `openui`, `papercraft`            |
+| `chat.lexical/v1`  | client      | add Lexical nodes and extensions to the conversation editor                                                                                                                                                                                                                   | none outside chat today           |
 
 - `chat.views/v1` 1.1.0 adds `registerFenceRenderer({ tag, elementTag })`: while
   it lives, every fence of `tag` in an agent turn becomes one `elementTag`
@@ -129,6 +129,38 @@ batch.
   streams the Thread's fences of a tag, by the same projection, to a surface
   outside the conversation (the papercraft canvas); it gives `[]` while no
   renderer of the tag is registered.
+- `chat.views/v1` 1.2.0 adds two drawing points (bundle isolation 5(a)):
+  - `registerToolRenderer({ toolName, elementTag?, standalone?, openByDefault? })`:
+    every call of `toolName` is drawn by one `elementTag` element per call,
+    created through `ui/v1` with its `view` (`ChatToolView`: the Project's and
+    Thread's ids, the prompt, `key` `${promptId}/${callId}`, the name, the
+    arguments, the result or the whole `ErrorInfo`, the status, the reader's
+    `chosen` and `focused`), or by the generic row when no element is given.
+    `standalone` takes the call out of the activity group; `openByDefault`
+    keeps its block open until the reader closes it. The registration
+    replaces every built-in fact the chat has for that name.
+  - `registerInputRenderer({ source, elementTag })`: every prompt of `source`
+    (a kind other than `user`; `bundle:<bundle id>` for a bundle's
+    instructions) is drawn by one `elementTag` element with its `view`
+    (`ChatInputView`: the ids, the prompt, the source, the log's text,
+    `chosen` and `focused`). It wins over a `chat.delegated-input/v1` block
+    renderer for the same prompt.
+  - The element reports the reader's open/close choice with one bubbling,
+    composed `chat-block-chosen` event (`CHAT_BLOCK_CHOSEN_EVENT`,
+    `{ chosen }`); the chat keeps it, sets `view` again and stops the event at
+    the element's frame. An element may define `toggle()`, which the
+    conversation's toggle key calls; it answers with the same event.
+    Without it, the toggle key sets the generic answer.
+  - A second registration of a name or a source fails with
+    `registration_conflict`, naming the owner (the first wins); a spec that
+    fails its schema, the source `user`, a bare `bundle` or an element `ui/v1`
+    has not defined fails with `invalid_input`. A registration that arrives or
+    is disposed while a transcript is shown redraws it at once, and disposing
+    disposes its elements through `ui/v1`.
+  - Without a registration a tool call is the chat's own drawing, which for
+    any name it does not draw itself is the generic row inside the activity
+    group, closed by default; an input is the chat's own drawing of its
+    source.
 - `chat.send/v1` 1.1.0 adds `sendAction({ projectId, threadId, program, text })`:
   the text (at most 16,000 UTF-16 code units) goes in a
   `<ui-action program="…">` envelope by the composer's route for a typed
@@ -180,6 +212,9 @@ desktop part, as Papercraft does.
   (from 1.9.0, for the execution picker; from 1.9.1, for the conversation
   too), and `terminal/v1` or `runtime.terminals/v1` for live terminal output.
   Without them the conversation still works.
+- **Platform:** chat 1.10.0 needs platform `^1.10.0`, for
+  `desktop/ui/collapsible-block`, the transcript's folding block and its
+  generic open/closed rule.
 
 `<chat-view>` opens its Thread on the record of `runtime.records/v1`, kept
 current as the records change, and the composer acts on the Thread

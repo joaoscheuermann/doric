@@ -53,6 +53,15 @@ src/client/
   and `package.json` lists no `workspace` (OD40 O2).
 - `workspace.selection/v1` is read through the copy
   `src/client/api/workspace-selection.ts` by the picker and the conversation.
+- The collapsible block and its generic open/closed rule are
+  `desktop/ui/collapsible-block` (platform 1.10.0); never copy them back here.
+  `src/client/domain/collapsible.ts` keeps only the rules that name the chat's
+  own blocks.
+- Which drawing a tool call or an input gets (`chat.views/v1` 1.2.0) is decided
+  only in `src/client/domain/tool-drawing.ts` and
+  `src/client/domain/drawn-turns.ts`. The built-in names there (`edit`,
+  `write`, `view-image`, `thread-spawn`, `load_skill`) leave in bundle
+  isolation 5(b), as their bundles register.
 
 ## Styling
 

@@ -17,6 +17,7 @@
 @source '../error-notice.tsx';
 @source '../model-icon.tsx';
 @source '../choice-list.tsx';
+@source '../collapsible-block.tsx';
 
 /*
  * Borders and outlines take the theme's colours by default, wherever a sheet

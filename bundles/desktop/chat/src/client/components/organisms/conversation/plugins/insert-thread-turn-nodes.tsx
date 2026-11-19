@@ -62,6 +62,11 @@ import {
   type FailureTurnNode,
 } from '../nodes/failure-turn-node.js';
 import {
+  $createInputTurnNode,
+  $isInputTurnNode,
+  type InputTurnNode,
+} from '../nodes/input-turn-node.js';
+import {
   $createLifecycleTurnNode,
   $isLifecycleTurnNode,
   type LifecycleTurnNode,
@@ -132,6 +137,7 @@ type TurnBlock =
   | UserTurnNode
   | DelegatedTurnNode
   | TerminalResultNode
+  | InputTurnNode
   | AgentTurnNode
   | ThinkingTurnNode
   | ToolTurnNode
@@ -159,6 +165,7 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isUserTurnNode(node) ||
   $isDelegatedTurnNode(node) ||
   $isTerminalResultNode(node) ||
+  $isInputTurnNode(node) ||
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
   $isToolTurnNode(node) ||
@@ -179,6 +186,15 @@ const $createBlock = (
     case 'queued':
       return new QueuedTurnNode(key, turn.promptId, turn.items);
     case 'user':
+      // A bundle that draws the input's source draws it, before the chat's own
+      // drawing of a terminal's answer or another Thread's input (O8).
+      if (turn.element !== undefined && turn.input !== undefined)
+        return $createInputTurnNode({
+          turnKey: key,
+          promptId: turn.promptId,
+          input: turn.input,
+          element: turn.element,
+        });
       if (turn.terminal !== undefined)
         return $createTerminalResultNode({
           turnKey: key,
@@ -370,6 +386,9 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
         left.delegated?.kind === other.delegated?.kind &&
         left.delegated?.threadId === other.delegated?.threadId &&
         left.delegated?.text === other.delegated?.text &&
+        // An input a bundle draws repaints when its element or its text does.
+        left.element === other.element &&
+        left.input?.text === other.input?.text &&
         // A terminal's answer is read from the prompt's own fields, so the
         // block repaints only when one of them changed.
         (left.terminal === undefined) === (other.terminal === undefined) &&
@@ -459,7 +478,8 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
     turn.type === 'user' &&
     ($isUserTurnNode(block) ||
       $isDelegatedTurnNode(block) ||
-      $isTerminalResultNode(block))
+      $isTerminalResultNode(block) ||
+      $isInputTurnNode(block))
   )
     block.setTurn(turn);
   else if (turn.type === 'agent' && $isAgentTurnNode(block))

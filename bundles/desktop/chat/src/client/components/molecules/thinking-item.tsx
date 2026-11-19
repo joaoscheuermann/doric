@@ -1,6 +1,7 @@
-import { type Chosen, thinkingOpenness } from '../../domain/collapsible.js';
+import { type Chosen, CollapsibleBlock } from 'desktop/ui/collapsible-block';
+
+import { thinkingOpenness } from '../../domain/collapsible.js';
 import { reasoningText } from '../../utility/reasoning-text.js';
-import { CollapsibleBlock } from './collapsible-block.js';
 
 type ThinkingItemProps = {
   readonly text: string;

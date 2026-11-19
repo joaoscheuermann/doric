@@ -15,6 +15,7 @@ import {
   COMPOSER_STACK_BLOCK,
   DELEGATED_TURN_BLOCK,
   FAILURE_TURN_BLOCK,
+  INPUT_TURN_BLOCK,
   LIFECYCLE_TURN_BLOCK,
   PROMPT_EDIT_BLOCK,
   QUEUE_BLOCK,
@@ -58,7 +59,8 @@ export const caretKind = (nodeType: string): CaretKind => {
     nodeType === ACTIVITY_TURN_BLOCK ||
     nodeType === FAILURE_TURN_BLOCK ||
     nodeType === REPLIES_TURN_BLOCK ||
-    nodeType === TERMINAL_RESULT_TURN_BLOCK
+    nodeType === TERMINAL_RESULT_TURN_BLOCK ||
+    nodeType === INPUT_TURN_BLOCK
   ) {
     return 'widget';
   }

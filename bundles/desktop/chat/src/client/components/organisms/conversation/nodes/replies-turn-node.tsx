@@ -13,6 +13,7 @@
  * thread on the latest drawing of the comment's target (`openCommentThread`).
  */
 
+import { CollapsibleBlock } from 'desktop/ui/collapsible-block';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -32,7 +33,6 @@ import type {
   RepliesTurn,
 } from '../../../../domain/projector.js';
 import { useCommentThreads } from '../../../../hooks/use-comment-threads.js';
-import { CollapsibleBlock } from '../../../molecules/collapsible-block.js';
 import { CommentThreadPin } from '../../../molecules/comment-thread-pin.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { ReadonlyMarkdown } from '../readonly-markdown.js';

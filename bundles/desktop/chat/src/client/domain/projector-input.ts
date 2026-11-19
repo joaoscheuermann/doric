@@ -133,6 +133,11 @@ export const readInput = (
     // same lines the stack drew before the reader sent.
     comments: [...(comments.get(item.promptId) ?? [])],
     awaiting: false,
+    // Another source's input keeps its source and the text as the log holds it,
+    // so a bundle that draws the source reads both.
+    ...(input.source.kind === 'user'
+      ? {}
+      : { input: { source: input.source, text: input.text } }),
     ...(delegated === undefined ? {} : { delegated }),
     ...(terminal === undefined ? {} : { terminal }),
     ...(instruction === undefined ? {} : { instruction }),

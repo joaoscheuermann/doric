@@ -1,8 +1,25 @@
 import { Button } from 'desktop/ui/button';
+import { type Chosen, CollapsibleBlock } from 'desktop/ui/collapsible-block';
 import { SquareIcon } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 
-import { CollapsibleBlock } from '../../../src/client/components/molecules/collapsible-block.js';
-import { WithChosen } from '../../support/chosen.js';
+// The reader's open/closed choice a folding block's owner holds (in the chat,
+// the Lexical node's state), held here in React state so a story's chevron
+// works the way the conversation's does.
+function WithChosen({
+  initial = null,
+  children,
+}: {
+  /** The reader's choice before the story starts; `null` lets the work decide. */
+  readonly initial?: Chosen;
+  readonly children: (
+    chosen: Chosen,
+    onChosenChange: (chosen: boolean) => void,
+  ) => ReactNode;
+}) {
+  const [chosen, setChosen] = useState<Chosen>(initial);
+  return <>{children(chosen, setChosen)}</>;
+}
 
 const detail = (
   <div className="flex flex-col gap-1.5">
@@ -13,7 +30,7 @@ const detail = (
 );
 
 export default {
-  title: 'Chat/Molecules/Collapsible block',
+  title: 'Desktop/Collapsible block',
   component: CollapsibleBlock,
 };
 

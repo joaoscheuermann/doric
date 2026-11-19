@@ -7,9 +7,10 @@
  * row and tab menus, `FileTree.rowMenu`, `FileTree.pending` and
  * `TabStrip.tabMenu`; 1.6.0: `ScrollArea.scrollbars`; 1.7.0:
  * `desktop/ui/error-notice`; 1.8.0: `desktop/ui/element-host`; 1.9.0:
- * `desktop/ui/model-icon`, `desktop/ui/choice-list`).
+ * `desktop/ui/model-icon`, `desktop/ui/choice-list`; 1.10.0:
+ * `desktop/ui/collapsible-block`).
  */
-export const PLATFORM_VERSION = '1.9.0';
+export const PLATFORM_VERSION = '1.10.0';
 
 /**
  * The version segment of the platform folders and URLs (`desktop@<v>`,

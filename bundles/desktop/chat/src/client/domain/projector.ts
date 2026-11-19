@@ -23,9 +23,8 @@ import { type PromptExecution, readExecution } from './projector-execution.js';
 import { type PromptInput, readInput } from './projector-input.js';
 import { type LifecycleEvent, pauseReason } from './prompt-lifecycle.js';
 import type { QueueItem } from './queue.js';
-import { LOAD_SKILL_TOOL } from './skill-load.js';
 import type { TerminalResult } from './terminal-result.js';
-import { THREAD_SPAWN_TOOL } from './thread-spawn.js';
+import { builtInDrawing } from './tool-drawing.js';
 import type { ThreadEvent } from './workspace.js';
 
 export type PromptStatus =
@@ -90,6 +89,13 @@ export type UserTurn = TurnBase & {
    * rather than leaving the transcript silent.
    */
   readonly awaiting: boolean;
+  /** Set when the input's source is not `user`: the source and the text as the log holds them. */
+  readonly input?: {
+    readonly source: QueueItem['source'];
+    readonly text: string;
+  };
+  /** Set by `drawnTurns` while a bundle draws this input's source: that element's tag. */
+  readonly element?: string;
 };
 
 /** A durable receipt at submission time, separate from the execution's prompt. */
@@ -148,6 +154,8 @@ export type ActivityItem =
   | { readonly kind: 'thinking'; readonly text: string }
   | {
       readonly kind: 'tool';
+      /** The call's id, as `ToolTurn.callId`. */
+      readonly callId: string;
       readonly name: string;
       readonly args: string;
       readonly status: ToolStatus;
@@ -322,6 +330,8 @@ export type Draft =
       delegated?: DelegatedInput;
       instruction?: Instruction;
       awaiting: boolean;
+      input?: { readonly source: QueueItem['source']; readonly text: string };
+      element?: string;
     }
   | {
       type: 'agent';
@@ -440,20 +450,21 @@ const userDraftsOf = (drafts: readonly Draft[]): UserDrafts => {
 /** The draft a compaction bracket holds while the log has not closed it. */
 type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
 
+/** Whether a tool's calls stay out of the activity summary: the chat's own answer. */
+const builtInStandalone = (name: string): boolean =>
+  builtInDrawing(name).standalone;
+
 /**
  * Whether a draft belongs to the burst an `ActivityTurn` folds together:
- * reasoning and tool calls other than `edit` and `write`, which stay out of the
- * summary as their own turn blocks so every file modification remains visible in
- * the flow, and other than `thread-spawn`, whose delegation has a block of its
- * own, and `load_skill`, whose block names the skill the agent loaded.
+ * reasoning and the tool calls `standalone` does not keep out of the summary as
+ * their own turn blocks.
  */
-const isBurstDraft = (turn: Draft): turn is BurstDraft =>
+const isBurstDraft = (
+  turn: Draft,
+  standalone: (name: string) => boolean,
+): turn is BurstDraft =>
   turn.type === 'thinking' ||
-  (turn.type === 'tool_call' &&
-    turn.name !== 'edit' &&
-    turn.name !== 'write' &&
-    turn.name !== THREAD_SPAWN_TOOL &&
-    turn.name !== LOAD_SKILL_TOOL);
+  (turn.type === 'tool_call' && !standalone(turn.name));
 
 /** One grouped step, in the shape a surface renders it. */
 const activityItem = (item: BurstDraft): ActivityItem =>
@@ -461,6 +472,7 @@ const activityItem = (item: BurstDraft): ActivityItem =>
     ? { kind: 'thinking', text: item.text }
     : {
         kind: 'tool',
+        callId: item.callId,
         name: item.name,
         args: item.args,
         status: item.status,
@@ -483,12 +495,16 @@ const activity = (run: readonly BurstDraft[]): ActivityTurn => ({
  * done and did more than one thing becomes one turn, while the steps of a burst
  * of one, and of the burst the log is still writing — the transcript's last, in
  * a job that has not settled — stay on their own, so a lone step reads as itself
- * and the reader watches the live burst as it happens.
+ * and the reader watches the live burst as it happens. `standalone` decides which
+ * tool calls stay out of a burst; the chat's own answer by default.
  */
-const grouped = (
+export const groupTurns = (
   drafts: readonly Draft[],
   status: ReadonlyMap<string, PromptStatus>,
+  standalone: (name: string) => boolean = builtInStandalone,
 ): readonly Turn[] => {
+  const inBurst = (turn: Draft): turn is BurstDraft =>
+    isBurstDraft(turn, standalone);
   // A `comment_reply` call draws no row of its own: its reply block says what
   // it wrote, where it wrote it.
   const turns = drafts.filter((turn) => !isReplyCall(turn));
@@ -497,6 +513,20 @@ const grouped = (
   const lastIndex = lastTurnIndex(turns);
   const last = turns[lastIndex];
   const writing = last !== undefined && !status.has(last.promptId);
+  // The burst the log is still writing: the trailing steps of the last prompt,
+  // reasoning and tool calls alike, so a call that stands on its own does not
+  // fold the live steps before it.
+  let liveStart = lastIndex + 1;
+  while (writing && liveStart > 0) {
+    const previous = turns[liveStart - 1];
+    if (
+      previous === undefined ||
+      (previous.type !== 'thinking' && previous.type !== 'tool_call') ||
+      previous.promptId !== last?.promptId
+    )
+      break;
+    liveStart -= 1;
+  }
 
   const result: Turn[] = [];
   let index = 0;
@@ -517,7 +547,7 @@ const grouped = (
       index = end;
       continue;
     }
-    if (turn === undefined || !isBurstDraft(turn)) {
+    if (turn === undefined || !inBurst(turn)) {
       if (turn !== undefined) result.push(turn);
       index += 1;
       continue;
@@ -528,17 +558,18 @@ const grouped = (
       const next = turns[end + 1];
       if (
         next === undefined ||
-        !isBurstDraft(next) ||
+        !inBurst(next) ||
         next.promptId !== turn.promptId
       )
         break;
       end += 1;
     }
 
-    const run = turns.slice(index, end + 1).filter(isBurstDraft);
+    const run = turns.slice(index, end + 1).filter(inBurst);
     // A burst of one step has nothing to summarize: the step is the whole of it,
     // and a summary would only repeat it.
-    if (run.length === 1 || (writing && end === lastIndex)) result.push(...run);
+    if (run.length === 1 || (writing && index >= liveStart))
+      result.push(...run);
     else result.push(activity(run));
     index = end + 1;
   }
@@ -1058,7 +1089,7 @@ const project = (events: readonly ThreadEvent[]): Projection => {
     comments,
     threads,
     answers,
-    turns: grouped(drafts, status),
+    turns: groupTurns(drafts, status),
   };
 };
 
@@ -1124,7 +1155,7 @@ const readInto = (
     comments,
     threads,
     answers,
-    turns: grouped(drafts, status),
+    turns: groupTurns(drafts, status),
   };
 };
 

@@ -1,17 +1,17 @@
 import { type ErrorInfo, errorInfo } from 'desktop/reads';
+import {
+  blockOpen,
+  type Chosen,
+  CollapsibleBlock,
+} from 'desktop/ui/collapsible-block';
 import { ErrorNotice } from 'desktop/ui/error-notice';
 import { cn } from 'desktop/ui/utils';
 import { memo, useMemo, useState } from 'react';
 
-import {
-  blockOpen,
-  type Chosen,
-  toolOpenness,
-} from '../../domain/collapsible.js';
+import { toolOpenness } from '../../domain/collapsible.js';
 import { type DiffLine, parseEditCall } from '../../domain/edit-tool.js';
 import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
-import { CollapsibleBlock } from './collapsible-block.js';
 
 export const INITIAL_DIFF_LINES = 16;
 
@@ -83,7 +83,7 @@ export const EditToolItem = memo(function EditToolItem({
   const failed = status === 'failed' || parsed.success === false;
   const verb = running ? 'Editing' : failed ? 'Failed to edit' : 'Edited';
   const hasCounts = parsed.added > 0 || parsed.removed > 0;
-  const openness = toolOpenness(status, args, result, error, 'edit');
+  const openness = toolOpenness(status, args, result, error, true);
   const open = blockOpen(chosen, openness);
   const hiddenCount = Math.max(0, parsed.diffLines.length - INITIAL_DIFF_LINES);
   const canToggleMore = hiddenCount > 0;

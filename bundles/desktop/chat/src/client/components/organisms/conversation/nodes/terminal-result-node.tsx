@@ -13,6 +13,7 @@
  * as one stop, and Enter opens or closes it like any other widget.
  */
 
+import { blockToggled, type Chosen } from 'desktop/ui/collapsible-block';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -24,11 +25,7 @@ import {
 } from 'lexical';
 import type { JSX } from 'react/jsx-runtime';
 
-import {
-  blockToggled,
-  type Chosen,
-  terminalResultOpenness,
-} from '../../../../domain/collapsible.js';
+import { terminalResultOpenness } from '../../../../domain/collapsible.js';
 import { TERMINAL_RESULT_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { UserTurn } from '../../../../domain/projector.js';
 import {

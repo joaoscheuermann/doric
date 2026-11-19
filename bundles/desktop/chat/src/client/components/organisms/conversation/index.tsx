@@ -92,6 +92,7 @@ import {
   FenceNode,
   fenceElementKey,
 } from './nodes/fence-node.js';
+import { InputTurnNode } from './nodes/input-turn-node.js';
 import { LifecycleTurnNode } from './nodes/lifecycle-turn-node.js';
 import { PromptEditNode } from './nodes/prompt-edit-node.js';
 import { QueueNode } from './nodes/queue-node.js';
@@ -259,6 +260,7 @@ const defineConversationExtension = (
       UserTurnNode,
       DelegatedTurnNode,
       TerminalResultNode,
+      InputTurnNode,
       AgentTurnNode,
       ThinkingTurnNode,
       ToolTurnNode,
@@ -466,8 +468,13 @@ export const Conversation = memo(function Conversation({
   const stop = useThreadStop(chat.thread);
   const ui = useContext(ChatUiContext);
   const blocksSource = useMemo(
-    () => ({ blocks: external.drawn, ui }),
-    [external.drawn, ui],
+    () => ({
+      blocks: external.drawn,
+      ui,
+      projectId: chat.thread.projectId,
+      threadId: chat.thread.id,
+    }),
+    [external.drawn, ui, chat.thread.projectId, chat.thread.id],
   );
   // Retry on the failed-prompt block: only the last failure's, and only while
   // the agent controls offer the same retry (§5.1, §6.1).
