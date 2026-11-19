@@ -3,15 +3,12 @@
  *
  * A tool's registration answers all three facts of its calls' drawing — the
  * element, whether a call stands outside the activity group, whether its block
- * is open by default — whole, so a registration of a name the chat draws itself
- * replaces the chat's answer. An unregistered tool gets the chat's built-in
- * answer, whose names leave here one by one as bundles take their drawings
- * over (5(b)).
+ * is open by default — whole. An unregistered tool is drawn by the chat's
+ * generic row, grouped and closed by default.
  */
 
 import type { ToolRendererSpec } from '../../contracts/index.js';
 import type { QueueItem } from './queue.js';
-import { THREAD_SPAWN_TOOL } from './thread-spawn.js';
 
 /** How the calls of one tool are drawn. */
 export interface ToolDrawing {
@@ -23,28 +20,13 @@ export interface ToolDrawing {
   readonly openByDefault: boolean;
 }
 
-/**
- * The calls that stay out of the activity summary as blocks of their own:
- * `thread-spawn`, whose delegation has a block of its own.
- */
-const STANDALONE: ReadonlySet<string> = new Set([THREAD_SPAWN_TOOL]);
-
-/**
- * The chat's own answer for an unregistered tool: closed by default, and
- * standalone for the names left in `STANDALONE`, which leave in 5(b).
- */
-export const builtInDrawing = (name: string): ToolDrawing => ({
-  standalone: STANDALONE.has(name),
-  openByDefault: false,
-});
-
-/** A registration's answer for `name`, whole (O4); else `builtInDrawing(name)`. */
+/** A registration's answer for `name`, whole (O4); else grouped and closed. */
 export const toolDrawing = (
   name: string,
   registered: ReadonlyMap<string, ToolRendererSpec>,
 ): ToolDrawing => {
   const spec = registered.get(name);
-  if (spec === undefined) return builtInDrawing(name);
+  if (spec === undefined) return { standalone: false, openByDefault: false };
   return {
     ...(spec.elementTag === undefined ? {} : { elementTag: spec.elementTag }),
     standalone: spec.standalone ?? false,

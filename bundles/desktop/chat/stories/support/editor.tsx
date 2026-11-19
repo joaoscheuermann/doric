@@ -105,10 +105,6 @@ import {
   ThinkingTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/thinking-turn-node.js';
 import {
-  $createThreadSpawnNode,
-  ThreadSpawnNode,
-} from '../../src/client/components/organisms/conversation/nodes/thread-spawn-node.js';
-import {
   $createToolTurnNode,
   ToolTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/tool-turn-node.js';
@@ -152,7 +148,6 @@ import {
 } from '../../src/client/domain/conversation-nodes.js';
 import { syncPlan } from '../../src/client/domain/conversation-sync.js';
 import type { Turn } from '../../src/client/domain/projector.js';
-import { THREAD_SPAWN_TOOL } from '../../src/client/domain/thread-spawn.js';
 import type { Thread, ThreadEvent } from '../../src/client/domain/workspace.js';
 import { CommentThreadsContext } from '../../src/client/hooks/use-comment-threads.js';
 import { ConversationThreadContext } from '../../src/client/hooks/use-live-terminal.js';
@@ -353,7 +348,6 @@ const conversationNodes = [
   AgentTurnNode,
   ThinkingTurnNode,
   ToolTurnNode,
-  ThreadSpawnNode,
   TurnAuthorNode,
   ActivityTurnNode,
   LifecycleTurnNode,
@@ -538,8 +532,6 @@ const $createTurnBlock = (
         turn.items,
       );
     case 'tool_call':
-      if (turn.name === THREAD_SPAWN_TOOL)
-        return $createThreadSpawnNode({ turnKey: key, ...turn });
       return $createToolTurnNode(
         key,
         turn.promptId,

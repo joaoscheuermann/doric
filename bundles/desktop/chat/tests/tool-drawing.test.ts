@@ -1,10 +1,10 @@
 // Which drawing a tool call gets (bundle isolation 5(a), `chat.views/v1`
 // 1.2.0): a registration answers its own three facts, whole (O4); an
-// unregistered tool gets the chat's built-in answer, which keeps the
-// standalone names not yet moved by 5(b). And the key an input renderer is
+// unregistered tool gets the chat's answer. And the key an input renderer is
 // registered under. 5(b) change 1: `edit`, `write` and `view-image` are
 // `files`' to draw; unregistered, they are any other name. Change 2:
-// `load_skill` is `default`'s, likewise.
+// `load_skill` is `default`'s, likewise. Change 3: `thread-spawn` is
+// `threads`', so no name is standalone unregistered any more (T5.4).
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -31,18 +31,9 @@ const registered = (
   new Map(specs.map((spec) => [spec.toolName, spec]));
 
 describe('the drawing of an unregistered tool', () => {
-  test('thread-spawn is standalone and closed', () => {
-    for (const name of ['thread-spawn']) {
-      assert.deepEqual(
-        facts(toolDrawing(name, none)),
-        { elementTag: undefined, standalone: true, openByDefault: false },
-        name,
-      );
-    }
-  });
-
-  test('any other name, edit, write, view-image and load_skill among them, is grouped, closed and has no element', () => {
+  test('any name, thread-spawn, edit, write, view-image and load_skill among them, is grouped, closed and has no element', () => {
     for (const name of [
+      'thread-spawn',
       'terminal',
       'probe_tool',
       'edit',
@@ -86,20 +77,27 @@ describe('the drawing of a registered tool', () => {
     assert.equal(drawing.openByDefault, false);
   });
 
-  test('a registration of a built-in name replaces the built-in answer whole (O4)', () => {
+  test('a registration of thread-spawn answers its own facts, as threads registers it', () => {
     const drawing = toolDrawing(
       'thread-spawn',
-      registered({ toolName: 'thread-spawn' }),
+      registered({
+        toolName: 'thread-spawn',
+        elementTag: 'threads-spawn-call',
+        standalone: true,
+      }),
     );
-    assert.equal(drawing.standalone, false);
-    assert.equal(drawing.openByDefault, false);
-    assert.equal(drawing.elementTag, undefined);
+    assert.deepEqual(facts(drawing), {
+      elementTag: 'threads-spawn-call',
+      standalone: true,
+      openByDefault: false,
+    });
   });
 
   test('a registration answers for its own name only', () => {
     const map = registered({ toolName: 'probe_tool', standalone: true });
+    assert.equal(toolDrawing('probe_tool', map).standalone, true);
     assert.equal(toolDrawing('other_tool', map).standalone, false);
-    assert.equal(toolDrawing('thread-spawn', map).standalone, true);
+    assert.equal(toolDrawing('thread-spawn', map).standalone, false);
   });
 });
 

@@ -6,7 +6,6 @@ import { blockOpen, blockToggled } from 'desktop/ui/collapsible-block';
 import {
   replyOpenness,
   settledOpenness,
-  spawnOpenness,
   terminalResultOpenness,
   thinkingOpenness,
   toolOpenness,
@@ -117,17 +116,5 @@ describe('what opens each block on its own', () => {
   test("the reader's choice on a terminal result stands over the outcome", () => {
     assert.equal(blockOpen(true, terminalResultOpenness(false)), true);
     assert.equal(blockOpen(false, terminalResultOpenness(true)), false);
-  });
-
-  test('a thread-spawn block is open while it spawns and when it failed, and folded once it spawned', () => {
-    assert.equal(blockOpen(null, spawnOpenness('running')), true);
-    assert.equal(blockOpen(null, spawnOpenness('finished')), false);
-    assert.equal(blockOpen(null, spawnOpenness('failed')), true);
-  });
-
-  test("the reader's choice on a thread-spawn block stands over its call", () => {
-    assert.equal(blockOpen(true, spawnOpenness('running')), true);
-    // They can fold away a call that is still spawning.
-    assert.equal(blockOpen(false, spawnOpenness('running')), false);
   });
 });

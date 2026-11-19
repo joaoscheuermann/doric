@@ -24,7 +24,6 @@ import { type PromptInput, readInput } from './projector-input.js';
 import { type LifecycleEvent, pauseReason } from './prompt-lifecycle.js';
 import type { QueueItem } from './queue.js';
 import type { TerminalResult } from './terminal-result.js';
-import { builtInDrawing } from './tool-drawing.js';
 import type { ThreadEvent } from './workspace.js';
 
 export type PromptStatus =
@@ -450,10 +449,6 @@ const userDraftsOf = (drafts: readonly Draft[]): UserDrafts => {
 /** The draft a compaction bracket holds while the log has not closed it. */
 type CompactionDraft = Extract<Draft, { type: 'compaction' }>;
 
-/** Whether a tool's calls stay out of the activity summary: the chat's own answer. */
-const builtInStandalone = (name: string): boolean =>
-  builtInDrawing(name).standalone;
-
 /**
  * Whether a draft belongs to the burst an `ActivityTurn` folds together:
  * reasoning and the tool calls `standalone` does not keep out of the summary as
@@ -496,12 +491,12 @@ const activity = (run: readonly BurstDraft[]): ActivityTurn => ({
  * of one, and of the burst the log is still writing — the transcript's last, in
  * a job that has not settled — stay on their own, so a lone step reads as itself
  * and the reader watches the live burst as it happens. `standalone` decides which
- * tool calls stay out of a burst; the chat's own answer by default.
+ * tool calls stay out of a burst; none by default.
  */
 export const groupTurns = (
   drafts: readonly Draft[],
   status: ReadonlyMap<string, PromptStatus>,
-  standalone: (name: string) => boolean = builtInStandalone,
+  standalone: (name: string) => boolean = () => false,
 ): readonly Turn[] => {
   const inBurst = (turn: Draft): turn is BurstDraft =>
     isBurstDraft(turn, standalone);

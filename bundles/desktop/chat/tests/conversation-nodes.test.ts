@@ -9,7 +9,6 @@ import {
   isReadOnlyBlock,
   isUndeletableBlock,
   THINKING_TURN_BLOCK,
-  THREAD_SPAWN_TURN_BLOCK,
   TOOL_TURN_BLOCK,
   TURN_AUTHOR_BLOCK,
   USER_PROMPT_BLOCK,
@@ -46,9 +45,5 @@ describe('what a conversation block allows', () => {
     assert.equal(COMMENT_SEAT_BLOCK, 'chat-comment-seat-node');
     assert.equal(isUndeletableBlock(COMMENT_SEAT_BLOCK), true);
     assert.equal(isReadOnlyBlock(COMMENT_SEAT_BLOCK), false);
-  });
-  test('preserves a thread-spawn block when deleting across the transcript, without editing it itself', () => {
-    assert.equal(isUndeletableBlock(THREAD_SPAWN_TURN_BLOCK), true);
-    assert.equal(isReadOnlyBlock(THREAD_SPAWN_TURN_BLOCK), false);
   });
 });

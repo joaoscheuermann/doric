@@ -7,6 +7,7 @@ import {
   type ActivityTurn,
   type CompactionTurn,
   emptyProjection,
+  groupTurns,
   type LifecycleTurn,
   projectEvents,
   sandboxWrites,
@@ -34,6 +35,12 @@ const call = (
   name: string,
   payload: unknown = {},
 ): Readonly<Record<string, unknown>> => ({ id, name, index: 0, payload });
+
+/**
+ * The standalone answer of a registration made for the test: no name is a
+ * built-in standalone one since 5(b) change 3, so a probe name stands in.
+ */
+const standalone = (name: string): boolean => name === 'probe-standalone';
 
 const types = (turns: readonly Turn[]): readonly string[] =>
   turns.map((turn) => turn.type);
@@ -370,7 +377,55 @@ describe('thread event projection', () => {
     assert.equal(activity?.thoughts, 2);
   });
 
-  test('a thread-spawn call stands on its own between the bursts on either side of it', () => {
+  test('a call the standalone answer names stands on its own between the bursts on either side of it', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'inspect' }),
+      event(2, 'one', {
+        type: 'tool.started',
+        call: call('c1', 'terminal', { command: 'ls' }),
+      }),
+      event(3, 'one', {
+        type: 'tool.finished',
+        call: call('c1', 'terminal', { command: 'ls' }),
+        record: { output: 'src' },
+      }),
+      event(4, 'one', {
+        type: 'tool.started',
+        call: call('c2', 'probe-standalone', { path: 'a.ts' }),
+      }),
+      event(5, 'one', {
+        type: 'tool.finished',
+        call: call('c2', 'probe-standalone', { path: 'a.ts' }),
+        record: { output: 'drawn' },
+      }),
+      event(6, 'one', { type: 'reasoning.delta', delta: 'wait' }),
+      event(7, 'one', {
+        type: 'tool.started',
+        call: call('c3', 'terminal', { command: 'npm test' }),
+      }),
+      event(8, 'one', {
+        type: 'tool.finished',
+        call: call('c3', 'terminal', { command: 'npm test' }),
+        record: { output: 'pass' },
+      }),
+      event(9, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: '',
+        source: { kind: 'user' },
+      }),
+    ]);
+
+    // The call reads as a block of its own, so the bursts around it are the
+    // summaries that stand either side of it.
+    const turns = groupTurns(projection.drafts, projection.status, standalone);
+    assert.deepEqual(types(turns), ['activity', 'tool_call', 'activity']);
+    assert.equal(toolOf(turns[1])?.name, 'probe-standalone');
+    assert.equal(activityOf(turns[0])?.tools, 1);
+    assert.equal(activityOf(turns[2])?.tools, 1);
+  });
+
+  test('groups an unregistered thread-spawn call into the burst with the calls around it', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'inspect' }),
       event(2, 'one', {
@@ -391,17 +446,7 @@ describe('thread event projection', () => {
         call: call('c2', 'thread-spawn', { prompt: 'Audit the contrast' }),
         record: { output: '{"threadId":"thread-2","promptId":"prompt-2"}' },
       }),
-      event(6, 'one', { type: 'reasoning.delta', delta: 'wait' }),
-      event(7, 'one', {
-        type: 'tool.started',
-        call: call('c3', 'terminal', { command: 'npm test' }),
-      }),
-      event(8, 'one', {
-        type: 'tool.finished',
-        call: call('c3', 'terminal', { command: 'npm test' }),
-        record: { output: 'pass' },
-      }),
-      event(9, 'one', {
+      event(6, 'one', {
         type: 'prompt.finished',
         status: 'completed',
         text: '',
@@ -409,16 +454,14 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    // The spawn reads as a block of its own, so the bursts around it are the
-    // summaries that stand either side of it, as an `edit` call's are.
-    assert.deepEqual(types(projection.turns), [
-      'activity',
-      'tool_call',
-      'activity',
-    ]);
-    assert.equal(toolOf(projection.turns[1])?.name, 'thread-spawn');
-    assert.equal(activityOf(projection.turns[0])?.tools, 1);
-    assert.equal(activityOf(projection.turns[2])?.tools, 1);
+    // `thread-spawn` is no built-in standalone name since 5(b) change 3:
+    // unregistered, it is one more call of the burst.
+    assert.deepEqual(types(projection.turns), ['activity']);
+    const activity = activityOf(projection.turns[0]);
+    assert.deepEqual(
+      activity?.items.map((item) => (item.kind === 'tool' ? item.name : '')),
+      ['', 'terminal', 'thread-spawn'],
+    );
   });
 
   test('groups an unregistered load_skill call into the burst with the calls around it', () => {
@@ -468,11 +511,11 @@ describe('thread event projection', () => {
     );
   });
 
-  test('a burst that spawned a Thread does not list the spawn among its steps', () => {
+  test('a burst around a standalone call does not list it among its steps', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', {
         type: 'prompt.accepted',
-        text: 'Delegate the audit and run the suite',
+        text: 'Probe the audit and run the suite',
         source: { kind: 'user' },
       }),
       event(2, 'one', {
@@ -495,12 +538,12 @@ describe('thread event projection', () => {
       }),
       event(6, 'one', {
         type: 'tool.started',
-        call: call('c3', 'thread-spawn', { prompt: 'Audit the contrast' }),
+        call: call('c3', 'probe-standalone', { path: 'a.ts' }),
       }),
       event(7, 'one', {
         type: 'tool.finished',
-        call: call('c3', 'thread-spawn', { prompt: 'Audit the contrast' }),
-        record: { output: '{"threadId":"thread-2","promptId":"prompt-2"}' },
+        call: call('c3', 'probe-standalone', { path: 'a.ts' }),
+        record: { output: 'drawn' },
       }),
       event(8, 'one', {
         type: 'tool.started',
@@ -528,14 +571,16 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    const activities = projection.turns.filter(
-      (turn): turn is ActivityTurn => turn.type === 'activity',
-    );
+    const activities = groupTurns(
+      projection.drafts,
+      projection.status,
+      standalone,
+    ).filter((turn): turn is ActivityTurn => turn.type === 'activity');
     const named = activities
       .flatMap((turn) => turn.items)
       .flatMap((item) => (item.kind === 'tool' ? [item.name] : []));
 
-    // The spawn has its own block, so no summary offers it as one of its steps.
+    // The call has its own block, so no summary offers it as one of its steps.
     assert.deepEqual(named, ['terminal', 'terminal', 'terminal', 'terminal']);
     // And the calls that did fold into a summary still count as its tools.
     assert.deepEqual(

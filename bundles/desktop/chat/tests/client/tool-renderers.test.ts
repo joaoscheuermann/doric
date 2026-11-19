@@ -404,6 +404,35 @@ describe('T5.3 the reader’s choice on an element block', () => {
     ]);
   });
 
+  // Moved from the chat's `thread-spawn.test.ts` (5(b) change 3): the block
+  // the reader opened is theirs, whoever draws it.
+  test('a standalone block the reader opened stays open while the transcript goes on', async () => {
+    const { probe, state } = rendererProbe({
+      tools: [{ ...probeTool, standalone: true }],
+    });
+    const events = [asked, ...ran(2, 'c1'), done(4)];
+    const window = await openWith(probe, events);
+    assertReady(state);
+    const [element] = probeElements(window.document, TOOL_ELEMENT);
+    assert.ok(element);
+    assert.equal(toolView(element).chosen, null);
+
+    // The reader opens the block a settled call shows folded on its own.
+    choose(element, true);
+    await settle(100);
+    assert.equal(toolView(element).chosen, true);
+
+    snapshot(window, [
+      ...events,
+      threadEvent(5, { type: 'text.delta', delta: 'Still working on it.' }),
+    ]);
+    await settle(150);
+
+    // Their choice is theirs: the run going on must not fold the block again.
+    assert.deepEqual(probeElements(window.document, TOOL_ELEMENT), [element]);
+    assert.equal(toolView(element).chosen, true);
+  });
+
   test('the toggle key on a standalone element without toggle() sets the opposite of the generic answer', async () => {
     const { probe, state } = rendererProbe({ tools: [probeTool] });
     const window = await openWith(probe, [asked, ...ran(2, 'c1'), done(4)]);
@@ -584,9 +613,49 @@ describe('T5.4 an unregistered tool', () => {
       'the row is closed',
     );
   });
+
+  // 5(b) change 3: `threads` draws `thread-spawn`; the chat has no spawn block
+  // of its own left, and no name stands outside the summary unregistered.
+  test('thread-spawn is the generic row inside the activity summary, closed, with no spawn block', async () => {
+    const { probe, state } = rendererProbe({ tools: [probeTool] });
+    const window = await openWith(probe, [
+      asked,
+      thought(2, 'inspect'),
+      ...ran(3, 'c1', 'thread-spawn'),
+      ...ran(5, 'c2', 'grep'),
+      done(7),
+    ]);
+    assertReady(state);
+
+    assert.equal(
+      window.document.querySelectorAll(
+        '[data-spawn-call-id], [data-slot="thread-spawn"]',
+      ).length,
+      0,
+      'no spawn block is drawn',
+    );
+    assert.doesNotMatch(transcriptText(window), /Spawned|Spawning/);
+    assert.equal(
+      summaries(window).length,
+      1,
+      blocks(window)
+        .map((b) => b.textContent)
+        .join(' | '),
+    );
+    const [summary] = summaries(window);
+    assert.ok(summary);
+    assert.match(summary.textContent ?? '', /called 2 tools/);
+    await openSummary(summary);
+    const shown = summaries(window)[0]?.textContent ?? '';
+    assert.match(shown, /Called thread spawn/);
+    assert.ok(
+      !shown.includes(JSON.stringify({ path: 'c1.ts' })),
+      'the row is closed',
+    );
+  });
 });
 
-test('the chat manifest is 1.10.2 on platform ^1.10.0 and provides chat.views/v1@1.2.0', () => {
+test('the chat manifest is 1.10.3 on platform ^1.10.0 and provides chat.views/v1@1.2.0', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as {
@@ -594,7 +663,7 @@ test('the chat manifest is 1.10.2 on platform ^1.10.0 and provides chat.views/v1
     readonly engines: { readonly doric: string };
     readonly provides: readonly string[];
   };
-  assert.equal(manifest.version, '1.10.2');
+  assert.equal(manifest.version, '1.10.3');
   assert.equal(manifest.engines.doric, '^1.10.0');
   assert.ok(
     manifest.provides.includes('chat.views/v1@1.2.0'),

@@ -22,7 +22,6 @@ import {
 } from '../../../../domain/conversation-sync.js';
 import type { Turn } from '../../../../domain/projector.js';
 import { terminalResultEquals } from '../../../../domain/terminal-result.js';
-import { THREAD_SPAWN_TOOL } from '../../../../domain/thread-spawn.js';
 import {
   $createActivityTurnNode,
   $isActivityTurnNode,
@@ -97,11 +96,6 @@ import {
   type ThinkingTurnNode,
 } from '../nodes/thinking-turn-node.js';
 import {
-  $createThreadSpawnNode,
-  $isThreadSpawnNode,
-  type ThreadSpawnNode,
-} from '../nodes/thread-spawn-node.js';
-import {
   $createToolTurnNode,
   $isToolTurnNode,
   type ToolTurnNode,
@@ -141,7 +135,6 @@ type TurnBlock =
   | AgentTurnNode
   | ThinkingTurnNode
   | ToolTurnNode
-  | ThreadSpawnNode
   | ActivityTurnNode
   | LifecycleTurnNode
   | CompactionTurnNode
@@ -169,7 +162,6 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
   $isToolTurnNode(node) ||
-  $isThreadSpawnNode(node) ||
   $isActivityTurnNode(node) ||
   $isLifecycleTurnNode(node) ||
   $isCompactionTurnNode(node) ||
@@ -234,8 +226,6 @@ const $createBlock = (
         turn.items,
       );
     case 'tool_call':
-      if (turn.name === THREAD_SPAWN_TOOL)
-        return $createThreadSpawnNode({ turnKey: key, ...turn });
       return $createToolTurnNode(
         key,
         turn.promptId,
@@ -486,10 +476,7 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
     block.setTurn(turn);
   else if (turn.type === 'thinking' && $isThinkingTurnNode(block))
     block.setTurn(turn);
-  else if (
-    turn.type === 'tool_call' &&
-    ($isToolTurnNode(block) || $isThreadSpawnNode(block))
-  )
+  else if (turn.type === 'tool_call' && $isToolTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'activity' && $isActivityTurnNode(block))
     block.setTurn(turn);

@@ -139,7 +139,10 @@ describe('drawnTurns', () => {
     assert.equal(only?.type === 'activity' ? only.tools : 0, 3);
   });
 
-  test('a registration that takes a built-in name back into the group folds it (O4)', () => {
+  // 5(b) change 3: `thread-spawn` was the chat's last built-in standalone
+  // name; unregistered, it folds like any other, so the projection's own turns
+  // and the registered drawing agree on it (T5.4).
+  test('an unregistered thread-spawn folds into the summary, with or without other registrations', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'inspect' }),
       ...ran(2, 'c1', 'thread-spawn'),
@@ -151,17 +154,39 @@ describe('drawnTurns', () => {
         source: { kind: 'user' },
       }),
     ]);
-    assert.deepEqual(types(projection.turns), [
-      'thinking',
-      'tool_call',
-      'tool_call',
-    ]);
+    assert.deepEqual(types(projection.turns), ['activity']);
     const turns = drawnTurns(
+      projection,
+      tools({ toolName: 'probe_tool', standalone: true }),
+      noInputs,
+    );
+    assert.deepEqual(types(turns), ['activity']);
+  });
+
+  test('a registration that takes a standalone name back into the group folds it (O4)', () => {
+    const projection = projectEvents(emptyProjection, [
+      event(1, 'one', { type: 'reasoning.delta', delta: 'inspect' }),
+      ...ran(2, 'c1', 'thread-spawn'),
+      ...ran(4, 'c2', 'terminal'),
+      event(6, 'one', {
+        type: 'prompt.finished',
+        status: 'completed',
+        text: '',
+        source: { kind: 'user' },
+      }),
+    ]);
+    const standalone = drawnTurns(
+      projection,
+      tools({ toolName: 'thread-spawn', standalone: true }),
+      noInputs,
+    );
+    assert.deepEqual(types(standalone), ['thinking', 'tool_call', 'tool_call']);
+    const grouped = drawnTurns(
       projection,
       tools({ toolName: 'thread-spawn' }),
       noInputs,
     );
-    assert.deepEqual(types(turns), ['activity']);
+    assert.deepEqual(types(grouped), ['activity']);
   });
 
   test('the live burst keeps every step on its own', () => {

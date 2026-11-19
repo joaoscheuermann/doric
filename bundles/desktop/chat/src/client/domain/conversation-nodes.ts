@@ -12,11 +12,6 @@
 export const AGENT_TURN_BLOCK = 'agent-turn-node';
 export const THINKING_TURN_BLOCK = 'thinking-turn-node';
 export const TOOL_TURN_BLOCK = 'tool-turn-node';
-/**
- * A `thread-spawn` call, drawn as the delegation it is rather than as the
- * generic row every other tool call draws.
- */
-export const THREAD_SPAWN_TURN_BLOCK = 'thread-spawn-node';
 export const USER_TURN_BLOCK = 'user-turn-node';
 export const DELEGATED_TURN_BLOCK = 'delegated-turn-node';
 
@@ -94,7 +89,6 @@ const UNDELETABLE = new Set([
   AGENT_TURN_BLOCK,
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,
-  THREAD_SPAWN_TURN_BLOCK,
   USER_TURN_BLOCK,
   DELEGATED_TURN_BLOCK,
   TERMINAL_RESULT_TURN_BLOCK,
