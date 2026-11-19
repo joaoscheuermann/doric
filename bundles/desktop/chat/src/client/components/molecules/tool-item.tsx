@@ -6,10 +6,8 @@ import { attachmentLine } from 'runtime/contracts';
 import { toolOpenness } from '../../domain/collapsible.js';
 import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
-import { LOAD_SKILL_TOOL } from '../../domain/skill-load.js';
 import { humanize } from '../../utility/humanize.js';
 import { AttachmentImage } from './attachment-image.js';
-import { SkillToolItem } from './skill-tool-item.js';
 import { TerminalToolItem } from './terminal-tool-item.js';
 
 type ToolItemProps = {
@@ -49,19 +47,6 @@ export function ToolItem({
   if (!generic && name === 'terminal') {
     return (
       <TerminalToolItem
-        args={args}
-        chosen={chosen}
-        error={error}
-        focused={focused}
-        onChosenChange={onChosenChange}
-        result={result}
-        status={status}
-      />
-    );
-  }
-  if (!generic && name === LOAD_SKILL_TOOL) {
-    return (
-      <SkillToolItem
         args={args}
         chosen={chosen}
         error={error}

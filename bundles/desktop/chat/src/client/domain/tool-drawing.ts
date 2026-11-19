@@ -11,7 +11,6 @@
 
 import type { ToolRendererSpec } from '../../contracts/index.js';
 import type { QueueItem } from './queue.js';
-import { LOAD_SKILL_TOOL } from './skill-load.js';
 import { THREAD_SPAWN_TOOL } from './thread-spawn.js';
 
 /** How the calls of one tool are drawn. */
@@ -26,13 +25,9 @@ export interface ToolDrawing {
 
 /**
  * The calls that stay out of the activity summary as blocks of their own:
- * `thread-spawn`, whose delegation has a block of its own, and `load_skill`,
- * whose block names the skill the agent loaded.
+ * `thread-spawn`, whose delegation has a block of its own.
  */
-const STANDALONE: ReadonlySet<string> = new Set([
-  THREAD_SPAWN_TOOL,
-  LOAD_SKILL_TOOL,
-]);
+const STANDALONE: ReadonlySet<string> = new Set([THREAD_SPAWN_TOOL]);
 
 /**
  * The chat's own answer for an unregistered tool: closed by default, and

@@ -421,7 +421,7 @@ describe('thread event projection', () => {
     assert.equal(activityOf(projection.turns[2])?.tools, 1);
   });
 
-  test('a load_skill call stands on its own and is never folded into a burst', () => {
+  test('groups an unregistered load_skill call into the burst with the calls around it', () => {
     const ran = (
       sequence: number,
       id: string,
@@ -458,19 +458,13 @@ describe('thread event projection', () => {
       }),
     ]);
 
-    // The lone grep before the skill is a burst of one, so it reads as itself;
-    // the skill keeps its own block; the two calls after it fold into a summary.
-    assert.deepEqual(types(projection.turns), [
-      'tool_call',
-      'tool_call',
-      'activity',
-    ]);
-    assert.equal(toolOf(projection.turns[0])?.name, 'grep');
-    assert.equal(toolOf(projection.turns[1])?.name, 'load_skill');
-    const activity = activityOf(projection.turns[2]);
+    // `load_skill` is no built-in standalone name since 5(b) change 2:
+    // unregistered, it is one more call of the burst of four.
+    assert.deepEqual(types(projection.turns), ['activity']);
+    const activity = activityOf(projection.turns[0]);
     assert.deepEqual(
       activity?.items.map((item) => (item.kind === 'tool' ? item.name : '')),
-      ['find', 'grep'],
+      ['grep', 'load_skill', 'find', 'grep'],
     );
   });
 

@@ -1592,7 +1592,15 @@ test('a call registered standalone stands outside the activity summary while ter
   );
 });
 
-test('a load_skill call stands as a block of its own between tool calls, never inside an activity summary', async () => {
+// Bundle isolation 5(b) change 2, OD-9: the standalone block is a probe
+// registered in the test, where it was the chat's built-in `load_skill`
+// drawing (now `default`'s).
+test('a call registered standalone stands as a block of its own between tool calls, never inside an activity summary', async () => {
+  const { probe, state } = rendererProbe({
+    tools: [
+      { toolName: 'probe_skill', elementTag: TOOL_ELEMENT, standalone: true },
+    ],
+  });
   const ran = (
     sequence: number,
     id: string,
@@ -1610,7 +1618,8 @@ test('a load_skill call stands as a block of its own between tool calls, never i
       record: { output },
     }),
   ];
-  opened = await openChatWindow({ url, host: host(thread()) });
+  opened = await openChatWindow({ url, host: host(thread()), probe });
+  await settle();
   await deliver(opened, [
     event(1, {
       type: 'prompt.accepted',
@@ -1621,7 +1630,7 @@ test('a load_skill call stands as a block of its own between tool calls, never i
     ...ran(
       4,
       'call-2',
-      'load_skill',
+      'probe_skill',
       { name: 'cwd/behavioral-testing' },
       '# Behavioral Testing',
     ),
@@ -1640,15 +1649,23 @@ test('a load_skill call stands as a block of its own between tool calls, never i
   const rowOf = (pattern: RegExp): Element | undefined =>
     rows.find((row) => pattern.test(row.textContent ?? ''));
 
-  // The skill draws its own row, which is no summary of other calls.
-  const skill = rowOf(/Loaded skill/);
-  assert.ok(skill, 'the load_skill call draws a row of its own');
+  // The registered call is drawn by its element in a row of its own, which is
+  // no summary of other calls.
+  assertReady(state);
+  const [element] = probeElements(opened.document, TOOL_ELEMENT);
+  assert.ok(element, 'the standalone call is drawn');
+  assert.equal(
+    (element.view as { readonly name?: string } | undefined)?.name,
+    'probe_skill',
+  );
+  const skill = rows.find((row) => row.contains(element));
+  assert.ok(skill, 'the standalone call draws a row of its own');
   assert.doesNotMatch(skill.textContent ?? '', /Called \d+ tools?/);
 
-  // Only the two calls after it fold into a summary; the skill is not one of
-  // the calls it counts.
+  // Only the two calls after it fold into a summary; the standalone call is
+  // not one of the calls it counts.
   const summary = rowOf(/Called 2 tools/);
-  assert.ok(summary, 'the calls after the skill fold into a summary');
+  assert.ok(summary, 'the calls after it fold into a summary');
   assert.notEqual(summary, skill);
   assert.doesNotMatch(
     opened.document.body.textContent ?? '',

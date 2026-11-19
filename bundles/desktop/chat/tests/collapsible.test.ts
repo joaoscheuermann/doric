@@ -6,7 +6,6 @@ import { blockOpen, blockToggled } from 'desktop/ui/collapsible-block';
 import {
   replyOpenness,
   settledOpenness,
-  skillOpenness,
   spawnOpenness,
   terminalResultOpenness,
   thinkingOpenness,
@@ -130,17 +129,5 @@ describe('what opens each block on its own', () => {
     assert.equal(blockOpen(true, spawnOpenness('running')), true);
     // They can fold away a call that is still spawning.
     assert.equal(blockOpen(false, spawnOpenness('running')), false);
-  });
-
-  test('a load_skill block is folded while it loads and once loaded, and open when the load failed', () => {
-    assert.equal(blockOpen(null, skillOpenness('running')), false);
-    assert.equal(blockOpen(null, skillOpenness('finished')), false);
-    assert.equal(blockOpen(null, skillOpenness('failed')), true);
-  });
-
-  test("the reader's choice on a load_skill block stands over its call", () => {
-    assert.equal(blockOpen(true, skillOpenness('running')), true);
-    assert.equal(blockOpen(true, skillOpenness('finished')), true);
-    assert.equal(blockOpen(false, skillOpenness('failed')), false);
   });
 });

@@ -3,7 +3,8 @@
 // unregistered tool gets the chat's built-in answer, which keeps the
 // standalone names not yet moved by 5(b). And the key an input renderer is
 // registered under. 5(b) change 1: `edit`, `write` and `view-image` are
-// `files`' to draw; unregistered, they are any other name.
+// `files`' to draw; unregistered, they are any other name. Change 2:
+// `load_skill` is `default`'s, likewise.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -30,8 +31,8 @@ const registered = (
   new Map(specs.map((spec) => [spec.toolName, spec]));
 
 describe('the drawing of an unregistered tool', () => {
-  test('thread-spawn and load_skill are standalone and closed', () => {
-    for (const name of ['thread-spawn', 'load_skill']) {
+  test('thread-spawn is standalone and closed', () => {
+    for (const name of ['thread-spawn']) {
       assert.deepEqual(
         facts(toolDrawing(name, none)),
         { elementTag: undefined, standalone: true, openByDefault: false },
@@ -40,13 +41,14 @@ describe('the drawing of an unregistered tool', () => {
     }
   });
 
-  test('any other name, edit, write and view-image among them, is grouped, closed and has no element', () => {
+  test('any other name, edit, write, view-image and load_skill among them, is grouped, closed and has no element', () => {
     for (const name of [
       'terminal',
       'probe_tool',
       'edit',
       'write',
       'view-image',
+      'load_skill',
       'Edit',
       'edit ',
     ]) {

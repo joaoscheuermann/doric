@@ -369,28 +369,6 @@ describe('T5.1 a registered tool element draws each call', () => {
     assert.ok(state.disposed.includes(element), 'the element was disposed');
     assert.match(transcriptText(window), /Calling probe tool/);
   });
-
-  test('a registration of `load_skill` with no element draws its call with the generic row, not the skill block; disposing it brings the skill block back', async () => {
-    const { probe, state } = rendererProbe({
-      tools: [{ toolName: 'load_skill' }],
-    });
-    const window = await openWith(probe, [
-      asked,
-      started(2, 'c1', 'load_skill'),
-    ]);
-    assertReady(state);
-    const skillNames = () =>
-      window.document.querySelectorAll('[data-slot="skill-name"]').length;
-    assert.equal(skillNames(), 0, 'the built-in skill block is not drawn');
-    assert.doesNotMatch(transcriptText(window), /Loading skill/);
-    assert.match(transcriptText(window), /Calling load skill/);
-
-    state.tools.get('load_skill')?.dispose();
-    await settle(150);
-    assert.equal(skillNames(), 1, 'the built-in skill block is back');
-    assert.match(transcriptText(window), /Loading skill/);
-    assert.doesNotMatch(transcriptText(window), /Calling load skill/);
-  });
 });
 
 describe('T5.3 the reader’s choice on an element block', () => {
@@ -568,9 +546,47 @@ describe('T5.4 an unregistered tool', () => {
         `the row of ${id} is closed`,
       );
   });
+
+  // 5(b) change 2: `default` draws `load_skill`; the chat has no skill block
+  // of its own left.
+  test('load_skill is the generic row inside the activity summary, closed, with no skill block', async () => {
+    const { probe, state } = rendererProbe({ tools: [probeTool] });
+    const window = await openWith(probe, [
+      asked,
+      thought(2, 'inspect'),
+      ...ran(3, 'c1', 'load_skill'),
+      ...ran(5, 'c2', 'grep'),
+      done(7),
+    ]);
+    assertReady(state);
+
+    assert.equal(
+      window.document.querySelectorAll('[data-slot="skill-name"]').length,
+      0,
+      'no skill block is drawn',
+    );
+    assert.doesNotMatch(transcriptText(window), /Loaded skill/);
+    assert.equal(
+      summaries(window).length,
+      1,
+      blocks(window)
+        .map((b) => b.textContent)
+        .join(' | '),
+    );
+    const [summary] = summaries(window);
+    assert.ok(summary);
+    assert.match(summary.textContent ?? '', /called 2 tools/);
+    await openSummary(summary);
+    const shown = summaries(window)[0]?.textContent ?? '';
+    assert.match(shown, /Called load skill/);
+    assert.ok(
+      !shown.includes(JSON.stringify({ path: 'c1.ts' })),
+      'the row is closed',
+    );
+  });
 });
 
-test('the chat manifest is 1.10.1 on platform ^1.10.0 and provides chat.views/v1@1.2.0', () => {
+test('the chat manifest is 1.10.2 on platform ^1.10.0 and provides chat.views/v1@1.2.0', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as {
@@ -578,7 +594,7 @@ test('the chat manifest is 1.10.1 on platform ^1.10.0 and provides chat.views/v1
     readonly engines: { readonly doric: string };
     readonly provides: readonly string[];
   };
-  assert.equal(manifest.version, '1.10.1');
+  assert.equal(manifest.version, '1.10.2');
   assert.equal(manifest.engines.doric, '^1.10.0');
   assert.ok(
     manifest.provides.includes('chat.views/v1@1.2.0'),
