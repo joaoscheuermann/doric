@@ -8,7 +8,8 @@
     "declaration": true,
     "declarationMap": true,
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts"],
   "references": [
@@ -31,10 +32,17 @@
       "path": "../../foundation/host-config"
     },
     {
+      "path": "../../desktop/chat"
+    },
+    {
       "path": "../../../packages/bundle"
     },
     {
       "path": "../../../packages/agent"
+    },
+    {
+      "path": "../../../packages/desktop"
     }
-  ]
+  ],
+  "exclude": ["src/client/**"]
 }

@@ -1,8 +1,8 @@
 {
   "manifestVersion": 1,
   "id": "default",
-  "version": "2.6.0",
-  "engines": { "doric": "^1.0.0" },
+  "version": "2.7.0",
+  "engines": { "doric": "^1.10.0" },
   "description": "The default agent: system prompt, skills, tools, model resolution and provider history.",
   "provides": [
     "executor/v1@1.5.0",
@@ -15,7 +15,13 @@
     "models/v1@^1.2.0",
     "host-config/v1@^1.1.0",
     "hooks/v1@^1.0.0",
-    "log/v1@^1.0.0"
+    "log/v1@^1.0.0",
+    "ui/v1@^1.0.0"
   ],
-  "optional": ["runtime.lease/v1", "runtime.workspace/v1", "mcp/v1"]
+  "optional": [
+    "runtime.lease/v1",
+    "runtime.workspace/v1",
+    "mcp/v1",
+    "chat.views/v1"
+  ]
 }

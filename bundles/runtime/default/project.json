@@ -11,6 +11,7 @@
       "options": {
         "commands": [
           "tsc --build bundles/runtime/default/tsconfig.json",
+          "tsc -p bundles/runtime/default/tsconfig.client.json",
           "node packages/bundle/dist/build/cli.js build bundles/runtime/default"
         ],
         "parallel": false
@@ -20,7 +21,11 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc --build bundles/runtime/default/tsconfig.json --emitDeclarationOnly"
+        "commands": [
+          "tsc --build bundles/runtime/default/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/runtime/default/tsconfig.client.json"
+        ],
+        "parallel": false
       }
     },
     "test": {
@@ -30,8 +35,10 @@
       "options": {
         "commands": [
           "tsc -p bundles/runtime/default/tsconfig.spec.json",
+          "tsc -p bundles/runtime/default/tsconfig.client-spec.json",
           "node packages/bundle/dist/build/cli.js copy-md bundles/runtime/default/src/host bundles/runtime/default/dist-tests/src/host",
-          "node --test bundles/runtime/default/dist-tests/tests/*.test.js"
+          "node --test bundles/runtime/default/dist-tests/tests/*.test.js",
+          "node --test --test-force-exit bundles/runtime/default/dist-tests/tests/client/*.test.js"
         ],
         "parallel": false
       }
