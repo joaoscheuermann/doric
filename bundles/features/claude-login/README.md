@@ -5,13 +5,18 @@ The provider page of the `claude` kind offers a sign-in no other kind draws:
 the browser opens Claude's authorization page, and the credential the sign-in
 stores becomes the provider's `token` field.
 
-It is a feature bundle with a host part only, loaded by the `bundle` platform.
+It is a feature bundle with a host part and a client part, loaded by the
+`bundle` platform. It needs the desktop app of platform 1.7.0 or later
+(`engines.doric` `^1.7.0`, since 1.1.0) and requires `secrets/v1`, `ui/v1` and
+`regions/v1`.
 See the [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
 
 ## What it provides
 
 - **Contract:** `claude.login/v1`, with `start` and `finish`.
+- **Element:** `<claude-login-field>`, the sign-in row of the `claude` kind's
+  provider page, added to `settings.provider.field` (from 1.1.0).
 
 ## Host
 
@@ -41,15 +46,44 @@ never opens one; the window does, through `doric.browser/v1`.
 
 ## Settings integration
 
-The `settings` bundle imports this package (`claude-login/contracts`), its
-manifest requires `claude.login/v1`, and its API exposes the two calls as
-`SettingsApi.claude.start` and `SettingsApi.claude.finish`. The provider page
-of the `claude` kind draws a "Sign in with Claude" row that drives the
-`useClaudeLogin` hook: it starts the sign-in, opens the URL in the system
-browser, shows that URL while it waits, and settles the answered credential
-into the `credentials` query cache before it publishes it, so the page's
-auto-select effect commits a `token` value the configuration already accepts.
-The hook's own cancel aborts the call without a failure toast.
+The client part (`src/client/`) draws the sign-in in the `settings` bundle's
+provider page; `settings` names neither this bundle nor the `claude` kind.
+
+- **The item.** `activate` defines `<claude-login-field>` and adds
+  `{ id: 'claude-login', tag: 'claude-login-field', props: { kind: 'claude', field: 'token' } }`
+  to the slot `settings.provider.field`, so `settings` draws the element in
+  place of the `claude` kind's `token` field. It imports `settings/contracts`
+  as types only, and the slot name as a checked literal.
+- **The element.** `settings` sets its `view` (`ProviderFieldView`). The row
+  reads "Claude login", with "Sign in with Claude" (or "Sign in again" once
+  `view.label` names the stored credential) and, while a sign-in waits,
+  "Waiting for the browser…", Cancel and the authorization URL. While
+  `view.problem` is set it shows the message in its own row: "Sign in with
+  Claude to finish this provider." (`missing`) or "The credential this
+  provider names is no longer stored: sign in with Claude again."
+  (`unknown`).
+- **The sign-in.** The `useClaudeLogin` hook calls `claude.login/v1`'s
+  `start`, opens the URL in the system browser through `doric.browser/v1` (a
+  browser that fails to open leaves the URL on screen), and waits on `finish`.
+  A finished sign-in dispatches the bubbling, composed DOM event
+  `settings-provider-field` with `detail: { value: credential.id }`, on which
+  `settings` reads its credentials again and writes the id into the `token`
+  field; then it toasts "Claude is signed in." (id `claude-login`), after
+  dismissing a failure. A failure toasts under `claude-login-failed` with
+  the bundle's own catalog (`sign_in_failed`, "Sign-in failed"); the hook's
+  own Cancel aborts the call without a failure toast. A sign-in that finishes
+  after its element is disposed (from 1.1.1) writes nothing and toasts no
+  success, since nothing would select the credential: it shows the info toast
+  "Claude sign-in finished after its page closed; sign in again from the
+  provider page to use it." (id `claude-login-finished`), and the user signs
+  in again.
+- **The adapter.** `src/client/api.ts` makes the calls over the element's
+  services, a child scope that ends when the element is released. A refusal
+  other than `internal` keeps its code and message with the error as `cause`;
+  anything else is `internal`.
+
+Without `settings` the item is added to a slot nobody draws. Before `settings`
+1.12.0 it drew the row itself and listed `claude.login/v1` under `optional`.
 
 ## Limits
 
@@ -65,6 +99,11 @@ npx nx build bundle-claude-login
 npx nx typecheck bundle-claude-login
 npx nx test bundle-claude-login
 ```
+
+`tests/*.test.ts` test the host part and the manifest; `tests/client/*.test.ts`
+test the activation and mount `<claude-login-field>` alone in a happy-dom
+window. `tests/client/api.test.ts` serves `doric.browser/v1` by hand, since a
+bundle cannot define a platform contract.
 
 To rebuild and stage every bundle used by the Doric host:
 

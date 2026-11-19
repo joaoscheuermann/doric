@@ -45,8 +45,8 @@ export const modelKindDescriptorSchema = z
     modelsFromCatalog: z.boolean().optional(),
     /**
      * models/v1 1.4.0, models.provider/v1 1.3.0: the site a provider page
-     * links to, with the control's label. A reader draws it only for an
-     * `https:` URL; a kind without a site has no such key.
+     * links to, with the control's label. The URL must be `https:`; a kind
+     * without a site has no such key.
      */
     site: z
       .object({

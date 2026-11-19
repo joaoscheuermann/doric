@@ -53,7 +53,7 @@ export const fieldEntryFor = (
 
 /**
  * The element's `view`. `problem` is set only where today's sign-in message stood
- * in for the page's issue (`settings-provider.tsx:213-222`): the provider has an
+ * in for the page's issue before 1.12.0: the provider has an
  * id, `draftIssue` is defined, and a required field's value is empty
  * (`missing`) or, for a `secret` field, names no stored `API_TOKEN` credential
  * (`unknown`). An optional field that is empty has no problem.

@@ -26,8 +26,10 @@ src/client/
 
 `src/contracts/` is the contracts module `settings/contracts` (built by
 `tsconfig.json` to `dist/contracts/`): contract declarations, types and slot
-names only. No file of it imports `src/client`; the client reaches it by the
-relative path `../contracts/index.js`.
+names only — `SETTINGS_SECTIONS`, and `SETTINGS_PROVIDER_FIELD` with
+`ProviderFieldItemProps` and `ProviderFieldView`. No file of it imports
+`src/client`; the client reaches it by the relative path
+`../contracts/index.js`.
 
 - A rule that can be stated in terms of its arguments belongs in `domain/` and
   has a test; code that needs React or the DOM is proven by the window tests in
@@ -51,6 +53,16 @@ relative path `../contracts/index.js`.
   imported with `import type` only.
 - `settings.models/v1` holds every rule the footer picker shows: the chat
   draws the view and writes the Thread, and computes nothing of it.
+- The provider page names no provider kind. A kind's link is its descriptor's
+  `site`, kept by the adapter only when it is `https:`. A field that a kind
+  draws its own way is an item of `settings.provider.field`, drawn in the
+  field's place
+  (`domain/provider-fields.ts`, `components/molecules/provider-field-element.tsx`);
+  `settings` imports no other bundle's contracts for it. The slot's items are
+  read through the activation services' `regions/v1` and its elements created
+  through their `ui/v1`, not an element's: with the element's services the
+  item was never drawn
+  ([spec P12](../../../docs/designs/bundle-isolation.md#revisions)).
 
 ## Footers
 

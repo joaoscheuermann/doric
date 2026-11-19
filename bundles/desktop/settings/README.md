@@ -15,14 +15,38 @@ the `bundle` platform. See the
 ## What it provides
 
 - **UI:** `<settings-page>` at `/settings`, the settings window's one React
-  root. `claude.login/v1`, `core.open-settings/v1` and `workspace.dashboard/v1`
-  are `optional`; the bundle builds the reference of `workspace.dashboard/v1`
-  from its id (`src/client/api/navigation-refs.ts`) and imports only its type
-  from `workspace/contracts`, which the `workspace` bundle provides (settings
+  root. `core.open-settings/v1` and `workspace.dashboard/v1` are `optional`;
+  the bundle builds the reference of `workspace.dashboard/v1` from its id
+  (`src/client/api/navigation-refs.ts`) and imports only its type from
+  `workspace/contracts`, which the `workspace` bundle provides (settings
   1.11.1).
 - **Sections:** six child routes of `/settings`, each listed in the window's
   nav through the `settings.sections` region.
 - **Region:** `settings.sections`, where other bundles add their own sections.
+- **Provider field slot** (from 1.12.0): `settings.provider.field`
+  (`SETTINGS_PROVIDER_FIELD`), where another bundle draws one field of one
+  provider kind's form. An item is an element whose `props` are
+  `ProviderFieldItemProps` (`kind`, `field`); on a provider page of that kind,
+  `settings` draws the element in place of the field it names, in the settings
+  window's Providers section and on the Dashboard's provider page. It sets the
+  element's `view` (`ProviderFieldView`: `kind`, `field`, the draft's `value`,
+  the `label` of the credential that value names, set only when it names a
+  stored `API_TOKEN` credential, and `problem`,
+  while that field keeps the provider from being saved: `missing` for a
+  required field that is empty, `unknown` for a `secret` field that names no
+  stored credential; an optional field that is empty has none, from 1.12.2)
+  and takes the
+  element's answer from the bubbling, composed DOM event
+  `settings-provider-field` (`detail: { value }`): it reads the credentials
+  again, then writes `value` into the field if the open provider is still of
+  that kind. With two items for one kind and field the first by `order` is
+  drawn; with none, or with an item whose props are not two non-empty strings,
+  `settings` draws the field itself. When `ui.create` throws for an item's
+  tag, `settings` draws the field itself too (from 1.12.2) and takes no
+  `problem` from that item. While a drawn item reports a `problem`,
+  the item shows the message and the page draws no "This provider cannot be
+  saved yet" alert. The provider page names no kind: the Claude sign-in is
+  the [`claude-login`](../../features/claude-login/README.md) bundle's item.
 - **Account menu entry:** the "Settings" data item in the `account` bundle's
   `account.menu` slot, drawn with `<settings-entry-icon>`; it runs
   `core.open-settings/v1` with `defaultPath: '/settings'`. `settings` loads
@@ -51,9 +75,11 @@ the `bundle` platform. See the
   save, so a model the provider page adds reaches the footer at once.
 - **Contracts module:** `settings/contracts` (`src/contracts/`, emitted to
   `dist/contracts/`): the two contracts, the eight types a configuration draft
-  is made of, and `SETTINGS_SECTIONS`, the name of the `settings.sections`
-  slot. No file of it imports `src/client`; `git` imports
-  `SettingsConfigV1` from it, and the chat its types.
+  is made of, `SETTINGS_SECTIONS`, the name of the `settings.sections`
+  slot, and, from 1.12.0, the provider field slot's `SETTINGS_PROVIDER_FIELD`,
+  `ProviderFieldItemProps` and `ProviderFieldView`. No file of it imports
+  `src/client`; `git` imports `SettingsConfigV1` from it, the chat its types,
+  and `claude-login` the slot's types.
 
 The window is opened by `core`'s `core.open-settings/v1` command, which two
 entries run: the Dashboard's "All settings", which this bundle adds to
@@ -134,9 +160,11 @@ All host calls go through one adapter, `src/client/api/settings-api.ts`:
   and a success toast (id `credentials-write`) first dismisses it;
 - a failed read of the provider kinds shows an announced block error notice
   with Retry in the settings window's Providers section, and a compact one in
-  the dashboard's Providers group; a failed Claude sign-in is an error toast
-  (id `claude-login-failed`, the success keeps `claude-login`), and a failure
-  to open a provider's site is an error toast (id `provider-open-site`);
+  the dashboard's Providers group;
+- on the Dashboard's provider page, a kind whose descriptor names an `https:`
+  site draws a control that opens it in the browser; a failure to open it is
+  an error toast (id `provider-open-site`); the settings window's provider
+  screen (`SettingsProviderScreen`) draws no such control;
 - `tools/v1` reads the tool catalog and each tool's declared fields.
 
 ## Development

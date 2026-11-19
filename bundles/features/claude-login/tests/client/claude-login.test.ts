@@ -331,7 +331,7 @@ describe('the claude-login-field element, mounted alone', () => {
     );
     assert.match(
       toastText(),
-      /Claude sign-in finished; open the provider page again to use it/,
+      /Claude sign-in finished after its page closed; sign in again from the provider page to use it/,
     );
     assert.deepEqual(toasts?.surfaces(), [], 'The info toasts a failure.');
   });

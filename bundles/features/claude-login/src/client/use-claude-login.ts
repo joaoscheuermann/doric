@@ -74,7 +74,7 @@ export const useClaudeLogin = (
         toast.dismiss('claude-login-failed');
         if (!mounted.current) {
           toast.info(
-            'Claude sign-in finished; open the provider page again to use it.',
+            'Claude sign-in finished after its page closed; sign in again from the provider page to use it.',
             { id: 'claude-login-finished' },
           );
           return;

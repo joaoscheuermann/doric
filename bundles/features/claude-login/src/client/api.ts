@@ -1,5 +1,6 @@
-// The sign-in calls the claude-login element makes, over the services of the
-// activation that created it: `claude.login/v1` prepares and finishes the
+// The sign-in calls the claude-login element makes, over the element's
+// services (a child scope that ends when the element is released):
+// `claude.login/v1` prepares and finishes the
 // sign-in on the host, and `doric.browser/v1` opens the authorization page in
 // the system browser, because the host may run where no browser does.
 
@@ -16,7 +17,7 @@ import {
   type CredentialDescription,
 } from '../contracts/index.js';
 
-/** The sign-in calls the element makes, over one activation's services. */
+/** The sign-in calls the element makes, over one element's services. */
 export interface ClaudeLoginApi {
   /** Prepares a browser sign-in and answers the authorization URL. */
   start(options?: CallArg): Promise<string>;
