@@ -26,6 +26,8 @@ import { WorkspaceSelectionV1 } from 'workspace/contracts';
 import { ChatHooksV1 } from './api/peers.js';
 import { filesReadsOf } from './api/reads.js';
 import { refreshWorkspaceOf } from './api/selection.js';
+import { defineEditCallElement, EDIT_CALL_TAG } from './chat/edit-call.js';
+import { ChatViewsV1, filesToolRenderers } from './chat/views.js';
 import { FILE_ICON_TAG, FILE_VIEW_TAG, openFileCommand } from './commands.js';
 import { defineFilesElements } from './elements.js';
 import {
@@ -96,6 +98,7 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define('files-tree', elements.tree),
     ui.define(FILE_VIEW_TAG, elements.fileView),
     ui.define(FILE_ICON_TAG, elements.fileIcon),
+    ui.define(EDIT_CALL_TAG, defineEditCallElement()),
   ];
   const command = services.use(CommandsV1).register(openFileCommand);
   const regions = registerFilesRegions(services.use(RegionsV1));
@@ -124,7 +127,18 @@ export function activate({ services }: ClientContext): Cleanup {
     });
   });
 
+  // Bundle isolation 5(b): the calls of `edit`, `write` and `view-image` are
+  // drawn by `files` while the chat serves its views, each registration in a
+  // callback of its own, so one refused leaves the others (`:1033`).
+  const drawings = filesToolRenderers.map((spec) =>
+    services.whenAvailable(ChatViewsV1, (views) => {
+      const registration = views.registerToolRenderer(spec);
+      return () => registration.dispose();
+    }),
+  );
+
   return () => {
+    for (const drawing of drawings.reverse()) drawing.dispose();
     activity.dispose();
     workspace.dispose();
     regions.dispose();

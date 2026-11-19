@@ -3,7 +3,13 @@
 // installs them) and a React element rendered into `document.body`. A test
 // builds the element over the stories' fakes (`stories/support/`) and reads
 // the DOM and what the fakes were asked.
+//
+// Bundle isolation 5(b): `mountElement` mounts one custom element of the
+// bundle alone, as the chat creates a registered tool element: `services`
+// and `view` set, then connected. No chat window and no chat built part.
 
+import type { Services } from 'bundle/contracts';
+import type { ReactElementInstance } from 'desktop/ui/react-element';
 import { Window } from 'happy-dom';
 import type { ReactElement } from 'react';
 
@@ -95,6 +101,70 @@ export const settle = async (): Promise<void> => {
 };
 
 let current: Rendered | undefined;
+
+/** One custom element mounted alone in `document.body`. */
+export interface MountedElement<V> {
+  readonly element: HTMLElement & { view: V; toggle?(): void };
+  /** The `chat-block-chosen` details the element dispatched, in order. */
+  readonly chosen: readonly boolean[];
+  /** Sets a new `view` object on the same element and settles. */
+  setView(view: V): Promise<void>;
+  /** Removes the element. Idempotent. */
+  cleanup(): void;
+}
+
+let mounted: { cleanup(): void } | undefined;
+
+/**
+ * Defines `tag` once in happy-dom's registry, creates the element, sets
+ * `services` and `view` on it, appends it to `document.body` and settles.
+ * - Installs the window first; the module that built `element` must have
+ *   been imported after `installWindow()` (React DOM reads the globals).
+ * - Mounting again cleans up an element still mounted.
+ */
+export const mountElement = async <V>(
+  tag: string,
+  element: new () => ReactElementInstance,
+  input: { readonly services: Services; readonly view: V },
+): Promise<MountedElement<V>> => {
+  mounted?.cleanup();
+  installWindow();
+  if (customElements.get(tag) === undefined)
+    customElements.define(tag, element);
+  const node = document.createElement(
+    tag,
+  ) as unknown as ReactElementInstance & {
+    view: V;
+    toggle?(): void;
+  };
+  const chosen: boolean[] = [];
+  node.addEventListener('chat-block-chosen', (event) => {
+    const detail = (event as CustomEvent<{ readonly chosen: boolean }>).detail;
+    chosen.push(detail.chosen);
+  });
+  node.services = input.services;
+  node.view = input.view;
+  document.body.append(node);
+  await settle();
+  let cleaned = false;
+  const result: MountedElement<V> = {
+    element: node,
+    chosen,
+    setView: async (view) => {
+      node.view = view;
+      await settle();
+    },
+    cleanup: () => {
+      if (cleaned) return;
+      cleaned = true;
+      if (mounted === result) mounted = undefined;
+      node.remove();
+      node.dispose();
+    },
+  };
+  mounted = result;
+  return result;
+};
 
 /**
  * Renders the element `view` builds.

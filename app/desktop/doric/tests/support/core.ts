@@ -30,6 +30,14 @@ export const SETTINGS_DIST = resolve('bundles/desktop/settings/dist');
 export const WORKSPACE_DIST = resolve('bundles/desktop/workspace/dist');
 /** The real account bundle (bundle isolation 4(b)): the account menu. */
 export const ACCOUNT_DIST = resolve('bundles/desktop/account/dist');
+/**
+ * The real registrants of `chat.views/v1` tool and input drawings besides
+ * `files` (bundle isolation 5(b)): the terminal, threads and default bundles,
+ * added by `workspaceDistribution({ drawings: true })`.
+ */
+export const TERMINAL_DIST = resolve('bundles/features/terminal/dist');
+export const THREADS_DIST = resolve('bundles/features/threads/dist');
+export const DEFAULT_DIST = resolve('bundles/runtime/default/dist');
 /** The real host-config bundle: only its manifest, descriptor and schemas. */
 const HOST_CONFIG_DIST = resolve('bundles/foundation/host-config/dist');
 /**
@@ -332,9 +340,18 @@ const HOST_ONLY_KEPT: Readonly<Record<string, readonly string[]>> = {
  * `tools/v1`). The claude-login bundle comes as its contracts module alone,
  * providing nothing: the settings client imports it, and its sign-in stays
  * unavailable. `bundles` adds fixture bundles after them.
+ *
+ * With `drawings`, the real terminal, threads and default bundles come too
+ * (bundle isolation 5(b), AC5.4): with `files` they are every bundle that
+ * draws a tool call or an input in the transcript. Their host contracts
+ * (`terminal/v1` among them) are the e2e host's to answer, and the host-only
+ * cuts gain what they require that no real bundle provides.
  */
 export const workspaceDistribution = async (
-  input: { readonly bundles?: readonly FixtureBundle[] } = {},
+  input: {
+    readonly bundles?: readonly FixtureBundle[];
+    readonly drawings?: boolean;
+  } = {},
 ): Promise<{
   readonly catalog: DistributionCatalog;
   readonly artifacts: ReadonlyMap<string, Buffer>;
@@ -350,6 +367,13 @@ export const workspaceDistribution = async (
     await builtBundle(SETTINGS_DIST),
     await builtBundle(WORKSPACE_DIST),
     await builtBundle(ACCOUNT_DIST),
+    ...(input.drawings === true
+      ? [
+          await builtBundle(TERMINAL_DIST),
+          await builtBundle(THREADS_DIST),
+          await builtBundle(DEFAULT_DIST),
+        ]
+      : []),
   ];
   const provided = new Set(
     real.flatMap(({ bundle }) => contractsOf(bundle).map((entry) => entry.id)),

@@ -286,3 +286,62 @@ export const logo: ProjectFileContent = {
   binary: true,
   content: '',
 };
+
+// The edit block (bundle isolation 5(b)) ---------------------------------
+
+/** The `edit` tool's call on the Checkout button. */
+export const editArgs = JSON.stringify({
+  path: 'src/components/Checkout.tsx',
+  edits: [
+    {
+      oldText: '<Button className="bg-white text-black">',
+      newText: '<Button className="bg-primary text-primary-foreground">',
+    },
+  ],
+});
+
+/** What `files`'s `edit` tool answers: the summary line and a numbered diff. */
+export const editResult = JSON.stringify({
+  success: true,
+  first_changed_line: 41,
+  diff: [
+    'Edited src/components/Checkout.tsx (+2 -1)',
+    '  39   return (',
+    '  40     <footer className="flex justify-end gap-2">',
+    '  41 -     <Button className="bg-white text-black">',
+    '  41 +     <Button className="bg-primary text-primary-foreground">',
+    '  42 +       <LockIcon data-icon="inline-start" />',
+    '  43         Pay {formatTotal(total)}',
+    '  44       </Button>',
+  ].join('\n'),
+});
+
+/** A longer diff, past the sixteen lines the block shows before "Show more". */
+export const longEditResult = JSON.stringify({
+  success: true,
+  diff: [
+    'Edited src/stores/cart.ts (+12 -8)',
+    ...Array.from({ length: 8 }, (_, index) => {
+      const line = 10 + index;
+      return `  ${line} -  ${['items', 'total', 'currency', 'discount', 'coupon', 'tax', 'shipping', 'updatedAt'][index]}: unknown;`;
+    }),
+    ...Array.from({ length: 12 }, (_, index) => {
+      const line = 10 + index;
+      return `  ${line} +  readonly ${['items', 'total', 'currency', 'discount', 'coupon', 'tax', 'shipping', 'updatedAt', 'customerId', 'notes', 'giftWrap', 'version'][index]}: ${index < 2 ? 'number' : 'string'};`;
+    }),
+    '  22   }',
+  ].join('\n'),
+});
+
+/** The `write` tool creating a new file, while it is still running. */
+export const writeArgs = JSON.stringify({
+  path: 'src/pages/orders/OrderHistory.tsx',
+  content: [
+    "import { useOrders } from '../../hooks/use-orders';",
+    '',
+    'export function OrderHistory() {',
+    '  const orders = useOrders();',
+    '  return <OrderList orders={orders} />;',
+    '}',
+  ].join('\n'),
+});

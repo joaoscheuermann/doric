@@ -8,6 +8,7 @@ import {
   descriptorSchema,
   type ManifestV1,
   manifestV1Schema,
+  PLATFORM_VERSION,
   resolveEnvironment,
 } from 'bundle/runtime';
 
@@ -160,7 +161,7 @@ void test('the runtime activates after its providers and before the bundles that
           'secrets.backend/v1': 'storage-backend',
         },
       },
-      platformVersion: '1.0.0',
+      platformVersion: PLATFORM_VERSION,
       generation: 1,
     },
     'host',

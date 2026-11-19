@@ -28,6 +28,9 @@
     },
     {
       "path": "../../desktop/layout"
+    },
+    {
+      "path": "../../desktop/chat"
     }
   ]
 }

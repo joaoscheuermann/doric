@@ -6,7 +6,9 @@
 // tree loads with) at version 1.7.4 (change 6: the Monaco rule in its sheet)
 // and keeps `engines.doric`. Bundle isolation 4(d) ships 1.7.8: the selection
 // and the records come from `workspace.selection/v1` and `runtime.records/v1`,
-// each in the section of the line it replaces (O1).
+// each in the section of the line it replaces (O1). Bundle isolation 5(b)
+// change 1 ships 1.8.0: the bundle draws `edit`, `write` and `view-image`
+// through `chat.views/v1` (listed under `optional`), on platform `^1.10.0`.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -17,6 +19,7 @@ type Manifest = {
   readonly engines: { readonly doric: string };
   readonly provides: readonly string[];
   readonly requires: readonly string[];
+  readonly optional: readonly string[];
 };
 
 const manifest = JSON.parse(
@@ -49,9 +52,23 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.7.8 and keeps engines.doric', () => {
-    assert.equal(manifest.version, '1.7.8');
+  test('provides files/v1@1.3.0 at version 1.8.0 on platform ^1.10.0', () => {
+    assert.equal(manifest.version, '1.8.0');
     assert.ok(manifest.provides.includes('files/v1@1.3.0'));
-    assert.equal(manifest.engines.doric, '^1.0.0');
+    assert.equal(manifest.engines.doric, '^1.10.0');
+  });
+
+  // The registrations need the contract when it is there and nothing when it
+  // is not; an `optional` line carries no range.
+  test('takes chat.views/v1 as optional and keeps requiring ui/v1', () => {
+    assert.ok(
+      manifest.optional.includes('chat.views/v1'),
+      manifest.optional.join(', '),
+    );
+    assert.ok(manifest.requires.includes('ui/v1@^1.0.0'));
+    assert.deepEqual(
+      manifest.requires.filter((ref) => ref.startsWith('chat.')),
+      [],
+    );
   });
 });

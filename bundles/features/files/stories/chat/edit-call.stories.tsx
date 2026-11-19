@@ -1,0 +1,101 @@
+import { errorFrom } from 'desktop/reads';
+import type { ComponentProps } from 'react';
+
+import { EditToolItem } from '../../src/client/chat/edit-call.js';
+import { WithChosen } from '../support/chosen.js';
+import {
+  editArgs,
+  editResult,
+  longEditResult,
+  writeArgs,
+} from '../support/fixtures.js';
+
+type Props = Omit<
+  ComponentProps<typeof EditToolItem>,
+  'chosen' | 'onChosenChange' | 'name'
+> &
+  Partial<Pick<ComponentProps<typeof EditToolItem>, 'name'>>;
+
+function Edit(props: Props) {
+  return (
+    <WithChosen>
+      {(chosen, onChosenChange) => (
+        <EditToolItem
+          name="edit"
+          {...props}
+          chosen={chosen}
+          onChosenChange={onChosenChange}
+        />
+      )}
+    </WithChosen>
+  );
+}
+
+export default {
+  title: 'Files/Chat/Edit call',
+  component: EditToolItem,
+};
+
+export const Edited = {
+  render: () => <Edit args={editArgs} result={editResult} status="finished" />,
+};
+
+export const Editing = {
+  render: () => <Edit args={editArgs} status="running" />,
+};
+
+export const WritingNewFile = {
+  render: () => <Edit name="write" args={writeArgs} status="running" />,
+};
+
+export const LongDiff = {
+  render: () => (
+    <Edit
+      args={JSON.stringify({ path: 'src/stores/cart.ts', edits: [] })}
+      result={longEditResult}
+      status="finished"
+    />
+  ),
+};
+
+export const Failed = {
+  render: () => (
+    <Edit
+      args={editArgs}
+      error={errorFrom(
+        '',
+        'oldText was not found in src/components/Checkout.tsx',
+      )}
+      status="failed"
+    />
+  ),
+};
+
+export const FailedInOutput = {
+  render: () => (
+    <Edit
+      args={editArgs}
+      result={JSON.stringify({
+        success: false,
+        error: 'The file changed on disk since it was read. Read it again.',
+      })}
+      status="finished"
+    />
+  ),
+};
+
+export const RawOutput = {
+  render: () => (
+    <Edit
+      args={editArgs}
+      result="Edited src/components/Checkout.tsx"
+      status="finished"
+    />
+  ),
+};
+
+export const Focused = {
+  render: () => (
+    <Edit args={editArgs} result={editResult} status="finished" focused />
+  ),
+};
