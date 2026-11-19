@@ -328,7 +328,7 @@ describe('thread event projection', () => {
     );
   });
 
-  test('keeps edit calls outside the activity summary while grouping terminal calls inside it', () => {
+  test('groups an unregistered edit call inside the activity summary with the terminal calls', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'inspect' }),
       event(2, 'one', {
@@ -362,15 +362,12 @@ describe('thread event projection', () => {
       event(9, 'one', { type: 'text.delta', delta: 'All set.' }),
     ]);
 
-    assert.deepEqual(types(projection.turns), [
-      'activity',
-      'tool_call',
-      'activity',
-      'agent',
-    ]);
-    assert.equal(toolOf(projection.turns[1])?.name, 'edit');
-    assert.equal(activityOf(projection.turns[0])?.tools, 1);
-    assert.equal(activityOf(projection.turns[2])?.tools, 1);
+    // `edit` is no built-in standalone name since 5(b): unregistered, it is
+    // one more call of the burst.
+    assert.deepEqual(types(projection.turns), ['activity', 'agent']);
+    const activity = activityOf(projection.turns[0]);
+    assert.equal(activity?.tools, 3);
+    assert.equal(activity?.thoughts, 2);
   });
 
   test('a thread-spawn call stands on its own between the bursts on either side of it', () => {

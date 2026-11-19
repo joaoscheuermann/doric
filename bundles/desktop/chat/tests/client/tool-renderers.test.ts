@@ -370,21 +370,6 @@ describe('T5.1 a registered tool element draws each call', () => {
     assert.match(transcriptText(window), /Calling probe tool/);
   });
 
-  test('a registration of `edit` with no element draws its call with the generic row, not the diff block; disposing it brings the diff block back', async () => {
-    const { probe, state } = rendererProbe({ tools: [{ toolName: 'edit' }] });
-    const window = await openWith(probe, [asked, started(2, 'c1', 'edit')]);
-    assertReady(state);
-    const editBlocks = () =>
-      window.document.querySelectorAll('[data-slot="edit-tool"]').length;
-    assert.equal(editBlocks(), 0, 'the built-in diff block is not drawn');
-    assert.match(transcriptText(window), /Calling edit/);
-
-    state.tools.get('edit')?.dispose();
-    await settle(150);
-    assert.equal(editBlocks(), 1, 'the built-in diff block is back');
-    assert.doesNotMatch(transcriptText(window), /Calling edit/);
-  });
-
   test('a registration of `load_skill` with no element draws its call with the generic row, not the skill block; disposing it brings the skill block back', async () => {
     const { probe, state } = rendererProbe({
       tools: [{ toolName: 'load_skill' }],
@@ -543,9 +528,49 @@ describe('T5.4 an unregistered tool', () => {
       'the row is closed',
     );
   });
+
+  // 5(b) change 1: `files` draws `edit`, `write` and `view-image`; the chat
+  // has no drawing of its own left for them.
+  test('edit, write and view-image are the generic row inside the activity summary, closed, with no diff block', async () => {
+    const { probe, state } = rendererProbe({ tools: [probeTool] });
+    const window = await openWith(probe, [
+      asked,
+      thought(2, 'inspect'),
+      ...ran(3, 'c1', 'edit'),
+      ...ran(5, 'c2', 'write'),
+      ...ran(7, 'c3', 'view-image'),
+      done(9),
+    ]);
+    assertReady(state);
+
+    assert.equal(
+      window.document.querySelectorAll('[data-slot="edit-tool"]').length,
+      0,
+      'no diff block is drawn',
+    );
+    assert.equal(
+      summaries(window).length,
+      1,
+      blocks(window)
+        .map((b) => b.textContent)
+        .join(' | '),
+    );
+    const [summary] = summaries(window);
+    assert.ok(summary);
+    assert.match(summary.textContent ?? '', /called 3 tools/);
+    await openSummary(summary);
+    const shown = summaries(window)[0]?.textContent ?? '';
+    assert.match(shown, /Called edit/);
+    assert.match(shown, /Called write/);
+    for (const id of ['c1', 'c2', 'c3'])
+      assert.ok(
+        !shown.includes(JSON.stringify({ path: `${id}.ts` })),
+        `the row of ${id} is closed`,
+      );
+  });
 });
 
-test('the chat manifest is 1.10.0 on platform ^1.10.0 and provides chat.views/v1@1.2.0', () => {
+test('the chat manifest is 1.10.1 on platform ^1.10.0 and provides chat.views/v1@1.2.0', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as {
@@ -553,7 +578,7 @@ test('the chat manifest is 1.10.0 on platform ^1.10.0 and provides chat.views/v1
     readonly engines: { readonly doric: string };
     readonly provides: readonly string[];
   };
-  assert.equal(manifest.version, '1.10.0');
+  assert.equal(manifest.version, '1.10.1');
   assert.equal(manifest.engines.doric, '^1.10.0');
   assert.ok(
     manifest.provides.includes('chat.views/v1@1.2.0'),

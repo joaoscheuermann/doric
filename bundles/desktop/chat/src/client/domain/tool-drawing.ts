@@ -26,32 +26,21 @@ export interface ToolDrawing {
 
 /**
  * The calls that stay out of the activity summary as blocks of their own:
- * `edit` and `write`, so every file modification remains visible in the flow;
- * `thread-spawn`, whose delegation has a block of its own; and `load_skill`,
+ * `thread-spawn`, whose delegation has a block of its own, and `load_skill`,
  * whose block names the skill the agent loaded.
  */
 const STANDALONE: ReadonlySet<string> = new Set([
-  'edit',
-  'write',
   THREAD_SPAWN_TOOL,
   LOAD_SKILL_TOOL,
 ]);
 
 /**
- * The calls whose block stays open once settled: `edit` and `write`, so the
- * diff stands visible in the transcript, and `view-image`, so the image the
- * agent looked at stands beside it.
+ * The chat's own answer for an unregistered tool: closed by default, and
+ * standalone for the names left in `STANDALONE`, which leave in 5(b).
  */
-const OPEN_BY_DEFAULT: ReadonlySet<string> = new Set([
-  'edit',
-  'write',
-  'view-image',
-]);
-
-/** The chat's own answer for an unregistered tool; the five names leave in 5(b). */
 export const builtInDrawing = (name: string): ToolDrawing => ({
   standalone: STANDALONE.has(name),
-  openByDefault: OPEN_BY_DEFAULT.has(name),
+  openByDefault: false,
 });
 
 /** A registration's answer for `name`, whole (O4); else `builtInDrawing(name)`. */

@@ -3,6 +3,10 @@
 // command, how it exited and the streams — folded away when the command
 // finished cleanly and open when it did not, instead of the Markdown the host
 // framed it in.
+//
+// Bundle isolation 5(b), OD-8: the chat's own `terminal` row case, moved here
+// from `edit-tool-item.test.ts` when `files` took the edit block; it moves
+// to `terminal` with the rest of this file in change 4.
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
@@ -164,6 +168,58 @@ test('a background terminal result that failed is open, with its stderr in the t
   assert.notEqual(stderr, null);
   assert.match(stderr?.textContent ?? '', /AssertionError/);
   assert.equal(stderr?.className.includes('text-destructive'), true);
+});
+
+test('terminal tool card renders single-line truncated command inside the card', async () => {
+  opened = await openChatWindow({
+    url,
+    host: {
+      ...host,
+      'runtime.threads/v1.thread': () => ({ ...thread, state: 'running' }),
+    },
+  });
+  opened
+    .watches()
+    .at(-1)
+    ?.push({
+      kind: 'snapshot',
+      threadId,
+      projectId,
+      project: null,
+      thread: { ...thread, state: 'running' },
+      events: [
+        event(1, {
+          type: 'prompt.accepted',
+          text: 'Run tests',
+          source: { kind: 'user' },
+        }),
+        event(2, {
+          type: 'tool.started',
+          call: {
+            id: 'call-term-1',
+            name: 'terminal',
+            payload: {
+              command:
+                'npm test -- --watch --very-long-flag-that-truncates-on-one-line',
+            },
+          },
+        }),
+      ],
+    });
+  await settle(200);
+
+  const view = opened.document.querySelector('chat-view');
+  assert.ok(view);
+
+  const terminalTool = view.querySelector('[data-slot="terminal-tool"]');
+  assert.notEqual(terminalTool, null);
+
+  // While running, the terminal card is open by default and shows the command on a single truncated line.
+  const commandRow = terminalTool?.querySelector(
+    '[data-slot="terminal-command"]',
+  );
+  assert.notEqual(commandRow, null);
+  assert.equal(commandRow?.className.includes('truncate'), true);
 });
 
 test('T-19 a terminal call the tool failed shows the compact tool notice naming the call', async () => {

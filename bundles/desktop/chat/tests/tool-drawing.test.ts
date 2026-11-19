@@ -1,14 +1,14 @@
 // Which drawing a tool call gets (bundle isolation 5(a), `chat.views/v1`
 // 1.2.0): a registration answers its own three facts, whole (O4); an
-// unregistered tool gets the chat's built-in answer, which keeps today's
-// standalone and open-by-default names until 5(b) moves them. And the key an
-// input renderer is registered under.
+// unregistered tool gets the chat's built-in answer, which keeps the
+// standalone names not yet moved by 5(b). And the key an input renderer is
+// registered under. 5(b) change 1: `edit`, `write` and `view-image` are
+// `files`' to draw; unregistered, they are any other name.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-  builtInDrawing,
   inputSourceKey,
   type ToolDrawing,
   toolDrawing,
@@ -30,28 +30,6 @@ const registered = (
   new Map(specs.map((spec) => [spec.toolName, spec]));
 
 describe('the drawing of an unregistered tool', () => {
-  test('edit and write are standalone and open by default', () => {
-    for (const name of ['edit', 'write']) {
-      assert.deepEqual(
-        facts(toolDrawing(name, none)),
-        { elementTag: undefined, standalone: true, openByDefault: true },
-        name,
-      );
-      assert.deepEqual(
-        facts(builtInDrawing(name)),
-        facts(toolDrawing(name, none)),
-      );
-    }
-  });
-
-  test('view-image is open by default and grouped', () => {
-    assert.deepEqual(facts(toolDrawing('view-image', none)), {
-      elementTag: undefined,
-      standalone: false,
-      openByDefault: true,
-    });
-  });
-
   test('thread-spawn and load_skill are standalone and closed', () => {
     for (const name of ['thread-spawn', 'load_skill']) {
       assert.deepEqual(
@@ -62,8 +40,16 @@ describe('the drawing of an unregistered tool', () => {
     }
   });
 
-  test('any other name is grouped, closed and has no element', () => {
-    for (const name of ['terminal', 'probe_tool', 'Edit', 'edit ']) {
+  test('any other name, edit, write and view-image among them, is grouped, closed and has no element', () => {
+    for (const name of [
+      'terminal',
+      'probe_tool',
+      'edit',
+      'write',
+      'view-image',
+      'Edit',
+      'edit ',
+    ]) {
       const drawing = toolDrawing(name, none);
       assert.equal(drawing.standalone, false, name);
       assert.equal(drawing.openByDefault, false, name);
@@ -99,7 +85,10 @@ describe('the drawing of a registered tool', () => {
   });
 
   test('a registration of a built-in name replaces the built-in answer whole (O4)', () => {
-    const drawing = toolDrawing('edit', registered({ toolName: 'edit' }));
+    const drawing = toolDrawing(
+      'thread-spawn',
+      registered({ toolName: 'thread-spawn' }),
+    );
     assert.equal(drawing.standalone, false);
     assert.equal(drawing.openByDefault, false);
     assert.equal(drawing.elementTag, undefined);
@@ -108,7 +97,7 @@ describe('the drawing of a registered tool', () => {
   test('a registration answers for its own name only', () => {
     const map = registered({ toolName: 'probe_tool', standalone: true });
     assert.equal(toolDrawing('other_tool', map).standalone, false);
-    assert.equal(toolDrawing('edit', map).standalone, true);
+    assert.equal(toolDrawing('thread-spawn', map).standalone, true);
   });
 });
 

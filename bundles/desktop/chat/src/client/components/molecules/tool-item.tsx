@@ -9,7 +9,6 @@ import type { ToolStatus } from '../../domain/projector.js';
 import { LOAD_SKILL_TOOL } from '../../domain/skill-load.js';
 import { humanize } from '../../utility/humanize.js';
 import { AttachmentImage } from './attachment-image.js';
-import { EditToolItem } from './edit-tool-item.js';
 import { SkillToolItem } from './skill-tool-item.js';
 import { TerminalToolItem } from './terminal-tool-item.js';
 
@@ -51,20 +50,6 @@ export function ToolItem({
     return (
       <TerminalToolItem
         args={args}
-        chosen={chosen}
-        error={error}
-        focused={focused}
-        onChosenChange={onChosenChange}
-        result={result}
-        status={status}
-      />
-    );
-  }
-  if (!generic && (name === 'edit' || name === 'write')) {
-    return (
-      <EditToolItem
-        args={args}
-        name={name}
         chosen={chosen}
         error={error}
         focused={focused}

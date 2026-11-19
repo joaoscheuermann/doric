@@ -42,6 +42,12 @@ import {
   noticesTitled,
   retryOf,
 } from './support/notices.js';
+import {
+  assertReady,
+  probeElements,
+  rendererProbe,
+  TOOL_ELEMENT,
+} from './support/renderers.js';
 import { selectionProbe } from './support/selection.js';
 import {
   type ChatWindow,
@@ -1447,11 +1453,20 @@ test('a registered renderer draws the delegated input with the read-only Markdow
   });
 });
 
-test('edit tool calls stand outside the activity summary with their diff while terminal calls fold into the summary with their shell view', async () => {
+// Bundle isolation 5(b), OD-9: the standalone block is a probe registered in
+// the test, where it was the chat's built-in `edit` drawing (now `files`').
+test('a call registered standalone stands outside the activity summary while terminal calls fold into the summary with their shell view', async () => {
+  const { probe, state } = rendererProbe({
+    tools: [
+      { toolName: 'probe_edit', elementTag: TOOL_ELEMENT, standalone: true },
+    ],
+  });
   opened = await openChatWindow({
     url,
     host: host(thread()),
+    probe,
   });
+  await settle();
   await deliver(opened, [
     event(1, {
       type: 'prompt.accepted',
@@ -1515,40 +1530,18 @@ test('edit tool calls stand outside the activity summary with their diff while t
       type: 'tool.started',
       call: {
         id: 'call-edit-1',
-        name: 'edit',
-        payload: {
-          path: 'src/parser.ts',
-          edits: [
-            {
-              oldText: 'const old = 1;',
-              newText: 'const next = 2;\nexport { next };',
-            },
-          ],
-        },
+        name: 'probe_edit',
+        payload: { path: 'src/parser.ts' },
       },
     }),
     event(6, {
       type: 'tool.finished',
       call: {
         id: 'call-edit-1',
-        name: 'edit',
-        payload: {
-          path: 'src/parser.ts',
-          edits: [
-            {
-              oldText: 'const old = 1;',
-              newText: 'const next = 2;\nexport { next };',
-            },
-          ],
-        },
+        name: 'probe_edit',
+        payload: { path: 'src/parser.ts' },
       },
-      record: {
-        output: JSON.stringify({
-          success: true,
-          diff: ' 1 -const old = 1;\n 1 +const next = 2;\n 2 +export { next };',
-          first_changed_line: 1,
-        }),
-      },
+      record: { output: 'Updated src/parser.ts.' },
     }),
     event(7, {
       type: 'prompt.finished',
@@ -1558,24 +1551,16 @@ test('edit tool calls stand outside the activity summary with their diff while t
     }),
   ]);
 
+  assertReady(state);
   const view = opened.document.querySelector('chat-view');
   assert.ok(view);
 
-  // The edit block stands outside the activity summary with its diff open.
-  const editTool = view.querySelector('[data-slot="edit-tool"]');
-  assert.notEqual(editTool, null);
+  // The registered call is drawn without opening anything, with its view.
+  const [element] = probeElements(opened.document, TOOL_ELEMENT);
+  assert.ok(element, 'the standalone call is drawn');
   assert.equal(
-    editTool?.querySelector('[data-slot="edit-file-name"]')?.textContent,
-    'parser.ts',
-  );
-  assert.equal(editTool?.querySelector('[data-slot="edit-file-dir"]'), null);
-  assert.match(
-    editTool?.querySelector('[data-slot="edit-counts"]')?.textContent ?? '',
-    /\+2.*−1/,
-  );
-  assert.equal(
-    editTool?.querySelectorAll('[data-slot="edit-diff-line"]').length,
-    3,
+    (element.view as { readonly name?: string } | undefined)?.name,
+    'probe_edit',
   );
 
   // The terminal call is folded inside the activity summary ("Thought once, called 1 tool").
@@ -1588,6 +1573,13 @@ test('edit tool calls stand outside the activity summary with their diff while t
     button.textContent?.includes('Thought once, called 1 tool'),
   );
   assert.ok(summaryButton);
+  // The standalone call is not inside the summary.
+  assert.ok(
+    ![...view.querySelectorAll('[data-lexical-editor] > *')].some(
+      (block) => block.contains(summaryButton) && block.contains(element),
+    ),
+    'the standalone call stands outside the summary',
+  );
   summaryButton.click();
   await settle(50);
 

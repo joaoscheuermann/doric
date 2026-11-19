@@ -142,7 +142,7 @@ describe('drawnTurns', () => {
   test('a registration that takes a built-in name back into the group folds it (O4)', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', { type: 'reasoning.delta', delta: 'inspect' }),
-      ...ran(2, 'c1', 'edit'),
+      ...ran(2, 'c1', 'thread-spawn'),
       ...ran(4, 'c2', 'terminal'),
       event(6, 'one', {
         type: 'prompt.finished',
@@ -156,7 +156,11 @@ describe('drawnTurns', () => {
       'tool_call',
       'tool_call',
     ]);
-    const turns = drawnTurns(projection, tools({ toolName: 'edit' }), noInputs);
+    const turns = drawnTurns(
+      projection,
+      tools({ toolName: 'thread-spawn' }),
+      noInputs,
+    );
     assert.deepEqual(types(turns), ['activity']);
   });
 

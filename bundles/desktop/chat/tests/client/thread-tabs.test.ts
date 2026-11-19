@@ -130,12 +130,12 @@ test('chat-thread-tab-icon draws the bubble for a Thread the records do not desc
   assert.deepEqual(iconsOf(element), ['lucide-message-circle']);
 });
 
-test('the chat requires runtime.records/v1@^1.0.0 and layout.tabs/v2@^2.0.0 and takes workspace.hooks/v1 as optional, at version 1.10.0 (spec §10, decision O2; 6(c) O11; 4(d); 5(a))', () => {
+test('the chat requires runtime.records/v1@^1.0.0 and layout.tabs/v2@^2.0.0 and takes workspace.hooks/v1 as optional, at version 1.10.1 (spec §10, decision O2; 6(c) O11; 4(d); 5(a); 5(b))', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as { version: string; requires: string[]; optional: string[] };
 
-  assert.equal(manifest.version, '1.10.0');
+  assert.equal(manifest.version, '1.10.1');
   assert.ok(manifest.requires.includes('runtime.records/v1@^1.0.0'));
   assert.ok(!manifest.optional.includes('runtime.records/v1'));
   assert.ok(manifest.requires.includes('layout.tabs/v2@^2.0.0'));
