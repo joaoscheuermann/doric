@@ -14,10 +14,12 @@ import {
 import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { providerIconRequest } from '../../domain/model-icons.js';
 import { providerSite } from '../../domain/provider-icon.js';
-import type { ClaudeLogin } from '../../hooks/use-claude-login.js';
 import { useModelIcons } from '../../hooks/use-model-icons.js';
 import { ProviderIcon } from '../molecules/provider-icon.js';
-import { SettingsProviderScreen } from './settings-provider.js';
+import {
+  type ProviderFieldItems,
+  SettingsProviderScreen,
+} from './settings-provider.js';
 
 /**
  * A provider's page in the dashboard's main area: a title bar with the
@@ -27,17 +29,17 @@ import { SettingsProviderScreen } from './settings-provider.js';
  * sends the change waiting on the debounce.
  */
 export function DashboardProviderPage({
-  claudeLogin,
   credentials,
   draft,
+  fieldItems,
   kinds,
   onChange,
   onFlush,
 }: {
-  /** The Claude sign-in the `claude` kind's row offers, while a provider answers it. */
-  readonly claudeLogin?: ClaudeLogin;
   readonly credentials: readonly Credential[];
   readonly draft: ProviderDraft;
+  /** The items of `settings.provider.field` the form draws in its fields' place. */
+  readonly fieldItems?: ProviderFieldItems;
   readonly kinds: readonly ProviderKind[];
   readonly onChange: (next: ProviderDraft) => void;
   readonly onFlush: () => void;
@@ -95,9 +97,9 @@ export function DashboardProviderPage({
         onBlur={onFlush}
       >
         <SettingsProviderScreen
-          {...(claudeLogin === undefined ? {} : { claudeLogin })}
           credentials={credentials}
           draft={draft}
+          {...(fieldItems === undefined ? {} : { fieldItems })}
           kinds={kinds}
           onChange={onChange}
         />

@@ -21,9 +21,6 @@
       "path": "../../runtime/runtime"
     },
     {
-      "path": "../../features/claude-login"
-    },
-    {
       "path": "../../../packages/bundle"
     },
     {

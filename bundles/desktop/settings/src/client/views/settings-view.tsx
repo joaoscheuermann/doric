@@ -1,13 +1,20 @@
-import { NavigationV1, type Services } from 'bundle/contracts';
+import { NavigationV1, RegionsV1, type Services, UiV1 } from 'bundle/contracts';
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
 import { SidebarMenuButton, SidebarMenuItem } from 'desktop/ui/sidebar';
 import { Skeleton } from 'desktop/ui/skeleton';
 import { AlertCircleIcon } from 'lucide-react';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 import { SETTINGS_SECTIONS } from '../../contracts/index.js';
 import { AppearanceV1 } from '../api/appearance.js';
+import { settingsServices } from '../api/settings-api.js';
 import { sectionIcon } from '../components/molecules/section-icon.js';
 import { SettingsAppearance } from '../components/organisms/settings-appearance.js';
 import { SettingsCredentials } from '../components/organisms/settings-credentials.js';
@@ -28,13 +35,10 @@ import { sectionIdOf } from '../domain/section-route.js';
 import { sections } from '../domain/sections.js';
 import { filterSettingsSections } from '../domain/settings-search.js';
 import { linkHosts, type SectionId, sectionHosts } from '../elements.js';
-import {
-  useClaudeLogin,
-  useClaudeLoginAvailable,
-} from '../hooks/use-claude-login.js';
 import { type Config, useConfig } from '../hooks/use-config.js';
 import { useConfigAutosave } from '../hooks/use-config-autosave.js';
 import { type Credentials, useCredentials } from '../hooks/use-credentials.js';
+import { useProviderFieldEntries } from '../hooks/use-provider-fields.js';
 import {
   type ProviderKinds,
   useProviderKinds,
@@ -188,8 +192,6 @@ const isSectionId = (value: string | undefined): value is SectionId =>
  */
 export function Settings({ services }: { readonly services: Services }) {
   const credentials = useCredentials();
-  const claudeLogin = useClaudeLogin();
-  const claudeLoginAvailable = useClaudeLoginAvailable();
   const kinds = useProviderKinds();
   const config = useConfig(true, kinds.list);
   const route = useRoute(services);
@@ -202,8 +204,12 @@ export function Settings({ services }: { readonly services: Services }) {
     config,
     kinds: kinds.list,
     credentials: credentials.list,
-    claudeLogin,
   });
+  // Another bundle's field item is created through the activation services
+  // (D9-17), not this element's.
+  const ui = useMemo(() => settingsServices().use(UiV1), []);
+  const regions = useMemo(() => settingsServices().use(RegionsV1), []);
+  const fieldEntries = useProviderFieldEntries(regions);
   const provider = page.provider;
   const routeSection = sectionIdOf(route?.pattern);
   const current =
@@ -309,9 +315,13 @@ export function Settings({ services }: { readonly services: Services }) {
     provider !== undefined &&
     draft !== undefined ? (
       <SettingsProviderScreen
-        claudeLogin={claudeLoginAvailable ? claudeLogin : undefined}
         credentials={credentials.list}
         draft={provider}
+        fieldItems={{
+          ui,
+          entries: fieldEntries,
+          onAnswer: page.answerField,
+        }}
         kinds={kinds.list}
         onChange={page.change}
       />

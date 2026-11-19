@@ -20,6 +20,5 @@ export const settingsErrorCatalog: ErrorCatalog = {
   kinds_read_failed: { title: 'Providers not loaded', retryable: true },
   credentials_read_failed: { title: 'Credentials not loaded', retryable: true },
   credential_write_failed: { title: 'Credential not saved', retryable: false },
-  sign_in_failed: { title: 'Sign-in failed', retryable: false },
   browser_failed: { title: 'Page not opened', retryable: false },
 };

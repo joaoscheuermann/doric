@@ -1,23 +1,20 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import type { Services } from 'bundle/contracts';
+import { RegionsV1, type Services, UiV1 } from 'bundle/contracts';
 import { defineReactElement } from 'desktop/ui/react-element';
 import { SidebarScope } from 'desktop/ui/sidebar';
 import { TooltipProvider } from 'desktop/ui/tooltip';
-import { type ReactNode, StrictMode, useEffect, useRef } from 'react';
+import { type ReactNode, StrictMode, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
-import { api } from '../api/settings-api.js';
+import { api, settingsServices } from '../api/settings-api.js';
 import { DashboardProviderPage } from '../components/organisms/dashboard-provider-page.js';
 import { DashboardProvidersGroup } from '../components/organisms/dashboard-providers.js';
 import { PROVIDER_PAGE_ID, providerPageHosts } from '../elements.js';
-import {
-  useClaudeLogin,
-  useClaudeLoginAvailable,
-} from '../hooks/use-claude-login.js';
 import { useConfig } from '../hooks/use-config.js';
 import { useConfigAutosave } from '../hooks/use-config-autosave.js';
 import { useCredentials } from '../hooks/use-credentials.js';
 import { useDashboardPage } from '../hooks/use-dashboard-page.js';
+import { useProviderFieldEntries } from '../hooks/use-provider-fields.js';
 import { useProviderKinds } from '../hooks/use-provider-kinds.js';
 import { useProviderPage } from '../hooks/use-provider-page.js';
 import { settingsQueryClient } from '../queries/client.js';
@@ -31,8 +28,6 @@ import { settingsQueryClient } from '../queries/client.js';
  */
 function DashboardProviders({ services }: { readonly services: Services }) {
   const credentials = useCredentials();
-  const claudeLogin = useClaudeLogin();
-  const claudeLoginAvailable = useClaudeLoginAvailable();
   const kinds = useProviderKinds();
   const config = useConfig(true, kinds.list);
   useConfigAutosave(services, config);
@@ -40,8 +35,12 @@ function DashboardProviders({ services }: { readonly services: Services }) {
     config,
     kinds: kinds.list,
     credentials: credentials.list,
-    claudeLogin,
   });
+  // Another bundle's field item is created through the activation services
+  // (D9-17), not this element's.
+  const ui = useMemo(() => settingsServices().use(UiV1), []);
+  const regions = useMemo(() => settingsServices().use(RegionsV1), []);
+  const fieldEntries = useProviderFieldEntries(regions);
   const shown = useDashboardPage() === PROVIDER_PAGE_ID;
   const host = providerPageHosts.useHosts().at(-1)?.element;
   const { flush } = config;
@@ -98,9 +97,13 @@ function DashboardProviders({ services }: { readonly services: Services }) {
         host !== undefined &&
         createPortal(
           <DashboardProviderPage
-            {...(claudeLoginAvailable ? { claudeLogin } : {})}
             credentials={credentials.list}
             draft={page.provider}
+            fieldItems={{
+              ui,
+              entries: fieldEntries,
+              onAnswer: page.answerField,
+            }}
             kinds={kinds.list}
             onChange={page.change}
             onFlush={() => void flush()}

@@ -12,7 +12,6 @@ import {
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
-import { ClaudeLoginV1 } from 'claude-login/contracts';
 import type {
   DashboardFooterItemProps,
   WORKSPACE_DASHBOARD_FOOTER,
@@ -32,7 +31,6 @@ import {
   providerPageHosts,
   sectionHosts,
 } from './elements.js';
-import { setClaudeLoginAvailable } from './hooks/use-claude-login.js';
 import {
   clearSettingsQueryClient,
   settingsQueryClient,
@@ -128,12 +126,6 @@ export function activate({ services }: ClientContext): () => void {
       },
     ),
     createSectionRoute().follow(navigation),
-    // `claude.login/v1` is optional: the provider page offers the sign-in
-    // only while a provider answers it.
-    services.whenAvailable(ClaudeLoginV1, () => {
-      setClaudeLoginAvailable(true);
-      return () => setClaudeLoginAvailable(false);
-    }),
     // `workspace.dashboard/v1` is optional too: without the workspace's dashboard
     // the Providers group has nowhere to open its page.
     services.whenAvailable(WorkspaceDashboardV1, () => {

@@ -24,7 +24,6 @@ import {
   toolsMethods,
 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
-import { ClaudeLoginV1, claudeLoginMethods } from 'claude-login/contracts';
 import { configurationMethods } from 'host-config/contracts';
 import type {
   ConfigReplaceResult,
@@ -39,8 +38,6 @@ import {
 } from '../../src/client/api/settings-api.js';
 
 export interface FakeHost {
-  claudeStart?: () => { readonly url: string };
-  claudeFinish?: () => CredentialDescription;
   current?: () => DoricConfiguration | Promise<DoricConfiguration>;
   replace?: (
     input: unknown,
@@ -99,10 +96,6 @@ export const settingsOver = async (
   run: (api: SettingsApi) => Promise<void>,
 ): Promise<void> => {
   const provide: AnyServiceDefinition[] = [
-    fake(ClaudeLoginV1.id, claudeLoginMethods, {
-      start: () => (host.claudeStart ?? unanswered)(),
-      finish: () => (host.claudeFinish ?? unanswered)(),
-    }),
     fake(HostConfigurationV1.id, configurationMethods, {
       current: () => (host.current ?? unanswered)(),
       replace: (input: unknown) => (host.replace ?? unanswered)(input),

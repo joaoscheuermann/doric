@@ -13,7 +13,6 @@
 //   'Doric returned an invalid response.' for a shape they refuse.
 
 import {
-  type CallArg,
   type CredentialDescription,
   credentialFieldsSatisfied,
   type Disposable,
@@ -29,7 +28,6 @@ import {
   type Services,
   ToolsV1,
 } from 'bundle/contracts';
-import { ClaudeLoginV1 } from 'claude-login/contracts';
 import { ClientError } from 'desktop/reads';
 import type {
   ConfigReplaceResult,
@@ -642,15 +640,6 @@ const credentialWriteFailure = (error: unknown): never => {
   return unexpected(error);
 };
 
-/**
- * The failures `claude.login/v1` answers: the contract's own message, or the
- * generic one.
- */
-const claudeLoginFailure = (error: unknown): never =>
-  isContractError(error)
-    ? hostFailure(error, error.message)
-    : unexpected(error);
-
 /** Whether one declared value is one the field's kind accepts. */
 const fieldAccepts = (field: ModelField, value: string): boolean => {
   switch (field.kind) {
@@ -1201,12 +1190,6 @@ export interface SettingsApi {
     update(id: string, input: CredentialUpdate): Promise<Credential>;
     remove(id: string): Promise<void>;
   };
-  readonly claude: {
-    /** Prepares a browser sign-in and answers the authorization URL. */
-    start(options?: CallArg): Promise<string>;
-    /** Waits for the browser's answer and answers the stored credential. */
-    finish(options?: CallArg): Promise<Credential>;
-  };
   /**
    * The /projects dashboard's shown page (`workspace.dashboard/v1`, optional).
    * Without a provider no page is shown: `active` is `undefined`, `show` does
@@ -1338,33 +1321,6 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
       if (result === 'referenced') return fail('conflict', credentialConflict);
     },
   },
-  claude: {
-    start: async (options) => {
-      // A tuple method takes the call as its only argument, so an absent call
-      // is no argument at all: `undefined` would be read as an input item.
-      const login = services.use(ClaudeLoginV1);
-      try {
-        const started = await (options === undefined
-          ? login.start()
-          : login.start(options));
-        return started.url;
-      } catch (error) {
-        return claudeLoginFailure(error);
-      }
-    },
-    finish: async (options) => {
-      const login = services.use(ClaudeLoginV1);
-      let answered: CredentialDescription;
-      try {
-        answered = await (options === undefined
-          ? login.finish()
-          : login.finish(options));
-      } catch (error) {
-        return claudeLoginFailure(error);
-      }
-      return credentialFrom(answered);
-    },
-  },
   dashboard: {
     active: () =>
       dashboardAvailable
@@ -1397,10 +1353,27 @@ export const setDashboardAvailable = (available: boolean): void => {
 };
 
 let active: SettingsApi | undefined;
+let activeServices: Services | undefined;
 
 /** Binds the module adapter to the bundle's activation services (D9-17). */
 export const initSettingsApi = (services: Services | undefined): void => {
+  activeServices = services;
   active = services === undefined ? undefined : createSettingsApi(services);
+};
+
+/**
+ * The activation services `initSettingsApi` bound (D9-17). The provider page
+ * creates another bundle's element through these, not an element's services,
+ * which hand back a scoped view of an element that carries calls of its own
+ * rather than the element itself.
+ */
+export const settingsServices = (): Services => {
+  if (activeServices === undefined) {
+    throw new SettingsApiError('internal', 'Doric backend is unavailable.', {
+      retryable: false,
+    });
+  }
+  return activeServices;
 };
 
 /** The adapter the hooks call; the bundle is active while its UI exists. */

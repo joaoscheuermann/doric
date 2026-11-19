@@ -40,11 +40,6 @@ export const THREADS_DIST = resolve('bundles/features/threads/dist');
 export const DEFAULT_DIST = resolve('bundles/runtime/default/dist');
 /** The real host-config bundle: only its manifest, descriptor and schemas. */
 const HOST_CONFIG_DIST = resolve('bundles/foundation/host-config/dist');
-/**
- * The real claude-login bundle: only its contracts module, which the settings
- * client imports (`claude-login/contracts`) for its optional sign-in.
- */
-const CLAUDE_LOGIN_DIST = resolve('bundles/features/claude-login/dist');
 
 /** The host-only foundation that satisfies the core's backends. */
 export const memoryFoundation: FixtureBundle = {
@@ -337,9 +332,7 @@ const HOST_ONLY_KEPT: Readonly<Record<string, readonly string[]>> = {
  * The host answers those calls, and the real bundles' own host contracts
  * (`git.commands/v1`, `files/v1`, `usage/v1`; see the e2e `workspace-host`),
  * and the core's that the settings bundle calls (`models/v1`, `secrets/v1`,
- * `tools/v1`). The claude-login bundle comes as its contracts module alone,
- * providing nothing: the settings client imports it, and its sign-in stays
- * unavailable. `bundles` adds fixture bundles after them.
+ * `tools/v1`). `bundles` adds fixture bundles after them.
  *
  * With `drawings`, the real terminal, threads and default bundles come too
  * (bundle isolation 5(b), AC5.4): with `files` they are every bundle that
@@ -402,7 +395,7 @@ export const workspaceDistribution = async (
   }
 
   return builtDistribution({
-    built: [...real, ...hostOnly, await hostOnlyBundle(CLAUDE_LOGIN_DIST, [])],
+    built: [...real, ...hostOnly],
     bundles: [...(input.bundles ?? [])],
   });
 };

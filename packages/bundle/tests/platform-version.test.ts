@@ -52,13 +52,18 @@ describe('the platform version', () => {
 });
 
 describe('the platform each bundle asks for', () => {
-  test('chat asks for ^1.10.0, settings for ^1.9.0, layout, account and workspace for ^1.8.0 and every other bundle for ^1.0.0', () => {
+  test('chat, files, terminal, threads and default ask for ^1.10.0, settings for ^1.9.0, layout, account and workspace for ^1.8.0, claude-login for ^1.7.0 and every other bundle for ^1.0.0', () => {
     const asked = new Map([
       ['desktop/chat', '^1.10.0'],
+      ['features/files', '^1.10.0'],
+      ['features/terminal', '^1.10.0'],
+      ['features/threads', '^1.10.0'],
+      ['runtime/default', '^1.10.0'],
       ['desktop/settings', '^1.9.0'],
       ['desktop/layout', '^1.8.0'],
       ['desktop/account', '^1.8.0'],
       ['desktop/workspace', '^1.8.0'],
+      ['features/claude-login', '^1.7.0'],
     ]);
     const found = manifests();
     for (const name of asked.keys()) {

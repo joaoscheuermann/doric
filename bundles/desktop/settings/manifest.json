@@ -1,17 +1,13 @@
 {
   "manifestVersion": 1,
   "id": "settings",
-  "version": "1.11.1",
+  "version": "1.12.0",
   "engines": {
     "doric": "^1.9.0"
   },
   "description": "The settings window.",
   "provides": ["settings.config/v1@1.1.0", "settings.models/v1@1.0.0"],
-  "optional": [
-    "claude.login/v1",
-    "core.open-settings/v1",
-    "workspace.dashboard/v1"
-  ],
+  "optional": ["core.open-settings/v1", "workspace.dashboard/v1"],
   "requires": [
     "hooks/v1@^1.0.0",
     "ui/v1@^1.0.0",

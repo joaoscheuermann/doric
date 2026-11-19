@@ -1,5 +1,5 @@
+import type { Ui } from 'bundle/contracts';
 import { Alert, AlertDescription, AlertTitle } from 'desktop/ui/alert';
-import { Button } from 'desktop/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
@@ -28,8 +28,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from 'desktop/ui/select';
-import { AlertCircleIcon, ChevronRightIcon, LogInIcon } from 'lucide-react';
+import { AlertCircleIcon, ChevronRightIcon } from 'lucide-react';
 
+import type { ProviderFieldItemProps } from '../../../contracts/index.js';
 import {
   type Credential,
   credentialLabel,
@@ -42,7 +43,12 @@ import {
   type ProviderKind,
   providerIssue,
 } from '../../domain/config.js';
-import type { ClaudeLogin } from '../../hooks/use-claude-login.js';
+import {
+  fieldEntryFor,
+  type ProviderFieldEntry,
+  providerFieldView,
+} from '../../domain/provider-fields.js';
+import { ProviderFieldElement } from '../molecules/provider-field-element.js';
 import { ProviderModelsEditor } from '../molecules/provider-models-editor.js';
 import { ProviderCatalogModels } from './provider-catalog-models.js';
 import { ProviderModelPicker } from './provider-model-picker.js';
@@ -159,6 +165,13 @@ function ProviderFieldControl({
   );
 }
 
+/** The items of `settings.provider.field`, with what draws and answers them. */
+export interface ProviderFieldItems {
+  readonly ui: Ui;
+  readonly entries: readonly ProviderFieldEntry[];
+  readonly onAnswer: (item: ProviderFieldItemProps, value: string) => void;
+}
+
 /**
  * The form that configures one provider, as the screen the providers list
  * navigates to. The kind fixes the field set, the model list, and which fields
@@ -176,50 +189,25 @@ function ProviderFieldControl({
  * once the screen's caller has stored it.
  */
 export function SettingsProviderScreen({
-  claudeLogin,
   credentials,
   draft,
+  fieldItems,
   kinds,
   onChange,
 }: {
-  /** The Claude sign-in the `claude` kind's row offers; absent outside the settings window. */
-  readonly claudeLogin?: ClaudeLogin;
   readonly credentials: readonly Credential[];
   readonly draft: ProviderDraft;
+  /** The items of `settings.provider.field`; absent outside the windows that draw them. */
+  readonly fieldItems?: ProviderFieldItems;
   readonly kinds: readonly ProviderKind[];
   readonly onChange: (next: ProviderDraft) => void;
 }) {
   const kind = kindOf(kinds, draft.kind);
   const tokens = credentialsOfKind(credentials, 'API_TOKEN');
-  // The `claude` kind's token is what its sign-in stores: while the sign-in
-  // is offered, the row takes the token field's place, and the operator never
-  // picks a credential by hand. While the provider is not signed in, its id is
-  // filled and the draft has an issue, the sign-in message stands in for that
-  // issue: an empty token asks to sign in, and a token naming a credential the
-  // store no longer holds asks to sign in again.
-  const signInField =
-    kind?.id === 'claude' && claudeLogin !== undefined
-      ? kind.fields.find((field) => field.kind === 'secret')
-      : undefined;
-  const signedIn =
-    signInField === undefined
-      ? undefined
-      : tokens.find(
-          (token) => token.id === draft.configuration[signInField.key],
-        );
   const draftIssue =
     kind === undefined
       ? 'Choose a provider kind.'
       : providerIssue(draft, kind, credentials);
-  const issue =
-    signInField === undefined ||
-    signedIn !== undefined ||
-    draft.id.trim() === '' ||
-    draftIssue === undefined
-      ? draftIssue
-      : (draft.configuration[signInField.key] ?? '').trim() === ''
-        ? 'Sign in with Claude to finish this provider.'
-        : 'The credential this provider names is no longer stored: sign in with Claude again.';
 
   const setValue = (key: string, value: string): void =>
     onChange({
@@ -227,10 +215,59 @@ export function SettingsProviderScreen({
       configuration: { ...draft.configuration, [key]: value },
     });
 
+  // An item of another bundle stands in for a field of this kind: its element
+  // is drawn in the field's place with the field's `view`, and its answer is
+  // the field's value. While a drawn item shows a problem, that problem stands
+  // in for the page's issue (O2).
+  const items =
+    fieldItems === undefined || kind === undefined
+      ? []
+      : kind.fields.flatMap((field) => {
+          const entry = fieldEntryFor(fieldItems.entries, kind.id, field.key);
+          return entry === undefined
+            ? []
+            : [
+                {
+                  field,
+                  entry,
+                  view: providerFieldView({
+                    draft,
+                    field,
+                    credentials,
+                    draftIssue,
+                  }),
+                },
+              ];
+        });
+  const issue = items.some(({ view }) => view.problem !== undefined)
+    ? undefined
+    : draftIssue;
+
+  const fieldControl = (field: ProviderField) => {
+    const item = items.find((candidate) => candidate.field === field);
+    return item === undefined || fieldItems === undefined ? (
+      <ProviderFieldControl
+        key={field.key}
+        field={field}
+        tokens={tokens}
+        value={draft.configuration[field.key] ?? ''}
+        onChange={(value) => setValue(field.key, value)}
+      />
+    ) : (
+      <ProviderFieldElement
+        key={field.key}
+        ui={fieldItems.ui}
+        tag={item.entry.tag}
+        view={item.view}
+        onAnswer={(value) => fieldItems.onAnswer(item.entry.props, value)}
+      />
+    );
+  };
+
   // A kind decides which of its fields an operator rarely needs, so the screen
   // draws the necessary ones in the open and shelves the rest behind the last
   // section: an endpoint is the kind's own until someone points it elsewhere.
-  const fields = (kind?.fields ?? []).filter((field) => field !== signInField);
+  const fields = kind?.fields ?? [];
   const necessary = fields.filter(({ advanced }) => advanced !== true);
   const advanced = fields.filter(({ advanced }) => advanced === true);
 
@@ -278,56 +315,7 @@ export function SettingsProviderScreen({
         </FieldDescription>
       </Field>
 
-      {necessary.map((field) => (
-        <ProviderFieldControl
-          key={field.key}
-          field={field}
-          tokens={tokens}
-          value={draft.configuration[field.key] ?? ''}
-          onChange={(value) => setValue(field.key, value)}
-        />
-      ))}
-
-      {signInField !== undefined && claudeLogin !== undefined && (
-        <Field>
-          <FieldLabel>Claude login</FieldLabel>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={claudeLogin.busy}
-              onClick={() => claudeLogin.start()}
-            >
-              <LogInIcon data-icon="inline-start" />
-              {claudeLogin.busy
-                ? 'Waiting for the browser…'
-                : signedIn === undefined
-                  ? 'Sign in with Claude'
-                  : 'Sign in again'}
-            </Button>
-            {claudeLogin.busy && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => claudeLogin.cancel()}
-              >
-                Cancel
-              </Button>
-            )}
-          </div>
-          <FieldDescription>
-            {signedIn === undefined
-              ? 'Signs in with a Claude Code subscription: the browser opens, and the login is stored as a credential this provider uses.'
-              : `Signed in: this provider uses the '${signedIn.name}' credential. When Claude requests fail with an authentication error, the login expired or was revoked: sign in again.`}
-          </FieldDescription>
-          {claudeLogin.busy && claudeLogin.url !== undefined && (
-            <FieldDescription>
-              If the browser did not open, visit{' '}
-              <span className="break-all select-all">{claudeLogin.url}</span>
-            </FieldDescription>
-          )}
-        </Field>
-      )}
+      {necessary.map(fieldControl)}
 
       {kind !== undefined &&
         (kind.lists.includes('models') ? (
@@ -362,15 +350,7 @@ export function SettingsProviderScreen({
             />
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 flex flex-col gap-4">
-            {advanced.map((field) => (
-              <ProviderFieldControl
-                key={field.key}
-                field={field}
-                tokens={tokens}
-                value={draft.configuration[field.key] ?? ''}
-                onChange={(value) => setValue(field.key, value)}
-              />
-            ))}
+            {advanced.map(fieldControl)}
           </CollapsibleContent>
         </Collapsible>
       )}

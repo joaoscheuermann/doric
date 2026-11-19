@@ -5,9 +5,8 @@
 //   Retry replaces the Reload button and reads the catalog again; the catalog
 //   models field of a kind whose models are its catalog shows the same notice.
 //   (The execution picker's read failure is in the chat's
-//   `tests/client/execution-picker.test.ts`,
-//   the Claude sign-in toast in `claude-login.test.ts`, and the dashboard's
-//   Providers group and open-site toast in `dashboard-providers.test.ts`.)
+//   `tests/client/execution-picker.test.ts`, and the dashboard's Providers
+//   group and open-site toast in `dashboard-providers.test.ts`.)
 // - T-39: a refused configuration save or credential remove followed by a
 //   successful one leaves one toast, the plain success, with no failure
 //   notice; and no success or message toast in the chat, settings and layout
@@ -408,11 +407,10 @@ test('no success or message toast in the chat, settings, layout and workspace so
     }
   }
 
-  // The three settings actions that toast both outcomes (§4).
+  // The two settings actions that toast both outcomes (§4).
   for (const [failure, success] of [
     ['config-save-failed', 'config-save'],
     ['credentials-write-failed', 'credentials-write'],
-    ['claude-login-failed', 'claude-login'],
   ]) {
     assert.ok(failureIds.has(failure), `no toastError uses ${failure}`);
     assert.ok(otherIds.has(success), `no success toast uses ${success}`);
