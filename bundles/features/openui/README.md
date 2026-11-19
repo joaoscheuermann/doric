@@ -74,7 +74,7 @@ prompt and the SHA-256 digest of its parsed questions.
 
 The form's view is a copy of the one `threads`' `ask` drew before `threads`
 2.0.0 removed it. The client re-reads a question's state on each live row of
-the Thread (`chat.hooks/v1.onThreadUpdateHook`), and registers a projector for
+the Thread (`chat.hooks/v2.onThreadUpdateHook`), and registers a projector for
 `openui.answered/v1` rows so they draw no block.
 
 ## Actions
@@ -163,7 +163,7 @@ off, an older revision). While a click is sent the fence stays busy at least
 - **Required:** `chat.views/v1@^1.1.0`, `chat.send/v1@^1.1.0`,
   `runtime.threads/v1@^1.8.0`, `runtime.hooks/v1@^1.2.0`, `hooks/v1`,
   `events/v1`, `skills/v1@^1.1.0` and `ui/v1`.
-- **Optional:** `chat.hooks/v1`, for `onThreadUpdateHook`.
+- **Optional:** `chat.hooks/v2`, for `onThreadUpdateHook`.
 - **Packages:** `@openuidev/lang-core` and `@openuidev/react-lang` 1.0.2,
   `@openuidev/react-ui` 0.18.1, with React 19 and `lucide-react`; `elkjs`
   0.11.1 (EPL-2.0; it bundles GWT runtime and Guava code under the Apache
