@@ -59,9 +59,14 @@ src/client/
   own blocks.
 - Which drawing a tool call or an input gets (`chat.views/v1` 1.2.0) is decided
   only in `src/client/domain/tool-drawing.ts` and
-  `src/client/domain/drawn-turns.ts`. The built-in names there (`edit`,
-  `write`, `view-image`, `thread-spawn`, `load_skill`) leave in bundle
-  isolation 5(b), as their bundles register.
+  `src/client/domain/drawn-turns.ts`, and an unregistered call's element only
+  in `src/client/components/molecules/tool-item.tsx`. `tool-drawing.ts` holds
+  the placement facts (`standalone`: `edit`, `write`, `thread-spawn`,
+  `load_skill`; `openByDefault`: `edit`, `write`, `view-image`);
+  `tool-item.tsx` chooses the built-in drawing by name (`terminal`,
+  `edit`/`write`, `load_skill`). Bundle isolation 5(b) trims both places, name
+  by name, as their bundles register; a registration replaces every built-in
+  fact for its name, the drawing included.
 
 ## Styling
 

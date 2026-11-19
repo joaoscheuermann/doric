@@ -67,7 +67,8 @@ for how bundles work.
   turn's avatar is drawn in the column's left gutter.
 - **What the agent did, in place.** Answers render as Markdown with their
   markers kept. Reasoning and tool calls open while they run and fold once
-  they settle. `edit` and `write` calls render as a unified diff with
+  they settle; a live `edit`, `write`, `thread-spawn` or `load_skill` call no
+  longer folds the steps before it into a group. `edit` and `write` calls render as a unified diff with
   `+added / −removed` counts, and a `terminal` call shows its command and its
   live output. A `load_skill` call draws its own block naming the skill and
   where it came from. A background command's result, a paused or resumed
