@@ -26,6 +26,10 @@ export const modelFieldSchema = z
 
 export type ModelField = z.output<typeof modelFieldSchema>;
 
+/** Whether `value` parses as a URL with the `https:` scheme (OD49). */
+const isHttpsUrl = (value: string): boolean =>
+  URL.canParse(value) && new URL(value).protocol === 'https:';
+
 /** The llms `ProviderKind` object, unchanged. */
 export const modelKindDescriptorSchema = z
   .object({
@@ -39,6 +43,18 @@ export const modelKindDescriptorSchema = z
      * fill writes every model the catalog lists, so none is named by hand.
      */
     modelsFromCatalog: z.boolean().optional(),
+    /**
+     * models/v1 1.4.0, models.provider/v1 1.3.0: the site a provider page
+     * links to, with the control's label. A reader draws it only for an
+     * `https:` URL; a kind without a site has no such key.
+     */
+    site: z
+      .object({
+        url: z.url().refine(isHttpsUrl, { message: 'Expected an https: URL' }),
+        label: z.string().min(1),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

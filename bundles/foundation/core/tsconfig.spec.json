@@ -23,15 +23,6 @@
     },
     {
       "path": "../../../packages/llms/tsconfig.lib.json"
-    },
-    {
-      "path": "../../providers/codex"
-    },
-    {
-      "path": "../../providers/openai"
-    },
-    {
-      "path": "../../providers/openrouter"
     }
   ],
   "exclude": ["src/desktop/**", "src/client/**", "tests/client/**"]

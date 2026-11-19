@@ -14,6 +14,7 @@ import {
   ModelsProviderV1,
   ModelsV1,
   modelIconSvgSchema,
+  modelKindDescriptorSchema,
   modelsMethods,
   modelsProviderMethods,
   type ResolvedModel,
@@ -296,4 +297,49 @@ void test('an icon is SVG markup of at most 16,384 characters, and an icon reque
     modelsMethods.icons.input.safeParse(requestNaming('m'.repeat(512))).success,
     true,
   );
+});
+
+// T6.2 (bundle isolation 6(b)): the optional site of a kind descriptor, a
+// strict `{ url, label }` whose URL is an `https:` URL (D21, OD49).
+
+const siteOf = (site: unknown) => ({ ...openAiKind, site });
+
+/** The paths a descriptor is refused at, once each; none when it parses. */
+const refusedAt = (descriptor: unknown): string[] => {
+  const parsed = modelKindDescriptorSchema.safeParse(descriptor);
+
+  return parsed.success
+    ? []
+    : [...new Set(parsed.error.issues.map(({ path }) => path.join('.')))];
+};
+
+void test('a kind descriptor parses without a site and keeps the https site it carries', () => {
+  const withSite = siteOf({ url: 'https://example.test', label: 'Open' });
+
+  assert.deepEqual(modelKindDescriptorSchema.parse(openAiKind), openAiKind);
+  assert.deepEqual(modelKindDescriptorSchema.parse(withSite), withSite);
+});
+
+void test('a kind descriptor refuses a site with an unknown key, an empty label, or a url that is not an https URL', () => {
+  assert.deepEqual(
+    refusedAt(
+      siteOf({ url: 'https://example.test', label: 'Open', icon: 'x' }),
+    ),
+    ['site'],
+  );
+  assert.deepEqual(
+    refusedAt(siteOf({ url: 'https://example.test', label: '' })),
+    ['site.label'],
+  );
+  for (const url of [
+    'example.test',
+    'http://example.test',
+    'javascript:alert(1)',
+  ]) {
+    assert.deepEqual(
+      refusedAt(siteOf({ url, label: 'Open' })),
+      ['site.url'],
+      url,
+    );
+  }
 });

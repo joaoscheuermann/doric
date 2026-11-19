@@ -5,6 +5,8 @@
 
 import {
   type AnyServiceDefinition,
+  type AnyServiceRef,
+  type CallScope,
   type CatalogResult,
   type CredentialCreate,
   type CredentialDescription,
@@ -18,6 +20,7 @@ import {
   ModelsV1,
   modelsMethods,
   SecretsV1,
+  type Services,
   secretsMethods,
   type ToolCatalogEntry,
   ToolsV1,
@@ -43,6 +46,12 @@ export interface FakeHost {
     input: unknown,
   ) => ConfigReplaceResult | Promise<ConfigReplaceResult>;
   kinds?: () => readonly ModelKindDescriptor[];
+  /**
+   * The kinds as an older or foreign host sends them, past the descriptor
+   * schema of this platform, which no provider here may answer: the adapter
+   * reads them as sent, and only its own checks meet them.
+   */
+  foreignKinds?: () => readonly unknown[];
   kind?: (id: string) => ModelKindDescriptor | undefined;
   catalog?: (input: {
     kind: string;
@@ -90,6 +99,20 @@ const fake = (
     ),
   );
 
+/** `services` whose `models/v1.kinds` answers `kinds` as sent. */
+const withForeignKinds = (
+  services: Services,
+  kinds: () => readonly unknown[],
+): Services => {
+  const use = (contract: AnyServiceRef, scope?: CallScope) =>
+    contract.id === ModelsV1.id
+      ? { kinds: () => Promise.resolve([...kinds()]) }
+      : services.use(contract, scope);
+
+  // `services` is frozen: the replacement is the own `use` of an heir.
+  return Object.create(services, { use: { value: use } }) as Services;
+};
+
 /** The settings adapter over fake host providers. */
 export const settingsOver = async (
   host: FakeHost,
@@ -124,7 +147,13 @@ export const settingsOver = async (
   const test = createTestServices({ bundle: { id: 'settings' }, provide });
 
   try {
-    await run(createSettingsApi(test.services));
+    await run(
+      createSettingsApi(
+        host.foreignKinds === undefined
+          ? test.services
+          : withForeignKinds(test.services, host.foreignKinds),
+      ),
+    );
   } finally {
     await test.dispose();
   }

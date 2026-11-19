@@ -720,7 +720,7 @@ test('AC6.2: no source of settings names the claude kind, imports claude-login/c
   assert.deepEqual(naming, []);
 });
 
-test('AC6.2: the settings manifest is 1.12.0 and takes no claude.login/v1, and its package does not list claude-login', async () => {
+test('AC6.2: the settings manifest is 1.12.1 and takes no claude.login/v1, and its package does not list claude-login', async () => {
   const manifest = JSON.parse(
     await readFile(join(settingsRoot, 'manifest.json'), 'utf8'),
   ) as { readonly version: string; readonly optional?: readonly string[] };
@@ -731,7 +731,7 @@ test('AC6.2: the settings manifest is 1.12.0 and takes no claude.login/v1, and i
     readonly devDependencies?: Readonly<Record<string, string>>;
   };
 
-  assert.equal(manifest.version, '1.12.0');
+  assert.equal(manifest.version, '1.12.1');
   assert.ok(
     !(manifest.optional ?? []).includes('claude.login/v1'),
     `optional ${(manifest.optional ?? []).join(', ')}`,

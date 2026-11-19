@@ -25,6 +25,8 @@ See the [main README](../../../README.md) for Doric as a whole and
 ## Behavior
 
 The kind descriptor is the one the closed `llms` catalog declared, unchanged.
+It carries `site` (`https://openrouter.ai`, "Open OpenRouter"), the page a
+provider page links to.
 
 - `advertised()` and `catalogCapacity()` are true: usage reads context capacity
   from this kind's live catalog.

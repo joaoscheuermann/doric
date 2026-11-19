@@ -48,6 +48,7 @@
             "bundle-openai",
             "bundle-openrouter",
             "bundle-codex",
+            "bundle-claude",
             "bundle-docker",
             "bundle-notifications",
             "bundle-layout",

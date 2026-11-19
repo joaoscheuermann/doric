@@ -59,6 +59,7 @@ const openrouter = {
     { key: 'token', label: 'Token', kind: 'secret', required: true },
   ],
   lists: ['models', 'reasonings'],
+  site: { url: 'https://openrouter.ai', label: 'Open OpenRouter' },
 };
 
 const openai = {
@@ -451,6 +452,55 @@ test("the OpenRouter page opens the provider's site in the browser; other kinds 
     ) === null,
     'An OpenAI-compatible page still offers the OpenRouter site.',
   );
+});
+
+/** The page of the provider `name`, with the kinds the host answers. */
+const openPageWithKinds = async (name: string, kinds: readonly unknown[]) => {
+  const dashboard = await openDashboard({
+    answers: { 'models/v1.kinds': () => kinds },
+  });
+  rowOf(dashboard.window, name).click();
+  await settle(20);
+  return dashboard;
+};
+
+const headerButtons = (window: SettingsWindow): HTMLElement[] => [
+  ...window.document.querySelectorAll<HTMLElement>(
+    'settings-dashboard-provider header button',
+  ),
+];
+
+test("T6.2: a kind's descriptor names the site its page opens and the control's label, for a kind settings never named", async () => {
+  const { window } = await openPageWithKinds('acme', [
+    openrouter,
+    openai,
+    { ...acme, site: { url: 'https://acme.test/console', label: 'Open Acme' } },
+  ]);
+
+  const site = window.document.querySelector<HTMLElement>(
+    'settings-dashboard-provider [aria-label="Open Acme"]',
+  );
+  assert.ok(site !== null, 'The Acme page offers no site link.');
+  site.click();
+  await settle(20);
+  assert.deepEqual(
+    window.received('doric.shell/v1.openExternal').map((call) => call.input),
+    [{ url: 'https://acme.test/console' }],
+  );
+});
+
+test('T6.2: a kind whose site is not https draws no site control on its page', async () => {
+  const { window } = await openPageWithKinds('acme', [
+    openrouter,
+    openai,
+    {
+      ...acme,
+      site: { url: 'http://insecure.test', label: 'Open Insecure' },
+    },
+  ]);
+
+  assert.equal(pageHeading(window), 'acme');
+  assert.deepEqual(headerButtons(window), []);
 });
 
 test('a change on the provider page saves itself once typing settles', async () => {

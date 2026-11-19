@@ -62,6 +62,7 @@ export const openRouterKind: KindDefinition = {
       },
     ],
     lists: ['models', 'reasonings'],
+    site: { url: 'https://openrouter.ai', label: 'Open OpenRouter' },
   },
   advertised: true,
   catalogCapacity: true,

@@ -387,9 +387,6 @@ in conversation events.
   change its type or meaning, without a notice in the release notes of an
   earlier release.
 
-A later release adds the optional field `site`, `{ url, label }`, to the
-objects of `GET /providers/kinds`.
-
 ### Configuration and providers
 
 `GET /config` answers `{ configuration, revision, updatedAt }`.
@@ -405,6 +402,17 @@ objects of `GET /providers/kinds`.
   activated answers `503 configuration_rejected`.
 - Configuration saved here reaches the next prompt of any Project, including
   one that is already running.
+
+`GET /providers/kinds` answers `{ kinds }`, the provider kinds a configuration
+may name. Each kind has an `id`, a `label`, a `description`, its `fields` and
+its `lists`, and may carry the optional `modelsFromCatalog` and `site`:
+
+- each field has a `key`, a `label`, a `kind`, `required`, and the optional
+  `description`, `placeholder`, `options` and `advanced`;
+- `site` is `{ url, label }`: the page a client may link to, with the link's
+  label. It is absent when the kind has none.
+
+A client ignores the fields it does not know, as the conventions above say.
 
 A provider kind whose catalog describes its models declares a models URL, and
 that catalog is read twice:

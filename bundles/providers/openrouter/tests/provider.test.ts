@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { LlmProvider } from 'llms';
+import { type LlmProvider, providerKind } from 'llms';
 
 import { frozenKind, providerWorld } from './support/world.js';
 
-void test('the openrouter record answers the frozen llms kind, is advertised and reports catalog capacity', async () => {
+void test('the openrouter record answers the frozen llms kind with its site, is advertised and reports catalog capacity', async () => {
   const { world, provider } = await providerWorld('openrouter');
 
   try {
     assert.deepEqual(await provider.kind(), frozenKind());
+    // The llms kind and this record define the kind twice; they stay equal.
+    assert.deepEqual(await provider.kind(), providerKind('openrouter'));
     assert.equal(await provider.advertised(), true);
     assert.equal(await provider.catalogCapacity(), true);
   } finally {

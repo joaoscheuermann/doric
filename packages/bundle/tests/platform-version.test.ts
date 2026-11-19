@@ -42,8 +42,8 @@ const manifests = (): Map<string, { engines?: { doric?: string } }> => {
 };
 
 describe('the platform version', () => {
-  test('AC5.1: is 1.10.0 once desktop/ui/collapsible-block is platform API', () => {
-    assert.equal(PLATFORM_VERSION, '1.10.0');
+  test('AC6.3: is 1.11.0 once the kind descriptor of models/v1 and models.provider/v1 carries site', () => {
+    assert.equal(PLATFORM_VERSION, '1.11.0');
   });
 
   test('leaves the folders and URLs at 1.0.0', () => {

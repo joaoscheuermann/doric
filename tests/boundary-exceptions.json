@@ -2,34 +2,6 @@
   "violations": [
     {
       "check": "imports",
-      "bundle": "core",
-      "target": "claude/host",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 6(b)"
-    },
-    {
-      "check": "imports",
-      "bundle": "core",
-      "target": "codex/host",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 6(b)"
-    },
-    {
-      "check": "imports",
-      "bundle": "core",
-      "target": "openai/host",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 6(b)"
-    },
-    {
-      "check": "imports",
-      "bundle": "core",
-      "target": "openrouter/host",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 6(b)"
-    },
-    {
-      "check": "imports",
       "bundle": "runtime",
       "target": "postgres/prisma",
       "decision": "docs/features/bundle-isolation.md",

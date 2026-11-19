@@ -9,7 +9,7 @@ import {
   recordingTransport,
 } from './support/world.js';
 
-void test('the claude record answers the frozen llms kind, is advertised and reports catalog capacity', async () => {
+void test('the claude record answers the frozen llms kind without a site, is advertised and reports catalog capacity', async () => {
   const { world, provider } = await providerWorld('claude');
 
   try {
@@ -19,6 +19,8 @@ void test('the claude record answers the frozen llms kind, is advertised and rep
       ...frozenKind(),
       lists: providerKind('claude')?.lists,
     });
+    assert.deepEqual(await provider.kind(), providerKind('claude'));
+    assert.equal('site' in (await provider.kind()), false);
     assert.equal(await provider.advertised(), true);
     assert.equal(await provider.catalogCapacity(), true);
   } finally {

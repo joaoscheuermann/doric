@@ -933,6 +933,25 @@ const providerFieldFrom = (value: unknown): ProviderField => {
   };
 };
 
+/**
+ * A kind's site when its URL parses with the `https:` scheme and its label is a
+ * non-empty string; none otherwise. A malformed site never fails the kind.
+ */
+const siteFrom = (value: unknown): ProviderKind['site'] => {
+  if (
+    !isRecord(value) ||
+    typeof value.url !== 'string' ||
+    typeof value.label !== 'string' ||
+    value.label === '' ||
+    !URL.canParse(value.url) ||
+    new URL(value.url).protocol !== 'https:'
+  ) {
+    return undefined;
+  }
+
+  return { url: value.url, label: value.label };
+};
+
 const providerKindFrom = (value: unknown): ProviderKind => {
   if (
     !isRecord(value) ||
@@ -946,6 +965,8 @@ const providerKindFrom = (value: unknown): ProviderKind => {
     return invalidResponse();
   }
 
+  const site = siteFrom(value.site);
+
   return {
     id: value.id,
     label: value.label,
@@ -953,6 +974,7 @@ const providerKindFrom = (value: unknown): ProviderKind => {
     fields: value.fields.map(providerFieldFrom),
     lists: value.lists as readonly ProviderListId[],
     ...(value.modelsFromCatalog === true ? { modelsFromCatalog: true } : {}),
+    ...(site === undefined ? {} : { site }),
   };
 };
 

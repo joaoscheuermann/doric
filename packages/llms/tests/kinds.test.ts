@@ -249,6 +249,19 @@ void test('only a kind that keeps models may list its catalog as its models, and
   assert.notEqual(providerKind('openrouter')?.modelsFromCatalog, true);
 });
 
+void test('OpenRouter names the site a provider page links to, and no other kind names one', () => {
+  const siteOf = (id: string): unknown =>
+    Reflect.get(providerKind(id) ?? {}, 'site');
+
+  assert.deepEqual(siteOf('openrouter'), {
+    url: 'https://openrouter.ai',
+    label: 'Open OpenRouter',
+  });
+  for (const id of ['openai', 'claude', 'codex']) {
+    assert.equal(siteOf(id), undefined, id);
+  }
+});
+
 void test('uses the configured OpenRouter catalog for execution and model listing', async () => {
   const catalog = 'https://catalog.example.test/models';
   const transport = fakeTransport({

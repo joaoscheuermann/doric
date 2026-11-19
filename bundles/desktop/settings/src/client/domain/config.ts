@@ -132,6 +132,11 @@ export type ProviderKind = {
    * for one by hand.
    */
   readonly modelsFromCatalog?: boolean;
+  /**
+   * The site the provider page links to, with the control's label. Only an
+   * `https:` site with a label reaches here: the adapter drops any other.
+   */
+  readonly site?: { readonly url: string; readonly label: string };
 };
 
 /** The value kinds a tool configuration field can carry. */

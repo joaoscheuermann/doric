@@ -23,7 +23,8 @@ Part of [Doric](../../README.md), whose provider bundles build on it.
 - **Multi-turn replay.** Opaque provider output, including encrypted
   reasoning, is kept for exact replay without being logged.
 - **Settings-ready metadata.** `providerKinds` describes each provider's
-  configuration fields so a settings UI can render them.
+  configuration fields, and the site a settings UI may link to, so a settings
+  UI can render them.
 
 ## Usage
 
