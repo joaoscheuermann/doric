@@ -344,9 +344,10 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // and `papercraft` features are anchored comments and the live preview
     // they pin to. The `mcp` feature is
     // the Project's MCP servers and the tools they bring. The `openui`
-    // feature draws UI in the conversation (OpenUI slice 1). No bundle is
-    // quarantined.
-    assert.equal(host.bundleCount, 30);
+    // feature draws UI in the conversation (OpenUI slice 1). The `account`
+    // and `workspace` desktop bundles (bundle isolation 4(b), 4(c)) have no
+    // host part. No bundle is quarantined.
+    assert.equal(host.bundleCount, 32);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -380,6 +381,8 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         docker: ['active', 'others'],
         notifications: ['active', 'others'],
         layout: ['active', 'others'],
+        account: ['active', 'others'],
+        workspace: ['active', 'others'],
         settings: ['active', 'others'],
         chat: ['active', 'others'],
         history: ['active', 'others'],
@@ -410,7 +413,6 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['runtime', 'resources'],
       ['runtime', 'screen'],
       ['screen-relay', 'screen'],
-      ['claude-login', 'settings'],
       ['comments', 'papercraft'],
       ['runtime', 'mcp'],
       // openui requires chat.views/v1 and chat.send/v1 (chat), the runtime's
