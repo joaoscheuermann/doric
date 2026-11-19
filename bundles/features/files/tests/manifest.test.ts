@@ -9,6 +9,9 @@
 // each in the section of the line it replaces (O1). Bundle isolation 5(b)
 // change 1 ships 1.8.0: the bundle draws `edit`, `write` and `view-image`
 // through `chat.views/v1` (listed under `optional`), on platform `^1.10.0`.
+// Bundle isolation 5(c) change 3 ships 1.8.1: the bundle observes
+// `chat.hooks/v2` instead of `chat.hooks/v1`, and refreshes after its own
+// `edit` and `write` calls.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -52,8 +55,8 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.8.0 on platform ^1.10.0', () => {
-    assert.equal(manifest.version, '1.8.0');
+  test('provides files/v1@1.3.0 at version 1.8.1 on platform ^1.10.0', () => {
+    assert.equal(manifest.version, '1.8.1');
     assert.ok(manifest.provides.includes('files/v1@1.3.0'));
     assert.equal(manifest.engines.doric, '^1.10.0');
   });
@@ -69,6 +72,13 @@ describe('the files manifest', () => {
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('chat.')),
       [],
+    );
+  });
+
+  test('takes chat.hooks/v2, not chat.hooks/v1, as optional', () => {
+    assert.deepEqual(
+      manifest.optional.filter((ref) => ref.startsWith('chat.hooks/')),
+      ['chat.hooks/v2'],
     );
   });
 });

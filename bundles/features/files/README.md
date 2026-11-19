@@ -97,10 +97,13 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   names it meanwhile) and merged in; one whose read fails closes again and
   its failure is the observation's `error`.
 - `files.refresh/v1` (client) is the Project refresh coordinator. It rereads
-  when a sandbox-writing tool runs in any held conversation (chat's
-  `onSandboxActivityHook`), when the selected Project or Thread changes, when a
-  Thread's run ends (not when it starts), on window focus, and every 15 s while
-  the window is visible and connected.
+  when an `edit` or `write` call finishes in any held conversation (chat's
+  `onThreadUpdateHook`), when the chat starts to hold a Thread, a held
+  Thread's working directory changes or its run ends, not when it starts
+  (chat's `onSandboxActivityHook`), when the selected Project or Thread
+  changes, on window focus, and every 15 s while the window is visible and
+  connected. Both hooks are `chat.hooks/v2`'s, listed under `optional`
+  (files 1.8.1).
 - `files.open-file/v1` opens a file as a workspace tab (`files-file-view`).
   The tab's trigger draws the `files-file-icon` element (`iconTag`). Its
   context menu holds "Reveal in Files" (`layout.tabs/v2@2.0.0` `menu`, so the

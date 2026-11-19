@@ -23,7 +23,7 @@ import { LayoutPanelV3 } from 'layout/contracts';
 import { RuntimeRecordsV1 } from 'runtime/contracts';
 import { WorkspaceSelectionV1 } from 'workspace/contracts';
 
-import { ChatHooksV1 } from './api/peers.js';
+import { ChatHooksV2 } from './api/peers.js';
 import { filesReadsOf } from './api/reads.js';
 import { refreshWorkspaceOf } from './api/selection.js';
 import { defineEditCallElement, EDIT_CALL_TAG } from './chat/edit-call.js';
@@ -35,6 +35,7 @@ import {
   createRefreshCoordinator,
   type RefreshEnvironment,
 } from './refresh/coordinator.js';
+import { refreshAfterWrites } from './refresh/tool-refresh.js';
 import { createFilesSandbox, createSandboxStore } from './sandbox-store.js';
 import { setFilesClient } from './state.js';
 import { resetExpansion } from './stores/expansion.js';
@@ -120,11 +121,20 @@ export function activate({ services }: ClientContext): Cleanup {
       return () => coordinator.setWorkspace(undefined);
     },
   );
-  // D9-10: a sandbox-writing tool in any held conversation refreshes its Project.
-  const activity = services.use(HooksV1).whenAvailable(ChatHooksV1, (chat) => {
-    chat.onSandboxActivityHook(({ projectId }) => {
-      coordinator.request(projectId);
-    });
+  // D12: a held Thread the chat starts to hold, moves or finishes refreshes
+  // its Project (`onSandboxActivityHook`), and so does a finished `edit` or
+  // `write` call in any held conversation (`onThreadUpdateHook`).
+  const activity = services.use(HooksV1).whenAvailable(ChatHooksV2, (chat) => {
+    const lifecycle = chat.onSandboxActivityHook(({ projectId }) =>
+      coordinator.request(projectId),
+    );
+    const writes = chat.onThreadUpdateHook(
+      refreshAfterWrites((projectId) => coordinator.request(projectId)),
+    );
+    return () => {
+      writes.dispose();
+      lifecycle.dispose();
+    };
   });
 
   // Bundle isolation 5(b): the calls of `edit`, `write` and `view-image` are

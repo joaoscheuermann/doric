@@ -10,17 +10,41 @@ import {
   defineHooks,
   ref,
 } from 'bundle/contracts';
+import type { ThreadUpdateNotice } from 'chat/contracts';
 import { z } from 'zod';
 
 import type { TreeScope } from '../../contracts/index.js';
 
-/** chat.hooks/v1 (D9-10): a sandbox-writing tool finished in a held Thread. */
-export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
+/**
+ * chat.hooks/v2 (D12): the Project of a Thread the chat starts to hold, moves
+ * or finishes (`onSandboxActivityHook`), and every live event of a held Thread
+ * (`onThreadUpdateHook`), from which `files` takes its own tools' calls.
+ */
+export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
   onSandboxActivityHook: defineHook({
     kind: 'observe',
     input: z.object({ projectId: z.string() }).strict(),
   }),
+  onThreadUpdateHook: defineHook({
+    kind: 'observe',
+    input: z.object({
+      projectId: z.string(),
+      threadId: z.string(),
+      threadName: z.string(),
+      update: z.custom<ThreadUpdateNotice>(
+        (value) =>
+          typeof value === 'object' &&
+          value !== null &&
+          'kind' in value &&
+          (value.kind === 'event' || value.kind === 'updated'),
+      ),
+    }),
+  }),
 });
+
+export type ThreadUpdateInput = z.output<
+  (typeof ChatHooksV2)['hooks']['onThreadUpdateHook']['input']
+>;
 
 /**
  * The mark git's changes read gives one tree row: the description its label
