@@ -18,7 +18,8 @@ client part (the desktop UI), loaded by the `bundle` platform. See the
   discovery, search, inspection, editing, validation and synthesis.
 - **Contracts:** `files/v1` (host), `files.sandbox/v1` and `files.refresh/v1`
   (client) and the `files.open-file/v1` command.
-- **UI:** the Files view in the workspace panel and the file tab.
+- **UI:** the Files view in the workspace panel, the file tab, and the
+  drawing of `edit` and `write` calls in the chat (1.8.0).
 
 ## Tools
 
@@ -126,6 +127,24 @@ The client reads the selected Project and Thread ids through
 `workspace.selection/v1` (required, `^1.0.0`) and their records through
 `runtime.records/v1` (files 1.7.8); it imports `WorkspaceSelectionV1` from
 `workspace/contracts`. Without `workspace` the bundle is quarantined.
+
+From 1.8.0 (bundle isolation 5(b)) `files` draws its tools' calls in the chat
+through `chat.views/v1`, listed under `optional`, each registration in a
+`whenAvailable` callback of its own in `src/client/index.ts`; the specs are in
+`src/client/chat/views.ts`:
+
+- `edit` and `write` are drawn by `files-edit-call`
+  (`src/client/chat/edit-call.tsx`), a block of its own outside the activity
+  group, open until the reader closes it: "Editing", "Edited" or "Failed to
+  edit", the file name, the `+added / −removed` counts and the unified diff,
+  or the failure notice with the fallback code `tool_failed`.
+- `view-image` keeps the chat's generic row, open until the reader closes it,
+  so the image the agent looked at stands beside it.
+
+The element imports only the chat's types from `chat/contracts`, and needs
+platform 1.10.0 (`engines.doric` `^1.10.0`) for
+`desktop/ui/collapsible-block`. Without the chat the bundle registers nothing,
+and without `files` the chat draws these calls as generic rows.
 
 `src/client/styles.css` ships, unlayered, the Monaco scrollbar slider rule
 (`.monaco-scrollable-element > .scrollbar > .slider`), because the file viewer

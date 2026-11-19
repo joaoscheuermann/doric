@@ -8,8 +8,9 @@ model, saves the history as
 it goes, and compacts a long conversation so the agent can keep working
 within the model's context window.
 
-It provides `executor/v1`, the default executor, and owns `default.hooks/v1` and `default.agents/v1`. The bundle runs in the
-generation process next to `runtime`, which calls it. See the
+It provides `executor/v1`, the default executor, and owns `default.hooks/v1` and `default.agents/v1`. The bundle's host part runs in the
+generation process next to `runtime`, which calls it; from 2.7.0 a client part
+draws its `load_skill` calls in the chat ([The `load_skill` block](#the-load_skill-block)). See the
 [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
 
@@ -288,6 +289,23 @@ reason="loaded-skills">` message after the summary (`default:loaded-skills`),
   deltas, written after 250 ms, at 64 KiB, before any other write and when
   the run ends; empty deltas are dropped.
 
+## The `load_skill` block
+
+From 2.7.0 (bundle isolation 5(b)) the client part (`src/client/`) defines
+`default-skill-call` through `ui/v1`, which it requires, and registers it for
+`load_skill` through `chat.views/v1`, listed under `optional`, as a block of
+its own outside the activity group (`standalone`). The block shows "Loading
+skill", "Loaded skill" or "Failed to load skill", the skill's name and where
+it comes from: `built-in`, `workspace` for `cwd/<name>`, and
+`<source> · <group>` as written for any `<source>/<group>/<name>`, so an MCP
+skill reads "mcp · server" (`src/client/skill-load.ts`). It is folded while
+it loads and once loaded, and open when the load failed, with the failure
+notice and the fallback code `tool_failed`; its `toggle()` follows that rule.
+The client part imports only the chat's types from `chat/contracts` and needs
+platform 1.10.0 (`engines.doric` `^1.10.0`) for
+`desktop/ui/collapsible-block`. Without the chat it registers nothing, and
+without `default` the chat draws a `load_skill` call as a generic row.
+
 ## Tests
 
 `npx nx test bundle-default` runs the ported executor scenarios against fake
@@ -301,6 +319,9 @@ skills kept across a compaction and
 unprovided one), and the `coding-workflow` skill's agent filter and pin. It also runs the exact request-body checks: the real `llms`
 OpenRouter and OpenAI Responses providers, with a faked HTTP transport, must
 send the bodies the stage-1 host recorded (`tests/fixtures/request-body`).
+The client tests (`tests/client/`) mount `default-skill-call` alone in a
+happy-dom document and check its block and the label rule. Its story is
+`stories/skill-call.stories.tsx`, with the decorators in `.storybook/preview.tsx`.
 
 ## Development
 

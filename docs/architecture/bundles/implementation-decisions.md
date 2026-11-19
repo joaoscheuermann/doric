@@ -532,6 +532,7 @@ As seções 4-WP4-\* acima detalham a implementação; esta lista registra as de
 - **Build.** `tsc --build` emite JS e `.d.ts`, de modo que os exports `import` de `dist/` funcionam no Node. Depois, `scripts/build-tokens.mjs` gera `src/styles/tokens.css` e `dist/tokens.json` a partir de `dist/tokens/{tokens,css}.js`. `desktop:test` depende de `build`.
 - **Fontes copiadas, não movidas.** O renderer ainda referencia `src/assets/fonts` até a 8G, então mover as fontes quebraria o build dele. As fontes são copiadas byte a byte para `assets/fonts/`, e a 8G apaga as originais com o split do `styles.css`. Em `fonts.css`, as URLs passam a `../../assets/fonts/`. A 8C reescreve essas URLs para `fonts/` ao emitir o `theme.css` da plataforma.
 - **`defineReactElement`.** As propriedades listadas viram acessores no protótipo, que gravam o valor e re-renderizam. A raiz só é criada quando o elemento está conectado e tem `services`. `wrap` é construído uma única vez, com os primeiros `services`. Testado com `happy-dom` (devDependency de `desktop/ui`).
+  - Substituído pela bundle isolation, etapa 5(b) ([OD46](../../features/bundle-isolation.md#decisions) (a)): a raiz deixa de ser do elemento. Todo elemento de uma classe renderiza por `createPortal` numa única raiz React que a classe compartilha, criada no primeiro connect da classe, cada um dentro de um error boundary próprio, e `dispose()` remove o conteúdo do elemento na hora (`flushSync`).
 
 ## Etapa 8 — `packages/desktop` (8D)
 

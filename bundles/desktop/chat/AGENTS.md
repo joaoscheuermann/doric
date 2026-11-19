@@ -60,13 +60,16 @@ src/client/
 - Which drawing a tool call or an input gets (`chat.views/v1` 1.2.0) is decided
   only in `src/client/domain/tool-drawing.ts` and
   `src/client/domain/drawn-turns.ts`, and an unregistered call's element only
-  in `src/client/components/molecules/tool-item.tsx`. `tool-drawing.ts` holds
-  the placement facts (`standalone`: `edit`, `write`, `thread-spawn`,
-  `load_skill`; `openByDefault`: `edit`, `write`, `view-image`);
-  `tool-item.tsx` chooses the built-in drawing by name (`terminal`,
-  `edit`/`write`, `load_skill`). Bundle isolation 5(b) trims both places, name
-  by name, as their bundles register; a registration replaces every built-in
-  fact for its name, the drawing included.
+  in `src/client/components/molecules/tool-item.tsx`, the generic row.
+  Since 1.10.4 (bundle isolation 5(b)) the chat names no tool to draw or place
+  it: `tool-drawing.ts` answers from the registrations only, and the bundle
+  that owns a tool registers its drawing. Never add a built-in drawing or
+  placement fact for a tool name back here.
+- A terminal prompt is told by its source kind (`fromTerminal` in
+  `src/client/domain/projector-input.ts`), never by parsing its text: the
+  `terminal` bundle reads the host's frame. The chat lists neither
+  `terminal/v1` nor `runtime.terminals/v1`, and `ConversationThreadContext`
+  lives in `src/client/hooks/conversation-thread.ts`.
 
 ## Styling
 

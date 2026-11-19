@@ -85,6 +85,22 @@ shows `Instruction from:` or `Result from:`, the sender (its name from
 `runtime.records/v1` when the records hold it, as a link to its conversation,
 else its short id), `Status: …` and the text through chat's
 `<chat-readonly-markdown>`. An instruction starts open and a result closed.
+The block is the platform's `desktop/ui/collapsible-block`; from 2.1.0 the
+bundle keeps no copy of its own.
+
+From 2.1.0 (bundle isolation 5(b)) the client part also draws each
+`thread-spawn` call in the chat as `<threads-spawn-call>`, registered for the
+tool through `chat.views/v1` as a block of its own outside the activity group
+(`standalone`). The block shows "Spawning", "Spawned" or "Spawn failed", the
+child as a link to its conversation once it exists (its name from
+`runtime.records/v1` when the records hold it), the agent, model and effort
+the call names, and the prompt handed down, with the failure notice (fallback
+code `tool_failed`) when the call failed. It is open while it spawns and when
+it failed, folded once the child exists, and its `toggle()` follows that rule.
+The bundle reaches the chat's types through its structural copy
+(`src/client/chat-contract.ts`) and needs platform 1.10.0 (`engines.doric`
+`^1.10.0`). Without `threads` the chat draws a `thread-spawn` call as a
+generic row.
 
 Threads written before 2.0.0 still hold `threads.asked/v1` and
 `threads.answered/v1` rows. When `chat.views/v1` is available the client

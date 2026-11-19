@@ -19,7 +19,9 @@ See the [main README](../../../README.md) for Doric as a whole and
   `create`, `snapshot`, `input`, `resize`, `stop`, `rename`, and the
   `watchProject` stream). A session may carry a `name` (1.2.0).
 - **UI:** the header's "New terminal" button, the sidebar's terminal rows and
-  the workspace terminal tab, with their context menus.
+  the workspace terminal tab, with their context menus; from 1.2.0, the
+  `terminal` call's row and a background terminal's result in the chat
+  ([In the chat](#in-the-chat)).
 
 ## Names and menus
 
@@ -66,7 +68,8 @@ The tool runs a command in the current working directory; a relative
   list `secrets/v1` delivers, read again right before a terminal starts.
 - **Client part** (`src/client`): the window's terminal store and the
   elements `terminal-new-button`, `terminal-rows`, `terminal-view` and
-  `terminal-tab-icon`.
+  `terminal-tab-icon`, and, from 1.2.0, `terminal-tool-call` and
+  `terminal-result` ([In the chat](#in-the-chat)).
   `registerTerminalSurfaces` adds the header button (`shell.header.actions`) and the
   sidebar's terminal rows while `workspace` serves `workspace.sidebar/v1`;
   its `busy` answer keeps a Thread active while an agent terminal under it is
@@ -77,6 +80,11 @@ The tool runs a command in the current working directory; a relative
   row (`aria-current="true"`), subscribing only while its Thread has terminals.
 - `create` opens a manual bash PTY in a Thread's working directory, bringing
   its Project back first.
+- The client's output watches of one terminal share one host stream (1.2.0):
+  every watcher gets every chunk, a watcher that joins late makes the watch
+  read the snapshot again (or gets the error that ended it), and the stream
+  closes when the last watcher stops, so a chat row and a terminal tab
+  watching the same terminal do not cut each other off.
 
 `terminal/contracts` keeps `TerminalV1` (`run` only) for the 1.0.0
 consumers; `TerminalServiceV1` is the full 1.2.0 contract. The `runtime`
@@ -85,6 +93,33 @@ bundle delegates its terminal reads to this bundle while it is active.
 `src/client/styles.css` ships the xterm scrollbar slider rule, scoped to
 `[data-slot='terminal-view']`, which matches ScrollArea's lane; the layout's
 sheet no longer carries it.
+
+## In the chat
+
+From 1.2.0 (bundle isolation 5(b)) the client part draws in the chat, through
+`chat.views/v1`, listed under `optional`, each registration in a
+`whenAvailable` callback of its own. It reaches the chat's shapes through
+structural copies in `src/client/peers.ts`, and needs platform 1.10.0
+(`engines.doric` `^1.10.0`) for `desktop/ui/collapsible-block`.
+
+- `terminal-tool-call` (`src/client/chat/terminal-call.tsx`) draws each
+  `terminal` call, inside the activity group. It follows the call's Project in
+  the terminal store and, while the terminal runs, shows its live output (the
+  last 32,000 characters, drawn at most every 50 ms) and Stop. Stop calls the
+  store's `stop`, whose refusal is the store's toast, and is gone at once for
+  that terminal. The row shows the reader's open/close click until the chat
+  sets the next `view`; its `toggle()` takes a call whose terminal still runs
+  as open.
+- `terminal-result` (`src/client/chat/terminal-result.tsx`) draws each prompt
+  of the source `terminal`: a background command's result framed by the host
+  is the command's block, open when the command did not finish cleanly; its
+  copied text is the prompt's text, the host's Markdown frame. A terminal
+  prompt without that frame is a block labelled "Terminal" holding its text as
+  read-only Markdown, folded once settled.
+
+A failed call's notice falls back to the code `tool_failed`. Without
+`terminal` the chat draws a `terminal` call as a generic row and a background
+result as plain text.
 
 ## Development
 

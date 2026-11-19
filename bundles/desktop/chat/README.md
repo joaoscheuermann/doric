@@ -1,7 +1,8 @@
 # Chat bundle
 
-`chat` is the conversation with your agent. You read its answers, reasoning,
-tool calls, file diffs and terminal output as they stream in, and you write the
+`chat` is the conversation with your agent. You read its answers, reasoning and
+tool calls as they stream in — the owning bundles draw file diffs and terminal
+output, and without them those calls are generic rows — and you write the
 next prompt in the same document, at the end of the transcript. While the agent
 works you can steer it, queue follow-ups, pause or stop it, and comment on any
 part of an answer before you send.
@@ -67,14 +68,16 @@ for how bundles work.
   turn's avatar is drawn in the column's left gutter.
 - **What the agent did, in place.** Answers render as Markdown with their
   markers kept. Reasoning and tool calls open while they run and fold once
-  they settle; a live `edit`, `write`, `thread-spawn` or `load_skill` call no
-  longer folds the steps before it into a group. `edit` and `write` calls render as a unified diff with
-  `+added / −removed` counts, and a `terminal` call shows its command and its
-  live output. A `load_skill` call draws its own block naming the skill and
-  where it came from. A background command's result, a paused or resumed
-  prompt, a history compaction and a failure each get their own row; a
-  failure row, a failed tool call and a failed compaction draw the shared
-  error notice (`desktop/ui/error-notice`) with its code, a Copy details action
+  they settle; a live standalone call does not fold the steps before it into
+  a group. The chat draws no tool of another bundle itself (from 1.10.4): the
+  bundle that owns a tool draws its calls through `chat.views/v1` — `files` the
+  `edit` and `write` diffs, `default` the `load_skill` block, `threads` the
+  `thread-spawn` block, `terminal` the `terminal` row with its live output and
+  a background command's result. Without that bundle a call is the generic
+  row inside the activity summary, and a background result is plain text. A
+  paused or resumed prompt, a history compaction and a failure each get their
+  own row; a failure row, a failed tool call and a failed compaction draw the
+  shared error notice (`desktop/ui/error-notice`) with its code, a Copy details action
   and the cause chain in collapsed details, and the last prompt's failure offers
   Retry while the agent control's status is `failed` and it can retry.
 - **Steer while it runs.** `Cmd/Ctrl+Enter` sends; while a prompt runs it
@@ -113,13 +116,13 @@ batch.
 
 ## Extension points
 
-| Contract           | Where       | What another bundle can do                                                                                                                                                                                                                                                    | Used by                           |
-| ------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `chat.views/v1`    | client      | `registerProjector` for event types the built-in projection does not claim, `registerRenderer` for the element of a block type, `registerFenceRenderer`, and `registerToolRenderer`/`registerInputRenderer` for the drawing of a tool's calls or of an input source's prompts | `openui`, `papercraft`, `threads` |
-| `chat.hooks/v1`    | client      | observe `onMountHook`, `onUnmountHook`, `onSandboxActivityHook` and `onThreadUpdateHook`; transform `onBeforeRenderBlockHook`                                                                                                                                                 | `files`, `notifications`          |
-| `chat.composer/v1` | desktopMain | read and watch a Thread's draft, add or remove stack items, and `registerFlush` for the comment kind it owns                                                                                                                                                                  | `papercraft`                      |
-| `chat.send/v1`     | client      | send a Thread's held draft now, exactly as the composer does; `sendAction` sends a control's text                                                                                                                                                                             | `openui`, `papercraft`            |
-| `chat.lexical/v1`  | client      | add Lexical nodes and extensions to the conversation editor                                                                                                                                                                                                                   | none outside chat today           |
+| Contract           | Where       | What another bundle can do                                                                                                                                                                                                                                                    | Used by                                                           |
+| ------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `chat.views/v1`    | client      | `registerProjector` for event types the built-in projection does not claim, `registerRenderer` for the element of a block type, `registerFenceRenderer`, and `registerToolRenderer`/`registerInputRenderer` for the drawing of a tool's calls or of an input source's prompts | `openui`, `papercraft`, `threads`, `files`, `default`, `terminal` |
+| `chat.hooks/v1`    | client      | observe `onMountHook`, `onUnmountHook`, `onSandboxActivityHook` and `onThreadUpdateHook`; transform `onBeforeRenderBlockHook`                                                                                                                                                 | `files`, `notifications`                                          |
+| `chat.composer/v1` | desktopMain | read and watch a Thread's draft, add or remove stack items, and `registerFlush` for the comment kind it owns                                                                                                                                                                  | `papercraft`                                                      |
+| `chat.send/v1`     | client      | send a Thread's held draft now, exactly as the composer does; `sendAction` sends a control's text                                                                                                                                                                             | `openui`, `papercraft`                                            |
+| `chat.lexical/v1`  | client      | add Lexical nodes and extensions to the conversation editor                                                                                                                                                                                                                   | none outside chat today                                           |
 
 - `chat.views/v1` 1.1.0 adds `registerFenceRenderer({ tag, elementTag })`: while
   it lives, every fence of `tag` in an agent turn becomes one `elementTag`
@@ -158,10 +161,10 @@ batch.
     has not defined fails with `invalid_input`. A registration that arrives or
     is disposed while a transcript is shown redraws it at once, and disposing
     disposes its elements through `ui/v1`.
-  - Without a registration a tool call is the chat's own drawing, which for
-    any name it does not draw itself is the generic row inside the activity
-    group, closed by default; an input is the chat's own drawing of its
-    source.
+  - Without a registration a tool call is the generic row inside the
+    activity group, closed by default: since 1.10.4 the chat has no built-in
+    drawing or placement for any tool name. An input is the chat's own
+    drawing of its source, or its plain text when it has none.
 - `chat.send/v1` 1.1.0 adds `sendAction({ projectId, threadId, program, text })`:
   the text (at most 16,000 UTF-16 code units) goes in a
   `<ui-action program="…">` envelope by the composer's route for a typed
@@ -211,8 +214,9 @@ desktop part, as Papercraft does.
   `comments.added/v1`, `comments.resolved/v1`, `runtime.prompt-finished/v1`,
   `workspace.hooks/v1`, `settings.models/v1` and `workspace.selection/v1`
   (from 1.9.0, for the execution picker; from 1.9.1, for the conversation
-  too), and `terminal/v1` or `runtime.terminals/v1` for live terminal output.
-  Without them the conversation still works.
+  too). Without them the conversation still works. From 1.10.4 the chat lists
+  neither `terminal/v1` nor `runtime.terminals/v1`: the `terminal` bundle
+  draws a terminal's live output in its own row.
 - **Platform:** chat 1.10.0 needs platform `^1.10.0`, for
   `desktop/ui/collapsible-block`, the transcript's folding block and its
   generic open/closed rule.
