@@ -1,17 +1,25 @@
 import { sandboxWrites } from './projector.js';
 import type { ThreadChats } from './thread-chats.js';
 
+export interface SandboxChangeOptions {
+  /** Count newly finished sandbox-writing tool calls (`chat.hooks/v1`). Default `true`. */
+  readonly toolCalls?: boolean;
+}
+
 /**
  * Projects changed by newly observed tool completions or Thread lifecycle
- * changes. A Thread that starts running (a prompt starting) changes nothing in
- * the sandbox yet, and a refresh then would compete with the prompt for the
- * host and the sandbox, so only its other state changes count: the prompt
- * finishing, or failing, still refreshes the Project.
+ * changes; with `toolCalls: false`, by the lifecycle changes only. A Thread
+ * that starts running (a prompt starting) changes nothing in the sandbox yet,
+ * and a refresh then would compete with the prompt for the host and the
+ * sandbox, so only its other state changes count: the prompt finishing, or
+ * failing, still refreshes the Project.
  */
 export function changedSandboxProjects(
   previous: ThreadChats,
   next: ThreadChats,
+  options?: SandboxChangeOptions,
 ): ReadonlySet<string> {
+  const toolCalls = options?.toolCalls ?? true;
   const projects = new Set<string>();
   for (const [id, chat] of next.chats) {
     const before = previous.chats.get(id);
@@ -24,7 +32,7 @@ export function changedSandboxProjects(
       projects.add(chat.thread.projectId);
       continue;
     }
-    if (before.projection === chat.projection) continue;
+    if (!toolCalls || before.projection === chat.projection) continue;
     const sequence = before.projection.events.at(-1)?.sequence ?? 0;
     const events = chat.projection.events;
     let start = events.length;

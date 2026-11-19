@@ -657,7 +657,7 @@ describe('T5.4 an unregistered tool', () => {
 
 // Bundle isolation 5(b) change 4: `terminal` draws live terminal output, so
 // the chat reads neither `terminal/v1` nor `runtime.terminals/v1`.
-test('the chat manifest is 1.10.4 on platform ^1.10.0, provides chat.views/v1@1.2.0 and takes no terminal contract', () => {
+test('the chat manifest is 1.11.0 on platform ^1.10.0, provides chat.views/v1@1.2.0 and takes no terminal contract', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as {
@@ -667,7 +667,7 @@ test('the chat manifest is 1.10.4 on platform ^1.10.0, provides chat.views/v1@1.
     readonly requires: readonly string[];
     readonly optional: readonly string[];
   };
-  assert.equal(manifest.version, '1.10.4');
+  assert.equal(manifest.version, '1.11.0');
   assert.deepEqual(
     [...manifest.requires, ...manifest.optional].filter(
       (entry) =>
@@ -679,5 +679,18 @@ test('the chat manifest is 1.10.4 on platform ^1.10.0, provides chat.views/v1@1.
   assert.ok(
     manifest.provides.includes('chat.views/v1@1.2.0'),
     manifest.provides.join(', '),
+  );
+});
+
+// Bundle isolation 5(c) change 1: `chat.hooks/v2` appears beside
+// `chat.hooks/v1`, which keeps its version until change 6 removes it.
+test('the chat manifest provides chat.hooks/v2@2.0.0 beside chat.hooks/v1@1.1.0', () => {
+  const manifest = JSON.parse(
+    readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
+  ) as { readonly provides: readonly string[] };
+
+  assert.deepEqual(
+    manifest.provides.filter((entry) => entry.startsWith('chat.hooks/')),
+    ['chat.hooks/v1@1.1.0', 'chat.hooks/v2@2.0.0'],
   );
 });

@@ -53,8 +53,9 @@ for how bundles work.
     another bundle's block element;
   - `<chat-block>`, the fallback for a block no renderer claims: its type, id,
     time and payload as JSON.
-- **Contracts:** `chat.views/v1`, `chat.lexical/v1`, `chat.hooks/v1` and
-  `chat.send/v1` (client), and `chat.composer/v1` (desktopMain).
+- **Contracts:** `chat.views/v1`, `chat.lexical/v1`, `chat.hooks/v1`,
+  `chat.hooks/v2` and `chat.send/v1` (client), and `chat.composer/v1`
+  (desktopMain).
 - **Block type:** `chat.delegated-input/v1`, another Thread's instruction or
   result, which the `threads` bundle draws.
 
@@ -120,6 +121,7 @@ batch.
 | ------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `chat.views/v1`    | client      | `registerProjector` for event types the built-in projection does not claim, `registerRenderer` for the element of a block type, `registerFenceRenderer`, and `registerToolRenderer`/`registerInputRenderer` for the drawing of a tool's calls or of an input source's prompts | `openui`, `papercraft`, `threads`, `files`, `default`, `terminal` |
 | `chat.hooks/v1`    | client      | observe `onMountHook`, `onUnmountHook`, `onSandboxActivityHook` and `onThreadUpdateHook`; transform `onBeforeRenderBlockHook`                                                                                                                                                 | `files`, `notifications`                                          |
+| `chat.hooks/v2`    | client      | observe `onMountHook`, `onUnmountHook`, `onSandboxActivityHook` and `onThreadUpdateHook`; transform `onBeforeRenderBlockHook`                                                                                                                                                 | none outside chat today                                           |
 | `chat.composer/v1` | desktopMain | read and watch a Thread's draft, add or remove stack items, and `registerFlush` for the comment kind it owns                                                                                                                                                                  | `papercraft`                                                      |
 | `chat.send/v1`     | client      | send a Thread's held draft now, exactly as the composer does; `sendAction` sends a control's text                                                                                                                                                                             | `openui`, `papercraft`                                            |
 | `chat.lexical/v1`  | client      | add Lexical nodes and extensions to the conversation editor                                                                                                                                                                                                                   | none outside chat today                                           |
@@ -177,6 +179,13 @@ batch.
   created; later registrations fail with `frozen`.
 - `onThreadUpdateHook` reports every live event of a held Thread as it arrives,
   before the 100 ms flush, and every `updated` record; chat does not await it.
+- `chat.hooks/v2` 2.0.0 has the hooks of `chat.hooks/v1` 1.1.0 with the same
+  inputs. Its `onSandboxActivityHook` fires when the chat starts to hold a
+  Thread, when a held Thread's working directory changes, or when its state
+  changes to anything but `running`, and not after a finished tool call: a
+  bundle that wants a refresh after its own tool observes `onThreadUpdateHook`.
+  `chat.hooks/v1` also fires it after a finished `edit`, `write`, `terminal` or
+  `git` call, and leaves in a later change of step 5(c).
 - A card inside the conversation can dispatch a `chat:intent` DOM event; chat
   runs it as `commands/v1.execute(command, input)` and shows a failure as an
   error toast with the id `chat-intent-<command>`, so repeated failures replace

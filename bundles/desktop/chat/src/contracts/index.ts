@@ -371,6 +371,29 @@ const threadRef = z
   .object({ projectId: z.string(), threadId: z.string() })
   .strict();
 
+const sandboxActivityInput = z.object({ projectId: z.string() }).strict();
+
+const threadUpdateInput = z
+  .object({
+    projectId: z.string(),
+    threadId: z.string(),
+    threadName: z.string(),
+    update: z.custom<ThreadUpdateNotice>(
+      (value) =>
+        typeof value === 'object' &&
+        value !== null &&
+        ((value as { kind?: unknown }).kind === 'event' ||
+          (value as { kind?: unknown }).kind === 'updated'),
+      { message: 'Expected an event or an updated record.' },
+    ),
+  })
+  .strict();
+
+/**
+ * @deprecated Use `ChatHooksV2`. 1.1.0: `onSandboxActivityHook` also fires
+ * after a finished `edit`, `write`, `terminal` or `git` call. Removed in
+ * bundle isolation step 5(c).
+ */
 export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
   onMountHook: defineHook({ kind: 'observe', input: threadRef }),
   onUnmountHook: defineHook({ kind: 'observe', input: threadRef }),
@@ -381,7 +404,7 @@ export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
   /** D9-10: a held conversation saw a sandbox-writing tool or lifecycle change. */
   onSandboxActivityHook: defineHook({
     kind: 'observe',
-    input: z.object({ projectId: z.string() }).strict(),
+    input: sandboxActivityInput,
   }),
   /**
    * 1.1.0 (R-9.6): every live event of a held Thread as it is received
@@ -390,21 +413,42 @@ export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
    */
   onThreadUpdateHook: defineHook({
     kind: 'observe',
-    input: z
-      .object({
-        projectId: z.string(),
-        threadId: z.string(),
-        threadName: z.string(),
-        update: z.custom<ThreadUpdateNotice>(
-          (value) =>
-            typeof value === 'object' &&
-            value !== null &&
-            ((value as { kind?: unknown }).kind === 'event' ||
-              (value as { kind?: unknown }).kind === 'updated'),
-          { message: 'Expected an event or an updated record.' },
-        ),
-      })
-      .strict(),
+    input: threadUpdateInput,
+  }),
+});
+
+/**
+ * 2.0.0 (U27, D12): the hooks of `chat.hooks/v1` 1.1.0, with the same names,
+ * kinds and inputs. Only `onSandboxActivityHook` differs, in when it fires.
+ */
+export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
+  /** A conversation opened on a Thread. */
+  onMountHook: defineHook({ kind: 'observe', input: threadRef }),
+  /** A conversation closed or moved to another Thread. */
+  onUnmountHook: defineHook({ kind: 'observe', input: threadRef }),
+  /** A block before it is drawn: its data and its actions. */
+  onBeforeRenderBlockHook: defineHook({
+    kind: 'transform',
+    input: renderBlockSchema,
+  }),
+  /**
+   * The Project of a Thread the chat starts to hold, whose working directory
+   * changes, or whose state changes to anything but `running`; once per
+   * Project per store change. Never after a finished tool call: the owner of a
+   * tool observes `onThreadUpdateHook` for that.
+   */
+  onSandboxActivityHook: defineHook({
+    kind: 'observe',
+    input: sandboxActivityInput,
+  }),
+  /**
+   * Every live event of a held Thread as it is received (before the 100 ms
+   * flush; never a snapshot or history), and every `updated` record. Chat does
+   * not await it.
+   */
+  onThreadUpdateHook: defineHook({
+    kind: 'observe',
+    input: threadUpdateInput,
   }),
 });
 
