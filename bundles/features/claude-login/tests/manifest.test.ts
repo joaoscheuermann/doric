@@ -2,7 +2,9 @@
 // sign-in (bundle isolation 6(a), O10): a minor, 1.1.0, that defines its
 // element through `ui/v1` and adds its item through `regions/v1`, and asks for
 // the desktop app of platform 1.7.0 or later (`desktop/ui/error-notice`).
-// What it provides and requires of the host stays as it was.
+// What it provides and requires of the host stays as it was. The patch 1.1.1
+// (6(a) follow-up, OD48) tells a sign-in that finishes after its element is
+// gone apart from a success.
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -26,10 +28,10 @@ const manifest = async (): Promise<Manifest> =>
     ),
   ) as Manifest;
 
-test('claude-login ships its client part as 1.1.0 and asks for platform ^1.7.0', async () => {
+test('claude-login ships its client part as 1.1.0, then the patch 1.1.1, and asks for platform ^1.7.0', async () => {
   const { version, engines } = await manifest();
 
-  assert.equal(version, '1.1.0');
+  assert.equal(version, '1.1.1');
   assert.equal(engines.doric, '^1.7.0');
 });
 

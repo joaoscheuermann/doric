@@ -968,7 +968,7 @@ test('T6.3-14: a ready view carries exactly the keys of its type, and so do its 
   watch.dispose();
 });
 
-test('T6.3-15, AC6.4: the settings manifest is 1.12.1, "The settings window.", provides settings.models/v1@1.0.0, requires no runtime.threads/v1 and asks for platform ^1.9.0', async () => {
+test('T6.3-15, AC6.4: the settings manifest is 1.12.2, "The settings window.", provides settings.models/v1@1.0.0, requires no runtime.threads/v1 and asks for platform ^1.9.0', async () => {
   const manifest = JSON.parse(
     await readFile(
       resolve(
@@ -986,7 +986,7 @@ test('T6.3-15, AC6.4: the settings manifest is 1.12.1, "The settings window.", p
     readonly engines: { readonly doric: string };
   };
 
-  assert.equal(manifest.version, '1.12.1');
+  assert.equal(manifest.version, '1.12.2');
   assert.equal(manifest.description, 'The settings window.');
   assert.ok(
     manifest.provides.includes('settings.models/v1@1.0.0'),

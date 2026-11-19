@@ -17,22 +17,24 @@ const answerOf = (event: Event): string | undefined => {
   return typeof detail?.value === 'string' ? detail.value : undefined;
 };
 
-/** Creates `tag` through `ui` with `{ view }`, sets `view` on change, hands each `settings-provider-field` value to `onAnswer` (stopping the event at its frame), disposes on unmount. A failed creation is logged and draws nothing. */
+/** Creates `tag` through `ui` with `{ view }`, sets `view` on change, hands each `settings-provider-field` value to `onAnswer` (stopping the event at its frame), disposes on unmount. A failed creation is logged, draws nothing and calls `onFailure`, so the page can draw the field itself. */
 export function ProviderFieldElement({
   ui,
   tag,
   view,
   onAnswer,
+  onFailure,
 }: {
   readonly ui: Ui;
   readonly tag: string;
   readonly view: ProviderFieldView;
   readonly onAnswer: (value: string) => void;
+  readonly onFailure: () => void;
 }): JSX.Element {
   const frame = useRef<HTMLDivElement>(null);
   const created = useRef<FieldHost | null>(null);
-  const latest = useRef({ view, onAnswer });
-  latest.current = { view, onAnswer };
+  const latest = useRef({ view, onAnswer, onFailure });
+  latest.current = { view, onAnswer, onFailure };
 
   useEffect(() => {
     const host = frame.current;
@@ -42,6 +44,7 @@ export function ProviderFieldElement({
       element = ui.create(tag, { view: latest.current.view }) as FieldHost;
     } catch (error) {
       console.error(`Doric: the element <${tag}> could not be created:`, error);
+      latest.current.onFailure();
       return;
     }
     if (element.view !== latest.current.view)

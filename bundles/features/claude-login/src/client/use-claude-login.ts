@@ -1,7 +1,7 @@
 import { errorInfo } from 'desktop/reads';
 import { toastError } from 'desktop/ui/error-notice';
 import { toast } from 'desktop/ui/sonner';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { CredentialDescription } from '../contracts/index.js';
 import type { ClaudeLoginApi } from './api.js';
@@ -30,7 +30,10 @@ export interface ClaudeLogin {
  * `claude-login` after dismissing a failure; a failure toasts under
  * `claude-login-failed`, except a failure of this hook's own signal, which is
  * the cancel it asked for and stays silent. `onSignedIn` runs with the
- * answered credential before the success toast.
+ * answered credential before the success toast. A sign-in that finishes after
+ * the hook's component is gone runs no `onSignedIn` and toasts no success: it
+ * toasts the info `claude-login-finished` instead, so the stored login is not
+ * lost silently.
  */
 export const useClaudeLogin = (
   api: ClaudeLoginApi,
@@ -42,6 +45,14 @@ export const useClaudeLogin = (
   const inFlight = useRef<AbortController | undefined>(undefined);
   const latest = useRef({ api, onSignedIn });
   latest.current = { api, onSignedIn };
+  /** Whether the component is still mounted, so a finish has someone to answer. */
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const start = useCallback((): void => {
     const controller = new AbortController();
@@ -60,8 +71,15 @@ export const useClaudeLogin = (
           // that did not open is one click away rather than a failure.
         }
         const signed = await api.finish({ signal });
-        latest.current.onSignedIn(signed);
         toast.dismiss('claude-login-failed');
+        if (!mounted.current) {
+          toast.info(
+            'Claude sign-in finished; open the provider page again to use it.',
+            { id: 'claude-login-finished' },
+          );
+          return;
+        }
+        latest.current.onSignedIn(signed);
         toast.success('Claude is signed in.', { id: 'claude-login' });
       } catch (error) {
         // A refusal of this hook's own cancel is the cancel it asked for.

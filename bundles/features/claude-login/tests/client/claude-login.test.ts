@@ -297,6 +297,45 @@ describe('the claude-login-field element, mounted alone', () => {
     assert.ok(toasts?.ids().includes('claude-login'), 'no claude-login toast');
   });
 
+  test('a sign-in that finishes after its element is disposed answers nothing, shows no success and toasts the info claude-login-finished (OD48)', async () => {
+    const held: { release?: () => void } = {};
+    // The host finishes when the test lets it, whatever became of the element.
+    const field = await mountField(
+      signInServices(
+        () =>
+          new Promise<CredentialDescription>((resolve) => {
+            held.release = () => resolve(signedIn);
+          }),
+      ).services,
+    );
+
+    buttonOf(field.element, 'Sign in with Claude')?.click();
+    await settle();
+    const { release } = held;
+    assert.ok(release !== undefined, 'The sign-in never waited on finish.');
+
+    field.cleanup();
+    await settle();
+    release();
+    await settle(50);
+
+    assert.deepEqual(field.answers, [], 'A gone element answered the page.');
+    assert.ok(
+      !(toasts?.ids() ?? []).includes('claude-login'),
+      'A sign-in nothing can use toasts a success.',
+    );
+    assert.doesNotMatch(toastText(), /Claude is signed in\./);
+    assert.ok(
+      (toasts?.ids() ?? []).includes('claude-login-finished'),
+      `no claude-login-finished toast: ${(toasts?.ids() ?? []).join(', ')}`,
+    );
+    assert.match(
+      toastText(),
+      /Claude sign-in finished; open the provider page again to use it/,
+    );
+    assert.deepEqual(toasts?.surfaces(), [], 'The info toasts a failure.');
+  });
+
   test('a sign-in the authorization refuses toasts as claude-login-failed, titled "Sign-in failed" with its own message (T-38)', async () => {
     const field = await mountField(
       signInServices(async () => {

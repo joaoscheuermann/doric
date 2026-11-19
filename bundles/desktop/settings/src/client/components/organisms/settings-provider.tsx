@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from 'desktop/ui/select';
 import { AlertCircleIcon, ChevronRightIcon } from 'lucide-react';
+import { useState } from 'react';
 
 import type { ProviderFieldItemProps } from '../../../contracts/index.js';
 import {
@@ -218,13 +219,17 @@ export function SettingsProviderScreen({
   // An item of another bundle stands in for a field of this kind: its element
   // is drawn in the field's place with the field's `view`, and its answer is
   // the field's value. While a drawn item shows a problem, that problem stands
-  // in for the page's issue (O2).
+  // in for the page's issue (O2). An item whose element cannot be created
+  // leaves its field to the page, as if it were not there.
+  const [failedTags, setFailedTags] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const items =
     fieldItems === undefined || kind === undefined
       ? []
       : kind.fields.flatMap((field) => {
           const entry = fieldEntryFor(fieldItems.entries, kind.id, field.key);
-          return entry === undefined
+          return entry === undefined || failedTags.has(entry.tag)
             ? []
             : [
                 {
@@ -260,6 +265,9 @@ export function SettingsProviderScreen({
         tag={item.entry.tag}
         view={item.view}
         onAnswer={(value) => fieldItems.onAnswer(item.entry.props, value)}
+        onFailure={() =>
+          setFailedTags((failed) => new Set(failed).add(item.entry.tag))
+        }
       />
     );
   };

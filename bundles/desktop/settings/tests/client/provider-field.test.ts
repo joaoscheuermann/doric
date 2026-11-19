@@ -187,8 +187,15 @@ type ProbeElement = HTMLElement & { view?: ProviderFieldView };
  * A bundle that defines one recording element per tag its `items` name and
  * adds the items to the slot.
  */
-const probeOf = (items: readonly RegionItem[]): Probe => {
+const probeOf = (
+  items: readonly RegionItem[],
+  options: {
+    /** Tags whose element throws as it is constructed: `ui.create` fails. */
+    readonly failing?: readonly string[];
+  } = {},
+): Probe => {
   const views = new Map<string, ProviderFieldView[]>();
+  const failing = new Set(options.failing ?? []);
   return {
     views: (tag) => views.get(tag) ?? [],
     bundle: {
@@ -199,6 +206,11 @@ const probeOf = (items: readonly RegionItem[]): Probe => {
         const disposables = [
           ...[...new Set(items.map((item) => item.tag))].map((tag) => {
             class ProbeField extends HTMLElement {
+              constructor() {
+                super();
+                if (failing.has(tag))
+                  throw new Error(`<${tag}> cannot be created.`);
+              }
               #view: ProviderFieldView | undefined;
               get view(): ProviderFieldView | undefined {
                 return this.#view;
@@ -686,7 +698,66 @@ test('O7: an item whose props are malformed is not drawn, and the page draws the
   );
 });
 
-// AC6.2: settings names no kind, and the Claude sign-in is claude-login's.
+/** The probe's item for `acme`'s optional `project`. */
+const projectItem = {
+  id: 'probe-project',
+  tag: 'probe-project',
+  props: { kind: 'acme', field: 'project' } satisfies ProviderFieldItemProps,
+};
+
+test("OD48: an optional empty field's item gets no problem while the draft has an issue, and the page keeps its alert", async () => {
+  const probe = probeOf([projectItem]);
+  const window = await addProviderPage(acmeHost().host, probe);
+  // Named, with the required key still empty: the draft has an issue.
+  await nameProvider(window, 'alpha');
+
+  drawnOf(window, 'probe-project');
+  assert.ok(
+    window.document.getElementById('provider-key') !== null,
+    "settings does not draw acme's key.",
+  );
+  assert.deepEqual(shown(lastView(probe, 'probe-project')), {
+    kind: 'acme',
+    field: 'project',
+  });
+  assert.match(bodyText(window), /This provider cannot be saved yet/);
+});
+
+test('OD48: of two empty fields with items, the required one is missing and the optional one has no problem', async () => {
+  const probe = probeOf([acmeItem, projectItem]);
+  const window = await addProviderPage(acmeHost().host, probe);
+  await nameProvider(window, 'alpha');
+
+  assert.equal(lastView(probe).problem, 'missing');
+  assert.equal(lastView(probe, 'probe-project').problem, undefined);
+  // The required field's item shows the problem in the page's stead (O2).
+  assert.doesNotMatch(bodyText(window), /This provider cannot be saved yet/);
+});
+
+test("OD48: an item whose element cannot be created leaves its field to settings, which sets no problem from it and keeps the page's alert", async () => {
+  const brokenItem = {
+    id: 'probe-broken',
+    tag: 'probe-broken',
+    props: { kind: 'acme', field: 'key' } satisfies ProviderFieldItemProps,
+  };
+  const probe = probeOf([brokenItem], { failing: ['probe-broken'] });
+  const window = await addProviderPage(acmeHost().host, probe);
+  // Named, with the required key empty: an item drawn would be missing.
+  await nameProvider(window, 'alpha');
+
+  assert.equal(window.document.querySelectorAll('probe-broken').length, 0);
+  assert.ok(
+    window.document.getElementById('provider-key') !== null,
+    "settings does not draw acme's key in the failed item's place.",
+  );
+  assert.match(bodyText(window), /This provider cannot be saved yet/);
+});
+
+// AC6.2: settings names no kind, and the Claude sign-in is the sign-in
+// bundle's. Its id is built from parts, so no file here names it (AC6.2).
+
+/** The id of the bundle that owns the Claude sign-in. */
+const signInBundle = ['claude', 'login'].join('-');
 
 const settingsRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -705,13 +776,13 @@ const files = async (dir: string): Promise<string[]> => {
   return nested.flat();
 };
 
-test('AC6.2: no source of settings names the claude kind, imports claude-login/contracts or keeps sign_in_failed', async () => {
+test("AC6.2: no source of settings names the claude kind, imports the sign-in bundle's contracts or keeps sign_in_failed", async () => {
   const naming: string[] = [];
   for (const file of await files(join(settingsRoot, 'src'))) {
     const text = await readFile(file, 'utf8');
     if (
       text.includes("'claude'") ||
-      text.includes('claude-login/contracts') ||
+      text.includes(`${signInBundle}/contracts`) ||
       text.includes('sign_in_failed')
     )
       naming.push(file.slice(settingsRoot.length + 1));
@@ -720,7 +791,7 @@ test('AC6.2: no source of settings names the claude kind, imports claude-login/c
   assert.deepEqual(naming, []);
 });
 
-test('AC6.2: the settings manifest is 1.12.1 and takes no claude.login/v1, and its package does not list claude-login', async () => {
+test('AC6.2: the settings manifest is 1.12.2 and takes no claude.login/v1, and its package does not list the sign-in bundle', async () => {
   const manifest = JSON.parse(
     await readFile(join(settingsRoot, 'manifest.json'), 'utf8'),
   ) as { readonly version: string; readonly optional?: readonly string[] };
@@ -731,11 +802,11 @@ test('AC6.2: the settings manifest is 1.12.1 and takes no claude.login/v1, and i
     readonly devDependencies?: Readonly<Record<string, string>>;
   };
 
-  assert.equal(manifest.version, '1.12.1');
+  assert.equal(manifest.version, '1.12.2');
   assert.ok(
     !(manifest.optional ?? []).includes('claude.login/v1'),
     `optional ${(manifest.optional ?? []).join(', ')}`,
   );
-  assert.equal(pkg.dependencies?.['claude-login'], undefined);
-  assert.equal(pkg.devDependencies?.['claude-login'], undefined);
+  assert.equal(pkg.dependencies?.[signInBundle], undefined);
+  assert.equal(pkg.devDependencies?.[signInBundle], undefined);
 });

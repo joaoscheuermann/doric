@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "claude-login",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "engines": { "doric": "^1.7.0" },
   "description": "The in-app Claude Code sign-in: reuse an existing login or open a fresh browser authorization, stored as the 'Claude' API token credential.",
   "provides": ["claude.login/v1@1.0.0"],
