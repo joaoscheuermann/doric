@@ -655,15 +655,26 @@ describe('T5.4 an unregistered tool', () => {
   });
 });
 
-test('the chat manifest is 1.10.3 on platform ^1.10.0 and provides chat.views/v1@1.2.0', () => {
+// Bundle isolation 5(b) change 4: `terminal` draws live terminal output, so
+// the chat reads neither `terminal/v1` nor `runtime.terminals/v1`.
+test('the chat manifest is 1.10.4 on platform ^1.10.0, provides chat.views/v1@1.2.0 and takes no terminal contract', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/desktop/chat/manifest.json', 'utf8'),
   ) as {
     readonly version: string;
     readonly engines: { readonly doric: string };
     readonly provides: readonly string[];
+    readonly requires: readonly string[];
+    readonly optional: readonly string[];
   };
-  assert.equal(manifest.version, '1.10.3');
+  assert.equal(manifest.version, '1.10.4');
+  assert.deepEqual(
+    [...manifest.requires, ...manifest.optional].filter(
+      (entry) =>
+        entry.startsWith('terminal/') || entry.startsWith('runtime.terminals/'),
+    ),
+    [],
+  );
   assert.equal(manifest.engines.doric, '^1.10.0');
   assert.ok(
     manifest.provides.includes('chat.views/v1@1.2.0'),

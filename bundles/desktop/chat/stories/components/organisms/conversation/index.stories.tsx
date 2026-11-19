@@ -7,8 +7,6 @@ import type {
 } from '../../../../src/client/domain/workspace.js';
 import {
   idleThread,
-  liveOutput,
-  liveTerminal,
   promptIdOf,
   queueEditOf,
   redesignDraft,
@@ -42,7 +40,6 @@ const conversation = (
 const runningHost: StoryHost = {
   queues: { [redesignThread.id]: redesignQueue },
   drafts: { [redesignThread.id]: redesignDraft },
-  terminals: [{ terminal: liveTerminal, output: liveOutput }],
 };
 
 /** The full Thread's first two prompts, settled. */

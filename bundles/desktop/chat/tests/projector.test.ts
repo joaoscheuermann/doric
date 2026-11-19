@@ -14,6 +14,7 @@ import {
   type ToolTurn,
   type Turn,
 } from '../src/client/domain/projector.js';
+import { fromTerminal } from '../src/client/domain/projector-input.js';
 import type { ThreadEvent } from '../src/client/domain/workspace.js';
 
 const event = (
@@ -171,42 +172,47 @@ describe('thread event projection', () => {
     assert.equal(textOf(turn), '');
   });
 
-  test("carries a background terminal result as the turn's own block", () => {
+  // Bundle isolation 5(b) change 4 (OD-7, S-5): the chat no longer reads the
+  // host's frame of a background terminal's result; `terminal` draws it from
+  // the input. A terminal prompt keeps its source and its text, framed or
+  // not, and `fromTerminal` tells it from the reader's own.
+  test('carries a background terminal result as its input, with its own text, and not as the reader’s turn', () => {
+    const text = [
+      '# Background terminal result',
+      '',
+      'Terminal: terminal-3f8a',
+      'Originating prompt: prompt-9',
+      'Command: npm test',
+      'Exit code: 3',
+      'Reason: exited',
+      'Duration: 1940 ms',
+      '',
+      '## Standard output (last 12000 characters)',
+      '',
+      'ok',
+      '',
+      '## Standard error (last 12000 characters)',
+      '',
+    ].join('\n');
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', {
         type: 'prompt.accepted',
-        text: [
-          '# Background terminal result',
-          '',
-          'Terminal: terminal-3f8a',
-          'Originating prompt: prompt-9',
-          'Command: npm test',
-          'Exit code: 3',
-          'Reason: exited',
-          'Duration: 1940 ms',
-          '',
-          '## Standard output (last 12000 characters)',
-          '',
-          'ok',
-          '',
-          '## Standard error (last 12000 characters)',
-          '',
-        ].join('\n'),
+        text,
         source: { kind: 'terminal', terminalId: 'terminal-3f8a' },
       }),
     ]);
 
     const turn = projection.turns[0];
-    const terminal = turn?.type === 'user' ? turn.terminal : undefined;
-    assert.equal(terminal?.terminalId, 'terminal-3f8a');
-    assert.equal(terminal?.command, 'npm test');
-    assert.equal(terminal?.exitCode, 3);
-    assert.equal(terminal?.stdout, 'ok');
-    assert.equal(terminal?.stderr, '');
-    assert.equal(textOf(turn), '');
+    assert.equal(turn?.type, 'user');
+    assert.deepEqual(turn?.type === 'user' ? turn.input : undefined, {
+      source: { kind: 'terminal', terminalId: 'terminal-3f8a' },
+      text,
+    });
+    assert.equal(textOf(turn), text);
+    assert.equal(turn !== undefined && fromTerminal(turn), true);
   });
 
-  test('shows a terminal prompt the host did not frame as its own text', () => {
+  test('carries a terminal prompt the host did not frame the same way, as its input and its own text', () => {
     const projection = projectEvents(emptyProjection, [
       event(1, 'one', {
         type: 'prompt.accepted',
@@ -216,8 +222,36 @@ describe('thread event projection', () => {
     ]);
 
     const turn = projection.turns[0];
-    assert.equal(turn?.type === 'user' ? turn.terminal : 'x', undefined);
+    assert.deepEqual(turn?.type === 'user' ? turn.input : undefined, {
+      source: { kind: 'terminal', terminalId: 'terminal-3f8a' },
+      text: 'output without the host header',
+    });
     assert.equal(textOf(turn), 'output without the host header');
+    assert.equal(turn !== undefined && fromTerminal(turn), true);
+  });
+
+  test('tells only a terminal prompt as from a terminal', () => {
+    for (const source of [
+      { kind: 'user' },
+      { kind: 'parent', threadId: 'parent-thread' },
+      { kind: 'bundle', bundleId: 'default', reason: 'coding-workflow' },
+    ]) {
+      const projection = projectEvents(emptyProjection, [
+        event(1, 'one', {
+          type: 'prompt.accepted',
+          text: 'Run the tests',
+          source,
+        }),
+      ]);
+
+      const turn = projection.turns[0];
+      assert.equal(turn?.type, 'user', source.kind);
+      assert.equal(
+        turn !== undefined && fromTerminal(turn),
+        false,
+        source.kind,
+      );
+    }
   });
 
   test('accumulates consecutive reasoning deltas into one thinking turn', () => {

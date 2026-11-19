@@ -5,6 +5,7 @@ import {
   foldComment,
 } from './comment-threads.js';
 import type { ThinkingTurn, Turn, UserTurn } from './projector.js';
+import { fromTerminal } from './projector-input.js';
 
 /** A prompt the reader has sent that the log does not hold yet. */
 export type PendingSend = {
@@ -29,7 +30,7 @@ const ownPromptIds = (turn: Turn): readonly string[] => {
   if (
     turn.type === 'user' &&
     turn.delegated === undefined &&
-    turn.terminal === undefined &&
+    !fromTerminal(turn) &&
     turn.instruction === undefined
   )
     return [turn.promptId];

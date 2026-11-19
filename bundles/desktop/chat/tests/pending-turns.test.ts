@@ -103,19 +103,47 @@ describe('the turns a surface waits for', () => {
     assert.equal(sent?.type === 'user' && sent.accepted, false);
   });
 
+  // Bundle isolation 5(b) change 4 (OD-7): a terminal prompt is told by its
+  // source, as the projector carries it in `input`, framed or not.
   test("draws the words when a background terminal's result is among the log's prompts", () => {
+    const text = [
+      '# Background terminal result',
+      '',
+      'Terminal: t1',
+      'Originating prompt: one',
+      'Command: npm test',
+      'Exit code: 0',
+      'Reason: exited',
+      'Duration: 10 ms',
+      '',
+      '## Standard output (last 12000 characters)',
+      '',
+      '',
+      '## Standard error (last 12000 characters)',
+      '',
+    ].join('\n');
     const result: UserTurn = {
-      ...prompt(''),
+      ...prompt(text),
       promptId: 'terminal',
-      terminal: {
-        terminalId: 't1',
-        promptId: 'one',
-        command: 'npm test',
-        exitCode: 0,
-        reason: 'exited',
-        durationMs: 10,
-        stdout: '',
-        stderr: '',
+      input: { source: { kind: 'terminal', terminalId: 't1' }, text },
+    };
+    const drawn = withPendingTurns([prompt('hi'), answer(), result], {
+      text: 'next',
+      before: 1,
+    });
+
+    const sent = drawn.at(-1);
+    assert.equal(sent?.type === 'user' && sent.text, 'next');
+    assert.equal(sent?.type === 'user' && sent.accepted, false);
+  });
+
+  test('draws the words when a terminal prompt the host did not frame is among the log’s prompts', () => {
+    const result: UserTurn = {
+      ...prompt('output without the host header'),
+      promptId: 'terminal',
+      input: {
+        source: { kind: 'terminal', terminalId: 't1' },
+        text: 'output without the host header',
       },
     };
     const drawn = withPendingTurns([prompt('hi'), answer(), result], {

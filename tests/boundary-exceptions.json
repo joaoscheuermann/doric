@@ -69,13 +69,6 @@
       "target": "runtime",
       "decision": "docs/features/bundle-isolation.md",
       "until": "phase 10"
-    },
-    {
-      "check": "cycles",
-      "bundle": "chat",
-      "target": "terminal",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "step 5(b)"
     }
   ]
 }

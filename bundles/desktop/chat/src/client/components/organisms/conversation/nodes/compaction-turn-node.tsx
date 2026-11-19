@@ -29,7 +29,7 @@ import type { JSX } from 'react/jsx-runtime';
 import { COMPACTION_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import type { CompactionTurn } from '../../../../domain/projector.js';
-import { ConversationThreadContext } from '../../../../hooks/use-live-terminal.js';
+import { ConversationThreadContext } from '../../../../hooks/conversation-thread.js';
 import { ReadonlyMarkdown } from '../readonly-markdown.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 

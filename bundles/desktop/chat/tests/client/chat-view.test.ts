@@ -1455,7 +1455,9 @@ test('a registered renderer draws the delegated input with the read-only Markdow
 
 // Bundle isolation 5(b), OD-9: the standalone block is a probe registered in
 // the test, where it was the chat's built-in `edit` drawing (now `files`').
-test('a call registered standalone stands outside the activity summary while terminal calls fold into the summary with their shell view', async () => {
+// Change 4: the chat no longer draws `terminal` of its own, so the call is
+// the generic row inside the summary (`terminal` registers its element).
+test('a call registered standalone stands outside the activity summary while an unregistered terminal call folds into the summary as a generic row', async () => {
   const { probe, state } = rendererProbe({
     tools: [
       { toolName: 'probe_edit', elementTag: TOOL_ELEMENT, standalone: true },
@@ -1565,9 +1567,9 @@ test('a call registered standalone stands outside the activity summary while ter
 
   // The terminal call is folded inside the activity summary ("Thought once, called 1 tool").
   assert.match(view.textContent ?? '', /Thought once, called 1 tool/);
-  assert.equal(view.querySelector('[data-slot="terminal-tool"]'), null);
+  assert.doesNotMatch(view.textContent ?? '', /Called\s*terminal/);
 
-  // Opening the activity summary reveals the terminal tool card inside it.
+  // Opening the activity summary reveals the terminal call's generic row.
   const triggers = [...view.querySelectorAll<HTMLElement>('button')];
   const summaryButton = triggers.find((button) =>
     button.textContent?.includes('Thought once, called 1 tool'),
@@ -1583,12 +1585,12 @@ test('a call registered standalone stands outside the activity summary while ter
   summaryButton.click();
   await settle(50);
 
-  const terminalTool = view.querySelector('[data-slot="terminal-tool"]');
-  assert.notEqual(terminalTool, null);
+  assert.match(view.textContent ?? '', /Called\s*terminal/);
+  // Not the shell card the chat drew of its own until change 4.
   assert.equal(
-    terminalTool?.querySelector('[data-slot="terminal-command-preview"]')
-      ?.textContent,
-    'npm test',
+    view.querySelector('[data-slot="terminal-tool"]') === null,
+    true,
+    'the chat draws its own terminal card',
   );
 });
 

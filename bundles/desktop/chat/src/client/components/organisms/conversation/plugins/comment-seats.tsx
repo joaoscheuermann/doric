@@ -33,8 +33,8 @@ import {
   seatWantsKey,
   sentSeatWants,
 } from '../../../../domain/comment-seats.js';
+import { ConversationThreadContext } from '../../../../hooks/conversation-thread.js';
 import { useCommentThreads } from '../../../../hooks/use-comment-threads.js';
-import { ConversationThreadContext } from '../../../../hooks/use-live-terminal.js';
 import { composerStackStore } from '../../../../stores/composer-stack.js';
 import { $agentTurns, AgentTurnNode } from '../nodes/agent-turn-node.js';
 import { CommentSeatNode } from '../nodes/comment-seat-node.js';

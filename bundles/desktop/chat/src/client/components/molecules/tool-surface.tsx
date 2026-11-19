@@ -83,7 +83,6 @@ export function ToolSurface({
         chosen={chosen}
         error={error}
         focused={focused}
-        generic={renderers.has(name)}
         name={name}
         onChosenChange={onChosenChange}
         openByDefault={drawing.openByDefault}

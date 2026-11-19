@@ -8,7 +8,6 @@ import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
 import { humanize } from '../../utility/humanize.js';
 import { AttachmentImage } from './attachment-image.js';
-import { TerminalToolItem } from './terminal-tool-item.js';
 
 type ToolItemProps = {
   readonly args: string;
@@ -23,8 +22,6 @@ type ToolItemProps = {
   readonly focused?: boolean;
   /** Whether the settled block stays open until the reader closes it; `toolDrawing`'s answer. */
   readonly openByDefault?: boolean;
-  /** Whether a registration owns the name, so the generic row draws it whatever the name. */
-  readonly generic?: boolean;
 };
 
 /**
@@ -37,27 +34,12 @@ export function ToolItem({
   chosen,
   error,
   focused,
-  generic = false,
   name,
   onChosenChange,
   openByDefault = false,
   result,
   status,
 }: ToolItemProps) {
-  if (!generic && name === 'terminal') {
-    return (
-      <TerminalToolItem
-        args={args}
-        chosen={chosen}
-        error={error}
-        focused={focused}
-        onChosenChange={onChosenChange}
-        result={result}
-        status={status}
-      />
-    );
-  }
-
   const running = status === 'running';
 
   return (

@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "chat",
-  "version": "1.10.3",
+  "version": "1.10.4",
   "engines": {
     "doric": "^1.10.0"
   },
@@ -16,8 +16,6 @@
   ],
   "optional": [
     "history.snapshots/v1",
-    "terminal/v1",
-    "runtime.terminals/v1",
     "models/v1",
     "comments.added/v1",
     "comments.resolved/v1",

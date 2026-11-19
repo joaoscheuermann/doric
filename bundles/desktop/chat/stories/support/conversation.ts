@@ -2,8 +2,7 @@
 // against: one realistic Thread whose durable log covers every kind of turn
 // the transcript draws, small logs for the node stories, and the window state
 // the conversation reads (the opened-Thread store, the queue query, the
-// composer's stack and draft, the Thread records, the live terminals and the
-// queue edit). Every shape is the host's, so the projection, the stores and
+// composer's stack and draft, the Thread records and the queue edit). Every shape is the host's, so the projection, the stores and
 // the nodes read exactly what a window fed by the host would.
 //
 // Nothing here talks to a host: `installStoryHost` hands the chat a set of
@@ -14,10 +13,6 @@ import { QueryClient } from '@tanstack/react-query';
 import { createRecordsApi } from 'runtime/testing';
 
 import { setModelsApi } from '../../src/client/api/model-icons.js';
-import type {
-  ChatTerminalsApi,
-  Terminal,
-} from '../../src/client/api/terminals-contract.js';
 import { READER_NAME } from '../../src/client/domain/conversation-authors.js';
 import {
   emptyProjection,
@@ -31,7 +26,6 @@ import type { Thread, ThreadEvent } from '../../src/client/domain/workspace.js';
 import { queryKeys } from '../../src/client/queries/keys.js';
 import { initChat } from '../../src/client/services/chat-services.js';
 import { setWorkspaceSelection } from '../../src/client/stores/execution-sources.js';
-import { setTerminalServiceApi } from '../../src/client/stores/live-terminals.js';
 import {
   type QueueEdit,
   queueEditStore,
@@ -452,32 +446,6 @@ export const redesignDraft: {
   items: [stackItem(3, 'The total should align with the button baseline', 44)],
 };
 
-/** The terminal the full Thread's running call drives. */
-export const liveTerminal: Terminal = {
-  id: 'terminal-e2e',
-  projectId,
-  threadId: storyThreadIds.redesign,
-  origin: 'agent',
-  command: liveCommand,
-  cwd: '/workspace/storefront',
-  startedAt: '2026-10-16T08:58:10.000Z',
-  timeoutMs: 600_000,
-  state: 'running',
-  pty: false,
-};
-
-/** What the live terminal has printed so far. */
-export const liveOutput = [
-  '> storefront@2.4.0 test:e2e',
-  '> playwright test checkout',
-  '',
-  'Running 6 tests using 3 workers',
-  '  ✓ checkout › pays with a saved card (2.1s)',
-  '  ✓ checkout › shows the summary above the form (1.4s)',
-  '  ✓ checkout › keeps the Pay label readable in dark mode (1.7s)',
-  '',
-].join('\n');
-
 // Node story logs -----------------------------------------------------------
 
 /** One Thread's log as a story builds it. */
@@ -568,23 +536,17 @@ export interface StoryHost {
       { readonly text: string; readonly items: readonly ComposerItem[] }
     >
   >;
-  /** The agent terminals the Project runs, with their output. */
-  readonly terminals?: readonly {
-    readonly terminal: Terminal;
-    readonly output: string;
-  }[];
 }
 
 /**
  * Hands the chat the activation services a story runs on: the connection is
  * up, the queue answers from the fixtures, the composer keeps a draft seeded
- * from them, and every other call is refused. The Thread records, an empty
- * selection and the live terminals are set too.
+ * from them, and every other call is refused. The Thread records and an
+ * empty selection are set too.
  */
 export const installStoryHost = (host: StoryHost = {}): void => {
   const queues = host.queues ?? {};
   const drafts = host.drafts ?? {};
-  const terminals = host.terminals ?? [];
   /**
    * The story's own copy of each Thread's draft, taken from the fixtures the
    * first time it is read, so a story's writes never reach the fixtures nor
@@ -725,35 +687,6 @@ export const installStoryHost = (host: StoryHost = {}): void => {
   setModelsApi(storyModels);
 
   setWorkspaceSelection({ current: () => ({}), subscribe: () => disposable });
-
-  const api: ChatTerminalsApi = {
-    snapshot: (terminalId) => {
-      const held = terminals.find(({ terminal }) => terminal.id === terminalId);
-      return Promise.resolve(
-        held === undefined
-          ? undefined
-          : {
-              terminal: held.terminal,
-              output: held.output,
-              offset: held.output.length,
-              truncated: false,
-            },
-      );
-    },
-    stop: () => Promise.resolve(false),
-    watchProject: (id, listener) => {
-      const next = typeof listener === 'function' ? listener : listener.next;
-      next({
-        kind: 'snapshot',
-        projectId: id,
-        terminals: terminals
-          .map(({ terminal }) => terminal)
-          .filter((terminal) => terminal.projectId === id),
-      });
-      return disposable;
-    },
-  };
-  setTerminalServiceApi(api);
 };
 
 /**

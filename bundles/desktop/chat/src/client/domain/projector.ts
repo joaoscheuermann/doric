@@ -23,7 +23,6 @@ import { type PromptExecution, readExecution } from './projector-execution.js';
 import { type PromptInput, readInput } from './projector-input.js';
 import { type LifecycleEvent, pauseReason } from './prompt-lifecycle.js';
 import type { QueueItem } from './queue.js';
-import type { TerminalResult } from './terminal-result.js';
 import type { ThreadEvent } from './workspace.js';
 
 export type PromptStatus =
@@ -59,8 +58,8 @@ export type Instruction = {
 export type UserTurn = TurnBase & {
   readonly type: 'user';
   /**
-   * The prompt as written; empty when another Thread or a background terminal
-   * wrote it, since the block reads the input's own fields instead.
+   * The prompt as written; empty when another Thread wrote it, since the block
+   * reads the input's own fields instead.
    */
   readonly text: string;
   readonly accepted: boolean;
@@ -76,12 +75,6 @@ export type UserTurn = TurnBase & {
   readonly instruction?: Instruction;
   /** Set when a control of a UI the agent drew sent this prompt (D20): its program. */
   readonly action?: { readonly program: string };
-  /**
-   * Set when a background terminal wrote this input: the settled command, read
-   * from the prompt the host enqueued, which the transcript draws as its own
-   * block instead of the Markdown the host framed it in.
-   */
-  readonly terminal?: TerminalResult;
   /**
    * Whether the agent has still to do anything about this prompt: the log has
    * accepted it and not moved past it, so a surface can show that it is waiting

@@ -21,7 +21,6 @@ import {
   syncPlan,
 } from '../../../../domain/conversation-sync.js';
 import type { Turn } from '../../../../domain/projector.js';
-import { terminalResultEquals } from '../../../../domain/terminal-result.js';
 import {
   $createActivityTurnNode,
   $isActivityTurnNode,
@@ -86,11 +85,6 @@ import {
   type RepliesTurnNode,
 } from '../nodes/replies-turn-node.js';
 import {
-  $createTerminalResultNode,
-  $isTerminalResultNode,
-  type TerminalResultNode,
-} from '../nodes/terminal-result-node.js';
-import {
   $createThinkingTurnNode,
   $isThinkingTurnNode,
   type ThinkingTurnNode,
@@ -130,7 +124,6 @@ type TurnBlock =
   | QueuedTurnNode
   | UserTurnNode
   | DelegatedTurnNode
-  | TerminalResultNode
   | InputTurnNode
   | AgentTurnNode
   | ThinkingTurnNode
@@ -157,7 +150,6 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isQueuedTurnNode(node) ||
   $isUserTurnNode(node) ||
   $isDelegatedTurnNode(node) ||
-  $isTerminalResultNode(node) ||
   $isInputTurnNode(node) ||
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
@@ -179,19 +171,13 @@ const $createBlock = (
       return new QueuedTurnNode(key, turn.promptId, turn.items);
     case 'user':
       // A bundle that draws the input's source draws it, before the chat's own
-      // drawing of a terminal's answer or another Thread's input (O8).
+      // drawing of another Thread's input (O8).
       if (turn.element !== undefined && turn.input !== undefined)
         return $createInputTurnNode({
           turnKey: key,
           promptId: turn.promptId,
           input: turn.input,
           element: turn.element,
-        });
-      if (turn.terminal !== undefined)
-        return $createTerminalResultNode({
-          turnKey: key,
-          promptId: turn.promptId,
-          result: turn.terminal,
         });
       if (turn.delegated !== undefined)
         return $createDelegatedTurnNode({
@@ -378,13 +364,7 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
         left.delegated?.text === other.delegated?.text &&
         // An input a bundle draws repaints when its element or its text does.
         left.element === other.element &&
-        left.input?.text === other.input?.text &&
-        // A terminal's answer is read from the prompt's own fields, so the
-        // block repaints only when one of them changed.
-        (left.terminal === undefined) === (other.terminal === undefined) &&
-        (left.terminal === undefined ||
-          other.terminal === undefined ||
-          terminalResultEquals(left.terminal, other.terminal))
+        left.input?.text === other.input?.text
       );
     }
     case 'activity': {
@@ -468,7 +448,6 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
     turn.type === 'user' &&
     ($isUserTurnNode(block) ||
       $isDelegatedTurnNode(block) ||
-      $isTerminalResultNode(block) ||
       $isInputTurnNode(block))
   )
     block.setTurn(turn);

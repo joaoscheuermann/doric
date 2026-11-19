@@ -299,8 +299,8 @@ export const terminalResult = (input: {
 export const testCommand = 'npm test -- --run src/checkout';
 
 /**
- * The prompt a settled background command writes into its Thread, as
- * `terminal/v1` frames it: the header, the outcome, and the last of each
+ * The prompt a settled background command writes into its Thread, as the
+ * terminal host frames it: the header, the outcome, and the last of each
  * stream the host kept.
  */
 export const backgroundResult = (input: {

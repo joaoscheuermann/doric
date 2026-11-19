@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState } from 'react';
 
 import { attachmentsApi } from '../../api/attachments-api.js';
-import { ConversationThreadContext } from '../../hooks/use-live-terminal.js';
+import { ConversationThreadContext } from '../../hooks/conversation-thread.js';
 
 type Loaded =
   | { readonly status: 'loading' }

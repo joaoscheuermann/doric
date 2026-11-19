@@ -24,6 +24,7 @@ import {
   READER_NAME,
 } from './conversation-authors.js';
 import type { Turn } from './projector.js';
+import { fromTerminal } from './projector-input.js';
 
 /**
  * A turn's identity across updates: the kind of turn it is and the event that
@@ -67,12 +68,10 @@ const authorFor = (
   if (turn.type === 'user')
     // A prompt the host has not accepted yet is drawn dimmed and nameless; the
     // name arrives with the accepted turn the log holds. Another Thread's input
-    // and a background terminal's answer name themselves in their own header,
-    // so neither wears the reader's name. A bundle's instruction wears the
-    // bundle's, beside the agent's mark.
-    return !turn.accepted ||
-      turn.delegated !== undefined ||
-      turn.terminal !== undefined
+    // and a background terminal's prompt, framed or not, are not the
+    // reader's, so neither wears the reader's name. A bundle's instruction
+    // wears the bundle's, beside the agent's mark.
+    return !turn.accepted || turn.delegated !== undefined || fromTerminal(turn)
       ? null
       : turn.instruction === undefined
         ? { role: 'user', name: READER_NAME, at }
@@ -92,12 +91,11 @@ const authorFor = (
 
 /**
  * Whether a turn hands the conversation back to the agent from outside it:
- * another Thread's input or a background terminal's answer. Neither is the
+ * another Thread's input or a background terminal's prompt. Neither is the
  * reader speaking, so neither starts a new stretch of the agent's work.
  */
 const isRelayedInput = (turn: Turn): boolean =>
-  turn.type === 'user' &&
-  (turn.delegated !== undefined || turn.terminal !== undefined);
+  turn.type === 'user' && (turn.delegated !== undefined || fromTerminal(turn));
 
 /**
  * The mark a turn wears in the gutter, or `null` when it wears none. The

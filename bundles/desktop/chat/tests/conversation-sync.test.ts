@@ -194,6 +194,41 @@ describe('bringing the blocks in step with the turns', () => {
     });
   }
 
+  // Bundle isolation 5(b) change 4 (OD-7): a terminal prompt is told by its
+  // source, framed by the host or not, so neither wears the reader's name and
+  // both are relayed into the agent's run.
+  for (const [framing, text] of [
+    [
+      'framed',
+      '# Background terminal result\n\nTerminal: t1\nCommand: npm test',
+    ],
+    ['unframed', 'output without the host header'],
+  ] as const) {
+    test(`keeps a ${framing} terminal prompt in order without attributing it to the reader, inside the agent's run`, () => {
+      const input: UserTurn = {
+        ...user('terminal', 3),
+        text,
+        input: { source: { kind: 'terminal', terminalId: 't1' }, text },
+      };
+      const turns = [
+        user('one', 1),
+        agent('one', 2),
+        input,
+        agent('terminal', 4),
+      ];
+      const plan = syncPlan([], turns, Number.MAX_SAFE_INTEGER);
+
+      assert.equal(plan.steps[2]?.author, null);
+      assert.equal(plan.steps[1]?.author?.role, 'agent');
+      assert.equal(plan.steps[3]?.author?.role, 'agent');
+      // A relayed input starts no new stretch: the agent keeps one mark.
+      assert.deepEqual(
+        plan.steps.map((step) => step.mark?.role ?? null),
+        ['user', 'agent', null, null],
+      );
+    });
+  }
+
   test('creates the newest turns first when the transcript arrives whole', () => {
     const first = user('one', 1);
     const run = agent('one', 2);

@@ -1,13 +1,12 @@
 import type { TurnComment } from '../../contracts/index.js';
 import { delegatedInput } from './delegated.js';
-import type { Draft } from './projector.js';
+import type { Draft, Turn } from './projector.js';
 import {
   parsePromptEnvelope,
   promptMessage,
   promptSummary,
 } from './prompt-envelope.js';
 import type { QueueItem } from './queue.js';
-import { terminalResultInput } from './terminal-result.js';
 import type { ThreadEvent } from './workspace.js';
 
 /** Accepted input and its two distinct positions in the conversation. */
@@ -105,11 +104,7 @@ export const readInput = (
   )
     return undefined;
   inputs.set(item.promptId, { ...input, shown: true });
-  const terminal = terminalResultInput(input.source, input.text);
-  const delegated =
-    terminal === undefined
-      ? delegatedInput(input.source, input.text)
-      : undefined;
+  const delegated = delegatedInput(input.source, input.text);
   const instruction =
     input.source.kind === 'bundle'
       ? {
@@ -125,8 +120,7 @@ export const readInput = (
     type: 'user',
     promptId: item.promptId,
     events: [item],
-    text:
-      delegated === undefined && terminal === undefined ? shownText(input) : '',
+    text: delegated === undefined ? shownText(input) : '',
     accepted: true,
     // The comments the log wrote below this input — the flush of a send —
     // are the margin of the words it carries: they render above them, the
@@ -139,7 +133,6 @@ export const readInput = (
       ? {}
       : { input: { source: input.source, text: input.text } }),
     ...(delegated === undefined ? {} : { delegated }),
-    ...(terminal === undefined ? {} : { terminal }),
     ...(instruction === undefined ? {} : { instruction }),
     ...(action === undefined ? {} : { action }),
   };
@@ -158,3 +151,11 @@ export const acceptedHumanInputs = (
       input.source.kind === 'user' &&
       (!input.steer || input.shown || input.queuedShown),
   ).length;
+
+/**
+ * Whether a user turn came from a background terminal (the runtime's source
+ * kind), framed by the host or not: such a prompt is relayed into the agent's
+ * run and never the reader's own (OD-7).
+ */
+export const fromTerminal = (turn: Turn): boolean =>
+  turn.type === 'user' && turn.input?.source.kind === 'terminal';

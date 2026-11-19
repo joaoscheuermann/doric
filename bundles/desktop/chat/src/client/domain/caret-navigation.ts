@@ -21,7 +21,6 @@ import {
   QUEUE_BLOCK,
   QUEUED_TURN_BLOCK,
   REPLIES_TURN_BLOCK,
-  TERMINAL_RESULT_TURN_BLOCK,
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,
   TURN_AUTHOR_BLOCK,
@@ -57,7 +56,6 @@ export const caretKind = (nodeType: string): CaretKind => {
     nodeType === ACTIVITY_TURN_BLOCK ||
     nodeType === FAILURE_TURN_BLOCK ||
     nodeType === REPLIES_TURN_BLOCK ||
-    nodeType === TERMINAL_RESULT_TURN_BLOCK ||
     nodeType === INPUT_TURN_BLOCK
   ) {
     return 'widget';

@@ -17,17 +17,11 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import type { SHELL_CONVERSATION_FOOTER } from 'layout/contracts';
-import { RuntimeTerminalsV1 } from 'runtime/contracts';
 
 import { ChatHooksV1, SEND_PROMPT_COMMAND } from '../contracts/index.js';
 import { HistorySnapshotsV1 } from './api/history-contract.js';
 import { setModelsApi } from './api/model-icons.js';
 import { SettingsModelsV1 } from './api/settings-models.js';
-import {
-  fromRuntimeTerminals,
-  fromTerminalService,
-  TerminalServiceV1,
-} from './api/terminals-contract.js';
 import { WorkspaceSelectionV1 } from './api/workspace-selection.js';
 import { THREAD_ROUTE } from './domain/thread-route.js';
 import {
@@ -62,11 +56,6 @@ import {
   setSettingsModels,
   setWorkspaceSelection,
 } from './stores/execution-sources.js';
-import {
-  resetLiveTerminalsStore,
-  setRuntimeTerminalsApi,
-  setTerminalServiceApi,
-} from './stores/live-terminals.js';
 import { threadChatsStore } from './stores/thread-chats.js';
 
 export function activate({ services }: ClientContext): Cleanup {
@@ -143,14 +132,6 @@ export function activate({ services }: ClientContext): Cleanup {
     setModelsApi(api);
     return () => setModelsApi(undefined);
   });
-  const terminalService = services.whenAvailable(TerminalServiceV1, (api) => {
-    setTerminalServiceApi(fromTerminalService(api));
-    return () => setTerminalServiceApi(undefined);
-  });
-  const runtimeTerminals = services.whenAvailable(RuntimeTerminalsV1, (api) => {
-    setRuntimeTerminalsApi(fromRuntimeTerminals(api));
-    return () => setRuntimeTerminalsApi(undefined);
-  });
   const stopActivity = watchSandboxActivity(threadChatsStore, hooks);
   // The Thread tabs the chat opens beside the conversation, and the views of
   // the Threads the window shows (bundle isolation 4(c)).
@@ -162,8 +143,6 @@ export function activate({ services }: ClientContext): Cleanup {
     stopThreadTabs();
     stopActivity();
     threadChatsStore.getState().closeAll();
-    runtimeTerminals.dispose();
-    terminalService.dispose();
     history.dispose();
     models.dispose();
     settingsModels.dispose();
@@ -172,7 +151,6 @@ export function activate({ services }: ClientContext): Cleanup {
     sendCommand.dispose();
     route.dispose();
     for (const element of elements.reverse()) element.dispose();
-    resetLiveTerminalsStore();
     resetConnectionStore();
     resetComposers();
     resetComposerStack();

@@ -123,9 +123,19 @@ const fromUser = accepted(5, userPromptId, 'Thanks, go on.', { kind: 'user' });
 const transcriptText = (window: ChatWindow): string =>
   window.document.querySelector('[data-lexical-editor]')?.textContent ?? '';
 
-/** The chat's own terminal-result block. */
-const terminalBlock = (window: ChatWindow) =>
-  window.document.querySelector('button[aria-label^="Toggle background"]');
+/**
+ * Whether the transcript holds the terminal-result block the chat drew of its
+ * own until bundle isolation 5(b) change 4; `terminal` draws it now, so the
+ * chat never does. A boolean, so a failure does not print a whole element.
+ */
+const terminalBlock = (window: ChatWindow): boolean =>
+  window.document.querySelector('button[aria-label^="Toggle background"]') !==
+  null;
+
+/** The chat's plain text block of the terminal prompt: the host's frame, as text. */
+const terminalPlainText = (window: ChatWindow): boolean =>
+  /Background terminal result/.test(transcriptText(window)) &&
+  /Command: npm test/.test(transcriptText(window));
 
 /** The chat's own block of another Thread's instruction. */
 const delegatedBlock = (window: ChatWindow) =>
@@ -189,7 +199,7 @@ describe('T5.2 a registered input element draws the prompts of its source', () =
       (connected?.view as ChatInputView | undefined)?.promptId,
       terminalPromptId,
     );
-    assert.equal(terminalBlock(window), null);
+    assert.equal(terminalBlock(window), false);
   });
 
   test('bundle:probe draws the instructions of bundle probe and leaves those of bundle other to the chat', async () => {
@@ -235,7 +245,10 @@ describe('T5.2 a registered input element draws the prompts of its source', () =
       fromUser,
     ]);
     assertReady(state);
-    assert.notEqual(terminalBlock(window), null);
+    // Unregistered, a terminal prompt is the chat's plain text block (5(b)
+    // change 4), not the result block it drew of its own.
+    assert.equal(terminalBlock(window), false);
+    assert.equal(terminalPlainText(window), true);
     assert.notEqual(delegatedBlock(window), null);
     assert.match(transcriptText(window), /Follow the probe workflow\./);
     assert.deepEqual(probeElements(window.document, INPUT_ELEMENT), []);
@@ -247,7 +260,7 @@ describe('T5.2 a registered input element draws the prompts of its source', () =
     assert.equal(probeElements(window.document, INPUT_ELEMENT).length, 3);
     for (const prompt of [terminalPromptId, parentPromptId, probePromptId])
       assert.ok(viewOf(window, prompt), `the element draws ${prompt}`);
-    assert.equal(terminalBlock(window), null);
+    assert.equal(terminalBlock(window), false);
     assert.equal(delegatedBlock(window), null);
     assert.doesNotMatch(transcriptText(window), /Follow the probe workflow\./);
     const drawn = probeElements(window.document, INPUT_ELEMENT);
@@ -257,7 +270,8 @@ describe('T5.2 a registered input element draws the prompts of its source', () =
     assert.deepEqual(probeElements(window.document, INPUT_ELEMENT), []);
     for (const element of drawn)
       assert.ok(state.disposed.includes(element), 'the element was disposed');
-    assert.notEqual(terminalBlock(window), null);
+    assert.equal(terminalBlock(window), false);
+    assert.equal(terminalPlainText(window), true);
     assert.notEqual(delegatedBlock(window), null);
     assert.match(transcriptText(window), /Follow the probe workflow\./);
   });

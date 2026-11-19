@@ -22,7 +22,7 @@ import type { JSX } from 'react/jsx-runtime';
 import { FAILURE_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import { chatErrorCatalog } from '../../../../domain/error-catalog.js';
 import type { FailureTurn } from '../../../../domain/projector.js';
-import { ConversationThreadContext } from '../../../../hooks/use-live-terminal.js';
+import { ConversationThreadContext } from '../../../../hooks/conversation-thread.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
