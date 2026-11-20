@@ -25,8 +25,10 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   the group of its server's slug, with a `reference` that carries the server
   id and the skill's URI; `read` reads one as `readSkill` does, with an origin
   line that names the server and the URI and says the skill's other files are
-  not available. A call without a Project scope, or a reference that names no
-  server and URI, is refused (`invalid_input`).
+  not available. A call without a Project scope, or a reference that cannot
+  be parsed, is refused (`invalid_input`); a reference to an unknown server
+  gives `mcp_server_missing`; a skill on a server that is not connected, or
+  that the server no longer lists, gives `mcp_skill_unavailable`.
 - **Storage type:** `mcp.server/v1` 1.1.0, one document per server, listed
   per Project in creation order.
 - **Credential kind:** `MCP_TOKEN`, one secret an OAuth sign-in stored.

@@ -201,7 +201,8 @@ export interface McpToolView {
 /**
  * One skill a connected server serves through the MCP Skills extension
  * (`io.modelcontextprotocol/skills`), as the reader sees it. The default
- * agent lists these skills and loads one only through `readSkill`.
+ * agent lists and loads these skills through `default.skill-sources/v1`,
+ * which this bundle provides over `readSkill`.
  */
 export interface McpSkillView {
   /** The URI of its SKILL.md: unique within the server (names need not be). */

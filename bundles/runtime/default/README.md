@@ -59,13 +59,17 @@ no method is exposed to a window), with:
 
 See **Agents** below.
 
-`default.skill-sources/v1@1.0.0` (from 2.8.0), an extension point `default`
-declares and does not provide: a host many-contract a bundle provides
-(`{ cardinality: 'many' }`) to offer the agent skills, with:
+## Contracts it declares and does not provide
+
+`default.skill-sources/v1@1.0.0` (from 2.8.0), an extension point declared in
+`default/contracts`: a host many-contract a bundle provides to offer the agent
+skills, with:
 
 - `list({ cwd })` — the skills the source offers to the prompt of
   `call.scope`, whose working directory is `cwd`: each with its `name`,
-  `description`, a `reference` only the source reads, and an optional `group`;
+  `description`, a `reference` only the source reads, and an optional `group`.
+  A `list` must answer within 5,000 ms, or the source is left out of that
+  catalog;
 - `read({ reference })` — one skill's `text`, and an optional `origin`, the
   sentence that says where it comes from. The source bounds the time a read
   may take.
@@ -73,7 +77,36 @@ declares and does not provide: a host many-contract a bundle provides
 A source is named by the bundle id that provides it, so its skills are
 `<bundle id>/<group>/<name>`, or `<bundle id>/<name>` without a group; a
 provider whose bundle id is `cwd` is ignored. `mcp` provides it for the skills
-of a Project's MCP servers.
+of a Project's MCP servers. A bundle becomes a source by adding
+`default.skill-sources/v1@1.0.0` under `provides` in its manifest and a
+`default` package dependency, and by providing the contract with
+`{ cardinality: 'many' }`, as `mcp` does:
+
+```ts
+import { SkillSourcesV1, skillSourcesMethods } from 'default/contracts';
+
+services.provide(
+  defineService(
+    SkillSourcesV1,
+    {
+      list: defineMethod({
+        ...skillSourcesMethods.list,
+        execute: async ({ cwd }, call) => ({ skills: await mine(call, cwd) }),
+      }),
+      read: defineMethod({
+        ...skillSourcesMethods.read,
+        execute: async ({ reference }) => ({ text: await readMine(reference) }),
+      }),
+    },
+    { cardinality: 'many' },
+  ),
+);
+```
+
+Until the open question Q9 of
+[the spec](../../../docs/designs/bundle-isolation.md#questions) is settled, a
+source's skills appear in the catalog under the heading "MCP server skills",
+whose text says they are served by the Project's MCP servers.
 
 ## Behavior
 
