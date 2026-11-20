@@ -20,7 +20,7 @@ import {
   type StreamListener,
   toStreamObserver,
 } from 'bundle/contracts';
-import { RuntimeHooksV1, RuntimeV1 } from 'runtime/contracts';
+import { RuntimeHooksV1, RuntimeV2 } from 'runtime/contracts';
 
 import {
   type McpServerInput,
@@ -341,7 +341,7 @@ export const activate = ({ services }: HostContext): Cleanup => {
       };
     });
 
-  const watching = services.whenAvailable(RuntimeV1, (runtime) => {
+  const watching = services.whenAvailable(RuntimeV2, (runtime) => {
     const subscription = runtime.watch((notice) => {
       if (notice.kind !== 'projectDeleted') return;
       forgetProject(notice.projectId).catch((error: unknown) => {
