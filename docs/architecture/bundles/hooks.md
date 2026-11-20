@@ -1,553 +1,194 @@
-# Hooks e ciclo de vida
+# Hooks and the app's lifecycle
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes the hook mechanism as implemented on 2026-11-20.
 
-## Resumo
+## Summary
 
-O ciclo de vida do app é definido por hooks: pontos nomeados em que o dono de uma operação pede a outros bundles que observem, transformem ou decidam algo. O próprio app define os hooks padrão do seu ciclo de vida, e qualquer bundle pode definir hooks próprios para que outros modifiquem o comportamento dele. A regra é uma só: **quem é dono de uma operação define os hooks dela**. Cada hook é declarado em zod com `defineHook`, agrupado sob um ID de contrato versionado com `defineHooks` e disparado pelo dono com `execute`, no mesmo molde do `defineTool`.
+A hook is a named point at which the bundle that owns an operation lets other bundles observe it, transform its input, decide whether it goes ahead, or run a step of it. The rule is: **the owner of an operation declares its hooks.** The platform owns the app's lifecycle and declares its hooks in `doric.app.hooks/v1` and `doric.window.hooks/v1`; a bundle declares the hooks of its own operations in a hooks contract of its own, such as `chat.hooks/v2` or `runtime.hooks/v1`. Any bundle may observe a hook, through the contract `hooks/v1`.
 
-O sistema de hooks é um serviço como outro qualquer: o contrato `hooks/v1` (`HooksV1`), de cardinalidade `one`, fornecido pelo core por padrão. A referência `HooksV1` e o tipo do contrato vêm de `bundle/contracts`, como os dos outros contratos básicos; o core fornece a definição com `execute`. Um bundle obtém o sistema com `services.use(HooksV1)`, declara `hooks/v1` em `requires`, e o contexto de `activate` não tem membro `hooks`. Depois que o provedor de `hooks/v1` de um ambiente ativa, a plataforma daquele ambiente define nele os hooks do ciclo de vida do app, por isso outro bundle pode substituir o sistema inteiro de hooks sem que o app mude.
+A hook is declared with `defineHook`, grouped under a versioned contract id with `defineHooks`, and fired by its owner with `execute` ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`hooks.ts`](../../../packages/bundle/src/contracts/basic/hooks.ts), [`facades.ts`](../../../packages/bundle/src/runtime/facades.ts)). A handler is registered with `use` or `whenAvailable` on the same contract ([`hooks.ts`](../../../packages/bundle/src/contracts/basic/hooks.ts)). The provider of `hooks/v1`, the `core` bundle by default, keeps the handlers, runs them in order and applies one failure rule to all of them ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)).
 
-## O modelo
+## Who declares and who observes
 
-Além dos hooks padrão, o app fornece as funcionalidades de plataforma: splash, recuperação, janelas e menus nativos, `doric://`, catálogo e diagnóstico. A tabela mostra quem define hooks e quem registra handlers.
+| Role     | What it does                                                                                        | What its manifest lists                                                                                                                                                                    |
+| -------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Owner    | Declares a hooks contract, defines it in `hooks/v1` and fires each hook with `execute`              | The contract id with its full version under `provides` (`chat.hooks/v2@2.0.0`), and `hooks/v1@^1.0.0` under `requires`, except `core`, which provides `hooks/v1`                           |
+| Observer | Registers handlers on the hooks of a contract it does not own                                       | `hooks/v1@^1.0.0` under `requires`; the hooks contract under `requires` (with a range) or `optional` when it calls `use`, and under `requires` or `optional` when it calls `whenAvailable` |
+| Platform | Declares and fires `doric.app.hooks/v1` and `doric.window.hooks/v1`; its principal is named `doric` | Nothing: a bundle does not list a `doric.*` contract                                                                                                                                       |
 
-| Dono                  | Exemplos de hooks                                            | Quem registra handlers                            |
-| --------------------- | ------------------------------------------------------------ | ------------------------------------------------- |
-| App (plataforma)      | Ciclo de vida do app, das gerações e das janelas             | Qualquer bundle, por `hooks/v1`, inclusive o core |
-| Bundles estruturais   | `runtime`: Projects; `default`: request ao modelo e tools    | Bundles que precisam modificar a execução         |
-| Qualquer outro bundle | `git`: antes de trocar de branch; `chat`: montagem de blocos | Qualquer bundle que declare o contrato            |
+The owner check is made when the owner defines its contract: the provider refuses a bundle whose manifest does not list the contract id under `provides`, and refuses a `doric.*` contract to anyone but the platform, both with `not_owner` ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)). `use` on a hooks contract is checked as `services.use` is: it is allowed on a contract the bundle lists under `requires` or `optional`, on a contract it provides, and on a `doric.*` contract, and otherwise throws `undeclared_requirement` ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts), [`services.ts`](../../../packages/bundle/src/runtime/services.ts)). `whenAvailable` is not checked against the manifest ([`facades.ts`](../../../packages/bundle/src/runtime/facades.ts)); the line under `requires` or `optional` that an observer of the table lists is the convention the shipped bundles follow, not a rule the runtime enforces. A `doric.*` contract needs no line.
 
-Hooks são um dos quatro canais de mensagens entre bundles: o runtime pede decisão ou transformação em um ponto nomeado, com ordem, espera e saída validada pelo dono da operação. Eventos duráveis, sinais efêmeros e `CustomEvent` são canais distintos, descritos em [serviços e canais](./services-and-channels.md).
+## The contract `hooks/v1`
 
-## O contrato `hooks/v1`
+`hooks/v1` is a service contract of cardinality `one` ([`basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts)). The `core` bundle provides it, version 1.0.0, in each of its three environments: `host`, `desktopMain` and `client` ([`core/src/host/index.ts`](../../../bundles/foundation/core/src/host/index.ts), [`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`core/src/client/index.ts`](../../../bundles/foundation/core/src/client/index.ts), [`manifest.json`](../../../bundles/foundation/core/manifest.json)).
 
-`hooks/v1` tem três operações, e todo bundle chega a elas pelo mesmo caminho:
+A bundle reaches it with `services.use(HooksV1)`, where `HooksV1` comes from `bundle/contracts`. The value it gets has three members ([`hooks.ts`](../../../packages/bundle/src/contracts/basic/hooks.ts), [`facades.ts`](../../../packages/bundle/src/runtime/facades.ts)):
 
-```ts
-import { type HostContext, HooksV1 } from 'bundle/contracts';
+- `define(Contract)`: for the owner. It defines the contract in the provider and returns a handle with one `execute(input, call?)` per hook. The handle is cached per bundle, so a second `define` of the same contract returns the same handle and may be called inside an `execute`.
+- `use(Contract)`: for an observer whose manifest lists the contract. It returns one registration function per hook; each takes a handler and returns a `Disposable`.
+- `whenAvailable(Contract, callback)`: for an observer that may run without the owner. The callback receives the same registration functions once the owner has defined the contract, and again each time it is defined anew; when the owner's definition goes away, the cleanup the callback returns runs, and the handlers the callback registered synchronously, before its first `await`, are removed. A handler registered after an `await` inside the callback is not tracked: it stays registered when the definition goes away, and the callback registers it again each time the contract is defined anew ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)). Register synchronously in the callback, or dispose of later registrations in the cleanup. It returns a `Disposable`.
 
-export const activate = ({ services }: HostContext) => {
-  const hooks = services.use(HooksV1); // hooks/v1 em requires
-  // hooks.define(Contrato): o dono obtém os hooks para disparar com execute.
-  // hooks.use(Contrato).<hook>(handler): registro quando o contrato está em requires.
-  // hooks.whenAvailable(Contrato, (h) => h.<hook>(handler)): registro opcional.
-};
-```
+What a provider implements is a lower interface, `HooksProvider`, with the methods `define`, `register`, `whenDefined` and `execute`; the runtime builds the three members above over it, so any provider of `hooks/v1` serves the same API ([`hooks.ts`](../../../packages/bundle/src/contracts/basic/hooks.ts), [`facades.ts`](../../../packages/bundle/src/runtime/facades.ts)).
 
-Partes `host` usam `HostContext`, partes `desktopMain` usam `DesktopContext` e partes `client` usam `ClientContext`; os três têm só `services` (`{ readonly services: Services }`), vêm de `bundle/contracts`, e o core recebe esse mesmo contexto. Todo registro feito por meio de `hooks/v1` é rastreado pelo loader com o bundle que o fez e descartado em ordem inversa quando esse bundle é desativado.
+A handler receives `(input, call)`. `call.caller` is the bundle that called `execute` (`bundleId`, `version`, `generation`); `call.scope` is a record of strings whose keys belong to the bundles that read them, such as `projectId`, `threadId` and `promptId`, except `windowKey`, the one key the platform reserves and fills for a call that leaves a window; `call.signal` aborts with the operation; `call.trace` is its trace context ([`call.ts`](../../../packages/bundle/src/contracts/call.ts)). An owner passes the call of the operation in progress as the last argument of `execute`, or `{ signal, deadline }`.
 
-### Substituir o sistema de hooks
+## Declaring hooks
 
-`hooks/v1` não tem prefixo `doric.`, por isso outro bundle pode fornecê-lo. Como o contrato é de cardinalidade `one`, só um provedor fica ativo em cada ambiente, e a composição o escolhe em `providers`:
+`defineHook({ kind, input, order?, forOwner? })` declares one hook: its kind and the zod schema of its input. The name of the hook is its key in `defineHooks`, by convention `on<Point>Hook` ([`define.ts`](../../../packages/bundle/src/contracts/define.ts)).
 
-```json
-{
-  "core": "core",
-  "providers": { "hooks/v1": "myhooks" }
-}
-```
+| Kind        | What each handler returns                       | How the provider runs the handlers                                                                                     | A handler that throws, times out or returns an invalid value                                          |
+| ----------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `observe`   | Nothing                                         | One after another, each awaited within the deadline; `execute` resolves to `undefined`                                 | Reported and skipped; the next handler runs                                                           |
+| `transform` | A value of the input schema                     | One after another; each receives the validated output of the one before; `execute` resolves to the last value          | Reported and skipped; the next handler receives the value the skipped one received                    |
+| `decide`    | `{ allow: true }` or `{ allow: false, reason }` | One after another; the first refusal ends the chain and is the result; with no refusal the result is `{ allow: true }` | Reported and skipped; it does not count as a refusal                                                  |
+| `sequence`  | Nothing                                         | One after another, each awaited with no deadline, in catalog order or, with `order: 'reverse'`, in reverse             | Not reported to diagnostics; the error rejects `execute`, so the owner fails the step the hook guards |
 
-Um bundle escolhido em `providers` para um contrato que o core fornece ou consome faz parte da **fundação**. Em cada ambiente, o loader ativa primeiro a fundação, depois o core e, por último, os demais bundles, em ordem de dependência. Por isso um bundle como `myhooks` só pode declarar `requires` de contratos `doric.*`: ele ativa antes do core e não pode depender de nada que o core forneça.
+`order` is accepted only on a `sequence` hook. `forOwner(input, bundleId)` is accepted only on an `observe` hook: it gives each handler the input meant for that handler's bundle, or `undefined` to skip the handler, and a `forOwner` that throws rejects `execute` ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)). `forOwner` takes effect only where the provider holds the owner's own definition: a bundle's contract that crosses a process boundary loses it (see [Generations, processes and windows](#generations-processes-and-windows)), so on the host a bundle's `forOwner` holds only for an owner that runs in the kernel (`core`, the foundation, and the resident bundles `host-config`, `transport` and `screen-relay`), and an owner in a generation process loses it.
 
-A escolha vale em cada ambiente em que `myhooks` fornece `hooks/v1`; nos outros ambientes, o core continua sendo o provedor. Num ambiente em que a escolha vale, o loader não registra a implementação de `hooks/v1` do core, e o `services.use(HooksV1)` do próprio core devolve `myhooks`. Sem escolha em `providers`, um segundo provedor de `hooks/v1` vai para quarentena com motivo; como a fundação e o core ativam antes, é o bundle substituto que vai para quarentena, e o core continua provedor.
+`defineHooks(id, hooks)` groups hooks under a contract id that matches `contractIdPattern`: lowercase segments separated by `.`, then `/v` and a positive major, so `name/v1` is accepted as well as the conventional `<owner>.<name>/v<major>`; every member must come from `defineHook`, and an id that starts with `doric.` is refused, because those ids belong to the platform, which declares its own with an internal variant that bundles cannot import ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`ids.ts`](../../../packages/bundle/src/contracts/ids.ts)). The id carries the major version; the full version is the one the owner lists under `provides`. How a hooks contract takes a minor or a major is in [Versioning](versioning.md).
 
-O provedor escolhido passa a receber todos os `define`, `use` e `whenAvailable`, inclusive os da plataforma, e é ele que aplica ordem, prazo padrão, validação e a regra de falha; o comportamento descrito neste documento é o contrato que qualquer provedor precisa cumprir. As definições `AppHooksV1` e `WindowHooksV1` continuam da plataforma (`doric.app.hooks/v1` e `doric.window.hooks/v1`) e não mudam com o provedor.
+The owner exports the contract from its `contracts` entry point (for example `bundles/desktop/chat/src/contracts/index.ts`), and an observer that depends on the owner imports it from `<owner>/contracts` ([`mcp/src/host/index.ts`](../../../bundles/features/mcp/src/host/index.ts)). The provider matches a registration to a definition by contract id and hook name only ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)), so an observer may declare a structural copy of the hooks it observes, with the same id, names, kinds and inputs, in place of the import; the input its handler gets is the one the owner's definition validated. The shipped copies exist for two reasons. `files`, `git`, `notifications` and `openui` keep a copy of `chat.hooks/v2`, and `chat` a copy of `workspace.hooks/v1`, so that they load in a composition without the owner, where `<owner>/contracts` is not mapped; they list the contract under `optional`. `terminal` keeps a copy of `runtime.hooks/v1`, and `runtime` a copy of `core.event-hooks/v1`, so that their packages take no dependency on the owner's package; both list the contract under `requires` ([`git/src/client/api/peers.ts`](../../../bundles/features/git/src/client/api/peers.ts), [`chat/src/client/api/workspace-hooks.ts`](../../../bundles/desktop/chat/src/client/api/workspace-hooks.ts), [`terminal/src/host/peers.ts`](../../../bundles/features/terminal/src/host/peers.ts), [`runtime/src/host/peers.ts`](../../../bundles/runtime/runtime/src/host/peers.ts)).
 
-## Hooks definidos pelo app
+## Firing a hook
 
-A plataforma define os hooks do app do mesmo jeito que um bundle define os seus: `AppHooksV1` (`doric.app.hooks/v1`) reúne o ciclo de vida do app e das gerações, e `WindowHooksV1` (`doric.window.hooks/v1`) reúne `onCloseHook` e `onFlushHook`. Os dois vêm de `bundle/contracts`, junto com as funções `define*`.
-
-| Hook                                  | Tipo    | Ambiente      | Quando dispara                                                                                        |
-| ------------------------------------- | ------- | ------------- | ----------------------------------------------------------------------------------------------------- |
-| `onActivateHook` / `onDeactivateHook` | observe | Todos         | Ativação e desativação de cada bundle; só observa, e uma falha de handler vai ao diagnóstico          |
-| `onHostReadyHook`                     | observe | `host`        | Todos os bundles do host ativaram, antes de aceitar requisições de produto                            |
-| `onAppReadyHook`                      | observe | `desktopMain` | Todos os bundles do desktop ativaram; o core monta o esqueleto do menu e abre a janela principal aqui |
-| `onAppActivateHook`                   | observe | `desktopMain` | O app volta ao foco sem janelas, como um clique no dock do macOS                                      |
-| `onBeforeQuitHook`                    | decide  | `desktopMain` | Pedido de encerramento do app; pode vetar, e um segundo pedido força                                  |
-| `onGenerationReadyHook`               | observe | Todos         | Uma geração nova foi baixada e ativada no processo dela                                               |
-| `onConnectionChangedHook`             | observe | `desktopMain` | A conexão com o host caiu ou voltou                                                                   |
-| `onCloseHook`                         | decide  | `client`      | Pedido de fechamento de uma janela; pode vetar e espera a resposta do usuário                         |
-| `onFlushHook`                         | observe | `client`      | Depois do `onCloseHook`; grava o que está pendente dentro do prazo fixo definido pela plataforma      |
-
-### Como o app define os hooks do ciclo de vida
-
-A plataforma é só mais um consumidor de `hooks/v1`. Em cada ambiente, depois que o provedor de `hooks/v1` daquele ambiente ativa (o core, por padrão, ou o bundle escolhido em `providers`), a plataforma chama `define(AppHooksV1)` nesse provedor e passa a disparar `execute` nos pontos do ciclo de vida do app que existem naquele ambiente, conforme a tabela acima: em todos os ambientes, `onActivateHook`, `onDeactivateHook` e `onGenerationReadyHook`; no `desktopMain`, também `onAppReadyHook`, `onAppActivateHook`, `onBeforeQuitHook` e `onConnectionChangedHook`; no `host`, também `onHostReadyHook`; no `client`, o bootstrap de cada janela define `AppHooksV1` no `hooks/v1` do client e dispara ali os hooks marcados como Todos. `WindowHooksV1` é definido pela plataforma no ambiente `client`: o bootstrap de cada janela chama `define(WindowHooksV1)` no `hooks/v1` do client e executa `onCloseHook` e `onFlushHook` quando o main pede o fechamento daquela janela; o main só sinaliza o pedido. A plataforma não conhece a implementação: se outro bundle fornecer `hooks/v1`, o app registra e dispara os hooks nesse provedor. Pela mesma lógica a plataforma lê settings, secrets, tools e storage pelos contratos `settings/v1`, `secrets/v1`, `tools/v1` e `storage/v1`.
-
-O `onActivateHook` dos bundles ativados antes do provedor de `hooks/v1` daquele ambiente, inclusive o do próprio provedor, não é observável, porque o contrato ainda não existe; no caso padrão, isso vale para os bundles da fundação. O prazo de prontidão das janelas é medido pela plataforma, não pelo provedor: se o provedor de `hooks/v1` falha ou não ativa, a superfície entra em [recuperação](./splash-and-recovery.md) do mesmo jeito, e a falha do core leva ao modo de recuperação, como em [bundle core e quarentena](./core.md).
-
-### Registro nos hooks do app
-
-Não há atalhos para os hooks do app: qualquer bundle, não só o core, registra com `services.use(HooksV1).use(AppHooksV1).onAppReadyHook(handler)`, como faria com o hook de qualquer outro dono. O bundle declara `hooks/v1` em `requires`; `AppHooksV1` é `doric.*` e não entra.
+The owner defines its contract and fires a hook:
 
 ```ts
-import { AppHooksV1, type DesktopContext, HooksV1 } from 'bundle/contracts';
+const hooks = services.use(HooksV1).define(RuntimeHooksV1);
 
-export const activate = ({ services }: DesktopContext) => {
-  const hooks = services.use(HooksV1);
-  hooks.use(AppHooksV1).onAppReadyHook(async (_input, call) => {
-    await openMainWindow(call);
-  });
-};
+await hooks.onThreadsClosingHook.execute({ projectId, threadIds }, call);
 ```
 
-No client, `hooks.use(WindowHooksV1).onCloseHook(handler)` e `hooks.use(WindowHooksV1).onFlushHook(handler)` registram handlers para a janela do client que chamou: o provedor associa o registro ao `call.scope.windowKey` preenchido pela plataforma. A falha da ativação de um bundle (o `activate` dele) leva à quarentena, descrita em [bundle core e quarentena](./core.md); o `onActivateHook` só observa a ativação, e uma falha num handler desse hook vai ao diagnóstico, como em qualquer hook `observe`. O fechamento de janelas está em [janelas abertas pelo core](./windows.md).
+On `define`, the provider checks the owner as described above and records it; a second bundle that defines the same id in the same generation gets `registration_conflict`. Disposing of the definition undefines the contract and removes what the `whenAvailable` callbacks registered ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)).
 
-### Hooks de início, parada, geração e sinal de par
+On `execute`, the provider of the core ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)):
 
-A plataforma define quatro hooks a mais em `AppHooksV1` (`doric.app.hooks/v1`). Nenhum deles nomeia um bundle ou um contrato de bundle:
+1. refuses a hook name the contract lacks and an input that fails the schema, with `invalid_input`;
+2. takes the handlers registered for that contract id and hook that the call's generation sees, and, for `doric.window.hooks/v1`, only those registered for the call's `scope.windowKey`;
+3. sorts them by the activation order of their bundles in the catalog, the platform's own first, and by registration order within one bundle;
+4. runs them by the rule of the hook's kind (table above). A handler of a hook that is not `sequence` has 10,000 ms (`DEFAULT_HOOK_DEADLINE_MS`), with two exceptions: `onCloseHook` has no deadline, and `onFlushHook` has the time left before the deadline of the call that fired it, measured when `execute` starts, or no deadline when the call has none or none is left;
+5. for a hook that is not `sequence`, reports a handler that throws, returns an invalid value or passes its deadline to `doric.diagnostics/v1`, as `hook_handler_failed` or `hook_handler_timeout`, with the contract and the hook;
+6. rejects `execute` with the call's abort reason when `call.signal` aborts first.
 
-- `onHostStartHook` (`sequence`): roda em ordem de ativação, depois de carregar os bundles e de conferir o bloco `required` da composição, e antes de `onHostReadyHook`. Uma falha é fatal. Cada bundle informa o estágio que executa por `doric.startup/v1`.
-- `onHostStopHook` (`sequence`, ordem reversa): roda depois de fechar o listener e antes de desativar os bundles.
-- `onGenerationChangedHook` (`observe`): recebe `activated`, `draining`, `lost` ou `stopped` em cada geração viva. O campo `holds` chega a cada handler só com as retenções do próprio bundle, por `forOwner`.
-- `onPeerSignalHook`: entrega o `doric.generation/v1.signal(topic, payload)` do bundle ao mesmo bundle nas outras gerações vivas, com o remetente informado.
+Activation order puts the foundation first, then `core`, then the other bundles, each group in dependency order with ties broken by bundle id; within the foundation, the providers of `storage.backend/v1` and `secrets.backend/v1` come first ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). The **foundation**, in the catalog's sense, is the set of bundles that the composition chooses under `providers` for a contract the core provides or requires in that environment. In the shipped host composition it is `postgres`, chosen for `storage.backend/v1` and `secrets.backend/v1`, which the core requires ([`composition.json`](../../../app/backend/doric-host/composition.json)). The term is not the folder `bundles/foundation/`: `host-config` and `transport` are in that folder but are not chosen providers, so they activate after the core.
 
-Quem usa esses hooks decide o que a troca significa. O `runtime`, por exemplo, reage a eles para retomar, liberar e adotar Projects. O kernel não chama nenhum método de bundle pelo nome. Ver [processos e isolamento](./process-isolation.md).
+When an owner fires a hook without awaiting it, it ignores the result: `runtime` fires `onProjectReadyHook` and `onProjectClosingHook` after the commit and drops any rejection, and `core` fires `onEventAppendedHook` after an append in the same way ([`runtime/src/host/ports.ts`](../../../bundles/runtime/runtime/src/host/ports.ts), [`core/src/host/events/facade.ts`](../../../bundles/foundation/core/src/host/events/facade.ts)).
 
-## Hooks definidos por bundles
+## Registering a handler
 
-| Dono                 | Hook                                          | Tipo                | Regra que continua com o dono                                                              |
-| -------------------- | --------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------ |
-| `runtime`            | `onProjectReadyHook` / `onProjectClosingHook` | observe             | Coordena lease, retomada e liberação única; handlers repetíveis são idempotentes           |
-| `default`            | `onBeforeModelRequestHook`                    | transform           | Cancelamento e admissão do histórico seguem no executor                                    |
-| `default`            | `onBeforeToolHook` / `onAfterToolHook`        | decide / observe    | O Agent valida o lote completo antes de qualquer handler                                   |
-| Executor de workflow | `onBeforeNodeHook` / `onAfterNodeHook`        | transform / observe | Controla checkpoint e transição                                                            |
-| `chat`               | `onMountHook` / `onUnmountHook`               | observe             | Replay não executa efeitos de runtime                                                      |
-| `chat`               | `onBeforeRenderBlockHook`                     | transform           | A projeção e o tipo do bloco continuam do projetor; handlers só acrescentam ações e marcas |
-| `git`                | `onBeforeSwitchBranchHook`                    | decide              | A troca em si, a trava do Project e o evento `git.branch-switched/v1` continuam do Git     |
-| `core`               | `onBeforeOpenWindowHook`                      | transform           | O core aplica suas políticas depois dos handlers, e o main valida o resultado              |
-
-## Como um hook funciona
-
-Um hook é um contrato como qualquer serviço. `defineHook({ kind, input })` define um único hook só com o tipo e o schema de entrada em zod (de onde o build gera o JSON Schema canônico); o nome do hook é a chave em `defineHooks`. `defineHooks` agrupa hooks sob um ID de contrato com major, que é o que aparece em `provides` e `requires`; a versão completa vem de `provides`. O dono lista esse ID em `provides`; quem registra handlers o lista em `requires` ou o consulta com `whenAvailable`, e nesse caso não o lista. Os dois lados também declaram `hooks/v1` em `requires`, fornecido pelo core por padrão. A família `define*`, o subpath `bundle/contracts` e a geração de JSON Schema estão em [contratos](./contracts.md).
-
-### Tipos
-
-O `kind` fixa a saída do hook, por isso `defineHook` não recebe `output`.
-
-| Tipo        | Saída de cada handler                                                                           | Execução                                                                                 | Falha de um handler                                  |
-| ----------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `observe`   | Nenhuma                                                                                         | Depois da operação; não bloqueia o dono nem altera o resultado                           | Ignorado; os outros handlers seguem                  |
-| `transform` | Um valor do mesmo schema da entrada, o que permite encadear handlers                            | Antes da operação, em série; cada handler recebe a saída validada do anterior            | Ignorado; o próximo recebe a entrada que ele recebeu |
-| `decide`    | `Decision`, definida pela plataforma como `{ allow: true } \| { allow: false; reason: string }` | Antes da operação, em série; o primeiro handler que recusa encerra a cadeia com o motivo | Ignorado; não conta como recusa e a cadeia segue     |
-
-Não há política de falha por hook. O provedor de `hooks/v1` aplica uma regra única aos três tipos: um handler que falha ou passa do prazo padrão do provedor é ignorado, a cadeia segue como se ele não existisse e a falha vai ao diagnóstico. O prazo padrão vale para todos os handlers, exceto os de `WindowHooksV1`: o `onCloseHook` não tem prazo, porque espera a resposta do usuário, e o `onFlushHook` tem prazo fixo definido pela plataforma.
-
-### Disparo pelo dono
-
-O dono obtém os hooks com `services.use(HooksV1).define(Contrato)` e dispara cada um com `execute`, como no `defineTool`. Como todo stub, `execute` aceita como último argumento opcional o `call` pai (o `call` da operação em curso) ou `{ signal, deadline }`:
+An observer registers in the `activate` of its part:
 
 ```ts
-const gitHooks = services.use(HooksV1).define(GitHooksV1);
-const decision = await gitHooks.onBeforeSwitchBranchHook.execute(input, call);
-```
-
-`execute` valida a entrada com o zod, roda os handlers na ordem, valida a saída de cada handler, ignora o handler que falha ou passa do prazo padrão e devolve `Promise<void>` (`observe`), `Promise<Input>` (`transform`) ou `Promise<Decision>` (`decide`).
-
-### Registro pelo consumidor
-
-O consumidor registra handlers com `hooks.use(Contrato).<hook>(handler)` quando o contrato está em `requires`, ou com `hooks.whenAvailable(Contrato, (h) => h.<hook>(handler))` quando a dependência é opcional, sempre com `const hooks = services.use(HooksV1)`. O handler recebe `(input, call)`, com `call.caller` (`{ bundleId: string; version: string; generation: number }` do bundle que chamou `execute`, preenchido pelo dispatcher da plataforma), `call.scope` (`projectId`, `threadId`, `promptId`, `windowKey`, quando houver), `call.signal` e `call.trace`. Quando o dono repassa o `call` pai, o dispatcher herda dele `scope`, `signal` e `trace`, mas `call.caller` nunca é herdado: é sempre o bundle que faz a chamada. No `execute(input, call, services)` de `switchBranch` do Git, `call.caller` é quem chamou o Git; quando o Git executa `onBeforeSwitchBranchHook` ou chama `events/v1` repassando esse `call`, o `caller` desse salto é `git`. Numa chamada que sai de uma janela client, o dispatcher preenche `scope.windowKey`. Log vem de `log/v1`, não do `call`. Os contratos de hook da plataforma (`AppHooksV1` e `WindowHooksV1`) são exceção: usam `hooks.use` sem entrar em `requires`, porque a plataforma os garante em todos os ambientes em que eles existem, e contratos `doric.*` não entram em `requires`. O registro devolve um descarte, que o bundle pode liberar antes; o loader rastreia o registro e o libera automaticamente quando o bundle que registrou é desativado.
-
-### Regras
-
-- A ordem dos handlers segue a ordem de ativação dos bundles: a fundação, depois o core e depois os demais, em ordem de dependência; a composição pode fixar outra ordem.
-- O provedor de `hooks/v1` aplica o mesmo prazo padrão a todos os handlers, exceto os de `WindowHooksV1`: o `onCloseHook` não tem prazo, porque espera a resposta do usuário, e o `onFlushHook` tem prazo fixo definido pela plataforma; com processos por geração, a chamada atravessa o mesmo envelope RPC dos serviços (ver [isolamento por processo](./process-isolation.md)).
-- Nenhum hook executa de novo porque um evento antigo foi reproduzido, e ações iniciadas pela UI são comandos, não hooks.
-- O nome do registro segue `on<Ponto>Hook`. Um ponto só entra na API quando tiver um consumidor real.
-
-### Onde ficam os contratos de hook
-
-O dono publica seus contratos de hook no entrypoint `contracts/` do bundle e os importa no próprio código por caminho relativo (`../contracts/index.js`), como em [manifesto v1](./manifest.md); o consumidor de outro bundle importa só esse entrypoint, por exemplo `default/contracts`; os detalhes estão em [contratos](./contracts.md). `HooksV1`, `SettingsV1` e as demais referências dos contratos básicos, com seus tipos, vêm de `bundle/contracts`, junto com `AppHooksV1`, `WindowHooksV1` e os tipos de contexto; `core/contracts` exporta só o que é do core, como `CoreHooksV1`. Nenhum código importa o entrypoint `bundle` (loader Node).
-
-## Exemplo: o Git define um hook
-
-O Git define um hook para que outros bundles possam impedir uma troca de branch.
-
-```ts
-// git, contracts/hooks.ts: hooks não têm lógica, então a definição fica em contracts/.
-import { defineHook, defineHooks } from 'bundle/contracts';
-import { z } from 'zod';
-
-export const onBeforeSwitchBranchHook = defineHook({
-  kind: 'decide',
-  input: z
-    .object({ projectId: z.string(), from: z.string(), to: z.string() })
-    .strict(),
-});
-
-export const GitHooksV1 = defineHooks('git.hooks/v1', {
-  onBeforeSwitchBranchHook,
+const closing = services.use(HooksV1).whenAvailable(RuntimeHooksV1, (hooks) => {
+  const registration = hooks.onThreadsClosingHook(host.threadsClosing);
+  return () => registration.dispose();
 });
 ```
 
-```ts
-// git, host/git-commands.ts: o dono executa o hook dentro do execute do método.
-import { defineMethod, defineService, HooksV1 } from 'bundle/contracts';
-import { z } from 'zod';
-import { GitHooksV1 } from '../contracts/index.js';
+This is how `terminal` registers its cleanup of a Thread's terminals ([`terminal/src/host/index.ts`](../../../bundles/features/terminal/src/host/index.ts)). A `Disposable` that a call to `hooks/v1` returns is tracked in the calling bundle's scope ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)), so the registrations of a bundle are removed when the bundle deactivates, after its `onDeactivateHook` and before its cleanup runs ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts)). A part that registers for a shorter time, such as a mounted page, disposes of the registration itself ([`use-config-autosave.ts`](../../../bundles/desktop/settings/src/client/hooks/use-config-autosave.ts)).
 
-export const gitCommands = defineService('git.commands/v1', {
-  switchBranch: defineMethod({
-    input: z.object({ projectId: z.string(), to: z.string() }).strict(),
-    output: z.object({ from: z.string(), to: z.string() }).strict(),
-    execute: async ({ projectId, to }, call, services) => {
-      // call.caller é quem chamou o Git; no execute do hook, o caller do salto é git.
-      const gitHooks = services.use(HooksV1).define(GitHooksV1);
-      const from = await currentBranch(projectId);
-      const decision = await gitHooks.onBeforeSwitchBranchHook.execute(
-        { projectId, from, to },
-        call,
-      );
-      if (!decision.allow)
-        throw new GitError('switch-refused', decision.reason);
-      await switchBranch(projectId, to);
-      return { from, to };
-    },
-  }),
-});
-```
+## Generations, processes and windows
 
-```ts
-// git, host/index.ts: fornece a definição.
-import { type HostContext } from 'bundle/contracts';
-import { gitCommands } from './git-commands.js';
+The host runs its bundles in generation processes, and its `hooks/v1` is the one in the kernel; a hooks contract crosses the process boundary as its id and, for each hook, its name, its `kind`, the JSON Schema of its input and its `order`, and the receiving side rebuilds it from those, except the two platform contracts, which it takes as they are ([`values.ts`](../../../packages/bundle/src/runtime/envelope/values.ts)). `forOwner` is not carried: when an owner in a generation process defines its contract in the kernel's provider, the rebuilt contract has no `forOwner`, and every handler receives the whole input. The provider keeps each registration with the generation of the call that made it: a registration made in generation 0, the kernel, is seen by every execution; one made in a generation is seen only by executions in that generation, or by kernel executions while that generation is active ([`partition.ts`](../../../bundles/foundation/core/src/shared/partition.ts)). A bundle hooks contract has one definition per generation, so the same owner in two generations does not conflict; a `doric.*` contract has one definition ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)). How generations are started and drained is in [Process isolation](process-isolation.md).
 
-export const activate = ({ services }: HostContext) => {
-  services.provide(gitCommands);
-};
-```
+In the client, each window has its own `hooks/v1`, and the provider runs a `doric.window.hooks/v1` handler only for the window whose `scope.windowKey` registered it ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)).
 
-`services.use(HooksV1).define(GitHooksV1)` devolve sempre o mesmo handle para o mesmo dono, por isso pode ser chamado dentro do `execute`. O `services` que o `execute` recebe é o do Git, ligado em `services.provide(gitCommands)`.
+## Hooks the platform declares
 
-```ts
-// Outro bundle, que declara "hooks/v1@^1.0.0" e "git.hooks/v1@^1.0.0" em requires.
-import { type HostContext, HooksV1 } from 'bundle/contracts';
-import { GitHooksV1 } from 'git/contracts';
+`doric.app.hooks/v1` (`AppHooksV1`) and `doric.window.hooks/v1` (`WindowHooksV1`) are exported by `bundle/contracts` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). A bundle registers on them as on any other hooks contract, with `services.use(HooksV1).use(AppHooksV1)`; no hook names a bundle or a bundle's contract, and each bundle decides what a hook means to it.
 
-export const activate = ({ services }: HostContext) => {
-  services
-    .use(HooksV1)
-    .use(GitHooksV1)
-    .onBeforeSwitchBranchHook(async ({ to }) =>
-      to.startsWith('release/')
-        ? { allow: false, reason: 'Branches de release são protegidos.' }
-        : { allow: true },
-    );
-};
-```
+### When the platform defines them
 
-O registro devolve um descarte, liberado automaticamente quando o bundle que registrou é desativado. `gitCommands` é o serviço definido com `defineService`, e `git/contracts` exporta para os consumidores a referência `GitCommandsV1 = ref<typeof gitCommands>('git.commands/v1')`, como em [contratos](./contracts.md).
+In an environment whose `hooks/v1` is provided in the same process, the platform defines `doric.app.hooks/v1` as soon as the provider has activated. The bundles activated before it, the foundation and the provider itself, are not observed: no `onActivateHook` or `onDeactivateHook` fires for them. In a host generation process, `hooks/v1` is the kernel's, so the platform defines the contract before the first bundle activates, and every bundle is observed ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts), [`runner.ts`](../../../packages/bundle/src/runtime/runner.ts)). In a client window, the platform defines `doric.window.hooks/v1` once the window's `hooks/v1` provider has activated ([`packages/desktop/src/client/activate.ts`](../../../packages/desktop/src/client/activate.ts)).
 
-## Exemplos de hooks entre bundles
+### `doric.app.hooks/v1`
 
-Os exemplos cobrem os três tipos de hook, os três ambientes e os dois jeitos de depender de um hook: obrigatório (`requires`) e opcional (`whenAvailable`).
+| Hook                      | Kind       | Input                                                         | Where and when the platform fires it                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------- | ---------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onActivateHook`          | `observe`  | `bundleId`, `version`, `generation`, `environment`            | Every environment: after each observed bundle activates ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts))                                                                                                                                                                                                                                                    |
+| `onDeactivateHook`        | `observe`  | The same                                                      | Every environment: before each observed bundle deactivates, in reverse activation order ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts))                                                                                                                                                                                                                    |
+| `onHostStartHook`         | `sequence` | Empty                                                         | Host: once, after the bundles are loaded and the composition's `required` contracts are checked, before `onHostReadyHook`; activation order; a failure stops the host ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`index.ts`](../../../app/backend/doric-host/src/index.ts))                                                                                  |
+| `onHostReadyHook`         | `observe`  | Empty                                                         | Host: once, before the HTTP listener binds ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`index.ts`](../../../app/backend/doric-host/src/index.ts))                                                                                                                                                                                                             |
+| `onHostStopHook`          | `sequence` | Empty                                                         | Host: once, after the HTTP server and the sockets close and before the bundles deactivate; reverse activation order; a failure is reported and the stop goes on ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`index.ts`](../../../app/backend/doric-host/src/index.ts))                                                                                        |
+| `onGenerationChangedHook` | `observe`  | `event`, `generation`, `incarnation`, `self`, `live`, `holds` | Host: in every live generation when a generation is `activated`, `draining`, `lost` or `stopped`; a lost or stopped generation does not hear its own change; `holds`, set for `lost`, reaches each handler with its own bundle's holds only ([`manager.ts`](../../../packages/bundle/src/process/manager.ts), [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)) |
+| `onPeerSignalHook`        | `observe`  | `topic`, `payload`, `from`, `self`, `live`                    | Host: when a bundle calls `doric.generation/v1.signal(topic, payload)`, in every other live generation, to the handlers of the same bundle only ([`manager.ts`](../../../packages/bundle/src/process/manager.ts), [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts))                                                                                             |
+| `onGenerationReadyHook`   | `observe`  | `generation`                                                  | Host: when a published generation becomes active. Desktop: when a new desktop generation has loaded ([`manager.ts`](../../../packages/bundle/src/process/manager.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts))                                                                                                                                                  |
+| `onAppReadyHook`          | `observe`  | Empty                                                         | `desktopMain`: once the desktop bundles have activated at start ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts))                                                                                                                                                                                                                                                       |
+| `onAppActivateHook`       | `observe`  | Empty                                                         | `desktopMain`: when the app is activated, as by a click on its dock icon ([`lifecycle.ts`](../../../app/desktop/doric/src/platform/lifecycle.ts))                                                                                                                                                                                                                                  |
+| `onBeforeQuitHook`        | `decide`   | Empty                                                         | `desktopMain`: on a request to quit; a refusal keeps the app open, a second request while the first waits quits at once, and a failure counts as allow ([`lifecycle.ts`](../../../app/desktop/doric/src/platform/lifecycle.ts))                                                                                                                                                    |
+| `onConnectionChangedHook` | `observe`  | `connected`                                                   | `desktopMain`: when the connection to the host drops or returns; a repeated value is not fired ([`lifecycle.ts`](../../../app/desktop/doric/src/platform/lifecycle.ts))                                                                                                                                                                                                            |
 
-### 1. Recusar uma operação com um hook de bundle estrutural (`decide`, host)
+The desktop main process fires its hooks into the generation process of the desktop bundles, through that generation's `hooks/v1`; with no provider there, a `decide` hook allows and the others do nothing ([`process.ts`](../../../app/desktop/doric/src/platform/generation/process.ts)). A failure of the platform's own `execute` does not stop the lifecycle step, except for `onHostStartHook`, and is recorded by the process that fired the hook:
 
-Um bundle `allowlist` impede a tool `web` de acessar domínios fora de uma lista configurada. Ele usa o hook que o `default` define antes de cada tool.
+- the activation loop of every environment reports a failed `onActivateHook` or `onDeactivateHook` to diagnostics as `hook_execute_failed` ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts));
+- the host kernel reports a failed `onHostStopHook`, `onHostReadyHook`, `onGenerationReadyHook`, `onGenerationChangedHook` or `onPeerSignalHook` to diagnostics as `hook_execute_failed`, and a failed `onHostStartHook` stops the host ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`manager.ts`](../../../packages/bundle/src/process/manager.ts));
+- the desktop main process does not report to diagnostics: it logs `App hook failed` for `onAppActivateHook`, `onBeforeQuitHook` and `onConnectionChangedHook`, `onAppReadyHook failed` and `onGenerationReadyHook failed` for those two hooks ([`lifecycle.ts`](../../../app/desktop/doric/src/platform/lifecycle.ts), [`distribution.ts`](../../../app/desktop/doric/src/platform/catalog/distribution.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)).
 
-```json
-{
-  "manifestVersion": 1,
-  "id": "allowlist",
-  "version": "1.0.0",
-  "engines": { "doric": "^1.0.0" },
-  "provides": ["allowlist.settings/v1@1.0.0"],
-  "requires": [
-    "hooks/v1@^1.0.0",
-    "settings/v1@^1.0.0",
-    "default.hooks/v1@^1.0.0"
-  ]
-}
-```
+In recovery mode the host fires none of its three host hooks ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)).
 
-```ts
-import {
-  defineSettings,
-  type HostContext,
-  HooksV1,
-  SettingsV1,
-} from 'bundle/contracts';
-import { DefaultHooksV1 } from 'default/contracts';
-import { z } from 'zod';
+### `doric.window.hooks/v1`
 
-export const allowlistSettings = defineSettings({
-  id: 'allowlist.settings/v1',
-  schema: z.object({ domains: z.array(z.string()).default([]) }).strict(),
-});
+| Hook          | Kind      | When each window fires it                                                                                                                         |
+| ------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onCloseHook` | `decide`  | The main process asks the window to close; a refusal keeps it open, with its reason. A forced close skips the hook. No deadline                   |
+| `onFlushHook` | `observe` | After the close is allowed: the window saves what is pending, within the deadline the main process sets for the flush and passes with the request |
 
-export const activate = ({ services }: HostContext) => {
-  const settings = services.use(SettingsV1);
-  settings.register(allowlistSettings);
+Both are answered by the window's close protocol ([`close.ts`](../../../packages/desktop/src/client/close.ts)). How windows are opened and closed is in [Windows](windows.md).
 
-  services
-    .use(HooksV1)
-    .use(DefaultHooksV1)
-    .onBeforeToolHook(async ({ tool, input }) => {
-      if (tool !== 'web') return { allow: true };
+## Host start and stop
 
-      const { domains } = await settings.get(allowlistSettings); // tipado pela definição
-      const hostname = new URL(input.url).hostname;
-      return domains.includes(hostname)
-        ? { allow: true }
-        : { allow: false, reason: `O domínio ${hostname} não está liberado.` };
-    });
-};
-```
+Activation opens no database, so the work a host needs before it serves runs in `onHostStartHook`. Each handler names the stage it runs with `doric.startup/v1.stage(name)` and writes its log lines with `doric.startup/v1.log(record)`, so a failure is logged at that stage ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`index.ts`](../../../app/backend/doric-host/src/index.ts)). The host names its own stages: `bootstrap`, `bundle_load`, `network_binding` and `ready`. The shipped bundles name these:
 
-Quando o handler recusa, o `default` não executa a tool e devolve ao modelo o motivo como resultado de erro. O Agent continua validando o lote completo de tool calls antes de qualquer handler.
+| Stage                      | Bundle                  | What its start step does                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `database_client`          | `postgres`              | Connects the process's database client, so a missing URL fails here; an unreachable database fails at the first query, in the `credential_activation` stage. `postgres` registers no hook of its own: the core's start step calls `storage.backend/v1.connect`, which runs this step ([`postgres/src/host/start.ts`](../../../bundles/foundation/postgres/src/host/start.ts), [`core/src/host/secrets/activation.ts`](../../../bundles/foundation/core/src/host/secrets/activation.ts)) |
+| `credential_activation`    | `core`                  | Reads the stored credentials once through `secrets/v1`, so a missing or unusable credential key fails here ([`activation.ts`](../../../bundles/foundation/core/src/host/secrets/activation.ts))                                                                                                                                                                                                                                                                                         |
+| `configuration_activation` | `host-config`           | Reads the stored configuration and builds its providers ([`configuration.ts`](../../../bundles/foundation/host-config/src/host/configuration.ts))                                                                                                                                                                                                                                                                                                                                       |
+| `sandbox_pool`             | `docker`, `firecracker` | Prepares the sandbox pool ([`docker/src/host/start.ts`](../../../bundles/sandboxes/docker/src/host/start.ts), [`firecracker/src/host/start.ts`](../../../bundles/sandboxes/firecracker/src/host/start.ts))                                                                                                                                                                                                                                                                              |
+| `workspace_reconciliation` | `runtime`               | Reconciles the persisted Projects and Threads and logs what it interrupted ([`lifecycle.ts`](../../../bundles/runtime/runtime/src/host/lifecycle.ts))                                                                                                                                                                                                                                                                                                                                   |
 
-### 2. Transformar o contexto do modelo (`transform`, host)
+`transport` also has a start step, which names no stage and logs the Socket.IO namespaces it serves ([`transport/src/kernel.ts`](../../../bundles/foundation/transport/src/kernel.ts)).
 
-Um bundle `rules` acrescenta ao prompt de sistema as regras do arquivo `AGENTS.md` do Project. O manifesto lista os contratos que o código usa:
+At shutdown the host closes the HTTP server and the sockets and runs `onHostStopHook`, in which `runtime` suspends its Projects, ending their running prompts, while the other bundles are still active ([`index.ts`](../../../app/backend/doric-host/src/index.ts), [`lifecycle.ts`](../../../bundles/runtime/runtime/src/host/lifecycle.ts), [`service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)). Then the kernel stops: the generation processes stop first, and their bundles deactivate, which disposes of the sandbox pool; then the kernel's own bundles deactivate in reverse activation order, which disconnects the database ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`docker/src/host/index.ts`](../../../bundles/sandboxes/docker/src/host/index.ts), [`postgres/src/host/index.ts`](../../../bundles/foundation/postgres/src/host/index.ts)).
 
-```json
-{
-  "manifestVersion": 1,
-  "id": "rules",
-  "version": "1.0.0",
-  "engines": { "doric": "^1.0.0" },
-  "requires": ["hooks/v1@^1.0.0", "default.hooks/v1@^1.0.0", "files/v1@^1.0.0"]
-}
-```
+## Hooks bundles declare
 
-```ts
-import { type HostContext, HooksV1 } from 'bundle/contracts';
-import { DefaultHooksV1 } from 'default/contracts';
-import { FilesV1 } from 'files/contracts';
+| Contract                    | Owner and environment | Hook                                                       | Kind      | When the owner fires it                                                                                                                                                                                                                                                                                                                    | Observers in this repository                                                                                                             |
+| --------------------------- | --------------------- | ---------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `core.hooks/v1@1.0.0`       | `core`, `desktopMain` | `onBeforeOpenWindowHook`                                   | transform | Before `windows/v1.open`; the core then applies its own policy and keys the window by the calling bundle ([`windows.ts`](../../../bundles/foundation/core/src/desktop/windows.ts))                                                                                                                                                         | None                                                                                                                                     |
+| `core.event-hooks/v1@1.0.0` | `core`, `host`        | `onEventAppendedHook` (`stream`, `type`)                   | observe   | After `events/v1.append` commits a row to an event sink, not awaited ([`facade.ts`](../../../bundles/foundation/core/src/host/events/facade.ts))                                                                                                                                                                                           | `runtime` ([`runtime/src/host/index.ts`](../../../bundles/runtime/runtime/src/host/index.ts))                                            |
+| `default.hooks/v1@1.0.0`    | `default`, `host`     | `onBeforeModelRequestHook` (`system`)                      | transform | Before every model request of a prompt, to adjust the system prompt ([`executor.ts`](../../../bundles/runtime/default/src/host/executor.ts))                                                                                                                                                                                               | None                                                                                                                                     |
+| `runtime.hooks/v1@1.2.0`    | `runtime`, `host`     | `onProjectReadyHook`, `onProjectClosingHook` (`projectId`) | observe   | After a Project's `ready` commit and after its `cancelling` commit, not awaited ([`ports.ts`](../../../bundles/runtime/runtime/src/host/ports.ts))                                                                                                                                                                                         | `mcp` ([`index.ts`](../../../bundles/features/mcp/src/host/index.ts), [`manager.ts`](../../../bundles/features/mcp/src/host/manager.ts)) |
+|                             |                       | `onThreadsClosingHook` (`projectId`, `threadIds`)          | observe   | Awaited where the runner closes the Threads' terminals, before it awaits their running work                                                                                                                                                                                                                                                | `terminal`                                                                                                                               |
+|                             |                       | `onPromptStartedHook`                                      | observe   | Awaited before the executor runs a prompt                                                                                                                                                                                                                                                                                                  | `mcp`, `openui`, `papercraft`                                                                                                            |
+|                             |                       | `onThreadCwdChangedHook`                                   | observe   | After a Thread's working directory or repository hint changed: awaited before the change answers its caller, except when a reacquired sandbox resets the directory to the workspace root, where the runner holds the project lock and fires it without waiting ([`runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)) | `papercraft`                                                                                                                             |
+| `chat.hooks/v2@2.0.0`       | `chat`, `client`      | `onMountHook`, `onUnmountHook` (`projectId`, `threadId`)   | observe   | When a conversation opens on a Thread, and when it closes or moves to another ([`use-mount-hooks.ts`](../../../bundles/desktop/chat/src/client/hooks/use-mount-hooks.ts))                                                                                                                                                                  | None                                                                                                                                     |
+|                             |                       | `onBeforeRenderBlockHook`                                  | transform | Before a block is drawn, once per block; handlers may add actions ([`use-external-blocks.ts`](../../../bundles/desktop/chat/src/client/hooks/use-external-blocks.ts))                                                                                                                                                                      | None                                                                                                                                     |
+|                             |                       | `onSandboxActivityHook` (`projectId`)                      | observe   | Once per Project per store change, when the chat starts to hold a Thread of it, when its working directory changes, or when its state changes to anything but `running`; never after a finished tool call; not awaited ([`sandbox-activity.ts`](../../../bundles/desktop/chat/src/client/services/sandbox-activity.ts))                    | `files`                                                                                                                                  |
+|                             |                       | `onThreadUpdateHook`                                       | observe   | For every live event of a held Thread as it arrives, and every `updated` record; not awaited ([`thread-chats.ts`](../../../bundles/desktop/chat/src/client/stores/thread-chats.ts))                                                                                                                                                        | `files`, `git`, `notifications`, `openui`                                                                                                |
+| `workspace.hooks/v1@1.0.0`  | `workspace`, `client` | `onOpenThreadHook` (`projectId`, `threadId`)               | observe   | When the reader asks to open a Thread beside the conversation ([`thread-navigation.ts`](../../../bundles/desktop/workspace/src/client/hooks/thread-navigation.ts))                                                                                                                                                                         | `chat` ([`thread-tabs.ts`](../../../bundles/desktop/chat/src/client/services/thread-tabs.ts))                                            |
 
-export const activate = ({ services }: HostContext) => {
-  services
-    .use(HooksV1)
-    .use(DefaultHooksV1)
-    .onBeforeModelRequestHook(async (request, call) => {
-      const files = services.use(FilesV1, call.scope);
-      const rules = await files.readIfExists('AGENTS.md', call);
-      if (rules === undefined) return request;
+The contracts are declared in [`core/src/contracts/hooks.ts`](../../../bundles/foundation/core/src/contracts/hooks.ts), [`default/src/contracts/index.ts`](../../../bundles/runtime/default/src/contracts/index.ts), [`runtime/src/contracts/hooks.ts`](../../../bundles/runtime/runtime/src/contracts/hooks.ts), [`chat/src/contracts/index.ts`](../../../bundles/desktop/chat/src/contracts/index.ts) and [`workspace/src/contracts/index.ts`](../../../bundles/desktop/workspace/src/contracts/index.ts); each owner's manifest lists its contract under `provides`. Every observer named above reaches the contract through `whenAvailable`. `mcp`, `openui`, `papercraft` and `terminal` list `runtime.hooks/v1` under `requires`, with the range of the minor that added the hooks they use (`^1.2.0`, or `^1.1.0` for `terminal`); `files`, `git`, `notifications` and `openui` list `chat.hooks/v2` under `optional`, and `chat` lists `workspace.hooks/v1` there (each bundle's `manifest.json`, for example [`terminal`'s](../../../bundles/features/terminal/manifest.json) and [`git`'s](../../../bundles/features/git/manifest.json)).
 
-      return {
-        ...request,
-        system: `${request.system}\n\n## Regras do Project\n\n${rules}`,
-      };
-    });
-};
-```
+### The platform's hooks in shipped bundles
 
-Cada handler de `transform` recebe a saída validada do anterior, e o `default` valida o resultado final contra o schema do request antes de chamar o modelo; como o `kind` é `transform`, esse schema é o mesmo da entrada do hook. `call.scope` traz o Project e a Thread da execução, `services.use(FilesV1, call.scope)` devolve o serviço `files/v1` nesse escopo, e `call.signal` é cancelado junto com o prompt.
+- `core` sets the menu skeleton (the top-level menus), migrates the stored selection, and then opens the workspace window in `onAppReadyHook`, and focuses or reopens that window in `onAppActivateHook` ([`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts)). The core owns the menu skeleton, and the shipped bundles add items and keybindings through the core's `menus/v1`, which records the calling bundle as the item's owner before it passes the item to `doric.menus/v1`. The runtime does not make that path exclusive: `doric.*` contracts need no manifest line, and the desktop's `doric.menus/v1` takes `owner` as the caller sends it ([`services.ts`](../../../packages/bundle/src/runtime/services.ts), [`broker.ts`](../../../app/desktop/doric/src/platform/generation/broker.ts), [`menu.ts`](../../../bundles/foundation/core/src/desktop/menu.ts), [`menus.ts`](../../../bundles/foundation/core/src/desktop/menus.ts)).
+- `history` flushes its store and allows in `onBeforeQuitHook` ([`history/src/desktop/index.ts`](../../../bundles/desktop/history/src/desktop/index.ts)).
+- `settings` saves a pending change of its page in `onFlushHook` ([`use-config-autosave.ts`](../../../bundles/desktop/settings/src/client/hooks/use-config-autosave.ts)).
+- `runtime` hands Projects over between generations: in `onGenerationChangedHook` the active generation recovers and a draining one releases its Projects as their prompts end, and on `lost` or `stopped` of another generation the active runtime adopts that generation's Projects; each release is signalled with `doric.generation/v1.signal`, and the active runtime adopts the released Projects in `onPeerSignalHook` ([`handover.ts`](../../../bundles/runtime/runtime/src/host/handover.ts)).
+- The start steps of `onHostStartHook` and the stop step of `runtime` are in [Host start and stop](#host-start-and-stop).
 
-### 3. Consumir um hook e definir outro no mesmo bundle (`observe` e `decide`, host)
+## Replacing the provider of `hooks/v1`
 
-O Git observa o hook de Project pronto do `runtime` para aquecer o status do repositório, e define seu próprio `onBeforeSwitchBranchHook`, mostrado acima.
+`hooks/v1` has no `doric.` prefix, so another bundle may provide it. Because its cardinality is `one`, a composition that enables a second provider chooses it under `providers`, for example `"providers": { "hooks/v1": "myhooks" }`; without that choice the second provider is quarantined with `unchosen_provider` and the core stays the provider ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). A chosen provider of a contract the core provides becomes part of the foundation (defined in [Firing a hook](#firing-a-hook)), which activates before the core. When a chosen foundation provider is quarantined, the catalog does not fall back to the core: the environment starts in recovery mode ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). A foundation bundle that lists a contract under `requires` is quarantined with `foundation_requires`, except a replacement of `events/v1`, `settings/v1` or `models/v1` that requires a storage or secrets backend ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). The chosen provider receives every `define`, `register`, `whenDefined` and `execute`, the platform's included, so the order, the deadline, the validation and the failure rule described here are what any provider must implement; `doric.app.hooks/v1` and `doric.window.hooks/v1` do not change with it. How a composition chooses providers is in [Composition and distribution](composition-and-distribution.md).
 
-```ts
-import { type HostContext, HooksV1 } from 'bundle/contracts';
-import { RuntimeHooksV1 } from 'runtime/contracts';
-import { gitCommands } from './git-commands.js';
+## Related documents
 
-export const activate = ({ services }: HostContext) => {
-  const hooks = services.use(HooksV1);
-
-  hooks.use(RuntimeHooksV1).onProjectReadyHook(async ({ projectId }, call) => {
-    // observe: uma falha aqui vai ao diagnóstico e não impede o Project de abrir.
-    await statusCache.warm(projectId, { signal: call.signal });
-  });
-
-  // o execute de switchBranch define GitHooksV1 e dispara onBeforeSwitchBranchHook.
-  services.provide(gitCommands);
-};
-```
-
-> **Desatualizado.** A região `layout.panel` do parágrafo abaixo se chama
-> `shell.panel` desde o passo 4(a) do isolamento de bundles. O comportamento
-> atual está em
-> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
-> a fase de documentação desse trabalho (fase 12) reescreve este documento.
-
-O manifesto do Git declara as duas coisas: o hook que ele define em `provides` e o que ele consome em `requires`. Como em [manifesto v1](./manifest.md), ele também lista os demais contratos que o código do Git usa com `use`: `hooks/v1`, `events/v1` (o evento `git.branch-switched/v1`, que o Git fornece), `settings/v1`, `tools/v1` e `runtime.workspace/v1` (usado pela tool do Git em [contextos](./contexts.md)) no host; `ui/v1`, `navigation/v1` (rotas `/git/diff/:threadId/:repository` e `/settings/git`), `regions/v1` (o item em `layout.panel`), `windows/v1` e `menus/v1` no client; e `runtime.lease/v1`, que o `execute` de `switchBranch` usa. `commands/v1` e `git.commands/v1` entram pela parte client, como em [chat](./chat.md): `commands/v1` existe no `desktopMain` e no client, não no host, então o comando `git.open-comparison/v1` e o `switchBranchCommand` são registrados no client, que chama `git.commands/v1` do host pela ponte. `git.commands/v1` entra em `requires` embora o próprio Git o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client; o manifesto completo está em [chat](./chat.md). `chat.hooks/v2`, consumido pela parte client com `whenAvailable` no exemplo 4, não entra em `requires`: fica em `optional`.
-
-```json
-{
-  "manifestVersion": 1,
-  "id": "git",
-  "version": "1.5.0",
-  "engines": { "doric": "^1.0.0" },
-  "provides": [
-    "git.commands/v1@1.3.0",
-    "git.hooks/v1@1.0.0",
-    "git.settings/v1@1.0.0",
-    "git.branch-switched/v1@1.0.0"
-  ],
-  "requires": [
-    "hooks/v1@^1.0.0",
-    "events/v1@^1.0.0",
-    "settings/v1@^1.0.0",
-    "tools/v1@^1.0.0",
-    "commands/v1@^1.0.0",
-    "git.commands/v1@^1.0.0",
-    "ui/v1@^1.0.0",
-    "navigation/v1@^1.0.0",
-    "regions/v1@^1.0.0",
-    "windows/v1@^1.0.0",
-    "menus/v1@^1.0.0",
-    "runtime.lease/v1@^1.0.0",
-    "runtime.workspace/v1@^1.0.0",
-    "runtime.hooks/v1@^1.0.0"
-  ],
-  "optional": ["chat.hooks/v2"]
-}
-```
-
-O manifesto acima é ilustrativo. O do `git` 1.2.13 (`bundles/features/git/manifest.json`) traz as mesmas duas linhas para o hook do `chat`: `hooks/v1@^1.0.0` em `requires`, porque o observador usa `services.use(HooksV1).whenAvailable`, e `chat.hooks/v2` em `optional`, porque o `chat` pode faltar na composição.
-
-### 4. Definir um hook na UI e consumi-lo como dependência opcional (`transform`, client)
-
-O `chat` define `onBeforeRenderBlockHook` para que outros bundles acrescentem ações a um bloco antes de ele ser renderizado. O Git acrescenta “Abrir comparação” aos blocos da tool `git`, mas só se o `chat` existir na composição. Este exemplo é uma ilustração: a cópia de `chat.hooks/v2` que o `git` 1.2.13 guarda define só `onThreadUpdateHook`, e nenhum bundle registra `onBeforeRenderBlockHook`.
-
-```ts
-// chat, contracts/hooks.ts: o dono define o hook.
-import { defineHook, defineHooks } from 'bundle/contracts';
-import { renderBlockSchema } from './blocks'; // schema zod do bloco renderizado
-
-export const onBeforeRenderBlockHook = defineHook({
-  kind: 'transform',
-  input: renderBlockSchema,
-});
-
-export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
-  onBeforeRenderBlockHook,
-});
-```
-
-```ts
-// chat, parte client: o dono executa o hook; hooks/v1 está em requires.
-import { type ClientContext, HooksV1 } from 'bundle/contracts';
-import { ChatHooksV2 } from '../contracts/index.js';
-
-export const activate = ({ services }: ClientContext) => {
-  const chatHooks = services.use(HooksV1).define(ChatHooksV2);
-  renderer.beforeRender = (block, call) =>
-    chatHooks.onBeforeRenderBlockHook.execute(block, call);
-};
-```
-
-```ts
-// git, parte client: consumo opcional; chat.hooks/v2 fica em optional, não em requires.
-import { type ClientContext, HooksV1 } from 'bundle/contracts';
-import { ChatHooksV2 } from 'chat/contracts';
-
-export const activate = ({ services }: ClientContext) => {
-  services.use(HooksV1).whenAvailable(ChatHooksV2, (h) =>
-    h.onBeforeRenderBlockHook((block) =>
-      block.tool === 'git'
-        ? {
-            ...block,
-            actions: [
-              ...block.actions,
-              { id: 'git.open-comparison/v1', label: 'Abrir comparação' },
-            ],
-          }
-        : block,
-    ),
-  );
-};
-```
-
-Um handler lento ou com erro é ignorado naquele bloco e aparece no diagnóstico, e o `chat` renderiza o bloco sem a contribuição. A ação `git.open-comparison/v1` é um comando definido com `defineCommand`, despachado pela conversa quando o usuário escolhe a ação; não é hook nem serviço. Ver [contratos](./contracts.md).
-
-### 5. O core define um hook para ajustar janelas antes de abrir (`transform`, desktopMain)
-
-O core define `onBeforeOpenWindowHook`, em `core.hooks/v1`, que deixa outros bundles ajustarem uma janela antes de ela abrir. Um bundle `geometry` usa esse hook para aplicar o tamanho preferido do usuário. As políticas do core rodam depois dos handlers.
-
-```ts
-// core, contracts/hooks.ts
-import { defineHook, defineHooks } from 'bundle/contracts';
-import { openWindowRequestSchema } from './windows'; // schema zod do pedido de janela
-
-export const onBeforeOpenWindowHook = defineHook({
-  kind: 'transform',
-  input: openWindowRequestSchema,
-});
-
-export const CoreHooksV1 = defineHooks('core.hooks/v1', {
-  onBeforeOpenWindowHook,
-});
-```
-
-```ts
-// core, desktopMain/windows.ts: a definição de windows/v1 com execute.
-import {
-  defineMethod,
-  defineService,
-  DoricWindowsV1, // doric.windows/v1, nativo
-  HooksV1,
-  WindowsV1,
-} from 'bundle/contracts';
-import { CoreHooksV1 } from '../contracts/index.js';
-import {
-  openWindowRequestSchema,
-  openWindowResultSchema,
-} from '../contracts/windows.js';
-
-export const coreWindows = defineService(WindowsV1, {
-  open: defineMethod({
-    input: openWindowRequestSchema,
-    output: openWindowResultSchema,
-    execute: async (request, call, services) => {
-      const coreHooks = services.use(HooksV1).define(CoreHooksV1);
-      const adjusted = await coreHooks.onBeforeOpenWindowHook.execute(
-        request,
-        call,
-      );
-      return services.use(DoricWindowsV1).open(
-        {
-          ...applyCorePolicy(adjusted),
-          key: `${call.caller.bundleId}:${request.key}`,
-        },
-        call,
-      );
-    },
-  }),
-});
-
-// core, parte desktopMain: recebe o mesmo DesktopContext que qualquer bundle.
-import { type DesktopContext } from 'bundle/contracts';
-import { coreWindows } from './windows.js';
-
-export const activate = ({ services }: DesktopContext) => {
-  services.provide(coreWindows);
-};
-
-// geometry, parte desktopMain; requires: hooks/v1 e core.hooks/v1.
-import { type DesktopContext, HooksV1 } from 'bundle/contracts';
-import { CoreHooksV1 } from 'core/contracts';
-
-export const activate = ({ services }: DesktopContext) => {
-  services
-    .use(HooksV1)
-    .use(CoreHooksV1)
-    .onBeforeOpenWindowHook((request) => {
-      const size = preferredSizes.get(request.key);
-      return size === undefined
-        ? request
-        : { ...request, appearance: { ...request.appearance, size } };
-    });
-};
-```
-
-Um handler que falha ou passa do prazo padrão é ignorado, e a janela abre com o pedido como estava antes dele. A chave da janela usa `call.caller.bundleId`, que a plataforma preenche com o bundle que chamou `windows/v1`, por isso chaves de bundles diferentes não colidem. O core usa `doric.windows/v1`; os outros bundles usam `windows/v1`. O contrato nativo `doric.windows/v1`, as chaves de janela e o serviço `windows/v1` estão em [janelas abertas pelo core](./windows.md).
-
-## Relações
-
-- [Contratos e a família define\*](./contracts.md): especifica `defineHook`, `defineHooks`, o entrypoint `contracts/` e a geração do JSON Schema que os hooks usam.
-- [Serviços entre bundles e canais de mensagens](./services-and-channels.md): hooks são um dos quatro canais e atravessam o mesmo envelope dos serviços; `hooks/v1` é um serviço substituível como os outros.
-- [Contextos e capacidades](./contexts.md): define o contexto só com serviços, `call` e os contratos que substituem os antigos membros do contexto, entre eles `hooks/v1`.
-- [Manifesto v1](./manifest.md): os IDs de contrato de hook aparecem em `provides` e `requires`.
-- [Versionamento semântico](./versioning.md): define como um contrato de hook evolui entre minor e major.
-- [Bundle core e quarentena](./core.md): o core fornece `hooks/v1` por padrão e ativa depois da fundação; a falha da ativação de um bundle leva à quarentena, e o `onActivateHook` só observa essa ativação.
-- [Composição e distribuição](./composition-and-distribution.md): `providers` escolhe, por ambiente, o provedor de `hooks/v1` quando mais de um bundle o fornece, e o bundle escolhido entra na fundação.
-- [Splash e recuperação](./splash-and-recovery.md): a superfície entra em recuperação quando o provedor de `hooks/v1` falha.
-- [Janelas abertas pelo core](./windows.md): usa `onBeforeOpenWindowHook`, `onCloseHook` e `onFlushHook`.
-- [Isolamento por processo](./process-isolation.md): descreve o envelope RPC que leva handlers entre processos por geração.
-- [O bundle chat](./chat.md): dono de `onMountHook`, `onUnmountHook` e `onBeforeRenderBlockHook`.
-- [Eventos e nodes](./events-and-nodes.md): explica por que replay de eventos não reexecuta hooks.
-- [Observabilidade e diagnóstico](./observability.md): recebe as falhas de handlers registradas pelos hooks.
+- [Contracts](contracts.md): the `define*` family and the `contracts` entry point.
+- [Manifest](manifest.md): `provides`, `requires` and `optional`.
+- [Versioning](versioning.md): how a hooks contract takes a minor or a major.
+- [Services and channels](services-and-channels.md): hooks beside services, events and signals.
+- [Process isolation](process-isolation.md): generations and their handover.
+- [Windows](windows.md): opening and closing windows.
+- [Menus and keybindings](menus-and-keybindings.md): the menu skeleton and the items bundles add.
+- [Observability](observability.md): where handler failures are reported.
