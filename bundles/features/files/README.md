@@ -96,14 +96,19 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   folder that opens later is read on its own (the observation's `loading`
   names it meanwhile) and merged in; one whose read fails closes again and
   its failure is the observation's `error`.
-- `files.decorations/v1` (client, many, 1.9.0) is declared here and provided
-  by other bundles: each provider's `observe({ projectId, cwd }, listener)`
+- The contract `files.decorations/v1` 1.0.0, declared from `files` 1.9.0 (client, many) and provided by other bundles;
+  `files` lists it under `optional`: each provider's `observe({ projectId, cwd }, listener)`
   answers its marks for the tree, a list of `{ path, mark }` with its `error`
   and `fetching`. The Files view asks every provider for the tree it shows and
   draws their merge: for a path two providers mark, the mark of the provider
   whose bundle id is smaller (by code unit) wins; the first error in bundle-id
   order shows in the panel's read toast, and the view refreshes while any
-  provider fetches. With no provider no row is marked. `git` provides it with
+  provider fetches; the tree's own read error wins over any provider's error.
+  With no provider no row is marked. A mark is a `FileMark`: `description`
+  (the row's accessible label and tooltip suffix), `count` (a directory's
+  badge: how many marked entries lie below it), and the optional `tone` (CSS
+  class names of the marked name and badge), `letter` (a file's badge letter)
+  and `struck` (whether a file's name is struck through). `git` provides it with
   the marks of its changes read; `files` names no `git.*` contract.
 - `files.refresh/v1` (client) is the Project refresh coordinator. It rereads
   when an `edit` or `write` call finishes in any held conversation (chat's

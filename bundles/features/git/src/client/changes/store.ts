@@ -11,7 +11,12 @@
 
 import type { Query } from '@tanstack/query-core';
 import { QueryClient, QueryObserver } from '@tanstack/query-core';
-import { type Disposable, defineMethod, defineService } from 'bundle/contracts';
+import {
+  type Disposable,
+  defineMethod,
+  defineService,
+  ref,
+} from 'bundle/contracts';
 import {
   messageFrom,
   pendingReadInterval,
@@ -21,7 +26,7 @@ import {
 import { toggleExpanded } from 'desktop/ui/panels';
 import {
   type DecorationsObservation,
-  FilesDecorationsV1,
+  type FilesDecorations,
   filesDecorationsMethods,
   type ReadState,
   ROOT_PATH,
@@ -275,6 +280,12 @@ export const decorationsOf = (
     fetching: state.fetching,
   };
 };
+
+/**
+ * `files.decorations/v1`, declared by `files` and taken by id (D32): only the
+ * method specs are a value import, beside the path helpers.
+ */
+const FilesDecorationsV1 = ref<FilesDecorations>('files.decorations/v1');
 
 /** `files.decorations/v1` over a store: the Files tree's marks from the changes read. */
 export const createFilesDecorations = (store: GitStore) =>

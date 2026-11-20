@@ -86,8 +86,10 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   Discard all leaves nested repositories and submodules listed. A new read
   decides `discarded`; a failing command or a target still listed answers
   `failed` with what was discarded before it.
-- `git.changes/v1` (client) keeps the window's one changes read per Project and
-  working directory, shared with the Changes view and the footer.
+- `git.changes/v1` (client) answers the window's one changes read per Project
+  and working directory. Nothing in this repository reads it: the Changes view
+  and its badge read git's store directly. It stays provided for other
+  consumers.
 - `files.decorations/v1` (client, many; git 1.3.0) gives the Files tree the
   marks of the same changes read: for a scope, its marks path by path, its
   error and whether it fetches. The contract is the one `files` declares, so
@@ -95,9 +97,12 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   keeps the list of marks, so the tree keeps its rows.
 - git takes the `files.*` types it uses from `files/contracts` with
   `import type` and declares the refs of the optional `files.sandbox/v1` and
-  `files.refresh/v1` and the `files.open-file/v1` command id by id (D32). It
-  imports values of `files/contracts` at run time (the decorations contract it
-  provides, `ROOT_PATH`), so `files` is one of its `dependencies`.
+  `files.refresh/v1`, the provided `files.decorations/v1` and the
+  `files.open-file/v1` command id by id (D32). At run time it imports from
+  `files/contracts` the values `filesDecorationsMethods`, `ROOT_PATH` and
+  `workspacePath` (`src/client/changes/store.ts`) and `sandboxNotice`
+  (`src/client/changes/git-changes.tsx`, `src/client/diff/file-diff.tsx`), so
+  `files` is one of its `dependencies`.
 - `git.open-comparison/v1` opens one file's comparison as a workspace tab
   (`git-file-diff`), whose trigger draws the `git-file-diff-icon` element
   (`iconTag`). The tab's context menu holds "Open file", which runs

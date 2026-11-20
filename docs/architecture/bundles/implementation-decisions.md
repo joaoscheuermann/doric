@@ -18,6 +18,17 @@
 > e as leituras do lease, entre elas R-STREAM, os `requires`, o watch do
 > Project, os streams de terminal, a ponte e o `required` da composição) são
 > histórico.
+>
+> Desde a fase 9 (2026-11-20, `files` 1.9.0 e `git` 1.3.0), a árvore do
+> `files` não lê mais `git.changes/v1`: ela lê as marcas de todo fornecedor
+> de `files.decorations/v1`, que o `git` fornece. As entradas abaixo que
+> descrevem o `files` lendo `git.changes/v1` (o escopo da árvore na
+> "Etapa 10 — bundle `files` (10E)", o escopo de `git.changes/v1` na 10G e
+> as `decorations` desenhadas pela árvore, em "Refatoração de fronteira —
+> BWP-11") são histórico. Nada no repositório lê mais `git.changes/v1`: a
+> visão Changes e seu contador leem o store do `git` diretamente
+> (`git/src/client/hooks/use-changes.ts:27`); o contrato continua provido para
+> outros consumidores (D17 da spec).
 
 ## Princípios
 
