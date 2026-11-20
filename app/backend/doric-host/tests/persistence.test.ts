@@ -4,10 +4,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { type ConfigInput, defaultConfig } from 'host-config/testing';
-import { Prisma } from 'postgres/prisma';
 
-import { createProjectStore } from './helpers/legacy/projects.js';
-import { createThreadStore } from './helpers/legacy/threads.js';
 import {
   migrationDirectory,
   persistenceFixture,
@@ -18,853 +15,6 @@ const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const promptId = randomUUID();
 const gitCredentialId = '00000000-0000-4000-8000-000000000003';
 const githubCredentialId = '00000000-0000-4000-8000-000000000004';
-
-integrationTest(
-  'keeps execution timing through rename and returns the completed duration after reopening',
-  async ({ configs, projects, threads, second }) => {
-    const { project } = await projects.create(
-      'Timer',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Agent');
-    const running = await threads.setState(thread.id, 'running', promptId);
-    assert.ok(running?.executionStartedAt);
-    const start = await threads.appendEvent(thread.id, promptId, {
-      type: 'prompt.started',
-    });
-    assert.equal(
-      (await threads.rename(thread.id, 'Renamed'))?.executionStartedAt,
-      start.createdAt,
-    );
-    await threads.setResult(thread.id, {
-      promptId,
-      status: 'completed',
-      text: 'Done',
-      at: new Date(Date.parse(start.createdAt) + 65_000).toISOString(),
-    });
-    await threads.setState(thread.id, 'ready');
-    const reopened = createThreadStore(second);
-    const finished = await reopened.record(thread.id);
-    assert.equal(finished?.executionStartedAt, undefined);
-    assert.equal(finished?.lastExecutionMs, 65_000);
-    assert.equal(
-      (await reopened.listByProject(project.id))[0]?.lastExecutionMs,
-      65_000,
-    );
-  },
-);
-
-integrationTest(
-  'stores acceptance and queue receipt atomically, including their sequence cursor',
-  async ({ configs, projects, threads, second }) => {
-    const project = await projects.create(
-      'Queue',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.project.id, 'Thread');
-    const accepted = {
-      type: 'prompt.accepted',
-      text: 'Waiting input',
-      source: { kind: 'user' },
-      queued: true,
-    };
-    await assert.rejects(
-      threads.appendEvents(thread.id, promptId, [
-        accepted,
-        { type: 'prompt.queued', invalid: 1n },
-      ]),
-    );
-    const restarted = createThreadStore(second);
-    assert.equal((await restarted.eventsAfter(thread.id, 0)).length, 0);
-    assert.equal((await restarted.find(thread.id))?.thread.lastSequence, 0);
-    await threads.appendEvents(thread.id, promptId, [
-      accepted,
-      { type: 'prompt.queued' },
-    ]);
-    const stored = await restarted.eventsAfter(thread.id, 0);
-    assert.deepEqual(
-      stored.map((event) => [event.type, event.sequence]),
-      [
-        ['prompt.accepted', 1],
-        ['prompt.queued', 2],
-      ],
-    );
-    assert.equal(
-      (await restarted.queue(thread.id))?.items[0]?.preview,
-      'Waiting input',
-    );
-  },
-);
-
-integrationTest(
-  'sums descendant charges once and keeps costs through rewind and reconnection',
-  async ({ configs, projects, threads, database, second }) => {
-    const project = await projects.create(
-      'Usage',
-      await configs.load(),
-      'blue',
-    );
-    const root = await threads.create(project.project.id, 'Parent');
-    const child = await threads.create(
-      project.project.id,
-      'Child',
-      root.thread.id,
-    );
-    const grandchild = await threads.create(
-      project.project.id,
-      'Grandchild',
-      child.thread.id,
-    );
-    const unrelated = await threads.create(project.project.id, 'Other');
-    for (const [record, amount] of [
-      [root, 0.25],
-      [child, 0.5],
-      [grandchild, 0],
-      [unrelated, 9],
-    ] as const) {
-      const id = record.thread.id;
-      await threads.saveCheckpoint(id, promptId);
-      await threads.appendEvent(id, promptId, {
-        type: 'response.started',
-        provider: 'unified',
-        model: 'm',
-        contextWindow: 200000,
-      });
-      const usage = {
-        inputTokens: 48000,
-        outputTokens: 200,
-        cost: { amount, unit: 'credits' },
-      };
-      await threads.appendEvent(id, promptId, { type: 'usage', usage });
-      await threads.appendEvent(id, promptId, {
-        type: 'response.finished',
-        finish: { usage },
-      });
-    }
-    const before = await threads.usage(root.thread.id);
-    assert.equal(before?.total.cost, 0.75);
-    assert.equal(before?.total.calls, 3);
-    assert.equal(before?.threads.length, 3);
-    assert.equal(before?.context?.inputTokens, 48000);
-    await threads.rewind(root.thread.id, promptId);
-    const restarted = createThreadStore(second);
-    const after = await restarted.usage(root.thread.id);
-    assert.equal(after?.total.cost, 0.75);
-    assert.equal(after?.context, undefined);
-    assert.equal((await restarted.usage(child.thread.id))?.total.cost, 0.5);
-    // A pre-feature Thread has only durable usage events and no materialized totals.
-    await database.thread.update({
-      where: { id: child.thread.id },
-      data: { usage: Prisma.DbNull },
-    });
-    assert.equal((await restarted.usage(root.thread.id))?.total.cost, 0.75);
-  },
-);
-
-integrationTest(
-  'creates projects without threads and captures immutable configuration',
-  async ({ configs, projects, threads }) => {
-    const initial = await configs.load();
-    const first = await projects.create('First project', initial, 'blue');
-    assert.equal(first.project.name, 'First project');
-    assert.deepEqual(await threads.listByProject(first.project.id), []);
-    const replacement = structuredClone(initial.configuration);
-    replacement.models.execution.model = 'replacement';
-    const second = await projects.create(
-      'Second project',
-      await configs.replace(replacement),
-      'blue',
-    );
-    assert.deepEqual(
-      (await projects.find(first.project.id))?.snapshot,
-      initial,
-    );
-    assert.equal(
-      (await projects.find(second.project.id))?.snapshot.configuration.models
-        .execution.model,
-      'replacement',
-    );
-    assert.equal(
-      (await projects.rename(first.project.id, 'Renamed project'))?.name,
-      'Renamed project',
-    );
-    assert.equal('configSnapshot' in first.project, false);
-  },
-);
-
-integrationTest(
-  'persists independent provider-ready histories and exact redacted events',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const root = (await threads.create(project.id, 'Root')).thread;
-    const child = (await threads.create(project.id, 'Child', root.id)).thread;
-    assert.equal(root.name, 'Root');
-    assert.equal(
-      (await threads.rename(child.id, 'Renamed child'))?.name,
-      'Renamed child',
-    );
-    const messages = [
-      {
-        role: 'assistant' as const,
-        content: 'partial',
-        replay: [{ encrypted_content: 'opaque' }],
-      },
-    ];
-    await threads.saveMessages(child.id, messages);
-    const value = {
-      type: 'tool.finished',
-      output: { token: '[REDACTED]', nested: [null, 42] },
-    };
-    await threads.appendEvent(child.id, promptId, value);
-    assert.deepEqual((await threads.find(child.id))?.messages, messages);
-    assert.deepEqual((await threads.find(root.id))?.messages, []);
-    assert.deepEqual((await threads.eventsAfter(child.id, 0))[0]?.event, value);
-    assert.deepEqual(await threads.eventsAfter(root.id, 0), []);
-  },
-);
-
-integrationTest(
-  'stores event text PostgreSQL refuses as replacement characters',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Thread');
-    // A search or read over a binary file returns bytes no PostgreSQL string
-    // accepts: U+0000, and surrogates no pair completes. Astral pairs are text
-    // and must survive untouched.
-    await threads.appendEvent(thread.id, promptId, {
-      type: 'tool.finished',
-      output: 'before\u0000after\uD800tail \uD83D\uDE00',
-    });
-    assert.deepEqual((await threads.eventsAfter(thread.id, 0))[0]?.event, {
-      type: 'tool.finished',
-      output: 'before\uFFFDafter\uFFFDtail \uD83D\uDE00',
-    });
-  },
-);
-
-integrationTest(
-  'stores result text PostgreSQL refuses as replacement characters',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Thread');
-    await threads.setResult(thread.id, {
-      status: 'completed',
-      text: 'report\u0000published',
-      promptId,
-      at: '2026-01-01T00:00:00.000Z',
-    });
-    assert.equal(
-      (await threads.record(thread.id))?.result?.text,
-      'report\uFFFDpublished',
-    );
-  },
-);
-
-integrationTest(
-  'stores a Thread working directory with its hint, and lets a child inherit both',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const root = (await threads.create(project.id, 'Root')).thread;
-    assert.equal(root.cwd, '/workspace');
-    assert.equal(root.cwdRepo, undefined);
-
-    const moved = await threads.setCwd(root.id, '/workspace/doric', 'github');
-    assert.equal(moved?.cwd, '/workspace/doric');
-    assert.equal(moved?.cwdRepo, 'github');
-    assert.deepEqual(await threads.record(root.id), moved);
-
-    // A child starts where its parent is, and carries the hint it had.
-    const child = (
-      await threads.create(project.id, 'Child', root.id, {
-        cwd: '/workspace/doric',
-        cwdRepo: 'github',
-      })
-    ).thread;
-    assert.equal(child.cwd, '/workspace/doric');
-    assert.equal(child.cwdRepo, 'github');
-
-    // Moving on clears a hint the new directory no longer earns.
-    const deeper = await threads.setCwd(root.id, '/workspace/doric/src');
-    assert.equal(deeper?.cwd, '/workspace/doric/src');
-    assert.equal(deeper?.cwdRepo, undefined);
-    assert.equal((await threads.record(child.id))?.cwdRepo, 'github');
-
-    assert.equal(await threads.setCwd(randomUUID(), '/workspace'), undefined);
-  },
-);
-
-integrationTest(
-  'reads a thread or project record alone and answers nothing when it is missing',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Thread');
-    assert.deepEqual(
-      await threads.record(thread.id),
-      (await threads.find(thread.id))?.thread,
-    );
-    assert.deepEqual(
-      await projects.record(project.id),
-      (await projects.find(project.id))?.project,
-    );
-    const missing = randomUUID();
-    assert.equal(await threads.record(missing), undefined);
-    assert.equal(await projects.record(missing), undefined);
-  },
-);
-
-integrationTest(
-  'serializes event sequences across independent clients and rolls back failed insertion',
-  async ({ configs, projects, threads, second }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Thread');
-    const other = createThreadStore(second);
-    await Promise.all(
-      Array.from({ length: 12 }, (_, index) =>
-        (index % 2 ? threads : other).appendEvent(thread.id, promptId, {
-          type: 'delta',
-          index,
-        }),
-      ),
-    );
-    await assert.rejects(
-      threads.appendEvent(thread.id, 'not-a-uuid', { type: 'bad' }),
-    );
-    const next = await other.appendEvent(thread.id, promptId, { type: 'done' });
-    assert.equal(next.sequence, 13);
-    const events = await threads.eventsAfter(thread.id, 0);
-    assert.deepEqual(
-      new Set(
-        events
-          .filter(({ type }) => type === 'delta')
-          .map(({ event }) => (event as { index: number }).index),
-      ),
-      new Set(Array.from({ length: 12 }, (_, index) => index)),
-    );
-    assert.deepEqual(
-      events.map(({ sequence }) => sequence),
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-    );
-    assert.equal((await threads.find(thread.id))?.thread.lastSequence, 13);
-    assert.deepEqual(
-      (await threads.eventsAfter(thread.id, 12)).map(
-        ({ sequence }) => sequence,
-      ),
-      [13],
-    );
-  },
-);
-
-integrationTest(
-  'rewinds a Thread onto an earlier turn boundary without reusing sequences',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Thread');
-    const ids = [randomUUID(), randomUUID(), randomUUID()] as const;
-    const messages = [
-      { role: 'user' as const, content: 'first' },
-      { role: 'assistant' as const, content: 'first answer' },
-      { role: 'user' as const, content: 'second' },
-      { role: 'assistant' as const, content: 'second answer' },
-      { role: 'user' as const, content: 'third' },
-      { role: 'assistant' as const, content: 'third answer' },
-    ];
-    // Each turn checkpoints the provider history it reads, then appends its own.
-    for (const [index, promptId] of ids.entries()) {
-      await threads.saveCheckpoint(thread.id, promptId);
-      await threads.appendEvent(thread.id, promptId, {
-        type: 'prompt.accepted',
-      });
-      await threads.saveMessages(thread.id, messages.slice(0, (index + 1) * 2));
-    }
-    assert.deepEqual((await threads.find(thread.id))?.checkpoints, {
-      [ids[0]]: 0,
-      [ids[1]]: 2,
-      [ids[2]]: 4,
-    });
-
-    const marker = await threads.rewind(thread.id, ids[1]);
-
-    assert.equal(marker?.sequence, 4);
-    assert.equal(marker?.type, 'history.truncated');
-    assert.deepEqual(marker?.event, {
-      type: 'history.truncated',
-      afterSequence: 1,
-    });
-    assert.deepEqual(
-      (await threads.eventsAfter(thread.id, 0)).map(({ sequence }) => sequence),
-      [1, 4],
-    );
-    const restored = await threads.find(thread.id);
-
-    assert.ok(restored !== undefined);
-
-    assert.equal(restored.thread.lastSequence, 4);
-    assert.deepEqual(restored.messages, messages.slice(0, 2));
-    assert.deepEqual(restored.checkpoints, { [ids[0]]: 0 });
-    // Removed turns lost their checkpoint, so they cannot be rewound again.
-    assert.equal(await threads.rewind(thread.id, ids[1]), undefined);
-    assert.equal(await threads.rewind(thread.id, ids[2]), undefined);
-    assert.equal(await threads.rewind(thread.id, randomUUID()), undefined);
-    assert.equal(await threads.rewind(randomUUID(), ids[0]), undefined);
-  },
-);
-
-integrationTest(
-  'records each turn boundary once, so a resumed turn keeps the one it began at',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Thread');
-    const promptId = randomUUID();
-    await threads.saveCheckpoint(thread.id, promptId);
-    // The turn writes the history it built, and the host starts it again: the
-    // boundary that stands is the history the turn began at, not the partial
-    // history a resumed run reads.
-    await threads.saveMessages(thread.id, [
-      { role: 'user', content: 'input' },
-      { role: 'assistant', content: 'partial' },
-    ]);
-    await threads.saveCheckpoint(thread.id, promptId);
-
-    assert.deepEqual((await threads.find(thread.id))?.checkpoints, {
-      [promptId]: 0,
-    });
-  },
-);
-
-integrationTest(
-  'preserves terminal and cancelling states and clears the active prompt when not running',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Thread');
-    await threads.setState(thread.id, 'ready');
-    await threads.setState(thread.id, 'running', promptId);
-    assert.equal(
-      (await threads.find(thread.id))?.thread.activePromptId,
-      promptId,
-    );
-    await threads.setState(thread.id, 'cancelling');
-    assert.equal(
-      (await threads.setState(thread.id, 'running', randomUUID()))?.state,
-      'cancelling',
-    );
-    assert.equal(
-      (await threads.setState(thread.id, 'ready'))?.activePromptId,
-      undefined,
-    );
-    await threads.setState(thread.id, 'cancelled');
-    assert.equal(
-      (await threads.setState(thread.id, 'failed', undefined, 'late'))?.state,
-      'cancelled',
-    );
-    await projects.setState(project.id, 'cancelling');
-    assert.equal(
-      (await projects.setState(project.id, 'ready'))?.state,
-      'cancelling',
-    );
-    await projects.setState(project.id, 'failed', 'failure');
-    assert.equal(
-      (await projects.setState(project.id, 'ready'))?.errorCode,
-      'failure',
-    );
-  },
-);
-
-integrationTest(
-  'scopes pagination cursors to their project and parent',
-  async ({ configs, projects, threads }) => {
-    const first = (await projects.create('First', await configs.load(), 'blue'))
-      .project;
-    const second = (
-      await projects.create('Second', await configs.load(), 'blue')
-    ).project;
-    const root = (await threads.create(first.id, 'Root')).thread;
-    const sibling = (await threads.create(first.id, 'Sibling')).thread;
-    const children = await Promise.all([
-      threads.create(first.id, 'First child', root.id),
-      threads.create(first.id, 'Second child', root.id),
-    ]);
-    const foreign = (await threads.create(second.id, 'Foreign')).thread;
-    assert.deepEqual((await threads.list(first.id, 10, foreign.id)).items, []);
-    assert.deepEqual(
-      (await threads.list(first.id, 10, sibling.id, root.id)).items,
-      [],
-    );
-    const firstPage = await threads.list(first.id, 1, undefined, root.id);
-    const lastPage = await threads.list(
-      first.id,
-      1,
-      firstPage.nextCursor,
-      root.id,
-    );
-    assert.deepEqual(
-      new Set([...firstPage.items, ...lastPage.items].map(({ id }) => id)),
-      new Set(children.map(({ thread }) => thread.id)),
-    );
-    assert.equal(lastPage.nextCursor, undefined);
-    const projectsPage = await projects.list(1);
-    assert.equal(
-      (await projects.list(1, projectsPage.nextCursor)).items.length,
-      1,
-    );
-  },
-);
-
-integrationTest(
-  'enforces same-project immutable acyclic parentage at the database boundary',
-  async ({ configs, projects, threads, database }) => {
-    const first = (await projects.create('First', await configs.load(), 'blue'))
-      .project;
-    const second = (
-      await projects.create('Second', await configs.load(), 'blue')
-    ).project;
-    const root = (await threads.create(first.id, 'Root')).thread;
-    const child = (await threads.create(first.id, 'Child', root.id)).thread;
-    await assert.rejects(
-      database.thread.create({
-        data: {
-          projectId: second.id,
-          name: 'Invalid child',
-          parentThreadId: root.id,
-        },
-      }),
-    );
-    await assert.rejects(
-      database.thread.update({
-        where: { id: child.id },
-        data: { parentThreadId: null },
-      }),
-    );
-    await assert.rejects(
-      database.thread.update({
-        where: { id: root.id },
-        data: { projectId: second.id },
-      }),
-    );
-    const self = randomUUID();
-    await assert.rejects(
-      database.thread.create({
-        data: {
-          id: self,
-          projectId: first.id,
-          name: 'Self',
-          parentThreadId: self,
-        },
-      }),
-    );
-    const a = randomUUID();
-    const b = randomUUID();
-    await assert.rejects(
-      database.thread.createMany({
-        data: [
-          { id: a, projectId: first.id, name: 'A', parentThreadId: b },
-          { id: b, projectId: first.id, name: 'B', parentThreadId: a },
-        ],
-      }),
-    );
-    assert.equal(
-      (await threads.find(child.id))?.thread.parentThreadId,
-      root.id,
-    );
-  },
-);
-
-integrationTest(
-  'deletes only fully terminal subtrees without affecting other roots',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const root = (await threads.create(project.id, 'Root')).thread;
-    const child = (await threads.create(project.id, 'Child', root.id)).thread;
-    const grandchild = (
-      await threads.create(project.id, 'Grandchild', child.id)
-    ).thread;
-    const sibling = (await threads.create(project.id, 'Sibling')).thread;
-    await threads.appendEvent(grandchild.id, promptId, { type: 'saved' });
-    await threads.setState(root.id, 'cancelled');
-    assert.equal(await threads.deleteSubtree(root.id), 'active');
-    await threads.setState(child.id, 'failed');
-    const saved = await threads.eventsAfter(grandchild.id, 0);
-    assert.equal(await threads.deleteSubtree(root.id), 'active');
-    for (const node of [root, child, grandchild]) {
-      assert.ok(await threads.find(node.id));
-    }
-    assert.deepEqual(await threads.eventsAfter(grandchild.id, 0), saved);
-    await threads.setState(grandchild.id, 'cancelled');
-    assert.equal(await threads.deleteSubtree(root.id), 'deleted');
-    assert.equal(await threads.find(child.id), undefined);
-    assert.deepEqual(await threads.eventsAfter(grandchild.id, 0), []);
-    assert.ok(await threads.find(sibling.id));
-    await projects.setState(project.id, 'cancelled');
-    assert.equal(await projects.delete(project.id), 'active');
-    await threads.setState(sibling.id, 'failed');
-    assert.equal(await projects.delete(project.id), 'deleted');
-    assert.equal(await threads.find(sibling.id), undefined);
-    assert.equal(await projects.delete(project.id), 'missing');
-    assert.equal(await threads.deleteSubtree(root.id), 'missing');
-  },
-);
-
-integrationTest(
-  'resumes nonterminal records, pausing an interrupted prompt and preserving history',
-  async ({ configs, projects, threads }) => {
-    const snapshot = await configs.load();
-    const parentId = randomUUID();
-    const projectCases = [];
-    for (const state of [
-      'queued',
-      'ready',
-      'cancelling',
-      'failed',
-      'cancelled',
-    ] as const) {
-      const { project } = await projects.create('Project', snapshot, 'blue');
-      // Create conversations before making their owner terminal.
-      const threadCases = [];
-      if (state === 'queued') {
-        for (const threadState of [
-          'queued',
-          'ready',
-          'running',
-          'cancelling',
-          'failed',
-          'cancelled',
-        ] as const) {
-          const { thread } = await threads.create(project.id, 'Thread');
-          const messages = [
-            {
-              role: 'user' as const,
-              content: `Preserve ${threadState} conversation`,
-            },
-            {
-              role: 'assistant' as const,
-              content: 'Partial answer',
-              replay: [{ encrypted_content: 'opaque' }],
-            },
-          ];
-          await threads.saveMessages(thread.id, messages);
-          // A running Thread accepted and started a prompt before the crash, so
-          // the pause the boot records carries that prompt's own correlation
-          // rather than inventing one.
-          if (threadState === 'running') {
-            await threads.appendEvent(thread.id, promptId, {
-              type: 'prompt.accepted',
-              text: 'interrupted',
-              source: { kind: 'parent', threadId: parentId, promptId },
-            });
-            await threads.appendEvent(thread.id, promptId, {
-              type: 'agent.started',
-              model: 'test-model',
-              input: 'interrupted',
-            });
-          }
-          await threads.setState(
-            thread.id,
-            threadState,
-            threadState === 'running' ? promptId : undefined,
-            'original',
-          );
-          const event = await threads.appendEvent(thread.id, promptId, {
-            type: 'partial',
-            output: { text: 'retained evidence', nested: [null, 42] },
-          });
-          const before = await threads.find(thread.id);
-
-          assert.ok(before !== undefined);
-
-          threadCases.push({ before, event });
-        }
-      }
-      await projects.setState(project.id, state, 'original');
-      const before = await projects.find(project.id);
-
-      assert.ok(before !== undefined);
-
-      projectCases.push({ before, threadCases });
-    }
-    // Reconcile completes the terminations the crash began (a CANCELLING record
-    // becomes CANCELLED) and resumes the rest; only the resumed records are
-    // counted: the queued and running Threads, and the ready Project.
-    assert.equal(await threads.reconcile(), 2);
-    assert.equal(await projects.reconcile(), 1);
-    for (const { before, threadCases } of projectCases) {
-      const after = await projects.find(before.project.id);
-
-      assert.ok(after !== undefined);
-      const terminal = ['failed', 'cancelled'].includes(before.project.state);
-      const cancelling = before.project.state === 'cancelling';
-      assert.equal(
-        after.project.state,
-        terminal ? before.project.state : cancelling ? 'cancelled' : 'queued',
-      );
-      assert.equal(after.project.errorCode, terminal ? 'original' : undefined);
-      // A termination completed by reconcile carries the finish time it lacked.
-      if (cancelling) assert.ok(after.project.finishedAt !== undefined);
-      assert.deepEqual(after.snapshot, snapshot);
-      if (terminal) assert.deepEqual(after, before);
-      for (const { before: record, event } of threadCases) {
-        const restored = await threads.find(record.thread.id);
-
-        assert.ok(restored !== undefined);
-        const terminalThread = ['failed', 'cancelled'].includes(
-          record.thread.state,
-        );
-        const cancellingThread = record.thread.state === 'cancelling';
-        assert.equal(
-          restored.thread.state,
-          terminalThread
-            ? record.thread.state
-            : cancellingThread
-              ? 'cancelled'
-              : 'ready',
-        );
-        if (cancellingThread)
-          assert.ok(restored.thread.finishedAt !== undefined);
-        assert.equal(
-          restored.thread.errorCode,
-          terminalThread ? 'original' : undefined,
-        );
-        assert.equal(restored.thread.activePromptId, undefined);
-        assert.deepEqual(restored.messages, record.messages);
-        if (terminalThread) {
-          assert.deepEqual(restored, record);
-          assert.deepEqual(await threads.eventsAfter(record.thread.id, 0), [
-            event,
-          ]);
-          continue;
-        }
-        if (record.thread.state === 'running') {
-          // The interrupted run is paused durably instead of closed: the reboot
-          // names the restart as the reason, keeps the prompt unfinished, and
-          // leaves the prompt, its history, and its Thread resumable.
-          const events = await threads.eventsAfter(record.thread.id, 0);
-          assert.deepEqual(events.at(-1)?.event, {
-            type: 'prompt.paused',
-            reason: 'host_restarted',
-          });
-          assert.equal(events.at(-1)?.promptId, promptId);
-          assert.equal(restored.thread.result, undefined);
-          assert.equal(
-            events.some(({ type }) => type === 'prompt.finished'),
-            false,
-          );
-          assert.equal(
-            restored.thread.lastSequence,
-            record.thread.lastSequence + 1,
-          );
-        } else {
-          assert.equal(
-            restored.thread.lastSequence,
-            record.thread.lastSequence,
-          );
-          assert.deepEqual(await threads.eventsAfter(record.thread.id, 0), [
-            event,
-          ]);
-        }
-      }
-    }
-    assert.equal(await threads.reconcile(), 0);
-    assert.equal(await projects.reconcile(), 0);
-  },
-);
-
-integrationTest(
-  'leaves an accepted prompt that never started unfinished for the boot',
-  async ({ configs, projects, threads }) => {
-    const { project } = await projects.create(
-      'Project',
-      await configs.load(),
-      'blue',
-    );
-    const { thread } = await threads.create(project.id, 'Thread');
-    const queuedPromptId = randomUUID();
-    // The crash landed between `prompt.accepted` and the first run: the Thread
-    // never entered `running`, so there is no run to pause.
-    await threads.setState(thread.id, 'ready');
-    await threads.appendEvent(thread.id, queuedPromptId, {
-      type: 'prompt.accepted',
-      text: 'queued',
-      source: { kind: 'user' },
-    });
-    const before = await threads.find(thread.id);
-
-    assert.ok(before !== undefined);
-
-    assert.equal(before.thread.activePromptId, undefined);
-
-    assert.equal(await threads.reconcile(), 0);
-    const restored = await threads.find(thread.id);
-
-    assert.ok(restored !== undefined);
-
-    assert.equal(restored.thread.state, 'ready');
-    assert.equal(restored.thread.result, undefined);
-    assert.deepEqual(
-      (await threads.eventsAfter(thread.id, 0)).map(({ event }) => event),
-      [{ type: 'prompt.accepted', text: 'queued', source: { kind: 'user' } }],
-    );
-    // Nothing was closed and nothing was written: the boot reads this prompt as
-    // one it owes a run, with its input and origin intact.
-    assert.deepEqual(
-      (await threads.unfinishedPrompts(thread.id)).map(
-        ({ acceptedAt: _acceptedAt, queuedSequence: _sequence, ...progress }) =>
-          progress,
-      ),
-      [
-        {
-          projectId: project.id,
-          threadId: thread.id,
-          promptId: queuedPromptId,
-          text: 'queued',
-          revision: 1,
-          source: { kind: 'user' },
-          started: false,
-          attempts: 0,
-        },
-      ],
-    );
-  },
-);
 
 void test('ships the baseline followed by every incremental migration', async () => {
   assert.deepEqual((await readdir(migrationDirectory)).sort(), [
@@ -889,6 +39,7 @@ void test('ships the baseline followed by every incremental migration', async ()
     '20261010000000_runtime_documents',
     '20261012000000_registered_credential_kinds',
     '20261021000000_coalesce_thread_deltas',
+    '20261117000000_drop_legacy_runtime_tables',
     'migration_lock.toml',
   ]);
   assert.deepEqual(
@@ -980,6 +131,22 @@ void test('ships the baseline followed by every incremental migration', async ()
   // Every Thread that predates the column keeps the workspace root it ran in.
   assert.match(cwd, /ADD COLUMN "cwd" TEXT NOT NULL DEFAULT '\/workspace',/u);
   assert.match(cwd, /ADD COLUMN "cwd_repo" TEXT;/u);
+
+  const dropLegacy = await readFile(
+    `${migrationDirectory}/20261117000000_drop_legacy_runtime_tables/migration.sql`,
+    'utf8',
+  );
+  // The drop is irreversible, runs in its own transaction, and refuses any
+  // legacy row before it drops a table.
+  assert.match(dropLegacy, /cannot be reversed/u);
+  assert.match(dropLegacy, /^BEGIN;$/mu);
+  assert.ok(dropLegacy.indexOf('BEGIN;') < dropLegacy.indexOf('DO $$'));
+  assert.match(dropLegacy, /^COMMIT;\s*$/mu);
+  assert.ok(dropLegacy.trimEnd().endsWith('COMMIT;'));
+  assert.ok(dropLegacy.includes('RAISE EXCEPTION'));
+  assert.ok(
+    dropLegacy.indexOf('RAISE EXCEPTION') < dropLegacy.indexOf('DROP TABLE'),
+  );
 });
 
 void test('upgrades existing related Project and Thread rows with names and data intact', {
@@ -1089,7 +256,9 @@ void test('upgrades existing related Project and Thread rows with names and data
         last_sequence: 1,
       },
     ]);
-    assert.equal(await resources.database.threadEvent.count(), 1);
+    const [events] = await resources.database.$queryRaw<{ count: bigint }[]>`
+      SELECT count(*) AS count FROM thread_event`;
+    assert.equal(events?.count, 1n);
     const columns = await resources.database.$queryRaw<
       { table_name: string; is_nullable: string }[]
     >`SELECT table_name, is_nullable FROM information_schema.columns
@@ -1308,7 +477,7 @@ void test('leaves an unconfigured GitHub block unconfigured', {
 
 integrationTest(
   'installs a clean Project and Thread baseline without legacy tables or data',
-  async ({ database, projects, configs }) => {
+  async ({ database, configs }) => {
     const tables = await database.$queryRaw<{ tablename: string }[]>`
       SELECT tablename FROM pg_tables
       WHERE schemaname = current_schema() ORDER BY tablename`;
@@ -1316,7 +485,6 @@ integrationTest(
       tables.map(({ tablename }) => tablename),
       [
         'credential',
-        'project',
         'storage_blob',
         'storage_commit',
         'storage_document',
@@ -1326,13 +494,25 @@ integrationTest(
         'storage_stream_entry',
         'storage_truncation',
         'storage_type',
-        'thread',
-        'thread_event',
       ],
     );
-    assert.deepEqual((await projects.list(100)).items, []);
-    assert.equal(await database.thread.count(), 0);
-    assert.equal(await database.threadEvent.count(), 0);
+    // The legacy tables' enums and trigger function leave with them.
+    assert.deepEqual(
+      await database.$queryRaw`
+        SELECT t.typname FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = current_schema()
+          AND t.typname IN ('ProjectState', 'ThreadState')`,
+      [],
+    );
+    assert.deepEqual(
+      await database.$queryRaw`
+        SELECT p.proname FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = current_schema()
+          AND p.proname = 'guard_thread_tree'`,
+      [],
+    );
     assert.deepEqual((await configs.load()).configuration, defaultConfig);
     // The configuration is still one singleton: its settings space.
     await assert.rejects(database.$executeRaw`
@@ -1713,8 +893,6 @@ async function fixture() {
       ...resources,
       configs: kernel.configs,
       credentials: kernel.credentials,
-      projects: createProjectStore(database),
-      threads: createThreadStore(database),
       close: async () => {
         try {
           await kernel.close();

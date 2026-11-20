@@ -249,8 +249,8 @@ export const findImports = (snapshot) => {
  *
  * A whole string literal of an id is the id preceded and followed by the same
  * quote character, `'`, `"` or a backtick, each kind on its own. So
- * `'runtime.migration/v1'` inside a backtick SQL template counts as one
- * (`bundles/foundation/postgres/src/host/database.ts:68`).
+ * `'demo/v1'` inside a backtick SQL template counts as one, and
+ * `'demo/v1.method'` does not.
  *
  * Symbols:
  * - They are read from files under `bundles/<group>/<id>/src/contracts/` of

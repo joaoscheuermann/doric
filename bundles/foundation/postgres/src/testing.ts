@@ -1,5 +1,6 @@
 // `postgres/testing` (Node): the bundle's services with injected options,
-// and the bundle as an embedded foundation.
+// the bundle as an embedded foundation, and the Prisma client for tests that
+// read or seed the database directly.
 export type {
   DiskMeasurement,
   PostgresOptions,
@@ -9,3 +10,5 @@ export {
   type Postgres,
   postgresEmbedded,
 } from './host/postgres.js';
+export type { Database } from './prisma.js';
+export { PrismaClient } from './prisma.js';

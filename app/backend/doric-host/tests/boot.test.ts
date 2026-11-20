@@ -144,7 +144,10 @@ void test('legacy Project rows the stage-7 migration never moved fail the boot a
 }, async () => {
   assert.ok(connectionString);
   const database = await freshDatabase(connectionString, {
-    skip: (migration) => migration.endsWith('_runtime_documents'),
+    // Without stage 7 and the drop, the legacy tables stay and keep the row.
+    skip: (migration) =>
+      migration.endsWith('_runtime_documents') ||
+      migration.endsWith('_drop_legacy_runtime_tables'),
   });
   try {
     await database.query(

@@ -7,10 +7,9 @@ import type { DatabaseHandle } from './database.js';
  * step through `storage.backend/v1.connect` (the `postgres` bundle cannot
  * register its own start hook: `hooks/v1` is provided by the core, which
  * requires this storage). It sets the `database_client` stage and connects
- * the process's one client, so a missing URL, or legacy Project and Thread
- * rows the stage-7 migration has not moved, fail the host here. An
- * unreachable database still fails at the first query, in the credential
- * stage, as before.
+ * the process's one client, so a missing URL, or a row left in the legacy
+ * Project and Thread tables, fails the host here. An unreachable database
+ * still fails at the first query, in the credential stage, as before.
  */
 export const connectDatabase = async (
   handle: DatabaseHandle,

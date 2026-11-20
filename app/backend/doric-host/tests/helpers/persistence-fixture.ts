@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
-import { PrismaClient } from 'postgres/prisma';
+import { PrismaClient } from 'postgres/testing';
 
 /** The migrations belong to the `postgres` bundle, which owns the schema. */
 export const migrationDirectory =

@@ -13,8 +13,7 @@ import {
   type StorageTypeDefinition,
 } from 'bundle/contracts';
 import pg from 'pg';
-import { PrismaClient } from 'postgres/prisma';
-import { createPostgres } from 'postgres/testing';
+import { createPostgres, PrismaClient } from 'postgres/testing';
 import { createMemoryStore, memoryStorageBackend } from 'storage/memory';
 
 import type { DoricConfiguration } from '../../src/contracts/configuration.js';

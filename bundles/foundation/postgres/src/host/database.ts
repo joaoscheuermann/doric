@@ -9,43 +9,36 @@ import type { Environment } from './options.js';
 export const unmigratedReason =
   'Legacy Project and Thread data has not been migrated; run prisma migrate deploy.';
 
-interface LegacyState {
-  readonly legacy: boolean;
-  readonly migrated: boolean;
-}
-
 /**
- * The host never serves an empty history over existing data: legacy
- * `project`, `thread` or `thread_event` rows without the stage-7 marker
- * refuse the connection. The check is the first round trip, so a database
- * that cannot answer it is left to fail at the first query, as before.
+ * The host never serves an empty history over existing data: a row in the
+ * legacy `project`, `thread` or `thread_event` table refuses the connection,
+ * with or without the stage-7 marker. The check is the first round trip, so a
+ * database that cannot answer it is left to fail at the first query, as
+ * before.
  */
 const refuseUnmigrated = async (database: Database): Promise<void> => {
-  let state: LegacyState | undefined;
+  let legacy: boolean;
 
   try {
-    state = await readLegacyState(database);
+    legacy = await holdsLegacyRows(database);
   } catch {
     return;
   }
 
-  if (state.legacy && !state.migrated) {
+  if (legacy) {
     throw new Error(unmigratedReason);
   }
 };
 
-const readLegacyState = async (database: Database): Promise<LegacyState> => {
-  const [tables] = await database.$queryRaw<
-    { legacy: boolean; storage: boolean }[]
-  >`
+const holdsLegacyRows = async (database: Database): Promise<boolean> => {
+  const [tables] = await database.$queryRaw<{ legacy: boolean }[]>`
     SELECT
       to_regclass('thread_event') IS NOT NULL
         AND to_regclass('thread') IS NOT NULL
-        AND to_regclass('project') IS NOT NULL AS "legacy",
-      to_regclass('storage_document') IS NOT NULL AS "storage"`;
+        AND to_regclass('project') IS NOT NULL AS "legacy"`;
 
   if (tables === undefined || !tables.legacy) {
-    return { legacy: false, migrated: true };
+    return false;
   }
 
   const [rows] = await database.$queryRaw<{ legacy: boolean }[]>`
@@ -54,21 +47,7 @@ const readLegacyState = async (database: Database): Promise<LegacyState> => {
         OR EXISTS (SELECT 1 FROM "thread")
         OR EXISTS (SELECT 1 FROM "thread_event") AS "legacy"`;
 
-  if (rows === undefined || !rows.legacy) {
-    return { legacy: false, migrated: true };
-  }
-
-  if (!tables.storage) {
-    return { legacy: true, migrated: false };
-  }
-
-  const [marker] = await database.$queryRaw<{ migrated: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1 FROM "storage_document"
-      WHERE "type" = 'runtime.migration/v1' AND "id" = 'legacy-prisma'
-    ) AS "migrated"`;
-
-  return { legacy: true, migrated: marker?.migrated === true };
+  return rows?.legacy === true;
 };
 
 /** The process's single Prisma client, created on first use. */

@@ -19,9 +19,6 @@ The host part provides:
   the reserved `hostId`/`storageGeneration` identity row) on PostgreSQL tables.
 - `secrets.backend/v1` — the `credential` table, with secrets sealed in the
   AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY`.
-- `postgres.database/v1` — provisional: `connect()` and the process's single
-  Prisma client, used only by the kernel stores until their data moves to
-  `storage/v1`.
 
 ## Configuration
 
@@ -41,10 +38,11 @@ never reported as low storage.
 ## Schema and client
 
 The bundle owns the Prisma schema, the migrations and the generated client
-(`prisma/`, `src/generated/prisma`). The `postgres/prisma` subpath re-exports
-the generated client and `createDatabase` for the kernel, and
-`postgres/testing` builds the service definitions with injected options for
-tests.
+(`prisma/`, `src/generated/prisma`). The client is internal: only the two
+backends use it, and no other bundle or the host receives it. For tests,
+`postgres/testing` builds the service definitions with injected options and
+exports `PrismaClient` and the type `Database`, so a test can seed or read the
+database directly.
 
 ## Development
 
@@ -58,10 +56,17 @@ npx nx run bundle-postgres:migrate
 
 The PostgreSQL suites skip without `DORIC_TEST_DATABASE_URL`; the size report
 of the delta-coalescing migration also needs `DORIC_TEST_COALESCE_SIZE=1`.
-`migrate` runs `prisma migrate deploy`; a migration that rewrites data, such as
-`20261021000000_coalesce_thread_deltas`, has its operator steps in the
-[host README](../../../app/backend/doric-host/README.md#coalescing-stored-thread-deltas). The build writes `bundles/foundation/postgres/dist`,
-which `doric-host:build-bundles` stages into
+`migrate` runs `prisma migrate deploy`. A migration that rewrites or drops data
+has its operator steps in the host README:
+
+- `20261021000000_coalesce_thread_deltas`:
+  [Coalescing stored Thread deltas](../../../app/backend/doric-host/README.md#coalescing-stored-thread-deltas);
+- `20261117000000_drop_legacy_runtime_tables`, which drops the legacy
+  `project`, `thread` and `thread_event` tables and cannot be reversed:
+  [Legacy rows at the drop migration](../../../app/backend/doric-host/README.md#legacy-rows-at-the-drop-migration).
+
+The build writes `bundles/foundation/postgres/dist`, which
+`doric-host:build-bundles` stages into
 `app/backend/doric-host/dist/bundles/postgres`; to rebuild and stage every
 bundle used by the Doric host:
 

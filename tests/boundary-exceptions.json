@@ -1,18 +1,1 @@
-{
-  "violations": [
-    {
-      "check": "imports",
-      "bundle": "runtime",
-      "target": "postgres/prisma",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "phase 10"
-    },
-    {
-      "check": "cycles",
-      "bundle": "postgres",
-      "target": "runtime",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "phase 10"
-    }
-  ]
-}
+{ "violations": [] }

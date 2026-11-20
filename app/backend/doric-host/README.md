@@ -888,8 +888,9 @@ credential table.
   checkpoints that rewind truncates, Project colors, the credential store,
   provider kinds and models, Thread working directories, usage and queue
   pauses, the provider consolidation, generic storage, runtime documents,
-  registered credential kinds and the coalescing of stored Thread deltas. They
-  do not convert Session data.
+  registered credential kinds, the coalescing of stored Thread deltas and the
+  drop of the legacy Project and Thread tables. They do not convert Session
+  data.
 - The generic-storage migration converts the configuration tables into the
   `host-config.configuration/v1` settings document, keeping its revision and
   update time, verifies the conversion, and then drops those tables. It
@@ -899,6 +900,11 @@ credential table.
   one entry per run of deltas instead of one per token. It cannot be
   reversed and must run offline; follow
   [Coalescing stored Thread deltas](#coalescing-stored-thread-deltas).
+- The drop migration (`20261117000000_drop_legacy_runtime_tables`) drops the
+  legacy `project`, `thread` and `thread_event` tables, which are empty since
+  the runtime-documents migration moved their rows. It refuses while any of
+  them still holds a row and cannot be reversed; follow
+  [Legacy rows at the drop migration](#legacy-rows-at-the-drop-migration).
 
 Start from an empty database. A database with an older (pre-baseline) schema
 or migration history must be explicitly recreated by its operator before
@@ -966,6 +972,63 @@ To roll back, stop the host and restore the backup over the database, for
 example `docker exec -i doric-postgres-1 pg_restore -U doric -d doric --clean --if-exists --single-transaction < doric-before-coalesce.dump`.
 The restored database has not recorded the migration, so the next
 `prisma migrate deploy` of this version applies it again.
+
+### Legacy rows at the drop migration
+
+`20261117000000_drop_legacy_runtime_tables` drops the legacy `project`,
+`thread` and `thread_event` tables, with the `guard_thread_tree()` function and
+the `ProjectState` and `ThreadState` enums only they use. The runtime-documents
+migration (`20261010000000_runtime_documents`) moved their rows into the
+runtime's storage documents and streams and deleted them, so on a database
+that has run it the tables are empty. The drop migration locks the three
+tables and counts their rows in one transaction; if any table holds a row, it
+raises `Legacy table "<name>" holds <n> rows` and the transaction aborts, so
+nothing is dropped. Tables that are already gone are skipped. **It cannot be
+reversed**: the only way back is restoring the backup taken in step 3.
+
+Until the tables are gone, the host's startup check reads them: a row in any of
+them fails the host at its `database_client` stage, whether or not the
+runtime-documents migration has run, so the host never serves an empty history
+over data it has not moved.
+
+The examples use the same container, role and database as
+[Coalescing stored Thread deltas](#coalescing-stored-thread-deltas).
+
+1. Quit the Doric desktop app on every machine that connects to this host.
+2. Stop the host (`Ctrl+C` on `nx serve doric-host`, or
+   `docker compose stop docker` / `firecracker`). Keep PostgreSQL running.
+   With Compose, do not run `up` with the new image before step 3: its
+   `migrate` service applies pending migrations.
+3. Back up the database:
+
+   ```sh
+   docker exec doric-postgres-1 pg_dump -U doric -d doric -Fc > doric-before-drop.dump
+   ```
+
+4. Apply the migration, natively with `DORIC_DATABASE_URL` pointing at the
+   database (`npx nx run doric-host:migrate`), or with Compose
+   (`docker compose run --rm --build migrate`).
+5. If it raises, a row was written to a legacy table after the
+   runtime-documents migration, and nothing was dropped. Either restore the
+   backup, or export the rows and delete them, in this order:
+
+   ```sh
+   docker exec doric-postgres-1 pg_dump -U doric -d doric --data-only \
+     -t thread_event -t thread -t project > doric-legacy-rows.sql
+   docker exec doric-postgres-1 psql -U doric -d doric -c \
+     'DELETE FROM thread_event; DELETE FROM thread; DELETE FROM project;'
+   ```
+
+   Then mark the failed migration as rolled back and deploy again:
+
+   ```sh
+   npx prisma migrate resolve --rolled-back 20261117000000_drop_legacy_runtime_tables --config app/backend/doric-host/prisma.config.ts
+   npx nx run doric-host:migrate
+   ```
+
+6. Start the host, then the desktop.
+
+Rolling the code back past this migration: see the phase report.
 
 ### Network exposure
 

@@ -14,7 +14,7 @@ import {
   createConfigStore,
   createCredentialService,
 } from 'host-config/testing';
-import type { Database } from 'postgres/prisma';
+import type { Database } from 'postgres/testing';
 import { postgresEmbedded } from 'postgres/testing';
 
 /** The built bundles the host stages in `dist/bundles`. */
