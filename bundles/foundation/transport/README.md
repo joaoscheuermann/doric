@@ -41,7 +41,7 @@ them. The registration is disposed when the bundle deactivates.
 
 Every contract is resolved when a request arrives, not at activation, so a
 route reaches the generation that is active at that moment. The workspace
-sockets follow `runtime/v1` and `terminal/v1` through `whenAvailable`, so they
+sockets follow `runtime/v2` and `terminal/v1` through `whenAvailable`, so they
 watch each new provider after a generation change.
 
 ## Contracts it calls
@@ -53,7 +53,7 @@ watch each new provider after a generation change.
 | `models/v1`          | `/providers/kinds`, `/providers/models`                             |
 | `tools/v1`           | `GET /tools`                                                        |
 | `sandbox/v1`         | `/vms`                                                              |
-| `runtime/v1`         | `/projects`, `/vms/:id/ssh`, the `/projects` and `/threads` sockets |
+| `runtime/v2`         | `/projects`, `/vms/:id/ssh`, the `/projects` and `/threads` sockets |
 | `runtime.threads/v1` | `/threads`, Project Thread lists, the workspace sockets             |
 | `runtime.lease/v1`   | `GET /projects/:id/ssh`                                             |
 | `files/v1`           | Project files, tree and file content                                |

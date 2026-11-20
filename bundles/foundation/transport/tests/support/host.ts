@@ -25,7 +25,7 @@ import { ResourcesV1, resourcesMethods } from 'resources/contracts';
 import {
   RuntimeLeaseV1,
   RuntimeThreadsV1,
-  RuntimeV1,
+  RuntimeV2,
   runtimeLeaseMethods,
   runtimeMethods,
   runtimeThreadsMethods,
@@ -140,7 +140,7 @@ export const serve = async (fakes: Fakes = {}): Promise<Host> => {
     provide: [
       // The host always has hooks/v1 (the core); the transport's start step needs it.
       createMinimalHooks(),
-      fakeService(RuntimeV1.id, runtimeMethods, {
+      fakeService(RuntimeV2.id, runtimeMethods, {
         // The transport subscribes on activation; most cases publish nothing.
         watch: () => ({ dispose: () => undefined }),
         ...fakes.runtime,

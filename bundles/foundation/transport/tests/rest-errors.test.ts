@@ -41,7 +41,7 @@ const projectCases = (): Case[] => [
       ['POST', `/projects/${id}/terminate`, 'terminateProject'],
     ] as const
   ).map(([method, path, member, body]) => ({
-    name: `runtime/v1.${member} undefined`,
+    name: `runtime/v2.${member} undefined`,
     fakes: { runtime: { [member]: answering(undefined) } },
     method,
     path,
@@ -49,7 +49,7 @@ const projectCases = (): Case[] => [
     expected: restErrors.project(undefined),
   })),
   ...(['missing', 'active'] as const).map((result) => ({
-    name: `runtime/v1.deleteProject ${result}`,
+    name: `runtime/v2.deleteProject ${result}`,
     fakes: { runtime: { deleteProject: answering(result) } },
     method: 'DELETE',
     path: `/projects/${id}`,

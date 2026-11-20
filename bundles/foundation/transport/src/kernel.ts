@@ -18,7 +18,7 @@ import { ResourcesV1 } from 'resources/contracts';
 import {
   RuntimeLeaseV1,
   RuntimeThreadsV1,
-  RuntimeV1,
+  RuntimeV2,
   SandboxV1,
 } from 'runtime/contracts';
 import type { Server as SocketServer } from 'socket.io';
@@ -75,7 +75,7 @@ const version = '0.0.0';
  */
 export const transportRequires = [
   'hooks/v1@^1.0.0',
-  'runtime/v1@^1.0.0',
+  'runtime/v2@^2.0.0',
   'runtime.threads/v1@^1.7.0',
   'runtime.lease/v1@^1.0.0',
   'sandbox/v1@^1.0.0',
@@ -90,7 +90,7 @@ export const transportRequires = [
  * It provides no contract: `resources/v1`, which it served in stage 9, is the
  * `resources` bundle's since stage 10. Activation registers the routes and
  * namespaces over lazy stubs and subscribes the workspace socket to each
- * `runtime/v1` and `terminal/v1` provider as it becomes available, so nothing
+ * `runtime/v2` and `terminal/v1` provider as it becomes available, so nothing
  * here calls the generation while it is not running yet.
  */
 export const createTransport = (options: TransportOptions) =>
@@ -113,7 +113,7 @@ export const createTransport = (options: TransportOptions) =>
       activate: ({ services }: HostContext) => {
         const features = () => options.features?.() ?? services;
         const transport: TransportServices = {
-          runtime: services.use(RuntimeV1),
+          runtime: services.use(RuntimeV2),
           threads: services.use(RuntimeThreadsV1),
           // A lease read binds the request's Project or Thread as call scope.
           lease: (scope) => services.use(RuntimeLeaseV1, scope),
@@ -150,7 +150,7 @@ export const createTransport = (options: TransportOptions) =>
         );
         // The subscriptions returned are tracked by the callback's scope, so
         // they end when that provider leaves.
-        const watching = services.whenAvailable(RuntimeV1, (runtime) => {
+        const watching = services.whenAvailable(RuntimeV2, (runtime) => {
           runtime.watch(listener);
         });
         const following = services.whenAvailable(
