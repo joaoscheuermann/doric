@@ -41,7 +41,7 @@
   "resident": ["host-config", "transport", "screen-relay"],
   "required": {
     "contracts": [
-      "runtime/v1",
+      "runtime/v2",
       "executor/v1",
       "sandbox/v1",
       "models/v1",

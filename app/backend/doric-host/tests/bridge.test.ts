@@ -484,9 +484,9 @@ void test('a desktop caller reaches only the host methods its providers expose (
       ['secrets/v1', 'resolve', credential],
       ['secrets/v1', 'resolveByKind', ['OPENAI', 'key']],
       ['secrets/v1', 'redactions', []],
-      ['runtime/v1', 'recover', []],
-      ['runtime/v1', 'dispose', []],
-      ['runtime/v1', 'vmSsh', randomUUID()],
+      ['runtime/v2', 'recover', []],
+      ['runtime/v2', 'dispose', []],
+      ['runtime/v2', 'vmSsh', randomUUID()],
       ['runtime.threads/v1', 'spawn', 'prompt'],
       [
         'runtime.threads/v1',
@@ -508,7 +508,7 @@ void test('a desktop caller reaches only the host methods its providers expose (
     const watch = await firstOf(
       host.desktop,
       'd:w1',
-      'runtime/v1',
+      'runtime/v2',
       'watch',
       [],
     );

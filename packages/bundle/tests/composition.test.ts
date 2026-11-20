@@ -121,7 +121,7 @@ void test('the shipped composition requires the five structural contracts and th
 
   assert.deepEqual(shipped.required, {
     contracts: [
-      'runtime/v1',
+      'runtime/v2',
       'executor/v1',
       'sandbox/v1',
       'models/v1',
