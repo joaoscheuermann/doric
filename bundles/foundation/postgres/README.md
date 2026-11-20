@@ -31,7 +31,10 @@ The host part provides:
 Each is read when it is first needed. `activate` performs no I/O. The Prisma
 client is created and connected on first use from `DORIC_DATABASE_URL`, and the
 host forces that connection at its existing startup stages (`database_client`),
-so a missing URL or an unreachable database still fails the start. The health
+so a missing URL or an unreachable database still fails the start. A database
+whose three legacy tables (`project`, `thread`, `thread_event`) all exist and
+one of them holds a row fails the start at `database_client` too, with or
+without the stage-7 marker. The health
 check measures the disk without a database round trip, so a database outage is
 never reported as low storage.
 

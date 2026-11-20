@@ -2293,6 +2293,29 @@ The options the owner did not choose are in [Alternatives considered](#alternati
 
 ## Revisions
 
+- Implementation findings of phase 10 (2026-11-20). Recorded during the implementation on the branch `feat/bundle-isolation`, commit `fafd1d23`. The version stays 7. Each finding names the body passage it supersedes, or says it fills a gap; the body text is left as accepted. The coordinator's decision OD55 (2026-11-20, under OD34) is recorded in the concept's [Decisions](../features/bundle-isolation.md#decisions). The phase 10 plan's spec disagreements are listed below, D1–D15.
+  - D1. The line references into `bundles/foundation/postgres/src/host/database.ts` had drifted. At `fafd1d23^`, `refuseUnmigrated` was at `:23-35`, the first query (the tables' existence) at `:38-49`, the row count at `:51-55` and the marker query at `:65-71`. At `fafd1d23`, `refuseUnmigrated` is at `:19-31`, the first query at `:34-42` and the row count at `:44-48`; the marker query is gone, and `connect()` runs the check at `:90-95`. Supersedes the references at §16 ("`database.ts:19-35`", "`:38-49`", "`:47-49`", "`:53-55`", "`:60-71`").
+  - D2. In `src/host/postgres.ts`, at `fafd1d23^` the bundle provided `postgres.database/v1` at `:52` and listed it at `:57-61`; at `fafd1d23` the list is `:53`, `['storage.backend/v1', 'secrets.backend/v1']`, and `activatePostgres` (`:42-51`) provides only those two. Supersedes "`postgres.ts:52,58-62`".
+  - D3. The host README's coalescing steps are at `app/backend/doric-host/README.md:931-963` at `fafd1d23^`; after phase 10's README edits they are at `:937-969`. Supersedes that reference.
+  - D4. §16's SQL drops the three tables but leaves the two legacy enums and the `guard_thread_tree()` function (the trigger `thread_tree_guard` is dropped with its table); the migration drops them too (OD-3), and the AC10.2 drift check, empty on a fresh database, proves it. Supersedes §16's SQL.
+  - D5. `zod` leaves `postgres`'s dependencies, and with it one line of `package-lock.json`. Fills a gap.
+  - D6. The `contracts` file is deleted together with the `./contracts` export (OD-1, option (a)). Fills a gap.
+  - D7. `boot.test.ts` also skips the drop migration (OD-8). Fills a gap.
+  - D8. The 18 legacy-store tests are deleted with their helpers (OD-6). Fills a gap.
+  - D9. The stage-7 test used the contract; it is rewritten over a SQL seed (OD-5). Supersedes §16's "rewritten" note where it assumes no change of fixture.
+  - D10. `postgres/testing` exports `PrismaClient` and the type `Database`, and not `Prisma` (OD-2, option (a)). Supersedes D22 where it keeps `Prisma`.
+  - D11. The `boundaries.mjs` example that named `postgres/prisma` is replaced. Supersedes that example.
+  - D12. The line references into `bundles/foundation/postgres/tests/activate.test.ts` had drifted. At `fafd1d23^` the contract was named at `:64` (the dry activation's list, in the test at `:48`) and used at `:90-92` (in the test at `:70`); `:118` and `:135` named no case about it. At `fafd1d23` the two tests are at `:47` and `:68` and no longer name it. Supersedes "`activate.test.ts:64,90,118,135`" in section 19.
+  - D13. CR1 says "T10.4 tests the race"; the §16 body governs. Supersedes CR1's wording.
+  - D14. The startup check is changed (it drops the marker), not added. Supersedes the wording that adds it.
+  - D15. The AC10.5 report is summarised in the concept's Evolution entry, and the "Phase report" section of the branch's single pull request carries it, because decision 34 leaves no per-phase pull request (OD-13). Supersedes the phase's "report on the pull request".
+  - D16. OD-7 keeps the folder `20261117000000_drop_legacy_runtime_tables`, because decision 34 means a single merge at the end. Supersedes §16's rule that the folder takes the merge date if later; `main` is checked again at the merge, so the name still sorts after every migration there.
+  - D17. The function the migration drops is `guard_thread_tree()`; `thread_tree_guard` is its trigger, which goes with its table. The commit body of `fafd1d23` calls the function `thread_tree_guard`; this finding corrects it. Fills a gap.
+  - D18. Phases 4(e), 7, 9 and 10 edited the warning at the top of `docs/architecture/bundles/implementation-decisions.md`, although AC10.1 says no phase after 0 edits that file. Each edit was a notice only, and phase 12 folds it. Supersedes AC10.1's "no phase after 0 edits" for that warning.
+  - T10.1–T10.3 live in the new `drop-legacy-tables.test.ts`, not in `migration.test.ts`. Fills a gap.
+  - The stage-7 seed gained a FAILED project and a same-instant tie. Fills a gap.
+  - The manifest's `optional` key for `runtime.migration/v1` was removed, as §16 asks ("with the `optional` line phase 0 added"). It supersedes no text and fills no gap; it is listed because the plan named it.
+  - AC10.5 ran with a copied `node_modules`, because the sandbox's 2 GiB memory limit killed `npm ci`; the copy matches what `npm ci` at the pre-phase commit installs ([Evolution](../features/bundle-isolation.md#evolution)). Fills a gap.
 - Implementation findings of phase 9 (2026-11-20). Recorded during the implementation on the branch `feat/bundle-isolation`, commit `d7d600c2`. The version stays 7. Each finding names the body passage it supersedes, or says it fills a gap; the body text is left as accepted. The coordinator's decision OD54 (2026-11-19, under OD34) is recorded in the concept's [Decisions](../features/bundle-isolation.md#decisions). The phase 9 plan's spec disagreements are listed below in the plan's order, 1–8.
   - 1. The line references of `files`'s `src/client/api/peers.ts` had drifted: at `d7d600c2^`, the commit before the phase, the `git.changes/v1` copy was at `:49-77`. Supersedes those references.
   - 2. At `d7d600c2^`, `files-tree.tsx:91` was `:103`, and `useChanges` was at `:195-214`. Supersedes those references.

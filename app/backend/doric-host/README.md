@@ -986,8 +986,8 @@ raises `Legacy table "<name>" holds <n> rows` and the transaction aborts, so
 nothing is dropped. Tables that are already gone are skipped. **It cannot be
 reversed**: the only way back is restoring the backup taken in step 3.
 
-Until the tables are gone, the host's startup check reads them: a row in any of
-them fails the host at its `database_client` stage, whether or not the
+Until the tables are gone, the host's startup check reads them: when all three
+exist and one of them holds a row, the host fails at its `database_client` stage, whether or not the
 runtime-documents migration has run, so the host never serves an empty history
 over data it has not moved.
 
@@ -1028,7 +1028,13 @@ The examples use the same container, role and database as
 
 6. Start the host, then the desktop.
 
-Rolling the code back past this migration: see the phase report.
+Rolling the code back to a build whose `prisma/migrations` folder contains
+`20261010000000_runtime_documents` starts on the migrated database: AC10.5
+checked it with the build of `5a1da9b8` (see the phase 10 entry of
+[the feature doc](../../../docs/features/bundle-isolation.md#evolution)). A
+build without that folder could not serve this database before the drop either
+(Spec 1, §16), so the backup does not help it. The owner confirms this limit
+before the branch merges (OD-12).
 
 ### Network exposure
 

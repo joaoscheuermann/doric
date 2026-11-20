@@ -29,6 +29,19 @@
 > visão Changes e seu contador leem o store do `git` diretamente
 > (`git/src/client/hooks/use-changes.ts:27`); o contrato continua provido para
 > outros consumidores (D17 da spec).
+>
+> Desde a fase 10 (2026-11-20, `postgres` 2.0.0), `postgres.database/v1` e os
+> subpaths `postgres/prisma` e `./contracts` não existem mais, e a migração
+> `20261117000000_drop_legacy_runtime_tables` remove as tabelas legadas
+> `project`, `thread` e `thread_event`. As entradas abaixo que os descrevem
+> como atuais (S-12, a recusa em `connect()` X-14, as etapas 4 e 5, a parte do
+> boot em `database_client` que trata das tabelas legadas, "o kernel ainda
+> escreve nas tabelas legadas" na migração de dados da etapa 7 e D-S7-01) são
+> histórico. O estágio `database_client` continua existindo e roda o
+> `connect()` de `storage.backend/v1`; o `postgres` fornece só
+> `storage.backend/v1` e `secrets.backend/v1`, e a checagem de partida recusa,
+> com ou sem marcador, um banco em que as três tabelas legadas existem e uma
+> delas tem linha.
 
 ## Princípios
 
