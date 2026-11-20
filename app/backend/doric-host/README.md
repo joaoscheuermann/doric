@@ -181,7 +181,8 @@ What each bundle owns:
   `openui.questions/v1`.
 - **`files`** and **`git`** tools reach the Thread's working directory and the
   Project sandbox through `runtime.workspace/v1` and `runtime.lease/v1`; the
-  **`terminal`** tool reaches tracked terminals through `terminal/v1`.
+  **`terminal`** tool reaches tracked terminals through `terminal/v1`, which
+  the `terminal` bundle provides, not `runtime`.
 - **`runtime`** provides those contracts by forwarding each call to the
   per-prompt `Host` facade (its types live in
   `bundles/runtime/runtime/src/contracts/tool-host`), bound to the calling

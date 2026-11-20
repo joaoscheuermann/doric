@@ -73,7 +73,8 @@ src/client/
 - A terminal prompt is told by its source kind (`fromTerminal` in
   `src/client/domain/projector-input.ts`), never by parsing its text: the
   `terminal` bundle reads the host's frame. The chat lists neither
-  `terminal/v1` nor `runtime.terminals/v1`, and `ConversationThreadContext`
+  `terminal/v1` nor the former `runtime.terminals/v1`, and
+  `ConversationThreadContext`
   lives in `src/client/hooks/conversation-thread.ts`.
 
 ## Styling

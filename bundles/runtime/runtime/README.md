@@ -59,7 +59,7 @@ window's records mirror, over `runtime/v2` and `runtime.threads/v1`. See the
   [docs/features/cwd-tool.md](../../../docs/features/cwd-tool.md)) of the
   calling prompt's Thread, and `withThread`, which runs a task on one live
   Thread.
-- `runtime.lease/v1` — `describe`, `exec`, `readFile` and `writeFile` on the
+- `runtime.lease/v1` — `describe`, `exec`, `readFile`, `readFileBytes` and `writeFile` on the
   sandbox leased to the calling prompt's Project (`exec` carries no abort
   signal and returns text only), `ssh`, which answers the lease state without
   acquiring one, and `withLease`, which runs a task on the sandbox the Project
@@ -67,7 +67,9 @@ window's records mirror, over `runtime/v2` and `runtime.threads/v1`. See the
   resources and Git: the [`files`](../../features/files/README.md),
   [`git`](../../features/git/README.md) and
   [`resources`](../../features/resources/README.md) bundles answer them over
-  `withLease` and `runtime.workspace/v1.withThread`.
+  `withLease` and `runtime.workspace/v1.withThread`. The desktop can no
+  longer call any method of `runtime.lease/v1`; the manifest keeps its
+  `desktopScope` key, which is unused.
 - `runtime.hooks/v1` — `onProjectReadyHook`, `onProjectClosingHook` and
   `onThreadsClosingHook`, which the runner awaits where it closes a Thread's
   terminals; `onPromptStartedHook` (the prompt, its source, the Thread's `cwd`

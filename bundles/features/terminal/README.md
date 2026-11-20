@@ -99,10 +99,16 @@ sheet no longer carries it.
 
 From 1.2.0 (bundle isolation 5(b)) the client part draws in the chat, through
 `chat.views/v1`, listed under `optional`, each registration in a
-`whenAvailable` callback of its own. It imports the chat's types from
-`chat/contracts`, types only since the chat is optional, through
-`src/client/peers.ts`, and needs platform 1.10.0
+`whenAvailable` callback of its own, and needs platform 1.10.0
 (`engines.doric` `^1.10.0`) for `desktop/ui/collapsible-block`.
+
+From 1.2.1 (bundle isolation 7(c)) the client part imports the `runtime`,
+`workspace` and `layout` contracts, and the chat's types from
+`chat/contracts`, types only since the chat is optional, all through
+`src/client/peers.ts`. `runtime` is a dependency; `workspace`, `layout` and
+`chat` are devDependencies. `files.refresh/v1` stays a structural copy, and
+the host part keeps its copies of the runtime's shapes
+(`src/host/peers.ts`).
 
 - `terminal-tool-call` (`src/client/chat/terminal-call.tsx`) draws each
   `terminal` call, inside the activity group. It follows the call's Project in

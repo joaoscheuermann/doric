@@ -26,6 +26,8 @@ platform. See the [main README](../../../README.md) for Doric as a whole and
   (`GET /projects/:id/resources`). It never acquires a lease; a lease state
   comes back as data, and a provider without a reading answers an
   `unavailable` container.
+- From 1.1.5, `resources/contracts` declares `ContainerResources` and its
+  schema, which moved there from the runtime.
 
 ## Desktop UI
 

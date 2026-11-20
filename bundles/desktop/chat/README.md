@@ -221,8 +221,9 @@ desktop part, as Papercraft does.
   `workspace.hooks/v1`, `settings.models/v1` and `workspace.selection/v1`
   (from 1.9.0, for the execution picker; from 1.9.1, for the conversation
   too). Without them the conversation still works. From 1.10.4 the chat lists
-  neither `terminal/v1` nor `runtime.terminals/v1`: the `terminal` bundle
-  draws a terminal's live output in its own row.
+  neither `terminal/v1` nor `runtime.terminals/v1` (which runtime 3.0.0 no
+  longer provides): the `terminal` bundle draws a terminal's live output in
+  its own row.
 - **Platform:** chat 1.10.0 needs platform `^1.10.0`, for
   `desktop/ui/collapsible-block`, the transcript's folding block and its
   generic open/closed rule.

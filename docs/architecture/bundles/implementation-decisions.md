@@ -8,6 +8,16 @@
 > `workspace.dashboard/v1`, do bundle `workspace`, os substituem. As entradas
 > abaixo que os citam são histórico. O comportamento atual está em
 > [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts).
+>
+> Desde a fase 7 (2026-11-19, runtime 3.0.0), o runtime fornece `runtime/v2`
+> e não mais `runtime/v1` nem `runtime.terminals/v1` (os terminais vêm de
+> `terminal/v1`), e `runtime.lease/v1` 1.3.0 não tem mais as leituras de
+> arquivos, mudanças, recursos e Git, nem o desktop chama algum de seus
+> métodos. As entradas abaixo que descrevem esses contratos ou essas leituras
+> como atuais (as das linhas que citam `runtime/v1`, `runtime.terminals/v1`
+> e as leituras do lease, entre elas R-STREAM, os `requires`, o watch do
+> Project, os streams de terminal, a ponte e o `required` da composição) são
+> histórico.
 
 ## Princípios
 
@@ -964,9 +974,9 @@ Complementam a seção "Desktop e UI", como as S8-1 a S8-23. D9-2, D9-5, D9-6 e 
 
 ## Etapa 10 — bundle `git` (10G)
 
-- **Esquemas próprios em `git/contracts`.** Os tipos vêm de `runtime/contracts` (só `import type`), mas os esquemas zod são escritos no módulo: a parte cliente carrega `git/contracts`, e o mapa de imports da janela não garante o módulo de contratos de um bundle de host (mesma escolha de `files`).
+- **Esquemas próprios em `git/contracts`.** Desde o passo 7(c) do isolamento de bundles, os tipos são declarados em `git/contracts`, e só `LeaseOutcome` vem de `runtime/contracts` (só `import type`); os esquemas zod são escritos no módulo: a parte cliente carrega `git/contracts`, e o mapa de imports da janela não garante o módulo de contratos de um bundle de host (mesma escolha de `files`).
 - **`git.changes/v1` com `{ projectId, cwd? }`.** O escopo é o diretório de trabalho cru, não `root`: é a forma que o consumidor (`files`, árvore decorada) já usa e a mesma de `files.sandbox/v1`; a chave `['files', p, 'changes', cwd]` não muda.
-- **Busca de ocupado por `runtime.terminals/v1`.** O `terminal/v1@1.0.0` ainda não tem `list`; o host usa `runtime.terminals/v1.list(projectId)` por `whenAvailable` (o mesmo registro que o runtime consultava), com o filtro de hoje (`state !== 'exited'` e `origin === 'agent' || command !== 'bash'`). Quando o `terminal` dono do registro entrar (10L), a fonte troca para `terminal/v1.list` sem mudar o serviço (função `TerminalList`).
+- **Busca de ocupado por `runtime.terminals/v1`.** O `terminal/v1@1.0.0` ainda não tem `list`; o host usa `runtime.terminals/v1.list(projectId)` por `whenAvailable` (o mesmo registro que o runtime consultava), com o filtro de hoje (`state !== 'exited'` e `origin === 'agent' || command !== 'bash'`). Quando o `terminal` dono do registro entrar (10L), a fonte troca para `terminal/v1.list` sem mudar o serviço (função `TerminalList`). _Nota (2026-11-19, etapa 7(c) do isolamento de bundles):_ `runtime.terminals/v1` não é mais fornecido; o `git` 1.2.14 lê a lista de `terminal/v1` ([docs/features/bundle-isolation.md](../../features/bundle-isolation.md)).
 - **`fileDiff` inválido antes do lease.** Repositório ou caminho absoluto, com `..`, com NUL ou caminho vazio respondem `{ status: 'ready', value: { status: 'invalid_path' } }` sem chamar `withLease`, como a rota respondia 422 em qualquer estado do lease.
 - **Leituras de Thread por `withThread`.** `status` usa `{ exclusive: false, refreshHint: true }`; `branches` e `switchBranch` usam `{ exclusive: true }`. O `withThread` também responde `inactive` para um registro terminal, que o `git`/`branches` do runtime não checavam explicitamente (uma Thread terminal não tem runtime vivo, então a resposta é a mesma).
 - **Troca de branch espera o refresh.** Como o `refreshProject` que o `onSuccess` aguardava, o sucesso pede `files.refresh/v1.request(projectId)` (os outros leitores da janela) e aguarda o refresh do próprio cliente; sem `files.refresh/v1`, o retry e o refresh caem no cliente do `git`.

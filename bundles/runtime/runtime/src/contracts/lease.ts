@@ -7,8 +7,8 @@ import { LOCAL_KEY } from './runtime.js';
 
 /*
  * runtime.lease/v1: the sandbox operations the stage-1 tools use on the
- * sandbox leased to the calling prompt's Project (call.scope), plus, from
- * stage 5, the lease-dependent reads of the current routes (API mínima). Exec
+ * sandbox leased to the calling prompt's Project (call.scope), plus `ssh` and
+ * `withLease`, which answer the current lease state without acquiring. Exec
  * carries no abort signal and returns no byte arrays. 1.3.0 (bundle isolation
  * 7(c)): the reads of files, changes, resources and Git moved to the bundles
  * that own them; `ssh` and `withLease` stay.
@@ -84,14 +84,14 @@ export interface RuntimeLease {
   readFileBytes(path: string, call?: CallArg): Promise<string>;
   writeFile(path: string, content: string, call?: CallArg): Promise<void>;
 
-  // Lease reads answering the current lease state without acquiring. Scope:
+  // Answers the current lease state without acquiring. Scope:
   // `call.scope.projectId`; a call with no Project scope rejects with
   // ContractError('invalid_input').
   ssh(call?: CallArg): Promise<ProjectSsh>;
   /**
    * 1.1.0, local only: runs `task` on the sandbox the Project of
    * `call.scope.projectId` holds now, never acquiring one. The outcome
-   * follows the lease reads above: `missing` (no Project), `expired` (a
+   * follows `ssh` above: `missing` (no Project), `expired` (a
    * terminal Project without a runtime), `unavailable` (no runtime, closing,
    * or closing or lease loss during the task) and `pending` (no lease yet).
    */
