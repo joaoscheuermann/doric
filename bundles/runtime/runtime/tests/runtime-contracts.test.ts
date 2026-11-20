@@ -22,6 +22,7 @@ import {
   historyType,
   isValidName,
   legacyEventTypes,
+  legacyRuntimeMethods,
   migrationType,
   nameFromPrompt,
   type Project,
@@ -37,6 +38,7 @@ import {
   RuntimeThreadsV1,
   RuntimeUsageV1,
   RuntimeV1,
+  RuntimeV2,
   RuntimeWorkspaceV1,
   runtimeAttachmentsMethods,
   runtimeLeaseMethods,
@@ -87,6 +89,8 @@ const serializable: Record<string, Specs> = {
 /** The stage-9 remote watches (R-STREAM): a stream listener, then a Disposable. */
 const streams: Record<string, readonly string[]> = {
   'runtime/v1': ['watchProject'],
+  // Bundle isolation step 7(a): watchProject without the terminals.
+  'runtime/v2': ['watchProject'],
   // 1.8.0: viewThread holds a view while its stream is open.
   'runtime.threads/v1': ['watchThread', 'viewThread'],
   'runtime.terminals/v1': ['watchProject'],
@@ -113,15 +117,20 @@ void test('the transport-facing contracts carry no process-local member', () => 
           );
 
   // watch and drain take a kernel listener (a callback across the envelope).
-  for (const [name, spec] of Object.entries(runtimeMethods))
+  for (const [name, spec] of Object.entries(legacyRuntimeMethods))
     if (name !== 'watch' && name !== 'drain' && name !== 'watchProject')
       for (const io of ['input', 'output'] as const)
         assert.deepEqual(markers(spec[io], io), [], `runtime/v1.${name}.${io}`);
+  for (const [name, spec] of Object.entries(runtimeMethods))
+    if (name !== 'watch' && name !== 'drain' && name !== 'watchProject')
+      for (const io of ['input', 'output'] as const)
+        assert.deepEqual(markers(spec[io], io), [], `runtime/v2.${name}.${io}`);
 });
 
 void test('the remote watches cross as streams: only a listener and a Disposable are local', () => {
   const specs: Record<string, Specs> = {
-    'runtime/v1': runtimeMethods,
+    'runtime/v1': legacyRuntimeMethods,
+    'runtime/v2': runtimeMethods,
     'runtime.threads/v1': runtimeThreadsMethods,
     'runtime.terminals/v1': runtimeTerminalsMethods,
   };
@@ -181,6 +190,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
   assert.deepEqual(manifest.provides, [
     // 1.3.0: Project activity summaries for the desktop dashboard.
     `${RuntimeV1.id}@1.3.0`,
+    // Bundle isolation step 7(a): watchProject's snapshot without the
+    // terminals, which runtime.terminals/v1 streams.
+    `${RuntimeV2.id}@2.0.0`,
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
     // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0:
     // retry; 1.5.0: a bundle's instruction and restarting a failed child;
@@ -267,7 +279,7 @@ void test('a watch listener reaches the provider and its registration is release
   const listeners = new Set<(notice: RuntimeNotice) => void>();
   const refuse = () => Promise.reject(new Error('not used'));
   const methods = Object.fromEntries(
-    Object.entries(runtimeMethods).map(([name, spec]) => [
+    Object.entries(legacyRuntimeMethods).map(([name, spec]) => [
       name,
       defineMethod({ ...spec, execute: refuse } as never),
     ]),
@@ -276,6 +288,45 @@ void test('a watch listener reaches the provider and its registration is release
     bundle: { id: 'consumer' },
     provide: [
       defineService(RuntimeV1, {
+        ...methods,
+        watch: defineMethod({
+          ...legacyRuntimeMethods.watch,
+          execute: (listener) => {
+            listeners.add(listener);
+
+            return { dispose: () => listeners.delete(listener) };
+          },
+        }),
+      } as never),
+    ],
+  });
+  const seen: RuntimeNotice[] = [];
+  const registration = harness.services
+    .use(RuntimeV1)
+    .watch((notice) => seen.push(notice), harness.call());
+
+  for (const listener of listeners)
+    listener({ kind: 'projectDeleted', projectId: 'p-1' });
+  registration.dispose();
+
+  assert.deepEqual(seen, [{ kind: 'projectDeleted', projectId: 'p-1' }]);
+  assert.equal(listeners.size, 0);
+  await harness.dispose();
+});
+
+void test('a runtime/v2 watch listener reaches the provider and its registration is released', async () => {
+  const listeners = new Set<(notice: RuntimeNotice) => void>();
+  const refuse = () => Promise.reject(new Error('not used'));
+  const methods = Object.fromEntries(
+    Object.entries(runtimeMethods).map(([name, spec]) => [
+      name,
+      defineMethod({ ...spec, execute: refuse } as never),
+    ]),
+  );
+  const harness = createTestServices({
+    bundle: { id: 'consumer' },
+    provide: [
+      defineService(RuntimeV2, {
         ...methods,
         watch: defineMethod({
           ...runtimeMethods.watch,
@@ -290,7 +341,7 @@ void test('a watch listener reaches the provider and its registration is release
   });
   const seen: RuntimeNotice[] = [];
   const registration = harness.services
-    .use(RuntimeV1)
+    .use(RuntimeV2)
     .watch((notice) => seen.push(notice), harness.call());
 
   for (const listener of listeners)
@@ -316,7 +367,7 @@ void test('a stored Project record with keys outside the contract travels unchan
   } as Project;
   const refuse = () => Promise.reject(new Error('not used'));
   const methods = Object.fromEntries(
-    Object.entries(runtimeMethods).map(([name, spec]) => [
+    Object.entries(legacyRuntimeMethods).map(([name, spec]) => [
       name,
       defineMethod({ ...spec, execute: refuse } as never),
     ]),
@@ -327,7 +378,7 @@ void test('a stored Project record with keys outside the contract travels unchan
       defineService(RuntimeV1, {
         ...methods,
         project: defineMethod({
-          ...runtimeMethods.project,
+          ...legacyRuntimeMethods.project,
           execute: async (id) => (id === record.id ? record : undefined),
         }),
       } as never),

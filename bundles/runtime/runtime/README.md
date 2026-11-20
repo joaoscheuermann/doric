@@ -9,7 +9,7 @@ It provides the runtime's contracts over stores built on `storage/v1`, and
 publishes the `runtime/contracts` entrypoint that tools and feature bundles
 use to reach a prompt's Thread, working directory and sandbox. Its client part
 activates in each desktop window and provides `runtime.records/v1`, the
-window's records mirror, over `runtime/v1` and `runtime.threads/v1`. See the
+window's records mirror, over `runtime/v2` and `runtime.threads/v1`. See the
 [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
 
@@ -18,6 +18,11 @@ window's records mirror, over `runtime/v1` and `runtime.threads/v1`. See the
 - `runtime/v1` — Projects (create, read, rename, color, terminate, delete,
   activity), the runtime's watch streams, and the lifecycle methods recover,
   adopt and drain.
+- `runtime/v2` 2.0.0 (runtime 2.10.0) — the methods of `runtime/v1`, with the
+  same inputs and outputs, except that the `snapshot` item of `watchProject`
+  has no `terminals`; a Project's terminals are read from `terminal/v1`.
+  `runtime/v1` 1.3.0 is still provided, unchanged, and leaves in a later
+  release.
 - `runtime.threads/v1` — the Thread model: create, read, rename, prompt,
   steer, resume, retry, rewind, compact, pause, terminate and delete Threads,
   manage their prompt queues, and watch a Thread. `instruct` (bundles only, never
@@ -147,7 +152,7 @@ compacts on the Thread's own provider, and an older executor would ignore it.
 ## How it works
 
 - **Client part:** `src/client/` activates in each desktop window and
-  provides `runtime.records/v1` over `runtime/v1` and `runtime.threads/v1`. It
+  provides `runtime.records/v1` over `runtime/v2` and `runtime.threads/v1`. It
   calls no host method at activation.
 - **Prompts:** the runner executes each prompt through `executor/v1` (the
   [`default`](../default/README.md) bundle in the shipped host) with the

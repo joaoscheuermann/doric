@@ -26,6 +26,7 @@ import {
   type ThreadEvent,
 } from './model.js';
 import {
+  type LegacyProjectWatchItem,
   type ProjectWatchInput,
   type ProjectWatchItem,
   watchMethods,
@@ -171,12 +172,24 @@ export interface Runtime {
   watch(listener: RuntimeListener, call?: CallArg): Disposable;
   /**
    * The `/projects` namespace as a stream (stage 9 R-STREAM, 1.2.0): one
-   * snapshot of the Project, its Threads and terminals, then its Project and
+   * snapshot of the Project and its Threads, then its Project and
    * Thread notices. Remote-callable; the desktop bridge subscribes to it.
    */
   watchProject(
     input: ProjectWatchInput,
     listener: StreamListener<ProjectWatchItem>,
+    call?: CallArg,
+  ): Disposable;
+}
+
+/**
+ * `Runtime` whose `watchProject` snapshot also carries the Project's
+ * terminals. runtime/v1 1.3.0; leaves in step 7(c).
+ */
+export interface LegacyRuntime extends Omit<Runtime, 'watchProject'> {
+  watchProject(
+    input: ProjectWatchInput,
+    listener: StreamListener<LegacyProjectWatchItem>,
     call?: CallArg,
   ): Disposable;
 }
@@ -248,4 +261,12 @@ export const runtimeMethods = {
   watchProject: watchMethods.project,
 } as const;
 
-export const RuntimeV1 = ref<Runtime>('runtime/v1');
+/** The methods of runtime/v1 1.3.0; leaves in step 7(c). */
+export const legacyRuntimeMethods = {
+  ...runtimeMethods,
+  watchProject: watchMethods.legacyProject,
+} as const;
+
+/** runtime/v1 1.3.0; leaves in step 7(c). */
+export const RuntimeV1 = ref<LegacyRuntime>('runtime/v1');
+export const RuntimeV2 = ref<Runtime>('runtime/v2');

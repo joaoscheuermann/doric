@@ -1,4 +1,4 @@
-// A fake `runtime/v1`, a fake `runtime.threads/v1` and a fake connection for
+// A fake `runtime/v2`, a fake `runtime.threads/v1` and a fake connection for
 // the records mirror's tests (bundle isolation phase 3, T3.1 to T3.9). The
 // fakes keep the host's records in memory and answer as the host does; a test
 // replaces a member to make one call wait or fail.
@@ -29,7 +29,7 @@ import type {
 
 type Writable<Value> = { -readonly [Key in keyof Value]: Value[Key] };
 
-/** The members of `runtime/v1` the mirror calls (`RuntimeHost`). */
+/** The members of `runtime/v2` the mirror calls (`RuntimeHost`). */
 type RuntimeHost = Pick<
   Runtime,
   | 'projects'

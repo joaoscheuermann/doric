@@ -103,6 +103,16 @@
       "terminateProject",
       "watchProject"
     ],
+    "runtime/v2": [
+      "createProject",
+      "deleteProject",
+      "projectActivity",
+      "projects",
+      "renameProject",
+      "setProjectColor",
+      "terminateProject",
+      "watchProject"
+    ],
     "screen.sessions/v2": ["attach"],
     "secrets/v1": ["create", "delete", "list", "update"],
     "terminal/v1": [

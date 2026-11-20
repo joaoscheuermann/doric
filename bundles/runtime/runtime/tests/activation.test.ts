@@ -18,7 +18,8 @@ import { activate } from '../src/host/index.js';
  * The runtime's activation (design 57 §13.1, stage 5 "Activation"): the
  * manifest and built descriptor are valid, activation provides and defines
  * exactly what the manifest declares, the host activation order of §1.2 has
- * no cycle, and a second `runtime/v1` provider is quarantined.
+ * no cycle, and a second `runtime/v1` or `runtime/v2` provider is
+ * quarantined.
  */
 
 const manifestOf = async (dir: string): Promise<ManifestV1> =>
@@ -226,6 +227,55 @@ void test('a second provider of runtime/v1 is quarantined without a choice', asy
   assert.deepEqual(
     resolved.contracts
       .find(({ id }) => id === 'runtime/v1')
+      ?.providers.map(({ bundleId }) => bundleId),
+    ['runtime'],
+  );
+});
+
+void test('a second provider of runtime/v2 is quarantined without a choice', async () => {
+  const core = await manifestOf('core');
+  const runtime = await manifestOf('runtime');
+  const other = provider('runtime-copy', ['runtime/v2@2.0.0']);
+  const candidates = [
+    candidate(core),
+    candidate(runtime),
+    candidate(other),
+    candidate(provider('default', ['executor/v1@1.4.0'])),
+    candidate(provider('docker', ['sandbox/v1@1.0.0'])),
+    candidate(provider('host-config', ['host-config/v1@1.1.0'])),
+    candidate(
+      provider('storage-backend', [
+        'storage.backend/v1@1.0.0',
+        'secrets.backend/v1@1.0.0',
+      ]),
+    ),
+  ];
+  const resolved = resolveEnvironment(
+    {
+      candidates,
+      composition: {
+        core: 'core',
+        enabled: candidates.map(({ id }) => id),
+        providers: {
+          'storage.backend/v1': 'storage-backend',
+          'secrets.backend/v1': 'storage-backend',
+        },
+      },
+      platformVersion: '1.0.0',
+      generation: 1,
+    },
+    'host',
+  );
+  const codes = (id: string) =>
+    resolved.entries
+      .find((entry) => entry.id === id)
+      ?.reasons.map(({ code }) => code) ?? [];
+
+  assert.ok(codes('runtime-copy').includes('unchosen_provider'));
+  assert.deepEqual(codes('runtime'), []);
+  assert.deepEqual(
+    resolved.contracts
+      .find(({ id }) => id === 'runtime/v2')
       ?.providers.map(({ bundleId }) => bundleId),
     ['runtime'],
   );

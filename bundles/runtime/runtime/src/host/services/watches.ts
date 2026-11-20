@@ -14,7 +14,7 @@ import type {
 } from '../../contracts/model.js';
 import type { RuntimeNotice } from '../../contracts/runtime.js';
 import {
-  type ProjectWatchItem,
+  type LegacyProjectWatchItem,
   replayFailedMessage,
   type TerminalWatchItem,
   type ThreadWatchItem,
@@ -50,7 +50,7 @@ export interface Watches {
   ): Disposable;
   project(
     input: { readonly projectId: string },
-    listener: StreamListener<ProjectWatchItem>,
+    listener: StreamListener<LegacyProjectWatchItem>,
   ): Disposable;
   terminals(
     projectId: string,

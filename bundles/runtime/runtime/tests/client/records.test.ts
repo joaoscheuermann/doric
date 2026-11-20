@@ -1,6 +1,6 @@
 // The records mirror, `runtime.records/v1` (docs/designs/bundle-isolation.md
 // section 4; T3.1, T3.2, T3.4, T3.5, T3.6 and T3.7), against a fake
-// `runtime/v1`, a fake `runtime.threads/v1` and a fake connection.
+// `runtime/v2`, a fake `runtime.threads/v1` and a fake connection.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -169,7 +169,6 @@ describe('reads (T3.1)', () => {
       projectId,
       project: renamedProject,
       threads: [thread(siblingId, projectId), thread(rootId, projectId)],
-      terminals: [],
     });
     assert.deepEqual(records.threads(projectId), {
       status: 'ready',
@@ -225,7 +224,6 @@ describe('reads (T3.1)', () => {
       projectId: otherProjectId,
       project: project(otherProjectId),
       threads: [thread(uuid(30), otherProjectId)],
-      terminals: [],
     });
 
     assert.deepEqual(
@@ -268,7 +266,6 @@ describe('reads (T3.1)', () => {
       projectId,
       project: project(projectId),
       threads: [thread(rootId, projectId)],
-      terminals: [],
     });
 
     follow.dispose();
@@ -659,7 +656,6 @@ describe('connection (T3.4)', () => {
         projectId,
         project: project(projectId),
         threads: [thread(rootId, projectId)],
-        terminals: [],
       });
 
       host.connection.current = 'disconnected';
@@ -851,7 +847,6 @@ describe('one-off reads and the watch failure (T3.7)', () => {
       projectId,
       project: project(projectId),
       threads: [thread(rootId, projectId)],
-      terminals: [],
     });
 
     end(watch, new ContractError('internal', 'The stream broke.'));

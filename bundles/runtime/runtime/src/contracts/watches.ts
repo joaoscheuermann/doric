@@ -67,6 +67,26 @@ export type ProjectWatchItem =
       readonly projectId: string;
       readonly project: Project | null;
       readonly threads: readonly Thread[];
+    }
+  | { readonly kind: 'project-updated'; readonly project: Project }
+  | { readonly kind: 'project-deleted'; readonly projectId: string }
+  | { readonly kind: 'thread-updated'; readonly thread: Thread }
+  | {
+      readonly kind: 'thread-deleted';
+      readonly projectId: string;
+      readonly threadId: string;
+    };
+
+/**
+ * A `ProjectWatchItem` whose snapshot also carries the Project's terminals.
+ * runtime/v1 1.3.0; leaves in step 7(c).
+ */
+export type LegacyProjectWatchItem =
+  | {
+      readonly kind: 'snapshot';
+      readonly projectId: string;
+      readonly project: Project | null;
+      readonly threads: readonly Thread[];
       readonly terminals: readonly Terminal[];
     }
   | { readonly kind: 'project-updated'; readonly project: Project }
@@ -161,19 +181,8 @@ export const threadWatchItemSchema: z.ZodType<
     .strict(),
 ]);
 
-export const projectWatchItemSchema: z.ZodType<
-  ProjectWatchItem,
-  ProjectWatchItem
-> = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('snapshot'),
-      projectId: z.string(),
-      project: projectSchema.nullable(),
-      threads: z.array(threadSchema),
-      terminals: z.array(terminalRecordSchema),
-    })
-    .strict(),
+/** The `ProjectWatchItem` arms after the snapshot, shared with runtime/v1. */
+const projectWatchUpdateSchemas = [
   z
     .object({ kind: z.literal('project-updated'), project: projectSchema })
     .strict(),
@@ -190,6 +199,38 @@ export const projectWatchItemSchema: z.ZodType<
       threadId: z.string(),
     })
     .strict(),
+] as const;
+
+export const projectWatchItemSchema: z.ZodType<
+  ProjectWatchItem,
+  ProjectWatchItem
+> = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('snapshot'),
+      projectId: z.string(),
+      project: projectSchema.nullable(),
+      threads: z.array(threadSchema),
+    })
+    .strict(),
+  ...projectWatchUpdateSchemas,
+]);
+
+/** runtime/v1 1.3.0; leaves in step 7(c). */
+export const legacyProjectWatchItemSchema: z.ZodType<
+  LegacyProjectWatchItem,
+  LegacyProjectWatchItem
+> = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('snapshot'),
+      projectId: z.string(),
+      project: projectSchema.nullable(),
+      threads: z.array(threadSchema),
+      terminals: z.array(terminalRecordSchema),
+    })
+    .strict(),
+  ...projectWatchUpdateSchemas,
 ]);
 
 export const terminalWatchItemSchema: z.ZodType<
@@ -235,6 +276,14 @@ export const watchMethods = {
     input: z.tuple([
       projectWatchInputSchema,
       streamListener(projectWatchItemSchema),
+    ]),
+    output: disposableSchema,
+  },
+  /** runtime/v1 1.3.0; leaves in step 7(c). */
+  legacyProject: {
+    input: z.tuple([
+      projectWatchInputSchema,
+      streamListener(legacyProjectWatchItemSchema),
     ]),
     output: disposableSchema,
   },

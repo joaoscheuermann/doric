@@ -1,4 +1,4 @@
-// The selected Project's live tree over `runtime/v1.watchProject`: the
+// The selected Project's live tree over `runtime/v2.watchProject`: the
 // cases of the main process's former `project-events` suite, plus the
 // reconnect rules the stream form adds.
 
@@ -154,7 +154,6 @@ const snapshot = (
   projectId,
   project: { ...project, id: projectId },
   threads,
-  terminals: [],
 });
 
 const kinds = (updates: readonly ProjectUpdate[]) =>

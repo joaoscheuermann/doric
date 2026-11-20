@@ -1,5 +1,5 @@
 // The selected Project's live tree (stage 9, §5.8): the port of the main
-// process's `workspace/project-events.ts` over `runtime/v1.watchProject`.
+// process's `workspace/project-events.ts` over `runtime/v2.watchProject`.
 //
 // - One watch per window: a new watch replaces the previous one.
 // - There is no cursor: every (re)subscribe delivers a fresh, authoritative

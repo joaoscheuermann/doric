@@ -157,6 +157,11 @@ locked, and `files`, `git`, `terminal`, `resources`, `mcp`, `screen` and
 provides), and so is `papercraft`, which requires `files/v1`; nothing else
 reports it.
 
+A custom `DORIC_COMPOSITION` that names `runtime/v1` under
+`required.contracts` names `runtime/v2` instead. The runtime provides both
+today. A later release stops providing `runtime/v1`, and a host whose
+composition still requires it then does not start.
+
 What each bundle owns:
 
 - **`postgres`** (foundation) owns the Prisma schema, the migrations and the

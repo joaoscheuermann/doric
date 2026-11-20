@@ -38,7 +38,7 @@ import {
 } from '../../../src/contracts/lease.js';
 import type { ProjectColor } from '../../../src/contracts/model.js';
 import {
-  type Runtime,
+  type LegacyRuntime,
   type RuntimeNotice,
   type RuntimeOwner,
   RuntimeV1,
@@ -450,7 +450,7 @@ export const createHarness = (options: HarnessOptions = {}) => {
     provide: definitions,
   });
   consumer = consumerSide.services;
-  const runtime: Runtime = consumer.use(RuntimeV1);
+  const runtime: LegacyRuntime = consumer.use(RuntimeV1);
   const threadsApi: RuntimeThreads = consumer.use(RuntimeThreadsV1);
   const terminals: RuntimeTerminals = consumer.use(RuntimeTerminalsV1);
   const workspace: RuntimeWorkspace = consumer.use(RuntimeWorkspaceV1);

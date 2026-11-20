@@ -31,7 +31,7 @@ import {
 import { createPorts, type RuntimePorts } from './ports.js';
 import { attachmentsService } from './services/attachments.js';
 import { leaseService } from './services/lease.js';
-import { runtimeService } from './services/runtime.js';
+import { legacyRuntimeService, runtimeService } from './services/runtime.js';
 import { terminalSessionsService } from './services/terminal-sessions.js';
 import { threadsService } from './services/threads.js';
 import { usageService } from './services/usage.js';
@@ -132,7 +132,9 @@ export const provideRuntime = (
     log: ports.log,
   });
 
-  services.provide(runtimeService({ service, notices, watches, lifecycle }));
+  const runtimeDeps = { service, notices, watches, lifecycle };
+  services.provide(runtimeService(runtimeDeps));
+  services.provide(legacyRuntimeService(runtimeDeps));
   services.provide(threadsService({ service, threads, bindings, watches }));
   services.provide(workspaceService(bindings, service));
   services.provide(usageService(service));

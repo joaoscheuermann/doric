@@ -2,9 +2,9 @@
 
 import type { Runtime, RuntimeThreads } from '../../contracts/index.js';
 
-export { RuntimeThreadsV1, RuntimeV1 } from '../../contracts/index.js';
+export { RuntimeThreadsV1, RuntimeV2 } from '../../contracts/index.js';
 
-/** The subset of `runtime/v1` the records mirror calls. */
+/** The subset of `runtime/v2` the records mirror calls. */
 export type RuntimeHost = Pick<
   Runtime,
   | 'projects'

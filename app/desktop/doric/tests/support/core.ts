@@ -317,14 +317,14 @@ const HOST_ONLY_DISTS = [RUNTIME_DIST, COMMENTS_DIST, HOST_CONFIG_DIST];
  * reads.
  */
 const HOST_ONLY_KEPT: Readonly<Record<string, readonly string[]>> = {
-  [RUNTIME_DIST]: ['runtime.records/v1', 'runtime/v1', 'runtime.threads/v1'],
+  [RUNTIME_DIST]: ['runtime.records/v1', 'runtime/v2', 'runtime.threads/v1'],
 };
 
 /**
  * The workspace distribution: the real core, layout, resources, git, files,
  * chat, usage, settings, workspace and account, the memory foundation, and host-only cuts of the runtime,
  * comments and host-config bundles that provide the host contracts those
- * bundles `require` and none of them provides (`runtime/v1`,
+ * bundles `require` and none of them provides (`runtime/v2`,
  * `runtime.threads/v1`, `runtime.records/v1` with the runtime's client part,
  * `runtime.lease/v1`, `runtime.workspace/v1`,
  * `runtime.attachments/v1`, `runtime.usage/v1`, `comments/v1`,

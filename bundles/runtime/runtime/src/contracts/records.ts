@@ -23,7 +23,7 @@ import { type ProjectActivity, projectActivitySchema } from './runtime.js';
 /*
  * runtime.records/v1 (1.0.0, bundle isolation phase 3): the window's mirror of
  * the host's Projects and Threads. A client contract: the runtime's client
- * part provides it in each window, over runtime/v1 and runtime.threads/v1.
+ * part provides it in each window, over runtime/v2 and runtime.threads/v1.
  * Reads are local and synchronous; loads and writes go to the host.
  */
 

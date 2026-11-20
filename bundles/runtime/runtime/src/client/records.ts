@@ -1,5 +1,5 @@
 // `runtime.records/v1` (bundle isolation phase 3): the window's mirror of the
-// host's Projects and Threads, over `runtime/v1` and `runtime.threads/v1`.
+// host's Projects and Threads, over `runtime/v2` and `runtime.threads/v1`.
 // Reads answer from memory and start the first load of what they read;
 // `follow` keeps a Project current through its watch; writes go through the
 // host adapter and put the host's answer into the mirror before they resolve.
