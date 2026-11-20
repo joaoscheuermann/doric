@@ -42,7 +42,18 @@ belongs to the bundle that shows the Thread.
 - Before adding an exception for this bundle, open
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
   and search it for `"bundle": "notifications"`.
-- Update [`README.md`](README.md) and the feature doc
+- Read [`README.md`](README.md) for what the bundle does before adding to it.
+- Sample a new window value as a new member of `ObserverSources`, read it in
+  `src/client/index.ts`, and keep `src/client/observer.ts` free of `document`
+  and services. Add each new field of a report to `promptObservationSchema` in
+  `src/contracts/index.ts` as an optional field: the schema is strict, and the
+  platform refuses a report with an unknown field before `report` runs, which
+  the observer swallows.
+- Add the test of each change in the same change: a decision test in
+  [`tests/decide.test.ts`](tests/decide.test.ts), through the built desktop
+  part, and an observer test in
+  [`tests/observer.test.ts`](tests/observer.test.ts).
+- Update the feature doc
   [notifications](../../../docs/features/notifications.md) with any change to
   when a notice is shown or what it says.
 

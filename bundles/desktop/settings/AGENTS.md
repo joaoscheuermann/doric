@@ -1,86 +1,137 @@
-# Settings Bundle Agent Instructions
+# settings
 
-These instructions apply to `bundles/desktop/settings` and narrow the root
-`AGENTS.md`. The settings bundle is the application-global settings page
-(`/settings` and its sections), `settings.models/v1` (what the chat's footer
-execution picker offers), and the Dashboard's entries (the Providers group, the provider page
-and "All settings"). It moved here from `app/desktop/doric-renderer` in stage 9 and must keep that
-renderer's visible text, roles, layout and quirks, including the dropped Tools
-edits and the autosave without a Save button.
+Apply these rules to `bundles/desktop/settings/`, after the root
+[`AGENTS.md`](../../../AGENTS.md) and [`bundles/AGENTS.md`](../../AGENTS.md).
 
-## Layers
+## Function
 
-`src/client/` keeps the renderer's layering:
+Keep this bundle to the settings window and the surfaces that edit the host
+configuration and the stored credentials (the window's sections, the provider
+page, the dashboard's Providers group and the footer picker's data of
+`settings.models/v1`), and store nothing of its own: the configuration belongs
+to the bundle that provides `host-config/v1`, and the credentials to the one
+that provides `secrets/v1`. Do not draw another bundle's section or a provider
+kind's own field: a section belongs to the bundle that owns what it edits, and
+a field a kind draws its own way belongs to the bundle that owns the kind.
 
-```
-src/client/
-  components/{molecules,organisms,templates}/
-  views/       pages: own the state, compose templates
-  elements.ts  the custom elements `ui/v1` defines
-  hooks/       every `use*` hook
-  queries/     TanStack Query keys and the client
-  domain/      the configuration rules and the settings search (pure, tested)
-  api/         the host adapter: the only code that calls host contracts
-  services/    the providers of `settings.config/v1` and `settings.models/v1`
-```
+## Rules
 
-`src/contracts/` is the contracts module `settings/contracts` (built by
-`tsconfig.json` to `dist/contracts/`): contract declarations, types and slot
-names only — `SETTINGS_SECTIONS`, and `SETTINGS_PROVIDER_FIELD` with
-`ProviderFieldItemProps` and `ProviderFieldView`. No file of it imports
-`src/client`; the client reaches it by the relative path
-`../contracts/index.js`.
+- Keep the layers of `src/client/`: `components/{molecules,organisms,templates}/`
+  for presentation and for the reads and local state of one section, which
+  change the configuration draft only through `onChange`; `views/` for the
+  pages, which own the configuration draft and compose templates;
+  `elements.ts` for the custom elements `ui/v1` defines; `hooks/` for every
+  exported `use*` hook; `queries/` for the TanStack Query keys and the
+  window's client; `domain/` for pure rules; `api/` for the host adapter and
+  the refs built from contract ids; `services/` for the providers of
+  `settings.config/v1` and `settings.models/v1`.
+- Call `host-config/v1`, `models/v1`, `secrets/v1`, `tools/v1`,
+  `workspace.dashboard/v1` and `doric.browser/v1` only through `api()` of
+  `src/client/api/settings-api.ts`; check there both the input before the
+  call and the answer's shape after it, and fail only with a
+  `SettingsApiError` that carries a code and the message the surface shows.
+- Create another bundle's element for `settings.provider.field`, and read that
+  slot's items, only through the `ui/v1` and `regions/v1` of
+  `settingsServices()`, never through an element's services: an element's
+  services hand back a scoped view that is never drawn.
+- Put a rule that can be stated in terms of its arguments in `domain/`. Import
+  from a `tests/*.test.ts` file only the files of `src/` that
+  [`tsconfig.spec.json`](tsconfig.spec.json) includes
+  (`src/client/domain/*.ts`, `src/client/services/*.ts`,
+  `src/client/api/settings-api.ts`, `src/client/api/appearance.ts`,
+  `src/client/appearance-section.ts`, `src/contracts/`), and add to its
+  `include`, in the same change, any other file of `src/` such a test
+  imports.
+- Keep `configurationIssue` in `src/client/domain/config.ts` equal to the
+  validation of the bundle that provides `host-config/v1`, and change both in
+  one change: a draft it refuses is never sent, so a rule missing here reaches
+  the reader only as a refused save.
+- Keep every rule the conversation footer's execution picker shows in
+  `settings.models/v1` (`src/client/services/settings-models.ts` over
+  `domain/config.ts`): the chat draws the view and computes nothing of it.
+- Never let a credential's secret reach the window: a credential view carries
+  only `hasSecret`, and no call reads a secret back.
+- List and write only the credential kinds of `credentialKinds` in
+  `domain/config.ts`, and leave every other kind out of the list without
+  failing it: other bundles store credentials of their own kinds.
+- Name no provider kind in the provider page or the dashboard: draw every
+  field from the kind's descriptor, and leave a field a kind draws its own way
+  to an item of `settings.provider.field`, importing no other bundle's
+  contracts for it.
+- Reach `workspace.dashboard/v1` and `doric.appearance/v1` only through the
+  refs built from their ids in `src/client/api/navigation-refs.ts` and
+  `src/client/api/appearance.ts`, and import their types with `import type`,
+  so that the part loads without `workspace` and offers Appearance only while
+  an app answers `doric.appearance/v1`; keep `workspace.dashboard/v1` and
+  `core.open-settings/v1` under `optional` in [`manifest.json`](manifest.json).
+- Give every notice and error toast a code of `settingsErrorCatalog` in
+  `src/client/domain/error-catalog.ts` as its `fallbackCode`, pass that
+  catalog, and give each toast one fixed id per outcome, so that a new toast
+  replaces the last one of its outcome.
+- Add no unlayered rule to `src/client/styles.css`, and keep its `@source` of
+  `packages/desktop/src`: the sheet holds only the utilities layer, so that a
+  utility both it and the platform theme emit keeps one order, which
+  `tests/styles-cascade.test.ts` checks.
+- Before adding an exception for this bundle, open
+  [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
+  and search it for `"bundle": "settings"`.
+- Read [`README.md`](README.md) for what the bundle does before adding to it.
+- Add a built-in section in one change: its id in the `id` union of
+  `SettingsSectionEntry` and its entry in `sections` of
+  `src/client/domain/sections.ts` (id, label, an icon of `SectionIconName`,
+  order and the description the search matches), and, for a new icon, its
+  name in `SectionIconName` and its drawing in
+  `src/client/components/molecules/section-icon.tsx`; its id in `sectionIds` and
+  `sectionHosts` of `src/client/elements.ts`; its case in `Section` and in
+  `useSectionHost` of `src/client/views/settings-view.tsx`; and its organism
+  under `components/organisms/`, which edits the draft only through
+  `onChange`. Give a section that depends on an optional contract its route
+  and link only while that contract is available, as
+  `src/client/appearance-section.ts` does.
+- Add a configuration field in one change: its type in
+  `src/contracts/configuration.ts`; its rule in `configurationIssue` and its
+  comparison in `isSameConfiguration` of `src/client/domain/config.ts`; and its
+  check in `desktopConfiguration` and its reading in `configurationFrom` of
+  `src/client/api/settings-api.ts`, where a field `desktopConfiguration` does
+  not keep never reaches the host; and, in the same change, the field in
+  `ConfigInputSchema` of the bundle that provides `host-config/v1` and in
+  `ConfigurationValue` of `host-config/contracts`, which `runtime/contracts`
+  re-exports: the host's schema is strict and refuses a save that carries a
+  key it does not declare.
+- Add a host call to `SettingsApi` in `src/client/api/settings-api.ts`, its
+  cache key to `src/client/queries/keys.ts`, and the hook that reads it under
+  `hooks/`.
+- Add what the footer picker shows as an optional field of `ExecutionView` in
+  `src/contracts/models.ts`, in both the type and `viewSchema` (the schema is
+  strict), computed in `src/client/services/settings-models.ts`.
+- Test a host call or an answer reader in a `tests/*-adapter.test.ts` against
+  the fakes of [`tests/support/host.ts`](tests/support/host.ts), and a
+  behavior of the window in `tests/client/` through
+  [`tests/client/support/window.ts`](tests/client/support/window.ts).
+- Keep every file under `stories/` and `.storybook/` compiling: the typecheck
+  target checks them with `src/client/`.
+- Update the feature doc a change belongs to:
+  [settings](../../../docs/features/settings.md) for the window and its
+  sections, [per-thread model](../../../docs/features/per-thread-model.md) for
+  `settings.models/v1`, [credentials](../../../docs/features/credentials.md)
+  for the Credentials section,
+  [thread archive](../../../docs/features/thread-archive.md) for the Threads
+  section, [error messages](../../../docs/features/error-messages.md) for the
+  error catalog, notices and toasts, [git](../../../docs/features/git.md) for
+  `settings.config/v1`, and [UI redesign](../../../docs/features/ui-redesign.md)
+  for the items in `account.menu` and `workspace.dashboard.footer`.
 
-- A rule that can be stated in terms of its arguments belongs in `domain/` and
-  has a test; code that needs React or the DOM is proven by the window tests in
-  `tests/client/` or in the running app.
-- `domain/config.ts` mirrors the host's validation so a draft the host would
-  refuse is never sent; the host re-validates.
-- The shadcn primitives are `desktop/ui/<name>`; `toast` comes only from
-  `desktop/ui/sonner`.
-- Imports are relative with `.js` extensions; the package is ESM and the part
-  is bundled by `bundle`'s build.
+## Verify
 
-## Boundaries
+- `npx nx run bundle-settings:typecheck`: run it after any change under
+  `src/`, `stories/` or `.storybook/`.
+- `npx nx run bundle-settings:test`: run it after any change under `src/` or
+  `tests/`, and run the tests only through this target, which builds the
+  bundle first, because the window tests load the built client part from
+  `dist/`.
+- `npx nx run bundle-settings:build`: run it after a change to
+  `manifest.json`, `package.json`, a `tsconfig*.json` file or `src/contracts/`.
 
-- The client part never imports `bundle`, `bundle/runtime` or
-  `desktop/client`, and touches no DOM at module load.
-- A secret is never read back: the host answers only whether one is stored.
-- Autosave is bound to the activation services and flushes in the window's
-  `onFlushHook`, never through an element's services (D9-17).
-- The `workspace.dashboard/v1` reference it lists under `optional` is built from
-  its id in `src/client/api/navigation-refs.ts`; `workspace/contracts` is
-  imported with `import type` only.
-- `settings.models/v1` holds every rule the footer picker shows: the chat
-  draws the view and writes the Thread, and computes nothing of it.
-- The provider page names no provider kind. A kind's link is its descriptor's
-  `site`, kept by the adapter only when it is `https:`. A field that a kind
-  draws its own way is an item of `settings.provider.field`, drawn in the
-  field's place
-  (`domain/provider-fields.ts`, `components/molecules/provider-field-element.tsx`);
-  `settings` imports no other bundle's contracts for it. The slot's items are
-  read through the activation services' `regions/v1` and its elements created
-  through their `ui/v1`, not an element's: with the element's services the
-  item was never drawn
-  ([spec P12](../../../docs/designs/bundle-isolation.md#revisions)).
+## Generated files
 
-## Footers
-
-All footer text, including nested controls, uses `font-weight: 400` through the
-shell's footer rule: use a semantic `footer` or a `data-slot` ending in
-`-footer`, and add no per-control weights inside footers.
-
-Labels and titles are 400 and running text 300, through desktop/ui's components
-and the theme's root weight; add no per-control weight to reach them.
-
-## Tests
-
-`tests/*.test.ts` are DOM-free; `tests/client/*.test.ts` boot happy-dom with
-the built core and settings parts. Both run under `node --test` from
-`dist-tests`, which the test target removes first. Validate with:
-
-```
-npx nx run bundle-settings:typecheck
-npx nx run bundle-settings:test
-npx nx run bundle-settings:build
-```
+None beyond those [`bundles/AGENTS.md`](../../AGENTS.md) lists.

@@ -1,91 +1,105 @@
-# Layout Bundle Agent Instructions
+# layout
 
-These instructions apply to `bundles/desktop/layout` and narrow the root `AGENTS.md`.
-The layout is the workspace window's frame and its slots: the sidebar column,
-the title bar, the conversation, the viewer tabs, the side panel and the
-footers. The navigation that fills the sidebar, the title bar and the page
-form (Projects, Threads, the Dashboard) is the `workspace` bundle's since 5.0.0. It moved here from
-`app/desktop/doric-renderer` in stage 9 and must keep that renderer's visible text,
-roles, layout and quirks.
+Apply these rules to `bundles/desktop/layout/`, after the root
+[`AGENTS.md`](../../../AGENTS.md) and [`bundles/AGENTS.md`](../../AGENTS.md).
 
-## Layers
+## Function
 
-`src/client/` keeps the renderer's layering:
+Keep this bundle to the frame of the workspace window and the slots it
+declares. Add to it no navigation, no record and no feature's drawing: what
+fills a slot, opens a tab, adds a panel view or registers a sidebar pane belongs
+to the bundle that owns that feature. Never import `runtime/contracts` and
+never read Projects, Threads or the selection: they belong to the bundle that
+navigates, and Thread tabs to the bundle that draws Threads.
 
-```
-src/client/
-  components/{molecules,organisms,templates}/
-  views/       pages: own the state, compose templates
-  elements/    the custom elements `ui/v1` defines
-  hooks/       every `use*` hook
-  stores/      Zustand stores
-  domain/      the vocabulary of the product (pure, tested)
-  utility/     helpers stated only in terms of their arguments
-  services/    the layout's own contract providers and activation services
-```
+## Rules
 
-- A rule that can be stated in terms of its arguments belongs in `domain/` or
-  `utility/` and has a test; code that needs React or the DOM is proven in the
-  running app.
-- The shadcn primitives are `desktop/ui/<name>`; `toast` comes only from
-  `desktop/ui/sonner`, so a window has one toast store.
-- Imports are relative with `.js` extensions; the package is ESM and the part
-  is bundled by `bundle`'s build.
+- Read [`README.md`](README.md) for what the frame draws, its slots and its
+  contracts before changing it, and
+  [The layout bundle](../../../docs/architecture/bundles/layout.md) for how
+  other bundles fill the shell.
+- Put new client code in the folder of `src/client/` that matches it:
+  `elements/` only the custom element `<layout-workspace>`; `views/` the frame,
+  which reads the stores and composes the templates;
+  `components/molecules/` a self-contained piece with no slot;
+  `components/organisms/` a column's content that reads a store or a region;
+  `components/templates/` the arrangement of columns and cards, taking its
+  content as props; `hooks/` every `use*` hook; `stores/` the Zustand vanilla
+  stores, one per contract; `domain/` pure rules about the layout's own data;
+  `utility/` generic helpers that name no layout type, such as
+  `move-item.ts`; `services/` the contract providers and
+  `layout-services.ts`.
+- Put a rule that can be stated in terms of its arguments in `domain/` or
+  `utility/`, with a DOM-free test in `tests/`.
+- Render the frame in a `tests/client/` test only through
+  [`render-shell.ts`](tests/client/support/render-shell.ts), with stand-in
+  items in the slots.
+- Reach the activation services from a component only through
+  `layoutServices()` of `services/layout-services.ts`.
+- Take `ElementHost` and `useRegionItems` only from `desktop/ui/element-host`,
+  and keep no local copy of them.
+- Never name another bundle's element tag, tab kind or icon in the frame: draw
+  a tab's or a panel view's icon and badge only as the element its owner names
+  (`iconTag`, `badgeTag`), and keep no icon switch.
+- Draw every slot with its `SHELL_*` constant from `src/contracts/index.ts`,
+  never with a string written in the frame.
+- Keep one `shell.sidebar` region element for the window and move it between
+  the two forms; never render a second one, so that its items keep their
+  elements when the form changes.
+- Keep the quarantine notice in the frame's own sidebar column, outside
+  `shell.sidebar`, so that it shows whatever fills that slot.
+- Keep `src/client/styles.css` to the conversation footer's rule keyed on
+  `[data-slot='workspace-footer']`: add no Tailwind directive or utility to it,
+  and never add a rule for an editor or a terminal that another bundle draws.
+- Make every input object schema of a contract `.strict()`, so that an unknown
+  key fails `invalid_input`.
+- Log a failure of an operation the frame starts itself with
+  `console.error('Doric: …')`.
+- Never rename or remove `--shell-conversation-footer-height`, a `data-slot`
+  or an `aria-label` the frame draws: other bundles and
+  [`app/desktop/doric-e2e`](../../../app/desktop/doric-e2e) select them; list
+  them in the README when you add one.
+- Add a slot in this order: declare its `SHELL_*` constant in
+  `src/contracts/index.ts` with a doc comment and no type annotation
+  (`export const SHELL_X = 'shell.x';`), so that a filler's
+  `satisfies typeof SHELL_X` rejects a misspelled name; raise the minor of
+  `version` in [`manifest.json`](manifest.json); draw it in
+  [`src/client/views/workspace-view.tsx`](src/client/views/workspace-view.tsx),
+  or in the template that holds its place, in each form that shows it; add a
+  case with a stand-in item to `tests/client/shell.test.ts` for the
+  conversation form or `tests/client/dashboard-shell.test.ts` for the page
+  form; and add the slot to the README's Slots table.
+- Add a contract or a contract member in this order: its types, schema and
+  method table in `src/contracts/index.ts`; its state in a store under
+  `stores/`, cleared by the cleanup of `activate` in `src/client/index.ts`; its
+  provider in `services/`, given to `services.provide` in `activate`; its pure
+  rules in `domain/`; and a `tests/<name>.test.ts` that drives the contract as
+  another bundle calls it.
+- Update the feature doc [UI redesign](../../../docs/features/ui-redesign.md)
+  with any change to how the window looks or behaves, and the feature doc of
+  any feature whose drawing the change moves:
+  [Conversation](../../../docs/features/conversation.md),
+  [Files](../../../docs/features/files.md) or
+  [Terminal](../../../docs/features/terminal.md).
+- Require in [`manifest.json`](manifest.json) only contracts that `core`
+  provides; never require a contract of a bundle that fills a slot or calls a
+  `layout.*` contract.
+- Before adding an exception for this bundle, open
+  [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
+  and search it for `"bundle": "layout"`.
 
-## Boundaries
+## Verify
 
-- The client part never imports `bundle`, `bundle/runtime` or
-  `desktop/client`, and touches no DOM at module load.
-- The layout reads no records and imports nothing from `runtime/contracts`;
-  Projects, Threads and the selection are `workspace`'s, and the Thread tabs
-  and the views of the Threads on screen are the chat's.
-- Persistent work is bound to the activation services, never to an element's
-  services (D9-17).
-- `src/client/styles.css` holds only the conversation footer's height, fill
-  and blur (one rule keyed on `[data-slot='workspace-footer']`); the utilities
-  this bundle uses are emitted by the shell's sorted sheet, so do not add
-  Tailwind directives here (WP6 decision on the cascade). The Monaco slider
-  rule ships with `files` and `git`, which draw Monaco editors, and the xterm
-  rule with `terminal`; the layout names neither editor.
-- The shell knows no consumer: a tab's or a panel view's icon is the element
-  its owner names (`iconTag`), and the layout keeps no icon switch, no tab
-  kinds of other bundles and no `readsSandbox`.
-- `ElementHost` and `useRegionItems` come from the platform's
-  `desktop/ui/element-host` (platform 1.8.0, `engines.doric` `^1.8.0`), with the
-  `ui` and `regions` services passed in; keep no local copy.
-- The frame keeps the quarantined-bundle notice in its own sidebar column,
-  outside `shell.sidebar`, so it shows whoever fills the slot.
+- `npx nx run bundle-layout:typecheck`: run it after any change under `src/`,
+  `stories/` or `.storybook/`.
+- `npx nx run bundle-layout:test`: run it after any change under `src/`,
+  `tests/` or `stories/support/`, whose `fake-host.ts`, `layout-host.tsx`,
+  `tabs.ts` and `placeholder.tsx` the client tests use; the target builds the
+  bundle first.
+- `npx nx run bundle-layout:build`: run it after a change to `manifest.json`,
+  `package.json`, a `tsconfig*.json` file, `src/contracts/` or
+  `src/client/styles.css`.
 
-## Slots
+## Generated files
 
-- Every shell slot is a constant in `src/contracts/index.ts` (`SHELL_*`). The
-  frame draws it as a value (`<Region name={SHELL_PANEL} />`,
-  `useRegionItems(regions, SHELL_PANEL)`); a filler in another bundle writes
-  `'shell.panel' satisfies typeof SHELL_PANEL` with an `import type`.
-- `views/workspace-view.tsx` draws one of two forms: the page form while
-  `shell.page` holds an item, the conversation form otherwise. It keeps one
-  `shell.sidebar` region element and moves it between the forms, so its items
-  (`workspace`'s `<workspace-sidebar>`) do not remount on a form switch.
-- The tab owner lives in `stores/workspace-tabs.ts`; `layout.tabs/v2`
-  `setOwner` sets it (`workspace` names it from the route), and the frame
-  reads it. A failed close of a tab is reported with `console.error('Doric: …')`.
-
-## Footers
-
-All footer text, including nested controls, uses `font-weight: 400`. Use a
-semantic `footer` element or a `data-slot` ending in `-footer` so the shell's
-footer rule (`app/desktop/doric-renderer/src/styles.css`) applies.
-
-Labels and titles are 400 and running text 300, through desktop/ui's components
-and the theme's root weight; add no per-control weight to reach them.
-
-## Tests
-
-`tests/*.test.ts` are DOM-free and run under `node --test` from
-`dist-tests`, which the test target removes first. Validate with:
-
-```
-npx nx run bundle-layout:typecheck
-npx nx run bundle-layout:test
-npx nx run bundle-layout:build
-```
+None.

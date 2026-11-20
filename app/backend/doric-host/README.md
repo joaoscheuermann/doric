@@ -773,157 +773,366 @@ other operations treat a Project without one this way
 
 ## REST API
 
+The [`transport`](../../../bundles/foundation/transport/README.md) bundle
+serves the REST API on the host's shared Express app, and the
+[`screen-relay`](../../../bundles/features/screen-relay/README.md) bundle adds
+one relayed path tree to the same app. No other bundle and nothing in the
+kernel registers an HTTP route
+([`host/app.ts`](../../../bundles/foundation/transport/src/host/app.ts),
+[`kernel.ts`](../../../bundles/foundation/transport/src/kernel.ts),
+[`screen-relay/src/host/index.ts`](../../../bundles/features/screen-relay/src/host/index.ts),
+[`src/index.ts`](src/index.ts)). The routes carry no authentication: who can
+reach the port is the only control
+([`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts)).
+The routes call the contracts of the bundles that own each resource, and
+those bundles' READMEs describe the behavior behind each answer: the
+[`runtime`](../../../bundles/runtime/runtime/README.md) for Projects, Threads,
+prompts and replay, [`files`](../../../bundles/features/files/README.md) and
+[`git`](../../../bundles/features/git/README.md) for workspace reads,
+[`terminal`](../../../bundles/features/terminal/README.md),
+[`resources`](../../../bundles/features/resources/README.md),
+[`usage`](../../../bundles/features/usage/README.md) and
+[`host-config`](../../../bundles/foundation/host-config/README.md).
+
 ### Routes
 
-Configuration, credentials and providers:
+Every path is served at the root of the host's port (default `3000`). A
+Project, Thread or credential `:id`, a `:promptId` and the page cursors are
+UUIDs
+([`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts));
+a terminal `:id` and a VM `:id` are opaque strings whose form no route checks
+([`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts),
+[`routes/vms.ts`](../../../bundles/foundation/transport/src/host/routes/vms.ts)).
 
-| Method    | Path                | Success   | Purpose                                                    |
-| --------- | ------------------- | --------- | ---------------------------------------------------------- |
-| GET / PUT | `/config`           | 200       | Read / replace configuration.                              |
-| GET       | `/credentials`      | 200       | List named credentials without their secrets.              |
-| POST      | `/credentials`      | 201       | Create a named credential.                                 |
-| PATCH     | `/credentials/:id`  | 200       | Rename, re-identify, or re-secret a credential.            |
-| DELETE    | `/credentials/:id`  | 204 / 409 | Delete an unreferenced credential / refuse one in use.     |
-| GET       | `/providers/kinds`  | 200       | List the provider kinds this host can configure.           |
-| POST      | `/providers/models` | 200       | Read the model catalog a draft provider's endpoint serves. |
-| GET       | `/tools`            | 200       | List the loaded tools and the settings each declares.      |
-| GET       | `/resources`        | 200       | Read the resources of the machine the host runs on.        |
+Configuration, credentials, providers, tools and the host machine
+([`routes/config.ts`](../../../bundles/foundation/transport/src/host/routes/config.ts),
+[`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts),
+[`routes/providers.ts`](../../../bundles/foundation/transport/src/host/routes/providers.ts),
+[`routes/tools.ts`](../../../bundles/foundation/transport/src/host/routes/tools.ts),
+[`routes/resources.ts`](../../../bundles/foundation/transport/src/host/routes/resources.ts),
+[`routes/vms.ts`](../../../bundles/foundation/transport/src/host/routes/vms.ts)):
 
-Projects and their workspace:
+| Method | Path                | Payload                                              | Success answer                               |
+| ------ | ------------------- | ---------------------------------------------------- | -------------------------------------------- |
+| GET    | `/config`           | —                                                    | 200 `{ configuration, revision, updatedAt }` |
+| PUT    | `/config`           | body: the `configuration` object                     | 200 `{ configuration, revision, updatedAt }` |
+| GET    | `/credentials`      | —                                                    | 200 array of credential descriptions         |
+| POST   | `/credentials`      | body: `{ kind, name, …fields }`                      | 201 credential description                   |
+| PATCH  | `/credentials/:id`  | body: `{ name?, username?, email?, secret?, kind? }` | 200 credential description                   |
+| DELETE | `/credentials/:id`  | —                                                    | 204                                          |
+| GET    | `/providers/kinds`  | —                                                    | 200 `{ kinds }`                              |
+| POST   | `/providers/models` | body: `{ kind, configuration }`                      | 200 `{ models }`                             |
+| GET    | `/tools`            | —                                                    | 200 `{ tools }`                              |
+| GET    | `/resources`        | —                                                    | 200 host resources                           |
+| GET    | `/vms`              | —                                                    | 200 array of `{ id, provider }`              |
+| GET    | `/vms/:id/ssh`      | `:id` is a VM id (any string)                        | 200 `{ vm, projectId, ssh }`                 |
 
-| Method | Path                          | Success   | Purpose                                            |
-| ------ | ----------------------------- | --------- | -------------------------------------------------- |
-| POST   | `/projects`                   | 202       | Reserve an environment without a Thread or prompt. |
-| GET    | `/projects`                   | 200       | List Projects.                                     |
-| GET    | `/projects/:id`               | 200       | Read public Project metadata.                      |
-| PATCH  | `/projects/:id`               | 200       | Rename a Project.                                  |
-| PATCH  | `/projects/:id/color`         | 200       | Set a palette color, or `null`.                    |
-| POST   | `/projects/:id/threads`       | 201       | Create a root or child Thread.                     |
-| GET    | `/projects/:id/threads`       | 200       | List Threads; optional `parentThreadId` filter.    |
-| GET    | `/projects/:id/ssh`           | 200 / 202 | Read private SSH access / wait for environment.    |
-| GET    | `/projects/:id/files`         | 200 / 202 | List one workspace directory.                      |
-| GET    | `/projects/:id/tree`          | 200 / 202 | List a workspace directory as a tree.              |
-| GET    | `/projects/:id/files/content` | 200 / 202 | Read one workspace file as bounded text.           |
-| GET    | `/projects/:id/diff`          | 200 / 202 | Read the workspace Git diff and change list.       |
-| GET    | `/projects/:id/changes`       | 200 / 202 | Read the changed paths with added/removed counts.  |
-| GET    | `/projects/:id/files/diff`    | 200 / 202 | Compare one changed file (`repository`, `path`).   |
-| GET    | `/projects/:id/resources`     | 200 / 202 | Read the Project sandbox's resources.              |
-| GET    | `/projects/:id/terminals`     | 200       | List the Project's terminals.                      |
-| POST   | `/projects/:id/terminate`     | 200       | Terminate the Project and its Threads.             |
-| DELETE | `/projects/:id`               | 204       | Delete a terminal Project.                         |
+Projects and their workspace
+([`routes/projects.ts`](../../../bundles/foundation/transport/src/host/routes/projects.ts),
+[`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts)):
 
-Threads:
+| Method | Path                          | Payload                                       | Success answer                                     |
+| ------ | ----------------------------- | --------------------------------------------- | -------------------------------------------------- |
+| POST   | `/projects`                   | body: `{ name }`                              | 202 Project plus `ssh.href`                        |
+| GET    | `/projects`                   | query: `limit?`, `cursor?`                    | 200 page of Projects                               |
+| GET    | `/projects/:id`               | —                                             | 200 Project                                        |
+| PATCH  | `/projects/:id`               | body: `{ name }`                              | 200 Project                                        |
+| PATCH  | `/projects/:id/color`         | body: `{ color }`                             | 200 Project                                        |
+| POST   | `/projects/:id/threads`       | body: `{ name, parentThreadId? }`             | 201 Thread                                         |
+| GET    | `/projects/:id/threads`       | query: `limit?`, `cursor?`, `parentThreadId?` | 200 page of Threads                                |
+| GET    | `/projects/:id/ssh`           | —                                             | 200 SSH access, or 202 while pending               |
+| GET    | `/projects/:id/files`         | query: `path?`                                | 200 `{ path, entries }`, or 202                    |
+| GET    | `/projects/:id/tree`          | query: `path?`                                | 200 `{ path, entries }`, or 202                    |
+| GET    | `/projects/:id/files/content` | query: `path`                                 | 200 `{ path, content, truncated, binary }`, or 202 |
+| GET    | `/projects/:id/diff`          | query: `path?`                                | 200 `{ path?, repositories }`, or 202              |
+| GET    | `/projects/:id/changes`       | query: `path?`                                | 200 `{ path?, repositories }`, or 202              |
+| GET    | `/projects/:id/files/diff`    | query: `repository`, `path`                   | 200 file diff, or 202                              |
+| GET    | `/projects/:id/resources`     | —                                             | 200 sandbox resources, or 202                      |
+| GET    | `/projects/:id/terminals`     | —                                             | 200 `{ items }`                                    |
+| POST   | `/projects/:id/terminate`     | —                                             | 200 Project                                        |
+| DELETE | `/projects/:id`               | —                                             | 204                                                |
 
-| Method      | Path                           | Success | Purpose                                                                             |
-| ----------- | ------------------------------ | ------- | ----------------------------------------------------------------------------------- |
-| GET         | `/threads/:id`                 | 200     | Read public Thread metadata.                                                        |
-| PATCH       | `/threads/:id`                 | 200     | Rename a Thread, move its working directory, or set its provider, model and effort. |
-| GET         | `/threads/:id/git`             | 200     | Read the Git summary of the Thread's directory.                                     |
-| GET / POST  | `/threads/:id/branches`        | 200     | List local branches / switch to one (`branch`, `cwd`).                              |
-| POST        | `/threads/:id/prompt`          | 202     | Enqueue human input; returns `promptId`.                                            |
-| POST        | `/threads/:id/steer`           | 202     | Steer the running prompt, or queue when it ended.                                   |
-| POST        | `/threads/:id/resume`          | 202     | Take up a prompt no run has finished; returns Thread.                               |
-| POST        | `/threads/:id/rewind`          | 202     | Replace an earlier prompt and discard later turns.                                  |
-| POST        | `/threads/:id/compact`         | 200     | Compact the idle Thread's context on demand.                                        |
-| GET         | `/threads/:id/events`          | 200     | Replay durable events.                                                              |
-| GET         | `/threads/:id/usage`           | 200     | Read the Thread's usage.                                                            |
-| GET         | `/threads/:id/queue`           | 200     | Read the revisioned queue snapshot.                                                 |
-| POST        | `/threads/:id/queue/resume`    | 200     | Reopen a stopped queue; returns Thread.                                             |
-| GET / PATCH | `/threads/:id/queue/:promptId` | 200     | Read / edit a queued prompt that has not started.                                   |
-| DELETE      | `/threads/:id/queue/:promptId` | 204     | Remove a pending input.                                                             |
-| POST        | `/threads/:id/interrupt`       | 200     | Stop the Thread's active prompt.                                                    |
-| POST        | `/threads/:id/terminals`       | 201     | Open a terminal in the Thread's sandbox.                                            |
-| POST        | `/threads/:id/terminate`       | 200     | Terminate a Thread subtree.                                                         |
-| DELETE      | `/threads/:id`                 | 204     | Delete a terminal subtree.                                                          |
+Threads
+([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+[`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts)):
 
-Terminals and VMs:
+| Method | Path                           | Payload                                               | Success answer                                                     |
+| ------ | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| GET    | `/threads/:id`                 | —                                                     | 200 Thread                                                         |
+| PATCH  | `/threads/:id`                 | body: `{ name?, cwd?, providerId?, model?, effort? }` | 200 Thread                                                         |
+| GET    | `/threads/:id/git`             | —                                                     | 200 Git summary, or `{ status }`                                   |
+| GET    | `/threads/:id/branches`        | —                                                     | 200 `{ branches, blocked? }`, or `{ status }`                      |
+| POST   | `/threads/:id/branches`        | body: `{ branch, cwd }`                               | 200 `{ branches, blocked? }`                                       |
+| POST   | `/threads/:id/prompt`          | body: `{ prompt }`                                    | 202 `{ promptId }`                                                 |
+| POST   | `/threads/:id/steer`           | body: `{ prompt, promptId, interrupt? }`              | 202 `{ status, promptId }`                                         |
+| POST   | `/threads/:id/resume`          | body: `{ promptId }`                                  | 202 Thread                                                         |
+| POST   | `/threads/:id/rewind`          | body: `{ promptId, prompt }`                          | 202 `{ promptId }`                                                 |
+| POST   | `/threads/:id/compact`         | —                                                     | 200 `{ status, condensedMessages, retainedMessages, tokensFreed }` |
+| POST   | `/threads/:id/interrupt`       | body: `{ promptId }`                                  | 200 `{ status: 'interrupted' }`                                    |
+| GET    | `/threads/:id/events`          | query: `afterSequence?`                               | 200 `{ events, lastSequence }`                                     |
+| GET    | `/threads/:id/usage`           | —                                                     | 200 Thread usage                                                   |
+| GET    | `/threads/:id/queue`           | —                                                     | 200 queue snapshot                                                 |
+| POST   | `/threads/:id/queue/resume`    | —                                                     | 200 Thread                                                         |
+| GET    | `/threads/:id/queue/:promptId` | —                                                     | 200 `{ promptId, text, revision, editable }`                       |
+| PATCH  | `/threads/:id/queue/:promptId` | body: `{ text, revision }`                            | 200 `{ promptId, text, revision, editable }`                       |
+| DELETE | `/threads/:id/queue/:promptId` | —                                                     | 204                                                                |
+| POST   | `/threads/:id/terminals`       | body: `{ cols?, rows? }`                              | 201 terminal session                                               |
+| POST   | `/threads/:id/terminate`       | —                                                     | 200 Thread                                                         |
+| DELETE | `/threads/:id`                 | —                                                     | 204                                                                |
 
-| Method | Path                    | Success | Purpose                                          |
-| ------ | ----------------------- | ------- | ------------------------------------------------ |
-| GET    | `/terminals/:id`        | 200     | Read a terminal snapshot after an output cursor. |
-| POST   | `/terminals/:id/input`  | 204     | Write input (`data`, up to 65536 characters).    |
-| POST   | `/terminals/:id/resize` | 204     | Resize (`cols`, `rows`, 1–1000).                 |
-| DELETE | `/terminals/:id`        | 204     | Stop a terminal.                                 |
-| GET    | `/vms`                  | 200     | List provisioned VM runtimes.                    |
-| GET    | `/vms/:id/ssh`          | 200     | Read the SSH access of one VM.                   |
+Terminals
+([`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts)):
 
-Terminal routes answer `Cache-Control: no-store`; terminal data is never stored
-in conversation events.
+| Method | Path                    | Payload                         | Success answer        |
+| ------ | ----------------------- | ------------------------------- | --------------------- |
+| GET    | `/terminals/:id`        | query: `after?` (output offset) | 200 terminal snapshot |
+| POST   | `/terminals/:id/input`  | body: `{ data }`                | 204                   |
+| POST   | `/terminals/:id/resize` | body: `{ cols, rows }`          | 204                   |
+| DELETE | `/terminals/:id`        | —                               | 204                   |
+
+The screen relay
+([`screen-relay/src/host/relay.ts`](../../../bundles/features/screen-relay/src/host/relay.ts)):
+
+| Method | Path                     | Payload           | Success answer                  |
+| ------ | ------------------------ | ----------------- | ------------------------------- |
+| any    | `/screen/<token>/<path>` | relayed unchanged | the screen session's own answer |
 
 ### Conventions
 
-- Lists use `{ items, nextCursor? }`, with `limit` (1–100, default 50) and an
-  exclusive UUID `cursor`. Page size does not limit total Projects or Threads.
-- Public metadata omits message history, prompts, credentials, and SSH keys.
-- Errors use `{ error: { code, message } }`. Invalid IDs and cursors return
-  400, invalid bodies 422, missing resources 404, and lifecycle conflicts 409.
-- Names are trimmed, reject NUL, and contain 1–80 Unicode characters.
-- An answer may gain optional fields in any release. A client ignores the
-  fields it does not know. A field is not removed or renamed, and does not
-  change its type or meaning, without a notice in the release notes of an
-  earlier release.
+- **Bodies.** A body is JSON, parsed by `express.json()` with its defaults
+  (100 KB). A body that is not valid JSON, or one over that size, answers
+  `500 internal_error`; a request without a JSON content type reaches its
+  route with no body
+  ([`host/app.ts`](../../../bundles/foundation/transport/src/host/app.ts),
+  [`host/errors.ts`](../../../bundles/foundation/transport/src/host/errors.ts)).
+  Every body schema is strict: an unknown key answers the route's `422`.
+- **Errors.** A refusal answers `{ error: { code, message } }`. An unexpected
+  failure of any route answers `500 { error: { code: 'internal_error',
+message: 'The request could not be completed.' } }` and never carries the
+  cause ([`host/errors.ts`](../../../bundles/foundation/transport/src/host/errors.ts)).
+  A path no route serves answers Express's own `404` page.
+- **IDs.** A Project, Thread or credential `:id` that is not a UUID answers
+  `400 invalid_project_id`, `invalid_thread_id` or `invalid_credential_id`; a
+  well-formed one that names nothing answers `404 <kind>_not_found` with
+  `The <kind> was not found.`. A lifecycle conflict answers
+  `409 <kind>_<reason>` with `The <kind> cannot perform this operation.`,
+  except `<kind>_storage_low`, whose message is `Execution paused: storage is
+low or unavailable. Free disk space above 10% and resume the queue.`
+  ([`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts),
+  [`contracts/rest-errors.ts`](../../../bundles/runtime/runtime/src/contracts/rest-errors.ts),
+  [`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
+  `GET /projects/:id/terminals` and `POST /threads/:id/terminals` are served
+  by the terminal router, mounted before the Project and Thread routers, and
+  do not test the form of `:id`
+  ([`host/app.ts`](../../../bundles/foundation/transport/src/host/app.ts)).
+- **Pages.** `GET /projects` and `GET /projects/:id/threads` answer
+  `{ items, nextCursor? }`, newest first. `limit` is 1–100 (default 50), and
+  `cursor` is the id of the last item of the previous page; an invalid
+  `limit` or `cursor` answers `400 invalid_page`, and a cursor that names no
+  item of that list answers an empty page. Without `parentThreadId`, the
+  Threads page holds every Thread of the Project, children included; with
+  it, only the direct children of that Thread, and a cursor naming a Thread
+  with another parent answers an empty page. Page size does not limit how
+  many Projects or Threads exist
+  ([`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts),
+  [`store/projects.ts`](../../../bundles/runtime/runtime/src/host/store/projects.ts),
+  [`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts)).
+- **Names.** A Project or Thread name is trimmed, contains no NUL, and has 1–80
+  Unicode characters
+  ([`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
+- **Records.** A Project is `{ id, name, color?, state, configRevision,
+errorCode?, createdAt, updatedAt, startedAt?, finishedAt? }`. A Thread is
+  `{ id, projectId, parentThreadId?, origin?, name, state, lastSequence,
+queuePaused?, cwd, cwdRepo?, activePromptId?, executionStartedAt?,
+lastExecutionMs?, errorCode?, createdAt, updatedAt, startedAt?,
+finishedAt?, result?, agent?, model?, effort?, providerId?, archivedAt?,
+pinned? }`, where `origin` is `user` or `agent`, `result` is
+  `{ status, text, promptId, at }` of its latest finished prompt, and `agent`
+  is `{ name, source }`. Neither carries message history, prompt text, a
+  credential or an SSH key
+  ([`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
+  The states are listed under
+  [Project and Thread lifecycle](#project-and-thread-lifecycle).
+- **Caching.** Every answer of the REST routes carries
+  `Cache-Control: no-store`: the terminal router, mounted first at the root,
+  sets it on every request that passes through it
+  ([`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts),
+  [`host/app.ts`](../../../bundles/foundation/transport/src/host/app.ts)).
+- **Answers grow.** An answer may gain optional fields. A client ignores the
+  fields it does not know.
 
 ### Configuration and providers
 
-`GET /config` answers `{ configuration, revision, updatedAt }`.
+`GET /config` answers `{ configuration, revision, updatedAt }`: the active
+configuration, the revision it is stored under, and when it was stored
+([`config/service.ts`](../../../bundles/foundation/host-config/src/host/config/service.ts),
+[`config/schema.ts`](../../../bundles/foundation/host-config/src/host/config/schema.ts)).
+The `configuration` object holds no secret: a provider names the `API_TOKEN`
+credential it authenticates with, and `gitCredentialId` /
+`githubCredentialId` name the `GIT` identity and the `API_TOKEN` GitHub uses.
+Its keys are `providers` (at least one `{ id, kind, configuration, models? }`,
+each model `{ name, reasonings?, defaultEffort?, mandatory? }`), `models`
+(`{ execution: { providerId, model, effort? } }`), `execution`
+(`{ maxTurns, maxToolResultChars?, contextCompaction? }`), and the optional
+`tools`, `gitCredentialId`, `githubCredentialId`, `profile` and `threads`.
+[Configuration](#configuration) describes what each one sets.
 
-- The stored configuration holds no secret: a provider names the `API_TOKEN`
-  credential it authenticates with, and `gitCredentialId` /
-  `githubCredentialId` name the `GIT` identity and the `API_TOKEN` GitHub
-  uses.
-- `PUT /config` replaces the whole configuration and accepts that same shape,
-  so what it answers is what it accepts. Unknown keys stay rejected
-  (`422 invalid_config`), and a reference that names an unstored credential or
-  the wrong kind is rejected with the same code. A replacement that cannot be
-  activated answers `503 configuration_rejected`.
-- Configuration saved here reaches the next prompt of any Project, including
-  one that is already running.
+`PUT /config` takes the `configuration` object as its whole body and replaces
+the active one. It answers the stored `{ configuration, revision, updatedAt }`,
+so the `configuration` it answers is a body it accepts. Replacements run one
+at a time, in request order
+([`routes/config.ts`](../../../bundles/foundation/transport/src/host/routes/config.ts),
+[`config/service.ts`](../../../bundles/foundation/host-config/src/host/config/service.ts)):
 
-`GET /providers/kinds` answers `{ kinds }`, the provider kinds a configuration
-may name. Each kind has an `id`, a `label`, a `description`, its `fields` and
-its `lists`, and may carry the optional `modelsFromCatalog` and `site`:
-
-- each field has a `key`, a `label`, a `kind`, `required`, and the optional
-  `description`, `placeholder`, `options` and `advanced`;
-- `site` is `{ url, label }`: the page a client may link to, with the link's
-  label. It is absent when the kind has none.
-
-A client ignores the fields it does not know, as the conventions above say.
-
-A provider kind whose catalog describes its models declares a models URL, and
-that catalog is read twice:
-
-1. When a provider page asks what its endpoint serves: `POST /providers/models`
-   takes the draft's `kind` and `configuration` values and answers `{ models }`,
-   every model with its name, its reasoning efforts, the effort it names as
-   that model's default, whether it pins reasoning on, and the request
-   parameters it advertises. Invalid values answer `422 invalid_provider`; an
-   unreadable catalog answers `502 model_catalog_unreadable`.
-2. On `PUT /config`: each listed model takes the reasoning that catalog
-   describes, a model the catalog does not name takes none, and the execution
-   effort resolves to the one its model starts at or is dropped when that
-   model lists none. A catalog that cannot be read leaves that provider as it
+1. A body the schema refuses, an unknown key included, answers
+   `422 invalid_config` with `The Doric configuration is invalid.`.
+2. A reference to a credential that is not stored or is of the wrong kind,
+   and a value a loaded tool requires but the body leaves out, answer
+   `422 invalid_config` with a message naming the fault.
+3. Each provider that lists models has its kind's catalog read: each listed
+   model takes the reasoning efforts, the default effort and the mandatory
+   flag the catalog gives it, and a model the catalog does not name takes
+   none. A provider whose kind sets `modelsFromCatalog` is read even with no
+   models, and its list becomes every model the catalog lists, in the
+   catalog's order. A catalog that cannot be read leaves that provider as it
    was, so an unreachable endpoint never costs the configuration its model
-   list.
+   list. The execution effort then resolves to the one its model starts at,
+   or is dropped when that model lists none
+   ([`models/catalog.ts`](../../../bundles/foundation/core/src/host/models/catalog.ts)).
+4. The providers are built before anything is stored, then the configuration
+   is stored and activated. Any failure from here answers
+   `503 configuration_rejected` with `The Doric configuration could not be
+activated.`, and the configuration in force stays.
+
+A configuration saved here reaches the next prompt of any Project, including
+one that is already running.
+
+`GET /providers/kinds` answers `{ kinds }`: the provider kinds a provider
+bundle registers and advertises, as `models/v1` lists them
+([`routes/providers.ts`](../../../bundles/foundation/transport/src/host/routes/providers.ts),
+[`models/index.ts`](../../../bundles/foundation/core/src/host/models/index.ts),
+[`basic/models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)).
+A registered kind that is not advertised, such as `codex`
+([`codex/src/host/kind.ts`](../../../bundles/providers/codex/src/host/kind.ts)),
+is absent from the list and still accepted: `POST /providers/models` looks a
+kind up among every registered kind, and `PUT /config` accepts any kind the
+provider catalog knows
+([`config/schema.ts`](../../../bundles/foundation/host-config/src/host/config/schema.ts)).
+Each kind is `{ id, label, description, fields, lists, modelsFromCatalog?,
+site? }`:
+
+- each field is `{ key, label, kind, required, description?, placeholder?,
+options?, advanced? }`, with `kind` one of `text`, `url`, `number`, `enum`
+  and `secret`;
+- `lists` names what the kind keeps per provider: `models`, `reasonings`, or
+  both;
+- `modelsFromCatalog: true` marks a kind whose model list is its live
+  catalog;
+- `site` is `{ url, label }`: the `https:` page a client may link to, with the
+  link's label. It is absent when the kind has none.
+
+`POST /providers/models` asks what a draft provider's endpoint serves, before
+the provider is saved. The body is `{ kind, configuration }`, where
+`configuration` maps the kind's field keys to strings. It answers
+`{ models }`, each `{ id, name?, reasonings, parameters, defaultEffort?,
+mandatory }`: the model's reasoning efforts, the request parameters it
+advertises, the effort it names as its default, and whether it pins reasoning
+on ([`routes/providers.ts`](../../../bundles/foundation/transport/src/host/routes/providers.ts),
+[`basic/models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)).
+
+- `422 invalid_provider` (`The provider values are invalid.`): the body is
+  malformed, the kind is unknown, a key is not a field of the kind, a value
+  is empty, a required field is missing, or a value does not fit its field
+  (`url` starts with `http://` or `https://`, `number` is finite, `enum` is
+  one of `options`, `secret` is a UUID). Only the form of a `secret` value is
+  checked: a UUID that names no credential passes, and the catalog is then
+  read without a secret
+  ([`models/index.ts`](../../../bundles/foundation/core/src/host/models/index.ts)).
+- `502 model_catalog_unreadable` (`The provider model catalog could not be
+read.`): the kind has no catalog, or the read failed.
 
 ### Credentials
 
-`/credentials` owns the credential store.
+`/credentials` owns the credential store
+([`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts),
+[`secrets/facade.ts`](../../../bundles/foundation/core/src/host/secrets/facade.ts),
+[`basic/secrets.ts`](../../../packages/bundle/src/contracts/basic/secrets.ts)).
+A credential description is `{ id, kind, name, username?, email?, hasSecret }`
+and never carries the secret.
 
-- `GET /credentials` answers
-  `[{ id, kind, name, username?, email?, hasSecret }]` and never a secret.
-- `POST` takes a `name` and a `kind` of `API_TOKEN` (`secret`),
-  `USERNAME_PASSWORD` (`username` and `secret`), or `GIT` (`username` and
-  `email`), and rejects a field the kind does not carry.
-- `PATCH` follows one rule per field: absent or `null` keeps it, `''` clears
-  it, and a value sets it. `kind` is immutable
-  (`409 credential_kind_immutable`), and a name already used by the kind is
-  `409`.
-- `DELETE` of a credential a provider or the configuration references is
-  `409 credential_referenced`.
-- Secrets are stored as AES-256-GCM envelopes under `DORIC_CREDENTIAL_KEY`;
-  the host refuses to start when a stored secret exists and that key is
-  missing or unusable.
+- **Kinds.** A kind fixes the fields a credential carries: `API_TOKEN` takes
+  `secret`, `USERNAME_PASSWORD` takes `username` and `secret`, and `GIT`,
+  which the `git` bundle registers, takes `username` and `email`
+  ([`git/src/host/credentials.ts`](../../../bundles/features/git/src/host/credentials.ts)).
+  A kind name is 2–32 characters of `A–Z`, `0–9` and `_`, starting with a
+  letter.
+- **Limits.** `name` and `username` are trimmed and 1–128 characters; `email`
+  is an address of at most 256 characters; `secret` is 1–512 characters
+  without a line break.
+- **POST** takes `{ kind, name }` and the kind's fields. A body that breaks a
+  limit, names a kind nothing registered, misses a field the kind requires,
+  or carries a field it does not take answers `422 invalid_credential` (`The
+credential does not match its kind.`).
+- **PATCH** takes any of `name`, `username`, `email`, `secret` and `kind`.
+  `name` and `kind` take a string only (`null` answers
+  `422 invalid_credential`). `username`, `email` and `secret` also take
+  `null` or `''`: an absent or `null` field keeps the stored value, and a
+  string, `''` included, replaces it
+  ([`secrets/facade.ts`](../../../bundles/foundation/core/src/host/secrets/facade.ts)).
+  `''` reaches storage as an empty value — an empty `username` or `email`
+  column, a sealed empty `secret`, which needs `DORIC_CREDENTIAL_KEY` like
+  any secret — and counts as present for the kind's field rule, so `''` on a
+  field the kind does not take answers `422 invalid_credential`
+  ([`secrets/backend.ts`](../../../bundles/foundation/postgres/src/host/secrets/backend.ts)).
+  A client sees it as cleared: the description omits an empty `username` or
+  `email` and answers `hasSecret: false` for an empty secret
+  ([`secrets/cache.ts`](../../../bundles/foundation/core/src/host/secrets/cache.ts)).
+  A `kind` nothing registers answers `422 invalid_credential` first; a
+  registered `kind` other than the stored one answers
+  `409 credential_kind_immutable`; a result that no longer fits the kind
+  answers `422 invalid_credential`.
+- A `422 invalid_credential` the secrets contract raises (a field rule or an
+  unknown kind it finds) carries that contract's message, such as `A GIT
+credential requires username, email and carries no other field.`, instead
+  of `The credential does not match its kind.`
+  ([`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts),
+  [`basic/secrets.ts`](../../../packages/bundle/src/contracts/basic/secrets.ts)).
+- A `name` already used by a credential of the same kind answers
+  `409 credential_name_taken`
+  ([`secrets/backend.ts`](../../../bundles/foundation/postgres/src/host/secrets/backend.ts)).
+- **DELETE** of a credential a provider or the configuration names answers
+  `409 credential_referenced`; the reference check runs before the store is
+  touched.
+- A write of a secret while `DORIC_CREDENTIAL_KEY` is not configured answers
+  `503 credential_storage_unavailable` (`The host cannot store credential
+secrets.`). [Persistence and security](#persistence-and-security) describes
+  how secrets are sealed.
+
+### Tools, resources and VMs
+
+- `GET /tools` answers `{ tools }`, one `{ name, description?, settings }` per
+  tool the active bundle generation exposes; `settings` lists the
+  configuration fields the tool declares, each `{ key, label, kind, required,
+description?, placeholder?, default?, options?, advanced? }`. The read runs
+  no tool
+  ([`routes/tools.ts`](../../../bundles/foundation/transport/src/host/routes/tools.ts),
+  [`types/tool.ts`](../../../packages/tool/src/lib/types/tool.ts)).
+- `GET /resources` reads the machine the host runs on and needs no Project:
+  `{ at, cpuCount, cpuPercent?, loadAverage?, memoryTotalBytes,
+memoryUsedBytes, uptimeSeconds }`. `cpuPercent` is absent on the first
+  reading of the process
+  ([`routes/resources.ts`](../../../bundles/foundation/transport/src/host/routes/resources.ts),
+  [`resources/src/contracts/index.ts`](../../../bundles/features/resources/src/contracts/index.ts)).
+- `GET /vms` answers the machines the sandbox provider runs, each
+  `{ id, provider }` with `provider` `docker` or `firecracker`.
+  `GET /vms/:id/ssh` answers `{ vm, projectId, ssh }`, where `ssh` is
+  `{ host, port, username: 'root', privateKey, knownHosts,
+hostKeyFingerprint }`; an unknown VM answers `404 vm_not_found`, and a VM
+  without SSH access `409 vm_ssh_unavailable`
+  ([`routes/vms.ts`](../../../bundles/foundation/transport/src/host/routes/vms.ts),
+  [`contracts/sandbox.ts`](../../../bundles/runtime/runtime/src/contracts/sandbox.ts),
+  [`contracts/runtime.ts`](../../../bundles/runtime/runtime/src/contracts/runtime.ts),
+  [`types/sandbox.ts`](../../../packages/sandbox/src/lib/types/sandbox.ts)).
 
 ### Create and converse
 
@@ -959,167 +1168,423 @@ curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
 
 ### Request rules
 
-- **Project creation** requires `{ "name": "..." }` and answers `202` with the
-  Project, which the host marks with a random color from its palette, plus an
-  `ssh.href` pointing at `/projects/:id/ssh`.
-- **Thread creation** requires `{ "name": "..." }` and accepts an optional
-  `parentThreadId`, which starts the child in its parent's working directory.
-  A top-level Thread copies the workspace default execution and a child its
-  parent's; creation fails, creating nothing, when the configuration cannot be
-  read.
-- **Project PATCH** requires the name-only body; **Thread PATCH** takes
-  `name`, `cwd`, an execution (`providerId` and `model`, optional `effort`),
-  or any combination.
-- **Thread execution.** `providerId` and `model` come together, and `effort`
-  only with them; any other pairing answers `422 { code: 'invalid_thread' }`
-  with `A Thread name, a working directory, an execution (providerId and
-model, with an optional effort), or a combination is required.` The runtime
-  checks the execution as a spawn's (`runtime.threads/v1.setThreadExecution`):
-  the configured provider and its listed models, then `models/v1.resolve`. A
-  refused execution answers `422 { code: 'invalid_execution' }` with
-  `The provider is not configured.`, `The model is not available on this
-provider.` or `This model does not support that effort.`; an unresolvable
-  one carries `models/v1`'s message; a missing Thread answers `404`. The name
-  and `cwd` are applied before the execution and kept when it is refused. A
-  valid one answers the updated Thread, whose record carries `providerId`,
-  `model` and `effort`, and applies from the Thread's next run.
-- **Thread archive.** Thread records may carry `archivedAt` and `pinned`, set
-  from the desktop app only (`runtime.threads/v1` 1.8.0; no route sets them).
-  `DELETE /threads/:id` deletes an archived agent thread; a non-archived one is
-  still refused.
-- **Prompt** accepts only a non-empty `prompt`. Public callers cannot forge
-  parent/result origins or correlation.
-- **Rewind** accepts only `{ "promptId", "prompt" }` and answers
-  `202 { promptId }` like a prompt. It removes the named turn and every later
-  turn from the durable event log and the provider-ready history, then accepts
-  the edited text as a new human input. Each turn records the provider-history
-  length it started from, so rewind truncates exactly at that turn boundary. A
-  Thread that is running or has queued input refuses with `409 thread_busy`, so
-  queued work never runs on truncated history; a `promptId` without a recorded
-  turn in that Thread returns `404 prompt_not_found`. Sequence numbers are
-  never reused.
-- **Interrupt** requires `{ "promptId" }` and answers
-  `200 { status: 'interrupted' }`; the stop applies to whatever prompt the
-  Thread is running. A Thread that is closing, terminal, or has no runtime is
-  `409 thread_inactive`.
-- **Resume** accepts only `{ "promptId" }` and answers `202` with the Thread.
-  It re-enqueues that one prompt — bringing the Project's sandbox back when
-  the host holds none — and appends the next `prompt.resumed` attempt. A
-  prompt the Thread has not left unfinished is `404 prompt_not_found`, one it
-  already holds running or queued is `409 thread_busy`, a Project that cannot
-  run is `409 thread_inactive`, and low storage is `409 thread_storage_low`.
-- **Compact** answers `{ status, condensedMessages, retainedMessages,
-tokensFreed }`. A running or queued Thread is `409 thread_busy`, a refusal
-  (disabled, no history, nothing to condense) is `409 compaction_refused`, and
-  a failed attempt is `502 compaction_failed`.
-- **SSH**: `GET /projects/:id/ssh` returns `202` with `Retry-After: 1` while
-  pending, `409` when unavailable, and `410` when expired. SSH responses forbid
-  caches.
+Each route turns the runtime's outcome into an answer as below
+([`routes/projects.ts`](../../../bundles/foundation/transport/src/host/routes/projects.ts),
+[`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+[`contracts/rest-errors.ts`](../../../bundles/runtime/runtime/src/contracts/rest-errors.ts));
+the runtime's side of each outcome is in
+[`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)
+and [`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts).
+
+- **Project creation** takes `{ name }` (`422 invalid_project` otherwise)
+  and answers `202` with the Project plus
+  `ssh: { href: '/projects/<id>/ssh' }`. The host marks the Project with a
+  random color of the palette `red`, `orange`, `amber`, `green`, `teal`,
+  `blue`, `violet`, `pink`, and starts acquiring its sandbox
+  ([`domain/colors.ts`](../../../bundles/runtime/runtime/src/host/domain/colors.ts)).
+- **Project PATCH** takes `{ name }` only (`422 invalid_project` otherwise);
+  **color** takes `{ color }`, a palette color or `null`
+  (`422 invalid_project_color` otherwise). Both answer the Project.
+- **Project terminate** answers the Project. **Project DELETE** answers `204`,
+  or `409 project_active` while the Project or one of its Threads is not
+  terminal.
+- **Thread creation** takes `{ name, parentThreadId? }`
+  (`422 invalid_thread` otherwise) and answers `201` with the Thread. A child
+  starts in its parent's working directory. A top-level Thread copies the
+  workspace default execution and a child its parent's; when the
+  configuration cannot be read, creation answers `500 internal_error` and
+  creates nothing. A missing Project answers `404 project_not_found`; a
+  Project the host holds no runtime for, or one that is closing, answers
+  `409 thread_inactive`. A `parentThreadId` that names no Thread of the
+  Project, or names a child Thread, answers `409 thread_invalid_parent`: a
+  Thread created over REST hangs off a top-level Thread.
+- **Thread PATCH** takes `name`, `cwd`, an execution (`providerId` and
+  `model`, optional `effort`), or any combination. `providerId` (1–128
+  characters) and `model` (1–512) come together, and `effort` (`none`,
+  `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) only with them; any
+  other body answers `422 invalid_thread` with `A Thread name, a working
+directory, an execution (providerId and model, with an optional effort), or
+a combination is required.`. The changes apply in the order name, `cwd`,
+  execution, and a change that applied stays when a later one is refused.
+  `cwd` is described under
+  [The Thread working directory](#the-thread-working-directory). The
+  execution is checked against the configuration — the provider must be
+  configured, the model listed for it, and the effort one the model takes —
+  and then `models/v1.resolve` must accept it
+  ([`domain/execution.ts`](../../../bundles/runtime/runtime/src/host/domain/execution.ts)).
+  A refusal answers `422 invalid_execution` with `The provider is not
+configured.`, `The model is not available on this provider.` or `This model
+does not support that effort.`, or with the message `models/v1.resolve`
+  rejected with. A valid execution is stored on the Thread as `providerId`,
+  `model` and `effort` and applies from its next run.
+- **Thread archive.** A Thread may carry `archivedAt` and `pinned`; no REST
+  route sets them (the desktop sets them through `runtime.threads/v1`).
+- **Thread terminate** cancels the Thread's subtree and answers the Thread.
+  **Thread DELETE** deletes the Thread's subtree and answers `204`, or
+  `409 thread_active` while a Thread of the subtree is not terminal. On a
+  Thread an agent opened that is not archived, the runtime deletes nothing
+  and the route answers `204`.
+- **Prompt** takes only a non-empty `prompt` (`422 invalid_prompt`, `Only a
+non-empty prompt is accepted.`) and answers `202 { promptId }`. It brings
+  the Project's sandbox back first when the host holds none. Every refusal
+  other than a missing Thread — a terminal or closing Thread, a Project that
+  cannot run, or a Thread an agent opened — answers `409 thread_inactive`.
+  A caller cannot set the input's origin or its correlation: the input is
+  always the reader's.
+- **Steer** takes `{ prompt, promptId, interrupt? }` (`422 invalid_steer`
+  otherwise) and answers `202 { status, promptId }` with the new input's id.
+  `status` is `steered` when `promptId` names the prompt the Thread is
+  running; the run reads the steer at its next safe point, and with
+  `interrupt: true` the running step is aborted so the run turns to the steer
+  at once. It is `queued` when that prompt is not running, the queue is
+  stopped, or the run ends meanwhile; the steer then waits at the front of
+  the queue. Refusals answer as a prompt's do.
+- **Rewind** takes `{ promptId, prompt }` (`422 invalid_rewind` otherwise)
+  and answers `202 { promptId }` like a prompt. The runtime truncates the
+  Thread's event log at the first event of the named prompt, has the executor
+  cut the provider-ready history at the same turn, appends one
+  `history.truncated` event, and accepts the edited text as a new reader
+  input
+  ([`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts)).
+  A Thread that is running or has queued input answers `409 thread_busy`
+  (`The Thread is running or has queued input and cannot be rewound.`), so
+  queued work never runs on truncated history; a prompt the log does not
+  hold, or one the executor cannot rewind to, answers `404 prompt_not_found`;
+  a terminal or closing Thread, a Project without a runtime, and a Thread an
+  agent opened answer `409 thread_inactive`.
+- **Interrupt** takes `{ promptId }` (`422 invalid_interrupt` otherwise) and
+  answers `200 { status: 'interrupted' }`, also when the Thread is already
+  stopped. `promptId` must be a UUID but names nothing: any UUID stops the
+  Thread's queue and aborts whatever prompt it is running
+  ([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)); [Stop, rewind, terminate, delete](#stop-rewind-terminate-delete)
+  describes the effect. A Thread that is closing, terminal, or has no runtime
+  answers `409 thread_inactive`.
+- **Resume** takes `{ promptId }` (`422 invalid_resume` otherwise) and
+  answers `202` with the Thread. It takes up that one prompt no run has
+  finished, bringing the Project's sandbox back when the host holds none, and
+  records the next `prompt.resumed` attempt; on a stopped queue it reopens
+  the queue with that prompt first. A prompt the Thread has not left
+  unfinished answers `404 prompt_not_found`, one it already holds running
+  `409 thread_busy`, a terminal Thread or a Project that cannot run
+  `409 thread_inactive`, and low storage `409 thread_storage_low`.
+- **Compact** condenses an idle Thread's context on demand and answers
+  `200 { status: 'compacted', condensedMessages, retainedMessages,
+tokensFreed }`. A running or queued Thread answers `409 thread_busy`; a
+  refusal answers `409 compaction_refused` with `Context compaction is
+disabled in the settings.`, `This Thread has no conversation to compact
+yet.` or `Nothing condenses here: the recent conversation is already the
+smallest safe span.`; a failed attempt answers `502 compaction_failed` with
+  its code (`summarizer_failed` or `unsafe_boundary`) in the message; a
+  history the executor cannot read answers `409 thread_not_supported`; a
+  terminal or closing Thread answers `409 thread_inactive`.
+- **SSH.** `GET /projects/:id/ssh` answers
+  `{ status: 'ready', vmId, ssh, href }`, where `ssh` is the access
+  `GET /vms/:id/ssh` describes and `href` is `/vms/<vmId>/ssh`. While the
+  sandbox is pending it answers `202 { status: 'pending' }` with
+  `Retry-After: 1`; an expired lease answers `410 project_ssh_expired`, and
+  any other state `409 project_ssh_unavailable`.
+- **Usage.** `GET /threads/:id/usage` answers `{ context?, total, threads }`:
+  `total` and each entry of `threads` count `calls`, `unpricedCalls`, `cost`,
+  `inputTokens`, `outputTokens`, `cachedInputTokens` and `reasoningTokens`,
+  each entry naming its `threadId`, `name` and `parentThreadId?`; `context`
+  is `{ model, providerId?, contextWindowSource?, contextWindow?,
+inputTokens? }`, the context window filled from the model catalog when it
+  knows the model
+  ([`usage/src/contracts/index.ts`](../../../bundles/features/usage/src/contracts/index.ts),
+  [`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
 
 ### Workspace reads
 
 `GET /projects/:id/files`, `/tree`, `/files/content`, `/diff`, `/changes`,
-`/files/diff` and `/resources` share the lease answers: `202` with
-`Retry-After: 1` while the environment is pending, `409` when unavailable, and
-`410` when expired.
+`/files/diff` and `/resources` read the Project's sandbox on its current
+lease and never acquire one. They share the lease answers:
+`202 { status: 'pending' }` with `Retry-After: 1` while the environment is
+pending, `410 project_files_expired` when the lease expired, and
+`409 project_files_unavailable` otherwise
+([`routes/projects.ts`](../../../bundles/foundation/transport/src/host/routes/projects.ts),
+[`files/src/host/reads.ts`](../../../bundles/features/files/src/host/reads.ts)).
 
-- A workspace-relative `path` is normalised, resolved against the workspace
-  root, and rejected with `422` when it escapes; a missing path is `404`.
-- Content is capped at 256 KiB (`CONTENT_LIMIT_BYTES`) and reported with
-  `truncated` and `binary` flags, so a binary file is never rendered as
-  mangled text.
-- `/diff` answers one entry per repository with its `diff` and `changes`. A Git
-  diff never contains untracked files, so the `changes` list supplies them
-  alongside `diff`.
-- A `path` on `/diff` also scopes discovery: the repositories it reads are the
-  ones that path belongs to or holds, which is how one Thread reads the
-  changes of its own working directory.
+- A `path` is at most 4096 characters without NUL, relative to the workspace
+  root. One that escapes the workspace, or is malformed, answers
+  `422 invalid_project_path`; a missing path answers
+  `404 project_path_not_found`; a path of the wrong type answers
+  `422 invalid_project_path`. The wrong-type message is `The Project path is
+not a directory.` on `/files` and `/tree`, `The Project path is not a
+readable file.` on `/files/content`, `The Project path is invalid.` on
+  `/diff`, `The Project path cannot be read.` on `/changes` (its `404` too),
+  and `The changed file cannot be read.` on `/files/diff` (its `404` too).
+- `/files` lists one directory level and `/tree` the whole tree below the
+  path, each as `{ path, entries }`; an entry is `{ name, path, type, size? }`,
+  and a tree entry of a directory adds its `children`
+  ([`types/files.ts`](../../../packages/sandbox/src/lib/types/files.ts)).
+- `/files/content` reads one file as UTF-8 text capped at 256 KiB
+  (`CONTENT_LIMIT_BYTES`) and answers `{ path, content, truncated, binary }`;
+  a binary file answers empty `content` with `binary: true`, so it is never
+  rendered as mangled text
+  ([`files/src/host/reads.ts`](../../../bundles/features/files/src/host/reads.ts)).
+- `/diff` answers `{ path?, repositories }`, one `{ path, diff, changes }` per
+  repository, where each change is `{ path, status }`. A Git diff never
+  contains untracked files, so `changes` supplies them alongside `diff`.
+  `/changes` answers one `{ path, changes, added, removed }` per repository,
+  each change with its `status` (`added`, `modified`, `deleted`, `renamed`,
+  `untracked`, `conflicted`), `originalPath?`, `staged`, `unstaged`,
+  `indexStatus` and `worktreeStatus`
+  ([`git/src/host/changes.ts`](../../../bundles/features/git/src/host/changes.ts),
+  [`git/src/contracts/index.ts`](../../../bundles/features/git/src/contracts/index.ts),
+  [`git/src/contracts/reads.ts`](../../../bundles/features/git/src/contracts/reads.ts)).
+- A `path` on `/diff` and `/changes` also scopes discovery: the repositories
+  read are the ones that path belongs to or holds, which is how one Thread
+  reads the changes of its own working directory. Discovery stops at each
+  repository boundary, so a nested repository is left to the outer one.
+- `/files/diff` compares one changed file, HEAD against the working tree.
+  `repository` and `path` are workspace-relative, and it answers that file's
+  change fields plus `{ repository, original, modified, binary, truncated }`.
+- `/resources` answers the sandbox's own usage: `{ status, at, cpuPercent?,
+cpuCount?, memoryUsedBytes?, memoryLimitBytes? }`, where `status` is
+  `ready` or `unavailable`
+  ([`resources/src/contracts/index.ts`](../../../bundles/features/resources/src/contracts/index.ts)).
 
 ### The Thread working directory
 
 Every Thread owns a working directory inside its Project's shared sandbox. It
-starts at `/workspace`, and the agent moves it with its `cwd` tool, which calls
-the same rule the HTTP route does.
+starts at `/workspace`, and the agent moves it with its `cwd` tool, which
+applies the same rule the HTTP route does
+([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts),
+[`domain/cwd.ts`](../../../bundles/runtime/runtime/src/host/domain/cwd.ts)).
 
-- `PATCH /threads/:id` takes an optional `cwd`: an absolute sandbox path, or
-  one relative to the Thread's current directory the way `cd` reads it.
-- A move that would leave the workspace root answers
-  `400 { code: 'invalid_cwd' }`, and so does one that names no directory or
-  names a file; a valid move answers the updated Thread.
+- `PATCH /threads/:id` takes an optional `cwd` of at most 4096 characters,
+  without NUL and not blank: an absolute sandbox path, or one relative to the
+  Thread's current directory the way `cd` reads it. A blank or
+  whitespace-only `cwd` answers `422 invalid_thread`.
+- A move that would leave the workspace root, through a symbolic link
+  included, answers `400 invalid_cwd` with `The working directory must stay
+inside the workspace.`; one that names nothing answers it with `No such
+directory.`, and one that names a file with `The working directory must be
+a directory.`. A Thread without a runtime answers `409 thread_inactive`. A
+  valid move answers the updated Thread
+  ([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts)).
 - The Thread record carries the directory as `cwd` plus a cheap hint as
-  `cwdRepo`: absent unless the directory's own root holds a `.git` marker, then
-  `github` when that repository's `origin` points at github.com and `git`
-  otherwise.
-- The hint is an observation, refreshed whenever the directory moves, when one
-  of the Thread's prompts settles, and when the Git summary below is read —
-  and `thread:updated` is published only when it really changed.
+  `cwdRepo`: absent unless the directory's own root holds a `.git` marker,
+  then `github` when that repository's `origin` points at github.com and
+  `git` otherwise
+  ([`domain/repository-hint.ts`](../../../bundles/runtime/runtime/src/host/domain/repository-hint.ts)).
+- The hint is refreshed whenever the directory moves, when one of the
+  Thread's prompts settles, and when the Git summary below is read, and
+  `thread:updated` is published only when it changed
+  ([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts),
+  [`git/src/host/service.ts`](../../../bundles/features/git/src/host/service.ts)).
 
 When a Project reacquires a sandbox, every Thread whose directory is not the
-workspace root is checked in one probe: a directory the sandbox no longer holds
-— missing, no longer a directory, or resolving outside the root — is reset to
-`/workspace` with its hint cleared, and one `thread:updated` is published for
-each reset. Only an explicit negative answer resets a directory: a probe that
-cannot run keeps every stored directory, because a command that failed is not
-evidence that the directories are gone.
+workspace root is checked in one probe: a directory the sandbox no longer
+holds — missing, no longer a directory, or resolving outside the root — is
+reset to `/workspace` with its hint cleared, and one `thread:updated` is
+published for each reset. Only an explicit negative answer resets a
+directory: a probe that cannot run keeps every stored directory, because a
+command that failed is not evidence that the directories are gone
+([`domain/cwd.ts`](../../../bundles/runtime/runtime/src/host/domain/cwd.ts)).
 
 `GET /threads/:id/git` answers the Git summary of the Thread's working
-directory:
+directory
+([`git/src/host/status.ts`](../../../bundles/features/git/src/host/status.ts),
+[`git/src/contracts/index.ts`](../../../bundles/features/git/src/contracts/index.ts)):
 
 - `{ repo: false }` when the directory holds, or lies in, no repository;
-- otherwise its `root`, `head` (the branch, or the short commit when HEAD is
-  detached), `detached`, `unborn`, `upstream`, `ahead`, `behind`, `dirty`
-  (`staged`/`modified`/`untracked`), `conflicted`, `operation`
-  (`merge`/`rebase`/`cherry-pick`/`revert`/`bisect`), `worktree`, `shallow`,
-  and `stash` count.
+- otherwise `{ repo: true, root, head, detached, unborn, upstream, ahead,
+behind, dirty, conflicted, operation, worktree, shallow, stash,
+submodules }`: `head` is the branch, or the short commit when HEAD is
+  detached; `upstream` and `operation` may be `null`; `dirty` is
+  `{ staged, modified, untracked }`; `operation` is `merge`, `rebase`,
+  `cherry-pick`, `revert` or `bisect`; the rest are counts and flags.
 
-One sandbox command per probe reads all of it — a
-`git status --porcelain=v2 --branch` document whose headers already carry the
-branch, its upstream, and the ahead/behind counts, plus the labeled facts a
-small shell script prints around it — and the answer is cached per Thread until
-the directory moves, a prompt settles, or the renderer asks for it. While the
-Project's sandbox is not readable, the route (like `/branches`) still answers
-`200` with `{ status: 'pending' }` or `{ status: 'unavailable' }`, so clients
-can poll without treating it as an error; an unknown Thread is `404`.
+One sandbox command reads all of it: a `git status --porcelain=v2 --branch`
+document, whose headers already carry the branch, its upstream and the
+ahead/behind counts, plus the labeled facts a small shell script prints
+around it. While the Project's sandbox is not readable, the route still
+answers `200` with `{ status: 'pending' }` or `{ status: 'unavailable' }`, so
+clients can poll without treating it as an error; an unknown Thread answers
+`404 thread_not_found`.
+
+`GET /threads/:id/branches` answers the same way while the sandbox is not
+readable, and otherwise `{ branches, blocked? }`: the local branches, newest
+commit first, each `{ name, current, commit, subject, worktree }`, and the
+sentence that says why switching is blocked, when it is
+([`git/src/host/branches.ts`](../../../bundles/features/git/src/host/branches.ts),
+[`git/src/host/service.ts`](../../../bundles/features/git/src/host/service.ts)).
+`POST /threads/:id/branches` takes `{ branch, cwd }`: an existing local
+branch name (1–1024 characters, no NUL, not starting with `-`) and the
+working directory the client last read, under the same rule as the `cwd` of
+`PATCH /threads/:id` (at most 4096 characters, no NUL, not blank). A body
+that breaks either rule answers `422 invalid_branch`. `cwd` is only a guard:
+the switch always runs in the Thread's own working directory
+([`git/src/host/service.ts`](../../../bundles/features/git/src/host/service.ts)).
+It is refused with `409 branch_refused` and its sentence, in this order:
+
+1. `cwd` differs from the Thread's current working directory: `The working
+directory changed. Reopen the branch picker and try again.`;
+2. running work shares that repository — a Thread of the Project whose
+   directory is in it and that runs a prompt or has one queued, or a terminal
+   still running there that an agent opened or whose command is not `bash`:
+   `Wait for active prompts and terminal commands in this worktree to finish
+before switching branches.`;
+3. the directory resolves outside the workspace: `The working directory must
+stay inside the workspace.`;
+4. it lies in no repository: `This directory is not a Git repository.`;
+5. the repository root resolves outside the workspace: `The repository must
+stay inside the workspace.`;
+6. a Git operation or a conflict is in progress: `Finish the current Git
+operation and resolve conflicts before switching branches.`;
+7. the branch is not a local branch: `This local branch no longer exists.`;
+8. it is checked out in another worktree: `This branch is checked out in
+another worktree.`;
+9. `git switch` fails: `Git could not switch branches. Commit or stash
+conflicting local changes and try again.`
+
+`GET` reports refusals 2–6 as `blocked`, the sentence of 2 taking precedence
+([`git/src/host/branches.ts`](../../../bundles/features/git/src/host/branches.ts)).
+Asking for the branch already checked out runs no switch and answers the
+branches unchanged. Otherwise it switches without discarding changes or
+creating a stash and answers the branches after the switch. A Thread without a
+readable sandbox answers `409 thread_inactive`.
 
 ### The prompt queue
 
-- `GET /threads/:id/queue` returns a non-cached, revisioned snapshot with
-  `paused`, `stopping`, the current active or resumable prompt, and the FIFO
-  pending items, each with its prompt ID, source, display label, bounded
-  preview and acceptance time.
-- `POST /threads/:id/queue/resume` reopens a stopped queue: it resumes the
-  latest eligible reader-paused prompt first and then the FIFO.
-- `GET /threads/:id/queue/:promptId` returns the full text, edit eligibility
-  and revision. `PATCH` on it requires `{ text, revision }`: only a user input
-  that has never started can be edited, and a stale revision is `409`.
-- `DELETE /threads/:id/queue/:promptId` removes a pending input and records
-  `prompt.finished` with `status: cancelled` and `reason: queue_removed`; it
-  refuses an input already executing.
+The queue routes
+([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+[`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
+[`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)):
+
+- `GET /threads/:id/queue` answers a revisioned snapshot
+  `{ revision, paused, stopping, current?, resumable?, items, error? }`: the
+  prompt running, the prompt a stop left resumable, and the FIFO pending
+  items, each `{ promptId, source, label, preview, acceptedAt, editable,
+revision }` with `source.kind` one of `user`, `terminal`, `parent`,
+  `result` and `bundle`. While storage is low the snapshot is `paused`, and
+  `error` carries the storage message
+  ([`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
+- `POST /threads/:id/queue/resume` reopens a stopped queue and answers the
+  Thread: it resumes the latest eligible reader-paused prompt first and then
+  the FIFO. On a queue that is not stopped and not waiting on storage, it
+  does nothing and answers `200` with the Thread, also while a prompt runs.
+  A stopped queue whose aborted prompt still runs answers `409 thread_busy`,
+  low storage `409 thread_storage_low`, and a terminal Thread or a Project
+  that cannot run `409 thread_inactive`.
+- `GET /threads/:id/queue/:promptId` answers `{ promptId, text, revision,
+editable }`. A `:promptId` that is not a UUID answers `422 invalid_prompt`
+  (`A promptId is required.`); a prompt that is no longer queued, or a Thread
+  that is missing, terminal or closing, answers `404 unknown_prompt` (`This
+  prompt is no longer queued.`).
+- `PATCH /threads/:id/queue/:promptId` takes `{ text, revision }`
+  (`422 invalid_prompt` otherwise) and answers the edited prompt with its new
+  revision. Only a reader input that has never started can be edited. The
+  error `code` is the outcome itself: `404 missing` or `404 unknown_prompt`
+  (`This prompt is no longer available for editing. Your changes have not
+been saved.`), `409 conflict` for a stale revision (`This prompt was edited
+elsewhere. Your changes have not been saved.`), `409 not_editable` (`Only
+your prompts that have not started can be edited. Your changes have not
+been saved.`), and `409 inactive` or `409 forbidden` (a Thread an agent
+  opened) with the first message.
+- `DELETE /threads/:id/queue/:promptId` removes a pending input, records
+  `prompt.finished` with `status: cancelled` and `reason: queue_removed`, and
+  answers `204`, also for an input already removed. A `:promptId` that is not
+  a UUID answers `422 invalid_prompt` (`A promptId is required.`). The input
+  being executed
+  answers `409 thread_busy`, an unknown one `409 thread_unknown_prompt`, a
+  Thread an agent opened `409 thread_forbidden`, and a terminal or closing
+  Thread `409 thread_inactive`.
 
 ### Replay
 
-`GET /threads/:id/events?afterSequence=N` returns `{ events, lastSequence }`.
-The optional cursor is exclusive (default 0). Sequence numbers are contiguous
-per Thread, not globally ordered across Threads. Each event contains:
+`GET /threads/:id/events?afterSequence=N` answers `{ events, lastSequence }`:
+every event after the cursor, and the Thread's latest sequence
+([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+[`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)).
+The cursor is exclusive and defaults to 0; one that is not a non-negative
+integer answers `400 invalid_event_cursor`. Sequence numbers are contiguous
+per Thread, not ordered across Threads. Each event is:
 
 ```text
 { projectId, threadId, promptId, sequence, type, event, createdAt }
 ```
 
-Events are persisted before publication. Their bodies include model reasoning,
-provider replay, tool inputs/results, usage, and failures. Credentials are
-redacted before persistence, and the characters PostgreSQL refuses — U+0000 and
-an unpaired surrogate, which binary tool output can carry — become U+FFFD, so a
-single binary match cannot fail a Thread. Full prompt/event payloads are not
-operational logs.
+Events are persisted before they are published. Their bodies include model
+reasoning, provider replay, tool inputs and results, usage, and failures.
+Credentials are redacted before persistence, and the characters PostgreSQL
+refuses — U+0000 and an unpaired surrogate, which binary tool output can
+carry — become U+FFFD, so a single binary match cannot fail a Thread
+([`domain/serialization.ts`](../../../bundles/runtime/runtime/src/host/domain/serialization.ts),
+[`store/records.ts`](../../../bundles/runtime/runtime/src/host/store/records.ts)).
+Full prompt and event payloads are not operational logs.
 
-Rewind appends one `history.truncated` event whose body is
-`{ type: 'history.truncated', afterSequence }`; `afterSequence` is the sequence
-of the last surviving event, or `0` when none survives. Subscribers receive it
-before the replacement `prompt.accepted`. Because sequence numbers are never
-reused, later events continue above the marker and a replay cursor above it
-simply skips the discarded range; clients drop their local events above
-`afterSequence`.
+A rewind appends one `history.truncated` event whose body is
+`{ type: 'history.truncated', afterSequence }`; `afterSequence` is the
+sequence of the last surviving event, or `0` when none survives. Subscribers
+receive it before the replacement `prompt.accepted`. Sequence numbers are
+never reused: later events continue above the marker, a replay cursor above
+it skips the discarded range, and a client drops its local events above
+`afterSequence`
+([`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts)).
+
+### Terminals
+
+The terminal sessions are the
+[`terminal`](../../../bundles/features/terminal/README.md) bundle's
+([`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts),
+[`terminal/src/contracts/index.ts`](../../../bundles/features/terminal/src/contracts/index.ts)).
+A session is `{ id, projectId, threadId, origin, command, cwd, startedAt,
+timeoutMs, state, pty, name? }`, with `origin` `agent` or `user` and `state`
+`starting`, `running` or `exited`. Terminal data is never stored in
+conversation events.
+
+- `GET /projects/:id/terminals` answers `{ items }`, the Project's sessions in
+  start order. It answers `200 { items: [] }` for a Project that does not
+  exist and for an `:id` that is not a UUID
+  ([`terminal/src/host/registry.ts`](../../../bundles/features/terminal/src/host/registry.ts)).
+- `POST /threads/:id/terminals` opens a bash PTY in the Thread's working
+  directory, bringing its Project back first, and answers `201` with the
+  session. `cols` and `rows` are optional integers 1–1000
+  (`422 invalid_terminal` otherwise); a missing, finished or closing Thread,
+  or a Project without a sandbox, answers `409 terminal_unavailable`.
+- `GET /terminals/:id?after=N` answers `{ terminal, output, offset,
+truncated }`: the output after the UTF-16 offset `after` (default 0), the
+  offset after it, and whether the cursor is older than the retained output.
+  A cursor that is not a non-negative integer answers `422 invalid_cursor`,
+  and a session that does not exist, a malformed `:id` included,
+  `404 terminal_missing`.
+- `POST /terminals/:id/input` takes `{ data }` of at most 65536 characters
+  (`422 invalid_input` otherwise); `POST /terminals/:id/resize` takes
+  `{ cols, rows }`, both 1–1000 (`422 invalid_size` otherwise). Both answer
+  `204`, or `404 terminal_missing` (`Terminal no longer exists.`) when the
+  session has no running process.
+- `DELETE /terminals/:id` stops and removes the session and answers `204`
+  whether or not it existed.
+
+### The screen relay
+
+The `screen-relay` bundle relays every request under `/screen/<token>/` to
+the upstream the `screen` bundle exposed for that session token, HTTP
+requests and WebSocket upgrades alike
+([`screen-relay/src/host/relay.ts`](../../../bundles/features/screen-relay/src/host/relay.ts),
+[`screen-relay/src/host/index.ts`](../../../bundles/features/screen-relay/src/host/index.ts)).
+The path after the token and the query reach the upstream unchanged.
+
+- **HTTP.** The request and the upstream's answer pass with their
+  hop-by-hop headers dropped, and the request's `Host` is replaced with the
+  upstream's `host:port`. A path under `/screen` whose token names no
+  session answers `404` with `No such screen.` (`text/plain`). The upstream
+  request is aborted after 30 seconds without activity. An upstream error
+  before the answer started answers `502` with `The screen upstream is
+unavailable.` (`text/plain`); after the answer started, that text is
+  appended to the partial answer and the answer ends.
+- **Upgrades.** The handshake is sent to the upstream as a `GET` with every
+  header kept except `Host`, which is replaced with the upstream's
+  `host:port`, and the upstream's own handshake answer reaches the client,
+  after which bytes pass both ways. An unknown token answers a raw
+  `HTTP/1.1 404 Not Found` and closes the socket; an upstream that cannot be
+  reached before the handshake answers a raw `HTTP/1.1 502 Bad Gateway`, and
+  one that fails after it closes the socket.
+
+Every other path is left to the REST routes, and every other upgrade to
+Socket.IO.
 
 ### Command-line client
 
@@ -1129,12 +1594,14 @@ npm run doric:spawn-agent -- --url http://127.0.0.1:3000 \
 ```
 
 The client creates a Project, then a Thread, submits the input, polls durable
-replay, and prints only IDs, event metadata, and the Project SSH URL.
+replay every 250 ms, and prints only IDs, event metadata, and the Project SSH
+URL; it fails when the prompt finishes `failed` or `cancelled` or the Thread
+ends first ([`scripts/spawn-agent.mjs`](../../../scripts/spawn-agent.mjs)).
 `--url` defaults to `DORIC_URL` or `http://127.0.0.1:3000`. Without
-`--terminate`, the Project remains reserved; with it, the entire Project closes
-after the submitted prompt ends, including any still-running descendants.
-Configure `/config` and server credentials separately; the client does not
-send credentials or A2A configuration.
+`--terminate`, the Project remains reserved; with it, the entire Project
+closes after the submitted prompt ends, including any still-running
+descendants. Configure `/config` and the credentials separately; the client
+sends no credentials.
 
 ## Socket.IO
 

@@ -1,41 +1,48 @@
-# Menus nativos e atalhos
+# Menus and keybindings
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes the native application menu, keyboard shortcuts and command dispatch on the desktop as implemented on 2026-11-20.
 
-## Resumo
+## Summary
 
-O menu nativo da aplicação e os atalhos de teclado passam a ser registrados por código, não deixados ao menu padrão do Electron. O core usa o contrato nativo da plataforma `doric.menus/v1`; os outros bundles pedem itens, atalhos e mudanças de contexto ao serviço `menus/v1`, que o core fornece por padrão no `desktopMain` sobre `doric.menus/v1` com suas políticas. Partes `client` que declaram `menus/v1` em `requires` o alcançam pela ponte. Cada item ou atalho aponta para um comando definido com `defineCommand` e registrado em `commands/v1`, que existe no `desktopMain` e no `client`, e pode ter uma condição `when` de vocabulário fixo. Um clique ou atalho resolve o comando, que é despachado à janela em foco ou ao registro do `desktopMain`, e conflitos de tecla são recusados com erro.
+The desktop's application menu and keyboard shortcuts are registered by code. Three contracts work together:
 
-## Situação atual
+- `doric.menus/v1`, a platform contract that the desktop main process provides in `desktopMain`. It holds the menu skeleton of each generation, the items and keybindings bundles registered, and the menu context of each window, and builds the native menu from them ([`native-menus.ts`](../../../app/desktop/doric/src/platform/menus/native-menus.ts), [`broker.ts`](../../../app/desktop/doric/src/platform/generation/broker.ts)).
+- `menus/v1`, a basic contract that bundles use to add menu items and keybindings and to report a window's context. The `core` bundle provides it in `desktopMain` over `doric.menus/v1`, recording the calling bundle as the owner of each registration ([`basic/menus.ts`](../../../packages/bundle/src/contracts/basic/menus.ts), [`core/src/desktop/menus.ts`](../../../bundles/foundation/core/src/desktop/menus.ts)).
+- `commands/v1`, the registry of commands in `desktopMain` and in each window's `client`. A menu item or a keybinding names a command by its id; a click or a key press dispatches that command ([`basic/commands.ts`](../../../packages/bundle/src/contracts/basic/commands.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)).
 
-Hoje `app/doric` não define `Menu`, então o Electron mostra o menu padrão. Menus e atalhos passam a ser registrados por código.
+The core sets the menu skeleton when the app is ready: Electron's own menus, one role per top-level menu, with no Settings item and no `Cmd+,` shortcut ([`core/src/desktop/menu.ts`](../../../bundles/foundation/core/src/desktop/menu.ts)). Each window handles keybindings with a single keydown listener that follows the table main sends it ([`packages/desktop/src/client/keybindings.ts`](../../../packages/desktop/src/client/keybindings.ts)).
 
-## Quem registra
+## Who registers what
 
-O contexto de ativação só entrega `services`; não existem `ctx.menus` nem `ctx.keybindings`. Partes `desktopMain` recebem `DesktopContext` e partes `client` recebem `ClientContext`, ambos só com `services`. A API nativa de menus e atalhos é o contrato de plataforma `doric.menus/v1`, usado pelo core. O core usa esse contrato e fornece `menus/v1` (itens, atalhos e `setContext`), que os outros bundles usam.
+| Who                                   | Uses                                   | For                                                                                               |
+| ------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| The core, `desktopMain` part          | `doric.menus/v1`                       | Setting the skeleton at `onAppReadyHook`; forwarding every `menus/v1` registration with its owner |
+| The core, `client` part               | `menus/v1.setContext`                  | Reporting the window's active route pattern as the context `path` after every navigation          |
+| Any bundle, `client` or `desktopMain` | `menus/v1.addItem`, `addKeybinding`    | Adding menu items and keybindings that point to a command id                                      |
+| Any bundle, `client` or `desktopMain` | `commands/v1.register`                 | Registering the command an item or keybinding dispatches                                          |
+| The desktop main process              | `commands/v1.execute` of each registry | Dispatching the command of a clicked item or a pressed key                                        |
 
-A referência `MenusV1` não é do core: ela fica em `bundle/contracts`, junto com as outras referências e tipos dos contratos básicos (`CommandsV1`, `HooksV1`, `WindowsV1` etc.), porque qualquer bundle pode fornecê-los; o core fornece a definição com `execute` (`coreMenus`). `menus/v1` não tem prefixo `doric.` e tem cardinalidade `one` (o padrão), então outro bundle pode fornecê-lo no lugar do core, escolhido em `providers` da composição para o `desktopMain`; nesse caso o loader não registra a definição `coreMenus` para `menus/v1` nesse ambiente, e o `services.use(MenusV1)` do próprio core devolve o provedor escolhido. De `core/contracts` vem só o que é do core, como `CoreHooksV1` e `OpenSettingsCommandV1`, a referência do comando `core.open-settings/v1`. O bundle que contribui um item define o comando que o item dispara com `defineCommand`.
+A `desktopMain` or `client` part reaches these contracts only through `services.use`; its activation context carries nothing else ([Contexts](contexts.md)). `doric.menus/v1` is a platform contract: it always exists in `desktopMain`, a part uses it without a manifest line, and no bundle can provide it ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). It is not exposed to windows. A bundle that adds items or keybindings lists `menus/v1` under `requires` in its manifest, and `commands/v1` when it registers commands; `requires` is one list for the whole bundle, with no field per part. `chat` and `papercraft` list both, and use them from their `client` parts ([`chat/manifest.json`](../../../bundles/desktop/chat/manifest.json), [`papercraft/manifest.json`](../../../bundles/features/papercraft/manifest.json)). The core uses `menus/v1` from its `client` part without a manifest line, because it provides the contract itself ([`core/src/client/index.ts`](../../../bundles/foundation/core/src/client/index.ts), [`core/manifest.json`](../../../bundles/foundation/core/manifest.json)).
 
-Pseudocódigo da API proposta:
+## The contract `menus/v1`
+
+`MenusV1` and its schemas are exported by `bundle/contracts` ([`basic/menus.ts`](../../../packages/bundle/src/contracts/basic/menus.ts)):
 
 ```ts
-// bundle/contracts: referência e tipo do contrato básico, fornecido pelo core por padrão
-import { ref } from './define.js';
+type MenuWhen = { path?: string; focus?: string };
 
-export type MenuWhen = { path?: string; focus?: string }; // path: padrão de path da rota ativa
-
-export interface Menus {
+interface Menus {
   addItem(item: {
     id: string;
-    location: string; // 'app/<menu>' ou 'dock'
-    command: string;
+    location: string; // 'app/<menu id>' or 'dock'
+    command: string; // the id of a command in commands/v1
     label: string;
     when?: MenuWhen;
     order?: number;
   }): Promise<void>;
   addKeybinding(binding: {
     command: string;
-    key: string;
+    key: string; // an Electron accelerator, such as 'CmdOrCtrl+Shift+B'
     when?: MenuWhen;
   }): Promise<void>;
   setContext(entry: {
@@ -44,203 +51,184 @@ export interface Menus {
   }): Promise<void>;
 }
 
-export const MenusV1 = ref<Menus>('menus/v1');
+const MenusV1 = ref<Menus>('menus/v1');
 ```
+
+Each input object is strict: an unknown field is refused with `invalid_input`. All three methods are exposed to desktop windows (`expose: 'desktop'`), so a `client` part calls them across the bridge to `desktopMain`. Like every method, each takes the parent `call` as an optional last argument.
+
+The contract takes no scope key from a window. The core's manifest lists no `desktopScope` entry for `menus/v1`, so the desktop process refuses a window's call that carries a scope key, such as `projectId`, `threadId` or `promptId`, with `invalid_input`, and fills `call.scope.windowKey` itself with the key of the calling window ([`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`core/manifest.json`](../../../bundles/foundation/core/manifest.json), [`core-scope.test.ts`](../../../app/desktop/doric/tests/core-scope.test.ts)). How scope keys and `desktopScope` work is in [Contexts](contexts.md#scope-keys) and [The bundle manifest](manifest.md).
+
+The core's provider, `coreMenus`, forwards each method to `doric.menus/v1` with the same `call` ([`core/src/desktop/menus.ts`](../../../bundles/foundation/core/src/desktop/menus.ts)):
+
+- `addItem` and `addKeybinding` add `owner`, the `bundleId`, `version` and `generation` of `call.caller`. On the hop to `doric.menus/v1` the caller becomes the core, so the owner travels in the input: it is the bundle that called `menus/v1`.
+- `setContext` adds `windowKey` from `call.scope.windowKey`. A call with no window key, such as one from a `desktopMain` part that serves no window call, is refused with `invalid_input` ("setContext needs a calling window").
+
+## The platform contract `doric.menus/v1`
+
+`DoricMenusV1` is exported by `bundle/contracts`; it exists in `desktopMain` only, and the desktop main process provides it in every `desktopMain` generation ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`process.ts`](../../../app/desktop/doric/src/platform/generation/process.ts), [`broker.ts`](../../../app/desktop/doric/src/platform/generation/broker.ts)):
 
 ```ts
-// git, client/commands.js
-import { defineCommand } from 'bundle/contracts';
-import { z } from 'zod';
-import { GitCommandsV1 } from '../contracts/index.js';
-import { resolveSwitchBranchInput } from './switch-branch-input.js';
+type MenuSkeleton = readonly {
+  readonly id: string;
+  readonly label: string;
+  readonly role?: string; // an Electron menu role, such as 'editMenu'
+  readonly submenu?: MenuSkeleton;
+}[];
 
-export const switchBranchCommand = defineCommand({
-  id: 'git.switch-branch/v1',
-  input: z
-    .object({ projectId: z.string().optional(), to: z.string().optional() })
-    .strict(),
-  execute: async (input, call, services) => {
-    // menu e atalho despacham sem entrada: o Project vem da rota ativa e a branch, de um seletor
-    const { projectId, to } = await resolveSwitchBranchInput(
-      input,
-      call,
-      services,
-    );
-    await services.use(GitCommandsV1).switchBranch({ projectId, to }, call);
-  },
-});
+interface Caller {
+  readonly bundleId: string;
+  readonly version: string;
+  readonly generation: number; // an integer
+}
+
+interface DoricMenus {
+  setSkeleton(skeleton: MenuSkeleton, call?: CallArg): Promise<void>;
+  add(
+    item: MenuItem & { readonly owner: Caller },
+    call?: CallArg,
+  ): Promise<void>;
+  addKeybinding(
+    binding: Keybinding & { readonly owner: Caller },
+    call?: CallArg,
+  ): Promise<void>;
+  setContext(
+    entry: {
+      readonly windowKey: string;
+      readonly key: 'path' | 'focus';
+      readonly value: string | null;
+    },
+    call?: CallArg,
+  ): Promise<void>;
+}
+
+const DoricMenusV1 = ref<DoricMenus>('doric.menus/v1');
 ```
+
+`MenuItem` and `Keybinding` are the inputs of `menus/v1.addItem` and `addKeybinding` above. Every input object, at every level of the skeleton, is strict. Each method returns once main has applied it, and rejects with the error main raised ([`broker.ts`](../../../app/desktop/doric/src/platform/generation/broker.ts), [`native-menus.ts`](../../../app/desktop/doric/src/platform/menus/native-menus.ts)):
+
+| Method          | Effect                                                                                                                                                               | Errors                                                                                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `setSkeleton`   | Stores the skeleton of the caller's generation, makes it the last skeleton set, and rebuilds the menu                                                                | `invalid_input` for a malformed skeleton                                                                                          |
+| `add`           | Records the item under the caller's generation and the owner's `bundleId`, and rebuilds the menu                                                                     | `registration_conflict` when the same owner already registered an item with the same `id` in that generation                      |
+| `addKeybinding` | Records the keybinding under the caller's generation and the owner's `bundleId`, sends the new table to the windows pinned to that generation, and rebuilds the menu | `registration_conflict` when a keybinding of that generation has the same `key` and the same `when` (see [Conflicts](#conflicts)) |
+| `setContext`    | Sets `path` or `focus` of the window's context, sends the window its new keybinding table, and rebuilds the menu when that window has focus                          | `not_found` when no window with that key is open                                                                                  |
+
+The generation of a registration is `call.caller.generation`, the generation of the bundle that made the hop; `owner` decides only whose registration it is.
+
+## The menu skeleton
+
+The core's `desktopMain` part sets the skeleton in its handler of `onAppReadyHook` of `doric.app.hooks/v1`, before it opens the first window ([`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [Hooks](hooks.md)). The skeleton is Electron's default menu, one role per top-level menu ([`core/src/desktop/menu.ts`](../../../bundles/foundation/core/src/desktop/menu.ts)):
+
+| `id`     | `label`  | `role`       |
+| -------- | -------- | ------------ |
+| `app`    | `App`    | `appMenu`    |
+| `file`   | `File`   | `fileMenu`   |
+| `edit`   | `Edit`   | `editMenu`   |
+| `view`   | `View`   | `viewMenu`   |
+| `window` | `Window` | `windowMenu` |
+| `help`   | `Help`   | `help`       |
+
+Electron expands each role into its own submenu, so the labels, accelerators and native roles of those entries are Electron's, including the clipboard shortcuts of the Edit menu. The skeleton has no Settings item and binds no `Cmd+,`. The core registers the command `core.open-settings/v1` in its `desktopMain` `commands/v1`, but no menu item or keybinding points to it; the command is described in the core's [README](../../../bundles/foundation/core/README.md) ([`core/src/desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts)).
+
+## Building the application menu
+
+Main rebuilds the application menu when a skeleton, item or keybinding is added or dropped, when the focused window changes, when a window is pinned to a generation, when the focused window's context changes, and when a generation's process is respawned ([`native-menus.ts`](../../../app/desktop/doric/src/platform/menus/native-menus.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). A rebuild:
+
+1. takes the generation the focused window is pinned to, or the newest generation when the focused window is not pinned or no window has focus;
+2. takes that generation's skeleton, or else the last skeleton any generation set. Until a skeleton exists, the menu is left alone and Electron's default menu shows;
+3. takes the items and keybindings of that generation whose `when` holds in the focused window's context (see [The `when` condition](#the-when-condition-and-the-window-context));
+4. builds one menu entry per skeleton entry, at every level of the skeleton, with these rules ([`skeleton.ts`](../../../app/desktop/doric/src/platform/menus/skeleton.ts)):
+   - an entry with role `appMenu` appears only on macOS;
+   - an entry with role `help` appears only when a nested entry or a contributed item fills it;
+   - any other entry with a role and neither nested entries nor contributed items is the bare role; otherwise it is Electron's submenu of that role, then the nested entries, then a separator, then the items, so a role entry with nested entries and no items ends with a separator;
+   - an entry without a role is a submenu with its nested entries, a separator when both are present, and the items;
+5. puts in each menu the items whose `location` is `app/<id of that entry>`, sorted by `order` (0 when absent), then by the order in which their owners first registered in the generation. Each item shows its `label` and, when a keybinding of the same command is active, that key as its accelerator; the accelerator is shown only, not registered, because the window's listener handles the key. A click dispatches the item's command for the focused window;
+6. on macOS, when at least one item has `location` `dock`, sets the dock menu to those items in registration order. When no dock item is left, the dock menu set last stays.
+
+An item addresses any entry of the skeleton by its id, top-level or nested. An item does not appear, and no error is raised, when its `location` is neither `dock` nor `app/` followed by the id of an entry at some level, or when it targets the `appMenu` entry, or an entry nested under it, on a platform other than macOS.
+
+## The `when` condition and the window context
+
+Each window has a context with two keys, `path` and `focus`, both `null` when the window opens ([`registry.ts`](../../../app/desktop/doric/src/platform/windows/registry.ts), [`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)). A `when` holds when each key it names equals the window's value for that key; a `when` with no key, or no `when`, always holds. With no focused window there is no context, so only items and keybindings whose `when` names no key apply ([`native-menus.ts`](../../../app/desktop/doric/src/platform/menus/native-menus.ts)).
+
+The comparison is exact string equality, with no pattern matching. The value of `path` is the route pattern, not the concrete path: the core's `client` part subscribes to `navigation/v1` and, on activation and after every navigation that changes the pattern, calls `setContext({ key: 'path', value })` with the pattern of the matched route, such as `/projects/:projectId/threads/:threadId`, or `null` when no route matches. A failed call is logged with `log/v1` ([`menu-context.ts`](../../../bundles/foundation/core/src/client/menu-context.ts), [Navigation](navigation.md)). So a `when: { path: '/projects/:projectId/threads/:threadId' }` holds in any window showing a Thread. No shipped part sets `focus`.
+
+## Keybindings in a window
+
+Main keeps, for each window, its effective table: the keybindings of the window's generation (the generation it is pinned to, or the newest) whose `when` holds in its context, as `{ key, command }` entries. It sends the table on the window's `keybindings` stream of the shell protocol whenever it changes ([`native-menus.ts`](../../../app/desktop/doric/src/platform/menus/native-menus.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`protocol.ts`](../../../packages/desktop/src/client/protocol.ts)).
+
+Each window installs one capture-phase `keydown` listener during its bootstrap, so bundles do not add listeners of their own for these shortcuts ([`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts), [`keybindings.ts`](../../../packages/desktop/src/client/keybindings.ts)):
+
+- It parses each `key` as an accelerator: modifiers `Cmd`/`Command`/`Meta`/`Super`, `Ctrl`/`Control`, `CmdOrCtrl`/`CommandOrControl` (Meta on macOS, Control elsewhere), `Alt`/`Option` and `Shift`, then one key, case-insensitive, with the aliases `Esc`, `Return`, `Space`, `Plus`, `Up`, `Down`, `Left`, `Right` and `Del`. A key it cannot parse is left out of the table.
+- A `keydown` matches an entry when its key and all four modifier states are equal to the chord. On a match the listener calls `preventDefault` and sends the `keybinding` notification with the entry's `key`.
+- Main looks the key up in the window's current table and dispatches its command for that window, or answers `not_found` when the table has no entry for that key ([`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
+
+A keybinding acts only in a focused Doric window: no global shortcut is registered. The Edit menu's clipboard shortcuts are Electron's native accelerators and never appear in the table.
+
+## Dispatching a command
+
+A command is defined with `defineCommand({ id, input, execute })`, where `id` is a bundle contract id, `input` a zod schema and `execute` receives `(input, call, services)`, and is registered with `services.use(CommandsV1).register(command)`, which returns a disposable ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`basic/commands.ts`](../../../packages/bundle/src/contracts/basic/commands.ts)):
 
 ```ts
-// core, desktopMain/menus.ts: definição de menus/v1 com execute
-import {
-  defineMethod,
-  defineService,
-  DoricMenusV1,
-  MenusV1,
-} from 'bundle/contracts';
-import { z } from 'zod';
+interface Commands {
+  register(command: Registrable<BoundCommand>): Disposable;
+  execute(
+    command: AnyServiceRef | ContractId,
+    input?: unknown,
+    call?: CallArg,
+  ): Promise<void>;
+}
 
-const when = z
-  .object({
-    path: z.string().optional(), // padrão de path da rota ativa
-    focus: z.string().optional(),
-  })
-  .strict();
-
-// call.caller é quem chamou menus/v1; no salto para doric.menus/v1 o caller passa a ser o core,
-// então o dono do registro vai explícito na entrada. call.scope.windowKey é herdado do call pai.
-export const coreMenus = defineService(MenusV1, {
-  addItem: defineMethod({
-    input: z
-      .object({
-        id: z.string(),
-        location: z.string(), // 'app/<menu>' ou 'dock'
-        command: z.string(),
-        label: z.string(),
-        when: when.optional(),
-        order: z.number().optional(),
-      })
-      .strict(),
-    output: z.void(),
-    execute: (item, call, services) =>
-      services.use(DoricMenusV1).add({ ...item, owner: call.caller }, call),
-  }),
-  addKeybinding: defineMethod({
-    input: z
-      .object({
-        command: z.string(),
-        key: z.string(),
-        when: when.optional(),
-      })
-      .strict(),
-    output: z.void(),
-    execute: (binding, call, services) =>
-      services
-        .use(DoricMenusV1)
-        .addKeybinding({ ...binding, owner: call.caller }, call),
-  }),
-  setContext: defineMethod({
-    input: z
-      .object({
-        key: z.enum(['path', 'focus']),
-        value: z.string().nullable(),
-      })
-      .strict(),
-    output: z.void(),
-    execute: (entry, call, services) =>
-      services
-        .use(DoricMenusV1)
-        .setContext({ windowKey: call.scope?.windowKey, ...entry }, call),
-  }),
-});
+const CommandsV1 = ref<Commands>('commands/v1');
 ```
 
-```ts
-// core, parte desktopMain
-import {
-  AppHooksV1,
-  type DesktopContext,
-  DoricMenusV1,
-  HooksV1,
-} from 'bundle/contracts';
-import { coreMenus } from './menus.js';
-import { defaultMenuSkeleton } from './menu.js';
+`commands/v1` exists in `desktopMain` and in `client`, not in `host`. The core provides both registries. Each is a map by id: registering an id already present is `registration_conflict`; `execute` parses the input with the command's schema (`{}` when absent) and refuses a failure with `invalid_input`. In `desktopMain` an unknown id is `unknown_command`; in a window, an id no part of the window registered is sent to `desktopMain` through the core's own contract `core.commands/v1`, whose miss is that same `unknown_command` ([`core/src/desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts), [`core/src/client/commands.ts`](../../../bundles/foundation/core/src/client/commands.ts), [`core/src/desktop/commands-bridge.ts`](../../../bundles/foundation/core/src/desktop/commands-bridge.ts)). `core.commands/v1` is described in the core's [README](../../../bundles/foundation/core/README.md).
 
-export const activate = ({ services }: DesktopContext) => {
-  services.provide(coreMenus);
+A click on a menu item or a matched key dispatches the command id with the input `{}`, for the window it came from or else the focused window ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts)):
 
-  // O esqueleto do menu é montado no onAppReadyHook, não direto no activate.
-  services
-    .use(HooksV1)
-    .use(AppHooksV1)
-    .onAppReadyHook(async (_input, call) => {
-      await services.use(DoricMenusV1).setSkeleton(defaultMenuSkeleton, call);
-    });
-};
-```
+1. When that window's generation (or, for an unpinned window or none, the newest generation) has a live process, main executes the id in that generation's `desktopMain` `commands/v1`, with `call.scope.windowKey` set to the window's key. If it runs, dispatch ends. With no live process this step is skipped.
+2. On `unknown_command`, or when step 1 was skipped, and only if the window has subscribed to its `commands` stream, main asks the window, over its `commands` stream, to execute the id in its `client` `commands/v1`, and waits for the result ([`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`packages/desktop/src/client/commands.ts`](../../../packages/desktop/src/client/commands.ts)).
+3. On `unknown_command` there too, with no window, or with a window that has not subscribed to its `commands` stream, main logs the warning "No registry has this command" with `kind: 'command_not_found'`.
 
-```ts
-// git, parte client: o comando entra no registro de comandos da janela, e o item e o atalho
-// vão a menus/v1 pela ponte client → desktopMain
-import { type ClientContext, CommandsV1, MenusV1 } from 'bundle/contracts';
-import { switchBranchCommand } from './commands.js';
+Any other error at step 1 or 2 is logged as "Command failed" and ends the dispatch. Because dispatch passes no input, a command reached from a menu or a key derives what it needs from the window, its route or its own state.
 
-export const activate = async ({ services }: ClientContext) => {
-  services.use(CommandsV1).register(switchBranchCommand);
+## Conflicts
 
-  const menus = services.use(MenusV1);
-  await menus.addItem({
-    id: 'git.menu.switch-branch',
-    location: 'app/view',
-    command: 'git.switch-branch/v1',
-    label: 'Trocar branch…',
-    when: { path: '/projects/:projectId/threads/:threadId' },
-  });
-  await menus.addKeybinding({
-    command: 'git.switch-branch/v1',
-    key: 'CmdOrCtrl+Shift+B',
-    when: { path: '/projects/:projectId/threads/:threadId' },
-  });
-};
-```
+Two keybindings conflict when they are in the same generation, have the same `key` string and the same `when`, comparing `path` and `focus` with an absent key equal to `null`. The owner does not matter: the second registration is refused with `registration_conflict`, whose details name the key and the command and owner already bound, and the first one stays ([`native-menus.ts`](../../../app/desktop/doric/src/platform/menus/native-menus.ts)). The error goes back to the caller of `addKeybinding`; nothing else reports it. Two keybindings with the same key and different `when` do not conflict: both `chat` and `papercraft` bind `CmdOrCtrl+Enter`, on different routes. Keys are compared as written, so `CmdOrCtrl+Enter` and `Ctrl+Enter` do not conflict even where they name the same chord.
 
-O manifesto do `git` declara em `requires` da parte `client` os contratos que esse código usa com `use`: `commands/v1`, `menus/v1` e `git.commands/v1`, que o `execute` de `switchBranchCommand` usa para chamar o host pela ponte. `doric.menus/v1` é da plataforma, sempre existe e nunca entra em `requires`; o core o usa sem declará-lo. O core também não declara `hooks/v1` nem `menus/v1`, que ele mesmo fornece; o core só pode declarar `requires` de contratos que a fundação fornece. A ordem de ativação (fundação, core e demais bundles) está em [serviços e canais](./services-and-channels.md).
+## Lifetimes
 
-Como alternativa, um bundle que já tenha parte `desktopMain` pode registrar o item e o atalho nela, com `activate({ services }: DesktopContext)` chamando o mesmo `services.use(MenusV1)` sem passar pela ponte; nesse caso `menus/v1` entra no `requires` da parte `desktopMain`. O `git` desta proposta não tem parte `desktopMain` e faz o registro na parte `client`.
+Registrations belong to a generation and an owner ([`native-menus.ts`](../../../app/desktop/doric/src/platform/menus/native-menus.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)):
 
-O `execute` de cada método de `menus/v1` recebe `(input, call, services)`, com `call.caller` (`{ bundleId, version, generation }`) preenchido pelo dispatcher da plataforma: é o bundle que chamou `menus/v1`, como `git`. Quando o core repassa `call` a `doric.menus/v1`, o dispatcher herda `scope`, `signal` e `trace`, mas o `caller` desse salto novo é o próprio core, nunca herdado; por isso o `execute` do core passa o dono na entrada (`owner: call.caller`) para atribuir cada item e atalho ao bundle que o pediu. `setContext` sabe a qual janela o contexto pertence por `call.scope.windowKey`, que o dispatcher preenche em toda chamada que sai de uma janela client. O loader rastreia o que cada bundle registrou por meio de serviços (o fornecimento de `menus/v1`, o comando em `commands/v1` e os itens e atalhos pedidos) e descarta em ordem inversa na desativação, então o menu é reconstruído sem os itens de um bundle desativado sem que ele precise de `onDispose`.
+- Each time main receives a diagnostics snapshot of a generation, it drops the items and keybindings owned there by every bundle whose state in the snapshot is not `active`, including `inactive` before the bundle first activates, and the menu and the window tables are rebuilt without them; the bundle needs no cleanup of its own.
+- When a generation's process is lost, its items and keybindings are dropped and its skeleton kept; when the process is respawned, the menu is rebuilt.
+- When a generation is retired, its items, keybindings and skeleton are dropped. If its skeleton was the last one set, it still serves as the last skeleton for a generation that has none.
+- A generation that never set a skeleton, because it did not get `onAppReadyHook`, shows the last skeleton set with its own items.
 
-A definição do comando tem `execute`, então ela fica em `client/commands.js` de `git`; se outros bundles quiserem despachá-lo com a entrada tipada, `git/contracts` exporta só a referência, `ref<typeof switchBranchCommand>('git.switch-branch/v1')`. O item e o atalho não carregam a função do comando: menus e atalhos o despacham pelo ID `git.switch-branch/v1`. Comandos de UI e de menu são definidos e registrados na parte `client` (ou `desktopMain`); a parte `host` nunca registra comando, porque `commands/v1` não existe no `host`.
+A window's context lives in the window's entry and goes with the window.
 
-O dispatcher valida a entrada de `addItem`, `addKeybinding` e `setContext` com o zod da definição fornecida no mesmo processo e com o JSON Schema gerado quando a chamada atravessa processos, inclusive na ponte client → desktopMain; os detalhes do diretório de serviços estão em [serviços e canais](./services-and-channels.md), e a família `define*` em [contratos](./contracts.md).
+## Shipped registrations
 
-## Esqueleto do menu
+| Bundle       | Part    | Registers                                                                                                                                                                    |
+| ------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core`       | desktop | The skeleton; the command `core.open-settings/v1` ([`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts))                                     |
+| `core`       | client  | The context `path` of each window ([`menu-context.ts`](../../../bundles/foundation/core/src/client/menu-context.ts))                                                         |
+| `chat`       | client  | The command `chat.send-prompt/v1` and its keybinding `CmdOrCtrl+Enter` on the Thread route ([`chat/src/client/index.ts`](../../../bundles/desktop/chat/src/client/index.ts)) |
+| `papercraft` | client  | The commands of the canvas bar and their keybindings on the canvas route ([`papercraft/src/client/index.ts`](../../../bundles/features/papercraft/src/client/index.ts))      |
 
-O core define o esqueleto do menu da aplicação:
+No shipped bundle adds a menu item. The commands of `chat` are described in its [README](../../../bundles/desktop/chat/README.md), and those of `papercraft` in `bundles/features/papercraft/README.md`.
 
-- App: Sobre, Settings (comando `core.open-settings/v1`), Sair.
-- Editar: desfazer, refazer, recortar, copiar, colar, selecionar tudo, com os papéis nativos que o macOS exige para os atalhos de área de transferência.
-- Visualizar.
-- Janela.
-- Ajuda.
+## Replacing the provider of `menus/v1`
 
-O core monta esse esqueleto e registra os atalhos básicos por `doric.menus/v1` no handler do `onAppReadyHook` que registrou com `hooks.use(AppHooksV1).onAppReadyHook(handler)`, não direto no `activate`. Depois que o provedor de `hooks/v1` do `desktopMain` ativa (o core, por padrão, ou o escolhido em `providers`), a plataforma chama `define(AppHooksV1)` e dispara o `onAppReadyHook` quando todos os bundles do desktop ativaram; os handlers registrados antes do `define` não se perdem (veja [hooks](./hooks.md)). Itens entram em `app/<menu>` ou `dock`. O comando `core.open-settings/v1` é registrado no `desktopMain` do core, e `core/contracts` exporta a referência `OpenSettingsCommandV1`.
+`menus/v1` has no `doric.` prefix, so another bundle may provide it in `desktopMain` when the composition chooses it under `providers`. The core's `services.provide(coreMenus)` is then inert, and the core's own uses of `menus/v1` reach the chosen provider ([`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [Contexts](contexts.md#activation-order-and-the-foundation)). A replacement reaches the native menu only through `doric.menus/v1`, and it names the owner of each registration itself, as the core does with `call.caller`.
 
-## Montagem pelo main
+## Related documents
 
-O main monta o menu com `Menu.buildFromTemplate` a partir dos registros feitos em `doric.menus/v1` e o reconstrói quando a janela em foco, a geração ou o contexto mudam.
-
-## Condição `when`
-
-`when` usa um vocabulário fixo e pequeno (`path`, `focus`), nunca JavaScript. `path` é o padrão de path da rota ativa, como `'/projects/:projectId/threads/:threadId'`, e não o path concreto com os valores dos parâmetros; assim um item vale para qualquer Thread aberta. A janela informa seu contexto ao main por `services.use(MenusV1).setContext({ key, value })`, chamado pela parte `client` pela ponte client → desktopMain, que substitui o antigo `DesktopContextV1.set`; o dispatcher preenche `call.scope.windowKey` com a janela que chamou, e o core repassa a `doric.menus/v1` com essa janela. Por exemplo, a parte `client` do core acompanha o [roteador](./navigation.md#o-roteador-navigationv1) com `subscribe` e, a cada navegação para uma Thread, informa `{ key: 'path', value: '/projects/:projectId/threads/:threadId' }`. Os contextos do desktop estão descritos em [contextos e capacidades](./contexts.md).
-
-## Despacho de comandos
-
-Um clique ou atalho resolve o comando:
-
-- um comando client é entregue à janela em foco e despachado ao registro de `commands/v1` dela, onde o `execute` definido por `defineCommand` roda com a entrada validada pelo zod e recebe `(input, call, services)`, com `call.scope.windowKey` da janela e os serviços do bundle que registrou o comando;
-- um comando registrado no `desktopMain`, como `core.open-settings/v1`, é despachado ao registro de `commands/v1` do `desktopMain`.
-
-`commands/v1` não existe no `host`, então não há comando host. Quando a ação precisa do host, o `execute` do comando obtém o stub do serviço correspondente com `services.use` e repassa o `call` recebido como último argumento; o dispatcher herda `scope`, `signal` e `trace`, e o `call.caller` desse salto é o bundle dono do comando.
-
-## Escopo dos atalhos
-
-Todo atalho vale para a janela em foco e é tratado por um único listener de teclado no shell, para que bundles não registrem listeners concorrentes. Atalhos globais (`globalShortcut`) ficam fora até haver um consumidor real.
-
-## Conflitos
-
-Dois atalhos com a mesma tecla e a mesma condição são conflito. O registro que chega depois é recusado com erro e aparece no diagnóstico, salvo uma precedência explícita na composição.
-
-## Relações
-
-- [Contratos e a família define\*](./contracts.md): `defineCommand`, `defineService` e `defineMethod` definem o comando do item e o serviço `menus/v1`; as referências `MenusV1`, `CommandsV1` e `DoricMenusV1` vêm de `bundle/contracts`, e a propagação de `call` está descrita ali.
-- [Bundle core e quarentena](./core.md): o core usa `doric.menus/v1`, fornece `menus/v1` e `commands/v1` (alcançável pelo client no caso de `menus/v1`) e é dono do esqueleto do menu e dos atalhos básicos, montados no `onAppReadyHook`.
-- [Hooks e ciclo de vida](./hooks.md): a plataforma define `AppHooksV1` no provedor ativo de `hooks/v1` e dispara o `onAppReadyHook`, no qual o core monta o esqueleto do menu.
-- [Serviços entre bundles e canais de mensagens](./services-and-channels.md): outros bundles pedem itens pelo stub tipado de `menus/v1`, a ponte client → desktopMain leva a `menus/v1` quando a parte `client` o declara em `requires`, a execução de um comando chama stubs de serviços do host repassando `call`, e `providers` da composição escolhe outro provedor de `menus/v1` no `desktopMain`.
-- [Contextos e capacidades](./contexts.md): `DesktopContext` e `ClientContext` só entregam `services`; `doric.menus/v1`, `menus/v1` e `commands/v1` são obtidos por `services.use`.
-- [Janelas abertas pelo core](./windows.md): o menu é reconstruído conforme a janela em foco, que recebe os comandos client.
-- [Navegação e rotas](./navigation.md): a condição `when` usa o padrão de path da rota ativa, que a parte `client` do core informa por `setContext` a cada navegação.
-- [Observabilidade e diagnóstico](./observability.md): conflitos de atalho recusados aparecem no diagnóstico.
-- [Manifesto](./manifest.md): o `git` declara `menus/v1` e `commands/v1` em `requires` da parte `client`; `doric.menus/v1` nunca entra.
-- [Composição e distribuição pelo host](./composition-and-distribution.md): a composição nomeia o core, escolhe provedores em `providers` e pode declarar a precedência explícita que resolve um conflito de atalho.
+- [Contexts](contexts.md): `services`, the call, scope keys and the platform contracts.
+- [Contracts](contracts.md): `defineService`, `defineMethod`, `defineCommand` and refs.
+- [The bundle manifest](manifest.md): `requires`, `provides` and `desktopScope`.
+- [Boundaries](boundaries.md): what a bundle may import and use.
+- [Hooks](hooks.md): `onAppReadyHook`, at which the core sets the skeleton.
+- [Windows](windows.md): window keys, focus and generations of windows.
+- [Navigation](navigation.md): the routes whose patterns become the context `path`.
+- [Core README](../../../bundles/foundation/core/README.md): `core.commands/v1` and `core.open-settings/v1`.
