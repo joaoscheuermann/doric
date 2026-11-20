@@ -27,27 +27,65 @@ with the [main README](../../../README.md).
 
 ## Concepts
 
-- A **Project** owns one environment: a sandbox lease, its durable workspace
-  volume, and the configuration captured when it was created.
-- A **Thread** owns an independent conversation, a FIFO prompt queue, and an
-  ordered, durable event history. A Thread may have a parent, so agents can
-  delegate work to child Threads you can open and inspect.
-- Root and child Threads of one Project share its files and processes; they
-  are not isolated from each other.
-- There is no Thread count, concurrency or depth cap: different Threads can
-  run at the same time.
+- A **Project** owns one environment: a sandbox lease, the workspace inside
+  that sandbox, and a record of the configuration in force when it was created
+  ([`store/projects.ts`](../../../bundles/runtime/runtime/src/host/store/projects.ts)).
+  With the Docker provider the workspace is a durable volume named after the
+  Project's id, so a reacquired sandbox returns to the same files
+  ([`docker/src/host/sandbox.ts`](../../../bundles/sandboxes/docker/src/host/sandbox.ts)).
+  The Firecracker provider keeps no durable workspace, so a reacquired microVM
+  starts again from its image
+  ([`firecracker/src/host/sandbox.ts`](../../../bundles/sandboxes/firecracker/src/host/sandbox.ts)).
+- A **Thread** owns an independent conversation, a FIFO prompt queue, its own
+  working directory and an ordered, durable event history. A Thread may have a
+  parent, so agents can delegate work to child Threads you can open and
+  inspect ([`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
+- Root and child Threads of one Project share its sandbox, so its files and
+  processes; they are not isolated from each other
+  ([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
+- Threads have no count, concurrency or depth cap: different Threads run at the
+  same time. A Thread the reader opens hangs from the Project or from a root
+  Thread; an agent nests child Threads at any depth
+  ([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
+- Sandboxes are bounded: each provider's pool holds at most 10 sandboxes, and
+  an acquisition beyond that waits, in arrival order, for capacity
+  ([`docker/src/host/sandbox.ts`](../../../bundles/sandboxes/docker/src/host/sandbox.ts),
+  [`firecracker/src/host/sandbox.ts`](../../../bundles/sandboxes/firecracker/src/host/sandbox.ts),
+  [`sandpool.ts`](../../../packages/sandpool/src/lib/sandpool.ts)).
 
-There is no legacy Session or A2A API.
+How Projects and Threads behave across the bundles that implement them is
+described in the feature doc
+[Projects and Threads](../../../docs/features/projects-and-threads.md).
 
 ## Run the host
 
 ### With Docker Compose
 
-[`compose.yaml`](compose.yaml) runs the host with PostgreSQL. Copy
-[`.env.example`](.env.example) to `app/backend/doric-host/.env` and fill in real
-values; that file is git-ignored and is the only place these secrets should
-live. Build the sandbox image first (see
-[The sandbox image](#the-sandbox-image)), then:
+[`compose.yaml`](compose.yaml) runs the host with PostgreSQL. The deploy
+credentials, the PostgreSQL password included, live only in
+`app/backend/doric-host/.env`: copy [`.env.example`](.env.example) there and
+fill in its empty values. The root [`.gitignore`](../../../.gitignore) ignores
+that file, so it is never committed. Compose reads it to fill in the variables
+of `compose.yaml` and hands the values to the containers as environment
+variables. The image build does not exclude it:
+[`.dockerignore`](../../../.dockerignore) excludes `.env` and `.env.*` only at
+the repository root, and [`.Dockerfile`](.Dockerfile) copies `app/` whole, so an
+image built while the file exists contains it.
+
+`.env.example` holds these entries:
+
+- `DORIC_POSTGRES_USER=doric`: the PostgreSQL role Compose creates and the
+  host connects as.
+- `DORIC_POSTGRES_DB=doric`: the database Compose creates.
+- `DORIC_POSTGRES_PASSWORD`, empty: the role's password, for instance from
+  `openssl rand -hex 24`.
+- `DORIC_CREDENTIAL_KEY`, empty: the key that encrypts stored credential
+  secrets, from `openssl rand -base64 32`; keep it across restarts.
+- `DORIC_SANDBOX_DOCKER_SOCKET=true`: shares the host's Docker socket with
+  every Project sandbox; see [the sandbox image](#the-sandbox-image).
+
+Build the sandbox image first (see [The sandbox image](#the-sandbox-image)),
+then:
 
 ```sh
 cp app/backend/doric-host/.env.example app/backend/doric-host/.env   # then edit it
@@ -57,21 +95,47 @@ docker compose --profile docker build
 docker compose --profile docker up -d
 ```
 
-From the repository root, `npm run doric:docker:build` runs the same `up` with
-`--build` under the Compose project name `doric`.
+Run from this directory, Compose reads `.env` on its own and names the project
+`doric-sandbox`. From the repository root, `npm run doric:docker:build` runs the
+same `up` with `--build`, `--env-file app/backend/doric-host/.env` and the
+project name `doric` ([`package.json`](../../../package.json)). The project
+name prefixes the volumes, so the two commands keep separate databases (and
+separate `firecracker-state` and `firecracker-cache` volumes); use one of them
+consistently.
 
-Compose starts:
+Compose defines these services ([`compose.yaml`](compose.yaml)):
 
-| Service       | What it does                                                                       |
-| ------------- | ---------------------------------------------------------------------------------- |
-| `postgres`    | PostgreSQL on a durable volume, published on `127.0.0.1:${DORIC_POSTGRES_PORT}`.   |
-| `migrate`     | One-shot `prisma migrate deploy`; the host waits for it to complete.               |
-| `docker`      | The host with the Docker sandbox provider (profile `docker`).                      |
-| `firecracker` | The host with the Firecracker provider instead (profile `firecracker`); see below. |
+- `postgres`: PostgreSQL 18.4 (`postgres:18.4-alpine3.24`, pinned by digest).
+  Its volume `postgres-data` is mounted at `/var/lib/postgresql`, its port is
+  published on `127.0.0.1:${DORIC_POSTGRES_PORT:-5432}`, and a `pg_isready`
+  health check runs every 2 s, up to 30 times.
+- `migrate`: a one-shot
+  `npx prisma migrate deploy --config app/backend/doric-host/prisma.config.ts`,
+  built from the `agent-runtime` target of [`.Dockerfile`](.Dockerfile). It
+  starts once `postgres` is healthy and is never restarted.
+- `docker`, profile `docker`: the host, built from the `docker-runtime`
+  target, with `DORIC_SANDBOX_PROVIDER=docker`, the host network, the
+  `NET_ADMIN` capability and the host's `/var/run/docker.sock`.
+- `firecracker`, profile `firecracker`: the host, built from the final
+  `runtime` target,
+  with `DORIC_SANDBOX_PROVIDER=firecracker`, the host network, privileged
+  mode, `/dev/kvm`, `/dev/net/tun`, the cgroup filesystem read-write and the
+  volumes `firecracker-state` and `firecracker-cache`.
 
-The `firecracker` profile replaces the Docker provider and needs `/dev/kvm` plus
-privileged mode. Confirm the deploy from the host log (`Bundles loaded` reports
-the bundle, tool and skill counts) and `GET /projects`.
+Either host service starts only after `postgres` is healthy and `migrate` has
+completed successfully. Both reach PostgreSQL at
+`127.0.0.1:${DORIC_POSTGRES_PORT:-5432}` with the `.env` credentials, bind
+`0.0.0.0`, mount `postgres-data` read-only at `/var/lib/doric/postgresql` and
+set `DORIC_STORAGE_PATH` to it, default `DORIC_SANDBOX_SSH` to `true`, and pass
+`DORIC_CREDENTIAL_KEY` on. The `docker` service also passes
+`DORIC_SANDBOX_IMAGE` (default `doric-sandbox:local`),
+`DORIC_SANDBOX_DOCKER_SOCKET` (default `false`), `DORIC_SANDBOX_CPUS` and
+`DORIC_SANDBOX_MEMORY_MIB` (empty keeps the provider's defaults); the
+`firecracker` service sets none of them, so it runs `node:22-bookworm`
+([Configuration](#configuration)).
+
+Confirm the deploy from the host log (`Bundles loaded` reports the bundle, tool
+and skill counts, then `Doric listening`) and from `GET /projects`.
 
 ### Natively
 
@@ -84,147 +148,505 @@ npx nx run doric-host:migrate
 npx nx serve doric-host
 ```
 
-Startup never applies migrations. `serve` and `run` build the host and its
-bundles first.
+The targets are defined in [`project.json`](project.json):
+
+- `build` compiles `src/` into `dist/`, after `build-bundles` and the build of
+  every project it depends on.
+- `build-bundles` builds every Nx project tagged `type:bundle`, then stages
+  every bundle into `dist/bundles`; it is never cached.
+- `migrate` runs `prisma migrate deploy` with
+  [`prisma.config.ts`](prisma.config.ts), whose schema and migrations are the
+  `postgres` bundle's, against `DORIC_DATABASE_URL`, or
+  `postgresql://doric:doric@127.0.0.1:5432/doric` when it is unset.
+- `serve` and `run` build, then run
+  `node app/backend/doric-host/dist/src/index.js`.
+- `test` compiles the host and its tests into `dist-tests/` and runs them with
+  `node --test`; see [Validation](#validation).
+
+Startup never applies migrations.
+
+Run natively, the host process is also the sandbox provider's host, so it
+needs what that provider needs. The sandbox package checks these when it
+provisions a sandbox, not at startup, so a missing one makes the first
+acquisition fail and the Project end `failed` with `sandbox_acquisition_failed`
+([On-demand sandboxes](#on-demand-sandboxes)):
+
+- **Docker**
+  ([`packages/docker-sandbox`](../../../packages/docker-sandbox/README.md),
+  [`host.ts`](../../../packages/docker-sandbox/src/lib/host.ts),
+  [`docker.ts`](../../../packages/docker-sandbox/src/lib/docker.ts)):
+  - a local Docker daemon, reached through `DOCKER_HOST` or
+    `/var/run/docker.sock` ([Configuration](#configuration));
+  - on Linux, the host network namespace and `nftables` with `CAP_NET_ADMIN`,
+    or provisioning fails with
+    `Docker egress requires nftables CAP_NET_ADMIN access`; on macOS and
+    Windows, Docker Desktop's own network path is used instead;
+  - with `DORIC_SANDBOX_SSH=true`, `ssh-keygen` and an executable static
+    Dropbear at `/opt/doric/firecracker/dropbearmulti`, or provisioning fails
+    with `Docker SSH requires pinned Dropbear: <path>`.
+- **Firecracker**
+  ([`packages/firecracker-sandbox`](../../../packages/firecracker-sandbox/README.md)):
+  Linux with read-write `/dev/kvm` and `/dev/net/tun`, cgroup v2, IPv4
+  forwarding, `nftables` with network-admin access, the pinned Firecracker,
+  jailer, kernel, initramfs and Dropbear assets under `/usr/local/bin` and
+  `/opt/doric/firecracker`, the OCI, ext4, network and SSH command-line tools
+  its preflight checks, and writable state and cache directories. The
+  `firecracker` Compose profile packages all of these.
 
 ## Configuration
 
-HTTP and Socket.IO share one listener, `0.0.0.0:3000` by default.
+HTTP and Socket.IO share one listener, `0.0.0.0:3000` by default. The kernel
+reads the listener, bundle, composition and log variables
+([`src/index.ts`](src/index.ts),
+[`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)); the bundles read the
+others from the same environment, which their generation process inherits.
 
-| Variable                      | Default                                          | Meaning                                                                                                        |
-| ----------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `DORIC_HOST`                  | `0.0.0.0`                                        | Address the HTTP/Socket.IO listener binds.                                                                     |
-| `DORIC_PORT`                  | `3000`                                           | Port of that listener.                                                                                         |
-| `DORIC_DATABASE_URL`          | —                                                | PostgreSQL connection URL. Required; a missing URL or unreachable database fails startup at `database_client`. |
-| `DORIC_CREDENTIAL_KEY`        | —                                                | 32 base64-encoded bytes that encrypt stored credential secrets. Required once a credential holds a secret.     |
-| `DORIC_STORAGE_PATH`          | current directory                                | Filesystem the [storage protection](#storage-protection) measures. Compose sets `/var/lib/doric/postgresql`.   |
-| `DORIC_SANDBOX_PROVIDER`      | `docker`                                         | `docker` or `firecracker`, applied to the shipped composition only (not to a custom `DORIC_COMPOSITION`).      |
-| `DORIC_SANDBOX_IMAGE`         | `node:22-bookworm`                               | Image every Project sandbox runs. Compose's `docker` profile defaults it to `doric-sandbox:local`.             |
-| `DORIC_SANDBOX_SSH`           | off                                              | `true` adds loopback-bound user SSH access to the active sandbox. Compose profiles default it to `true`.       |
-| `DORIC_SANDBOX_DOCKER_SOCKET` | off                                              | `true` mounts the host's Docker socket into every Docker sandbox. See [the sandbox image](#the-sandbox-image). |
-| `DORIC_SANDBOX_CPUS`          | `4`                                              | CPUs each Docker sandbox may use.                                                                              |
-| `DORIC_SANDBOX_MEMORY_MIB`    | `2048`                                           | Memory each Docker sandbox may use, in MiB.                                                                    |
-| `DORIC_BUNDLES_PATH`          | the staged `app/backend/doric-host/dist/bundles` | Root of the installed bundles.                                                                                 |
-| `DORIC_COMPOSITION`           | [`composition.json`](composition.json)           | Composition to boot. A custom one is booted as written.                                                        |
-| `DORIC_LOG_FILE`              | `doric.log`                                      | File that receives the debug-level log; the console shows info and above.                                      |
+- `DORIC_HOST` (default `0.0.0.0`): address the HTTP/Socket.IO listener binds
+  ([`src/index.ts`](src/index.ts)).
+- `DORIC_PORT` (default `3000`): port of that listener, parsed with
+  `Number.parseInt`; a value whose leading digits are not a port 0–65535 fails
+  startup at `network_binding`.
+- `DORIC_DATABASE_URL` (no default): PostgreSQL connection URL. Required: an
+  empty or missing URL fails startup at `database_client`, and an unreachable
+  database fails at its first query, at `credential_activation`
+  ([`postgres/src/prisma.ts`](../../../bundles/foundation/postgres/src/prisma.ts),
+  [`postgres/src/host/start.ts`](../../../bundles/foundation/postgres/src/host/start.ts)).
+- `DORIC_CREDENTIAL_KEY` (no default): 32 bytes, base64-encoded, that encrypt
+  stored credential secrets. A set but malformed key always fails startup at
+  `credential_activation`, with
+  `DORIC_CREDENTIAL_KEY must be 32 base64-encoded bytes.` A missing key fails
+  startup there only once a stored credential holds a secret, and it fails every attempt to store a secret
+  (`DORIC_CREDENTIAL_KEY is required to store a credential secret.`)
+  ([`postgres/src/host/secrets/backend.ts`](../../../bundles/foundation/postgres/src/host/secrets/backend.ts),
+  [`postgres/src/host/secrets/envelope.ts`](../../../bundles/foundation/postgres/src/host/secrets/envelope.ts)).
+- `DORIC_STORAGE_PATH` (default: the current directory): filesystem the
+  [storage protection](#storage-protection) measures
+  ([`postgres/src/host/storage/health.ts`](../../../bundles/foundation/postgres/src/host/storage/health.ts)).
+  Compose sets `/var/lib/doric/postgresql`.
+- `DORIC_SANDBOX_PROVIDER` (default `docker`): `docker` or `firecracker`; any
+  other value selects `docker`. It applies only when `DORIC_COMPOSITION` is
+  unset; a composition named by `DORIC_COMPOSITION`, even the shipped file,
+  is booted as written and names its provider in `enabled`
+  ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)).
+- `DORIC_SANDBOX_IMAGE` (default `node:22-bookworm`): image every Project
+  sandbox runs, with either provider. The provider pulls it only when it is
+  absent locally, so a local tag that was never built fails the pull, and the
+  Project ends `failed` with `sandbox_acquisition_failed`. Compose's `docker`
+  profile defaults it to `doric-sandbox:local`.
+- `DORIC_SANDBOX_SSH` (default off): exactly `true` adds loopback-bound user
+  SSH access to the active sandbox. Compose profiles default it to `true`, and
+  so do the `docker-runtime` and `runtime` images ([`.Dockerfile`](.Dockerfile)).
+- `DORIC_SANDBOX_DOCKER_SOCKET` (default off): exactly `true` mounts the host's
+  Docker socket into every Docker sandbox. See
+  [the sandbox image](#the-sandbox-image).
+- `DORIC_SANDBOX_CPUS` (default `4`): CPUs each Docker sandbox may use. Empty
+  keeps the default; a value that is not a whole positive number fails the
+  activation of the `docker` bundle
+  ([`docker/src/host/sandbox.ts`](../../../bundles/sandboxes/docker/src/host/sandbox.ts)).
+- `DORIC_SANDBOX_MEMORY_MIB` (default `2048`): memory each Docker sandbox may
+  use, in MiB, with the same rule as `DORIC_SANDBOX_CPUS`.
+- `DORIC_BUNDLES_PATH` (default: the staged `app/backend/doric-host/dist/bundles`):
+  root of the installed bundles.
+- `DORIC_COMPOSITION` (default [`composition.json`](composition.json)):
+  composition to boot. A custom one is booted as written.
+- `DORIC_LOG_FILE` (default `doric.log`): file that receives the debug-level
+  log; the console shows info and above.
+- `DOCKER_HOST` (default `/var/run/docker.sock`): the Docker daemon the Docker
+  provider reaches; a `unix://` URL or an absolute socket path is used, any
+  other value falls back to the default
+  ([`packages/docker-sandbox/src/lib/mapping.ts`](../../../packages/docker-sandbox/src/lib/mapping.ts)).
+
+Every Docker sandbox also gets a 4096 MiB disk. A Firecracker sandbox has fixed
+resources, 1 CPU, 512 MiB of memory and a 4096 MiB disk
+([`firecracker/src/host/sandbox.ts`](../../../bundles/sandboxes/firecracker/src/host/sandbox.ts)).
+Both providers give a sandbox egress networking with the DNS server `1.1.1.1`,
+and each pool tries to create a sandbox at most 3 times
+(`maxCreateAttempts`) before it fails the waiting acquisitions
+([`sandpool.ts`](../../../packages/sandpool/src/lib/sandpool.ts)).
 
 Compose also reads `DORIC_POSTGRES_USER`, `DORIC_POSTGRES_PASSWORD`,
 `DORIC_POSTGRES_DB` and `DORIC_POSTGRES_PORT` (default `5432`) from the
-environment file to start PostgreSQL and build `DORIC_DATABASE_URL`.
+environment file to start PostgreSQL and build `DORIC_DATABASE_URL`
+([`compose.yaml`](compose.yaml)).
 
 ## How the host is built
 
 The host is a small kernel. Everything a user sees — Projects, Threads, tools,
 providers, sandboxes, routes and the desktop UI — comes from **bundles** the
-kernel loads through the `bundle` platform package.
+kernel loads through the `bundle` platform package
+([`packages/bundle`](../../../packages/bundle/README.md)).
 
 ```text
 src/
-├── index.ts          composition root: listener, logger, bundle boot
+├── index.ts            composition root: logger, listener, startup stages, bundle boot, shutdown
 └── lib/
     ├── bridge/
-    │   ├── catalog.ts   the bundle catalog the desktop downloads
-    │   └── socket.ts    the desktop bridge namespace `/doric/bridge`
-    └── bundles/
-        └── boot.ts      bundle paths, composition, structural checks
+    │   ├── catalog.ts     the distribution members of `doric.catalog/v1`
+    │   └── socket.ts      the desktop bridge namespace `/doric/bridge`
+    ├── bundles/
+    │   └── boot.ts        bundle paths, composition, structural checks
+    └── socket-buffer.ts   the largest Socket.IO message the host accepts
 ```
+
+The kernel owns one Express app, one Node HTTP server and one Socket.IO server
+on it, and hands all three to the bundles as their network
+([`src/index.ts`](src/index.ts)); the `transport` bundle registers the REST
+routes and Socket.IO namespaces on them
+([`transport/src/host/index.ts`](../../../bundles/foundation/transport/src/host/index.ts)),
+and the `screen-relay` bundle its `/screen/<token>/` upgrades
+([`screen-relay/src/host/relay.ts`](../../../bundles/features/screen-relay/src/host/relay.ts)).
+Two Socket.IO settings follow from that:
+
+- `destroyUpgrade` is off, so Socket.IO never ends an HTTP upgrade it does not
+  own, such as a relayed screen handshake; Socket.IO handles `/socket.io/`
+  only.
+- `maxHttpBufferSize` is 8,039,084 bytes: the base64 size of the largest image
+  attachment the runtime keeps (6,990,508 bytes) plus 1 MiB for the envelope
+  around it, because a desktop call carries an attachment whole
+  ([`src/lib/socket-buffer.ts`](src/lib/socket-buffer.ts)). A larger message
+  drops the connection.
 
 ### Bundles and composition
 
 The host reads the installed bundles below `DORIC_BUNDLES_PATH` and the
-composition at `DORIC_COMPOSITION`. The shipped
+composition at `DORIC_COMPOSITION`
+([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). The shipped
 [`composition.json`](composition.json):
 
-- names `core` as the core and lists the enabled bundles;
-- chooses `postgres` for `storage.backend/v1` and `secrets.backend/v1`;
-- names the `resident` bundles that run in the host process itself
-  (`host-config`, `transport`, `screen-relay`) rather than in a generation
-  process;
-- names the `required` contracts and bundles the host refuses to serve
-  without;
-- offers the `sandbox` alternative (`docker` or `firecracker`) that
-  `DORIC_SANDBOX_PROVIDER` selects.
+- names `core` as the core and enables these 32 bundles, in this order:
+  `transport`, `postgres`, `core`, `host-config`, `files`, `web`, `git`,
+  `threads`, `terminal`, `usage`, `resources`, `screen`, `screen-relay`,
+  `runtime`, `default`, `openai`, `openrouter`, `codex`, `claude`,
+  `claude-login`, `docker`, `notifications`, `layout`, `account`,
+  `workspace`, `settings`, `chat`, `history`, `comments`, `openui`,
+  `papercraft` and `mcp`;
+- chooses `postgres` as the provider of `storage.backend/v1` and
+  `secrets.backend/v1`;
+- names the `resident` bundles that run in the kernel process itself
+  (`host-config`, `transport`, `screen-relay`);
+- requires the contracts `runtime/v2`, `executor/v1`, `sandbox/v1`,
+  `models/v1` and `host-config/v1` and the bundle `transport`: the host does
+  not serve without an active provider of each
+  ([Startup and failures](#startup-and-failures));
+- offers the `sandbox` alternative: `DORIC_SANDBOX_PROVIDER` picks `docker`,
+  the default and the one `enabled` lists, or `firecracker`, which then takes
+  the place of `docker` in `enabled`.
 
-A custom `DORIC_COMPOSITION` lists `account` in `enabled`; without it the
-window has no account menu, no connection badge and no About line, and
-nothing reports it.
+The kernel runs the foundation, the core, the embedded bundles and the
+resident bundles in its own process, and every other installed bundle in a
+generation process it forks, which inherits its environment
+([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). How generations are
+started, switched and respawned is described in
+[process-isolation.md](../../../docs/architecture/bundles/process-isolation.md),
+and the composition format in
+[composition-and-distribution.md](../../../docs/architecture/bundles/composition-and-distribution.md).
 
-A custom `DORIC_COMPOSITION` lists `workspace` in `enabled`; without it the
-window has no sidebar, no Project tabs and no Dashboard, the chat opens no
-Thread tab, the footer's execution picker shows the workspace default,
-locked, and `files`, `git`, `terminal`, `resources`, `mcp`, `screen` and
-`usage` are quarantined (each requires a contract that `workspace`
-provides), and so is `papercraft`, which requires `files/v1`; nothing else
-reports it.
+A custom `DORIC_COMPOSITION` is booted as written. A bundle it leaves out is
+absent, and every bundle that requires a contract only the missing bundle
+provides is quarantined. Leaving out `workspace` quarantines `files`, `git`,
+`terminal`, `resources`, `mcp`, `screen` and `usage`, each of which requires a
+`workspace.*` contract, and `papercraft`, which requires `files/v1` (their
+`manifest.json` files under [`bundles/features/`](../../../bundles/features)).
+A bundle no other bundle requires, such as `account`, is simply absent, and
+nothing reports it. A composition whose `required` entry names a contract or
+a bundle that is not active does not start.
 
-A custom `DORIC_COMPOSITION` names `runtime/v2` under `required.contracts`
-for the runtime's Projects. Runtime 3.0.0 provides no earlier version of that
-contract, so a host whose composition still requires one does not start.
+What each bundle the host composes does, in one line; each bundle's README is
+the home of its contracts and behavior.
 
-What each bundle owns:
+Foundation:
 
-- **`postgres`** (foundation) owns the Prisma schema, the migrations and the
-  process's one PostgreSQL client.
-- **`core`** provides `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`,
-  `settings/v1`, `secrets/v1`, `storage/v1` and `events/v1`. Every other bundle
-  registers its tools with `tools/v1`, and the loader registers each bundle's
-  `skills/*/SKILL.md` with `skills/v1`, in lexical folder order.
-- **`default`** (`bundles/runtime/default`) holds the default agent's executor
-  and its prompt. It binds every registered tool and appends every registered
-  skill on each prompt, and passes the system prompt through its
-  `default.hooks/v1` before every model request.
-- **`threads`** (`bundles/features/threads`) ships the delegation tools
-  `thread-spawn`, `thread-list`, `thread-get`, `thread-events`, `thread-send`,
-  `thread-restart`, `thread-interrupt` and `thread-terminate`, and reaches
-  the host only through `runtime.threads/v1`. The agent asks the user with a
-  question form in an `openui-lang` fence, served by the `openui` bundle's
-  `openui.questions/v1`.
-- **`files`** and **`git`** tools reach the Thread's working directory and the
-  Project sandbox through `runtime.workspace/v1` and `runtime.lease/v1`; the
-  **`terminal`** tool reaches tracked terminals through `terminal/v1`, which
-  the `terminal` bundle provides, not `runtime`.
-- **`runtime`** provides those contracts by forwarding each call to the
-  per-prompt `Host` facade (its types live in
-  `bundles/runtime/runtime/src/contracts/tool-host`), bound to the calling
-  prompt's scope only while that prompt runs. Lifecycle and authorization stay
-  in `runtime`: its runner builds the prompt-scoped facade, and every tool call
-  acts only on the calling prompt's direct children in the same Project.
-- **`transport`** registers every REST and Socket.IO route on the kernel's
-  listener through `doric.network/v1`. `app/backend/doric-host` keeps no
-  product route; it owns only the generic desktop bridge `/doric/bridge`.
-- **`host-config`** owns the configuration: one `settings/v1` space,
-  `host-config.configuration/v1`, resident in the kernel process. It also names
-  the credentials the configuration references, so deleting one is refused.
+- [`transport`](../../../bundles/foundation/transport/README.md) registers
+  every REST route and Socket.IO namespace on the kernel's listener through
+  `doric.network/v1`; the kernel registers no product route of its own, only
+  the [desktop bridge](#the-desktop-bridge).
+- [`postgres`](../../../bundles/foundation/postgres/README.md) provides
+  `storage.backend/v1` and `secrets.backend/v1`, owns the Prisma schema and
+  migrations under
+  [`bundles/foundation/postgres/prisma/`](../../../bundles/foundation/postgres/prisma),
+  and creates the process's one PostgreSQL client on first use
+  ([`postgres/src/host/database.ts`](../../../bundles/foundation/postgres/src/host/database.ts)).
+- [`core`](../../../bundles/foundation/core/README.md) provides the basic
+  services, among them `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`,
+  `settings/v1`, `secrets/v1`, `storage/v1`, `events/v1` and `models/v1`
+  ([`core/manifest.json`](../../../bundles/foundation/core/manifest.json)); the
+  loader registers each bundle's `skills/*/SKILL.md` with `skills/v1`, in
+  lexical folder order
+  ([`loader/skills.ts`](../../../packages/bundle/src/loader/skills.ts)).
+- [`host-config`](../../../bundles/foundation/host-config/README.md) owns the
+  configuration (the `settings/v1` space `host-config.configuration/v1`) and
+  provides `host-config/v1`, the active configuration and the `PUT /config`
+  pipeline; it names the credentials the configuration references, so deleting
+  one is refused
+  ([`host-config/src/host/configuration.ts`](../../../bundles/foundation/host-config/src/host/configuration.ts)).
+
+Runtime:
+
+- [`runtime`](../../../bundles/runtime/runtime/README.md) owns Projects,
+  Threads, their queues, the sandbox leases, recovery and the prompt runner,
+  and provides `runtime/v2`, `runtime.threads/v1`, `runtime.workspace/v1`,
+  `runtime.lease/v1` and the other `runtime.*` contracts. The contracts a tool
+  calls forward each call to the per-prompt `Host` facade, bound to the calling
+  prompt's scope only while that prompt runs
+  ([`services/workspace.ts`](../../../bundles/runtime/runtime/src/host/services/workspace.ts)).
+- [`default`](../../../bundles/runtime/default/README.md) provides
+  `executor/v1`, the default agent: system prompt, skills, tools, model
+  resolution and provider history.
+
+Sandboxes (one of the two, by `DORIC_SANDBOX_PROVIDER`), each providing
+`sandbox/v1`:
+
+- [`docker`](../../../bundles/sandboxes/docker/README.md): one
+  durable-workspace container per Project.
+- [`firecracker`](../../../bundles/sandboxes/firecracker/README.md): one
+  microVM per Project.
+
+Model providers, each providing a `models.provider/v1` kind:
+
+- [`openai`](../../../bundles/providers/openai/README.md): OpenAI Responses.
+- [`openrouter`](../../../bundles/providers/openrouter/README.md): OpenRouter,
+  with its live catalog and structured-output repair.
+- [`codex`](../../../bundles/providers/codex/README.md): Codex, internal and not
+  advertised.
+- [`claude`](../../../bundles/providers/claude/README.md): Claude Code
+  subscription login.
+
+Features:
+
+- [`files`](../../../bundles/features/files/README.md): the agent's file tools
+  and the desktop's file views, over `runtime.workspace/v1` and
+  `runtime.lease/v1`.
+- [`web`](../../../bundles/features/web/README.md): the agent's web research.
+- [`git`](../../../bundles/features/git/README.md): Git repository tools and
+  the desktop's changes, over `runtime.workspace/v1` and `runtime.lease/v1`.
+- [`threads`](../../../bundles/features/threads/README.md): the delegation
+  tools `thread-spawn`, `thread-list`, `thread-get`, `thread-events`,
+  `thread-send`, `thread-restart`, `thread-interrupt` and `thread-terminate`,
+  over `runtime.threads/v1` only
+  ([`threads/src/host/index.ts`](../../../bundles/features/threads/src/host/index.ts)).
+- [`terminal`](../../../bundles/features/terminal/README.md): tracked shell
+  commands and manual terminal sessions, `terminal/v1`.
+- [`usage`](../../../bundles/features/usage/README.md): Thread usage and cost,
+  `usage/v1`.
+- [`resources`](../../../bundles/features/resources/README.md): the host
+  machine and Project sandbox resource monitor, `resources/v1`.
+- [`screen`](../../../bundles/features/screen/README.md): the xpra HTML5
+  screen of a Project's sandbox.
+- [`screen-relay`](../../../bundles/features/screen-relay/README.md): the
+  `/screen/<token>/` relay of every Project screen, on the host's own origin.
+- [`claude-login`](../../../bundles/features/claude-login/README.md): the
+  in-app Claude Code sign-in, stored as the `Claude` API token credential.
+- [`comments`](../../../bundles/features/comments/README.md): anchored
+  comments and their durable events, `comments/v1`.
+- [`openui`](../../../bundles/features/openui/README.md): UI answers in the
+  conversation, the question form and its answers.
+- [`papercraft`](../../../bundles/features/papercraft/README.md): live
+  previews of a Project's code as conversation nodes.
+- [`mcp`](../../../bundles/features/mcp/README.md): MCP servers per Project,
+  their tools for its prompts and OAuth sign-in, `mcp/v1`.
+
+Desktop (client parts the desktop downloads through the
+[desktop bridge](#the-desktop-bridge)):
+
+- [`notifications`](../../../bundles/desktop/notifications/README.md): a
+  native notice when a prompt finishes outside the reader's view.
+- [`layout`](../../../bundles/desktop/layout/README.md): the workspace window's
+  frame and its slots.
+- [`account`](../../../bundles/desktop/account/README.md): the reader's
+  account status and menu, and About.
+- [`workspace`](../../../bundles/desktop/workspace/README.md): Projects,
+  Threads and the selection the window shows.
+- [`settings`](../../../bundles/desktop/settings/README.md): the settings
+  window.
+- [`chat`](../../../bundles/desktop/chat/README.md): the transcript, the
+  composer and the execution picker.
+- [`history`](../../../bundles/desktop/history/README.md): local per-Thread
+  conversation history snapshots.
 
 ### Startup and failures
 
-Activating the bundles opens no database. The `postgres` bundle connects its
-client in its `onHostStartHook` (stage `database_client`), so a missing URL or
-an unreachable database fails there. Credentials are read through `secrets/v1`,
-loaded by the `core` bundle at `credential_activation`.
+Startup runs in named stages; the kernel names its own and each bundle names
+the stage of its start step through `doric.startup/v1`
+([`src/index.ts`](src/index.ts)). In order:
+
+1. `bootstrap`: the kernel reads the composition and applies the chosen
+   alternatives, then logs `Doric starting` with `host`, `port` and
+   `alternatives` ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). A
+   composition it cannot read is handed to the platform as a path, which
+   refuses it at `bundle_load`.
+2. `bundle_load`: it logs `Loading bundles`, starts the platform and waits
+   until the first generation is active or failed, checks the `required`
+   contracts and bundles, and logs `Bundles loaded` with `bundleCount`,
+   `skillCount` and `toolCount`. Activating the bundles opens no database.
+3. The bundles' start steps (`onHostStartHook`), in activation order, each at
+   its own stage:
+   - `database_client`: the `core` bundle's start step connects
+     `storage.backend/v1`, and the `postgres` bundle creates its client there,
+     so an empty or missing `DORIC_DATABASE_URL` fails here. It logs
+     `Initializing PostgreSQL client` and then `PostgreSQL client initialized`.
+     It also refuses a database in which the tables `project`, `thread` and
+     `thread_event` all exist and one of them holds a row; a check query that
+     fails is ignored
+     ([`postgres/src/host/start.ts`](../../../bundles/foundation/postgres/src/host/start.ts),
+     [`postgres/src/host/database.ts`](../../../bundles/foundation/postgres/src/host/database.ts)).
+   - `credential_activation`: `core` reads the stored credentials once through
+     `secrets/v1`, so an unreachable database or an unusable
+     `DORIC_CREDENTIAL_KEY` fails here
+     ([`core/src/host/secrets/activation.ts`](../../../bundles/foundation/core/src/host/secrets/activation.ts)).
+   - `configuration_activation`: `host-config` reads the stored configuration,
+     prepares its model providers and logs `Doric configuration activated`
+     ([`host-config/src/host/configuration.ts`](../../../bundles/foundation/host-config/src/host/configuration.ts)).
+   - `sandbox_pool`: the sandbox provider logs its pool's settings
+     ([`docker/src/host/start.ts`](../../../bundles/sandboxes/docker/src/host/start.ts),
+     [`firecracker/src/host/start.ts`](../../../bundles/sandboxes/firecracker/src/host/start.ts)).
+   - `workspace_reconciliation`: the runtime reconciles the stored Projects and
+     Threads and logs `Workspace reconciled`
+     ([Host restarts](#host-restarts),
+     [`runtime/src/host/lifecycle.ts`](../../../bundles/runtime/runtime/src/host/lifecycle.ts)).
+
+   After the start steps the platform reads the storage identity, still within
+   `platform.start()`; a failure there is reported at the last bundle's stage.
+
+4. The kernel installs the [desktop bridge](#the-desktop-bridge), and the
+   bundles hear that the host is ready (`platform.ready()`) before it accepts
+   any request.
+5. `network_binding`: it logs `Binding HTTP listener`, listens on
+   `DORIC_HOST:DORIC_PORT`, logs `Doric listening` and enters the stage
+   `ready`.
+
+A failure in any stage logs `Doric failed to start` at level `fatal` with only
+the `stage` field, and the process exits with code 1
+([`src/index.ts`](src/index.ts)). The error itself is not logged: a start step
+that throws makes `platform.start()` reject without a log line
+([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)), and a
+`network_binding` failure, such as a port in use, is not logged either. The
+last line before `Doric failed to start` shows how far startup got, for
+instance `Initializing PostgreSQL client` with no
+`PostgreSQL client initialized`. Only a recovery-mode failure logs its reason
+(`Bundle recovery mode`).
 
 - A bundle that fails validation or activation is **quarantined**, logged as
   `Bundle quarantined` with its reasons, and the others keep serving. The
   desktop splash lists quarantined bundles and can disable one, which writes
-  `composition.overrides.json` beside the active composition.
+  `composition.overrides.json` beside the active composition
+  ([splash-and-recovery.md](../../../docs/architecture/bundles/splash-and-recovery.md)).
 - A core that cannot activate, or a composition whose `required` contracts or
   bundles are not all active, puts the host in **recovery mode**. The host has
   no recovery surface of its own: it logs `Bundle recovery mode` with the
-  reason and every bundle's state, and startup fails at the `bundle_load`
-  stage. A required provider lost after boot takes the same fatal path, so a
-  supervisor restarts the host.
+  reason, stops the platform, and startup fails at the `bundle_load` stage
+  ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). A quarantined
+  sandbox provider, for instance after an invalid `DORIC_SANDBOX_CPUS`, leaves
+  `sandbox/v1` without a provider and so takes this path.
+- A required provider lost after boot, when a generation becomes active
+  without it, logs `Bundle recovery mode` and exits the process with code 1, so
+  a supervisor restarts the host.
+
+### Shutdown
+
+`SIGINT` or `SIGTERM` closes the host once, in this order
+([`src/index.ts`](src/index.ts)):
+
+1. It stops watching the required providers.
+2. It closes the Socket.IO server and the HTTP listener.
+3. `platform.shutdown()` runs the bundles' stop steps (`onHostStopHook`) in
+   reverse activation order, while every bundle is still active; the runtime's
+   step suspends every live Project ([Host restarts](#host-restarts)).
+4. `platform.stop()` deactivates the transport, the generations, the core and,
+   last, the storage.
+
+### The desktop bridge
+
+The kernel's one Socket.IO namespace is `/doric/bridge`, on the same server
+([`src/lib/bridge/socket.ts`](src/lib/bridge/socket.ts)). Through it the
+desktop calls the contracts of the host's bundles. Each message is emitted
+under its `kind` and carries the whole envelope message, whose shapes are
+defined in
+[`envelope/messages.ts`](../../../packages/bundle/src/runtime/envelope/messages.ts)
+and described in
+[Envelope RPC](../../../docs/architecture/bundles/process-isolation.md#envelope-rpc);
+the bridge's place in distribution is described in
+[composition-and-distribution.md](../../../docs/architecture/bundles/composition-and-distribution.md#the-contract-doriccatalogv1).
+Every request carries `caller`, `trace`, `deadline` (epoch milliseconds, `0`
+for none), `generation` and an optional `scope`.
+
+- `call { id, contract, method, input, … }`: the host calls the method in the
+  kernel's active view as principal `doric`, waiting for a respawning
+  generation's provider first, and answers `result { id, ok: true, output }`
+  or `result { id, ok: false, error: { code, message, details? } }`.
+- `cancel { id }`: the host aborts that call's signal; the call still answers
+  with its `result`.
+- `subscribe { id, contract, method, input, … }`: the host opens a stream
+  method, emits each item as `event { id, values: [item] }`, and the end of
+  the stream or its failure as `end { id, error? }`.
+- `unsubscribe { id }`: the host disposes that stream without an `end`.
+
+The rules of every request:
+
+- Only the methods the active provider's contract exposes to the desktop are
+  served; any other answers `unavailable` with the message
+  `<contract> <method> is not available to the desktop.` The methods and scope
+  keys a window may use are listed in
+  [`tests/bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json).
+- An input whose schema is a tuple must be an array, which is spread as the
+  method's arguments; otherwise the call answers, or the stream ends with,
+  `invalid_input` and the message
+  `Invalid input for <contract> <method>: expected the argument tuple.` Any
+  other input is passed as the one argument.
+- `call` on a stream method answers `invalid_input` with the message
+  `<contract> <method> is a stream; subscribe to it.`, and `subscribe` on a
+  method that is not a stream ends with `invalid_input` and the message
+  `<contract> <method> is not a stream.`
+- A message that does not parse is logged as
+  `Refused a malformed host bridge message`; a malformed `call` or `subscribe`
+  with a string `id` is answered with `invalid_input`
+  (`Malformed call message.` or `Malformed subscribe message.`).
+- A disconnect aborts every open call and disposes every open stream.
+
+The kernel also provides the distribution members of `doric.catalog/v1`, which
+the desktop reads through the bridge to download, verify and resolve the
+client and desktop parts of a host generation
+([`src/lib/bridge/catalog.ts`](src/lib/bridge/catalog.ts)):
+
+- `distribution` answers the generation's `DistributionCatalog`: `generation`;
+  `hostBoot`, a random UUID each host process draws when it starts its bundles
+  ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)), which with
+  `generation` names a host generation; `platformVersion`; the `composition`;
+  the `storage` identity once resolved; `host`, the live `CatalogSnapshot`;
+  and `bundles`, each with its files (`path`, `sha256`, `size`) and its live
+  state and reasons. A bundle embedded in the kernel has no directory, so its
+  contract documents are served from memory. The full shape is described in
+  [composition-and-distribution.md](../../../docs/architecture/bundles/composition-and-distribution.md#the-contract-doriccatalogv1).
+- `artifact({ sha256 })` answers `{ sha256, base64 }` for a file a retained
+  generation lists, after checking its hash again, and otherwise fails with
+  `not_found`.
+- `watch` emits `{ generation }` each time another generation becomes active;
+  a respawn of the same generation emits nothing.
 
 ## Project and Thread lifecycle
 
 ### States
 
+The [`runtime`](../../../bundles/runtime/runtime/README.md) bundle owns this
+lifecycle, and its README is the home of the contracts below
+([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
+[`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
+A Project's state is `queued`, `ready`, `cancelling`, `cancelled` or `failed`;
+a Thread's adds `running`. `cancelled` and `failed` are terminal
+([`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
+
 - Create a Project first, then create its Threads explicitly. Project creation
   does not create a conversation.
-- Projects move from `queued` to `ready` once their sandbox is acquired.
-- Threads wait for the environment and then process prompts through
-  `ready -> running -> ready`.
-- Termination goes `cancelling -> cancelled` and stays terminal. Acquisition
-  or reconciliation failures use `failed`.
+- A new Project is `queued` and starts acquiring its sandbox at once, with its
+  id as the sandbox identity. It becomes `ready` once the sandbox is acquired;
+  an acquisition that fails ends it `failed` with the error code
+  `sandbox_acquisition_failed`.
+- A new Thread is `queued`, in `/workspace`, or, for a child, in its parent's
+  current directory. It becomes `ready` at once when its Project holds a
+  sandbox, and otherwise when the sandbox arrives
+  ([`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts)).
+- Threads process prompts through `ready -> running -> ready`.
+- Termination goes `cancelling -> cancelled`, or `cancelling -> failed` when it
+  carries an error code, and stays terminal.
 
 ### Stop, rewind, terminate, delete
 
@@ -234,44 +656,78 @@ loaded by the `core` bundle at `credential_activation`.
   history it wrote. Queued inputs stay accepted but wait until
   `POST /threads/:id/queue/resume` reopens the gate. Repeated stops are
   idempotent, the gate survives a host restart, and a stop never interrupts
-  child Threads.
+  child Threads
+  ([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
 - **Rewind** replaces an edited turn. It requires an idle Thread with an empty
-  queue and discards that turn and every later one.
+  queue (`busy` otherwise), discards that turn and every later one, and
+  enqueues the replacement as a new prompt. A Thread an agent opened cannot be
+  rewound (`forbidden`), and a Project for which the process holds no runtime
+  answers `inactive`
+  ([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
+  [`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts));
+  how the route maps these answers is in [Request rules](#request-rules).
 - **Terminating a Thread** cancels its entire subtree but leaves other Threads
   and the Project environment available.
 - **Terminating a Project** cancels all its Threads before releasing its lease.
-- Cancellation is cooperative; it does not undo sandbox changes.
-- Projects do not expire automatically. Terminate unused Projects to release
-  their environments.
-- **Physical deletion** requires terminal state, including descendants, and
-  discards the Project's durable workspace volume.
+  A lease that does not release ends the Project `failed` with
+  `sandbox_release_failed`
+  ([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
+  [`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
+- Cancellation is cooperative: it aborts the running prompts and does not undo
+  sandbox changes.
+- Projects do not expire automatically: nothing in the runtime ends an idle
+  Project. Terminate unused Projects to release their environments
+  ([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
+  [`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
+- **Physical deletion** of a Thread requires its whole subtree to be terminal,
+  and of a Project requires the Project and every Thread to be terminal;
+  otherwise it answers `active`. A Thread an agent opened is deleted only once
+  it is archived (`forbidden` otherwise). Deleting a Project removes its
+  records and then discards its workspace through `sandbox/v1`: the Docker
+  provider removes the durable volume, the Firecracker provider has nothing to
+  remove. A discard that fails is logged as `Project workspace discard failed`
+  and the deletion stands
+  ([`store/projects.ts`](../../../bundles/runtime/runtime/src/host/store/projects.ts),
+  [`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts),
+  [`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)).
 
 ### Host restarts
 
-A Project survives a host restart. A host stop is not a termination:
+A Project survives a host restart. A host stop is not a termination
+([`lifecycle.ts`](../../../bundles/runtime/runtime/src/host/lifecycle.ts),
+[`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
+[`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts),
+[`store/projects.ts`](../../../bundles/runtime/runtime/src/host/store/projects.ts)):
 
 1. The stop releases the lease, writes the Project back as `queued` (it needs a
    sandbox again) and its non-terminal Threads as `ready`, and _pauses_ the
    running prompt. The prompt stays unfinished, with
    `prompt.paused { reason: 'host_stopped' }`, so the next boot takes it up
-   again.
-2. The next boot reconciles instead of failing: a non-terminal Project becomes
-   `queued`, a non-terminal Thread becomes `ready`, and a prompt whose run
-   started but never recorded a pause gets
-   `prompt.paused { reason: 'host_restarted' }`, because the restart is what
-   interrupted it. A record a crash left `cancelling` becomes `cancelled`
-   instead: reviving it would resurrect work the reader stopped.
-3. That boot also takes up the work itself. For every Project holding a prompt
-   the host interrupted — one whose pause it recorded, one whose restart only
-   the boot discovered, or one that never started at all — it acquires the
-   Project's own sandbox and re-enqueues those prompts in the order the log
-   accepted them, each opening its next attempt with
-   `prompt.resumed { attempt }`.
+   again. A lease that does not release leaves the Project `queued` with
+   `sandbox_release_failed`. After the stop, creating a Project fails with
+   `Doric is shutting down.`
+2. The next boot reconciles the Threads: a prompt whose run started but never
+   recorded a pause gets `prompt.paused { reason: 'host_restarted' }`, because
+   the restart is what interrupted it, and a non-terminal Thread becomes
+   `ready`, with no active prompt and no error code other than `storage_low`.
+3. It reconciles the Projects: a non-terminal Project becomes `queued`, with no
+   error code. A Thread or Project a crash left `cancelling` becomes
+   `cancelled` instead: reviving it would resurrect work the reader stopped.
+4. It takes up the prompts the host owes: every unfinished prompt that is not
+   superseded (a paused prompt is superseded by the next input the reader
+   sends straight to the Thread), that is not paused by the reader or by low
+   storage, on a Thread whose dispatch gate is open — one whose pause
+   the stop recorded, one whose restart only the boot discovered, or one that
+   never started. For each Project holding such prompts it brings the Project
+   back, which starts acquiring the Project's own sandbox, and re-enqueues
+   those prompts in the order the log accepted them, each opening its next
+   attempt with `prompt.resumed { attempt }`.
+5. It brings back every other non-terminal Project, so each starts acquiring
+   its sandbox too, after the Projects of step 4.
 
-The queue is restored before HTTP starts listening, while sandbox acquisition
-continues in the background so full capacity cannot block boot. Only such a
-Project pays for a sandbox before anyone asks for one; a Project with nothing
-pending stays `queued` and acquires nothing.
+These steps run at the `workspace_reconciliation` stage, before HTTP starts
+listening, while sandbox acquisition continues in the background so full
+capacity cannot block boot. A finished prompt never runs again.
 
 A prompt the host has already taken up twice is closed as a failure instead,
 with `resume_exhausted` and a message telling the reader to send the prompt
@@ -280,25 +736,40 @@ interrupted prompt resumes from the provider history persisted as its run
 advanced — the assistant turns and tool results it already had; a history that
 ends in a tool call the restart interrupted is answered before it continues,
 and the reader's own input is never repeated. The reader can take up an
-unfinished prompt through `POST /threads/:id/resume`, which no budget bounds.
+unfinished prompt through `POST /threads/:id/resume`, which no budget bounds
+([`domain/prompts.ts`](../../../bundles/runtime/runtime/src/host/domain/prompts.ts),
+[`store/progress.ts`](../../../bundles/runtime/runtime/src/host/store/progress.ts),
+[`default/src/host/executor.ts`](../../../bundles/runtime/default/src/host/executor.ts)).
 
 ### On-demand sandboxes
 
-Acquisition is on demand:
+A process holds a live runtime only for the Projects it has brought back. The
+other operations treat a Project without one this way
+([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)):
 
-- Sending a prompt to a Project that has no runtime reacquires its sandbox
-  first — with the Project's own identity, so it returns to the same files —
-  sets the Project and its Threads `ready`, and then runs the prompt, keeping
-  arrival order when several prompts race to bring it back.
-- A read that needs a lease keeps answering `pending`/`unavailable` and never
-  resumes a Project by itself, which is what makes the boot resume the one
-  exception.
-- Terminating a Thread needs no runtime: a Thread of a resumed Project still
-  takes itself and its subtree through `cancelling -> cancelled` durably, so it
-  can be deleted without prompting first.
-- Every reacquired sandbox is validated against each Thread's working directory
-  in one probe, and a directory it no longer holds is reset to the workspace
-  root (see [the Thread working directory](#the-thread-working-directory)).
+- Sending a prompt, resuming a prompt or reopening the queue of a Project that
+  has no runtime brings it back first: it reacquires its sandbox with the
+  Project's own identity, sets the Project and its Threads `ready`, and then
+  runs the prompt, keeping arrival order when several prompts race to bring it
+  back. A Project that cannot come back answers `inactive`.
+- A read that needs a lease never brings a Project back. It answers `pending`
+  while the acquisition is in flight, `unavailable` when the process holds no
+  runtime for the Project or it is closing, `expired` for a terminal Project
+  and `missing` for an unknown one.
+- Terminating a Thread needs no runtime: the Thread and its subtree go through
+  `cancelling -> cancelled` durably, so it can be deleted without prompting
+  first. Terminating a Project without a runtime loads it and ends it.
+- Every acquisition writes the Git credentials the configuration in force
+  names into the sandbox (see
+  [Git and GitHub inside the sandbox](#git-and-github-inside-the-sandbox)),
+  then validates each Thread's working directory in one probe; a directory
+  missing from the sandbox is reset to the workspace root, and a probe that
+  cannot run keeps every directory (see
+  [the Thread working directory](#the-thread-working-directory)).
+- Each Project records the runtime process that holds it. While a draining
+  generation of bundles still holds a Project, the active one waits for its
+  release before it brings the Project back; generations are described in
+  [Projects and Threads](../../../docs/features/projects-and-threads.md).
 
 ## REST API
 

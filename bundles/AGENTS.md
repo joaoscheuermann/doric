@@ -181,6 +181,43 @@ an entry of the exceptions file.
 - Exercise a part's services in a unit test through `createTestServices` from
   `bundle/testing`.
 
+## Features and README
+
+- Add a feature to a bundle in these steps, in one change:
+  1. Declare each contract and slot name the feature adds in `src/contracts/`,
+     as [Contracts module](#contracts-module) requires, and list under
+     `provides` of `manifest.json` each contract that a part of the bundle
+     provides, defines or registers, as
+     [Manifest and package](#manifest-and-package) requires. When the feature
+     adds a member to a contract the bundle already provides (a method, an
+     output field, an optional input field or an error code), raise the minor
+     of that contract's `provides` entry and of the manifest's `version`, and
+     raise to that minor the `requires` range of each bundle that uses the new
+     member; when it removes or renames a member, adds a required field or
+     changes a meaning, declare a new contract with the next `/v<major>` id
+     instead, as [Versioning](../docs/architecture/bundles/versioning.md)
+     requires.
+  2. List under `requires` or `optional` of `manifest.json` each contract the
+     feature uses that the bundle does not provide and that
+     [Manifest and package](#manifest-and-package) requires a declaration for.
+  3. Put the feature's code in the part that runs it: `src/host/` for work in
+     the host, `src/desktop/` for work in the desktop's `desktopMain` process,
+     and `src/client/` for what a window draws
+     ([`activate.ts`](../packages/bundle/src/loader/activate.ts),
+     [`parts.ts`](../packages/bundle/src/build/parts.ts),
+     [manifest](../docs/architecture/bundles/manifest.md)), as
+     [Parts](#parts) requires.
+  4. Add the feature's tests under `tests/`, as [Tests](#tests) requires.
+  5. Update the bundle's `README.md`, and each feature doc in `docs/features/`
+     that describes the feature when one exists.
+- In a bundle's own `AGENTS.md`, state only the steps of adding a feature that
+  are specific to that bundle.
+- Keep a bundle's `README.md` its complete overview: its public interface
+  (contracts, manifest, exports, routes, tools, events), its behavior and
+  logic, its data shapes and persistence, its side effects, its configuration,
+  its limits, and its errors and failure behavior. Update it in every change to
+  the bundle's interface, behavior or data.
+
 ## Verify
 
 Run each command from the repository root.

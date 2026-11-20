@@ -1,247 +1,98 @@
-# Bundle core e quarentena
+# The core bundle and quarantine
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes the core bundle's place in a composition, the replacement of its contracts, quarantine and recovery as implemented on 2026-11-20.
 
-## Resumo
+## Summary
 
-O bundle `core` cobre todas as funcionalidades básicas: fornece por padrão os serviços básicos (`hooks/v1`, `log/v1`, `settings/v1`, `secrets/v1`, `tools/v1`, `skills/v1`, `storage/v1`, `events/v1`, `models/v1`, `commands/v1`, `ui/v1`, `navigation/v1`, `regions/v1`, `windows/v1`, `menus/v1`) e abre as janelas. Na UI, ele fornece só os mecanismos: criar elementos (`ui/v1`), rotas por path com o `<core-outlet>` (`navigation/v1`) e regiões com o `<core-region>` (`regions/v1`); o que aparece na tela vem de outros bundles, como o [layout](./layout.md). Qual bundle é o core é uma escolha da composição, não um nome fixo no código. Em cada ambiente, o loader ativa primeiro a **fundação** (os provedores escolhidos em `providers` para contratos que o core fornece ou consome, como `postgres` para `storage.backend/v1` e `secrets.backend/v1`), depois o core e por último os demais bundles. O core recebe o mesmo contexto que qualquer bundle (`{ services }`); a diferença é que ele usa os contratos nativos `doric.windows/v1` e `doric.menus/v1`, enquanto os outros bundles usam `windows/v1` e `menus/v1`. Qualquer contrato do core pode ser fornecido por outro bundle escolhido pela composição. Quando um bundle que não é o core falha na validação ou na ativação, só ele e quem depende dele por `requires` entram em quarentena, com motivo no catálogo. Um core mínimo de teste prova que trocar o core troca a interface inteira.
+The composition names one bundle as its **core**. The shipped core is the bundle `core` ([`bundles/foundation/core`](../../../bundles/foundation/core/README.md)), and it is the default provider of the basic contracts every other bundle builds on: hooks, log, tools, skills, settings, secrets, storage, events and models on the host; windows, menus and commands in the desktop's main process; UI elements, navigation and regions in each window. The core receives the same context as any bundle (`{ services }`) and registers its contracts with `services.provide`; the loader finds the core through the composition's `core` field, and nothing in the code names `core` as a special id ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)).
 
-## Como a composição escolhe o core
+In each environment the loader activates three phases in order: the **foundation** (the providers the composition chose for contracts the core provides or requires, such as `postgres` for `storage.backend/v1` and `secrets.backend/v1`), then the core, then the other bundles. Any contract without the `doric.` prefix, the core's included, may be provided by another bundle that the composition chooses under `providers`.
 
-A composição nomeia exatamente um bundle core (`"core": "core"`); o manifesto do core não tem nenhum campo especial.
+A bundle that fails to validate, resolve or activate is **quarantined**: it and the bundles that require what it provides are left out, with reason codes the catalog publishes, and the others keep serving. When the core or a chosen foundation provider cannot activate, the environment enters **recovery mode** instead. What must work without the core (the catalog, diagnostics, the splash and recovery, the native window and menu APIs, the platform's log) stays in the platform.
 
-- O loader recusa uma composição sem core.
-- O core pode declarar em `requires` apenas contratos que a fundação fornece: `storage.backend/v1` e `secrets.backend/v1`, ambos na parte `host`. O loader recusa um core que declare `requires` de qualquer outro contrato. Contratos de plataforma (`doric.*`, como `doric.app.hooks/v1` e `doric.windows/v1`) não entram em `requires` de nenhum bundle: a plataforma os garante em todos os ambientes, e `use` deles é sempre permitido.
-- Um bundle que usa com `use` um contrato do core o declara em `requires`, como qualquer outro contrato, inclusive os básicos (`hooks/v1`, `events/v1`, `settings/v1`, `tools/v1`, `commands/v1`, `ui/v1`, `storage/v1` etc.). Contratos opcionais usam `whenAvailable` e não entram em `requires`.
+## How the composition names the core
 
-Assim, “qual é o core” é uma escolha da composição, não um nome fixo no código, e outra distribuição pode fornecer um core próprio. O que mais a composição escolhe está em [composição e distribuição pelo host](./composition-and-distribution.md); o formato do manifesto está em [manifesto v1](./manifest.md).
+The composition's `core` field names the core bundle; the schema refuses an empty one ([`composition.ts`](../../../packages/bundle/src/runtime/composition.ts)). The core's manifest has no special field ([`manifest.json`](../../../bundles/foundation/core/manifest.json)). The host's shipped composition sets `"core": "core"` and chooses `postgres` for both backends ([`composition.json`](../../../app/backend/doric-host/composition.json)):
 
-## Ordem de ativação: fundação, core e demais bundles
-
-Em cada ambiente, o loader ativa os bundles em três fases:
-
-1. **Fundação.** Os bundles escolhidos em `providers` para contratos que o core fornece ou consome, por exemplo `myhooks` para `hooks/v1` ou `postgres` para `storage.backend/v1` e `secrets.backend/v1`. Bundles da fundação só podem declarar `requires` de contratos `doric.*`; o loader recusa um bundle da fundação que exija um contrato do core ou de outro bundle.
-2. **Core.** Ativa depois da fundação e já encontra os provedores de que precisa. É por isso que o core pode declarar `requires` de `storage.backend/v1` e `secrets.backend/v1`.
-3. **Demais bundles**, em ordem de dependência pelos `requires`. Todos dependem do core implicitamente para a ordem de ativação.
-
-Quando a composição escolhe outro provedor para um contrato que o core também fornece, o loader não registra a implementação do core para esse contrato naquele ambiente, e o `services.use` do próprio core devolve o provedor escolhido. A escolha vale em cada ambiente em que o bundle escolhido fornece o contrato; nos outros ambientes o provedor padrão, o core, continua. Com `"providers": { "hooks/v1": "myhooks" }` e um `myhooks` que só tem parte `host`, o `hooks/v1` do host é o `myhooks`, e o do `desktopMain` e do `client` continua sendo o do core.
-
-Sem escolha em `providers`, um segundo provedor de um contrato de cardinalidade única vai para quarentena com motivo. Como a fundação e o core ativam antes, é o bundle substituto que vai para quarentena se a composição não o escolher; o core continua fornecendo o contrato.
-
-## O core recebe o mesmo contexto que qualquer bundle
-
-Não existem `CoreDesktopContext` nem `CoreClientContext`. Partes `host` recebem `HostContext`, partes `desktopMain` recebem `DesktopContext` e partes `client` recebem `ClientContext`, todos importados de `bundle/contracts`; os três têm só `services` (`{ readonly services: Services }`). O core usa `services.provide`, `services.use` e `services.whenAvailable` como qualquer bundle. Tudo que ele registra é rastreado pelo loader e descartado em ordem inversa na desativação; a limpeza própria vem da função devolvida por `activate`.
-
-O que torna um bundle o core é só a escolha da composição. O core usa os contratos nativos `doric.windows/v1` e `doric.menus/v1`; os outros bundles usam `windows/v1` e `menus/v1`. O `caller` (`{ bundleId: string; version: string; generation: number }`) é sempre o bundle que faz a chamada, preenchido pelo dispatcher da plataforma em cada salto, e serve para diagnóstico e log. O modelo de contexto está em [contextos e capacidades](./contexts.md), e `Services` e `call` em [serviços e canais](./services-and-channels.md).
-
-## O que faz parte do core
-
-O core cobre todas as funcionalidades básicas. `bundle/contracts` exporta as referências desses contratos básicos (`HooksV1`, `LogV1`, `SettingsV1`, `SecretsV1`, `SecretsBackendV1`, `ToolsV1`, `SkillsV1`, `StorageV1`, `StorageBackendV1`, `EventsV1`, `ModelsV1`, `ModelsProviderV1`, `CommandsV1`, `UiV1`, `NavigationV1`, `RegionsV1`, `WindowsV1`, `MenusV1`) e os tipos deles, porque qualquer bundle pode fornecê-los; o core fornece as definições com `execute`, escritas com a referência no lugar do ID, como `defineService(WindowsV1, { open: defineMethod({ input, output, execute }) })`, para que o compilador confira os métodos. `core/contracts` exporta apenas o que é do core: `CoreHooksV1` (`core.hooks/v1`) e a referência `OpenSettingsCommandV1` ao comando `core.open-settings/v1`.
-
-Por ambiente:
-
-| Ambiente      | Contratos que o core fornece                                                                                                   | Comportamento                                                                                                                                                                                                                                                                 |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host`        | `hooks/v1`, `log/v1`, `settings/v1`, `secrets/v1`, `tools/v1`, `skills/v1`, `storage/v1`, `events/v1`, `models/v1`             | Fachadas: `storage/v1` sobre `storage.backend/v1` e `secrets/v1` sobre `secrets.backend/v1`, ambos fornecidos pela fundação (`postgres`, por padrão); `models/v1` agrega os provedores de `models.provider/v1`; validação com os schemas dos contratos                        |
-| `desktopMain` | `hooks/v1`, `log/v1`, `settings/v1` (preferências locais do desktop), `windows/v1`, `menus/v1`, `commands/v1`, `core.hooks/v1` | Abre a janela principal em `/` no `onAppReadyHook`, reabre no `onAppActivateHook`, monta no `onAppReadyHook` o esqueleto do menu (App, Editar, Visualizar, Janela, Ajuda) e os atalhos básicos, abre a janela de settings em `/settings` pelo comando `core.open-settings/v1` |
-| `client`      | `hooks/v1`, `log/v1`, `ui/v1`, `navigation/v1`, `regions/v1`, `commands/v1`                                                    | Cria elementos com os serviços do bundle dono, roteia por path com `<core-outlet>`, monta regiões com `<core-region>` e mostra `<core-not-found>` e `<core-unavailable>`; veja [UI no client](#ui-no-client)                                                                  |
-
-Por isso o core sempre tem uma parte `desktopMain`: é ali que roda o código que abre a primeira janela, antes de existir qualquer renderer.
-
-`commands/v1` existe no `desktopMain` e no `client`, não no `host`. Comandos de UI e de menu são definidos com `defineCommand` e registrados na parte `client` ou `desktopMain` de um bundle; uma parte `host` nunca registra comando.
-
-`windows/v1` (abrir e focar janelas pelas políticas do core) e `menus/v1` (itens, atalhos e `setContext`) são fornecidos no `desktopMain`. Como qualquer serviço do `desktopMain` ou do `host`, partes `client` que os declaram em `requires` os alcançam pela ponte, e o dispatcher preenche `scope.windowKey` em toda chamada que sai de uma janela.
-
-A parte `client` do próprio core usa `windows/v1` e `menus/v1` pela ponte sem declará-los em `requires`, por exemplo no `setContext` de [menus nativos e atalhos](./menus-and-keybindings.md), porque são contratos que o próprio core fornece no `desktopMain`. Qualquer outro bundle que os use declara `windows/v1` e `menus/v1` em `requires`.
-
-### Backends da fundação
-
-O armazenamento durável e o de segredos são contratos separados, de cardinalidade `one`, fornecidos pela fundação e não pelo core:
-
-- `storage.backend/v1` é fornecido pelo bundle `postgres` por padrão. O `storage/v1` do core é a fachada sobre ele.
-- `secrets.backend/v1` também é fornecido pelo `postgres` por padrão. O backend padrão guarda cada segredo como envelope AES-256-GCM sob `DORIC_CREDENTIAL_KEY`, como o credential store atual do host. O `secrets/v1` do core é a fachada sobre ele e aplica redação antes do log.
-
-Um bundle que queira trocar um desses armazenamentos fornece o backend e é escolhido em `providers`; como entra na fundação, ativa antes do core.
-
-### Fachadas do core
-
-`storage/v1` é a fachada sobre `storage.backend/v1`, e `secrets/v1` sobre `secrets.backend/v1`. Definições de settings e tipos de storage são identificados pelo ID qualificado. `log/v1` marca cada registro com `bundleId`, `version` e `generation` vindos de `call.caller` e com o `environment` do processo em que roda. `settings.get(definição)` é assíncrono e devolve o valor validado pelo schema da definição.
-
-### Cardinalidade dos contratos
-
-Cada contrato tem cardinalidade `one` (padrão; um provedor ativo, escolhido pela composição) ou `many`, declarada na opção `cardinality` de `defineService` só quando é `many` (vários provedores sem conflito, agregados pelo consumidor). Os contratos que o core fornece são `one`. O `models/v1` do core é o exemplo de agregação: `openai`, `openrouter` e `codex` fornecem `models.provider/v1`, de cardinalidade `many`, cada um registrando tipo configurável, campos e catálogo de modelos, e o `models/v1` do core os agrega sem que a composição escolha um.
-
-### Hooks do ciclo de vida
-
-`onAppReadyHook` e `onAppActivateHook` são hooks do app, definidos pela plataforma em `AppHooksV1` (`doric.app.hooks/v1`, importado de `bundle/contracts`). Depois que o provedor de `hooks/v1` de um ambiente ativa (o core, por padrão, ou o escolhido em `providers`), a plataforma daquele ambiente obtém esse provedor, chama `define(AppHooksV1)` e passa a disparar `execute` nos pontos do ciclo de vida. `WindowHooksV1` (`doric.window.hooks/v1`, com `onCloseHook` e `onFlushHook`) é definido pela plataforma no ambiente `client`: o bootstrap de cada janela o define no `hooks/v1` do client e o executa quando o main pede o fechamento da janela. A plataforma é só mais um consumidor do contrato: se outro bundle fornecer `hooks/v1`, o app usa esse. Pela mesma lógica, a plataforma lê settings, secrets, tools e storage pelos contratos, sem conhecer a implementação.
-
-Qualquer bundle, não só o core, registra handlers dos hooks do app. O core registra os seus como qualquer consumidor, sem atalho no contexto:
-
-> **Out of date.** The `openSettings` below no longer matches the code. Since
-> step 2(a) of the bundle isolation work, `core.open-settings/v1` 1.1.0 takes
-> `path` and `defaultPath`, and the core no longer falls back to
-> `path ?? '/settings'`. The current behavior is in
-> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
-> the documentation phase of that work (phase 12) rewrites this document.
-
-```ts
-// core, parte desktopMain
-import {
-  AppHooksV1,
-  CommandsV1,
-  DoricMenusV1,
-  DoricWindowsV1,
-  HooksV1,
-  type DesktopContext,
-} from 'bundle/contracts';
-import { CoreHooksV1 } from '../contracts/index.js';
-import { openSettings } from './commands.js';
-import { createHooks } from './hooks.js';
-import { defaultMenuSkeleton } from './menu.js';
-
-export function activate({ services }: DesktopContext) {
-  // Se a composição escolheu outro provedor de hooks/v1 neste ambiente,
-  // o loader não registra esta definição.
-  services.provide(createHooks()); // devolve defineService(HooksV1, { ... })
-  const hooks = services.use(HooksV1); // o provedor deste ambiente
-  const nativeWindows = services.use(DoricWindowsV1);
-  const nativeMenus = services.use(DoricMenusV1);
-
-  hooks.define(CoreHooksV1);
-  services.use(CommandsV1).register(openSettings);
-
-  hooks.use(AppHooksV1).onAppReadyHook(() => {
-    // App, Editar, Visualizar, Janela, Ajuda e os atalhos básicos
-    nativeMenus.setSkeleton(defaultMenuSkeleton);
-    return nativeWindows.open({ key: 'workspace', path: '/' });
-  });
-  hooks
-    .use(AppHooksV1)
-    .onAppActivateHook(() => nativeWindows.focusOrOpen('workspace'));
+```json
+{
+  "core": "core",
+  "providers": {
+    "storage.backend/v1": "postgres",
+    "secrets.backend/v1": "postgres"
+  }
 }
-
-// core, desktopMain/commands.ts
-import { defineCommand, DoricWindowsV1 } from 'bundle/contracts';
-import { z } from 'zod';
-
-export const openSettings = defineCommand({
-  id: 'core.open-settings/v1',
-  // Path de settings a abrir, como '/settings/providers'; omitido, '/settings'.
-  input: z.object({ path: z.string().optional() }).strict(),
-  execute: async ({ path }, call, services) => {
-    await services
-      .use(DoricWindowsV1)
-      .open({ key: 'settings', path: path ?? '/settings' }, call);
-  },
-});
-
-// core, contracts/index.ts
-import { ref } from 'bundle/contracts';
-import type { openSettings } from '../desktopMain/commands.js';
-export { CoreHooksV1 } from './hooks.js';
-export const OpenSettingsCommandV1 = ref<typeof openSettings>(
-  'core.open-settings/v1',
-);
 ```
 
-O `execute` de `openSettings` recebe os serviços do core, ligados em `register`, e repassa o `call` a `open`. O core importa as referências dos contratos básicos, os contratos de plataforma, as funções `define*` e o tipo `DesktopContext` de `bundle/contracts`, e os próprios contratos (`CoreHooksV1`) e o comando `openSettings` por caminho relativo. Nenhum código importa o entrypoint `bundle`, que é o loader Node. O código acima usa `hooks/v1` e `commands/v1`, que o próprio core fornece no `desktopMain`, e contratos `doric.*`; por isso a parte `desktopMain` do core não declara `requires`. Com `"providers": { "hooks/v1": "myhooks" }` e um `myhooks` com parte `desktopMain`, o `myhooks` ativa na fundação, o `provide` do core não é registrado, e `services.use(HooksV1)` devolve o `myhooks`.
+The catalog puts the environment in recovery when the core is not installed, not enabled or quarantined while the catalog is read ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). A composition that cannot be read or parsed puts the host in recovery with the reason `invalid composition: …` ([`loader/activate.ts`](../../../packages/bundle/src/loader/activate.ts)). The rest of the composition (`enabled`, `resident`, `required`, `alternatives`, overrides) is described in [Composition and distribution](composition-and-distribution.md).
 
-O core pode chamar `hooks.use(AppHooksV1)` antes de a plataforma chamar `define(AppHooksV1)`. Isso é aceito: `hooks.use` de um contrato de hook ainda não definido guarda os handlers registrados, e eles passam a valer quando o dono chama `define`. Também é aceito registrar depois do `define`, porque a plataforma só dispara `onAppReadyHook` quando todos os bundles do desktop ativaram. Em nenhuma das ordens um handler se perde.
+### What the core may require
 
-Uma falha do `activate` de um bundle leva à quarentena desse bundle. Uma falha de um handler de `onActivateHook`, que é `observe`, só vai ao diagnóstico e não coloca ninguém em quarentena. Quando o core é o provedor de `hooks/v1`, o `onActivateHook` do próprio core e dos bundles da fundação não é observável: eles ativam antes de o contrato existir. O mesmo vale para um provedor substituto, como `myhooks`. O modelo de hooks está em [hooks e ciclo de vida](./hooks.md), e a definição dos contratos com `defineHooks`, `defineService` e o restante da família `define*` está em [contratos](./contracts.md).
+The core lists under `requires` only contracts that the foundation provides. The shipped core requires `storage.backend/v1@^1.0.0` and `secrets.backend/v1@^1.0.0` ([`manifest.json`](../../../bundles/foundation/core/manifest.json)). For each entry of the core's `requires`, the catalog enters recovery when no enabled bundle provides the contract in any environment, when the active provider in this environment is not a foundation bundle, or when its version does not satisfy the range ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). A composition that chooses no backend therefore puts the host in recovery: a provider the composition did not choose under `providers` is not part of the foundation.
 
-## UI no client
+A bundle that calls `use` on a contract of the core lists it under `requires` or `optional`, as for any contract; `use` is also allowed on a contract the bundle provides itself, in any environment, and on every `doric.*` contract, which no manifest lists ([`services.ts`](../../../packages/bundle/src/runtime/services.ts), [`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts)). The core's own client part uses `menus/v1`, which the core provides in `desktopMain`, without a `requires` line for that reason ([`client/index.ts`](../../../bundles/foundation/core/src/client/index.ts)). The full rules of `requires` and `optional` are in [Manifest](manifest.md).
 
-O core não desenha nenhuma tela de produto. No client, a UI do core se resume a três serviços (`ui/v1`, `navigation/v1`, `regions/v1`) e quatro elementos; o resto da UI vem de outros bundles.
+## Activation order: foundation, core, others
 
-| Serviço ou elemento  | O que faz                                                                                                                   |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `ui/v1`              | `define(tag, classe)`, `create(tag, props?)` e `dispose(elemento)`                                                          |
-| `navigation/v1`      | Rotas por path: `register`, `navigate`, `back`, `current` e `subscribe`; veja [navegação e rotas](./navigation.md)          |
-| `regions/v1`         | `add(região, { id, tag, props?, order? })`: põe um elemento numa região com nome                                            |
-| `<core-outlet>`      | Mostra o elemento da rota ativa; dentro do elemento de uma rota pai, mostra a rota filha, como o `<Outlet>` do React Router |
-| `<core-region name>` | Cria, na ordem, os elementos adicionados àquela região com `regions.add`                                                    |
-| `<core-not-found>`   | O que o outlet mostra para um path sem rota                                                                                 |
-| `<core-unavailable>` | O que `ui.create` devolve para uma tag que nenhum bundle ativo definiu                                                      |
+`resolveEnvironment` resolves one environment without running bundle code and returns the activation order ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)):
 
-O bootstrap de cada janela ativa as partes client, com o core primeiro, e põe um `<core-outlet>` no `body`. A partir daí, tudo que aparece é escolhido pelo path da URL: o outlet de topo mostra a rota que casa com ele. Na janela principal, aberta em `/`, essa rota é a do [layout](./layout.md); na de settings, aberta em `/settings`, é a do bundle `settings`.
+1. **Foundation.** A provider chosen under `providers` joins the foundation of an environment when it provides the contract there and the core provides or requires that contract in the same environment. Foundation bundles that provide `storage.backend/v1` or `secrets.backend/v1` come first, then the rest of the foundation.
+2. **The core.**
+3. **Others,** every other scheduled bundle.
 
-### `define`: registrar a tag
+Inside each group the order is topological over `requires`, with ties broken by lexical bundle id. The members of a `requires` cycle are quarantined with `dependency_cycle`, and the order is computed again until no further bundle is quarantined.
 
-`ui.define('chat-view', ChatView)` chama `customElements.define` e anota no catálogo da janela que a tag pertence ao bundle que chamou. A tag precisa começar com o ID do bundle seguido de hífen (`chat-`), o que evita conflito de nomes e diz a `create` quem é o dono. Uma tag já definida na janela não pode ser trocada sem recarregar, porque `customElements.define` não substitui definições.
+A foundation bundle that lists any contract under `requires` is quarantined with `foundation_requires`. The one exception is a replacement of `events/v1`, `settings/v1` or `models/v1`, which may require `storage.backend/v1` and `secrets.backend/v1` ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)).
 
-### `ui.create` passo a passo
+On the host, the kernel activates the foundation, the core, every embedded bundle and every bundle the composition lists under `resident` in the host process, and the other installed bundles in a generation process; the published order is the kernel's order followed by the generation's ([`partition.ts`](../../../packages/bundle/src/process/partition.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). The hooks provider orders handlers by this published order. Generations are described in [Process isolation](process-isolation.md).
 
-`ui.create(tag, props)` é o `document.createElement` da plataforma. A diferença é que ele entrega ao elemento os serviços do bundle dono:
+The loader activates each bundle in order: it loads the part, calls `activate({ services })`, keeps the cleanup function `activate` returns, and records the bundle as `active` with its activation time ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts)). In a process whose `hooks/v1` provider activates in the same process, the platform defines `doric.app.hooks/v1` once that provider has activated and fires `onActivateHook` for each bundle activated after it; the bundles activated before it and the provider itself are not observed. With the core as the provider, the foundation and the core are not observed; when the composition chooses another provider of `hooks/v1`, that provider joins the foundation and the core is observed. In a host generation process, `hooks/v1` is the kernel's, so the contract is defined before the first bundle activates and every bundle is observed. Installed bundles register their `skills/*/SKILL.md` files through `skills/v1` on their behalf, in lexical folder order, after every bundle the process activates (the kernel, or one generation) has activated ([`loader/activate.ts`](../../../packages/bundle/src/loader/activate.ts), [`loader/skills.ts`](../../../packages/bundle/src/loader/skills.ts)). The lifecycle hooks are described in [Hooks and the app's lifecycle](hooks.md).
 
-```ts
-const view = ui.create('chat-view', { projectId: 'p1', threadId: 't1' });
-main.replaceChildren(view);
-```
+## What the core provides
 
-1. **Acha o dono.** Procura a tag no catálogo da janela. `chat-view` foi definida pelo `chat`. Se nenhum bundle ativo definiu a tag, porque o bundle não está na composição ou está em quarentena, devolve um `<core-unavailable>` com o nome da tag, e quem chamou não precisa tratar o caso.
-2. **Cria.** Chama `document.createElement('chat-view')`. O elemento ainda não está no DOM.
-3. **Entrega os serviços do dono.** Atribui `element.services`, um escopo filho dos serviços do `chat`, e não dos de quem chamou `create`. Assim, quando `<chat-view>` chama `runtime.threads/v1`, o `call.caller` é o `chat`. O que o elemento registra por esse escopo é descartado no `ui.dispose` do elemento ou, no mais tardar, quando o `chat` é desativado.
-4. **Atribui as props.** Faz `Object.assign(element, props)`. Props são propriedades JavaScript, não atributos, então aceitam objetos.
-5. **Devolve.** Quem chamou decide onde pôr o elemento. Só quando ele é conectado ao DOM o `connectedCallback` roda, já com `services` e props prontos.
+The core provides these contracts, each in the environments its parts register it ([`manifest.json`](../../../bundles/foundation/core/manifest.json), [`host/index.ts`](../../../bundles/foundation/core/src/host/index.ts), [`desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`client/index.ts`](../../../bundles/foundation/core/src/client/index.ts)). The full shape of each, with its methods, inputs and errors, is in the core's [README](../../../bundles/foundation/core/README.md); this document states them at the grain of the mechanism.
 
-Um bundle pode usar `document.createElement` direto para os próprios elementos internos, que não precisam de serviços. `ui.create` é necessário quando o elemento é de outro bundle, ou quando ele vai chamar serviços.
+| Environment   | Basic contracts (from `bundle/contracts`)                                                                                                                                | The core's own contracts (from `core/contracts`)                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `host`        | `hooks/v1@1.0.0`, `log/v1@1.0.0`, `tools/v1@1.4.0`, `skills/v1@1.1.0`, `storage/v1@1.1.0`, `secrets/v1@1.2.0`, `events/v1@1.0.0`, `settings/v1@1.0.0`, `models/v1@1.4.0` | `core.event-hooks/v1@1.0.0`; the storage types `core.settings/v1@1.0.0` and `core.settings-generation/v1@1.0.0` |
+| `desktopMain` | `hooks/v1@1.0.0`, `log/v1@1.0.0`, `settings/v1@1.0.0`, `commands/v1@1.0.0`, `windows/v1@1.1.0`, `menus/v1@1.0.0`                                                         | `core.hooks/v1@1.0.0`, `core.open-settings/v1@1.1.0`, `core.commands/v1@1.0.0`                                  |
+| `client`      | `hooks/v1@1.0.0`, `log/v1@1.0.0`, `ui/v1@1.0.0`, `navigation/v1@1.1.0`, `regions/v1@1.0.0`, `commands/v1@1.0.0`                                                          | None                                                                                                            |
 
-Os elementos do core (`<core-outlet>`, `<core-region>`, `<core-not-found>` e `<core-unavailable>`) são exceção: usam os serviços do core da própria janela, como `navigation/v1` e `regions/v1`, e não precisam receber `element.services`. Por isso podem ser escritos direto no template de um elemento, como o layout faz com `<core-outlet>` e `<core-region>`, ou criados com `document.createElement`, como o bootstrap faz com o `<core-outlet>` do `body`, sem `ui.create`.
+Every basic contract has cardinality `one` except `models.provider/v1`, which is `many`; the environments of each basic contract are fixed in [`basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts). The core's `provide` of a `one` contract registers nothing when the catalog's active provider of that contract is another bundle, so the core then reaches the chosen provider through the same contract ([`services.ts`](../../../packages/bundle/src/runtime/services.ts), [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts)). Activation of the core does no I/O: storage types are declared to the backend on first use, and credentials are read at the start step below ([`host/index.ts`](../../../bundles/foundation/core/src/host/index.ts)).
 
-`ui.dispose(element)` tira o elemento do DOM, chama `element.dispose()` uma vez, se existir, e descarta o que ele registrou pelo seu escopo de `services`; os registros do bundle dono continuam. O outlet, as regiões e as abas do layout chamam `dispose` quando uma view deixa de existir; mover um elemento no DOM não chama.
+### The backends of the foundation
 
-### `regions/v1`: lugares com nome
+Durable storage and stored secrets are two contracts of cardinality `one` that the foundation provides and the core requires: `storage.backend/v1` and `secrets.backend/v1`. In the shipped host `postgres` provides both ([`composition.json`](../../../app/backend/doric-host/composition.json)); the core's tests choose the in-memory foundation of `storage/memory` ([`tests/support/host.ts`](../../../bundles/foundation/core/tests/support/host.ts)). The core's `storage/v1` and `secrets/v1` are facades over them. [Storage](storage.md) describes the backends.
 
-> **Desatualizado.** O exemplo `layout.panel` abaixo não corresponde mais ao
-> código. Desde o passo 4(a) do isolamento de bundles, as regiões que o layout
-> desenha têm nomes `shell.*`, dados pelo lugar na tela e não pelo ID do bundle
-> (`shell.panel`, por exemplo), exportados como constantes `SHELL_*` de
-> `layout/contracts`; quem preenche escreve
-> `'shell.panel' satisfies typeof SHELL_PANEL`. O comportamento atual está em
-> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
-> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+### Host
 
-Uma região é um `<core-region name="…">` que um bundle põe no template do seu elemento. O dono do template escolhe os nomes, com o próprio ID como prefixo (`layout.panel`, `settings.sections`). Outros bundles adicionam elementos:
+- **`hooks/v1`.** Handlers of a hook run in the order of the calling generation's catalog `order`, the platform (`doric`) first, and in registration order within one bundle. For `observe`, `transform` and `decide` hooks, each handler has a deadline of 10 seconds (`DEFAULT_HOOK_DEADLINE_MS`), and a handler that throws or runs late is reported to `doric.diagnostics/v1` instead of failing the owner of the hook; in `doric.window.hooks/v1`, `onCloseHook` handlers have no deadline, and the other hooks give each handler the time left before the call's deadline, with no bound when the call has none or none is left. A `sequence` hook is the owner's own work: each handler is awaited without a deadline, in reverse order when the hook declares `order: 'reverse'`, and the first failure rejects `execute` ([`shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)). The same implementation serves the three environments. The full mechanism is in [Hooks and the app's lifecycle](hooks.md).
+- **`log/v1`.** Each record names the calling bundle, its version and generation, the call's scope and trace id, and the environment, and is written through the platform's `doric.log/v1`; on the host it reaches the host's pino destinations ([`shared/log.ts`](../../../bundles/foundation/core/src/shared/log.ts), [`boot.ts`](../../../app/backend/doric-host/src/lib/bundles/boot.ts)). The host and `desktopMain` parts redact by default: every secret that `secrets/v1.view().redactions()` lists is masked as `[REDACTED]` in the message and in the string leaves of the fields, and nothing is masked when `secrets/v1` cannot be reached, as in `desktopMain`, where no secret is resolved. The client part writes records without redaction, since a window holds no resolved secret. A level never throws: a record that cannot be written is reported to `doric.diagnostics/v1` as `log_write_failed`.
+- **`tools/v1`.** One registry of tools bound to the bundle that registered them. `list` answers them by the global `order` key in ascending order, tools without a key after those with one, and otherwise in registration order ([`tools.ts`](../../../bundles/foundation/core/src/host/tools.ts)). Names are unique per scope: a tool registered without a `projectId` takes its name in every scope, and a tool registered with a `projectId` collides only with an unscoped tool or a tool of the same Project. A collision is refused with `duplicate_tool`. Uniqueness holds within one generation's view (the kernel's tools plus one generation's), and `list` and `catalog` answer only the tools of the calling generation's view; they show a Project's tools only to calls whose `scope.projectId` names that Project.
+- **`skills/v1`.** Skill names are unique within one generation's view (`duplicate_skill`), and `list` answers the skills of the calling generation's view and orders skills by the global `order` key, then registration order, which the loader keeps in bundle order. Every name in a skill's `allowed-tools` must be in the `tools/v1` list of the registering call, or the registration is refused with `unavailable_tool` ([`skills.ts`](../../../bundles/foundation/core/src/host/skills.ts)). Because the loader registers installed skills only after every bundle the process activates (the kernel, or one generation) has activated, `allowed-tools` resolves against every tool that process's view sees: the kernel's tools plus that generation's. A refused registration quarantines the bundle (below).
+- **`settings/v1`.** Each registered space is one `core.settings/v1` document whose id is the settings id and whose revision is the space's revision; the document holds the value, the owner's contract version, the write time and the value of the global `core.settings-generation/v1` counter (document id `global`), which grows by one with every write ([`settings/facade.ts`](../../../bundles/foundation/core/src/host/settings/facade.ts), [`contracts/storage.ts`](../../../bundles/foundation/core/src/contracts/storage.ts)). A write commits both documents together. Writes of `settings/v1` and of `secrets/v1` run one at a time in one queue ([`writes.ts`](../../../bundles/foundation/core/src/shared/writes.ts)); subscribers of a space run synchronously after the commit, before the queue moves on, and a subscriber that throws is reported to diagnostics.
+- **`secrets/v1`** keeps a cache over `secrets.backend/v1`. Its start step on `onHostStartHook` connects the storage backend, enters the startup stage `credential_activation` and reads the stored credentials once, so an unusable credential key fails the host at that stage ([`secrets/activation.ts`](../../../bundles/foundation/core/src/host/secrets/activation.ts)). Credential kinds besides the basic `API_TOKEN` and `USERNAME_PASSWORD` are registered by bundles with `registerKind`, as `git` and `mcp` do ([`basic/secrets.ts`](../../../packages/bundle/src/contracts/basic/secrets.ts), [`git/src/host/index.ts`](../../../bundles/features/git/src/host/index.ts), [`mcp/src/host/index.ts`](../../../bundles/features/mcp/src/host/index.ts)).
+- **`storage/v1`, `events/v1` and `models/v1`.** `storage/v1` is the facade over `storage.backend/v1` with per-owner access ([`storage/facade.ts`](../../../bundles/foundation/core/src/host/storage/facade.ts)); `events/v1` appends a bundle's events to the stream of the event sink a bundle registered, and fires `core.event-hooks/v1.onEventAppendedHook` after each commit ([`events/facade.ts`](../../../bundles/foundation/core/src/host/events/facade.ts)); `models/v1` aggregates the `models.provider/v1` records that provider bundles register, without a choice in `providers` ([`models/index.ts`](../../../bundles/foundation/core/src/host/models/index.ts)). [Storage](storage.md) and [Events and nodes](events-and-nodes.md) describe the first two.
 
-```ts
-services.use(RegionsV1).add('layout.panel', { id: 'files', tag: 'files-tree' });
-```
+### Desktop main process
 
-`<core-region>` cria cada item com `ui.create(tag, props)`, ordenado por `order` e depois pela ordem de ativação, e chama `ui.dispose` quando o bundle do item é desativado. Uma região que não existe na tela, porque o bundle dono do template não está na composição, simplesmente não mostra nada.
+The `desktopMain` part provides hooks, log, local settings (a preferences file in the core's `doric.cache/v1` directory), `commands/v1`, the client commands bridge `core.commands/v1`, `windows/v1` and `menus/v1`; it defines `core.hooks/v1` and registers the command `core.open-settings/v1` ([`desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`desktop/settings.ts`](../../../bundles/foundation/core/src/desktop/settings.ts)). In `onAppReadyHook` it sets the menu skeleton (App, File, Edit, View, Window, Help) through `doric.menus/v1`, asks the platform through `doric.migrations/v1` to copy the layout's saved selection (`doric.selection`) from the packaged `file://` origin to `doric://app` once, and opens the primary `workspace` window at the last path that window showed, or `/`; in `onAppActivateHook` it focuses or reopens that window ([`menu.ts`](../../../bundles/foundation/core/src/desktop/menu.ts), [`migrations.ts`](../../../bundles/foundation/core/src/desktop/migrations.ts)).
 
-## O que o core decide
+`windows/v1` and `menus/v1` are the core's implementations over the native `doric.windows/v1` and `doric.menus/v1`, and most shipped bundles call them; `screen` also calls `doric.windows/v1` directly for its views ([`screen/src/desktop/index.ts`](../../../bundles/features/screen/src/desktop/index.ts)), which a `doric.*` contract allows without a manifest line. `windows/v1.open` runs `core.hooks/v1.onBeforeOpenWindowHook` and opens the window under the key `<calling bundle>:<key>` ([`windows.ts`](../../../bundles/foundation/core/src/desktop/windows.ts), [`menus.ts`](../../../bundles/foundation/core/src/desktop/menus.ts)). The details are in [Windows](windows.md) and [Menus and keybindings](menus-and-keybindings.md).
 
-Os outros bundles fazem só o que o core expõe:
+`core.open-settings/v1` (1.1.0) opens the settings window. Its input has an optional `path` and an optional `defaultPath`: with `path`, the window opens at that path, or is focused and navigated there when it is open; without `path`, an open settings window is only focused, and otherwise a new one opens at `defaultPath`; with neither and no window open, the command fails with `invalid_input` and nothing opens ([`desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts), [`contracts/commands.ts`](../../../bundles/foundation/core/src/contracts/commands.ts)). The core knows no settings route: the caller names it. Other bundles reach the command through the reference `OpenSettingsCommandV1` of `core/contracts`; its full contract is in the core's [README](../../../bundles/foundation/core/README.md).
 
-- registrar rotas por `navigation/v1` e montar elementos nas regiões por `regions/v1` e `ui/v1`;
-- adicionar itens de menu, atalhos e contexto de menu por `menus/v1`, inclusive de partes `client`, pela ponte;
-- abrir e focar janelas por `windows/v1`, inclusive de partes `client`, pela ponte;
-- registrar e executar comandos por `commands/v1`, nas partes `desktopMain` e `client`;
-- estender comportamento pelos hooks que o core define em `core.hooks/v1`.
+### Window client
 
-Cada um desses usos exige o contrato em `requires` do bundle que o faz. As APIs nativas de janela e menu da plataforma são os contratos `doric.windows/v1` e `doric.menus/v1`, usados pelo core. Os outros bundles usam `windows/v1` e `menus/v1`, que o core expõe sobre esses contratos nativos com suas políticas. Os detalhes estão em [janelas abertas pelo core](./windows.md), [menus nativos e atalhos](./menus-and-keybindings.md) e [contextos e capacidades](./contexts.md).
+In each window the client part provides hooks, log, `ui/v1`, `navigation/v1`, `regions/v1` and `commands/v1`, defines the four elements `core-outlet`, `core-region`, `core-not-found` and `core-unavailable`, intercepts same-origin links, and reports the window's path as menu context through `menus/v1` ([`client/index.ts`](../../../bundles/foundation/core/src/client/index.ts)). `ui/v1.define` refuses a tag that does not start with the calling bundle's id followed by `-`, and `ui/v1.create` answers a `core-unavailable` element when no active bundle owns the tag ([`ui.ts`](../../../bundles/foundation/core/src/client/ui.ts)). A command that no part of the window registered is sent to `desktopMain` through `core.commands/v1` ([`client/commands.ts`](../../../bundles/foundation/core/src/client/commands.ts)). The core draws no screen of the product: routes, regions and their content come from other bundles. [UI composition](ui-composition.md) and [Navigation](navigation.md) describe the mechanism.
 
-## O que não pertence ao core
+### The scope keys the core reads
 
-| Fora do core                                                                                     | Dono                                                  |
-| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
-| Catálogo, quarentena, diagnóstico, splash, recuperação, `doric://app`, IPC, processos de geração | Plataforma                                            |
-| Log próprio da plataforma, independente do `log/v1` do core                                      | Plataforma                                            |
-| APIs nativas de janela e menu (`doric.windows/v1`, `doric.menus/v1`)                             | Plataforma                                            |
-| Diretório de cache por bundle no desktop (`doric.cache/v1`)                                      | Plataforma                                            |
-| Referências e tipos dos contratos básicos (`HooksV1`, `StorageV1`, `UiV1` e os demais)           | Plataforma (`bundle/contracts`)                       |
-| Backends de storage e de segredos (`storage.backend/v1`, `secrets.backend/v1`)                   | Bundle `postgres`                                     |
-| Provedores de modelos (`models.provider/v1`)                                                     | `openai`, `openrouter`, `codex`                       |
-| Modelo de domínio e `runtime/v1`                                                                 | Bundle `runtime`                                      |
-| Executor (`executor/v1`)                                                                         | Bundle `direct`                                       |
-| Rotas, regiões e o conteúdo da tela (workspace, conversa, settings)                              | `layout`, `chat`, `settings`, `files`, `git` e outros |
+The core forwards `call.scope` unchanged and reads three keys of it: `tools/v1` reads `projectId` to choose a Project's tools; `events/v1` reads the keys that the registered event sink names, refusing an append whose scope lacks one with `invalid_scope`; `hooks/v1` reads `windowKey` to run the `doric.window.hooks/v1` handlers of one window; and `menus/v1.setContext` reads `windowKey` and refuses a call without it with `invalid_input` ([`menus.ts`](../../../bundles/foundation/core/src/desktop/menus.ts), [`tools.ts`](../../../bundles/foundation/core/src/host/tools.ts), [`events/facade.ts`](../../../bundles/foundation/core/src/host/events/facade.ts), [`shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts)). A scope holds at most 16 keys, each of at most 64 characters, a letter followed by letters, digits, `_`, `.` or `-`, with values of at most 512 characters ([`call.ts`](../../../packages/bundle/src/contracts/call.ts)). [Services and channels](services-and-channels.md) describes the call.
 
-Catálogo, diagnóstico, splash e recuperação continuam na plataforma (`doric.catalog/v1` e `doric.diagnostics/v1`) porque precisam funcionar sem o core: a recuperação precisa deles justamente quando o core falha. Pelo mesmo motivo, a plataforma tem log próprio, que não depende do `log/v1` do core. A superfície que mostra esse estado é descrita em [splash e recuperação](./splash-and-recovery.md).
+## Replacing a contract the core provides
 
-## Substituição de contratos do core
-
-Qualquer contrato sem prefixo `doric.` pode ser fornecido por outro bundle, inclusive os do core. Se dois bundles habilitados fornecem o mesmo contrato de cardinalidade `one`, a composição escolhe o provedor em `providers`:
+Any contract without the `doric.` prefix may be provided by another bundle; a manifest that lists a `doric.*` contract is invalid, and `define*` refuses a `doric.*` id ([`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts), [`define.ts`](../../../packages/bundle/src/contracts/define.ts)). When two enabled bundles provide one contract of cardinality `one` in an environment, the composition chooses one under `providers`:
 
 ```json
 {
@@ -254,54 +105,233 @@ Qualquer contrato sem prefixo `doric.` pode ser fornecido por outro bundle, incl
 }
 ```
 
-A escolha vale em cada ambiente em que o bundle escolhido fornece o contrato. Quando o contrato é um que o core fornece ou consome (como `hooks/v1`, `storage.backend/v1` e `secrets.backend/v1`), o provedor escolhido ativa na fundação, antes do core; o provedor escolhido para os demais contratos (como `runtime/v1`, `executor/v1` e `sandbox/v1`) ativa depois do core, com os outros bundles, em ordem de dependência. Sem escolha, o segundo provedor, que é o substituto, vai para quarentena com motivo. Com a escolha, a plataforma e os outros bundles, inclusive o próprio core, passam a usar o provedor escolhido sem mudar código, porque consomem só o contrato. Os antigos papéis exclusivos (armazenamento durável, segredos, runtime de domínio, executor, provider de sandbox) são exatamente isso: contratos `one` com um provedor escolhido (`storage.backend/v1`, `secrets.backend/v1`, `runtime/v1`, `executor/v1`, `sandbox/v1`). Contratos `many`, como `models.provider/v1`, não precisam de escolha. Contratos `doric.*` são da plataforma e não aceitam outro provedor.
+The catalog resolves the active provider of a `one` contract as follows ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)):
 
-Como o core vira dependência de quase todos os bundles, uma falha do core leva ao modo de recuperação, descrito em [splash e recuperação](./splash-and-recovery.md).
+- A choice names a bundle that is enabled and lists the contract under `provides`; otherwise the choice is ignored and recorded as an issue (`provider choice … ignored`). A choice applies in each environment where the chosen bundle provides the contract.
+- With a valid choice, the chosen bundle is the active provider while it is scheduled. Every other provider except the core is quarantined with `unchosen_provider`; the core stays active with its `provide` inert.
+- Without a choice, the core is the active provider when it provides the contract, and otherwise the first provider by lexical id. Every other provider except the core is quarantined with `unchosen_provider`.
 
-## O bundle `bundles/foundation/core` atual
+A chosen provider of a contract the core provides or requires joins the foundation and activates before the core, so the core and every other bundle reach it through the contract without a change of code. A chosen provider of any other contract activates with the others, in dependency order. Contracts of cardinality `many`, such as `models.provider/v1`, need no choice. When a chosen foundation provider is quarantined, the catalog does not fall back to the core: the environment enters recovery mode.
 
-O bundle `bundles/foundation/core` atual contém tools de arquivos, terminal e web. Ele é renomeado para `files` na primeira etapa, preservando os nomes públicos das tools e skills, e o ID `core` passa a pertencer ao bundle core novo. Na etapa 1, o contexto passa a ter só serviços, `bundle/contracts` passa a exportar as funções `define*`, `ref` e as referências e os tipos dos contratos básicos, e o core novo fornece `hooks/v1`, `log/v1`, `tools/v1` e `skills/v1`. `settings/v1`, `secrets/v1`, `storage/v1` e `events/v1` do core entram na etapa 2, junto com o `postgres` fornecendo `storage.backend/v1` e `secrets.backend/v1` sobre o Prisma atual. A sequência de etapas está em [migração em entregas verificáveis](./migration.md), e o destino das funcionalidades atuais em [divisão das funcionalidades atuais](./feature-split.md).
+## Quarantine
 
-## Quarentena
+A quarantined bundle is not activated, or is deactivated: the registrations it made are disposed of, its cleanup runs, and the other bundles keep serving ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts)). Its catalog entry and its diagnostics record have the state `quarantined` and every reason, each with a code, a message and, where it concerns one contract, that contract's id ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). The platform logs each quarantined bundle with its reasons under the message `Bundle quarantined` ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts)).
 
-Uma falha de validação ou de ativação de um bundle que não é o core coloca **apenas esse bundle** em quarentena, com motivo no catálogo.
+| Code                         | When                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_manifest`           | The manifest is missing or invalid ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts))                                                                                                                                                                                                                                                                                                                                                                             |
+| `invalid_descriptor`         | `contracts.json` is missing or disagrees with the manifest's id, version or `provides` ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts))                                                                                                                                                                                                                                                                                                                         |
+| `duplicate_id`               | Another installed bundle already uses the id ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts))                                                                                                                                                                                                                                                                                                                                                                   |
+| `engines_unsatisfied`        | `engines.doric` does not accept the platform's version ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts))                                                                                                                                                                                                                                                                                                                                                         |
+| `cardinality_mismatch`       | The bundle declares a contract with another cardinality than the catalog publishes, at resolution or at `provide` ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts), [`services.ts`](../../../packages/bundle/src/runtime/services.ts))                                                                                                                                                                                                                           |
+| `unchosen_provider`          | A second provider of a `one` contract that the composition did not choose ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts))                                                                                                                                                                                                                                                                                                                                      |
+| `foundation_requires`        | A foundation bundle lists a contract under `requires`, outside the exception above ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts))                                                                                                                                                                                                                                                                                                                             |
+| `missing_dependency`         | No enabled bundle provides a required contract, or an installed bundle has skills and no `skills/v1` provider is active ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts), [`loader/activate.ts`](../../../packages/bundle/src/loader/activate.ts))                                                                                                                                                                                                               |
+| `incompatible_version`       | The active provider's version does not satisfy the required range ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts))                                                                                                                                                                                                                                                                                                                                              |
+| `dependency_quarantined`     | The provider of a required contract is quarantined, or a bundle it depends on is not active when its turn comes ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts), [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts))                                                                                                                                                                                                                         |
+| `dependency_cycle`           | The bundle is part of a `requires` cycle ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts))                                                                                                                                                                                                                                                                                                                                                                       |
+| `invalid_part`               | A part cannot be loaded or its host part exports no `activate` function; a tool file the manifest lists does not default-export a tool definition (a function export included); or, on the desktop, one of its distributed files fails verification ([`loader/activate.ts`](../../../packages/bundle/src/loader/activate.ts), [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts), [`resolve.ts`](../../../app/desktop/doric/src/platform/catalog/resolve.ts)) |
+| `activate_failed`            | The bundle's `activate` throws ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts))                                                                                                                                                                                                                                                                                                                                                                           |
+| `registration_failed`        | A registration the bundle or the loader made for it is refused, such as a duplicate tool or skill, or a skill whose `allowed-tools` names an unavailable tool ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts), [`loader/activate.ts`](../../../packages/bundle/src/loader/activate.ts))                                                                                                                                                                   |
+| `skill_invalid`              | A `SKILL.md` file cannot be read or parsed ([`loader/activate.ts`](../../../packages/bundle/src/loader/activate.ts))                                                                                                                                                                                                                                                                                                                                                             |
+| `generation_failed`          | The generation process that holds the bundle failed ([`manager.ts`](../../../packages/bundle/src/process/manager.ts))                                                                                                                                                                                                                                                                                                                                                            |
+| `kernel_requires_generation` | Accepted by the schema; no code path sets it, because kernel bundles reach generation bundles through the catalog at call time ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts))                                                                                                                                                                                                              |
 
-- Bundles que exigem um contrato dele em `requires` também entram em quarentena, com o motivo “depende de um bundle em quarentena”.
-- Quem só o consulta por `whenAvailable` degrada a funcionalidade dependente.
-- Um provedor substituto não escolhido em `providers` para um contrato `one` vai para quarentena com motivo, e o provedor da fundação ou do core continua.
-- Se o provedor escolhido de `storage.backend/v1` ou `secrets.backend/v1` estiver em quarentena, a parte `host` do core, que os exige em `requires`, não ativa, e o host entra no modo de recuperação: mostra o diagnóstico, preserva os dados e bloqueia as operações de domínio, sem iniciar histórico vazio.
-- Se o provedor escolhido de outro contrato estrutural, como `runtime/v1`, estiver em quarentena, o host continua no modo só core: mostra o diagnóstico, preserva os dados e bloqueia as operações de domínio, sem iniciar histórico vazio.
-- Uma falha de um handler `observe`, como os de `onActivateHook`, vai só ao diagnóstico e não causa quarentena.
+Quarantine cascades through `requires`: the catalog checks every bundle again until nothing changes, so a bundle whose required provider is quarantined is quarantined with `dependency_quarantined`, and so on ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). A bundle that reaches the contract only through `whenAvailable` stays active and loses the dependent feature. A failing handler of an `observe` hook, such as `onActivateHook`, is reported to diagnostics and quarantines nobody ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts)).
 
-A escolha de provedores está em [contextos e capacidades](./contexts.md), e `storage.backend/v1` em [armazenamento genérico e histórico](./storage.md).
+On the desktop, `desktopMain` and `client` are resolved from the host's distribution with the same resolver; a bundle the host quarantined stays quarantined, and the desktop adds its own reasons ([`resolve.ts`](../../../app/desktop/doric/src/platform/catalog/resolve.ts)).
 
-## Core mínimo de teste
+## Recovery mode
 
-Um **core mínimo de teste**, usado só nos testes, abre uma janela simples sem nenhum bundle da UI padrão. Ele prova que trocar o core troca a interface inteira: se esse teste quebrar, alguém criou uma dependência da plataforma com a UI padrão.
+An environment enters recovery mode when ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts), [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts), [`loader/activate.ts`](../../../packages/bundle/src/loader/activate.ts)):
 
-## O que o core não conhece
+- the core is not installed, not enabled or quarantined;
+- a contract the core requires has no enabled provider, is not provided by an active foundation bundle, or has a version outside the range;
+- a chosen foundation provider is quarantined;
+- the `activate` of the core or of a foundation bundle fails;
+- the composition cannot be read.
 
-- **Eventos.** `events/v1` do core não lê IDs de Project, Thread ou prompt. Cada provedor tem um sumidouro registrado pelo dono (ver [eventos e nós](./events-and-nodes.md#sumidouro-registrado-pelo-dono)), e o `runtime` registra o do log de Thread.
-- **Segredos.** `secrets/v1.registerKind` aceita kinds de bundles. Os básicos `API_TOKEN` e `USERNAME_PASSWORD` ficam no contrato genérico. O bundle `git` registra `GIT` com usuário e e-mail, sem segredo.
-- **Credenciais na partida.** O start hook `credential_activation` fica no core (`bundles/foundation/core/src/host/secrets/activation.ts`), e é o único lugar do host que carrega as credenciais na ativação.
-- **Escopo.** O core só repassa o `call.scope`, que é opaco. Ele não monta nem interpreta chaves de bundle.
+The reason is recorded once, the first one met. In recovery the loader activates no further bundle and records each remaining one as `inactive`, and the platform does not fire `onHostReadyHook` ([`activation.ts`](../../../packages/bundle/src/runtime/activation.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)).
 
-## Relações
+On the host, the kernel logs `Bundle recovery mode` with the reason and every bundle's state and reasons, and starts no generation process ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). The host has no recovery surface of its own: `startBundles` stops the platform and throws `BundleRecoveryError`, and the boot ends in the host's fatal startup path ([`boot.ts`](../../../app/backend/doric-host/src/lib/bundles/boot.ts), [`index.ts`](../../../app/backend/doric-host/src/index.ts)). The host also takes that path, after logging `Bundle recovery mode`, when a contract or bundle the composition lists under `required` has no active provider, at boot (`assertStructural`) or after a generation is lost (`watchStructural`, which exits the process) ([`boot.ts`](../../../app/backend/doric-host/src/lib/bundles/boot.ts), [`index.ts`](../../../app/backend/doric-host/src/index.ts)); the shipped composition requires `runtime/v2`, `executor/v1`, `sandbox/v1`, `models/v1`, `host-config/v1` and the bundle `transport` ([`composition.json`](../../../app/backend/doric-host/composition.json)).
 
-- [Arquitetura de bundles](../bundles.md): documento principal que mostra como o core e a fundação se encaixam no conjunto.
-- [Manifesto v1](./manifest.md): o manifesto do core é um manifesto comum, sem campo especial, cujo `requires` só pode citar contratos da fundação, e o loader ordena a ativação com a fundação primeiro, depois o core e por fim os demais bundles.
-- [Composição e distribuição pelo host](./composition-and-distribution.md): é a composição que nomeia o core e escolhe provedores em `providers`, por ambiente.
-- [Contratos e a família define\*](./contracts.md): os contratos que o core fornece, como `windows/v1`, `menus/v1` e `regions/v1`, têm referência e tipo em `bundle/contracts`, e o core escreve as definições com `defineService` e `defineMethod`, com `execute(input, call, services)` em cada método e `cardinality` nas opções de `defineService` quando é `many`.
-- [Hooks e ciclo de vida](./hooks.md): o core fornece `hooks/v1`, a plataforma define `AppHooksV1` em cada ambiente e `WindowHooksV1` no client, e o core abre a janela principal e monta o menu pelos hooks do app.
-- [Contextos e capacidades](./contexts.md): o core recebe o mesmo `HostContext`, `DesktopContext` ou `ClientContext` que qualquer bundle, e os provedores escolhidos determinam a fundação e o modo só core.
-- [Serviços e canais](./services-and-channels.md): `services.provide`, `use` e `whenAvailable`, e o `call` com `caller` preenchido pelo dispatcher em cada salto.
-- [Janelas abertas pelo core](./windows.md): detalha `windows/v1` sobre `doric.windows/v1`, alcançável pelo client.
-- [Menus nativos e atalhos](./menus-and-keybindings.md): detalha `menus/v1` sobre `doric.menus/v1`, alcançável pelo client, pelo qual outros bundles adicionam menus e atalhos.
-- [UI composta por bundles](./ui-composition.md): os outros bundles montam componentes nas regiões que o core expõe por `regions/v1` e `ui/v1`.
-- [Navegação e rotas](./navigation.md): rotas como paths, `parent` e o funcionamento do `<core-outlet>`.
-- [O bundle layout](./layout.md): o workspace, que usa a rota `/`, o outlet e as regiões do core.
-- [Isolamento por processo](./process-isolation.md): com processos por geração, as chamadas do core a `doric.windows/v1` e `doric.menus/v1` passam pelo dispatcher da plataforma.
-- [Splash e recuperação](./splash-and-recovery.md): mostra quarentena e diagnóstico mesmo quando o core falha, com log próprio da plataforma.
-- [Armazenamento genérico e histórico](./storage.md): `storage/v1` do core sobre `storage.backend/v1`, e `secrets/v1` sobre `secrets.backend/v1`, ambos fornecidos pelo `postgres` na fundação.
-- [Observabilidade e diagnóstico](./observability.md): o motivo da quarentena chega ao diagnóstico da plataforma, e `log/v1` usa `call.caller` para identificar o bundle de origem.
-- [Migração em entregas verificáveis](./migration.md): a etapa 1 renomeia o `bundles/foundation/core` atual para `files` e cria o core com `hooks/v1`, `log/v1`, `tools/v1` e `skills/v1`; a etapa 2 acrescenta `settings/v1`, `secrets/v1`, `storage/v1`, `events/v1` e o `postgres`.
+On the desktop, the splash shows the recovery, core-failure or bundle-failure state with the reasons and waits for an action, such as disabling a bundle, returning to the default composition or using the last good core; this is described in [Splash and recovery](splash-and-recovery.md).
+
+## `doric.catalog/v1` and `doric.diagnostics/v1`
+
+The catalog and the diagnostics are platform contracts, provided by the platform under the principal `doric` in all three environments, and read through these contracts; the host has no HTTP route for them ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`platform-providers.ts`](../../../packages/bundle/src/runtime/platform-providers.ts)).
+
+### `doric.catalog/v1`
+
+| Method                  | Input                             | Output                | Where                                                        |
+| ----------------------- | --------------------------------- | --------------------- | ------------------------------------------------------------ |
+| `get()`                 | None                              | `CatalogSnapshot`     | Every environment                                            |
+| `distribution()`        | None                              | `DistributionCatalog` | The host                                                     |
+| `artifact({ sha256 })`  | `sha256`: 64 lowercase hex digits | `{ sha256, base64 }`  | The host                                                     |
+| `watch(listener)`       | A stream listener                 | A `Disposable`        | The host; one item `{ generation }` per published generation |
+| `disable({ bundleId })` | A non-empty bundle id             | Nothing               | The host                                                     |
+| `resetComposition()`    | None                              | Nothing               | The host                                                     |
+
+Every method of `doric.catalog/v1` is reachable from a desktop window ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). `CatalogSnapshot`, with the manifest and storage identity it carries, is:
+
+```ts
+interface CatalogSnapshot {
+  generation: number;
+  composition: {
+    core: string;
+    enabled: string[];
+    providers: Record<string, string>;
+  };
+  bundles: {
+    id: string;
+    version: string;
+    description?: string;
+    state: 'active' | 'quarantined' | 'disabled' | 'inactive';
+    phase?: 'foundation' | 'core' | 'others';
+    manifest?: CatalogManifest; // the validated manifest
+    reasons: { code: QuarantineCode; message: string; contract?: string }[];
+  }[];
+  order: string[]; // activation order of this environment
+  contracts: {
+    id: string;
+    environment: 'host' | 'desktopMain' | 'client';
+    cardinality: 'one' | 'many';
+    providers: { bundleId: string; version: string; bundleVersion: string }[];
+  }[];
+  storage?: StorageIdentity; // once the host resolved the backend
+}
+
+interface CatalogManifest {
+  manifestVersion: 1;
+  id: string;
+  version: string;
+  engines: { doric: string };
+  provides: string[];
+  requires: string[];
+  optional?: string[];
+  desktopScope?: Record<string, string[]>; // scope keys a window may send to each provided contract
+  description?: string;
+}
+
+interface StorageIdentity {
+  hostId: string; // a UUID
+  storageGeneration: number; // a positive integer
+}
+```
+
+`StorageIdentity` is defined in [`basic/storage.ts`](../../../packages/bundle/src/contracts/basic/storage.ts).
+
+`distribution()` answers what the desktop needs of a host generation, and `artifact` answers one listed file by hash, its bytes in base64:
+
+```ts
+interface DistributionCatalog {
+  generation: number; // the host generation; restarts at 1 with every host process
+  hostBoot: string; // random per host process; with generation, names a host generation
+  platformVersion: string; // the host platform version, informative
+  composition: {
+    core: string;
+    enabled: string[];
+    providers: Record<string, string>;
+  };
+  storage?: StorageIdentity;
+  host: CatalogSnapshot; // the host environment's doric.catalog/v1.get()
+  bundles: DistributionBundle[];
+}
+
+interface DistributionBundle {
+  id: string;
+  version: string;
+  state: 'active' | 'quarantined' | 'disabled' | 'inactive'; // in the host environment
+  reasons: { code: QuarantineCode; message: string; contract?: string }[]; // the host's
+  manifest?: CatalogManifest;
+  descriptor?: object; // the bundle's dist/contracts.json as JSON; the desktop validates it
+  files: DistributionFile[]; // desktop/**, client/**, contracts/**.js, schemas/**, manifest.json, contracts.json
+  parts: DistributionParts;
+}
+
+interface DistributionFile {
+  path: string; // relative to the bundle's dist directory, with / separators
+  sha256: string; // 64 lowercase hex digits of the file bytes
+  size: number; // a non-negative integer
+}
+
+interface DistributionParts {
+  // paths of the built parts among the files
+  desktopMain?: string;
+  client?: string;
+  clientStyles?: string;
+  contracts?: string;
+}
+```
+
+[Composition and distribution](composition-and-distribution.md) describes how the desktop uses them.
+
+`disable` adds the bundle to the `disabled` list of the composition overrides file and publishes a new generation; it fails with `not_found` for a bundle outside `enabled` and with `invalid_input` for the core. `resetComposition` clears the overrides and publishes. Both run one at a time; when the new generation cannot be published, they fail with `unavailable`, and the overrides they wrote apply at the next host start ([`composition-actions.ts`](../../../packages/bundle/src/process/composition-actions.ts)).
+
+### `doric.diagnostics/v1`
+
+| Method          | Input                                                                    | Output        |
+| --------------- | ------------------------------------------------------------------------ | ------------- |
+| `get()`         | None                                                                     | `Diagnostics` |
+| `report(entry)` | `{ bundleId: string; kind: string; message: string; details?: unknown }` | Nothing       |
+
+```ts
+interface Diagnostics {
+  generation: number;
+  mode: 'normal' | 'recovery';
+  recovery?: { reason: string };
+  issues: string[]; // problems found while reading the catalog
+  bundles: {
+    id: string;
+    version: string;
+    state: 'active' | 'quarantined' | 'disabled' | 'inactive';
+    phase?: 'foundation' | 'core' | 'others';
+    reasons: { code: QuarantineCode; message: string; contract?: string }[];
+    activationMs?: number;
+  }[];
+  errors: {
+    at: string;
+    bundleId: string;
+    kind: string;
+    message: string;
+    details?: unknown;
+  }[];
+  consumers: Record<string, string[]>; // bundles whose manifest requires each contract
+}
+```
+
+`report` is reachable from a desktop window, `get` is not ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). `report` adds an error with the time it was reported; the store keeps the 50 most recent errors of each bundle ([`diagnostics.ts`](../../../packages/bundle/src/runtime/diagnostics.ts)). [Observability](observability.md) describes where diagnostics are shown.
+
+## What the platform keeps
+
+The platform keeps what must work when the core fails, because recovery needs it exactly then ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)):
+
+| Kept by the platform                                                        | Contract or place                                                                                   |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| The catalog, quarantine and recovery                                        | `doric.catalog/v1`, [`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)                 |
+| Diagnostics                                                                 | `doric.diagnostics/v1`                                                                              |
+| The platform's own log, independent of `log/v1`                             | `doric.log/v1` and the platform log of the kernel                                                   |
+| The native window and menu APIs                                             | `doric.windows/v1`, `doric.menus/v1`                                                                |
+| The splash, `doric://app`, IPC and the generation processes                 | The desktop app and [`packages/bundle/src/process`](../../../packages/bundle/src/process/kernel.ts) |
+| The references and types of the basic contracts (`HooksV1`, `StorageV1`, …) | `bundle/contracts` ([`basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts))      |
+
+The platform reaches hooks, settings, secrets, tools and storage only through their contracts, so a provider the composition chooses in place of the core serves it as well. The platform contracts and their environments are described in [Contracts](contracts.md).
+
+## The minimal test core
+
+A minimal core used only in tests provides `hooks/v1`, `ui/v1`, `navigation/v1` and `regions/v1` written against `bundle/contracts` and `doric.*` contracts alone, and defines its own outlet ([`minimal-ui-core.ts`](../../../packages/bundle/src/testing/minimal-ui-core.ts)). Its tests open a window of that core without any bundle of the default UI, and check that a core that defines no outlet, or a quarantined core, reports a core failure ([`minimal-core.test.ts`](../../../packages/desktop/tests/client/minimal-core.test.ts), [`ui-platform.test.ts`](../../../packages/bundle/tests/ui-platform.test.ts)). If they fail, the platform has come to depend on the default UI.
+
+## Related documents
+
+- [The core's README](../../../bundles/foundation/core/README.md): the full shape of every contract the core provides.
+- [Manifest](manifest.md): `provides`, `requires` and `optional`.
+- [Contracts](contracts.md): contract ids and versions, the `define*` family and the platform contracts.
+- [Boundaries](boundaries.md): what a bundle may import.
+- [Composition and distribution](composition-and-distribution.md): the composition and the distribution to the desktop.
+- [Hooks and the app's lifecycle](hooks.md): `hooks/v1` and the lifecycle hooks.
+- [Process isolation](process-isolation.md): the kernel and the generation processes.
+- [Storage](storage.md): `storage/v1` and the backends.
+- [Windows](windows.md) and [Menus and keybindings](menus-and-keybindings.md): `windows/v1` and `menus/v1` over the native APIs.
+- [UI composition](ui-composition.md) and [Navigation](navigation.md): the client's elements, regions and routes.
+- [Splash and recovery](splash-and-recovery.md): what the desktop shows in recovery.
+- [Observability](observability.md): logs and diagnostics.
