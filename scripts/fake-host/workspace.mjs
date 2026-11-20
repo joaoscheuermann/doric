@@ -2,7 +2,7 @@
 //
 // Two Projects and one Thread each, enough for the desktop's sidebar, project
 // tabs and dashboard to draw a real tree. The identifiers are fixed UUIDs: the
-// workspace routes and `runtime/v1.watchProject` validate them as UUIDs.
+// workspace routes and `runtime/v2.watchProject` validate them as UUIDs.
 
 import { randomUUID } from 'node:crypto';
 
@@ -67,7 +67,7 @@ export const createWorkspace = () => {
     projectById,
     threadById,
     threadsOf,
-    /** `runtime/v1.projects`: one page; the fake tree is smaller than a page. */
+    /** `runtime/v2.projects`: one page; the fake tree is smaller than a page. */
     projectPage: ({ limit, cursor }) => {
       const start = cursor === undefined ? 0 : Number(cursor);
       const items = projects.slice(start, start + limit);
@@ -85,7 +85,7 @@ export const createWorkspace = () => {
 
       return { items: all.slice(start, start + limit) };
     },
-    /** `runtime/v1.projectActivity`: most recently active first. */
+    /** `runtime/v2.projectActivity`: most recently active first. */
     projectActivity: () =>
       [...projects]
         .sort((left, right) => right.activityAt - left.activityAt)

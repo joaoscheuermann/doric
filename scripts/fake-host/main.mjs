@@ -7,7 +7,7 @@
 //  - `doric.catalog/v1` from the same staged bundles the host build produces
 //    (`app/backend/doric-host/dist/bundles` by default): the desktop downloads
 //    the repository's own desktopMain and client parts from here.
-//  - `runtime/v1` and `runtime.threads/v1` from a small fixed workspace, so the
+//  - `runtime/v2` and `runtime.threads/v1` from a small fixed workspace, so the
 //    sidebar, the project tabs and the Screens group of the sidebar have data.
 //  - `runtime.threads/v1.watchThread` from a real in-memory event log, seeded
 //    with one scripted conversation. `comments/v1` answers the desktop's calls
