@@ -7,7 +7,9 @@
 // runtime.records/v1@^1.0.0. No line names the layout's transition contracts.
 // Bundle isolation 5(b) change 4 ships 1.2.0: the bundle draws the `terminal`
 // tool and the source `terminal` in the chat through `chat.views/v1` (listed
-// under `optional`), on platform `^1.10.0`.
+// under `optional`), on platform `^1.10.0`. Bundle isolation 7(c) ships the
+// patch 1.2.1: its client copies of the runtime and workspace contracts
+// become imports.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -25,8 +27,8 @@ const manifest = JSON.parse(
   readFileSync('bundles/features/terminal/manifest.json', 'utf8'),
 ) as Manifest;
 
-void test('terminal 1.2.0 on platform ^1.10.0 provides terminal/v1@1.2.0 and requires layout.tabs/v2@^2.0.0, workspace.sidebar/v1@^1.0.0, workspace.selection/v1@^1.0.0 and runtime.records/v1@^1.0.0', () => {
-  assert.equal(manifest.version, '1.2.0');
+void test('terminal 1.2.1 on platform ^1.10.0 provides terminal/v1@1.2.0 and requires layout.tabs/v2@^2.0.0, workspace.sidebar/v1@^1.0.0, workspace.selection/v1@^1.0.0 and runtime.records/v1@^1.0.0', () => {
+  assert.equal(manifest.version, '1.2.1');
   assert.equal(manifest.engines.doric, '^1.10.0');
   assert.deepEqual(manifest.provides, ['terminal/v1@1.2.0']);
   assert.deepEqual(

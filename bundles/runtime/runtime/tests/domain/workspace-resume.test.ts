@@ -250,7 +250,8 @@ void test('a prompt resumes a queued Project on demand and reacquires its own id
   // A read that needs a lease does not resume: it answers unavailable and
   // acquires nothing.
   assert.equal(
-    (await second.service.projects.files(project.id)).status,
+    (await second.service.projects.withLease(project.id, async () => 'read'))
+      .status,
     'unavailable',
   );
   assert.equal(second.sandbox.acquired.length, 0);

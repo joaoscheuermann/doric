@@ -28,7 +28,6 @@ export * from './runtime.js';
 export * from './sandbox.js';
 export * from './scope.js';
 export * from './storage.js';
-export * from './terminals.js';
 export * from './threads.js';
 export * from './tool-host/index.js';
 export * from './usage.js';

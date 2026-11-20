@@ -4,12 +4,8 @@ import { z } from 'zod';
 import {
   type Project,
   projectSchema,
-  type Terminal,
-  type TerminalOutput,
   type Thread,
   type ThreadEvent,
-  terminalOutputSchema,
-  terminalRecordSchema,
   threadEventSchema,
   threadSchema,
 } from './model.js';
@@ -77,47 +73,6 @@ export type ProjectWatchItem =
       readonly threadId: string;
     };
 
-/**
- * A `ProjectWatchItem` whose snapshot also carries the Project's terminals.
- * runtime/v1 1.3.0; leaves in step 7(c).
- */
-export type LegacyProjectWatchItem =
-  | {
-      readonly kind: 'snapshot';
-      readonly projectId: string;
-      readonly project: Project | null;
-      readonly threads: readonly Thread[];
-      readonly terminals: readonly Terminal[];
-    }
-  | { readonly kind: 'project-updated'; readonly project: Project }
-  | { readonly kind: 'project-deleted'; readonly projectId: string }
-  | { readonly kind: 'thread-updated'; readonly thread: Thread }
-  | {
-      readonly kind: 'thread-deleted';
-      readonly projectId: string;
-      readonly threadId: string;
-    };
-
-/** One `/projects` namespace emission about the Project's terminals. */
-export type TerminalWatchItem =
-  | {
-      /** `terminal:snapshot`. */
-      readonly kind: 'snapshot';
-      readonly projectId: string;
-      readonly terminals: readonly Terminal[];
-    }
-  /** `terminal:updated`. */
-  | { readonly kind: 'updated'; readonly terminal: Terminal }
-  /** `terminal:removed`. */
-  | {
-      readonly kind: 'removed';
-      readonly projectId: string;
-      readonly threadId: string;
-      readonly terminalId: string;
-    }
-  /** `terminal:output`: live only, never buffered before the snapshot. */
-  | { readonly kind: 'output'; readonly output: TerminalOutput };
-
 /** The Thread a window shows (runtime.threads/v1 1.8.0, `viewThread`). */
 export interface ThreadViewInput {
   readonly threadId: string;
@@ -181,7 +136,7 @@ export const threadWatchItemSchema: z.ZodType<
     .strict(),
 ]);
 
-/** The `ProjectWatchItem` arms after the snapshot, shared with runtime/v1. */
+/** The `ProjectWatchItem` arms after the snapshot. */
 const projectWatchUpdateSchemas = [
   z
     .object({ kind: z.literal('project-updated'), project: projectSchema })
@@ -216,52 +171,8 @@ export const projectWatchItemSchema: z.ZodType<
   ...projectWatchUpdateSchemas,
 ]);
 
-/** runtime/v1 1.3.0; leaves in step 7(c). */
-export const legacyProjectWatchItemSchema: z.ZodType<
-  LegacyProjectWatchItem,
-  LegacyProjectWatchItem
-> = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('snapshot'),
-      projectId: z.string(),
-      project: projectSchema.nullable(),
-      threads: z.array(threadSchema),
-      terminals: z.array(terminalRecordSchema),
-    })
-    .strict(),
-  ...projectWatchUpdateSchemas,
-]);
-
-export const terminalWatchItemSchema: z.ZodType<
-  TerminalWatchItem,
-  TerminalWatchItem
-> = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('snapshot'),
-      projectId: z.string(),
-      terminals: z.array(terminalRecordSchema),
-    })
-    .strict(),
-  z
-    .object({ kind: z.literal('updated'), terminal: terminalRecordSchema })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('removed'),
-      projectId: z.string(),
-      threadId: z.string(),
-      terminalId: z.string(),
-    })
-    .strict(),
-  z
-    .object({ kind: z.literal('output'), output: terminalOutputSchema })
-    .strict(),
-]);
-
 /**
- * The method specs of the three watches and of the view stream, spread into
+ * The method specs of the two watches and of the view stream, spread into
  * their contracts.
  */
 export const watchMethods = {
@@ -277,18 +188,6 @@ export const watchMethods = {
       projectWatchInputSchema,
       streamListener(projectWatchItemSchema),
     ]),
-    output: disposableSchema,
-  },
-  /** runtime/v1 1.3.0; leaves in step 7(c). */
-  legacyProject: {
-    input: z.tuple([
-      projectWatchInputSchema,
-      streamListener(legacyProjectWatchItemSchema),
-    ]),
-    output: disposableSchema,
-  },
-  terminals: {
-    input: z.tuple([z.uuid(), streamListener(terminalWatchItemSchema)]),
     output: disposableSchema,
   },
   view: {

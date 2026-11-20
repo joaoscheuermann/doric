@@ -158,31 +158,28 @@ void test('a listener that throws is logged and never reaches the domain', async
   await harness.dispose();
 });
 
-void test('lease reads need the scope of their Project or Thread', async () => {
+void test('lease reads need the scope of their Project', async () => {
   const harness = createHarness({
     sandbox: { sandbox: fakeSandbox() as never },
   });
   const project = await harness.readyProject();
   const thread = await harness.createThread(project.id);
   const refused = { code: 'invalid_input', message: leaseScopeMessage };
+  const read = async () => 'read';
 
-  await assert.rejects(async () => harness.lease({}).files({}), refused);
   await assert.rejects(async () => harness.lease({}).ssh(), refused);
+  await assert.rejects(async () => harness.lease({}).withLease(read), refused);
   await assert.rejects(
-    async () => harness.lease({ projectId: project.id }).git(),
+    async () => harness.lease({ threadId: thread.id }).ssh(),
     refused,
   );
   await assert.rejects(
-    async () => harness.lease({ threadId: thread.id }).resources(),
+    async () => harness.lease({ threadId: thread.id }).withLease(read),
     refused,
   );
-  assert.equal(
-    (await harness.lease({ projectId: project.id }).resources()).status,
-    'ready',
-  );
-  assert.equal(
-    (await harness.lease({ threadId: thread.id }).git()).status,
-    'ready',
+  assert.deepEqual(
+    await harness.lease({ projectId: project.id }).withLease(read),
+    { status: 'ready', value: 'read' },
   );
   await harness.dispose();
 });

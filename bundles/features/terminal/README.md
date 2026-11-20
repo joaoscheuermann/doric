@@ -87,8 +87,9 @@ The tool runs a command in the current working directory; a relative
   watching the same terminal do not cut each other off.
 
 `terminal/contracts` keeps `TerminalV1` (`run` only) for the 1.0.0
-consumers; `TerminalServiceV1` is the full 1.2.0 contract. The `runtime`
-bundle delegates its terminal reads to this bundle while it is active.
+consumers; `TerminalServiceV1` is the full 1.2.0 contract. It is the one
+source of a Project's terminals: the `runtime` bundle holds no terminal reads
+(bundle isolation 7(c)), and `git` reads the list for its branch switch.
 
 `src/client/styles.css` ships the xterm scrollbar slider rule, scoped to
 `[data-slot='terminal-view']`, which matches ScrollArea's lane; the layout's
@@ -98,8 +99,9 @@ sheet no longer carries it.
 
 From 1.2.0 (bundle isolation 5(b)) the client part draws in the chat, through
 `chat.views/v1`, listed under `optional`, each registration in a
-`whenAvailable` callback of its own. It reaches the chat's shapes through
-structural copies in `src/client/peers.ts`, and needs platform 1.10.0
+`whenAvailable` callback of its own. It imports the chat's types from
+`chat/contracts`, types only since the chat is optional, through
+`src/client/peers.ts`, and needs platform 1.10.0
 (`engines.doric` `^1.10.0`) for `desktop/ui/collapsible-block`.
 
 - `terminal-tool-call` (`src/client/chat/terminal-call.tsx`) draws each

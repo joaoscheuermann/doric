@@ -30,6 +30,14 @@ export type ProjectFileChange = ProjectChange & {
   readonly worktreeStatus: string;
 };
 
+/** The changed files of one Git repository and its added and removed lines. */
+export interface RepositoryChanges {
+  readonly path: string;
+  readonly changes: readonly ProjectFileChange[];
+  readonly added: number;
+  readonly removed: number;
+}
+
 /** The changes of one Project, one entry per Git repository in the reached path. */
 export type ProjectChanges = {
   readonly path?: string;

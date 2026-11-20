@@ -1,15 +1,6 @@
 import type { DoricConfig } from 'host-config/testing';
 import type { ProviderMessage } from 'llms';
-import type {
-  ContainerResources,
-  CwdChange,
-  FileDiff,
-  ProjectChangeSet,
-  RepositoryChanges,
-  Terminal,
-  TerminalOutput,
-  TerminalSnapshot,
-} from 'runtime/contracts';
+import type { CwdChange, Terminal, TerminalOutput } from 'runtime/contracts';
 import type { SandboxEntry, SandboxSshAccess, SandboxTreeNode } from 'sandbox';
 
 import type { ProjectColor } from './colors.js';
@@ -262,6 +253,21 @@ export type ProjectFile =
       readonly binary: boolean;
     }
   | { readonly status: 'invalid_path' | 'not_found' | 'not_file' };
+export type ProjectChangeStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'untracked';
+export interface ProjectChange {
+  readonly path: string;
+  readonly status: ProjectChangeStatus;
+}
+export interface ProjectChangeSet {
+  readonly path: string;
+  readonly diff: string;
+  readonly changes: readonly ProjectChange[];
+}
 export type ProjectDiff =
   | { readonly status: ProjectLeaseState }
   | {
@@ -271,6 +277,35 @@ export type ProjectDiff =
     }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+export type ChangeStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'untracked'
+  | 'conflicted';
+export interface FileChange {
+  readonly path: string;
+  readonly originalPath?: string;
+  readonly status: ChangeStatus;
+  readonly staged: boolean;
+  readonly unstaged: boolean;
+  readonly indexStatus: string;
+  readonly worktreeStatus: string;
+}
+export interface RepositoryChanges {
+  readonly path: string;
+  readonly changes: readonly FileChange[];
+  readonly added: number;
+  readonly removed: number;
+}
+export interface FileDiff extends FileChange {
+  readonly repository: string;
+  readonly original: string;
+  readonly modified: string;
+  readonly binary: boolean;
+  readonly truncated: boolean;
+}
 export type ProjectChanges =
   | { readonly status: ProjectLeaseState | 'invalid_path' | 'not_found' }
   | {
@@ -281,6 +316,15 @@ export type ProjectChanges =
 export type ProjectFileDiff =
   | { readonly status: ProjectLeaseState | 'invalid_path' | 'not_found' }
   | { readonly status: 'ready'; readonly diff: FileDiff };
+/** One sandbox's own resource usage, or why there is no reading. */
+export interface ContainerResources {
+  readonly status: 'ready' | 'unavailable';
+  readonly at: string;
+  readonly cpuPercent?: number;
+  readonly cpuCount?: number;
+  readonly memoryUsedBytes?: number;
+  readonly memoryLimitBytes?: number;
+}
 export type ProjectResources =
   | { readonly status: ProjectLeaseState }
   | { readonly status: 'ready'; readonly container: ContainerResources };
@@ -397,6 +441,13 @@ export interface ThreadStore {
   deleteSubtree(id: string): Promise<DeleteResult>;
   reconcile(): Promise<number>;
 }
+/** A terminal's retained output after a cursor (`GET /terminals/:id`). */
+export interface TerminalSnapshot {
+  readonly terminal: Terminal;
+  readonly output: string;
+  readonly offset: number;
+  readonly truncated: boolean;
+}
 export interface WorkspacePublisher {
   terminalUpdated?(value: Terminal): void;
   terminalOutput?(value: TerminalOutput): void;
@@ -484,11 +535,6 @@ export interface WorkspaceService {
     setCwd(id: string, cwd: string): Promise<CwdResult>;
     /** The Git summary of the Thread's working directory, probed on demand. */
     git(id: string): Promise<ThreadGitResult>;
-    branches(
-      id: string,
-      branch?: string,
-      cwd?: string,
-    ): Promise<import('runtime/contracts').BranchResult>;
     prompt(id: string, prompt: string): Promise<PromptResult>;
     /**
      * Takes up one prompt an interruption left unfinished, bringing the

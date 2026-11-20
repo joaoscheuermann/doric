@@ -6,17 +6,11 @@ import {
   toStreamObserver,
 } from 'bundle/contracts';
 
-import type {
-  Project,
-  Terminal,
-  Thread,
-  ThreadEvent,
-} from '../../contracts/model.js';
+import type { Project, Thread, ThreadEvent } from '../../contracts/model.js';
 import type { RuntimeNotice } from '../../contracts/runtime.js';
 import {
-  type LegacyProjectWatchItem,
+  type ProjectWatchItem,
   replayFailedMessage,
-  type TerminalWatchItem,
   type ThreadWatchItem,
 } from '../../contracts/watches.js';
 import type { Notices } from '../domain/notices.js';
@@ -26,8 +20,8 @@ import type { Notices } from '../domain/notices.js';
  * Socket.IO namespaces (bundles/foundation/transport/src/host/sockets/workspace.ts) over
  * a stream observer instead of a socket. Each watch subscribes to the runtime
  * notices first, then reads the durable snapshot; what arrives in between is
- * buffered, Thread events are deduplicated against the replay and delivered
- * gap-free, and terminal output is never buffered.
+ * buffered, and Thread events are deduplicated against the replay and
+ * delivered gap-free.
  */
 
 /** The durable reads a snapshot needs, the same the transport socket makes. */
@@ -40,7 +34,6 @@ export interface WatchReads {
   ): Promise<readonly ThreadEvent[]>;
   project(projectId: string): Promise<Project | undefined>;
   projectThreads(projectId: string): Promise<readonly Thread[]>;
-  terminals(projectId: string): Promise<readonly Terminal[]>;
 }
 
 export interface Watches {
@@ -50,11 +43,7 @@ export interface Watches {
   ): Disposable;
   project(
     input: { readonly projectId: string },
-    listener: StreamListener<LegacyProjectWatchItem>,
-  ): Disposable;
-  terminals(
-    projectId: string,
-    listener: StreamListener<TerminalWatchItem>,
+    listener: StreamListener<ProjectWatchItem>,
   ): Disposable;
 }
 
@@ -297,63 +286,13 @@ export const createWatches = ({
             reads.project(projectId),
             reads.projectThreads(projectId),
           ]);
-          // Read once after the tree, where the socket snapshot reads it.
-          const terminals = await reads.terminals(projectId);
           if (!stream.open) return;
           stream.next({
             kind: 'snapshot',
             projectId,
             project: record ?? null,
             threads,
-            terminals,
           });
-          notified.release();
-        } catch {
-          watch.fail();
-        }
-      })();
-
-      return watch.disposable;
-    },
-
-    terminals: (projectId, listener) => {
-      const stream = openStream(listener);
-      const notified = gate(stream);
-      const watch = follow(
-        stream,
-        (notice) => {
-          switch (notice.kind) {
-            case 'terminalUpdated':
-              if (notice.value.projectId === projectId)
-                notified.push({ kind: 'updated', terminal: notice.value });
-              return;
-            case 'terminalRemoved':
-              if (notice.projectId === projectId)
-                notified.push({
-                  kind: 'removed',
-                  projectId,
-                  threadId: notice.threadId,
-                  terminalId: notice.terminalId,
-                });
-              return;
-            case 'terminalOutput':
-              // A reconnect reads the bounded terminal snapshot instead of a
-              // second, unbounded copy of stdout buffered here.
-              if (notice.value.projectId === projectId && notified.ready)
-                stream.next({ kind: 'output', output: notice.value });
-              return;
-            default:
-              return;
-          }
-        },
-        () => notified.clear(),
-      );
-
-      void (async () => {
-        try {
-          const terminals = await reads.terminals(projectId);
-          if (!stream.open) return;
-          stream.next({ kind: 'snapshot', projectId, terminals });
           notified.release();
         } catch {
           watch.fail();

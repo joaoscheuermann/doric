@@ -26,14 +26,13 @@ import {
   type ThreadEvent,
 } from './model.js';
 import {
-  type LegacyProjectWatchItem,
   type ProjectWatchInput,
   type ProjectWatchItem,
   watchMethods,
 } from './watches.js';
 
 /*
- * runtime/v1: Projects, boot recovery, host stop and the live notices of the
+ * runtime/v2: Projects, boot recovery, host stop and the live notices of the
  * workspace (design 57 §2.2). API mínima: one method per WorkspaceService
  * operation the transport and the kernel call today.
  */
@@ -182,18 +181,6 @@ export interface Runtime {
   ): Disposable;
 }
 
-/**
- * `Runtime` whose `watchProject` snapshot also carries the Project's
- * terminals. runtime/v1 1.3.0; leaves in step 7(c).
- */
-export interface LegacyRuntime extends Omit<Runtime, 'watchProject'> {
-  watchProject(
-    input: ProjectWatchInput,
-    listener: StreamListener<LegacyProjectWatchItem>,
-    call?: CallArg,
-  ): Disposable;
-}
-
 const optional = <T extends z.ZodType>(schema: T) => schema.optional();
 
 export const recoverySummarySchema: z.ZodType<
@@ -261,12 +248,4 @@ export const runtimeMethods = {
   watchProject: watchMethods.project,
 } as const;
 
-/** The methods of runtime/v1 1.3.0; leaves in step 7(c). */
-export const legacyRuntimeMethods = {
-  ...runtimeMethods,
-  watchProject: watchMethods.legacyProject,
-} as const;
-
-/** runtime/v1 1.3.0; leaves in step 7(c). */
-export const RuntimeV1 = ref<LegacyRuntime>('runtime/v1');
 export const RuntimeV2 = ref<Runtime>('runtime/v2');

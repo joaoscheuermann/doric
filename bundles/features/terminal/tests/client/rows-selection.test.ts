@@ -4,9 +4,9 @@
 // (`layout.tabs/v2.current()`) is that terminal's tab, `terminal:<id>`. The
 // element subscribes to the tabs only while its Thread has terminals.
 //
-// The store, `workspace.selection/v1`, `runtime.records/v1`, `layout.tabs/v2`
-// and `navigation/v1` are fakes the test drives; happy-dom renders the
-// element.
+// The store, `workspace.selection/v1`, `layout.tabs/v2` and `navigation/v1`
+// are fakes the test drives, and `runtime.records/v1` is the runtime's own
+// in-memory fake (`runtime/testing`); happy-dom renders the element.
 
 import assert from 'node:assert/strict';
 import * as nodeModule from 'node:module';
@@ -14,6 +14,8 @@ import { afterEach, describe, test } from 'node:test';
 
 import type { Disposable, Services } from 'bundle/contracts';
 import type { ReactElementInstance } from 'desktop/ui/react-element';
+import type { Thread } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
 import type { Terminal } from '../../src/client/domain/terminals.js';
 import type { TerminalClient } from '../../src/client/elements.js';
@@ -121,15 +123,23 @@ const fakeServices = ({ tabs = true, navigation = true }: Peers = {}) => {
     params: { projectId: PROJECT, threadId: route },
   });
 
-  const record = (id: string) =>
-    [THREAD_A, THREAD_B, THREAD_C].includes(id)
-      ? { id, projectId: PROJECT }
-      : undefined;
+  const record = (id: string): Thread => ({
+    id,
+    projectId: PROJECT,
+    name: id,
+    state: 'ready',
+    lastSequence: 0,
+    cwd: '/workspace',
+    createdAt: '2026-11-10T09:00:00.000Z',
+    updatedAt: '2026-11-10T09:00:00.000Z',
+  });
+  const records = createRecordsApi({
+    threads: [THREAD_A, THREAD_B, THREAD_C].map(record),
+  });
+  // The fake describes a Project's Threads from its first `threads` read on.
+  records.threads(PROJECT);
   const apis: Record<string, unknown> = {
-    'runtime.records/v1': {
-      thread: (id: string) => record(id),
-      subscribe: (): Disposable => ({ dispose: () => undefined }),
-    },
+    'runtime.records/v1': records,
     'workspace.selection/v1': {
       current: () => ({ projectId: PROJECT, threadId: route }),
       subscribe: (): Disposable => ({ dispose: () => undefined }),

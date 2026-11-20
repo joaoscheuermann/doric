@@ -2,7 +2,8 @@
 // phase 3, T3.6): it provides `runtime.records/v1` and nothing else on the
 // client, and calls no method of `runtime/v2` or `runtime.threads/v1` until a
 // read or a `follow` asks. Bundle isolation step 7(a): the client reads the
-// host's Projects through `runtime/v2`, never `runtime/v1`.
+// host's Projects through `runtime/v2`, and reaches the host through no other
+// contract than it and `runtime.threads/v1`.
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -86,7 +87,7 @@ void test('activation with an unreachable host calls no host method', async () =
   assert.deepEqual(hostCalls, []);
 });
 
-void test('a Projects read reaches the host through runtime/v2, never runtime/v1', async () => {
+void test('a Projects read reaches the host through runtime/v2 and runtime.threads/v1 only', async () => {
   const hostCalls: string[] = [];
   const provided: { readonly id: string; readonly methods: object }[] = [];
   /** A host contract whose every method is recorded and answers empty. */
@@ -131,7 +132,11 @@ void test('a Projects read reaches the host through runtime/v2, never runtime/v1
 
   assert.ok(hostCalls.includes('runtime/v2.projects'), hostCalls.join(', '));
   assert.deepEqual(
-    hostCalls.filter((call) => call.startsWith('runtime/v1.')),
+    hostCalls.filter(
+      (call) =>
+        !call.startsWith('runtime/v2.') &&
+        !call.startsWith('runtime.threads/v1.'),
+    ),
     [],
   );
   if (typeof cleanup === 'function') await cleanup();

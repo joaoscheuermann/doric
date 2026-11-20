@@ -1,8 +1,9 @@
-// The runtime contracts this bundle calls, built from their IDs with local
-// shapes (the way `layout` and `notifications` reach their peers): the
-// runtime itself imports `terminal/contracts`, so importing
-// `runtime/contracts` here would close a cycle between the two projects.
-// Each shape is the runtime's own, narrowed to what this bundle calls.
+// The runtime contracts this bundle's host part calls, built from their IDs
+// with local shapes (the way `layout` and `notifications` reach their peers).
+// They were copies because the runtime imported `terminal/contracts`; it no
+// longer does (bundle isolation 7(c)), and the client part imports the
+// runtime's contracts, but the host part keeps these. Each shape is the
+// runtime's own, narrowed to what this bundle calls.
 
 import { type CallArg, defineHook, defineHooks, ref } from 'bundle/contracts';
 import type { Sandbox } from 'sandbox';

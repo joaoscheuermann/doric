@@ -12,8 +12,8 @@ import { createHarness, deferred, type HarnessRun } from './support/harness.js';
 /*
  * Ported from agents/doric tests/workspace-cwd.test.ts (design 57 §13.1,
  * stage 5 "Lease and lease reads"): the working directory rule through
- * runtime.threads/v1 (route), runtime.workspace/v1 (the cwd tool) and the
- * runtime.lease/v1 Git read.
+ * runtime.threads/v1 (route) and runtime.workspace/v1 (the cwd tool and the
+ * hint refresh a Git read asks for).
  */
 
 /** The porcelain-v2 document of a clean repository, as Git prints it. */
@@ -93,43 +93,6 @@ const sandboxWithAlpha = (git: FakeGitProbe = {}) =>
     ],
     repositories: [{ path: 'alpha', git: { status: clean, ...git } }],
   });
-
-void test('refuses branch switching while a prompt is running in the same worktree', async () => {
-  const running = deferred<string>();
-  const { harness, service } = serviceAt(
-    sandboxWithAlpha(),
-    () => running.promise,
-  );
-  try {
-    const project = await service.projects.create('Project');
-    await harness.projectState(project.id, 'ready');
-    const thread = await createThread(service, project.id);
-    await service.threads.setCwd(thread.id, '/workspace/alpha');
-    await service.threads.prompt(thread.id, 'Work');
-    await harness.threadState(thread.id, 'running');
-    const result = await service.threads.branches(thread.id, 'feature');
-    assert.equal(result.status, 'refused');
-  } finally {
-    running.resolve('done');
-    await service.dispose();
-  }
-});
-
-void test('refuses a stale branch selection after the working directory changes', async () => {
-  const { harness, service } = serviceAt(sandboxWithAlpha());
-  try {
-    const project = await service.projects.create('Project');
-    await harness.projectState(project.id, 'ready');
-    const thread = await createThread(service, project.id);
-    await service.threads.setCwd(thread.id, '/workspace/alpha');
-    assert.equal(
-      (await service.threads.branches(thread.id, 'main', '/workspace')).status,
-      'refused',
-    );
-  } finally {
-    await service.dispose();
-  }
-});
 
 void test('refuses a directory that reads as inside the root but resolves outside it', async () => {
   // A symbolic link in the workspace pointing out of it: its lexical path is
@@ -324,63 +287,7 @@ void test('keeps a prompt working directory its own, and answers one Thread at a
   await service.dispose();
 });
 
-void test('answers the Git summary of a Thread working directory', async () => {
-  const { harness, service } = serviceAt(
-    fakeSandbox({
-      repositories: [
-        {
-          path: '',
-          git: { status: committed, origin: 'git@github.com:owner/repo.git' },
-        },
-      ],
-    }),
-  );
-  const project = await service.projects.create('Project');
-  await harness.projectState(project.id, 'ready');
-  const thread = await createThread(service, project.id);
-
-  const summary = await service.threads.git(thread.id);
-  assert.equal(summary.status, 'ready');
-  if (summary.status !== 'ready') throw new Error('No summary');
-  assert.deepEqual(summary.git, {
-    repo: true,
-    root: '/workspace',
-    head: 'main',
-    detached: false,
-    unborn: false,
-    upstream: 'origin/main',
-    ahead: 0,
-    behind: 1,
-    dirty: { staged: 0, modified: 0, untracked: 0 },
-    conflicted: 0,
-    operation: null,
-    worktree: false,
-    shallow: false,
-    stash: 0,
-    submodules: 0,
-  });
-  assert.deepEqual(await service.threads.git(randomUUID()), {
-    status: 'missing',
-  });
-  await service.dispose();
-});
-
-void test('answers that a working directory holding no repository is not one', async () => {
-  const { harness, service } = serviceAt(
-    fakeSandbox({ entries: [{ path: 'plain/file.txt', content: 'x' }] }),
-  );
-  const project = await service.projects.create('Project');
-  await harness.projectState(project.id, 'ready');
-  const thread = await createThread(service, project.id);
-
-  assert.deepEqual(await service.threads.git(thread.id), {
-    status: 'ready',
-    git: { repo: false },
-  });
-  await service.dispose();
-});
-
-void test('probes the sandbox on every read, and publishes a hint only when it changes', async () => {
+void test('probes the sandbox on every hint refresh, and publishes the hint only when it changes', async () => {
   const live = liveSandbox(fakeSandbox({ entries: [{ path: 'alpha' }] }));
   const settled = deferred();
   const { harness, service, updated } = serviceAt(live.handle, async () => {
@@ -396,14 +303,24 @@ void test('probes the sandbox on every read, and publishes a hint only when it c
   const project = await service.projects.create('Project');
   await harness.projectState(project.id, 'ready');
   const thread = await createThread(service, project.id);
+  // The refresh a Git read asks for (git.commands/v1 `status`): the
+  // runtime probes the Thread's directory under its lock, then runs the task.
+  const refresh = () =>
+    service.threads.withThread(
+      thread.id,
+      { exclusive: false, refreshHint: true },
+      async () => 'read',
+    );
+  updated.length = 0;
 
-  const first = await service.threads.git(thread.id);
-  assert.deepEqual(first, { status: 'ready', git: { repo: false } });
+  assert.deepEqual(await refresh(), { status: 'ready', value: 'read' });
+  assert.equal((await service.threads.find(thread.id))?.cwdRepo, undefined);
+  assert.deepEqual(updated, []);
 
-  // The sandbox moves on without the directory moving, and the very next read
-  // observes it: a working directory changes under the agent while a prompt
-  // runs, so a read probes rather than answering what the last read saw. Here
-  // the workspace root itself becomes a repository.
+  // The sandbox moves on without the directory moving, and the very next
+  // refresh observes it: a working directory changes under the agent while a
+  // prompt runs, so a refresh probes rather than keeping what the last one
+  // saw. Here the workspace root itself becomes a repository.
   live.state.current = fakeSandbox({
     entries: [{ path: 'alpha' }, { path: 'alpha/src' }],
     repositories: [
@@ -413,18 +330,17 @@ void test('probes the sandbox on every read, and publishes a hint only when it c
       },
     ],
   });
-  const second = await service.threads.git(thread.id);
-  assert.ok(second.status === 'ready' && second.git.repo);
-  assert.equal(second.git.root, '/workspace');
+  await refresh();
+  assert.equal((await service.threads.find(thread.id))?.cwdRepo, 'git');
+  assert.deepEqual(
+    updated.map(({ id, cwdRepo }) => ({ id, cwdRepo })),
+    [{ id: thread.id, cwdRepo: 'git' }],
+  );
 
-  // Moving into the repository it holds re-roots the summary, and the record's
-  // hint follows the directory.
+  // Moving into the repository it holds keeps the hint with the directory.
   live.state.current = sandboxWithAlpha({ status: committed });
   const moved = await service.threads.setCwd(thread.id, 'alpha');
   assert.equal(moved.status, 'updated');
-  const scoped = await service.threads.git(thread.id);
-  assert.ok(scoped.status === 'ready' && scoped.git.repo);
-  assert.equal(scoped.git.root, '/workspace/alpha');
   assert.equal((await service.threads.find(thread.id))?.cwdRepo, 'git');
 
   // The job's own work becomes observable when it settles: the record's hint is
@@ -433,13 +349,11 @@ void test('probes the sandbox on every read, and publishes a hint only when it c
   await settled.promise;
   await until(() => updated.some(({ cwdRepo }) => cwdRepo === 'github'));
   assert.equal((await service.threads.find(thread.id))?.cwdRepo, 'github');
-  const settledSummary = await service.threads.git(thread.id);
-  assert.ok(settledSummary.status === 'ready' && settledSummary.git.repo);
-  assert.equal(settledSummary.git.behind, 1);
 
-  // Reading again finds the same hint, so nothing is published for it.
+  // Refreshing again finds the same hint, so nothing is published for it.
+  await harness.threadState(thread.id, 'ready');
   updated.length = 0;
-  await service.threads.git(thread.id);
+  await refresh();
   assert.deepEqual(updated, []);
   await service.dispose();
 });

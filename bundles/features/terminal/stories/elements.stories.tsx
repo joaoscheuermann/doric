@@ -6,6 +6,8 @@ import {
   SidebarScope,
 } from 'desktop/ui/sidebar';
 import { useState } from 'react';
+import type { Thread } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
 import { defineTerminalElements } from '../src/client/elements.js';
 import { ElementHost } from './support/element-host.js';
@@ -31,13 +33,22 @@ const useElements = (selected: boolean) =>
       store: storyTerminalStore(),
       open: () => undefined,
     });
-    const record = { id: threadId, projectId: 'prj_checkout' };
+    const record: Thread = {
+      id: threadId,
+      projectId: 'prj_checkout',
+      name: 'Split the payment form into steps',
+      state: 'ready',
+      lastSequence: 0,
+      cwd: '/workspace',
+      createdAt: '2026-11-10T09:00:00.000Z',
+      updatedAt: '2026-11-10T09:00:00.000Z',
+    };
+    const records = createRecordsApi({ threads: [record] });
+    // The fake describes a Project's Threads from its first `threads` read on.
+    records.threads(record.projectId);
     const services = storyServices({
       apis: {
-        'runtime.records/v1': {
-          ...still,
-          thread: (id: string) => (id === threadId ? record : undefined),
-        },
+        'runtime.records/v1': records,
         'workspace.selection/v1': {
           ...still,
           current: () =>

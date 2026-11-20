@@ -1,4 +1,4 @@
-import type { SandboxEntry, SandboxSshAccess, SandboxTreeNode } from 'sandbox';
+import type { SandboxSshAccess } from 'sandbox';
 import { z } from 'zod';
 
 import type { PromptResult } from './threads.js';
@@ -88,39 +88,6 @@ export interface ThreadOutcome {
 
 /** The repository hint of a working directory's own root. */
 export type CwdRepo = 'git' | 'github';
-
-/** The one thing a repository can be part-way through. */
-export type GitOperation =
-  | 'merge'
-  | 'rebase'
-  | 'cherry-pick'
-  | 'revert'
-  | 'bisect';
-
-/** The Git summary of one Thread's working directory. */
-export type ThreadGit =
-  | { readonly repo: false }
-  | {
-      readonly repo: true;
-      readonly root: string;
-      readonly head: string;
-      readonly detached: boolean;
-      readonly unborn: boolean;
-      readonly upstream: string | null;
-      readonly ahead: number;
-      readonly behind: number;
-      readonly dirty: {
-        readonly staged: number;
-        readonly modified: number;
-        readonly untracked: number;
-      };
-      readonly conflicted: number;
-      readonly operation: GitOperation | null;
-      readonly worktree: boolean;
-      readonly shallow: boolean;
-      readonly stash: number;
-      readonly submodules: number;
-    };
 
 /**
  * Who opened a Thread: the reader (`user`) or the agent that spawned it
@@ -344,10 +311,6 @@ export type CwdResult =
   | { readonly status: 'inactive' }
   | { readonly status: 'refused'; readonly change: CwdRefusal };
 
-export type ThreadGitResult =
-  | { readonly status: 'ready'; readonly git: ThreadGit }
-  | { readonly status: 'missing' | 'inactive' | 'pending' };
-
 // Lease-dependent Project reads --------------------------------------------
 
 export type ProjectLeaseState =
@@ -364,122 +327,7 @@ export type ProjectSsh =
       readonly ssh: SandboxSshAccess;
     };
 
-export type ProjectFiles =
-  | { readonly status: ProjectLeaseState }
-  | {
-      readonly status: 'ready';
-      readonly path: string;
-      readonly entries: readonly SandboxEntry[];
-    }
-  | { readonly status: 'invalid_path' | 'not_found' | 'not_directory' };
-
-export type ProjectTree =
-  | { readonly status: ProjectLeaseState }
-  | {
-      readonly status: 'ready';
-      readonly path: string;
-      readonly entries: readonly SandboxTreeNode[];
-    }
-  | { readonly status: 'invalid_path' | 'not_found' | 'not_directory' };
-
-export type ProjectFile =
-  | { readonly status: ProjectLeaseState }
-  | {
-      readonly status: 'ready';
-      readonly path: string;
-      readonly content: string;
-      readonly truncated: boolean;
-      readonly binary: boolean;
-    }
-  | { readonly status: 'invalid_path' | 'not_found' | 'not_file' };
-
-export type ProjectChangeStatus =
-  | 'added'
-  | 'modified'
-  | 'deleted'
-  | 'renamed'
-  | 'untracked';
-
-export interface ProjectChange {
-  readonly path: string;
-  readonly status: ProjectChangeStatus;
-}
-
-export interface ProjectChangeSet {
-  readonly path: string;
-  readonly diff: string;
-  readonly changes: readonly ProjectChange[];
-}
-
-export type ProjectDiff =
-  | { readonly status: ProjectLeaseState }
-  | {
-      readonly status: 'ready';
-      readonly path?: string;
-      readonly repositories: readonly ProjectChangeSet[];
-    }
-  | { readonly status: 'invalid_path' | 'not_found' };
-
-export type ChangeStatus =
-  | 'added'
-  | 'modified'
-  | 'deleted'
-  | 'renamed'
-  | 'untracked'
-  | 'conflicted';
-
-export interface FileChange {
-  readonly path: string;
-  readonly originalPath?: string;
-  readonly status: ChangeStatus;
-  readonly staged: boolean;
-  readonly unstaged: boolean;
-  readonly indexStatus: string;
-  readonly worktreeStatus: string;
-}
-
-export interface RepositoryChanges {
-  readonly path: string;
-  readonly changes: readonly FileChange[];
-  readonly added: number;
-  readonly removed: number;
-}
-
-export interface FileDiff extends FileChange {
-  readonly repository: string;
-  readonly original: string;
-  readonly modified: string;
-  readonly binary: boolean;
-  readonly truncated: boolean;
-}
-
-export type ProjectChanges =
-  | { readonly status: ProjectLeaseState | 'invalid_path' | 'not_found' }
-  | {
-      readonly status: 'ready';
-      readonly path?: string;
-      readonly repositories: readonly RepositoryChanges[];
-    };
-
-export type ProjectFileDiff =
-  | { readonly status: ProjectLeaseState | 'invalid_path' | 'not_found' }
-  | { readonly status: 'ready'; readonly diff: FileDiff };
-
-/** One sandbox's own resource usage, or why there is no reading. */
-export interface ContainerResources {
-  readonly status: 'ready' | 'unavailable';
-  readonly at: string;
-  readonly cpuPercent?: number;
-  readonly cpuCount?: number;
-  readonly memoryUsedBytes?: number;
-  readonly memoryLimitBytes?: number;
-}
-
-export type ProjectResources =
-  | { readonly status: ProjectLeaseState }
-  | { readonly status: 'ready'; readonly container: ContainerResources };
-
-// Queue, usage, branches ----------------------------------------------------
+// Queue, usage --------------------------------------------------------------
 
 export interface QueueItem {
   readonly promptId: string;
@@ -556,24 +404,6 @@ export interface ThreadUsage {
     readonly parentThreadId?: string;
   })[];
 }
-
-export interface Branch {
-  readonly name: string;
-  readonly current: boolean;
-  readonly commit: string;
-  readonly subject: string;
-  readonly worktree: string;
-}
-
-export interface Branches {
-  readonly branches: readonly Branch[];
-  readonly blocked?: string;
-}
-
-export type BranchResult =
-  | { readonly status: 'ready'; readonly value: Branches }
-  | { readonly status: 'missing' | 'inactive' | 'pending' }
-  | { readonly status: 'refused'; readonly message: string };
 
 // Terminals -----------------------------------------------------------------
 
@@ -802,41 +632,6 @@ export const cwdResultSchema: z.ZodType<CwdResult, CwdResult> = z.union([
   statuses(['missing', 'inactive']),
 ]);
 
-export const threadGitSchema: z.ZodType<ThreadGit, ThreadGit> = z.union([
-  z.looseObject({ repo: z.literal(false) }),
-  z.looseObject({
-    repo: z.literal(true),
-    root: z.string(),
-    head: z.string(),
-    detached: z.boolean(),
-    unborn: z.boolean(),
-    upstream: z.string().nullable(),
-    ahead: z.number(),
-    behind: z.number(),
-    dirty: z.looseObject({
-      staged: z.number(),
-      modified: z.number(),
-      untracked: z.number(),
-    }),
-    conflicted: z.number(),
-    operation: z
-      .enum(['merge', 'rebase', 'cherry-pick', 'revert', 'bisect'])
-      .nullable(),
-    worktree: z.boolean(),
-    shallow: z.boolean(),
-    stash: z.number(),
-    submodules: z.number(),
-  }),
-]);
-
-export const threadGitResultSchema: z.ZodType<
-  ThreadGitResult,
-  ThreadGitResult
-> = z.union([
-  z.looseObject({ status: z.literal('ready'), git: threadGitSchema }),
-  statuses(['missing', 'inactive', 'pending']),
-]);
-
 export const sandboxSshAccessSchema: z.ZodType<
   SandboxSshAccess,
   SandboxSshAccess
@@ -849,178 +644,11 @@ export const sandboxSshAccessSchema: z.ZodType<
   hostKeyFingerprint: z.string(),
 });
 
-const sandboxEntrySchema: z.ZodType<SandboxEntry, SandboxEntry> = z.looseObject(
-  {
-    name: z.string(),
-    path: z.string(),
-    type: z.enum(['directory', 'file']),
-    size: z.number().optional(),
-  },
-);
-
-const sandboxTreeNodeSchema: z.ZodType<SandboxTreeNode, SandboxTreeNode> =
-  z.looseObject({
-    name: z.string(),
-    path: z.string(),
-    type: z.enum(['directory', 'file']),
-    size: z.number().optional(),
-    get children() {
-      return z.array(sandboxTreeNodeSchema).optional();
-    },
-  });
-
 export const projectSshSchema: z.ZodType<ProjectSsh, ProjectSsh> = z.union([
   z.looseObject({
     status: z.literal('ready'),
     vmId: z.string(),
     ssh: sandboxSshAccessSchema,
-  }),
-  statuses(leaseStates),
-]);
-
-export const projectFilesSchema: z.ZodType<ProjectFiles, ProjectFiles> =
-  z.union([
-    z.looseObject({
-      status: z.literal('ready'),
-      path: z.string(),
-      entries: z.array(sandboxEntrySchema),
-    }),
-    statuses([
-      ...leaseStates,
-      'invalid_path',
-      'not_found',
-      'not_directory',
-    ] as const),
-  ]);
-
-export const projectTreeSchema: z.ZodType<ProjectTree, ProjectTree> = z.union([
-  z.looseObject({
-    status: z.literal('ready'),
-    path: z.string(),
-    entries: z.array(sandboxTreeNodeSchema),
-  }),
-  statuses([
-    ...leaseStates,
-    'invalid_path',
-    'not_found',
-    'not_directory',
-  ] as const),
-]);
-
-export const projectFileSchema: z.ZodType<ProjectFile, ProjectFile> = z.union([
-  z.looseObject({
-    status: z.literal('ready'),
-    path: z.string(),
-    content: z.string(),
-    truncated: z.boolean(),
-    binary: z.boolean(),
-  }),
-  statuses([...leaseStates, 'invalid_path', 'not_found', 'not_file'] as const),
-]);
-
-const projectChangeSetSchema: z.ZodType<ProjectChangeSet, ProjectChangeSet> =
-  z.looseObject({
-    path: z.string(),
-    diff: z.string(),
-    changes: z.array(
-      z.looseObject({
-        path: z.string(),
-        status: z.enum([
-          'added',
-          'modified',
-          'deleted',
-          'renamed',
-          'untracked',
-        ]),
-      }),
-    ),
-  });
-
-export const projectDiffSchema: z.ZodType<ProjectDiff, ProjectDiff> = z.union([
-  z.looseObject({
-    status: z.literal('ready'),
-    path: z.string().optional(),
-    repositories: z.array(projectChangeSetSchema),
-  }),
-  statuses([...leaseStates, 'invalid_path', 'not_found'] as const),
-]);
-
-const fileChangeShape = {
-  path: z.string(),
-  originalPath: z.string().optional(),
-  status: z.enum([
-    'added',
-    'modified',
-    'deleted',
-    'renamed',
-    'untracked',
-    'conflicted',
-  ]),
-  staged: z.boolean(),
-  unstaged: z.boolean(),
-  indexStatus: z.string(),
-  worktreeStatus: z.string(),
-};
-
-export const fileChangeSchema: z.ZodType<FileChange, FileChange> =
-  z.looseObject(fileChangeShape);
-
-export const repositoryChangesSchema: z.ZodType<
-  RepositoryChanges,
-  RepositoryChanges
-> = z.looseObject({
-  path: z.string(),
-  changes: z.array(fileChangeSchema),
-  added: z.number(),
-  removed: z.number(),
-});
-
-export const fileDiffSchema: z.ZodType<FileDiff, FileDiff> = z.looseObject({
-  ...fileChangeShape,
-  repository: z.string(),
-  original: z.string(),
-  modified: z.string(),
-  binary: z.boolean(),
-  truncated: z.boolean(),
-});
-
-export const projectChangesSchema: z.ZodType<ProjectChanges, ProjectChanges> =
-  z.union([
-    z.looseObject({
-      status: z.literal('ready'),
-      path: z.string().optional(),
-      repositories: z.array(repositoryChangesSchema),
-    }),
-    statuses([...leaseStates, 'invalid_path', 'not_found'] as const),
-  ]);
-
-export const projectFileDiffSchema: z.ZodType<
-  ProjectFileDiff,
-  ProjectFileDiff
-> = z.union([
-  z.looseObject({ status: z.literal('ready'), diff: fileDiffSchema }),
-  statuses([...leaseStates, 'invalid_path', 'not_found'] as const),
-]);
-
-export const containerResourcesSchema: z.ZodType<
-  ContainerResources,
-  ContainerResources
-> = z.looseObject({
-  status: z.enum(['ready', 'unavailable']),
-  at: z.string(),
-  cpuPercent: z.number().optional(),
-  cpuCount: z.number().optional(),
-  memoryUsedBytes: z.number().optional(),
-  memoryLimitBytes: z.number().optional(),
-});
-
-export const projectResourcesSchema: z.ZodType<
-  ProjectResources,
-  ProjectResources
-> = z.union([
-  z.looseObject({
-    status: z.literal('ready'),
-    container: containerResourcesSchema,
   }),
   statuses(leaseStates),
 ]);
@@ -1114,27 +742,6 @@ export const threadUsageSchema: z.ZodType<ThreadUsage, ThreadUsage> =
       }),
     ),
   });
-
-export const branchSchema: z.ZodType<Branch, Branch> = z.looseObject({
-  name: z.string(),
-  current: z.boolean(),
-  commit: z.string(),
-  subject: z.string(),
-  worktree: z.string(),
-});
-
-export const branchResultSchema: z.ZodType<BranchResult, BranchResult> =
-  z.union([
-    z.looseObject({
-      status: z.literal('ready'),
-      value: z.looseObject({
-        branches: z.array(branchSchema),
-        blocked: z.string().optional(),
-      }),
-    }),
-    z.looseObject({ status: z.literal('refused'), message: z.string() }),
-    statuses(['missing', 'inactive', 'pending']),
-  ]);
 
 export const terminalRecordSchema: z.ZodType<Terminal, Terminal> =
   z.looseObject({

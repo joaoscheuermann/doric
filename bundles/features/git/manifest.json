@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "git",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -30,7 +30,7 @@
     "files.sandbox/v1",
     "files.refresh/v1",
     "files.open-file/v1",
-    "runtime.terminals/v1",
+    "terminal/v1",
     "chat.hooks/v2"
   ],
   "desktopScope": {

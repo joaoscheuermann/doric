@@ -157,10 +157,9 @@ locked, and `files`, `git`, `terminal`, `resources`, `mcp`, `screen` and
 provides), and so is `papercraft`, which requires `files/v1`; nothing else
 reports it.
 
-A custom `DORIC_COMPOSITION` that names `runtime/v1` under
-`required.contracts` names `runtime/v2` instead. The runtime provides both
-today. A later release stops providing `runtime/v1`, and a host whose
-composition still requires it then does not start.
+A custom `DORIC_COMPOSITION` names `runtime/v2` under `required.contracts`
+for the runtime's Projects. Runtime 3.0.0 provides no earlier version of that
+contract, so a host whose composition still requires one does not start.
 
 What each bundle owns:
 

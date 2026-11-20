@@ -14,9 +14,6 @@
   "exclude": ["src/client/**"],
   "references": [
     {
-      "path": "../../features/terminal"
-    },
-    {
       "path": "../../../packages/sandpool"
     },
     {

@@ -19,7 +19,7 @@ import {
  * Ported from agents/doric tests/workspace-restart.test.ts (design 57 §13.1,
  * stage 5 "Restart"; §13.2: PostgreSQL-backed): a runtime booting over the
  * durable records a previous host left, on the PostgreSQL storage. The boot
- * is `runtime/v1.recover()`, today's reconcile and resume sequence.
+ * is `runtime/v2.recover()`, today's reconcile and resume sequence.
  */
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
@@ -619,27 +619,16 @@ void test('boot restores idle Projects without rerunning prompts or reviving ter
       host.acquisitions.map((value) => value.identity),
       [project.id],
     );
-    assert.equal(
-      (await host.service.threads.git(owner.thread.id)).status,
-      'pending',
-    );
-    assert.equal(
-      (await host.service.threads.branches(owner.thread.id)).status,
-      'pending',
-    );
+    // A lease read waits for the acquisition in flight: it answers pending.
+    const leased = () =>
+      host.service.projects.withLease(project.id, async () => 'read');
+    assert.equal((await leased()).status, 'pending');
     assert.deepEqual(host.ran, []);
     ready.resolve();
     await until(
       async () => (await host.projects.record(project.id))?.state === 'ready',
     );
-    assert.equal(
-      (await host.service.threads.git(owner.thread.id)).status,
-      'ready',
-    );
-    assert.equal(
-      (await host.service.threads.branches(owner.thread.id)).status,
-      'ready',
-    );
+    assert.deepEqual(await leased(), { status: 'ready', value: 'read' });
     assert.deepEqual(host.ran, []);
     assert.equal(
       (await host.threads.unfinishedPrompts()).find(

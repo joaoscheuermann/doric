@@ -25,6 +25,7 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import { toast } from 'desktop/ui/sonner';
+import type { SHELL_HEADER_ACTIONS } from 'layout/contracts';
 
 import { TerminalServiceV1 } from '../contracts/index.js';
 import { createTerminalApi } from './api.js';
@@ -63,7 +64,7 @@ export const terminalRegions: readonly {
   readonly item: RegionItem;
 }[] = [
   {
-    region: 'shell.header.actions',
+    region: 'shell.header.actions' satisfies typeof SHELL_HEADER_ACTIONS,
     item: { id: 'terminal-new', tag: 'terminal-new-button', order: 10 },
   },
 ];

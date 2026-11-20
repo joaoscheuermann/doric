@@ -2,35 +2,16 @@ import { type CallArg, functionSchema, ref } from 'bundle/contracts';
 import type { Sandbox } from 'sandbox';
 import { z } from 'zod';
 
-import {
-  type BranchResult,
-  branchResultSchema,
-  type ProjectChanges,
-  type ProjectDiff,
-  type ProjectFile,
-  type ProjectFileDiff,
-  type ProjectFiles,
-  type ProjectResources,
-  type ProjectSsh,
-  type ProjectTree,
-  projectChangesSchema,
-  projectDiffSchema,
-  projectFileDiffSchema,
-  projectFileSchema,
-  projectFilesSchema,
-  projectResourcesSchema,
-  projectSshSchema,
-  projectTreeSchema,
-  type ThreadGitResult,
-  threadGitResultSchema,
-} from './model.js';
+import { type ProjectSsh, projectSshSchema } from './model.js';
 import { LOCAL_KEY } from './runtime.js';
 
 /*
  * runtime.lease/v1: the sandbox operations the stage-1 tools use on the
  * sandbox leased to the calling prompt's Project (call.scope), plus, from
  * stage 5, the lease-dependent reads of the current routes (API mínima). Exec
- * carries no abort signal and returns no byte arrays.
+ * carries no abort signal and returns no byte arrays. 1.3.0 (bundle isolation
+ * 7(c)): the reads of files, changes, resources and Git moved to the bundles
+ * that own them; `ssh` and `withLease` stay.
  */
 
 export interface LeaseExecInput {
@@ -104,32 +85,9 @@ export interface RuntimeLease {
   writeFile(path: string, content: string, call?: CallArg): Promise<void>;
 
   // Lease reads answering the current lease state without acquiring. Scope:
-  // `call.scope.projectId`; a call with no Project or Thread scope rejects
-  // with ContractError('invalid_input').
+  // `call.scope.projectId`; a call with no Project scope rejects with
+  // ContractError('invalid_input').
   ssh(call?: CallArg): Promise<ProjectSsh>;
-  files(
-    input: { readonly path?: string },
-    call?: CallArg,
-  ): Promise<ProjectFiles>;
-  tree(input: { readonly path?: string }, call?: CallArg): Promise<ProjectTree>;
-  file(input: { readonly path: string }, call?: CallArg): Promise<ProjectFile>;
-  diff(input: { readonly path?: string }, call?: CallArg): Promise<ProjectDiff>;
-  changes(
-    input: { readonly path?: string },
-    call?: CallArg,
-  ): Promise<ProjectChanges>;
-  fileDiff(
-    input: { readonly repository: string; readonly path: string },
-    call?: CallArg,
-  ): Promise<ProjectFileDiff>;
-  resources(call?: CallArg): Promise<ProjectResources>;
-  // Scope: `call.scope.threadId`.
-  git(call?: CallArg): Promise<ThreadGitResult>;
-  /** Reads (no branch) or switches (branch and cwd echo) under the Project lock. */
-  branches(
-    input: { readonly branch?: string; readonly cwd?: string },
-    call?: CallArg,
-  ): Promise<BranchResult>;
   /**
    * 1.1.0, local only: runs `task` on the sandbox the Project of
    * `call.scope.projectId` holds now, never acquiring one. The outcome
@@ -163,8 +121,6 @@ export const leaseTaskSchema = functionSchema<LeaseTask<unknown>>().meta({
   [LOCAL_KEY]: 'callback',
 });
 
-const optionalPath = z.object({ path: z.string().optional() }).strict();
-
 export const runtimeLeaseMethods = {
   describe: { input: z.tuple([]), output: leaseDescriptionSchema },
   exec: { input: leaseExecInputSchema, output: leaseExecResultSchema },
@@ -172,26 +128,6 @@ export const runtimeLeaseMethods = {
   readFileBytes: { input: z.string(), output: z.string() },
   writeFile: { input: z.tuple([z.string(), z.string()]), output: z.void() },
   ssh: { input: z.tuple([]), output: projectSshSchema },
-  files: { input: optionalPath, output: projectFilesSchema },
-  tree: { input: optionalPath, output: projectTreeSchema },
-  file: {
-    input: z.object({ path: z.string() }).strict(),
-    output: projectFileSchema,
-  },
-  diff: { input: optionalPath, output: projectDiffSchema },
-  changes: { input: optionalPath, output: projectChangesSchema },
-  fileDiff: {
-    input: z.object({ repository: z.string(), path: z.string() }).strict(),
-    output: projectFileDiffSchema,
-  },
-  resources: { input: z.tuple([]), output: projectResourcesSchema },
-  git: { input: z.tuple([]), output: threadGitResultSchema },
-  branches: {
-    input: z
-      .object({ branch: z.string().optional(), cwd: z.string().optional() })
-      .strict(),
-    output: branchResultSchema,
-  },
   withLease: { input: leaseTaskSchema, output: leaseOutcomeSchema },
 } as const;
 

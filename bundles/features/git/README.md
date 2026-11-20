@@ -66,8 +66,9 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   comparison. Thread reads run on the live Thread through
   `runtime.workspace/v1`, Project reads on the Project's current lease through
   `runtime.lease/v1`; none acquires a lease. While some bundle provides
-  `runtime.terminals/v1`, the Project's terminals feed the branch switch's busy
-  check; without one, only running prompts block a switch.
+  `terminal/v1` (listed under `optional`), the Project's terminals it lists
+  feed the branch switch's busy check; without one, only running prompts
+  block a switch.
 - `git.commands/v1@1.1.0` adds `discard`: it discards changes of one
   repository the Thread's working directory reads, either the listed `paths`
   or, without `paths`, every listed change. It cannot be undone, so it runs

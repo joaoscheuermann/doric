@@ -23,7 +23,6 @@
     "host-config": "0.0.1",
     "sandbox": "0.0.1",
     "sandpool": "0.0.1",
-    "terminal": "0.0.1",
     "tslib": "^2.3.0",
     "zod": "^4.4.3"
   },

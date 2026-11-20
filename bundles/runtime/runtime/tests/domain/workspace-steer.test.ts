@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { SandboxExecResult } from 'sandbox';
-
 import type { ThreadEvent } from '../../src/contracts/model.js';
 import { fakeSandbox } from '../support/sandbox.js';
 import {
@@ -275,35 +273,29 @@ void test('an interrupting steer aborts the current step and continues the same 
 void test('a background terminal result steers the prompt still running instead of queuing a turn', {
   timeout: 5000,
 }, async () => {
-  const terminalFinished = deferred<SandboxExecResult>();
   const ran: string[] = [];
   const taken: { readonly kind: string; readonly prompt: string }[] = [];
   const harness = createHarness({
-    sandbox: {
-      sandbox: {
-        ...fakeSandbox(),
-        start: async () => ({
-          result: terminalFinished.promise,
-          write: async () => undefined,
-          resize: async () => undefined,
-          terminate: async () => undefined,
-        }),
-      } as never,
-    },
+    sandbox: { sandbox: fakeSandbox() as never },
     execute: async (run) => {
       ran.push(run.job.prompt);
-      await run.tools.terminal.run({
-        command: 'npm test',
-        cwd: '/workspace',
-        timeoutMs: 0,
-        background: true,
-      });
-      terminalFinished.resolve({
-        stdout: 'ok',
-        stderr: '',
-        exitCode: 0,
-        stdoutBytes: new Uint8Array(),
-        stderrBytes: new Uint8Array(),
+      // A background terminal of this prompt finishes, and the terminal
+      // bundle delivers its result through runtime.threads/v1, while the
+      // prompt goes on.
+      void run.tools.threads.enqueueTerminalResult({
+        threadId: run.thread.id,
+        promptId: run.job.id,
+        terminalId: 'terminal-tests',
+        text: [
+          '# Background terminal result',
+          '',
+          'Terminal: terminal-tests',
+          `Originating prompt: ${run.job.id}`,
+          'Command: npm test',
+          'Exit code: 0',
+          '',
+          'ok',
+        ].join('\n'),
       });
       // The prompt keeps working until the result reaches its safe point.
       await harness.waitFor(async () => {

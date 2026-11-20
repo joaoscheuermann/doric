@@ -29,7 +29,7 @@ Read [`README.md`](README.md) for what it draws, its contracts and its slots.
 ## Rules
 
 - Projects and Threads are read from `runtime.records/v1`; call no method of
-  `runtime/v1` or `runtime.threads/v1` (`tests/records-boundary.test.ts`).
+  `runtime/v2` or `runtime.threads/v1` (`tests/records-boundary.test.ts`).
 - Only `workspace-sidebar` runs `useWorkspace`'s once-per-window effects
   (`useWorkspace({ effects: true })`); state two elements share lives in a
   module store (`stores/project-tabs.ts`, `stores/dashboard.ts`).

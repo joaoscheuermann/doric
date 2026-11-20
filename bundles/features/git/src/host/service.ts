@@ -14,11 +14,11 @@ import {
 } from 'bundle/contracts';
 import {
   RuntimeLeaseV1,
-  type RuntimeTerminals,
   RuntimeWorkspaceV1,
   type ThreadContext,
 } from 'runtime/contracts';
 import { workspacePathKind } from 'sandbox';
+import type { TerminalService } from 'terminal/contracts';
 
 import {
   type Branches,
@@ -48,7 +48,7 @@ export const busyMessage =
   'Wait for active prompts and terminal commands in this worktree to finish before switching branches.';
 
 /** The Project's tracked terminals, while some provider lists them. */
-export type TerminalList = () => Pick<RuntimeTerminals, 'list'> | undefined;
+export type TerminalList = () => Pick<TerminalService, 'list'> | undefined;
 
 /**
  * The working directories with running work in the Thread's Project: Threads

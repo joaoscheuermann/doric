@@ -1,7 +1,9 @@
 // Bundle isolation AC3.1 (docs/designs/bundle-isolation.md): from phase 3 the
-// workspace's client part (step 4(c), decision O10) calls no method of `runtime/v1` or `runtime.threads/v1`.
-// It reads and writes Projects and Threads through `runtime.records/v1` only,
-// so no source file under `src` names either host contract or its ref.
+// workspace's client part (step 4(c), decision O10) calls no method of the
+// runtime's host contracts, `runtime/v2` (which replaced the first major
+// in phase 7) or `runtime.threads/v1`. It reads and writes Projects and Threads
+// through `runtime.records/v1` only, so no source file under `src` names
+// either host contract or its ref.
 
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -16,14 +18,14 @@ const filesUnder = (directory: string): string[] =>
   });
 
 const forbidden = [
-  /\bRuntimeV1\b/,
+  /\bRuntimeV2\b/,
   /\bRuntimeThreadsV1\b/,
-  /'runtime\/v1'/,
+  /'runtime\/v2'/,
   /'runtime\.threads\/v1'/,
 ];
 
 describe('the workspace reaches the host records only through runtime.records/v1 (AC3.1)', () => {
-  test('no file under src names RuntimeV1, RuntimeThreadsV1, runtime/v1 or runtime.threads/v1', () => {
+  test('no file under src names RuntimeV2, RuntimeThreadsV1, runtime/v2 or runtime.threads/v1', () => {
     const files = filesUnder('bundles/desktop/workspace/src');
     assert.ok(files.length > 0, 'The workspace has no source file to read.');
 

@@ -45,26 +45,6 @@
     "papercraft.programs/v1": ["export", "library", "read"],
     "resources/v1": ["host", "project"],
     "runtime.attachments/v1": ["attach", "read"],
-    "runtime.lease/v1": [
-      "branches",
-      "changes",
-      "diff",
-      "file",
-      "fileDiff",
-      "files",
-      "git",
-      "resources",
-      "tree"
-    ],
-    "runtime.terminals/v1": [
-      "create",
-      "input",
-      "list",
-      "resize",
-      "snapshot",
-      "stop",
-      "watchProject"
-    ],
     "runtime.threads/v1": [
       "archiveThread",
       "compact",
@@ -92,16 +72,6 @@
       "usage",
       "viewThread",
       "watchThread"
-    ],
-    "runtime/v1": [
-      "createProject",
-      "deleteProject",
-      "projectActivity",
-      "projects",
-      "renameProject",
-      "setProjectColor",
-      "terminateProject",
-      "watchProject"
     ],
     "runtime/v2": [
       "createProject",

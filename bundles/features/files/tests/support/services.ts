@@ -22,7 +22,7 @@ import {
   sniffImageMediaType,
 } from 'runtime/contracts';
 import type { Sandbox } from 'sandbox';
-import { type Terminal, TerminalV1, terminalMethods } from 'terminal/contracts';
+import type { Terminal } from 'terminal/contracts';
 import {
   isBoundTool,
   type Tool,
@@ -45,8 +45,7 @@ export type AttachedImages = Map<string, { name: string; bytes: string }>;
 /**
  * Fake providers of the contracts this bundle requires, standing for the
  * prompt's lease and Thread exactly as the host adapter does: the lease
- * forwards to `sandbox`, the working directory to `host.workspace`, and, when
- * the facade carries terminals, `terminal/v1` to `host.terminals`.
+ * forwards to `sandbox` and the working directory to `host.workspace`.
  */
 /**
  * runtime.attachments/v1 as the runtime answers it: an image keeps its
@@ -139,23 +138,12 @@ const providers = (
       },
     }),
   }),
-  ...(host.terminals === undefined
-    ? []
-    : [
-        defineService(TerminalV1, {
-          run: defineMethod({
-            input: terminalMethods.run.input,
-            output: terminalMethods.run.output,
-            execute: (input) => (host.terminals as Terminal).run(input),
-          }),
-        }),
-      ]),
 ];
 
 export interface BoundServices {
   readonly services: Services;
   readonly call: Call;
-  /** The terminal/v1 stub when the facade carries terminals. */
+  /** No `terminal/v1` stub: the runtime's `Host` carries no terminals since bundle isolation 7(c). */
   readonly terminals: () => Terminal | undefined;
 }
 
@@ -169,9 +157,6 @@ export const filesServices = (
     bundle: { id: 'files' },
     provide: providers(sandbox, host, attached),
   });
-  const terminal =
-    host.terminals === undefined ? undefined : harness.services.use(TerminalV1);
-
   return {
     services: harness.services,
     call: harness.call({
@@ -179,7 +164,7 @@ export const filesServices = (
       threadId: 'thread-1',
       promptId: 'prompt-1',
     }),
-    terminals: () => terminal,
+    terminals: () => undefined,
   };
 };
 
@@ -229,8 +214,7 @@ export interface ActivatedTool {
 }
 
 /**
- * Activates the bundle over the fake lease and Thread (with `terminal/v1`
- * when the facade carries terminals) and returns what it registered with
+ * Activates the bundle over the fake lease and Thread and returns what it registered with
  * `tools/v1`, as the agent loop sees each tool for one prompt.
  */
 export const activatedTools = async (

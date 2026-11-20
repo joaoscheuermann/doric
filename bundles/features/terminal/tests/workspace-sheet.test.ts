@@ -3,12 +3,13 @@
 // (R18), and the bundle ships it as a patch, 1.1.8.
 // Step 4(d) moves the bundle to the workspace and runtime contracts, the
 // next patch, 1.1.9. Step 5(b) adds the chat elements, the minor 1.2.0.
+// Step 7(c) imports the client copies it kept, the patch 1.2.1.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-test('the terminal sheet scans the workspace client sources, at version 1.2.0', () => {
+test('the terminal sheet scans the workspace client sources, at version 1.2.1', () => {
   const sheet = readFileSync(
     'bundles/features/terminal/src/client/styles.css',
     'utf8',
@@ -27,5 +28,5 @@ test('the terminal sheet scans the workspace client sources, at version 1.2.0', 
     1,
     'The sheet does not scan the workspace client sources once.',
   );
-  assert.equal(manifest.version, '1.2.0');
+  assert.equal(manifest.version, '1.2.1');
 });

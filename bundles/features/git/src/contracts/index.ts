@@ -24,29 +24,82 @@ import {
   ref,
 } from 'bundle/contracts';
 import type { ReadState } from 'files/contracts';
-import type {
-  Branch,
-  FileDiff,
-  LeaseOutcome,
-  ProjectChangeSet,
-  RepositoryChanges,
-  ThreadGit,
-} from 'runtime/contracts';
+import type { LeaseOutcome } from 'runtime/contracts';
 import { z } from 'zod';
 
-import type { ChangeMark, ProjectChanges } from './reads.js';
-
-export type {
-  Branch,
-  FileChange,
-  FileDiff,
-  LeaseOutcome,
-  ProjectChangeSet,
+import type {
+  ChangeMark,
+  ProjectChangeStatus,
+  ProjectChanges,
+  ProjectFileChange,
+  ProjectFileDiff,
   RepositoryChanges,
-  ThreadGit,
-} from 'runtime/contracts';
+} from './reads.js';
+
+export type { LeaseOutcome } from 'runtime/contracts';
 
 export * from './reads.js';
+
+/** The one thing a repository can be part-way through. */
+export type GitOperation =
+  | 'merge'
+  | 'rebase'
+  | 'cherry-pick'
+  | 'revert'
+  | 'bisect';
+
+/** The Git summary of one Thread's working directory. */
+export type ThreadGit =
+  | { readonly repo: false }
+  | {
+      readonly repo: true;
+      readonly root: string;
+      readonly head: string;
+      readonly detached: boolean;
+      readonly unborn: boolean;
+      readonly upstream: string | null;
+      readonly ahead: number;
+      readonly behind: number;
+      readonly dirty: {
+        readonly staged: number;
+        readonly modified: number;
+        readonly untracked: number;
+      };
+      readonly conflicted: number;
+      readonly operation: GitOperation | null;
+      readonly worktree: boolean;
+      readonly shallow: boolean;
+      readonly stash: number;
+      readonly submodules: number;
+    };
+
+/** One local branch of a Thread's directory. */
+export interface Branch {
+  readonly name: string;
+  readonly current: boolean;
+  readonly commit: string;
+  readonly subject: string;
+  readonly worktree: string;
+}
+
+/** One changed path of a repository's tracked diff. */
+export interface ChangeSetEntry {
+  readonly path: string;
+  readonly status: Exclude<ProjectChangeStatus, 'conflicted'>;
+}
+
+/** One repository's tracked diff and the paths it changes. */
+export interface ProjectChangeSet {
+  readonly path: string;
+  readonly diff: string;
+  readonly changes: readonly ChangeSetEntry[];
+}
+
+/** One changed file of a repository, as the changes read lists it. */
+export type FileChange = ProjectFileChange;
+
+/** One changed file, HEAD against the working tree. */
+export type FileDiff = ProjectFileDiff;
 
 /** What a read on one live Thread answers. */
 export type ThreadOutcome<T> =

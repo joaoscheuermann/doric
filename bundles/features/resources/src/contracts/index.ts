@@ -1,9 +1,5 @@
 import { type CallArg, noInput, ref } from 'bundle/contracts';
-import {
-  type ContainerResources,
-  containerResourcesSchema,
-  type LeaseOutcome,
-} from 'runtime/contracts';
+import type { LeaseOutcome } from 'runtime/contracts';
 import { z } from 'zod';
 
 /*
@@ -13,7 +9,17 @@ import { z } from 'zod';
  * the provider into the `resources` bundle, which adds `project()`.
  */
 
-export type { ContainerResources, LeaseOutcome } from 'runtime/contracts';
+export type { LeaseOutcome } from 'runtime/contracts';
+
+/** One sandbox's own resource usage, or why there is no reading. */
+export interface ContainerResources {
+  readonly status: 'ready' | 'unavailable';
+  readonly at: string;
+  readonly cpuPercent?: number;
+  readonly cpuCount?: number;
+  readonly memoryUsedBytes?: number;
+  readonly memoryLimitBytes?: number;
+}
 
 /** The machine the host runs on, read from `node:os` on demand. */
 export interface HostResources {
@@ -51,6 +57,18 @@ export const hostResourcesSchema: z.ZodType<HostResources, HostResources> = z
     uptimeSeconds: z.number(),
   })
   .strict();
+
+export const containerResourcesSchema: z.ZodType<
+  ContainerResources,
+  ContainerResources
+> = z.looseObject({
+  status: z.enum(['ready', 'unavailable']),
+  at: z.string(),
+  cpuPercent: z.number().optional(),
+  cpuCount: z.number().optional(),
+  memoryUsedBytes: z.number().optional(),
+  memoryLimitBytes: z.number().optional(),
+});
 
 export const projectResourcesOutcomeSchema = z.union([
   z.looseObject({

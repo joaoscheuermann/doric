@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
 import {
+  activatedGit,
   fakeRuntime,
   gitOver,
   repository,
@@ -139,6 +140,37 @@ describe('git.commands/v1 branches', () => {
     assert.equal(await current(repo), 'main');
   });
 
+  // Bundle isolation 7(c), P2: the provisional switch refused every
+  // expression that names no local branch, an option and a revision included.
+  test('refuses a branch expression that names no local branch, and changes nothing', async (t) => {
+    const repo = await committed(t);
+    await repo.git('commit', '-q', '--allow-empty', '-m', 'Second');
+    await writeFile(join(repo.root, 'file'), 'local edits\n');
+    const { git, dispose } = gitOver(
+      repo.sandbox,
+      fakeRuntime({ cwd: repo.root }),
+    );
+    t.after(dispose);
+
+    for (const branch of [
+      'HEAD~1',
+      '--discard-changes',
+      'main; touch injected',
+    ]) {
+      const switched = await git({ threadId: 'thread-1' }).switchBranch({
+        threadId: 'thread-1',
+        branch,
+        cwd: repo.root,
+      });
+      assert.equal(switched.status, 'refused', branch);
+    }
+    assert.equal(await current(repo), 'main');
+    assert.equal(
+      await readFile(join(repo.root, 'file'), 'utf8'),
+      'local edits\n',
+    );
+  });
+
   test('blocks switching outside a repository and during a Git operation', async (t) => {
     const repo = await committed(t);
     const outside = gitOver(
@@ -255,6 +287,63 @@ describe('git.commands/v1 branches', () => {
         { status: state },
       );
     }
+  });
+
+  // T7.2: the busy check reads the Project's sessions from `terminal/v1`,
+  // the terminal bundle's own contract, once the activated host sees it.
+  test('blocks switching while terminal/v1 lists a running agent session in the repository', async (t) => {
+    const repo = await committed(t);
+    await repo.git('branch', 'feature');
+    const { git, dispose } = await activatedGit(
+      repo.sandbox,
+      fakeRuntime({
+        cwd: repo.root,
+        terminals: [
+          terminal({ origin: 'agent', command: 'npm test', cwd: repo.root }),
+        ],
+      }),
+    );
+    t.after(dispose);
+
+    const read = await git({ threadId: 'thread-1' }).branches('thread-1');
+    assert.equal(read.status, 'ready');
+    assert.equal(
+      read.status === 'ready' ? read.value.blocked : undefined,
+      busy,
+    );
+    assert.deepEqual(
+      await git({ threadId: 'thread-1' }).switchBranch({
+        threadId: 'thread-1',
+        branch: 'feature',
+        cwd: repo.root,
+      }),
+      { status: 'refused', message: busy },
+    );
+    assert.equal(await current(repo), 'main');
+  });
+
+  test('does not block switching while no bundle provides terminal/v1', async (t) => {
+    const repo = await committed(t);
+    await repo.git('branch', 'feature');
+    const { git, dispose } = await activatedGit(
+      repo.sandbox,
+      fakeRuntime({ cwd: repo.root }),
+    );
+    t.after(dispose);
+
+    const read = await git({ threadId: 'thread-1' }).branches('thread-1');
+    assert.equal(read.status, 'ready');
+    assert.equal(
+      read.status === 'ready' ? read.value.blocked : 'unread',
+      undefined,
+    );
+    const switched = await git({ threadId: 'thread-1' }).switchBranch({
+      threadId: 'thread-1',
+      branch: 'feature',
+      cwd: repo.root,
+    });
+    assert.equal(switched.status, 'ready');
+    assert.equal(await current(repo), 'feature');
   });
 
   test('reads and switches under the Project lock; the summary refreshes the hint', async (t) => {

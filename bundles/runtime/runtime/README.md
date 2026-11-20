@@ -15,14 +15,13 @@ window's records mirror, over `runtime/v2` and `runtime.threads/v1`. See the
 
 ## What it provides
 
-- `runtime/v1` — Projects (create, read, rename, color, terminate, delete,
-  activity), the runtime's watch streams, and the lifecycle methods recover,
-  adopt and drain.
-- `runtime/v2` 2.0.0 (runtime 2.10.0) — the methods of `runtime/v1`, with the
-  same inputs and outputs, except that the `snapshot` item of `watchProject`
-  has no `terminals`; a Project's terminals are read from `terminal/v1`.
-  `runtime/v1` 1.3.0 is still provided, unchanged, and leaves in a later
-  release.
+- `runtime/v2` 2.0.0 — Projects (create, read, rename, color, terminate,
+  delete, activity), the runtime's watch streams, and the lifecycle methods
+  recover, adopt and drain. The `snapshot` item of `watchProject` has no
+  `terminals`; a Project's terminals are read from the
+  [`terminal`](../../features/terminal/README.md) bundle's `terminal/v1`.
+  Runtime 3.0.0 no longer provides the first version of the contract, whose
+  snapshot carried them.
 - `runtime.threads/v1` — the Thread model: create, read, rename, prompt,
   steer, resume, retry, rewind, compact, pause, terminate and delete Threads,
   manage their prompt queues, and watch a Thread. `instruct` (bundles only, never
@@ -62,11 +61,13 @@ window's records mirror, over `runtime/v2` and `runtime.threads/v1`. See the
   Thread.
 - `runtime.lease/v1` — `describe`, `exec`, `readFile` and `writeFile` on the
   sandbox leased to the calling prompt's Project (`exec` carries no abort
-  signal and returns text only), lease reads that answer the lease state
-  without acquiring one, and `withLease`, which runs a task on the sandbox the
-  Project holds now.
-- `runtime.terminals/v1` — a Project's terminal sessions, delegated to the
-  [`terminal`](../../features/terminal/README.md) bundle while it is active.
+  signal and returns text only), `ssh`, which answers the lease state without
+  acquiring one, and `withLease`, which runs a task on the sandbox the Project
+  holds now. 1.3.0 (runtime 3.0.0) drops the reads of files, changes,
+  resources and Git: the [`files`](../../features/files/README.md),
+  [`git`](../../features/git/README.md) and
+  [`resources`](../../features/resources/README.md) bundles answer them over
+  `withLease` and `runtime.workspace/v1.withThread`.
 - `runtime.hooks/v1` — `onProjectReadyHook`, `onProjectClosingHook` and
   `onThreadsClosingHook`, which the runner awaits where it closes a Thread's
   terminals; `onPromptStartedHook` (the prompt, its source, the Thread's `cwd`
@@ -160,9 +161,9 @@ compacts on the Thread's own provider, and an older executor would ignore it.
   boundary. Only queue and state mutations take the Project lock.
 - **Host facade:** each prompt gets a `Host`, whose types live in
   `contracts/tool-host`. It closes over the calling prompt's Project and
-  Thread: `threads` reaches only that prompt's direct children, `workspace`
-  reports and moves only its own Thread's working directory, and `terminals`
-  starts tracked commands in the calling Thread's sandbox.
+  Thread: `threads` reaches only that prompt's direct children, and
+  `workspace` reports and moves only its own Thread's working directory.
+  Tracked commands are the `terminal` bundle's `terminal/v1`.
 - **Sandboxes:** Projects lease their sandbox through `sandbox/v1`; the
   runtime applies the stored Git identity and GitHub API token to the
   sandbox, so the agent's Git commands authenticate without credentials in

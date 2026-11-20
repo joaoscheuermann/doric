@@ -5,24 +5,16 @@ import type { ContractError } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 
 import {
-  type LegacyProjectWatchItem,
-  legacyProjectWatchItemSchema,
   type Project,
   type ProjectWatchItem,
   projectWatchItemSchema,
-  RuntimeV1,
   RuntimeV2,
-  type Terminal,
-  type TerminalWatchItem,
   type Thread,
   type ThreadEvent,
   type ThreadWatchItem,
 } from '../../src/contracts/index.js';
 import { createNotices } from '../../src/host/domain/notices.js';
-import {
-  legacyRuntimeService,
-  runtimeService,
-} from '../../src/host/services/runtime.js';
+import { runtimeService } from '../../src/host/services/runtime.js';
 import {
   createWatches,
   type WatchReads,
@@ -58,7 +50,8 @@ const thread: Thread = {
   createdAt: '',
   updatedAt: '',
 };
-const terminal: Terminal = {
+/** A terminal session, which no runtime watch item carries any more. */
+const terminal = {
   id: 'terminal-1',
   projectId,
   threadId,
@@ -96,26 +89,10 @@ const setup = (reads: Partial<WatchReads> = {}) => {
         [event(1), event(2)].filter((value) => value.sequence > afterSequence),
       project: async () => project,
       projectThreads: async () => [thread],
-      terminals: async () => [],
       ...reads,
     },
   });
-  const { publisher } = notices;
-  const required = <T>(method: T | undefined): T => {
-    if (method === undefined) throw new Error('The publisher lacks a method.');
-    return method;
-  };
-  return {
-    watches,
-    notices,
-    errors,
-    publisher: {
-      ...publisher,
-      terminalUpdated: required(publisher.terminalUpdated),
-      terminalOutput: required(publisher.terminalOutput),
-      terminalRemoved: required(publisher.terminalRemoved),
-    },
-  };
+  return { watches, notices, errors, publisher: notices.publisher };
 };
 
 /** A listener that records every item and the end. */
@@ -283,7 +260,6 @@ void test('a project watch snapshots the tree and buffers its updates', async ()
   const gate = deferred<readonly Thread[]>();
   const { watches, publisher } = setup({
     projectThreads: () => gate.promise,
-    terminals: async () => [terminal],
   });
   const seen = recorder<ProjectWatchItem>();
   watches.project({ projectId }, seen.listener);
@@ -298,7 +274,6 @@ void test('a project watch snapshots the tree and buffers its updates', async ()
       projectId,
       project,
       threads: [thread],
-      terminals: [terminal],
     },
     { kind: 'thread-updated', thread: child },
     { kind: 'project-deleted', projectId },
@@ -321,48 +296,6 @@ void test('a project watch sees only its own Project and Threads', async () => {
   ]);
 });
 
-void test('a terminal watch buffers lifecycle notices but never output', async () => {
-  const gate = deferred<readonly Terminal[]>();
-  const { watches, publisher } = setup({ terminals: () => gate.promise });
-  const seen = recorder<TerminalWatchItem>();
-  watches.terminals(projectId, seen.listener);
-  const output = (data: string, offset: number) =>
-    publisher.terminalOutput({
-      projectId,
-      threadId,
-      terminalId: terminal.id,
-      data,
-      offset,
-    });
-  publisher.terminalUpdated(terminal);
-  // Output published before the snapshot is dropped: a client reads the
-  // bounded terminal snapshot instead.
-  output('lost', 4);
-  publisher.terminalRemoved({
-    projectId,
-    threadId,
-    terminalId: terminal.id,
-  });
-  gate.resolve([terminal]);
-  await seen.until(() => seen.items.length === 3);
-  output('kept', 8);
-  assert.deepEqual(seen.items, [
-    { kind: 'snapshot', projectId, terminals: [terminal] },
-    { kind: 'updated', terminal },
-    { kind: 'removed', projectId, threadId, terminalId: terminal.id },
-    {
-      kind: 'output',
-      output: {
-        projectId,
-        threadId,
-        terminalId: terminal.id,
-        data: 'kept',
-        offset: 8,
-      },
-    },
-  ]);
-});
-
 void test('a listener that fails does not stop the other watches', async () => {
   const { watches, publisher } = setup();
   const seen = recorder<ThreadWatchItem>();
@@ -376,14 +309,13 @@ void test('a listener that fails does not stop the other watches', async () => {
   assert.deepEqual(kinds(seen.items), ['snapshot', 'event:3']);
 });
 
-void test('the runtime contracts stream a real Thread, its Project and its terminals', async () => {
+void test('the runtime contracts stream a real Thread and its Project', async () => {
   const harness = createHarness();
   try {
     const created = await harness.readyProject();
     const child = await harness.createThread(created.id);
     const threadItems = recorder<ThreadWatchItem>();
     const projectItems = recorder<ProjectWatchItem>();
-    const terminalItems = recorder<TerminalWatchItem>();
     const watches = [
       harness.threads.watchThread(
         { threadId: child.id, afterSequence: 0 },
@@ -393,11 +325,9 @@ void test('the runtime contracts stream a real Thread, its Project and its termi
         { projectId: created.id },
         projectItems.listener,
       ),
-      harness.terminals.watchProject(created.id, terminalItems.listener),
     ];
     await threadItems.until(() => threadItems.items.length === 1);
     await projectItems.until(() => projectItems.items.length === 1);
-    await terminalItems.until(() => terminalItems.items.length === 1);
     assert.deepEqual(threadItems.items[0], {
       kind: 'snapshot',
       threadId: child.id,
@@ -411,11 +341,6 @@ void test('the runtime contracts stream a real Thread, its Project and its termi
       tree?.kind === 'snapshot' ? tree.threads.map((value) => value.id) : [],
       [child.id],
     );
-    assert.deepEqual(terminalItems.items[0], {
-      kind: 'snapshot',
-      projectId: created.id,
-      terminals: [],
-    });
 
     const accepted = await harness.threads.prompt({
       id: child.id,
@@ -449,12 +374,11 @@ void test('the runtime contracts stream a real Thread, its Project and its termi
 
 /*
  * Bundle isolation step 7(a) (T7.1, AC7.1): runtime/v2 streams the Project
- * and its Threads without the terminals, which runtime.terminals/v1 streams;
- * runtime/v1 keeps them until step 7(c). Both services run over the same
- * watches; a consumer reaches them through the contracts.
+ * and its Threads without the terminals, which the terminal bundle's
+ * terminal/v1 streams. A consumer reaches the service through the contract.
  */
 
-/** runtime/v1 and runtime/v2 over the watches of `setup`, from a consumer. */
+/** runtime/v2 over the watches of `setup`, from a consumer. */
 const services = (reads: Partial<WatchReads> = {}) => {
   const { watches, notices, publisher } = setup(reads);
   const unused = new Proxy(Object.create(null) as object, {
@@ -470,18 +394,13 @@ const services = (reads: Partial<WatchReads> = {}) => {
   } as unknown as Parameters<typeof runtimeService>[0];
   const harness = createTestServices({
     bundle: { id: 'consumer' },
-    provide: [runtimeService(deps), legacyRuntimeService(deps)],
+    provide: [runtimeService(deps)],
   });
-  return {
-    publisher,
-    harness,
-    v1: harness.services.use(RuntimeV1),
-    v2: harness.services.use(RuntimeV2),
-  };
+  return { publisher, harness, v2: harness.services.use(RuntimeV2) };
 };
 
 void test('a runtime/v2 project watch snapshots the Project and its Threads without terminals', async () => {
-  const { harness, v2 } = services({ terminals: async () => [terminal] });
+  const { harness, v2 } = services();
   try {
     const seen = recorder<ProjectWatchItem>();
     const watch = v2.watchProject({ projectId }, seen.listener, harness.call());
@@ -499,29 +418,8 @@ void test('a runtime/v2 project watch snapshots the Project and its Threads with
   }
 });
 
-void test('a runtime/v1 project watch snapshots the same tree with its terminals', async () => {
-  const { harness, v1 } = services({ terminals: async () => [terminal] });
-  try {
-    const seen = recorder<LegacyProjectWatchItem>();
-    const watch = v1.watchProject({ projectId }, seen.listener, harness.call());
-    await seen.until(() => seen.items.length === 1);
-    assert.deepEqual(seen.items[0], {
-      kind: 'snapshot',
-      projectId,
-      project,
-      threads: [thread],
-      terminals: [terminal],
-    });
-    watch.dispose();
-  } finally {
-    await harness.dispose();
-  }
-});
-
 void test('a runtime/v2 project watch forwards live Thread and Project updates unchanged, in order', async () => {
-  const { harness, v2, publisher } = services({
-    terminals: async () => [terminal],
-  });
+  const { harness, v2, publisher } = services();
   try {
     const seen = recorder<ProjectWatchItem>();
     const watch = v2.watchProject({ projectId }, seen.listener, harness.call());
@@ -584,18 +482,19 @@ void test('runtime/v2 streams a real Project and its Thread without terminals', 
   }
 });
 
-void test('the runtime/v2 snapshot schema refuses terminals; the runtime/v1 one requires them', () => {
+void test('the runtime/v2 snapshot schema refuses terminals', () => {
   const snapshot = {
     kind: 'snapshot',
     projectId,
     project,
     threads: [thread],
   };
-  const legacy = { ...snapshot, terminals: [terminal] };
   assert.equal(projectWatchItemSchema.safeParse(snapshot).success, true);
-  assert.equal(projectWatchItemSchema.safeParse(legacy).success, false);
-  assert.equal(legacyProjectWatchItemSchema.safeParse(legacy).success, true);
-  assert.equal(legacyProjectWatchItemSchema.safeParse(snapshot).success, false);
+  assert.equal(
+    projectWatchItemSchema.safeParse({ ...snapshot, terminals: [terminal] })
+      .success,
+    false,
+  );
 });
 
 void test('the runtime contracts refuse a watch whose input is not an ID', () => {

@@ -4,13 +4,14 @@
 // patch, 1.2.11.
 // Step 4(d) moves the bundle to the workspace and runtime contracts, the
 // next patch, 1.2.12. Step 5(c) change 2 observes `chat.hooks/v2`, the next
-// patch, 1.2.13.
+// patch, 1.2.13. Step 7(c) reads the terminals from `terminal/v1`, the next
+// patch, 1.2.14.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-test('the git sheet scans the workspace client sources, at version 1.2.13', () => {
+test('the git sheet scans the workspace client sources, at version 1.2.14', () => {
   const sheet = readFileSync(
     'bundles/features/git/src/client/styles.css',
     'utf8',
@@ -29,5 +30,5 @@ test('the git sheet scans the workspace client sources, at version 1.2.13', () =
     1,
     'The sheet does not scan the workspace client sources once.',
   );
-  assert.equal(manifest.version, '1.2.13');
+  assert.equal(manifest.version, '1.2.14');
 });

@@ -8,7 +8,8 @@
 // 1.2.12 from bundle isolation 4(d) (a patch: the selection and the records
 // come from `workspace.selection/v1` and `runtime.records/v1`), and at
 // 1.2.13 from bundle isolation 5(c) change 2 (a patch: it observes
-// `chat.hooks/v2` to refresh after its own tool).
+// `chat.hooks/v2` to refresh after its own tool), and at 1.2.14 from bundle
+// isolation 7(c) (a patch: the busy check reads `terminal/v1`).
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -20,7 +21,7 @@ describe('the git manifest', () => {
       readFileSync('bundles/features/git/manifest.json', 'utf8'),
     ) as { version: string; provides: string[]; requires: string[] };
 
-    assert.equal(manifest.version, '1.2.13');
+    assert.equal(manifest.version, '1.2.14');
     assert.ok(manifest.provides.includes('git.commands/v1@1.1.0'));
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('layout.tabs/')),
@@ -55,6 +56,22 @@ describe('the git manifest', () => {
     assert.deepEqual(
       manifest.optional.filter((ref) => ref.startsWith('chat.hooks/')),
       ['chat.hooks/v2'],
+    );
+  });
+
+  // Bundle isolation 7(c), AC7.4 and T7.2: the busy check reads the Project's
+  // terminals from the terminal bundle's `terminal/v1`, while some bundle
+  // provides it; the runtime no longer provides `runtime.terminals/v1`.
+  test('takes terminal/v1 as optional and no runtime.terminals/v1', () => {
+    const manifest = JSON.parse(
+      readFileSync('bundles/features/git/manifest.json', 'utf8'),
+    ) as { requires: string[]; optional: string[] };
+
+    assert.ok(manifest.optional.includes('terminal/v1'));
+    assert.equal(manifest.optional.includes('runtime.terminals/v1'), false);
+    assert.deepEqual(
+      manifest.requires.filter((ref) => ref.startsWith('terminal/')),
+      [],
     );
   });
 
