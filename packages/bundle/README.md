@@ -137,7 +137,10 @@ try {
 ```
 
 `provide` registers service definitions from a fake `test-provider` bundle,
-and `reports` collects the failures the runtime reported.
+and `reports` collects the failures the runtime reported. `providers` gives
+each `{ bundleId, provide }` entry a fake bundle of its own, so several
+providers of a many-contract reach `whenAvailable` with their own bundle ids,
+in the order given.
 
 ## Booting the host
 

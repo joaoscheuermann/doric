@@ -10,7 +10,7 @@ import {
   type CatalogSkill,
   currentCwd,
   type RunSkills,
-  readServerSkills,
+  readSourceSkills,
   readWorkspaceSkills,
 } from './sources.js';
 
@@ -21,7 +21,8 @@ export interface LiveCatalog {
   /**
    * currentCwd (failure = unchanged); readWorkspaceSkills only when the cwd
    * differs from the last read (failed scan of a new cwd → []), else reuse
-   * the last workspace list; readServerSkills (failure keeps the last list);
+   * the last workspace list; readSourceSkills with the current cwd (a source
+   * left out keeps its last list, a provider that is gone drops its skills);
    * skillCatalogChange against the current diff baseline; returns
    * bundleInstruction('skills-changed', message) when there is a message,
    * else undefined. Never rejects; calls don't overlap.
@@ -52,6 +53,13 @@ export const liveCatalog = (
 ): LiveCatalog => {
   let cwd = start.cwd;
   let { workspace, server } = start.skills;
+  /** Each source's last list, by its bundle id, in provider order. */
+  let sources = new Map<string, readonly CatalogSkill[]>();
+  for (const skill of server) {
+    if (skill.origin.kind !== 'source') continue;
+    const { bundleId } = skill.origin;
+    sources.set(bundleId, [...(sources.get(bundleId) ?? []), skill]);
+  }
   /** The state the next check compares with: the last announced one. */
   let baseline: CatalogState = start.catalog;
   /** Set by `rebase`: the next check compares with the start lists. */
@@ -65,7 +73,14 @@ export const liveCatalog = (
       cwd = now;
       workspace = await readWorkspaceSkills(now, call, services);
     }
-    server = (await readServerSkills(call, services)) ?? server;
+    const read = await readSourceSkills(cwd, call, services);
+    sources = new Map(
+      read.map(({ bundleId, skills }) => [
+        bundleId,
+        skills ?? sources.get(bundleId) ?? [],
+      ]),
+    );
+    server = [...sources.values()].flat();
     const from: CatalogState = rebased
       ? {
           locators: baseline.locators,

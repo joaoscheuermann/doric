@@ -1,8 +1,9 @@
 // The default manifest (bundle isolation 5(b), change 2): the bundle gains a
 // client part that draws `load_skill` calls in the chat through
 // `chat.views/v1` (listed under `optional`), defined through `ui/v1`, on
-// platform `^1.10.0` — the minor 2.7.0. What it provided and required before
-// stays.
+// platform `^1.10.0`. Phase 8 trades `mcp/v1` for the contract it declares,
+// `default.skill-sources/v1`, under `optional` — the minor 2.8.0. What it
+// provided and required before stays.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -21,8 +22,8 @@ const manifest = JSON.parse(
 ) as Manifest;
 
 describe('the default manifest', () => {
-  test('is version 2.7.0 on platform ^1.10.0', () => {
-    assert.equal(manifest.version, '2.7.0');
+  test('is version 2.8.0 on platform ^1.10.0', () => {
+    assert.equal(manifest.version, '2.8.0');
     assert.equal(manifest.engines.doric, '^1.10.0');
   });
 
@@ -46,6 +47,21 @@ describe('the default manifest', () => {
     );
   });
 
+  // `default` declares the contract and reads every provider; it calls no
+  // contract of `mcp`.
+  test('takes default.skill-sources/v1 as optional and no mcp contract', () => {
+    assert.ok(
+      manifest.optional.includes('default.skill-sources/v1'),
+      manifest.optional.join(', '),
+    );
+    assert.deepEqual(
+      [...manifest.requires, ...manifest.optional].filter((ref) =>
+        ref.startsWith('mcp'),
+      ),
+      [],
+    );
+  });
+
   test('keeps what it provided, required and took as optional', () => {
     assert.deepEqual(manifest.provides, [
       'executor/v1@1.5.0',
@@ -61,7 +77,7 @@ describe('the default manifest', () => {
       'log/v1@^1.0.0',
     ])
       assert.ok(manifest.requires.includes(ref), ref);
-    for (const ref of ['runtime.lease/v1', 'runtime.workspace/v1', 'mcp/v1'])
+    for (const ref of ['runtime.lease/v1', 'runtime.workspace/v1'])
       assert.ok(manifest.optional.includes(ref), ref);
   });
 });

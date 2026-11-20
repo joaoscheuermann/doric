@@ -8,7 +8,7 @@ model, saves the history as
 it goes, and compacts a long conversation so the agent can keep working
 within the model's context window.
 
-It provides `executor/v1`, the default executor, and owns `default.hooks/v1` and `default.agents/v1`. The bundle's host part runs in the
+It provides `executor/v1`, the default executor, and owns `default.hooks/v1` and `default.agents/v1`. From 2.8.0 it also declares `default.skill-sources/v1`, which other bundles provide to offer the agent their skills. The bundle's host part runs in the
 generation process next to `runtime`, which calls it; from 2.7.0 a client part
 draws its `load_skill` calls in the chat ([The `load_skill` block](#the-load_skill-block)). See the
 [main README](../../../README.md) for Doric as a whole and
@@ -58,6 +58,22 @@ no method is exposed to a window), with:
   `invalid_definition` (the workspace file is invalid or cannot be read).
 
 See **Agents** below.
+
+`default.skill-sources/v1@1.0.0` (from 2.8.0), an extension point `default`
+declares and does not provide: a host many-contract a bundle provides
+(`{ cardinality: 'many' }`) to offer the agent skills, with:
+
+- `list({ cwd })` — the skills the source offers to the prompt of
+  `call.scope`, whose working directory is `cwd`: each with its `name`,
+  `description`, a `reference` only the source reads, and an optional `group`;
+- `read({ reference })` — one skill's `text`, and an optional `origin`, the
+  sentence that says where it comes from. The source bounds the time a read
+  may take.
+
+A source is named by the bundle id that provides it, so its skills are
+`<bundle id>/<group>/<name>`, or `<bundle id>/<name>` without a group; a
+provider whose bundle id is `cwd` is ignored. `mcp` provides it for the skills
+of a Project's MCP servers.
 
 ## Behavior
 
@@ -111,13 +127,16 @@ See **Agents** below.
     directory, found with one `runtime.lease/v1` exec (at most 64 files, the
     first 4096 bytes of each) and described by their frontmatter's
     `description`;
-  - the MCP server skills that the Project's connected servers list through
-    `mcp/v1`.
+  - the skill sources' skills: every provider of `default.skill-sources/v1`
+    (such as `mcp`, for the Project's connected MCP servers), asked in
+    parallel for the Thread's working directory, in provider order.
 
   The last three are tables under "Skills to load": one row per skill, its
   locator and its description on one line. A locator is the bundle skill's
   `name`, `cwd/<directory>` for a workspace skill, or
-  `mcp/<server slug>/<name>` for an MCP skill; one another skill already took
+  `<bundle id>/<group>/<name>` (`<bundle id>/<name>` without a group) for a
+  source's skill, so an MCP skill is `mcp/<server slug>/<name>`; one another
+  skill already took
   gets `~2`, `~3`, …. The budgets are fixed: 8000 characters of rows for the
   built-in list and 4000 for each other one, with every description cut at
   500 characters, at 120 when a list passes its budget, and its trailing rows
@@ -127,17 +146,22 @@ See **Agents** below.
   not list now fails the call with `Unknown skill id "<name>"` and the ids it
   can load (or that none can be loaded), reading nothing. It answers the
   skill's instructions (up to 64 000 characters), reading a workspace skill
-  through `runtime.lease/v1` and an MCP skill through `mcp/v1.readSkill` on
-  every call; when the history already holds that exact text, uncut, it
-  answers `Skill <id> is already loaded above; follow it.` instead. The
-  workspace and MCP sources are best effort: a sandbox or server that cannot
-  answer adds no skill, and a skill that cannot be read fails only that tool
-  call.
+  through `runtime.lease/v1` and a source's skill through that source's
+  `read`, with no deadline of its own, on every call: the source's `origin`
+  line, when it gives one, comes before the body. When the history already
+  holds that exact text, uncut, it answers `Skill <id> is already loaded
+  above; follow it.` instead. The workspace and the sources are best effort:
+  a sandbox that cannot answer adds no skill; a source whose `list` takes
+  more than 5000 ms, rejects, or answers what fails the contract's schema
+  adds none for that read, and is logged through `log/v1` once per prompt with
+  its bundle id; a skill that cannot be read fails only that tool call.
 
   The system prompt stays the same for the whole run. Before every model
   request after the first, the run reads the Thread's working directory
   through the optional `runtime.workspace/v1` (scanning `.agents/skills` again
-  only when it moved) and the MCP servers again; when the skills it can load
+  only when it moved) and the skill sources again, with that directory (a
+  source that cannot answer keeps its last list, and one that is gone takes
+  its skills with it); when the skills it can load
   changed, the model reads one `<bundle-instruction bundle="default"
 reason="skills-changed">` message, stored in the history where it was read:
   the added skills as tables like the system prompt's, and the ids of listed
@@ -315,8 +339,9 @@ its mid-run changes, the agent definitions (the shipped built-in ones
 included), their `# Agents` catalog and their mid-run changes, the loaded
 skills kept across a compaction and
 `load_skill` against fake `runtime.lease/v1`, `runtime.workspace/v1` and
-`mcp/v1` providers that record every call (or none, to stand for an
-unprovided one), and the `coding-workflow` skill's agent filter and pin. It also runs the exact request-body checks: the real `llms`
+`default.skill-sources/v1` providers that record every call (or none, to
+stand for an unprovided one), each source provided from a bundle of its own
+(`createTestServices`'s `providers`), and the `coding-workflow` skill's agent filter and pin. It also runs the exact request-body checks: the real `llms`
 OpenRouter and OpenAI Responses providers, with a faked HTTP transport, must
 send the bodies the stage-1 host recorded (`tests/fixtures/request-body`).
 The client tests (`tests/client/`) mount `default-skill-call` alone in a

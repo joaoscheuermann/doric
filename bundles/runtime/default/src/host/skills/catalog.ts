@@ -73,7 +73,7 @@ const DESCRIPTION_SHORT_CHARS = 120;
 
 /**
  * What one run has offered so far. A skill's identity is `bundle:<name>`,
- * `workspace:<SKILL.md path>` or `mcp:<serverId>\n<uri>`.
+ * `workspace:<SKILL.md path>` or `source:<bundleId>\n<reference>`.
  */
 export interface CatalogState {
   /**
@@ -85,8 +85,8 @@ export interface CatalogState {
   readonly locators: ReadonlyMap<string, string>;
   /**
    * The identities the model was told about and that were not reported or
-   * seen as gone (shown or dropped rows of the built-in, workspace and MCP
-   * lists).
+   * seen as gone (shown or dropped rows of the built-in, workspace and
+   * skill source lists).
    */
   readonly available: ReadonlySet<string>;
   /**
@@ -102,7 +102,8 @@ export interface SkillCatalog extends CatalogState {
    * The `# Skills` section, `skills-catalog.md` rendered, or '' when there
    * is neither an always-available skill that fits nor a non-empty list. The
    * template gives the always-available skills that fit (body verbatim), then
-   * the non-empty lists among built-in, workspace and MCP, in that order:
+   * the non-empty lists among built-in, workspace and the skill sources', in
+   * that order:
    * each with its heading, a table of the rows that fit unless all were
    * dropped, and how many were dropped when any were.
    */
@@ -127,7 +128,7 @@ const identity = ({ name, origin }: CatalogSkill): string =>
     ? `bundle:${name}`
     : origin.kind === 'workspace'
       ? `workspace:${origin.path}`
-      : `mcp:${origin.serverId}\n${origin.uri}`;
+      : `source:${origin.bundleId}\n${origin.reference}`;
 
 /** The locator a skill asks for, before any `~N` suffix. */
 const baseLocator = ({ name, origin }: CatalogSkill): string =>
@@ -135,7 +136,9 @@ const baseLocator = ({ name, origin }: CatalogSkill): string =>
     ? name
     : origin.kind === 'workspace'
       ? `cwd/${name}`
-      : `mcp/${origin.serverSlug}/${name}`;
+      : origin.group === undefined
+        ? `${origin.bundleId}/${name}`
+        : `${origin.bundleId}/${origin.group}/${name}`;
 
 /**
  * One table cell: one line (whitespace runs → one space, trimmed), cut to
@@ -189,9 +192,10 @@ const fitList = (
  * while their rendered length stays within `ALWAYS_AVAILABLE_MAX_CHARS`; the
  * first that would pass it and every one after become rows at the front of
  * the built-in list. Locators: a bundle skill's name, `cwd/<name>` for a
- * workspace skill, `mcp/<serverSlug>/<name>` for an MCP skill, assigned in
- * list order; one already taken gets the first free `~2`, `~3`, …. Each
- * list's rows have their descriptions capped at `DESCRIPTION_MAX_CHARS`, at
+ * workspace skill, `<bundleId>/<group>/<name>` (or `<bundleId>/<name>`
+ * without a group) for a skill source's skill, assigned in list order; one
+ * already taken gets the first free `~2`, `~3`, …. Each list's rows have
+ * their descriptions capped at `DESCRIPTION_MAX_CHARS`, at
  * `DESCRIPTION_SHORT_CHARS` when they pass the list's budget, and lose their
  * trailing rows while they still do. An empty list is omitted. The state it
  * starts gives every row, shown or dropped, its locator and makes it
@@ -264,16 +268,16 @@ export const skillCatalog = (skills: RunSkills): SkillCatalog => {
 };
 
 /**
- * Compares the workspace and MCP skills offered now with `state`; bundle
+ * Compares the workspace and skill source skills offered now with `state`; bundle
  * identities never compared.
  * Added: identities in current not in state.available, workspace first, each
- * list in its order. Removed: workspace/MCP identities in state.available not
+ * list in its order. Removed: workspace/source identities in state.available not
  * in current.
  * Locators for added: old locator if identity in state.locators; else base
- * (`cwd/<name>`, `mcp/<serverSlug>/<name>`) or first `<base>~N` (N ≥ 2) not a
+ * (`cwd/<name>`, `<bundleId>/[<group>/]<name>`) or first `<base>~N` (N ≥ 2) not a
  * value of state.locators.
  * Message: `skills-changed.md` rendered with each non-empty added list,
- * workspace then MCP, fitted like the system prompt fits a list (4000 chars
+ * workspace then the sources', fitted like the system prompt fits a list (4000 chars
  * of rows; descriptions 500 → 120 → trailing rows dropped and counted), and
  * the locators of the removed identities that had a shown row, in
  * state.listed order.

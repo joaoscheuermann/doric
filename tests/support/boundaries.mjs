@@ -125,14 +125,15 @@ const usesPackage = (specifier, name) =>
  * an edge from each provider to the declarer (`docs/designs/bundle-isolation.md` section 1, `cycles`,
  * "The graph").
  *
- * `default.skill-sources/v1` (declared by `default`) and
- * `files.decorations/v1` (declared by `files`) join this table in the phases
- * that create them.
+ * `default.skill-sources/v1` (declared by `default`) joined it in phase 8;
+ * `files.decorations/v1` (declared by `files`) joins it in the phase that
+ * creates it.
  * @type {Readonly<Record<string, string>>}
  */
 export const declaredContracts = Object.freeze({
   'executor/v1': 'runtime',
   'sandbox/v1': 'runtime',
+  'default.skill-sources/v1': 'default',
 });
 
 /**

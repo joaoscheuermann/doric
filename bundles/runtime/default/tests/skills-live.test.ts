@@ -12,15 +12,15 @@ import { defaultInstruction, loadedEntry } from './support/envelopes.js';
 import {
   bundleServices,
   type FakeLease,
-  type FakeMcp,
+  type FakeSkillSource,
   type FakeWorkspace,
   fakeThreadState,
   type HarnessSkill,
-  mcpServer,
   projectId,
   promptId,
   runPrompt,
   skill,
+  sourceEntry,
   testConfiguration,
   thread,
   threadId,
@@ -192,14 +192,15 @@ const sandbox = (
     `---\ndescription: Some description.\n---\n\nFollow ${path}.\n`,
 });
 
-/** The connected server "Docs", serving one skill, `guide`. */
-const docs = mcpServer({
-  id: 'server-1',
-  name: 'Docs',
-  skills: [
-    { uri: GUIDE_URI, name: 'guide', description: 'Guide description.' },
-  ],
+/** The skill `guide` of the connected server "Docs", as the skill source of `mcp` lists it. */
+const docs = sourceEntry('guide', {
+  group: 'docs',
+  description: 'Guide description.',
+  reference: `server-1\n${GUIDE_URI}`,
 });
+
+/** The origin line the skill source of `mcp` gives `guide`. */
+const docsOrigin = `From the MCP server "Docs" (\`${GUIDE_URI}\`). Its other files are not available.`;
 
 const table = (...rows: readonly string[]): string =>
   ['| Skill | Description |', '| --- | --- |', ...rows].join('\n');
@@ -242,7 +243,8 @@ const run = async ({
   readonly turns: readonly Turn[];
   readonly skills?: readonly HarnessSkill[];
   readonly lease?: FakeLease;
-  readonly mcp?: FakeMcp;
+  /** The skill source the bundle `mcp` provides. */
+  readonly mcp?: FakeSkillSource;
   readonly workspace?: FakeWorkspace;
   readonly configuration?: ConfigurationValue;
   readonly state?: ReturnType<typeof fakeThreadState>;
@@ -253,7 +255,7 @@ const run = async ({
     skills,
     tools: [inspectTool()],
     ...(lease === undefined ? {} : { lease }),
-    ...(mcp === undefined ? {} : { mcp }),
+    ...(mcp === undefined ? {} : { sources: { mcp } }),
     ...(workspace === undefined ? {} : { workspace }),
     ...(configuration === undefined ? {} : { configuration }),
   });
@@ -347,8 +349,9 @@ void test('D2 tells the model about the skills of a server that connected mid-ru
   let servers: readonly (typeof docs)[] = [];
   const { requests, loaded } = await run({
     mcp: {
-      list: () => servers,
-      readSkill: () => ({
+      list: () => ({ skills: servers }),
+      read: () => ({
+        origin: docsOrigin,
         text: '---\nname: guide\ndescription: Guide description.\n---\nFollow the guide.',
       }),
     },
@@ -372,11 +375,7 @@ void test('D2 tells the model about the skills of a server that connected mid-ru
     ),
   );
   assert.deepEqual(loaded, [
-    [
-      '# Skill: mcp/docs/guide',
-      `From the MCP server "Docs" (\`${GUIDE_URI}\`). Its other files are not available.`,
-      'Follow the guide.',
-    ].join('\n\n'),
+    ['# Skill: mcp/docs/guide', docsOrigin, 'Follow the guide.'].join('\n\n'),
   ]);
 });
 
@@ -384,7 +383,7 @@ void test('D2 reports a skill whose server went away, and loading it then fails 
   let servers: readonly (typeof docs)[] = [docs];
   const { requests, calls, events } = await run({
     skills: [skill('b', 'B body.', { alwaysAvailable: false })],
-    mcp: { list: () => servers },
+    mcp: { list: () => ({ skills: servers }) },
     turns: [
       {
         calls: [inspecting],
@@ -412,7 +411,7 @@ void test('D2 reports a skill whose server went away, and loading it then fails 
     ),
   );
   assert.equal(
-    calls.mcp.filter(({ method }) => method === 'readSkill').length,
+    calls.sources.filter(({ method }) => method === 'read').length,
     0,
   );
 });
@@ -496,10 +495,10 @@ void test('D6 changes nothing when the server list cannot be read mid-run', asyn
   const { requests, loaded } = await run({
     mcp: {
       list: () => {
-        if (failing) throw new Error('mcp/v1 is restarting');
-        return [docs];
+        if (failing) throw new Error('mcp is restarting');
+        return { skills: [docs] };
       },
-      readSkill: () => ({ text: 'Follow the guide.' }),
+      read: () => ({ text: 'Follow the guide.' }),
     },
     turns: [
       {

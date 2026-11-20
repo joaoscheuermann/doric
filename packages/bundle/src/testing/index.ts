@@ -21,6 +21,15 @@ export interface TestServicesOptions {
   readonly bundle: { readonly id: string; readonly version?: string };
   /** Service definitions provided by a fake `test-provider` bundle. */
   readonly provide?: readonly AnyServiceDefinition[];
+  /**
+   * Fake bundles of their own: each entry provides its definitions from a
+   * principal whose bundle id is `bundleId`, so `whenAvailable` reports
+   * several providers of a many-contract, in the order given.
+   */
+  readonly providers?: readonly {
+    readonly bundleId: string;
+    readonly provide: readonly AnyServiceDefinition[];
+  }[];
 }
 
 /** In-process services for bundle unit tests, without a catalog or loader. */
@@ -50,6 +59,17 @@ export const createTestServices = (
     provider.services.provide(definition);
   }
 
+  const providers = (options.providers ?? []).map(({ bundleId, provide }) => {
+    const entry = createPrincipal(runtime, {
+      bundleId,
+      version: '0.0.0',
+      provides: 'any',
+      requires: 'any',
+    });
+    for (const definition of provide) entry.services.provide(definition);
+    return entry;
+  });
+
   const principal = createPrincipal(runtime, {
     bundleId: options.bundle.id,
     version: options.bundle.version ?? '0.0.0',
@@ -70,6 +90,10 @@ export const createTestServices = (
     dispose: async () => {
       await principal.scope.dispose();
       principal.close();
+      for (const entry of providers) {
+        await entry.scope.dispose();
+        entry.close();
+      }
       await provider.scope.dispose();
       provider.close();
       controller.abort();

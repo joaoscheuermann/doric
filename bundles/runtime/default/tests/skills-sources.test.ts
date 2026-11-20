@@ -10,15 +10,15 @@ import {
 } from '../src/host/skills/sources.js';
 import {
   type FakeLease,
-  type FakeMcp,
+  type FakeSkillSource,
   type HarnessSkill,
   leaseService,
-  mcpServer,
-  mcpService,
+  logService,
   projectId,
   promptId,
   type RecordedCall,
   skill,
+  skillSourceService,
   skillsService,
   threadId,
 } from './support/harness.js';
@@ -27,33 +27,46 @@ import {
  * Where the skills of one prompt run come from: `skills/v1` (bundle skills,
  * split by `alwaysAvailable`), the `.agents/skills/*\/SKILL.md` files of the
  * Thread's working directory, read with one `runtime.lease/v1` exec, and the
- * skills the Project's connected MCP servers list. Only the bundle source can
- * fail the read; the other two answer no skill instead.
+ * skills the providers of `default.skill-sources/v1` list, such as the
+ * Project's MCP servers through `mcp`. Only the bundle source can fail the
+ * read; the others answer no skill instead.
  */
 
 const scope = { projectId, threadId, promptId };
 
-/** `readRunSkills` over the given fake providers; absent ones are unprovided. */
+/**
+ * `readRunSkills` over the given fake providers; absent ones are unprovided.
+ * `source` is a skill source provided from the bundle `mcp`.
+ */
 const read = async (
   cwd: string,
   {
     skills = [],
     lease,
-    mcp,
+    source,
   }: {
     readonly skills?: readonly HarnessSkill[];
     readonly lease?: FakeLease;
-    readonly mcp?: FakeMcp;
+    readonly source?: FakeSkillSource;
   },
 ) => {
-  const calls = { lease: [] as RecordedCall[], mcp: [] as RecordedCall[] };
+  const calls = { lease: [] as RecordedCall[], source: [] as RecordedCall[] };
   const services = createTestServices({
     bundle: { id: 'default' },
     provide: [
+      logService([]),
       skillsService(skills),
       ...(lease === undefined ? [] : [leaseService(lease, calls.lease)]),
-      ...(mcp === undefined ? [] : [mcpService(mcp, calls.mcp)]),
     ],
+    providers:
+      source === undefined
+        ? []
+        : [
+            {
+              bundleId: 'mcp',
+              provide: [skillSourceService(source, calls.source)],
+            },
+          ],
   });
   const result = await readRunSkills(
     cwd,
@@ -211,61 +224,10 @@ void test('W3 scans the working directory with one sh exec and parses its NUL-se
   ]);
 });
 
-void test('M1 lists the skills of connected servers only, without reading any of them', async () => {
-  const { result, calls } = await read('/repo', {
-    mcp: {
-      list: () => [
-        mcpServer({
-          id: 'server-1',
-          name: 'Acme Billing',
-          skills: [
-            {
-              uri: 'skill://acme/refunds/SKILL.md',
-              name: 'refunds',
-              description: 'Refund a charge.',
-            },
-          ],
-        }),
-        mcpServer({
-          id: 'server-2',
-          name: 'Docs',
-          state: 'needs-sign-in',
-          skills: [
-            {
-              uri: 'skill://docs/guide/SKILL.md',
-              name: 'guide',
-              description: 'Read the guide.',
-            },
-          ],
-        }),
-      ],
-      readSkill: () => ({ text: 'never read' }),
-    },
-  });
-
-  assert.deepEqual(result.server, [
-    {
-      name: 'refunds',
-      description: 'Refund a charge.',
-      origin: {
-        kind: 'mcp',
-        serverId: 'server-1',
-        serverName: 'Acme Billing',
-        serverSlug: 'acme_billing',
-        uri: 'skill://acme/refunds/SKILL.md',
-      },
-    },
-  ]);
-  assert.equal(
-    calls.mcp.filter(({ method }) => method === 'readSkill').length,
-    0,
-  );
-});
-
-void test('M2 answers no server skill when mcp/v1 is not provided or its list rejects', async () => {
+void test('M2 answers no source skill when no skill source is provided or its list rejects', async () => {
   const unprovided = await read('/repo', {});
   const rejected = await read('/repo', {
-    mcp: { list: () => Promise.reject(new Error('mcp down')) },
+    source: { list: () => Promise.reject(new Error('mcp down')) },
   });
 
   assert.deepEqual(unprovided.result.server, []);

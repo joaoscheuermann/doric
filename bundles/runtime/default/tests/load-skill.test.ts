@@ -20,17 +20,17 @@ import {
 import {
   bundleServices,
   type FakeLease,
-  type FakeMcp,
+  type FakeSkillSource,
   type FakeWorkspace,
   fakeThreadState,
   type HarnessSkill,
   harnessVariables,
-  mcpServer,
   projectId,
   promptId,
   runPrompt,
   seedHistory,
   skill,
+  sourceEntry,
   testConfiguration,
   threadId,
 } from './support/harness.js';
@@ -49,8 +49,8 @@ import {
  * A prompt run offers the skills it lists in its system prompt through one
  * tool of its own, `load_skill`, last among the run's tools. Calling it reads
  * the named skill — a bundle body, a workspace SKILL.md through the prompt's
- * sandbox lease, or an MCP server's skill through `mcp/v1` — and answers its
- * instructions.
+ * sandbox lease, or an MCP server's skill through the skill source the
+ * bundle `mcp` provides — and answers its instructions.
  */
 
 const SKILL_PATH = '/workspace/.agents/skills/local/SKILL.md';
@@ -75,22 +75,29 @@ const workspaceLease = (
   readFile,
 });
 
-/** One connected server, "Docs", serving one skill, `guide`. */
+/** What the skill source of `mcp` reads `guide` by. */
+const GUIDE_REFERENCE = `server-1\n${GUIDE_URI}`;
+
+/**
+ * The skill source of `mcp` with one connected server, "Docs", serving one
+ * skill, `guide`, read with the origin line `mcp` gives.
+ */
 const docsServer = (
-  readSkill: FakeMcp['readSkill'] = () => ({
+  read: FakeSkillSource['read'] = () => ({
+    origin: `From the MCP server "Docs" (\`${GUIDE_URI}\`). Its other files are not available.`,
     text: '---\nname: guide\ndescription: Guide description.\n---\nFollow the guide.',
   }),
-): FakeMcp => ({
-  list: () => [
-    mcpServer({
-      id: 'server-1',
-      name: 'Docs',
-      skills: [
-        { uri: GUIDE_URI, name: 'guide', description: 'Guide description.' },
-      ],
-    }),
-  ],
-  readSkill,
+): FakeSkillSource => ({
+  list: () => ({
+    skills: [
+      sourceEntry('guide', {
+        group: 'docs',
+        description: 'Guide description.',
+        reference: GUIDE_REFERENCE,
+      }),
+    ],
+  }),
+  read,
 });
 
 const table = (...rows: readonly string[]): string =>
@@ -166,7 +173,8 @@ const run = async ({
 }: {
   readonly skills?: readonly HarnessSkill[];
   readonly lease?: FakeLease;
-  readonly mcp?: FakeMcp;
+  /** The skill source the bundle `mcp` provides. */
+  readonly mcp?: FakeSkillSource;
   readonly workspace?: FakeWorkspace;
   readonly configuration?: ConfigurationValue;
   readonly tools?: readonly RegisteredTool[];
@@ -201,7 +209,7 @@ const run = async ({
       ...tools,
     ],
     ...(lease === undefined ? {} : { lease }),
-    ...(mcp === undefined ? {} : { mcp }),
+    ...(mcp === undefined ? {} : { sources: { mcp } }),
     ...(workspace === undefined ? {} : { workspace }),
     ...(configuration === undefined ? {} : { configuration }),
   });
@@ -301,7 +309,7 @@ void test('T4 reads a workspace skill through the lease under the prompt call an
   ]);
 });
 
-void test('T5 reads an MCP skill through mcp/v1 only when it is loaded, and answers it with its source and without frontmatter', async () => {
+void test('T5 reads an MCP skill through its skill source only when it is loaded, and answers it with its source and without frontmatter', async () => {
   const idle = await run({ mcp: docsServer() });
   const { loaded, calls } = await run({
     mcp: docsServer(),
@@ -309,14 +317,14 @@ void test('T5 reads an MCP skill through mcp/v1 only when it is loaded, and answ
   });
 
   assert.equal(
-    idle.calls.mcp.filter(({ method }) => method === 'readSkill').length,
+    idle.calls.sources.filter(({ method }) => method === 'read').length,
     0,
   );
   assert.deepEqual(
-    calls.mcp
-      .filter(({ method }) => method === 'readSkill')
+    calls.sources
+      .filter(({ method }) => method === 'read')
       .map(({ input }) => input),
-    [{ id: 'server-1', uri: GUIDE_URI }],
+    [{ reference: GUIDE_REFERENCE }],
   );
   assert.deepEqual(loaded, [
     [
@@ -400,7 +408,7 @@ void test('T8 answers a name the list does not hold with a tool failure naming t
     0,
   );
   assert.equal(
-    calls.mcp.filter(({ method }) => method === 'readSkill').length,
+    calls.sources.filter(({ method }) => method === 'read').length,
     0,
   );
 });
@@ -446,7 +454,10 @@ void test('E1 reads the skills once per run and sends every request the same sys
     1,
   );
   // The servers are listed at the start and before the later request.
-  assert.equal(calls.mcp.filter(({ method }) => method === 'list').length, 2);
+  assert.equal(
+    calls.sources.filter(({ method }) => method === 'list').length,
+    2,
+  );
 });
 
 void test('K1 answers a second load of an unchanged skill with a note, reading it again each time', async () => {

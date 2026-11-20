@@ -19,6 +19,14 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   `call.scope.projectId`. A call without a Project scope is refused
   (`invalid_input`). The shapes and error codes live
   in [`src/contracts/index.ts`](src/contracts/index.ts) (`mcp/contracts`).
+- **Skill source:** `default.skill-sources/v1` 1.0.0 (host, one of many
+  providers; the contract is `default`'s, from `default/contracts`): `list`
+  answers the skills of the connected servers of the call's Project, each in
+  the group of its server's slug, with a `reference` that carries the server
+  id and the skill's URI; `read` reads one as `readSkill` does, with an origin
+  line that names the server and the URI and says the skill's other files are
+  not available. A call without a Project scope, or a reference that names no
+  server and URI, is refused (`invalid_input`).
 - **Storage type:** `mcp.server/v1` 1.1.0, one document per server, listed
   per Project in creation order.
 - **Credential kind:** `MCP_TOKEN`, one secret an OAuth sign-in stored.
@@ -34,7 +42,8 @@ the OAuth sign-in) and a client part (the sidebar's MCP pane), loaded by the
   URI, name and description; listed only when the server declares the
   extension. A failed listing is logged and leaves the server connected, with
   no skills. The default agent lists the connected servers' skills and loads
-  one on demand through the host-only `readSkill`: a `resources/read` of its
+  one on demand through the skill source (or a caller through the host-only
+  `readSkill`): a `resources/read` of its
   URI when asked, never before, for a URI the connected server lists now
   (`mcp_skill_unavailable` otherwise, or when the read fails, passes 30
   seconds or answers no text). Doric runs MCP skills without SEP-2640's

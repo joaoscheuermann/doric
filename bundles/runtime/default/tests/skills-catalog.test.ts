@@ -17,12 +17,13 @@ import {
 import {
   harnessVariables,
   leaseService,
-  mcpServer,
-  mcpService,
+  logService,
   projectId,
   promptId,
   skill,
+  skillSourceService,
   skillsService,
+  sourceEntry,
   threadId,
 } from './support/harness.js';
 import {
@@ -78,11 +79,10 @@ const served = (
   name,
   description,
   origin: {
-    kind: 'mcp',
-    serverId: `${serverSlug}-id`,
-    serverName: serverSlug,
-    serverSlug,
-    uri,
+    kind: 'source',
+    bundleId: 'mcp',
+    group: serverSlug,
+    reference: `${serverSlug}-id\n${uri}`,
   },
 });
 
@@ -311,30 +311,27 @@ void test('L1 names a bundle skill by its name, a workspace skill cwd/<directory
       stderr: '',
     }),
   };
-  const mcp: Parameters<typeof mcpService>[0] = {
-    list: () => [
-      mcpServer({
-        id: 'server-1',
-        name: 'Acme Billing',
-        skills: [
-          {
-            uri: 'skill://acme/refunds/SKILL.md',
-            name: 'refunds',
-            description: 'Refund a charge.',
-          },
-        ],
-      }),
-    ],
+  const mcp: Parameters<typeof skillSourceService>[0] = {
+    list: () => ({
+      skills: [
+        sourceEntry('refunds', {
+          group: 'acme_billing',
+          description: 'Refund a charge.',
+          reference: 'server-1\nskill://acme/refunds/SKILL.md',
+        }),
+      ],
+    }),
   };
   const services = createTestServices({
     bundle: { id: 'default' },
     provide: [
+      logService([]),
       skillsService([
         skill('bundled', 'Bundled body.', { alwaysAvailable: false }),
       ]),
       leaseService(lease, []),
-      mcpService(mcp, []),
     ],
+    providers: [{ bundleId: 'mcp', provide: [skillSourceService(mcp, [])] }],
   });
   const call = services.call({ projectId, threadId, promptId });
 
@@ -383,7 +380,7 @@ void test('L2 suffixes a locator another skill already took, and a workspace ski
  * before a later model request, compared with what the model was told, give
  * the body of one "Skills changed" message and the state the next check
  * compares with. Identities: `bundle:<name>`, `workspace:<SKILL.md path>`,
- * `mcp:<serverId>\n<uri>`.
+ * `source:<bundleId>\n<reference>`.
  */
 
 /** A workspace skill of the directory `root`, under `.agents/skills`. */
@@ -433,7 +430,7 @@ void test('C1 gives every rendered or dropped row a locator and keeps it availab
     new Map([
       ['bundle:x', 'x'],
       ...workspaceEntries,
-      ['mcp:s-id\nskill://s/y/SKILL.md', 'mcp/s/y'],
+      ['source:mcp\ns-id\nskill://s/y/SKILL.md', 'mcp/s/y'],
     ]),
   );
   assert.deepEqual(
@@ -441,7 +438,7 @@ void test('C1 gives every rendered or dropped row a locator and keeps it availab
     new Set([
       'bundle:x',
       ...workspaceEntries.map(([identity]) => identity),
-      'mcp:s-id\nskill://s/y/SKILL.md',
+      'source:mcp\ns-id\nskill://s/y/SKILL.md',
     ]),
   );
   // S7: 28 workspace rows fit the list, the last two are dropped.

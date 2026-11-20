@@ -41,6 +41,7 @@ import {
   toolsMethods,
 } from 'bundle/contracts';
 import { createTestServices, type TestServices } from 'bundle/testing';
+import { type SkillSources, SkillSourcesV1 } from 'default/contracts';
 import {
   type AttachInput,
   type Attachment,
@@ -458,6 +459,14 @@ export interface LoggedWarning {
   readonly fields?: unknown;
 }
 
+/** One provider of `default.skill-sources/v1`, bound to the Call of one prompt. */
+export interface SkillSourceProvider {
+  /** The bundle `whenAvailable` reports the provider from. */
+  readonly bundleId: string;
+  list(input: { readonly cwd: string }): ReturnType<SkillSources['list']>;
+  read(input: { readonly reference: string }): ReturnType<SkillSources['read']>;
+}
+
 /** The world one activation of the bundle runs in. */
 export interface World {
   readonly env: Environment;
@@ -466,6 +475,12 @@ export interface World {
   mcp(projectId: string): Mcp;
   /** mcp/v1 called with no Project scope. */
   readonly unscoped: Mcp;
+  /**
+   * Every provider of `default.skill-sources/v1` now, in `whenAvailable`
+   * order, each called as a prompt of the Project calls it, or with no scope
+   * when `projectId` is absent.
+   */
+  skillSources(projectId?: string): readonly SkillSourceProvider[];
   readonly registrations: readonly Registration[];
   /** The names a `remote` registry refused, in order. */
   readonly refused: readonly string[];
@@ -723,6 +738,25 @@ export const activateWorld = async (
     test,
     mcp,
     unscoped: test.services.use(McpV1),
+    skillSources: (projectId) => {
+      const call = test.call(
+        projectId === undefined
+          ? undefined
+          : { projectId, threadId: 'thread-1', promptId: 'prompt-1' },
+      );
+      const found: SkillSourceProvider[] = [];
+      test.services
+        .whenAvailable(SkillSourcesV1, (api, { bundleId }) => {
+          found.push({
+            bundleId,
+            list: (input) => api.list(input, call),
+            read: (input) => api.read(input, call),
+          });
+        })
+        .dispose();
+
+      return found;
+    },
     registrations,
     refused,
     live,

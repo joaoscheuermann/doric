@@ -18,7 +18,6 @@
     "chat": "0.0.1",
     "host-config": "0.0.1",
     "llms": "0.0.1",
-    "mcp": "0.0.1",
     "messages": "0.0.1",
     "mustache": "^4.2.0",
     "runtime": "0.0.1",

@@ -255,7 +255,7 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * skills are read at its start: the always-available bodies and the lists of
  * skills to load make the system prompt's `# Skills` section, which stays the
  * same for the whole run. Before every request after the first, the working
- * directory and the MCP servers are read again and a change reaches the model
+ * directory and the skill sources are read again and a change reaches the model
  * as one "Skills changed" bundle instruction. The run's own `load_skill` tool,
  * last and offered once a skill can be loaded, loads a listed one, answers a
  * note for one the history already holds unchanged, and is exempt from the

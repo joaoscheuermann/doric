@@ -2654,12 +2654,12 @@ test('W9 a watch lost with the host generation subscribes again', async () => {
 // T-3.8 (sidebar alignment §9.4): the pane is registered through
 // `layout.stack/v2`, so the manifest requires it and no longer v1.
 
-test('the MCP manifest is 1.2.6 and requires layout.stack/v2@^2.0.0, not v1', () => {
+test('the MCP manifest is 1.3.0 and requires layout.stack/v2@^2.0.0, not v1', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/features/mcp/manifest.json', 'utf8'),
   ) as { version: string; requires: string[] };
 
-  assert.equal(manifest.version, '1.2.6');
+  assert.equal(manifest.version, '1.3.0');
   assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
   assert.ok(
     !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),

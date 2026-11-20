@@ -1,7 +1,8 @@
 // The `mcp` bundle's host part: provides mcp/v1 over the stored servers and
-// their live connections, connects a Project's servers when a prompt of it
-// starts, stops them when it closes, and forgets them (credentials included)
-// when it is deleted. Everything it opened ends when the bundle deactivates.
+// their live connections and `default.skill-sources/v1` over their skills,
+// connects a Project's servers when a prompt of it starts, stops them when it
+// closes, and forgets them (credentials included) when it is deleted.
+// Everything it opened ends when the bundle deactivates.
 
 import { randomUUID } from 'node:crypto';
 
@@ -20,6 +21,7 @@ import {
   type StreamListener,
   toStreamObserver,
 } from 'bundle/contracts';
+import { SkillSourcesV1, skillSourcesMethods } from 'default/contracts';
 import { RuntimeHooksV1, RuntimeV2 } from 'runtime/contracts';
 
 import {
@@ -39,6 +41,11 @@ import {
 } from './credentials.js';
 import { createManager } from './manager.js';
 import { createSignIns } from './oauth.js';
+import {
+  parseSkillReference,
+  skillOrigin,
+  skillSourceEntries,
+} from './skills.js';
 import {
   createServerStore,
   newDocument,
@@ -317,6 +324,44 @@ export const activate = ({ services }: HostContext): Cleanup => {
     }),
   );
 
+  // The skills of the Project's connected servers, offered to `default`'s
+  // agent: listed from what `manager` holds, read as `readSkill` reads them.
+  const offering = services.provide(
+    defineService(
+      SkillSourcesV1,
+      {
+        list: defineMethod({
+          ...skillSourcesMethods.list,
+          execute: async (_input: { readonly cwd: string }, call: Call) => ({
+            skills: skillSourceEntries(await manager.snapshot(projectOf(call))),
+          }),
+        }),
+        read: defineMethod({
+          ...skillSourcesMethods.read,
+          execute: async (
+            { reference }: { readonly reference: string },
+            call: Call,
+          ) => {
+            const parsed = parseSkillReference(reference);
+            if (parsed === undefined) {
+              throw new ContractError(
+                'invalid_input',
+                'The reference names no MCP server and skill.',
+              );
+            }
+            const server = await serverOf(projectOf(call), parsed.serverId);
+
+            return {
+              origin: skillOrigin(server.name, parsed.uri),
+              text: await manager.readSkill(server, parsed.uri, call.signal),
+            };
+          },
+        }),
+      },
+      { cardinality: 'many' },
+    ),
+  );
+
   const hooks = services
     .use(HooksV1)
     .whenAvailable(RuntimeHooksV1, (registrar) => {
@@ -362,6 +407,7 @@ export const activate = ({ services }: HostContext): Cleanup => {
     watching.dispose();
     hooks.dispose();
     providing.dispose();
+    offering.dispose();
     await signIns.dispose();
     await manager.dispose();
     kind.dispose();

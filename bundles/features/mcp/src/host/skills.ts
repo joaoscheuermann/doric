@@ -1,12 +1,18 @@
 // The skills a server serves through the MCP Skills extension
 // (`io.modelcontextprotocol/skills`): Doric declares the extension, lists the
 // skills of a server that declares it too, and reads one skill's text only on
-// demand, through `mcp/v1.readSkill`.
+// demand, through `mcp/v1.readSkill` or the skill source it provides to
+// `default` (`default.skill-sources/v1`).
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import type { SkillSourceEntry } from 'default/contracts';
 import { z } from 'zod';
 
-import type { McpSkillView } from '../contracts/index.js';
+import {
+  type McpServerView,
+  type McpSkillView,
+  serverSlug,
+} from '../contracts/index.js';
 
 /** The Skills extension's id in `capabilities.extensions`, on both sides. */
 export const SKILLS_EXTENSION = 'io.modelcontextprotocol/skills';
@@ -81,3 +87,42 @@ export const readSkillText = async (
 
   throw new Error('The skill has no text content.');
 };
+
+/** The skill source's `reference` of one skill: the server id, `\n`, the uri. */
+export const skillReference = (serverId: string, uri: string): string =>
+  `${serverId}\n${uri}`;
+
+/**
+ * The server id and uri of a `skillReference`, split at its first `\n`, or
+ * undefined when either part would be empty.
+ */
+export const parseSkillReference = (
+  reference: string,
+): { readonly serverId: string; readonly uri: string } | undefined => {
+  const at = reference.indexOf('\n');
+  if (at <= 0 || at === reference.length - 1) return undefined;
+  return { serverId: reference.slice(0, at), uri: reference.slice(at + 1) };
+};
+
+/** The origin line of a skill the server named `name` serves at `uri`. */
+export const skillOrigin = (name: string, uri: string): string =>
+  `From the MCP server "${name}" (\`${uri}\`). Its other files are not available.`;
+
+/**
+ * The skills of the connected servers among `servers`, in their order, each
+ * in its server's order, as the skill source lists them: grouped by the
+ * server's slug and read by `skillReference`.
+ */
+export const skillSourceEntries = (
+  servers: readonly McpServerView[],
+): SkillSourceEntry[] =>
+  servers
+    .filter(({ status }) => status.state === 'connected')
+    .flatMap(({ id, name: serverName, skills }) =>
+      skills.map(({ uri, name, description }) => ({
+        group: serverSlug(serverName),
+        name,
+        description,
+        reference: skillReference(id, uri),
+      })),
+    );
