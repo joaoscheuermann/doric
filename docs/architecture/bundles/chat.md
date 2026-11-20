@@ -1,6 +1,6 @@
 # O bundle chat
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e a documentação continua sendo o contrato da implementação atual.
 
 ## Resumo
 
@@ -41,7 +41,7 @@ Pela regra de `requires`, a parte client do `chat` declara todo contrato que usa
   - `chat.views/v1` (`ChatViewsV1`), independente de editor;
   - `chat.lexical/v1`, específico da implementação padrão.
 - O serviço client `chat.send/v1`, em toda janela: `send({ projectId, threadId })` envia a pilha de comentários do compositor, com o texto de rascunho que o host guarda, como um prompt pelo mesmo caminho de envio, e limpa o rascunho depois do aceite. O prompt de todo envio usa o envelope XML `<comments>`/`<message>` ([comentários](./comments.md#o-prompt-o-envelope-xml)), e o `chat` lê o corpo de `<message>` onde mostra um prompt guardado. A projeção embutida dele reivindica `comments.added/v1` e `comments.resolved/v1` e as dobra em threads com estado ([comentários](./comments.md#threads-estados-e-respostas-do-agente)).
-- Os hooks `chat.hooks/v2` (`ChatHooksV2`), definidos e executados pela parte client no `hooks/v1` do client; outros bundles registram handlers neles, por exemplo com `whenAvailable` (ver [hooks](./hooks.md)). Desde o `chat` 2.0.0 (passo 5(c) do [isolamento de bundles](../../features/bundle-isolation.md)) o `chat` fornece só `chat.hooks/v2`, que substitui `chat.hooks/v1`: `onSandboxActivityHook` dispara quando o `chat` passa a manter uma Thread, quando o diretório de trabalho dela muda ou quando o estado dela muda para qualquer um exceto `running`, e nunca depois de uma tool terminada. O bundle dono de uma tool que escreve no sandbox observa `onThreadUpdateHook` e pede o próprio refresh, como o `files` faz para `edit` e `write` e o `git` para `git`.
+- Os hooks `chat.hooks/v2` (`ChatHooksV2`), definidos e executados pela parte client no `hooks/v1` do client; outros bundles registram handlers neles, por exemplo com `whenAvailable` (ver [hooks](./hooks.md)). Desde o `chat` 2.0.0 (passo 5(c) do [isolamento de bundles](../../designs/bundle-isolation-concept.md)) o `chat` fornece só `chat.hooks/v2`, que substitui `chat.hooks/v1`: `onSandboxActivityHook` dispara quando o `chat` passa a manter uma Thread, quando o diretório de trabalho dela muda ou quando o estado dela muda para qualquer um exceto `running`, e nunca depois de uma tool terminada. O bundle dono de uma tool que escreve no sandbox observa `onThreadUpdateHook` e pede o próprio refresh, como o `files` faz para `edit` e `write` e o `git` para `git`.
 
 Uma conversa alternativa substitui o bundle `chat` na composição: registra o mesmo path com o próprio elemento e pode fornecer `chat.views/v1` sem Lexical. Dois bundles que registram o mesmo path produzem um conflito de rota, e o segundo vai para quarentena com motivo. `chat.views/v1` tem cardinalidade `one`, a padrão de `defineService`; se dois bundles habilitados o fornecem, a composição escolhe o provedor em `providers`, e a escolha vale no ambiente client. Sem escolha, o segundo provedor vai para quarentena com motivo (ver [composição e distribuição](./composition-and-distribution.md)).
 
@@ -287,7 +287,7 @@ O manifesto acima é ilustrativo. O do `git` 1.2.13 (`bundles/features/git/manif
 > **Desatualizado.** A região `layout.panel` do parágrafo abaixo se chama
 > `shell.panel` desde o passo 4(a) do isolamento de bundles. O comportamento
 > atual está em
-> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
+> [docs/designs/bundle-isolation-concept.md](../../designs/bundle-isolation-concept.md#current-behavior-and-contracts);
 > a fase de documentação desse trabalho (fase 12) reescreve este documento.
 
 No client, `ui/v1` e `commands/v1` entram pelo código acima; `navigation/v1`, porque a parte client registra as rotas `/git/diff/:threadId/:repository` e `/settings/git` com `services.use(NavigationV1)` (ver [navegação e rotas](./navigation.md)); `regions/v1`, pelo item `<git-changes>` que ela põe na região `layout.panel` do [layout](./layout.md) e pelo link `{ id: 'git', tag: 'settings-link', props: { label: 'Git', path: '/settings/git' } }` na região `settings.sections`; `windows/v1`, porque `openComparisonCommand` abre a comparação com `services.use(WindowsV1)` (ver [abrir um path numa janela](./navigation.md#abrir-um-path-numa-janela)); `menus/v1`, pelo item de menu que a parte client pede; e `hooks/v1`, também usado pela parte client para consumir `chat.hooks/v2` com `whenAvailable`. `git.commands/v1` entra em `requires` embora o próprio `git` o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client, como no [documento principal](../bundles.md). `chat.views/v1` e `chat.hooks/v2` ficam fora por serem usados com `whenAvailable`. `commands/v1` existe no `desktopMain` e no client, não no host, por isso os comandos ficam na parte client.

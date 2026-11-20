@@ -56,9 +56,9 @@ No **root do workspace do Project**, que é o root do sandbox:
 
 Três fatos da plataforma fixam esse lugar:
 
-- O workspace de um Project é um só, e **as Threads o compartilham**: "Threads share their Project's sandbox; each Thread's working directory starts at the sandbox's workspace root `/workspace`" (`GROUNDING.md:605-607`). O `cwd` da Thread é o padrão `/workspace` do registro da Thread (`bundles/runtime/runtime/src/contracts/storage.ts:86`), e `runtime.workspace/v1` o move para qualquer path **dentro** do root do workspace (`bundles/runtime/runtime/src/contracts/workspace.ts:1-15,58-62`).
+- O workspace de um Project é um só, e **as Threads o compartilham**: "Threads share their Project's sandbox; each Thread's working directory starts at the sandbox's workspace root `/workspace`" (`docs/features/cwd-tool.md`). O `cwd` da Thread é o padrão `/workspace` do registro da Thread (`bundles/runtime/runtime/src/contracts/storage.ts:86`), e `runtime.workspace/v1` o move para qualquer path **dentro** do root do workspace (`bundles/runtime/runtime/src/contracts/workspace.ts:1-15,58-62`).
 - O host alcança o workspace pelo **lease**: `runtime.lease/v1.describe()` devolve a identidade e o **root**, e o contrato tem `readFile` e `writeFile` (`bundles/runtime/runtime/src/contracts/lease.ts:96-105`). É exatamente o caminho que o `files` já usa (`bundles/features/files/src/host/sandbox.ts:1-39`).
-- A guarda de caminho **já existe e não é do artefato**: a regra do sandbox recusa qualquer path que resolva fora do root do workspace (`GROUNDING.md:606-609`; `runtime.workspace/v1` devolve `outside` no `CwdChange`, `workspace.ts:15-16`).
+- A guarda de caminho **já existe e não é do artefato**: a regra do sandbox recusa qualquer path que resolva fora do root do workspace (`docs/features/cwd-tool.md`; `runtime.workspace/v1` devolve `outside` no `CwdChange`, `workspace.ts:15-16`).
 
 Daí a regra: **tudo o que o Doric escreve no workspace vive sob `.doric/`**, nunca espalhado pelo código do usuário; e o que é **derivado e descartável** — a forma compilada de um preview, por exemplo — fica no **cache do app**, não no Project, porque o cache é da plataforma e o Project é do usuário.
 

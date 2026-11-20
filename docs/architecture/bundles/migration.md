@@ -1,6 +1,6 @@
 # Migração em entregas verificáveis
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e a documentação continua sendo o contrato da implementação atual.
 
 ## Resumo
 
@@ -121,7 +121,7 @@ Depois da etapa 10, a fronteira entre plataforma e bundles foi refatorada em eta
 - **Em andamento na redação:** kinds de credencial registrados por bundle (BWP-8, com o `GIT` do `git`); bundle `host-config` com manifesto (BWP-9); exposição declarada por método e a ponte genérica (BWP-10).
 - **Ainda previstas:** pastas de bundles agrupadas por papel (BWP-13), e o reanexo de sandbox após reinício, que é a única mudança de comportamento aprovada (BWP-14).
 
-A regra que guia as etapas é a da plataforma sem conceitos de bundle, descrita em `GROUNDING.md`, na seção _Platform Boundary_.
+A regra que guia as etapas é a da plataforma sem conceitos de bundle, descrita em `docs/architecture/bundles/boundaries.md`.
 
 ## Relações
 

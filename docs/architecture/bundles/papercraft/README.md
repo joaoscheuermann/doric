@@ -446,7 +446,7 @@ O controle `Comentar` do cabeçalho e o da barra da janela são, portanto, um **
 
 O Doric é **YOLO por padrão**: o preview **não** é um portão. O agente publica o preview e implementa a mudança no código do Project com as ferramentas normais, no mesmo turno ou no seguinte — o preview é a janela que o usuário olha, e o comentário é o que corrige o rumo ([artefatos](../artifacts.md#a-política-de-revisão)).
 
-O que o preview garante é **não escrever às cegas**: a tool só escreve dentro do diretório do artefato, e a guarda de caminho é a do próprio sandbox, que recusa qualquer path que resolva fora do root do workspace (`GROUNDING.md:606-609`). A implementação de verdade é outra ação, sobre outros arquivos, que o preview mostra.
+O que o preview garante é **não escrever às cegas**: a tool só escreve dentro do diretório do artefato, e a guarda de caminho é a do próprio sandbox, que recusa qualquer path que resolva fora do root do workspace (`docs/features/cwd-tool.md`). A implementação de verdade é outra ação, sobre outros arquivos, que o preview mostra.
 
 Sob a política `request` — escolha do Project, não o padrão — a espera existe, e tem um lugar em cada casa: no node é um pedido na conversa (o bloco não tem botão) e na janela é o botão `Autorizar` da barra (`papercraft.approve/v1`), despachado por `commands/v1.execute`, o mesmo caminho que o painel de Changes do `git` usa; a aprovação grava `artifacts.approved/v1` ([artefatos](../artifacts.md)) e manda o prompt que libera a implementação, com o escopo autorizado. Se um dia fizer sentido um botão no próprio bloco do node, o renderer acrescenta ações por `chat.hooks/v1.onBeforeRenderBlockHook` e o `IntentDispatcher` as converte em comandos.
 

@@ -38,6 +38,8 @@ real files before acting.
 - Prefer existing package patterns, helper APIs, and tests before adding new
   abstractions.
 - Use `apply_patch` for manual file edits.
+- Write all documentation in English: feature and architecture docs, specs,
+  decision records, READMEs and `AGENTS.md` files.
 - Do not use destructive commands, broad rewrites, or rollback operations
   unless the user explicitly approves them.
 - Use `GROUNDING.md` for hard constraints, scope gates, and architecture

@@ -1,6 +1,6 @@
 # Context compaction
 
-**Estado:** implementado em `feat/context-compaction`. Este documento descreve o comportamento implementado e o plano que o guiou; `GROUNDING.md` segue sendo o contrato de validade, e a seção "Critérios de feature completa" lista o que "completa" significa nesta landing.
+**Estado:** implementado em `feat/context-compaction`. Este documento descreve o comportamento implementado e o plano que o guiou; o `AGENTS.md` da raiz segue sendo o contrato de validade, e a seção "Critérios de feature completa" lista o que "completa" significa nesta landing.
 
 ## Resumo
 
@@ -82,7 +82,7 @@ Quando o provider falha com erro classificado como estouro de contexto (heuríst
 4. **On-demand** (`runtime` services/runner/domain + `transport`): rota `POST /threads/:id/compact`, recusa `busy`, sessão sintética com `promptId` próprio, publicação dos eventos.
 5. **Configuração** (`bundles/foundation/host-config`): seção opcional `contextCompaction` com defaults; leitura pelo executor.
 6. **UI** (`bundles/desktop/chat`): projeção do bracket como um turno `compaction` próprio (linha discreta, estilo lifecycle), read-only e indeletável.
-7. **Documentação e validade**: este documento, `GROUNDING.md` (seções de eventos e persistência de sessão), e testes.
+7. **Documentação e validade**: este documento, a documentação (seções de eventos e persistência de sessão), e testes.
 
 ## Critérios de feature completa nesta landing
 
@@ -95,7 +95,7 @@ A feature está completa quando **todos** estes itens são verificáveis no repo
 5. Os três tipos de evento existem no log com payloads fechados e a UI renderiza o bracket como turno próprio.
 6. Config `contextCompaction` (enabled, pressurePercent, tailMinMessages, summaryMaxChars, charBudget) com defaults seguros; desabilitada, nada compacta.
 7. Testes: núcleo puro, re-base/rewind, marker, bordas, projeção, summarizer (fake provider), executor automático (stream fake), service/runner (recusas), UI projector.
-8. `GROUNDING.md` e este documento coerentes com o código; lint e testes dos pacotes afetados passando.
+8. A documentação e este documento coerentes com o código; lint e testes dos pacotes afetados passando.
 
 ## Limitações conhecidas (herdadas e declaradas)
 

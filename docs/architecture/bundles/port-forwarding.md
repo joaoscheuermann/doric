@@ -1,6 +1,6 @@
 # Port forwarding: alcançar as portas do sandbox
 
-**Estado:** proposta. Nada aqui descreve comportamento já implementado; `GROUNDING.md` continua sendo o contrato da implementação atual. Os caminhos citados como evidência existem hoje no repositório.
+**Estado:** proposta. Nada aqui descreve comportamento já implementado; a documentação continua sendo o contrato da implementação atual. Os caminhos citados como evidência existem hoje no repositório.
 
 ## Resumo
 
@@ -100,7 +100,7 @@ Espelha `bundles/features/screen-relay` linha a linha, com as diferenças que a 
 
 A UI se divide como a das telas: a parte **client** é a única que tem ponte com o host e faz as chamadas de `ports.sessions/v1`; a parte **desktopMain** não chama contrato de host algum, e é ela que possui a janela.
 
-- Um grupo na sidebar, por um pane de `layout.stack/v2` (`stack.register({ id: 'ports-sidebar', tag: PORTS_SIDEBAR_TAG, order: …, title: 'Ports' })`, sem tamanhos — a v2 não os aceita —, como o pane de telas em `bundles/features/screen/src/client/index.ts`), abaixo da árvore de Threads — o mesmo stack, e portanto o mesmo desenho de painéis, em que as telas registram o seu (`GROUNDING.md:498-500`) —, com uma linha por sessão e o estado dela, alimentado pelo mesmo desenho de dial das telas (`bundles/features/screen/src/client/index.ts:56-91`).
+- Um grupo na sidebar, por um pane de `layout.stack/v2` (`stack.register({ id: 'ports-sidebar', tag: PORTS_SIDEBAR_TAG, order: …, title: 'Ports' })`, sem tamanhos — a v2 não os aceita —, como o pane de telas em `bundles/features/screen/src/client/index.ts`), abaixo da árvore de Threads — o mesmo stack, e portanto o mesmo desenho de painéis, em que as telas registram o seu (`docs/features/screen.md`) —, com uma linha por sessão e o estado dela, alimentado pelo mesmo desenho de dial das telas (`bundles/features/screen/src/client/index.ts:56-91`).
 - Cada linha abre (ou foca) uma janela própria, por `doric.windows/v1`, com o path `/ports/<token>/`, partição própria e barra de título nativa, sem preload — o pedido exato que o `screen` monta em `bundles/features/screen/src/desktop/windows.ts:14-46`.
 - A janela carrega o path sob a origem do host e nada mais; a ação "copiar URL" monta a mesma URL a partir de `DORIC_HOST_URL`/origem conhecida. "Abrir no browser da máquina" **não** é possível hoje: não existe `shell.openExternal`, nenhuma superfície carrega origem fora da origem do host — a janela de view está presa a ela — e a CSP do esquema `doric://` não permite frames nem conexões a outra origem. Fica como pedido explícito de nova superfície da plataforma, listado nas decisões abertas.
 - A janela é reaberta e re-apontada quando a sessão muda de token, como o heal loop das telas faz com `focus`/`navigate`.
@@ -203,7 +203,7 @@ O `ports-relay` declara só `ports.relay/v1` em `provides`, como `screen-relay`.
 > prepara cada diretório `bundles/<grupo>/<id>` que tem um `manifest.json`. Um
 > bundle novo precisa da tag, do manifesto nesse local, de `npm install`, de
 > `nx sync` e de uma linha `enabled`. O comportamento atual está em
-> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts).
+> [docs/designs/bundle-isolation-concept.md](../../designs/bundle-isolation-concept.md#current-behavior-and-contracts).
 
 | Arquivo                                                      | Mudança                                                                                                                                                                     |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -215,7 +215,7 @@ O `ports-relay` declara só `ports.relay/v1` em `provides`, como `screen-relay`.
 | `packages/sandbox`                                           | Alcançabilidade do sandbox (D-9), pela interface (`reach(port)`) ou pelo helper público.                                                                                    |
 | `app/backend/doric-host/tests/bridge-exposure.snapshot.json` | O snapshot congelado do que uma janela pode chamar precisa ganhar `ports.sessions/v1` (e `ports.views/v1`, se o desktop a consumir), por `bridge-exposure.test.ts`.         |
 | `docs/architecture/bundles.md`                               | Link para este documento no mapa.                                                                                                                                           |
-| `GROUNDING.md`                                               | Só na implementação (ver abaixo).                                                                                                                                           |
+| A documentação                                               | Só na implementação (ver abaixo).                                                                                                                                           |
 
 ## Testes
 
@@ -245,7 +245,7 @@ O `ports-relay` declara só `ports.relay/v1` em `provides`, como `screen-relay`.
 - Se a política de portas é um espaço global de settings (o caminho com precedente) ou uma lista por Project, que hoje não tem onde morar: a configuração é única, o `configSnapshot` do Project é explicitamente "nunca lido na execução" (`bundles/runtime/runtime/src/contracts/storage.ts:20-30`) e `SandboxNetworkPolicy.allowPrivate[].ports` são regras de saída, não bindings do host.
 - Se TCP cru entra em escopo: hoje o seam `doric.network/v1` oferece HTTP e `upgrade`, não sockets crus, e servir um protocolo não-HTTP exigiria superfície nova.
 
-## O que muda no `GROUNDING.md` quando for implementado
+## O que muda na documentação quando for implementado
 
 O `AGENTS.md` pede atualizar o contrato quando a tarefa muda comportamento de produto. Na implementação, e não nesta proposta, entram lá: os bundles `ports` e `ports-relay` em `alternatives`/composição, os contratos `ports.sessions/v1`, `ports.views/v1` e `ports.relay/v1`, o prefixo `/ports/<token>/` na origem do host, a alcançabilidade do sandbox em `packages/sandbox`, a tool e a seção de settings. Nada disso vale enquanto esta proposta não virar entrega verificável.
 
