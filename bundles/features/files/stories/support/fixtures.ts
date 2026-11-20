@@ -1,12 +1,16 @@
 // The sandbox the files stories show: the Project "Checkout redesign", its
 // Thread working in `/workspace`, the workspace tree the host lists, the text
-// of a few of its files, and the marks git's changes read gives the tree.
+// of a few of its files, and the marks git gives the tree through
+// `files.decorations/v1`.
 
 import type { Project, Thread } from 'runtime/contracts';
 
-import type { ChangeMark } from '../../src/client/api/peers.js';
 import type { ProjectFileContent } from '../../src/client/reads/project-files.js';
-import type { ProjectTreeNode } from '../../src/contracts/index.js';
+import type {
+  DecorationsObservation,
+  FileMark,
+  ProjectTreeNode,
+} from '../../src/contracts/index.js';
 
 export const project: Project = {
   id: 'prj_checkout',
@@ -126,7 +130,7 @@ const tone = {
 };
 
 /** git's marks for the change set of the payment form Thread. */
-export const changeMarks: ReadonlyMap<string, ChangeMark> = new Map([
+export const changeMarks: ReadonlyMap<string, FileMark> = new Map([
   [
     'apps',
     {
@@ -188,6 +192,11 @@ export const changeMarks: ReadonlyMap<string, ChangeMark> = new Map([
     },
   ],
 ]);
+
+/** The same marks as `files.decorations/v1` answers them: a list of paths. */
+export const changeMarkList: DecorationsObservation['marks'] = [
+  ...changeMarks,
+].map(([path, mark]) => ({ path, mark }));
 
 export const paymentForm: ProjectFileContent = {
   path: 'apps/web/src/checkout/payment-form.tsx',

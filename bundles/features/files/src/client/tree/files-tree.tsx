@@ -1,13 +1,14 @@
 // <files-tree> (stage 10, §3.6): the Files view of the Project panel, moved
 // from the provisional `ProjectFilesContent` (`project-files-sidebar.tsx`):
-// one toast surface for the tree and changes reads, the gate that explains a
-// Project whose sandbox cannot be read, and the whole tree rooted at the
-// selected Thread's working directory, read per directory (the root, then
-// each directory as it opens), decorated from git's changes read when git
-// serves one. A file row opens its tab; the row of the current file tab
-// is the selected one. A file row's context menu copies its path relative to
-// the root (A8); a folder row's makes a file or a folder in it (A9, A10)
-// through an inline name row, then refreshes the Project (§4.4).
+// one toast surface for the tree read and the marks' providers, the gate that
+// explains a Project whose sandbox cannot be read, and the whole tree rooted at
+// the selected Thread's working directory, read per directory (the root, then
+// each directory as it opens), marked by every provider of
+// `files.decorations/v1` (bundle isolation 9). A file row opens its tab; the
+// row of the current file tab is the selected one. A file row's context menu
+// copies its path relative to the root (A8); a folder row's makes a file or a
+// folder in it (A9, A10) through an inline name row, then refreshes the
+// Project (§4.4).
 
 import { CommandsV1, type Services } from 'bundle/contracts';
 import { ContextMenuGroup, ContextMenuItem } from 'desktop/ui/context-menu';
@@ -37,18 +38,15 @@ import { WorkspaceSelectionV1 } from 'workspace/contracts';
 import { useStore } from 'zustand/react';
 
 import {
+  type FileMark,
   OPEN_FILE_COMMAND,
   sandboxNotice,
   type TreeObservation,
 } from '../../contracts/index.js';
-import {
-  type ChangesObservation,
-  type GitChanges,
-  GitChangesV1,
-} from '../api/peers.js';
 import { refreshWorkspaceOf } from '../api/selection.js';
 import { type FilesWrites, filesWritesOf } from '../api/writes.js';
 import { filePathOf } from '../commands.js';
+import { useDecorations } from '../hooks/use-decorations.js';
 import { useProjectReads } from '../hooks/use-project-reads.js';
 import { useService, useSubscribed } from '../hooks/use-service.js';
 import { relativeTo } from '../paths.js';
@@ -100,7 +98,6 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
   );
   const tabs = useService(services, LayoutTabsV2);
   const commands = useService(services, CommandsV1);
-  const git = useService(services, GitChangesV1);
   const location = locationOf(
     useSubscribed(
       workspace,
@@ -122,7 +119,7 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
   );
   const { projectId, cwd } = location;
   const tree = useTree(projectId, cwd);
-  const changes = useChanges(git, projectId, cwd);
+  const decorations = useDecorations(services, projectId, cwd);
   useProjectReads(projectId);
   const writes = useMemo(() => filesWritesOf(services), [services]);
   const open = useCallback(
@@ -138,14 +135,12 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
   if (workspace === undefined) return null;
 
   const root = rootOf(cwd);
-  const treeError = tree.error;
-  const changesError = changes?.error;
 
   return (
     <>
       <ReadFeedback
-        error={treeError ?? changesError}
-        refreshing={tree.fetching || changes?.fetching === true}
+        error={tree.error ?? decorations?.error}
+        refreshing={tree.fetching || decorations?.fetching === true}
         onRetry={() => {
           if (projectId !== undefined)
             filesClient()?.coordinator.request(projectId);
@@ -161,7 +156,7 @@ export function FilesTreeView({ services }: { readonly services: Services }) {
             root={root}
             scope={expansionScope(projectId, root)}
             selectedPath={selectedPath}
-            decorations={changes?.decorations}
+            decorations={decorations?.marks}
             onOpen={open}
             writes={writes}
           />
@@ -189,27 +184,6 @@ function useTree(
     );
     return () => observation.dispose();
   }, [projectId, cwd]);
-  return state;
-}
-
-/** Git's changes read of the same Project and root, when git serves one. */
-function useChanges(
-  git: GitChanges | undefined,
-  projectId: string | undefined,
-  cwd: string | undefined,
-): ChangesObservation | undefined {
-  const [state, setState] = useState<ChangesObservation | undefined>(undefined);
-  useEffect(() => {
-    if (git === undefined || projectId === undefined) {
-      setState(undefined);
-      return;
-    }
-    const observation = git.observe(
-      { projectId, ...(cwd === undefined ? {} : { cwd }) },
-      setState,
-    );
-    return () => observation.dispose();
-  }, [git, projectId, cwd]);
   return state;
 }
 
@@ -256,8 +230,8 @@ function SandboxGate({
 /**
  * The directory tree as read so far: a directory opened before its children
  * were read shows a loading line until they arrive (the sandbox store reads
- * them). Git's marks are keyed by path, so a folder that was never read still
- * carries its descendants' changes. A file row opens its tab beside this panel
+ * them). The providers' marks are keyed by path, so a folder that was never read
+ * still carries its descendants' marks. A file row opens its tab beside this panel
  * rather than replacing the tree, so what was opened stays reachable. Its props
  * keep their identity while the tree and its marks are unchanged, so a refresh
  * that only starts and settles a read leaves every row as it was.
@@ -279,7 +253,7 @@ const FilesView = memo(function FilesView({
   readonly root: string;
   readonly scope: string;
   readonly selectedPath?: string;
-  readonly decorations?: ChangesObservation['decorations'];
+  readonly decorations?: ReadonlyMap<string, FileMark>;
   readonly loading: ReadonlySet<string>;
   readonly onOpen: (path: string) => void;
   readonly writes: FilesWrites;

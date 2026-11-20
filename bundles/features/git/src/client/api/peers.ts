@@ -1,19 +1,26 @@
-// The optional and client peers of the git client, as structural copies of
-// their contracts by ID: a composition without files or chat would not map
-// `files/contracts` or `chat/contracts`. Each is reached through
+// The optional and client peers of the git client. The chat's hook is a
+// structural copy by ID: a composition without chat would not map
+// `chat/contracts`. The `files.*` contracts git lists under `optional` take
+// their types from `files/contracts` with `import type`, and their refs and
+// command id are declared here by id (D32). Each is reached through
 // `whenAvailable`, or used only by the element that a peer's own window shows.
 // `settings.config/v1` is not here: git requires it, and takes it from
 // `settings/contracts`.
 
-import {
-  type CallArg,
-  type Disposable,
-  defineHook,
-  defineHooks,
-  ref,
-} from 'bundle/contracts';
-import type { ProjectTreeNode, ReadState } from 'files/contracts';
+import { defineHook, defineHooks, ref } from 'bundle/contracts';
+import type {
+  OPEN_FILE_COMMAND as FilesOpenFileCommand,
+  FilesRefresh,
+  FilesSandbox,
+} from 'files/contracts';
 import { z } from 'zod';
+
+export type {
+  FilesRefresh,
+  FilesSandbox,
+  ProjectReads,
+  TreeObservation,
+} from 'files/contracts';
 
 /** What chat's `onThreadUpdateHook` hands git: a live event, or an updated record. */
 export type ChatThreadUpdate =
@@ -47,42 +54,14 @@ export type ThreadUpdateInput = z.output<
 >;
 
 /** files.sandbox/v1 (client, local): the tree read the Changes view is gated by. */
-export interface TreeObservation {
-  readonly read: ReadState<readonly ProjectTreeNode[]>;
-  readonly error?: string;
-  readonly fetching: boolean;
-}
-
-export interface FilesSandbox {
-  observeTree(
-    scope: { readonly projectId: string; readonly cwd?: string },
-    listener: (state: TreeObservation) => void,
-    call?: CallArg,
-  ): Disposable;
-}
-
 export const FilesSandboxV1 = ref<FilesSandbox>('files.sandbox/v1');
 
 /** files.refresh/v1 (client, local): the Project refresh coordinator. */
-export interface ProjectReads {
-  readonly projectId: string;
-  active(): boolean;
-  refresh(options: { readonly periodic: boolean }): Promise<void>;
-}
-
-export interface FilesRefresh {
-  register(reads: ProjectReads, call?: CallArg): Disposable;
-  request(
-    projectId: string,
-    options?: { readonly periodic?: boolean },
-    call?: CallArg,
-  ): void;
-}
-
 export const FilesRefreshV1 = ref<FilesRefresh>('files.refresh/v1');
 
 /** files.open-file/v1 (client command): opens one sandbox file as a tab. */
-export const OPEN_FILE_COMMAND = 'files.open-file/v1';
+export const OPEN_FILE_COMMAND =
+  'files.open-file/v1' satisfies typeof FilesOpenFileCommand;
 
 /** The configuration fields the Versioning section edits. */
 export interface VersioningDraft {

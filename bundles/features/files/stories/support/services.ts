@@ -1,7 +1,8 @@
 // A stand-in for the `Services` a files element receives: every contract the
 // story serves is available at once, keyed by its contract id, so the
 // components read seeded fixtures instead of a live host. `use` answers the
-// same API whatever the scope, or the API a scoped factory builds for it.
+// same API whatever the scope, or the API a scoped factory builds for it. A
+// many-contract is served by several providers, each under its bundle id.
 
 import type {
   AnyServiceRef,
@@ -19,19 +20,29 @@ const disposed: Disposable = { dispose: () => undefined };
 
 const provider = { bundleId: 'stories', version: '0.0.0' };
 
+/** One provider of a many-contract: the bundle that provides it, and its API. */
+export interface StoryProvider {
+  readonly bundleId: string;
+  readonly api: unknown;
+}
+
 /**
  * Services over fixed APIs. A value that is a function receives the call's
  * scope and returns the API for it (`services.use(FilesV1, { projectId })`);
- * pass such APIs under `scoped`.
+ * pass such APIs under `scoped`. A contract under `many` has one provider per
+ * entry: `whenAvailable` calls back once for each, in the order given, with
+ * its bundle id, and disposing the binding runs every cleanup.
  */
 export const storyServices = ({
   apis = {},
   scoped = {},
+  many = {},
 }: {
   readonly apis?: Readonly<Record<string, unknown>>;
   readonly scoped?: Readonly<
     Record<string, (scope: CallScope | undefined) => unknown>
   >;
+  readonly many?: Readonly<Record<string, readonly StoryProvider[]>>;
 }): Services => {
   const resolve = (id: string, scope?: CallScope): Provided => {
     const factory = scoped[id];
@@ -47,6 +58,19 @@ export const storyServices = ({
       return api as ApiOf<R>;
     },
     whenAvailable: (contract, callback) => {
+      const providers = many[contract.id];
+      if (providers !== undefined) {
+        const cleanups = providers.map(({ bundleId, api }) =>
+          callback(api as never, { bundleId, version: provider.version }),
+        );
+        return {
+          dispose: () => {
+            for (const cleanup of cleanups) {
+              if (typeof cleanup === 'function') void cleanup();
+            }
+          },
+        };
+      }
       const api = resolve(contract.id);
       if (api === undefined) return disposed;
       const cleanup = callback(api as never, provider);

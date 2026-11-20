@@ -7,6 +7,8 @@
 // - `files.sandbox/v1` (client, local): the window's one tree read per
 //   Project and root — its root and the directories open in it — shared with
 //   the bundles that gate on it.
+// - `files.decorations/v1` (client, local, many): the marks a provider gives
+//   the rows of the Files tree, merged across every provider.
 // - `files.refresh/v1` (client, local): the Project refresh coordinator.
 // - `files.open-file/v1` (client command): opens a file tab.
 
@@ -377,6 +379,62 @@ export const filesSandboxMethods = {
 } as const;
 
 export const FilesSandboxV1 = ref<FilesSandbox>('files.sandbox/v1');
+
+// files.decorations/v1 (client, local, many) ---------------------------------
+
+/**
+ * The mark a provider gives one tree row, stated by the bundle that knows what
+ * it means: the description the row's label reads, the badge count a
+ * directory carries, and a file badge's colour, letter and strike.
+ */
+export interface FileMark {
+  /** The row's accessible label and tooltip suffix. */
+  readonly description: string;
+  /** The badge a directory row carries: how many marked entries lie below it. */
+  readonly count: number;
+  /** Class names of the marked name and badge. */
+  readonly tone?: string;
+  /** The letter a marked file's badge carries. */
+  readonly letter?: string;
+  /** Whether a file's name is struck through. */
+  readonly struck?: boolean;
+}
+
+/** What one provider marks for one tree: its marks by workspace-relative path. */
+export interface DecorationsObservation {
+  readonly marks: readonly {
+    readonly path: string;
+    readonly mark: FileMark;
+  }[];
+  /** Why the provider's marks could not be read, as the toast shows it. */
+  readonly error?: string;
+  readonly fetching: boolean;
+}
+
+/**
+ * Client, local, many: every provider marks the rows of the Files tree it
+ * knows about. Observing activates the provider's read; it runs only while
+ * observed.
+ */
+export interface FilesDecorations {
+  observe(
+    scope: TreeScope,
+    listener: (state: DecorationsObservation) => void,
+    call?: CallArg,
+  ): Disposable;
+}
+
+export const filesDecorationsMethods = {
+  observe: {
+    input: z.tuple([
+      treeScopeSchema,
+      functionSchema<(state: DecorationsObservation) => void>(),
+    ]),
+    output: disposableSchema,
+  },
+} as const;
+
+export const FilesDecorationsV1 = ref<FilesDecorations>('files.decorations/v1');
 
 // files.refresh/v1 (client, local) -------------------------------------------
 

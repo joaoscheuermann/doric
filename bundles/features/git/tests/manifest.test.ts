@@ -9,7 +9,10 @@
 // come from `workspace.selection/v1` and `runtime.records/v1`), and at
 // 1.2.13 from bundle isolation 5(c) change 2 (a patch: it observes
 // `chat.hooks/v2` to refresh after its own tool), and at 1.2.14 from bundle
-// isolation 7(c) (a patch: the busy check reads `terminal/v1`).
+// isolation 7(c) (a patch: the busy check reads `terminal/v1`), and at 1.3.0
+// from bundle isolation 9 (a minor: it provides `files.decorations/v1`, the
+// marks of the Files tree, and takes the `files.*` contracts it uses from
+// `files/contracts`).
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -21,7 +24,7 @@ describe('the git manifest', () => {
       readFileSync('bundles/features/git/manifest.json', 'utf8'),
     ) as { version: string; provides: string[]; requires: string[] };
 
-    assert.equal(manifest.version, '1.2.14');
+    assert.equal(manifest.version, '1.3.0');
     assert.ok(manifest.provides.includes('git.commands/v1@1.1.0'));
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('layout.tabs/')),
@@ -71,6 +74,31 @@ describe('the git manifest', () => {
     assert.equal(manifest.optional.includes('runtime.terminals/v1'), false);
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('terminal/')),
+      [],
+    );
+  });
+
+  // Bundle isolation 9, T9.2: git gives the Files tree its marks through the
+  // contract files declares, and still reaches the files contracts it uses
+  // only while files provides them.
+  test('provides files.decorations/v1@1.0.0 and keeps the files.* contracts it uses optional', () => {
+    const manifest = JSON.parse(
+      readFileSync('bundles/features/git/manifest.json', 'utf8'),
+    ) as { provides: string[]; requires: string[]; optional: string[] };
+
+    assert.ok(
+      manifest.provides.includes('files.decorations/v1@1.0.0'),
+      manifest.provides.join(', '),
+    );
+    for (const id of [
+      'files.sandbox/v1',
+      'files.refresh/v1',
+      'files.open-file/v1',
+    ]) {
+      assert.ok(manifest.optional.includes(id), `${id} is not optional`);
+    }
+    assert.deepEqual(
+      manifest.requires.filter((ref) => ref.startsWith('files')),
       [],
     );
   });

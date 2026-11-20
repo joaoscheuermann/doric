@@ -1,4 +1,5 @@
-// The git bundle's client part (stage 10, §3.8): `git.changes/v1`, the
+// The git bundle's client part (stage 10, §3.8): `git.changes/v1`, the Files
+// tree's marks through `files.decorations/v1` (bundle isolation 9), the
 // `git.open-comparison/v1` command and the six elements — the Changes panel
 // view and its trigger badge, the comparison tab, the diff icon
 // (`git-file-diff-icon`) the layout draws for both, the footer's working
@@ -29,7 +30,11 @@ import type { SETTINGS_SECTIONS } from 'settings/contracts';
 
 import { gitApiOf } from './api/git-api.js';
 import { ChatHooksV2, type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
-import { createGitChanges, createGitStore } from './changes/store.js';
+import {
+  createFilesDecorations,
+  createGitChanges,
+  createGitStore,
+} from './changes/store.js';
 import {
   FILE_DIFF_ICON_TAG,
   FILE_DIFF_TAG,
@@ -127,6 +132,7 @@ export function activate({ services }: ClientContext): Cleanup {
       return () => registration.dispose();
     });
   services.provide(createGitChanges(store));
+  services.provide(createFilesDecorations(store));
 
   const ui = services.use(UiV1);
   const elements = defineGitElements(store);

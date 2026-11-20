@@ -11,7 +11,9 @@
 // through `chat.views/v1` (listed under `optional`), on platform `^1.10.0`.
 // Bundle isolation 5(c) change 3 ships 1.8.1: the bundle observes
 // `chat.hooks/v2` instead of the old chat hooks, and refreshes after its own
-// `edit` and `write` calls.
+// `edit` and `write` calls. Bundle isolation 9 ships 1.9.0: the bundle
+// declares `files.decorations/v1` (listed under `optional`) and names no
+// `git.*` contract.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -55,8 +57,8 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.8.1 on platform ^1.10.0', () => {
-    assert.equal(manifest.version, '1.8.1');
+  test('provides files/v1@1.3.0 at version 1.9.0 on platform ^1.10.0', () => {
+    assert.equal(manifest.version, '1.9.0');
     assert.ok(manifest.provides.includes('files/v1@1.3.0'));
     assert.equal(manifest.engines.doric, '^1.10.0');
   });
@@ -71,6 +73,19 @@ describe('the files manifest', () => {
     assert.ok(manifest.requires.includes('ui/v1@^1.0.0'));
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('chat.')),
+      [],
+    );
+  });
+
+  // Bundle isolation 9 (AC9.2): the tree's marks come from every provider of
+  // the contract files declares, not from git's own.
+  test('takes files.decorations/v1 as optional and no git.* contract', () => {
+    assert.ok(
+      manifest.optional.includes('files.decorations/v1'),
+      manifest.optional.join(', '),
+    );
+    assert.deepEqual(
+      manifest.optional.filter((ref) => ref.startsWith('git.')),
       [],
     );
   });

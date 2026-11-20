@@ -9,13 +9,6 @@
     },
     {
       "check": "cycles",
-      "bundle": "files",
-      "target": "git",
-      "decision": "docs/features/bundle-isolation.md",
-      "until": "phase 9"
-    },
-    {
-      "check": "cycles",
       "bundle": "postgres",
       "target": "runtime",
       "decision": "docs/features/bundle-isolation.md",

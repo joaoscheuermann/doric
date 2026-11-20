@@ -5,7 +5,9 @@
 // `['files', p, 'changes', cwd]`; the Project's Thread summaries live in this
 // client too, and both are reread together for a Project. Each retries a failed
 // read a bounded number of times and polls a pending lease at the host's hint.
-// It runs only while something observes it [D10-14].
+// It runs only while something observes it [D10-14]. The same read gives the
+// Files tree its marks through `files.decorations/v1`, the contract `files`
+// declares (bundle isolation 9).
 
 import type { Query } from '@tanstack/query-core';
 import { QueryClient, QueryObserver } from '@tanstack/query-core';
@@ -17,7 +19,15 @@ import {
   refreshQueries,
 } from 'desktop/reads';
 import { toggleExpanded } from 'desktop/ui/panels';
-import { type ReadState, ROOT_PATH, workspacePath } from 'files/contracts';
+import {
+  type DecorationsObservation,
+  FilesDecorationsV1,
+  filesDecorationsMethods,
+  type ReadState,
+  ROOT_PATH,
+  type TreeScope,
+  workspacePath,
+} from 'files/contracts';
 import { createStore } from 'zustand/vanilla';
 
 import {
@@ -239,3 +249,48 @@ export const createGitChanges = (store: GitStore) =>
       ]) => store.observeChanges(scope, listener),
     }),
   });
+
+/** The marks of each changes read, listed once per map. */
+const markLists = new WeakMap<
+  ChangesObservation['decorations'],
+  DecorationsObservation['marks']
+>();
+
+/**
+ * What the Files tree draws from a changes read: its marks in the map's order.
+ * The list is made once per map, so a notification that only starts or settles
+ * a fetch keeps it, and the tree keeps its rows.
+ */
+export const decorationsOf = (
+  state: ChangesObservation,
+): DecorationsObservation => {
+  let marks = markLists.get(state.decorations);
+  if (marks === undefined) {
+    marks = [...state.decorations].map(([path, mark]) => ({ path, mark }));
+    markLists.set(state.decorations, marks);
+  }
+  return {
+    marks,
+    ...(state.error === undefined ? {} : { error: state.error }),
+    fetching: state.fetching,
+  };
+};
+
+/** `files.decorations/v1` over a store: the Files tree's marks from the changes read. */
+export const createFilesDecorations = (store: GitStore) =>
+  defineService(
+    FilesDecorationsV1,
+    {
+      observe: defineMethod({
+        ...filesDecorationsMethods.observe,
+        execute: ([scope, listener]: [
+          TreeScope,
+          (state: DecorationsObservation) => void,
+        ]) =>
+          store.observeChanges(scope, (state) =>
+            listener(decorationsOf(state)),
+          ),
+      }),
+    },
+    { cardinality: 'many' },
+  );

@@ -17,7 +17,8 @@ platform. See the [main README](../../../README.md) for Doric as a whole and
 - **Skills:** cloning, commit preparation, conflict resolution, rebasing,
   remote synchronization and linked worktrees.
 - **Contracts:** `git.commands/v1` (host, 1.1.0 with `discard`),
-  `git.changes/v1` (client) and the `git.open-comparison/v1` command.
+  `git.changes/v1` (client), `files.decorations/v1` (client, declared by
+  `files`) and the `git.open-comparison/v1` command.
 - **Credentials:** the `GIT` credential kind, a Git identity (username and
   email) registered with `secrets/v1`.
 - **UI:** the Changes view, the comparison tab, the Files column footer's
@@ -86,8 +87,17 @@ Skills live in `src/skills/<name>/SKILL.md`; each one's `order` frontmatter
   decides `discarded`; a failing command or a target still listed answers
   `failed` with what was discarded before it.
 - `git.changes/v1` (client) keeps the window's one changes read per Project and
-  working directory, shared with the bundles that decorate from it, such as
-  the files tree.
+  working directory, shared with the Changes view and the footer.
+- `files.decorations/v1` (client, many; git 1.3.0) gives the Files tree the
+  marks of the same changes read: for a scope, its marks path by path, its
+  error and whether it fetches. The contract is the one `files` declares, so
+  `files` names no `git.*` contract; a refresh that answers the same changes
+  keeps the list of marks, so the tree keeps its rows.
+- git takes the `files.*` types it uses from `files/contracts` with
+  `import type` and declares the refs of the optional `files.sandbox/v1` and
+  `files.refresh/v1` and the `files.open-file/v1` command id by id (D32). It
+  imports values of `files/contracts` at run time (the decorations contract it
+  provides, `ROOT_PATH`), so `files` is one of its `dependencies`.
 - `git.open-comparison/v1` opens one file's comparison as a workspace tab
   (`git-file-diff`), whose trigger draws the `git-file-diff-icon` element
   (`iconTag`). The tab's context menu holds "Open file", which runs

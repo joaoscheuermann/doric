@@ -16,8 +16,8 @@ client part (the desktop UI), loaded by the `bundle` platform. See the
   available.
 - **Skills:** a baseline execution discipline plus focused skills for
   discovery, search, inspection, editing, validation and synthesis.
-- **Contracts:** `files/v1` (host), `files.sandbox/v1` and `files.refresh/v1`
-  (client) and the `files.open-file/v1` command.
+- **Contracts:** `files/v1` (host), `files.sandbox/v1`, `files.refresh/v1`
+  and `files.decorations/v1` (client) and the `files.open-file/v1` command.
 - **UI:** the Files view in the workspace panel, the file tab, and the
   drawing of `edit` and `write` calls in the chat (1.8.0).
 
@@ -96,6 +96,15 @@ skill of the `web` bundle. A skill's `allowed-tools` resolve against the whole
   folder that opens later is read on its own (the observation's `loading`
   names it meanwhile) and merged in; one whose read fails closes again and
   its failure is the observation's `error`.
+- `files.decorations/v1` (client, many, 1.9.0) is declared here and provided
+  by other bundles: each provider's `observe({ projectId, cwd }, listener)`
+  answers its marks for the tree, a list of `{ path, mark }` with its `error`
+  and `fetching`. The Files view asks every provider for the tree it shows and
+  draws their merge: for a path two providers mark, the mark of the provider
+  whose bundle id is smaller (by code unit) wins; the first error in bundle-id
+  order shows in the panel's read toast, and the view refreshes while any
+  provider fetches. With no provider no row is marked. `git` provides it with
+  the marks of its changes read; `files` names no `git.*` contract.
 - `files.refresh/v1` (client) is the Project refresh coordinator. It rereads
   when an `edit` or `write` call finishes in any held conversation (chat's
   `onThreadUpdateHook`), when the chat starts to hold a Thread, a held

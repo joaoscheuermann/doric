@@ -3,10 +3,11 @@ import { useState } from 'react';
 import { defineFilesElements } from '../src/client/elements.js';
 import { filesKeys } from '../src/client/sandbox-store.js';
 import { setFilesClient } from '../src/client/state.js';
+import type { DecorationsObservation } from '../src/contracts/index.js';
 import { ElementHost } from './support/element-host.js';
 import { fixedSandboxStore, seedExpansion } from './support/files-client.js';
 import {
-  changeMarks,
+  changeMarkList,
   openDirectories,
   paymentForm,
   project,
@@ -18,7 +19,7 @@ import { selectionApis, still, storyServices } from './support/services.js';
  * The three elements the files client defines, over one seeded activation:
  * its sandbox store (the tree read and the file tab's query client), the
  * workspace's selection, the records, the layout's panel and tabs, and git's
- * changes read.
+ * marks through `files.decorations/v1`.
  */
 const useElements = () =>
   useState(() => {
@@ -92,18 +93,6 @@ const useElements = () =>
         },
         'layout.panel/v3': { ...still, select: () => undefined },
         'commands/v1': { execute: async () => undefined },
-        'git.changes/v1': {
-          observe: (
-            _scope: unknown,
-            listener: (state: {
-              readonly decorations: typeof changeMarks;
-              readonly fetching: boolean;
-            }) => void,
-          ) => {
-            listener({ decorations: changeMarks, fetching: false });
-            return { dispose: () => undefined };
-          },
-        },
       },
       scoped: {
         'files/v1': () => ({
@@ -112,6 +101,22 @@ const useElements = () =>
             value: { status: 'read', ...paymentForm },
           }),
         }),
+      },
+      many: {
+        'files.decorations/v1': [
+          {
+            bundleId: 'git',
+            api: {
+              observe: (
+                _scope: unknown,
+                listener: (state: DecorationsObservation) => void,
+              ) => {
+                listener({ marks: changeMarkList, fetching: false });
+                return { dispose: () => undefined };
+              },
+            },
+          },
+        ],
       },
     });
     return { elements: defineFilesElements(store), services };
