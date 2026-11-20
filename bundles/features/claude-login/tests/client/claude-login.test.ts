@@ -324,7 +324,8 @@ describe('the claude-login-field element, mounted alone', () => {
       !(toasts?.ids() ?? []).includes('claude-login'),
       'A sign-in nothing can use toasts a success.',
     );
-    assert.doesNotMatch(toastText(), /Claude is signed in\./);
+    // The success check goes by id: the text of an earlier test's success
+    // toast can still be in the shared toaster while it leaves.
     assert.ok(
       (toasts?.ids() ?? []).includes('claude-login-finished'),
       `no claude-login-finished toast: ${(toasts?.ids() ?? []).join(', ')}`,
