@@ -21,19 +21,27 @@ Part of [Doric](../../README.md). The feature it serves is described in
   ([bundles/sandboxes/docker/src/host/sandbox.ts](../../bundles/sandboxes/docker/src/host/sandbox.ts),
   [bundles/sandboxes/firecracker/src/host/sandbox.ts](../../bundles/sandboxes/firecracker/src/host/sandbox.ts)).
 - The [`runtime`](../../bundles/runtime/runtime/README.md) bundle uses the
-  `SandboxLease` type in its sandbox contract and ports
+  `SandboxLease` type in its sandbox contract, its ports and its domain
   ([bundles/runtime/runtime/src/contracts/sandbox.ts](../../bundles/runtime/runtime/src/contracts/sandbox.ts),
-  [bundles/runtime/runtime/src/host/ports.ts](../../bundles/runtime/runtime/src/host/ports.ts)).
+  [bundles/runtime/runtime/src/host/ports.ts](../../bundles/runtime/runtime/src/host/ports.ts),
+  [bundles/runtime/runtime/src/host/domain/runtime.ts](../../bundles/runtime/runtime/src/host/domain/runtime.ts)).
+- The tests of [`files`](../../bundles/features/files/README.md),
+  [`docker-sandbox`](../docker-sandbox/README.md) and
+  [`firecracker-sandbox`](../firecracker-sandbox/README.md) build pools over
+  real or in-memory sessions, with `sandpool` as a devDependency
+  ([bundles/features/files/tests/binding.test.ts](../../bundles/features/files/tests/binding.test.ts),
+  [packages/docker-sandbox/tests/sandbox.e2e.ts](../docker-sandbox/tests/sandbox.e2e.ts),
+  [packages/firecracker-sandbox/tests/sandbox.e2e.ts](../firecracker-sandbox/tests/sandbox.e2e.ts)).
 - The host application lists it as a dependency
   ([app/backend/doric-host/package.json](../../app/backend/doric-host/package.json)).
 
 ## Entry point
 
-The package is ESM and has one entry point, `sandpool` (`.` in
-[package.json](package.json) `exports`): `./dist/index.js` with the types in
-`./dist/index.d.ts`, and `./src/index.ts` under the workspace's `@org/source`
-condition. [src/index.ts](src/index.ts) re-exports everything from
-[src/lib/sandpool.ts](src/lib/sandpool.ts) and
+The package is ESM. Its [package.json](package.json) `exports` has two
+entries: `./package.json`, and the code entry point `sandpool` (`.`):
+`./dist/index.js` with the types in `./dist/index.d.ts`, and `./src/index.ts`
+under the workspace's `@org/source` condition. [src/index.ts](src/index.ts)
+re-exports everything from [src/lib/sandpool.ts](src/lib/sandpool.ts) and
 [src/lib/types/sandpool.ts](src/lib/types/sandpool.ts). It depends on `pino`
 (for the `Logger` type), `sandbox` (for `Sandbox` and `SandboxSession`) and
 `tslib`.
@@ -146,10 +154,11 @@ interface SandboxLease {
 `root` and forwards `start`, `exec`, `cloneRepo`, `readFile`, `writeFile`,
 `putFile`, `getFile`, `diff`, `ssh` and `stats` to it. It has no `dispose`; a
 lease ends through `release`. Once the lease is released or the pool is
-disposed, every method fails with `Sandbox lease is no longer active`. `start`
-is always present and rejects with `Sandbox provider does not support live
-processes` when the session has none; `stats` resolves `undefined` when the
-session has none ([src/lib/sandpool.ts](src/lib/sandpool.ts)).
+disposed, every method rejects with `Sandbox lease is no longer active`,
+except `stats`, which throws it synchronously. `start` is always present and
+rejects with `Sandbox provider does not support live processes` when the
+session has none; `stats` resolves `undefined` when the session has none
+([src/lib/sandpool.ts](src/lib/sandpool.ts)).
 
 `release()` disposes the session (see [Leases](#leases-and-disposal)). It is
 idempotent and returns the same promise on every call.
@@ -189,14 +198,14 @@ keeps its state in memory only and persists nothing.
 - An acquisition **without an identity** takes an idle session when one
   exists; otherwise the pool calls `create()` and the new session joins the idle
   list, from which the first waiting acquisition without an identity takes it.
-- Acquisitions wait in one queue in arrival order, and creations start in that
-  order, followed by the creations that refill idle sessions up to `minIdle`.
-  The one exception is that an idle session is offered only to acquisitions
-  without an identity, so a later one of those can take an idle session ahead
-  of an identified acquisition that queued before it.
+- Acquisitions wait in one queue in arrival order. The one exception is that
+  an idle session is offered only to acquisitions without an identity, so a
+  later one of those can take an idle session ahead of an identified
+  acquisition that queued before it.
 - Because idle sessions serve only acquisitions without an identity, `minIdle`
-  holds capacity that identified acquisitions cannot use; keep `minIdle: 0`
-  when every acquisition carries an identity.
+  holds capacity that identified acquisitions cannot use, so when every
+  acquisition carries an identity, idle sessions kept for `minIdle` are never
+  leased.
 - If an identified acquisition is cancelled or rejected while its session is
   being created, the session is disposed when it arrives, never leased to
   another caller. A session created for an acquisition without an identity
@@ -206,15 +215,33 @@ keeps its state in memory only and persists nothing.
 
 ### Creation and capacity
 
+- The pool re-evaluates its state in one pass on each of these events:
+  `createSandpool`, an `acquire` call, a `waitUntilHeated` call on a pool that
+  is not heated, the abort of a queued acquisition, the end of a factory call
+  (success or failure), the start and the end of a session's disposal, and the
+  firing of the creation retry timer. A pass first hands idle sessions, oldest
+  first, to queued acquisitions without an identity in arrival order, then
+  starts creations.
+- A pass lists the creations it needs, in queue order: one for each queued
+  identified acquisition with no creation in flight, and one for each queued
+  acquisition without an identity while no idle session is left. It then adds
+  `minIdle − idle sessions` to refill. Creations already in flight for
+  acquisitions without an identity and for refilling are not subtracted, so a
+  pass can start creations for a need an earlier pass already covers. The extra
+  sessions join the idle list, so the pool can hold more than `minIdle` idle
+  sessions: with `minIdle: 1` and `maxSandboxes: 3`, `createSandpool` followed
+  by `waitUntilHeated()` creates two.
 - A creation starts only while all of these hold: the pool is `active`, no
   creation retry is pending, the creation attempts are not exhausted, and there
   is capacity.
 - Capacity is `maxSandboxes − (sessions that exist + creations in flight)`. A
   session counts until its disposal completes, so a slot frees only when a
   disposal finishes, not when `release` or `dispose` is called.
-- At most `maxCreateAttempts − consecutive failures − creations in flight`
-  creations start at once, so with the default of 3 no more than three factory
-  calls run together, whatever `maxSandboxes` is.
+- A pass starts the first `min(capacity, creations needed, maxCreateAttempts −
+consecutive failures − creations in flight)` creations of that list, so
+  creations in flight never exceed `maxCreateAttempts − consecutive failures`;
+  with the default of 3, no more than three factory calls run together,
+  whatever `maxSandboxes` is.
 - A successful factory call resets the consecutive failure count and the
   backoff.
 
@@ -228,8 +255,10 @@ keeps its state in memory only and persists nothing.
   timer is cleared, the backoff resets, and every pending acquisition and every
   heat waiter rejects with
   `Error('Sandpool could not create a sandbox after <maxCreateAttempts> attempts')`.
-  No creation starts, warming included, until the next `acquire` or
-  `waitUntilHeated` call, which resets the count and starts a fresh batch.
+  No creation starts, warming included, until the next `acquire` call, or
+  `waitUntilHeated` call on a pool that is not heated, that is not rejected for
+  an inactive pool or an aborted signal; it resets the count and the backoff
+  and starts a fresh batch.
 - An identified acquisition whose creation failed gets a new creation on a
   later pass while it is still queued.
 
@@ -255,7 +284,8 @@ keeps its state in memory only and persists nothing.
   `Error('Sandpool is disposing')`, and starts the disposal of every session,
   leased ones included; their leases become inactive.
 - A factory call still in flight is waited for, and its session is disposed
-  when it arrives.
+  when it arrives. If it fails, the error goes to `lastFailure` and no retry is
+  scheduled.
 - The lifecycle becomes `disposed`, and the promise resolves, once no factory
   call is in flight and every disposal has completed. A disposal that keeps
   failing keeps it waiting.
@@ -277,22 +307,27 @@ writes every line at level `debug`. Each line carries `lifecycle`, `idle`,
 `maxSandboxes`, `createFailures` and `maxCreateAttempts`; no line carries an
 error or its cause ([src/lib/sandpool.ts](src/lib/sandpool.ts)).
 
-| Message                                                                                                                                  | Extra fields                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `sandpool started`, `sandpool heated`, `sandpool disposal started`, `sandpool disposed`                                                  | —                                                       |
-| `waiting for sandpool to heat`, `sandpool heat wait cancelled`                                                                           | —                                                       |
-| `sandbox acquisition queued`, `sandbox acquisition cancelled`                                                                            | —                                                       |
-| `sandbox creation started`, `sandbox creation attempts resumed`                                                                          | —                                                       |
-| `sandbox created`, `sandbox leased`, `sandbox lease released`, `sandbox disposal started`, `sandbox disposed`, `sandbox disposal failed` | `sandboxId`                                             |
-| `sandbox creation retry scheduled`                                                                                                       | `retryDelayMs`                                          |
-| `sandbox disposal retry scheduled`                                                                                                       | `sandboxId`, `retryDelayMs`                             |
-| `sandbox creation failed`                                                                                                                | `reason: 'sandbox_factory_rejected'`, `hint`            |
-| `sandbox creation attempts exhausted`, `sandbox acquisition failed`, `sandpool heat failed`                                              | `reason: 'sandbox_creation_attempts_exhausted'`, `hint` |
+| Message                                                                                                                                  | Extra fields                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `sandpool started`, `sandpool heated`, `sandpool disposal started`, `sandpool disposed`                                                  | —                                                                                                                               |
+| `waiting for sandpool to heat`, `sandpool heat wait cancelled`                                                                           | —                                                                                                                               |
+| `sandbox acquisition queued`, `sandbox acquisition cancelled`                                                                            | —                                                                                                                               |
+| `sandbox creation started`, `sandbox creation attempts resumed`                                                                          | —                                                                                                                               |
+| `sandbox created`, `sandbox leased`, `sandbox lease released`, `sandbox disposal started`, `sandbox disposed`, `sandbox disposal failed` | `sandboxId`                                                                                                                     |
+| `sandbox creation retry scheduled`                                                                                                       | `retryDelayMs`                                                                                                                  |
+| `sandbox disposal retry scheduled`                                                                                                       | `sandboxId`, `retryDelayMs`                                                                                                     |
+| `sandbox creation failed`                                                                                                                | `reason: 'sandbox_factory_rejected'`, `hint: 'Check sandbox provider availability, image access, and resource support.'`        |
+| `sandbox creation attempts exhausted`, `sandbox acquisition failed`, `sandpool heat failed`                                              | `reason: 'sandbox_creation_attempts_exhausted'`, `hint: 'Retry the acquisition after restoring sandbox provider availability.'` |
 
 `sandpool heated` is written when the pool becomes heated, not on every pass
-while it stays heated.
+while it stays heated. `sandbox acquisition failed` and `sandpool heat failed`
+are written once for each waiter that exhausted attempts reject;
+`sandbox acquisition cancelled` and `sandpool heat wait cancelled` are written
+on an abort and once for each waiter that `dispose()` rejects.
 
 ## Errors
+
+All errors come from [src/lib/sandpool.ts](src/lib/sandpool.ts).
 
 | Where                                    | Error                                                                                                                                                                                                                                                                                                                                                               |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

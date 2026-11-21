@@ -156,16 +156,137 @@ The platform provides `doric.catalog/v1`; no bundle may provide it, because `dor
 | `disable({ bundleId })` | `void`                 | Adds the bundle to the overrides and publishes; `not_found` when it is not in the composition, `invalid_input` for the core                      |
 | `resetComposition()`    | `void`                 | Deletes the overrides and publishes                                                                                                              |
 
-The shapes ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)):
-
-- `CatalogSnapshot`: `generation`, `composition` (`core`, `enabled`, `providers`), `bundles` (each with `id`, `version`, optional `description`, `state` — `active`, `quarantined`, `disabled` or `inactive` —, optional `phase` — `foundation`, `core` or `others` —, optional `manifest` and the required `reasons`), `order` (the activation order), `contracts` (each with `id`, `environment`, `cardinality` and its active `providers`, each `bundleId`, `version`, `bundleVersion`) and optional `storage`.
-- A quarantine reason: `{ code, message, contract? }`; the codes are listed in [Core](core.md).
-- `storage`, the storage backend's identity: `{ hostId, storageGeneration }`, a UUID and a positive integer ([`storage.ts`](../../../packages/bundle/src/contracts/basic/storage.ts)).
-- `DistributionCatalog`: `generation` (restarts at 1 with every host process), `hostBoot` (random per host process), `platformVersion`, `composition`, optional `storage`, `host` (the host's `CatalogSnapshot`) and `bundles`. Each bundle has `id`, `version`, its host `state` and `reasons`, optional `manifest`, optional `descriptor` (its `contracts.json`), `files` (each `path`, lowercase hex `sha256` and `size`) and `parts`.
-- A bundle's `files` are `manifest.json`, `contracts.json` and every file under `desktop/`, `client/` and `schemas/`, every `.js` file under `contracts/`, and the modules outside `contracts/` that those contracts import. `parts` holds the fixed paths that are present: `desktopMain` is `desktop/index.js`, `client` is `client/index.js`, `clientStyles` is `client/styles.css` and `contracts` is `contracts/index.js` ([`distribution.ts`](../../../packages/bundle/src/loader/distribution.ts)). An embedded bundle has no directory: its files are its contract documents, served from memory ([`catalog.ts`](../../../app/backend/doric-host/src/lib/bridge/catalog.ts)).
-- `DistributionArtifact`: `sha256` and the file bytes as `base64`.
-
 The desktop reaches these members through the host bridge, the Socket.IO namespace `/doric/bridge` ([`socket.ts`](../../../app/backend/doric-host/src/lib/bridge/socket.ts), [`catalog.ts`](../../../app/backend/doric-host/src/lib/bridge/catalog.ts)).
+
+### The `DoricCatalog` shape
+
+`DoricCatalog` is the interface a caller of `doric.catalog/v1` receives. Its members and every shape they take and return, as declared in [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts) (`StorageIdentity` in [`storage.ts`](../../../packages/bundle/src/contracts/basic/storage.ts), `CallArg` in [`call.ts`](../../../packages/bundle/src/contracts/call.ts), `Environment` in [`ids.ts`](../../../packages/bundle/src/contracts/ids.ts), `StreamListener` in [`common.ts`](../../../packages/bundle/src/contracts/basic/common.ts), `Disposable` in [`context.ts`](../../../packages/bundle/src/contracts/context.ts), `JsonObject` in [`types.ts`](../../../packages/bundle/src/contracts/types.ts)):
+
+```ts
+interface DoricCatalog {
+  get(call?: CallArg): CatalogSnapshot;
+  distribution(call?: CallArg): Promise<DistributionCatalog>;
+  artifact(
+    request: { readonly sha256: string },
+    call?: CallArg,
+  ): Promise<DistributionArtifact>;
+  watch(listener: StreamListener<CatalogChange>, call?: CallArg): Disposable;
+  disable(
+    request: { readonly bundleId: string },
+    call?: CallArg,
+  ): Promise<void>;
+  resetComposition(call?: CallArg): Promise<void>;
+}
+
+interface CatalogSnapshot {
+  readonly generation: number; // integer
+  readonly composition: CatalogComposition;
+  readonly bundles: readonly CatalogBundle[];
+  readonly order: readonly string[]; // the activation order of this environment
+  readonly contracts: readonly CatalogContract[];
+  readonly storage?: StorageIdentity; // once the host resolved its storage backend
+}
+
+interface CatalogComposition {
+  readonly core: string;
+  readonly enabled: readonly string[];
+  readonly providers: Readonly<Record<string, string>>; // contract id → bundle id
+}
+
+interface CatalogBundle {
+  readonly id: string;
+  readonly version: string;
+  readonly description?: string;
+  readonly state: 'active' | 'quarantined' | 'disabled' | 'inactive';
+  readonly phase?: 'foundation' | 'core' | 'others';
+  readonly manifest?: CatalogManifest;
+  readonly reasons: readonly QuarantineReason[];
+}
+
+interface CatalogManifest {
+  readonly manifestVersion: 1;
+  readonly id: string;
+  readonly version: string;
+  readonly engines: { readonly doric: string };
+  readonly provides: readonly string[];
+  readonly requires: readonly string[];
+  readonly optional?: readonly string[];
+  readonly desktopScope?: Readonly<Record<string, readonly string[]>>; // contract id → scope keys a window may send
+  readonly description?: string;
+}
+
+interface QuarantineReason {
+  readonly code: QuarantineCode;
+  readonly message: string;
+  readonly contract?: string;
+}
+
+interface CatalogContract {
+  readonly id: string;
+  readonly environment: Environment; // 'host' | 'desktopMain' | 'client'
+  readonly cardinality: 'one' | 'many';
+  readonly providers: readonly ContractProvider[]; // the active providers
+}
+
+interface ContractProvider {
+  readonly bundleId: string;
+  readonly version: string; // the contract version the bundle declares in `provides`
+  readonly bundleVersion: string;
+}
+
+// The output type of `storageIdentitySchema`
+type StorageIdentity = {
+  hostId: string; // a UUID
+  storageGeneration: number; // a positive integer
+};
+
+interface DistributionCatalog {
+  readonly generation: number; // integer; restarts at 1 with every host process
+  readonly hostBoot: string; // non-empty, random per host process
+  readonly platformVersion: string; // the host's platform version
+  readonly composition: CatalogComposition;
+  readonly storage?: StorageIdentity;
+  readonly host: CatalogSnapshot; // what `get()` returns on the host
+  readonly bundles: readonly DistributionBundle[];
+}
+
+interface DistributionBundle {
+  readonly id: string;
+  readonly version: string;
+  readonly state: 'active' | 'quarantined' | 'disabled' | 'inactive'; // the host state
+  readonly reasons: readonly QuarantineReason[]; // the host's quarantine reasons
+  readonly manifest?: CatalogManifest;
+  readonly descriptor?: JsonObject; // the bundle's contracts.json
+  readonly files: readonly DistributionFile[];
+  readonly parts: DistributionParts;
+}
+
+interface DistributionFile {
+  readonly path: string; // non-empty, relative to the bundle's dist, `/` separators
+  readonly sha256: string; // 64 lowercase hex characters
+  readonly size: number; // a non-negative integer
+}
+
+interface DistributionParts {
+  readonly desktopMain?: string;
+  readonly client?: string;
+  readonly clientStyles?: string;
+  readonly contracts?: string;
+}
+
+interface DistributionArtifact {
+  readonly sha256: string; // 64 lowercase hex characters
+  readonly base64: string; // the file bytes
+}
+
+interface CatalogChange {
+  readonly generation: number; // integer
+}
+```
+
+The dispatcher checks every call against the method's schemas in `platform.ts`: an input that fails fails the call with `invalid_input`, and a result that fails fails it with `invalid_output` ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)). Those schemas are strict, so an unknown key in an object makes it invalid, except in the three record fields: `providers` and `desktopScope` accept any string key, and `descriptor` accepts any object. The desktop checks `descriptor` against the contract descriptor's schema when it resolves the generation and records a failure as `invalid_descriptor` ([`distribution.ts`](../../../packages/bundle/src/runtime/distribution.ts), [`descriptor.ts`](../../../packages/bundle/src/runtime/descriptor.ts), [Contracts](contracts.md#the-contract-descriptor-and-schemas)). `artifact` takes a `sha256` of 64 lowercase hex characters and `disable` a non-empty `bundleId`. `QuarantineCode` is one of the codes listed in [Core](core.md#quarantine). `call` is the optional call argument described in [Contracts](contracts.md#the-call); `StreamListener` and the `Disposable` that `watch` returns are described in [Streams](services-and-channels.md#streams).
+
+A bundle's `files` are `manifest.json`, `contracts.json` and every file under `desktop/`, `client/` and `schemas/`, every `.js` file under `contracts/`, and the modules outside `contracts/` that those contracts import. `parts` holds the fixed paths that are present: `desktopMain` is `desktop/index.js`, `client` is `client/index.js`, `clientStyles` is `client/styles.css` and `contracts` is `contracts/index.js` ([`distribution.ts`](../../../packages/bundle/src/loader/distribution.ts)). An embedded bundle has no directory: its files are its contract documents, served from memory ([`catalog.ts`](../../../app/backend/doric-host/src/lib/bridge/catalog.ts)).
 
 ## Building and staging
 

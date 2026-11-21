@@ -461,7 +461,7 @@ function createVmRegistry(
 The file views, the `tree` tool and the Git views read a workspace through
 these helpers. The listing helpers (`listSandboxDirectory`, `listSandboxTree`,
 `listSandboxDirectories`) all apply the same [visibility rules](#visibility-rules);
-`listSandboxRepos` and `workspacePathKind` apply none of them
+`workspacePathKind` applies only Confinement and `listSandboxRepos` applies none
 ([`files.ts`](src/lib/files.ts), [`types/files.ts`](src/lib/types/files.ts)).
 Each takes a `SandboxReader`, which a full `Sandbox` satisfies and so does any
 object that can run a command and report its text output:
@@ -658,13 +658,15 @@ arguments; directories past that budget are filtered after the scan).
 Command failures inside these scripts are not reported
 ([`files.ts`](src/lib/files.ts)):
 
-- The exit code of the rules read is not checked. When it fails, the listing
-  goes on with the default ignores only. In a recursive listing, when the
+- The exit code of the rules read is not checked. The listing applies whatever
+  rules the output holds, failed or not; none beyond the default ignores when
+  it prints nothing. In a recursive listing, when the
   `find` for nested `.gitignore` files exits non-zero (for example because one
   subdirectory is unreadable), every nested `.gitignore` is dropped and only
   the ancestors' rules apply.
-- When a `find` of the entry scan exits non-zero, for the same reason, the
-  scan prints no entries and the listing is `listed` and empty.
+- When a `find` of the entry scan exits non-zero (in a recursive listing, for
+  example because one subdirectory is unreadable; the one-level scan never
+  opens subdirectories), the scan prints no entries and the listing is `listed` and empty.
 
 ## Development
 

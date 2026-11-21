@@ -43,7 +43,10 @@ source inside the workspace). Runtime dependencies are `pino` (the logger
 type), `zod` (schemas), `tool` (JSON and tool types, see
 [tool](../tool/README.md)) and `tslib`. Every value and type named in this
 README's code blocks and export lists is exported from that entry; a helper
-the README calls internal is not.
+the README calls internal is not, and neither is a name the README attributes
+to another source: `ToolDefinition` and `ToolCallRequest` come from `tool`,
+`Logger` from `pino`, and `ErrorOptions` is the standard `Error` constructor
+options type.
 
 ## Quick start
 
@@ -658,7 +661,8 @@ interface OpenAiProviderDeps {
   (a Chat Completions-only endpoint is not supported); `models()` sends
   `GET {baseUrl}/models` and maps each entry of `data` with an id to
   `{ id, name: id, provider, raw }`.
-- **Body** (`openAiBody(request, stream, provider?)`,
+- **Body** (`openAiBody(request, stream, provider = 'openai')`, where
+  `provider` is the `ProviderId` named in its errors,
   [`openai/body.ts`](./src/lib/providers/openai/body.ts)):
   - `instructions`: the system messages' text joined by a blank line;
   - `input`: a user message is `{ role, content }` of `input_text` and
@@ -736,7 +740,8 @@ support is its catalog entry's `supported_parameters`; a model the catalog does
 not list has none; when no catalog can be read, support is unknown.
 `validateModel` reads the same shared catalog.
 
-Two operations read the catalog. Every `stream` without a schema awaits the
+Besides `models()` and `validateModel`, two operations read the catalog. Every
+`stream` without a schema awaits the
 model's catalog entry before it emits `response.started`, to add its
 `contextWindow`, so with a cold or expired cache the first event waits for the
 catalog load (up to its 5-second timeout); a failed load gives no window and
@@ -821,6 +826,25 @@ named tool); `parallel_tool_calls`; `temperature`; `max_tokens`; `reasoning:
 `flags.includeUsage` is `false`. In `json_object` and `prompt` modes the schema
 is always placed on the system prompt as described in
 [Structured output](#structured-output).
+
+The `options` parameter has this shape; the type itself (`OpenRouterBodyOptions`
+in `openrouter/body.ts`) is not exported:
+
+```ts
+{
+  structuredOutput?: 'json_schema' | 'json_object' | 'prompt'; // default 'json_schema'
+  requireParameters?: boolean; // provider.require_parameters sent only when true
+  replay?: 'all' | 'tool_calls'; // default 'all'
+  strictTools?: boolean; // `strict` left out only when false
+  providerId?: ProviderId; // default 'openrouter', named in errors
+}
+```
+
+With `strictTools` unset or `true`, a tool's `strict` is `true` only when the
+tool asks for it and its schema is strict-compatible, else `false`. The
+provider fills these options from the model's profile, which is where the
+rules above (strict omitted, `require_parameters` when tools remain or a
+schema uses a native mode, replay on tool turns only) come from.
 
 **Complete** ([`openrouter/parse.ts`](./src/lib/providers/openrouter/parse.ts)):
 text, `reasoning` (or `reasoning_content`), `refusal`, `tool_calls` and
@@ -972,10 +996,14 @@ choice.
   to answer", then ` (<stop_details.category>)` when present, then
   `: <stop_details.explanation>` or `.`.
 - Replay is kept only for a turn that holds a `thinking` block with a
-  signature or a `redacted_thinking` block: every block (`thinking` with its
-  signature, `redacted_thinking`, non-empty `text`, valid `tool_use`) in order,
-  each tagged `{ provider: 'claude', block }`; a thinking block without a
-  signature is left out.
+  signature or a `redacted_thinking` block, each kept block tagged
+  `{ provider: 'claude', block }` in order, and a thinking block without a
+  signature is left out. `complete` keeps the response's `thinking`,
+  `redacted_thinking`, `text` and `tool_use` blocks unchanged (empty text and
+  every `tool_use` included). A stream rebuilds the blocks that received
+  `content_block_stop`, dropping the rest: `thinking` with its signature,
+  `redacted_thinking`, non-empty `text`, and `tool_use` only when its input is
+  a valid call.
 - Usage: `inputTokens` is the sum of `input_tokens`,
   `cache_creation_input_tokens` and `cache_read_input_tokens` (those present),
   with `cacheWriteTokens` and `cachedInputTokens` as the last two;

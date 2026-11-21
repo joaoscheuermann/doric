@@ -78,7 +78,7 @@ Durable storage and stored secrets are two contracts of cardinality `one` that t
 
 The `desktopMain` part provides hooks, log, local settings (a preferences file in the core's `doric.cache/v1` directory), `commands/v1`, the client commands bridge `core.commands/v1`, `windows/v1` and `menus/v1`; it defines `core.hooks/v1` and registers the command `core.open-settings/v1` ([`desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`desktop/settings.ts`](../../../bundles/foundation/core/src/desktop/settings.ts)). In `onAppReadyHook` it sets the menu skeleton (App, File, Edit, View, Window, Help) through `doric.menus/v1`, asks the platform through `doric.migrations/v1` to copy the layout's saved selection (`doric.selection`) from the packaged `file://` origin to `doric://app` once, and opens the primary `workspace` window at the last path that window showed, or `/`; in `onAppActivateHook` it focuses or reopens that window ([`menu.ts`](../../../bundles/foundation/core/src/desktop/menu.ts), [`migrations.ts`](../../../bundles/foundation/core/src/desktop/migrations.ts)).
 
-`windows/v1` and `menus/v1` are the core's implementations over the native `doric.windows/v1` and `doric.menus/v1`, and most shipped bundles call them; `screen` also calls `doric.windows/v1` directly for its views ([`screen/src/desktop/index.ts`](../../../bundles/features/screen/src/desktop/index.ts)), which a `doric.*` contract allows without a manifest line. `windows/v1.open` runs `core.hooks/v1.onBeforeOpenWindowHook` and opens the window under the key `<calling bundle>:<key>` ([`windows.ts`](../../../bundles/foundation/core/src/desktop/windows.ts), [`menus.ts`](../../../bundles/foundation/core/src/desktop/menus.ts)). The details are in [Windows](windows.md) and [Menus and keybindings](menus-and-keybindings.md).
+`windows/v1` and `menus/v1` are the core's implementations over the native `doric.windows/v1` and `doric.menus/v1`. Among the other shipped bundles, `papercraft` calls `windows/v1`, and `chat` and `papercraft` call `menus/v1` ([`papercraft/manifest.json`](../../../bundles/features/papercraft/manifest.json), [`chat/manifest.json`](../../../bundles/desktop/chat/manifest.json)). `screen` calls `doric.windows/v1` directly for its views, and `papercraft` for window capture ([`screen/src/desktop/index.ts`](../../../bundles/features/screen/src/desktop/index.ts), [`papercraft/src/desktop/snapshot.ts`](../../../bundles/features/papercraft/src/desktop/snapshot.ts)), which a `doric.*` contract allows without a manifest line; only the core calls `doric.menus/v1`. `windows/v1.open` runs `core.hooks/v1.onBeforeOpenWindowHook` and opens the window under the key `<calling bundle>:<key>` ([`windows.ts`](../../../bundles/foundation/core/src/desktop/windows.ts), [`menus.ts`](../../../bundles/foundation/core/src/desktop/menus.ts)). The details are in [Windows](windows.md) and [Menus and keybindings](menus-and-keybindings.md).
 
 `core.open-settings/v1` (1.1.0) opens the settings window. Its input has an optional `path` and an optional `defaultPath`: with `path`, the window opens at that path, or is focused and navigated there when it is open; without `path`, an open settings window is only focused, and otherwise a new one opens at `defaultPath`; with neither and no window open, the command fails with `invalid_input` and nothing opens ([`desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts), [`contracts/commands.ts`](../../../bundles/foundation/core/src/contracts/commands.ts)). The core knows no settings route: the caller names it. Other bundles reach the command through the reference `OpenSettingsCommandV1` of `core/contracts`; its full contract is in the core's [README](../../../bundles/foundation/core/README.md).
 
@@ -163,110 +163,11 @@ The catalog and the diagnostics are platform contracts, provided by the platform
 
 ### `doric.catalog/v1`
 
-| Method                  | Input                             | Output                | Where                                                        |
-| ----------------------- | --------------------------------- | --------------------- | ------------------------------------------------------------ |
-| `get()`                 | None                              | `CatalogSnapshot`     | Every environment                                            |
-| `distribution()`        | None                              | `DistributionCatalog` | The host                                                     |
-| `artifact({ sha256 })`  | `sha256`: 64 lowercase hex digits | `{ sha256, base64 }`  | The host                                                     |
-| `watch(listener)`       | A stream listener                 | A `Disposable`        | The host; one item `{ generation }` per published generation |
-| `disable({ bundleId })` | A non-empty bundle id             | Nothing               | The host                                                     |
-| `resetComposition()`    | None                              | Nothing               | The host                                                     |
-
-Every method of `doric.catalog/v1` is reachable from a desktop window ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). `CatalogSnapshot`, with the manifest and storage identity it carries, is:
-
-```ts
-interface CatalogSnapshot {
-  generation: number;
-  composition: {
-    core: string;
-    enabled: string[];
-    providers: Record<string, string>;
-  };
-  bundles: {
-    id: string;
-    version: string;
-    description?: string;
-    state: 'active' | 'quarantined' | 'disabled' | 'inactive';
-    phase?: 'foundation' | 'core' | 'others';
-    manifest?: CatalogManifest; // the validated manifest
-    reasons: { code: QuarantineCode; message: string; contract?: string }[];
-  }[];
-  order: string[]; // activation order of this environment
-  contracts: {
-    id: string;
-    environment: 'host' | 'desktopMain' | 'client';
-    cardinality: 'one' | 'many';
-    providers: { bundleId: string; version: string; bundleVersion: string }[];
-  }[];
-  storage?: StorageIdentity; // once the host resolved the backend
-}
-
-interface CatalogManifest {
-  manifestVersion: 1;
-  id: string;
-  version: string;
-  engines: { doric: string };
-  provides: string[];
-  requires: string[];
-  optional?: string[];
-  desktopScope?: Record<string, string[]>; // scope keys a window may send to each provided contract
-  description?: string;
-}
-
-interface StorageIdentity {
-  hostId: string; // a UUID
-  storageGeneration: number; // a positive integer
-}
-```
-
-`StorageIdentity` is defined in [`basic/storage.ts`](../../../packages/bundle/src/contracts/basic/storage.ts).
-
-`distribution()` answers what the desktop needs of a host generation, and `artifact` answers one listed file by hash, its bytes in base64:
-
-```ts
-interface DistributionCatalog {
-  generation: number; // the host generation; restarts at 1 with every host process
-  hostBoot: string; // random per host process; with generation, names a host generation
-  platformVersion: string; // the host platform version, informative
-  composition: {
-    core: string;
-    enabled: string[];
-    providers: Record<string, string>;
-  };
-  storage?: StorageIdentity;
-  host: CatalogSnapshot; // the host environment's doric.catalog/v1.get()
-  bundles: DistributionBundle[];
-}
-
-interface DistributionBundle {
-  id: string;
-  version: string;
-  state: 'active' | 'quarantined' | 'disabled' | 'inactive'; // in the host environment
-  reasons: { code: QuarantineCode; message: string; contract?: string }[]; // the host's
-  manifest?: CatalogManifest;
-  descriptor?: object; // the bundle's dist/contracts.json as JSON; the desktop validates it
-  files: DistributionFile[]; // desktop/**, client/**, contracts/**.js, schemas/**, manifest.json, contracts.json
-  parts: DistributionParts;
-}
-
-interface DistributionFile {
-  path: string; // relative to the bundle's dist directory, with / separators
-  sha256: string; // 64 lowercase hex digits of the file bytes
-  size: number; // a non-negative integer
-}
-
-interface DistributionParts {
-  // paths of the built parts among the files
-  desktopMain?: string;
-  client?: string;
-  clientStyles?: string;
-  contracts?: string;
-}
-```
-
-[Composition and distribution](composition-and-distribution.md) describes how the desktop uses them.
+`doric.catalog/v1` has six members: `get()`, answered in every environment, and `distribution()`, `artifact({ sha256 })`, `watch(listener)`, `disable({ bundleId })` and `resetComposition()`, answered on the host; every member is reachable from a desktop window ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). For the mechanisms of this document, `get()` returns the calling environment's generation, the composition (`core`, `enabled`, `providers`), each bundle's state (`active`, `quarantined`, `disabled` or `inactive`), phase (`foundation`, `core` or `others`), validated manifest and quarantine reasons, the activation `order`, and each contract's cardinality and providers.
 
 `disable` adds the bundle to the `disabled` list of the composition overrides file and publishes a new generation; it fails with `not_found` for a bundle outside `enabled` and with `invalid_input` for the core. `resetComposition` clears the overrides and publishes. Both run one at a time; when the new generation cannot be published, they fail with `unavailable`, and the overrides they wrote apply at the next host start ([`composition-actions.ts`](../../../packages/bundle/src/process/composition-actions.ts)).
+
+The full shape of every member, with `CatalogSnapshot`, `DistributionCatalog` and the types they carry, is in [The `DoricCatalog` shape](composition-and-distribution.md#the-doriccatalog-shape); [Composition and distribution](composition-and-distribution.md) also describes how the desktop uses `distribution()` and `artifact`.
 
 ### `doric.diagnostics/v1`
 
