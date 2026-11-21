@@ -20,7 +20,7 @@ with the [main README](../../../README.md).
 - [REST API](#rest-api)
 - [Socket.IO](#socketio)
 - [Docker deployment details](#docker-deployment-details)
-- [Provider upgrades](#provider-upgrades)
+- [Provider kinds](#provider-kinds)
 - [Persistence and security](#persistence-and-security)
 - [Storage protection](#storage-protection)
 - [Validation](#validation)
@@ -1237,8 +1237,10 @@ non-empty prompt is accepted.`) and answers `202 { promptId }`. It brings
   running; the run reads the steer at its next safe point, and with
   `interrupt: true` the running step is aborted so the run turns to the steer
   at once. It is `queued` when that prompt is not running, the queue is
-  stopped, or the run ends meanwhile; the steer then waits at the front of
-  the queue. Refusals answer as a prompt's do.
+  stopped, or the Thread is stopping or pausing; the steer then joins the
+  back of the queue like an ordinary prompt. When the run ends while the
+  steer is being accepted, the steer waits at the front of the queue
+  instead. Refusals answer as a prompt's do.
 - **Rewind** takes `{ promptId, prompt }` (`422 invalid_rewind` otherwise)
   and answers `202 { promptId }` like a prompt. The runtime truncates the
   Thread's event log at the first event of the named prompt, has the executor
@@ -1605,6 +1607,28 @@ sends no credentials.
 
 ## Socket.IO
 
+The host serves Socket.IO 4 on the HTTP listener of the REST API, at the
+default path `/socket.io/` ([`src/index.ts`](src/index.ts)). The
+[`transport`](../../../bundles/foundation/transport/README.md) bundle registers
+the namespaces `/status`, `/threads` and `/projects` on that server when it
+starts
+([`transport/src/kernel.ts`](../../../bundles/foundation/transport/src/kernel.ts));
+the kernel's own namespace, `/doric/bridge`, is the
+[desktop bridge](#the-desktop-bridge). The server accepts a message of at most
+8,039,084 bytes, the base64 size of the largest image attachment the runtime
+keeps plus 1 MiB for the envelope around it, and closes a connection that
+sends a larger one
+([`src/lib/socket-buffer.ts`](src/lib/socket-buffer.ts)).
+
+On `/status`, `/threads` and `/projects` every event flows from the host to
+the client; the host handles no event a client emits there
+([`sockets/status.ts`](../../../bundles/foundation/transport/src/host/sockets/status.ts),
+[`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts)).
+A payload carries no version of its own; only the `type` of an event a bundle
+appends to a Thread's log names that event's version (`comments.added/v1`).
+A payload may gain optional fields and the log may carry new event types; a
+client ignores the fields and the types it does not know.
+
 ```ts
 import { Manager } from 'socket.io-client';
 
@@ -1612,149 +1636,345 @@ const manager = new Manager('http://127.0.0.1:3000');
 const status = manager.socket('/status');
 const project = manager.socket('/projects', { auth: { projectId } });
 
-// Every watched Thread owns a Manager of its own, so that closing that
-// connection is what ends the subscription the host holds for the Thread.
+// A Manager holds one socket per namespace, so every watched Thread needs a
+// Manager of its own. `auth` as a function is read again on each reconnect.
+let afterSequence = 42;
 const thread = new Manager('http://127.0.0.1:3000').socket('/threads', {
-  auth: { threadId, afterSequence: 42 },
+  auth: (send) => send({ threadId, afterSequence }),
+});
+thread.on('thread:snapshot', ({ events }) => {
+  afterSequence = events.at(-1)?.sequence ?? afterSequence;
+});
+thread.on('agent:event', (event) => {
+  afterSequence = event.sequence;
 });
 ```
 
-| Namespace               | Event               | Payload                                                |
-| ----------------------- | ------------------- | ------------------------------------------------------ |
-| `/status`               | `connect`           | None; confirms that the Doric host is reachable.       |
-| `/threads`              | `thread:snapshot`   | `{ threadId, projectId, project, thread, events }`     |
-| `/threads`              | `agent:event`       | Complete persisted Thread event envelope.              |
-| `/threads`, `/projects` | `thread:updated`    | Public Thread metadata.                                |
-| `/threads`, `/projects` | `thread:deleted`    | `{ projectId, threadId }`                              |
-| `/projects`             | `project:snapshot`  | `{ projectId, project, threads, terminals }`           |
-| `/projects`             | `project:updated`   | Public Project metadata.                               |
-| `/projects`             | `project:deleted`   | `{ projectId }`                                        |
-| `/projects`             | `terminal:snapshot` | `{ projectId, terminals }`                             |
-| `/projects`             | `terminal:updated`  | One terminal session.                                  |
-| `/projects`             | `terminal:output`   | Live terminal output.                                  |
-| `/projects`             | `terminal:removed`  | `{ projectId, threadId, terminalId }`                  |
-| `/threads`, `/projects` | `workspace:error`   | Sanitized `{ code, message }`; connection then closes. |
+| Namespace               | Event               | Payload                                                                                |
+| ----------------------- | ------------------- | -------------------------------------------------------------------------------------- |
+| `/status`               | none                | A connection only confirms that the host is reachable.                                 |
+| `/threads`              | `thread:snapshot`   | `{ threadId, projectId, project, thread, events }`                                     |
+| `/threads`              | `agent:event`       | One stored event `{ projectId, threadId, promptId, sequence, type, event, createdAt }` |
+| `/threads`, `/projects` | `thread:updated`    | The Thread record.                                                                     |
+| `/threads`, `/projects` | `thread:deleted`    | `{ projectId, threadId }`                                                              |
+| `/projects`             | `project:snapshot`  | `{ projectId, project, threads, terminals }`                                           |
+| `/projects`             | `project:updated`   | The Project record.                                                                    |
+| `/projects`             | `project:deleted`   | `{ projectId }`                                                                        |
+| `/projects`             | `terminal:snapshot` | `{ projectId, terminals }`                                                             |
+| `/projects`             | `terminal:updated`  | One terminal session.                                                                  |
+| `/projects`             | `terminal:output`   | `{ projectId, threadId, terminalId, data, offset }`                                    |
+| `/projects`             | `terminal:removed`  | `{ projectId, threadId, terminalId }`                                                  |
+| `/threads`, `/projects` | `workspace:error`   | `{ code: 'replay_failed', message: 'The snapshot could not be loaded.' }`              |
 
-The desktop app reaches the host through a separate generic namespace,
-`/doric/bridge`, owned by the kernel.
+The Project and Thread records are the ones the REST API answers
+([Conventions](#conventions)), a stored event is the one
+[Replay](#replay) describes, and a terminal session is the one
+[Terminals](#terminals) describes. In `terminal:output`, `data` is the chunk
+and `offset` the UTF-16 offset after it
+([`terminal/src/contracts/index.ts`](../../../bundles/features/terminal/src/contracts/index.ts)).
+`thread:updated` and `thread:deleted` reach the sockets subscribed to the
+Thread and those subscribed to its Project; the `project:*` and `terminal:*`
+events reach the sockets subscribed to the Project. A deletion notice leaves
+the connection open
+([`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts)).
 
 ### Subscriptions
 
-- `/status` requires no parameters and emits no application payload.
-- `/threads` requires `auth: { threadId, afterSequence? }` and `/projects`
-  requires `auth: { projectId }`; an invalid handshake is refused.
+A namespace middleware reads `socket.handshake.auth`, never the query
+([`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts)):
+
+- `/status` has no middleware and takes no parameters.
+- `/threads` takes `auth: { threadId, afterSequence? }`: `threadId` is a
+  UUID, and `afterSequence` a non-negative safe integer after coercion with
+  `Number()` (so `""` and `null` read as `0`), default `0`. A handshake that
+  fails is refused with the `connect_error` `Invalid thread subscription.`.
+- `/projects` takes `auth: { projectId }`, a UUID. A handshake that fails is
+  refused with `Invalid project subscription.`.
+- The handshake does not check that the Thread or Project exists: an id that
+  names nothing connects, and its snapshot carries `null` for each record it
+  cannot read.
+
+A Thread subscription runs in this order:
+
+1. The host registers the socket first, so every live event and notice
+   published from then on is kept for it.
+2. It reads the stored Thread, its events after `afterSequence`, and the
+   Thread's Project, and emits `thread:snapshot` with the events in sequence
+   order; `projectId`, `project` and `thread` are `null` when missing.
+3. It emits, as `agent:event`, the live events kept since step 1 in strict
+   sequence order, starting at the snapshot's last sequence plus one. An event
+   at or below that sequence is dropped, and an event that arrives after a gap
+   waits until the missing one arrives, so a client receives each event once
+   and in order.
+4. It emits the kept `thread:updated` and `thread:deleted` notices in the
+   order they arrived, then forwards each new event and notice as it is
+   published.
+
+A Project subscription registers the socket the same way and opens the
+Project's terminal stream, reads the Project, its Thread tree and its terminal
+sessions, and emits `project:snapshot` then `terminal:snapshot` with the same
+sessions. `threads` is every Thread of the Project, children included, as a
+flat array linked by `parentThreadId`. The kept notices follow in arrival
+order. `terminal:output` is never kept: it reaches only a socket whose
+snapshot is already out, and a client reads the output it missed from
+`GET /terminals/:id?after=N` ([Terminals](#terminals)). The host keeps one
+terminal stream per Project while at least one socket subscribes to it and
+closes it with the last one
+([`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts),
+[`sockets/terminal-feed.ts`](../../../bundles/foundation/transport/src/host/sockets/terminal-feed.ts)).
+
+When a snapshot read fails, the host emits `workspace:error` and disconnects
+the socket; the payload never carries the cause.
+
+Clients:
+
 - Reuse one `Manager` for `/status` and the Project subscription so they share
-  one Engine.IO connection, and give each watched Thread a `Manager` of its
-  own: closing that connection is what ends the Thread's subscription.
-- Missing snapshot resources are `null`. The Project snapshot contains the full
-  Thread tree as a flat array with `parentThreadId` links. Project
-  reconnection resnapshots that tree; execution history is replayed separately
-  per Thread.
-- Thread subscriptions are installed before durable replay, buffer live events
-  and lifecycle notifications, and deduplicate by sequence. Clients reconnect
-  with their last received sequence.
-- Terminal output is not buffered during a snapshot; a reconnect reads the
-  bounded terminal snapshot instead.
+  one Engine.IO connection. `Manager.socket(namespace)` returns the socket the
+  Manager already holds for that namespace, so one Manager carries one
+  `/threads` subscription: give each watched Thread a `Manager` of its own.
+  Disconnecting a namespace socket ends its subscription on the host.
+- socket.io-client reconnects with the `auth` it holds, so keep
+  `afterSequence` at the last received sequence: update `socket.auth` or pass
+  `auth` as a function. A Project reconnection receives the whole tree again;
+  each Thread's history is replayed by its own subscription.
 
 ### Prompt events
 
-- Each accepted input emits `prompt.accepted` with `{ type, text, source }`;
-  `text` is the input after configured-credential redaction and `source` is
-  its trusted origin.
-- The host emits `prompt.finished` with `{ type, status, text, source }`;
-  `status` is `completed`, `failed`, or `cancelled`. Success is acknowledged
-  only after conversation history is saved. Use this event, not the inner
-  `agent.finished`. A persistence failure can instead make the Thread terminal
-  with `persistence_failed`; clients must also observe Thread state.
-- An interruption that leaves a prompt unfinished emits `prompt.paused` with
-  `{ type, reason }`, where `reason` is `host_stopped` when the host stopped,
-  `host_restarted` when a boot discovered the restart a run never recorded,
-  and `reader_stopped` only in logs written before the reader's stop ended the
-  turn.
-- The reader's stop (`POST /threads/:id/interrupt`) finishes the prompt with
-  `prompt.finished` `status: cancelled` and `reason: interrupted`, keeping its
-  history. A prompt that never started is left without one: it was never
-  running.
-- The host takes its own interruptions up again by appending
-  `prompt.resumed` with `{ type, attempt }`, counting from `1`, and a reader's
-  own resume of the same prompt does the same under the prompt's own
-  `promptId`. A resumable prompt is unfinished: a client that sees one — no
+A prompt's progress travels as stored events the runtime writes: each is an
+`agent:event` whose `type` is the event's kind, whose `promptId` is the
+prompt, and whose `event` body starts with that same `type`
+([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts),
+[`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts)).
+
+The same log carries the runtime's other events — `agent.cancelled` and
+`agent.failed` `{ type, error? }`, `queue.paused` `{ type, reason? }` (`reason`
+`storage_low` when storage stops the queue), `queue.resumed`, `queue.updated`
+when the Thread's running prompt changes, and the rewind marker
+`history.truncated` ([Replay](#replay)) — and every event the executor writes
+through its session; the runtime README lists them under
+[Event streams](../../../bundles/runtime/runtime/README.md#event-streams).
+A bundle that appends to a Thread's log through `events/v1` writes under a
+versioned type `<bundle>.<name>/v<N>`, such as `comments.added/v1`, with its
+payload alone as `event`; the runtime publishes it as `agent:event` as soon as
+it is committed
+([`runtime/src/host/index.ts`](../../../bundles/runtime/runtime/src/host/index.ts),
+[`runtime/src/host/appends.ts`](../../../bundles/runtime/runtime/src/host/appends.ts),
+[`comments/src/host/comments.ts`](../../../bundles/features/comments/src/host/comments.ts)).
+
+- `prompt.accepted` `{ type, text, source, queued, steer? }` records each
+  accepted input. `text` is the input after configured-credential redaction,
+  `source` its trusted origin, and `queued` whether it waits behind other
+  work; `steer` names the running prompt when the input is a steer, whose
+  `queued` is always `true`.
+- `prompt.queued` `{ type, first? }` follows when the input waits in the
+  queue; `first: true` puts it at the front.
+- `prompt.started` `{ type }` marks the start of a run, and
+  `prompt.edited` `{ type, text }` an edit of a queued input.
+- `prompt.finished` `{ type, status, text, source, reason? }` ends the
+  prompt, with `status` `completed`, `failed` or `cancelled`. Success is
+  recorded only after conversation history is saved. Use this event, not the
+  inner `agent.finished`. A persistence failure instead makes the Thread
+  terminal with `persistence_failed`, so a client also observes Thread state.
+  `reason` is `interrupted` when the reader's stop ended the run and
+  `queue_removed` when the input was removed from the queue
+  ([The prompt queue](#the-prompt-queue)).
+- The reader's stop (`POST /threads/:id/interrupt`) ends a running prompt with
+  `prompt.finished` `status: cancelled` and `reason: interrupted`, and the
+  history it wrote stays. A prompt that has not started is not running, so
+  the stop leaves it without a `prompt.finished`.
+- `prompt.paused` `{ type, reason }` records an interruption that leaves the
+  prompt unfinished. The host writes `reason` `host_stopped` when the host
+  stops during the run, `host_restarted` when a boot finds a started prompt
+  whose run left no pause, and `storage_low` when storage runs low during the
+  run
+  ([`domain/storage-pause.ts`](../../../bundles/runtime/runtime/src/host/domain/storage-pause.ts),
+  [Storage protection](#storage-protection)). It also reads `reader_stopped`
+  in a stored log and treats it as a pause only the reader takes up again; it
+  writes no such pause
+  ([`store/progress.ts`](../../../bundles/runtime/runtime/src/host/store/progress.ts),
+  [`store/types.ts`](../../../bundles/runtime/runtime/src/host/store/types.ts)).
+- `prompt.resumed` `{ type, attempt, first? }` records that the host takes a
+  paused prompt up again, with `attempt` counting from `1`; a reader's own
+  resume of the prompt appends the same event under the prompt's `promptId`.
+  A resumable prompt is unfinished: a client that sees one — no
   `prompt.finished`, and a pause or a `prompt.resumed` as its last word — can
   offer the reader `POST /threads/:id/resume`.
 
 ### Steering and delivered results
 
-`POST /threads/:id/steer` takes `{ prompt, promptId, interrupt? }`, where
-`promptId` is the prompt the reader saw running, and answers
-`{ status, promptId }`:
+`POST /threads/:id/steer` ([Request rules](#request-rules)) answers
+`{ status, promptId }` with the steer's own id. With `steered`, the running
+prompt takes the input in at its next safe point — after the tool batch in
+flight, or before its final answer — and `interrupt: true` also aborts its
+current step so it continues with the steer at once. With `queued`, no run
+takes it in — the named prompt is not the one running, the queue is stopped,
+the Thread is stopping or pausing, or storage is low — and the input is
+queued at the back like an ordinary prompt; when the run ends while the steer
+is being accepted, the steer waits at the front of the queue instead
+([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
 
-- `steered` means the running prompt takes the input in at its next safe point
-  — after the tool batch in flight, or before its final answer — and
-  `interrupt: true` also aborts its current step so it continues with the
-  steer at once.
-- `queued` means the prompt was no longer running, or the Thread was stopping,
-  so the input was queued as an ordinary prompt.
-
-The steer is accepted as `prompt.accepted` with `steer` naming the running
-prompt; taking it in appends `prompt.steered` under the steer's own id, and a
-steer the run ended without reading returns to the front of the queue with
+The steer is recorded as `prompt.accepted` with `steer` naming the running
+prompt. Taking it in appends `prompt.steered` `{ type, promptId, text,
+source }` under the steer's own id, where `promptId` is the running prompt
+([`domain/session.ts`](../../../bundles/runtime/runtime/src/host/domain/session.ts)).
+A steer the run ends without reading returns to the front of the queue with
 `prompt.queued` `first: true`.
 
-Delegated results and background terminal results are delivered automatically.
-A Thread that is running takes them in as steers of its active prompt at the
-next safe point, without interrupting it; otherwise they are queued. They can
-trigger additional model/tool activity.
+Delegated results and background terminal results are delivered the same way,
+without a request: a Thread that is running takes them in as steers of its
+active prompt at the next safe point, without interrupting it; otherwise they
+are queued. They can start further model and tool activity
+([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
 
 ## Docker deployment details
 
-The image builds the bundles through the same Nx target as a local build,
-`NX_DAEMON=false npx nx run doric-host:build-bundles --skip-nx-cache`: it
-builds every Nx project tagged `type:bundle`, then `stage --all` stages every
-directory `bundles/<group>/<id>` that holds a `manifest.json` into
-`app/backend/doric-host/dist/bundles`. A bundle needs both: a manifest with no
-tag is not built, and `stage` then fails on its missing `dist/manifest.json`,
-which fails the image build. Dependencies are installed with
-`npm ci --ignore-scripts`, so no lifecycle script runs; the image runs Nx's
-`post-install` step itself. The build starts no Nx daemon and reads no Nx
-cache.
+[`.Dockerfile`](.Dockerfile) builds the host from the repository root. Every
+stage starts from `node:22-bookworm-slim` pinned by digest, and every archive
+or binary it fetches with `curl` is checked against a recorded SHA-256, so a
+changed one fails the build. Of the Debian packages, only those the host
+runs sandboxes with are pinned by version — nftables and openssh-client in
+`docker-runtime`, and e2fsprogs, iproute2, nftables, openssh-client, skopeo
+and socat in `runtime`; the build tools, `ca-certificates`, `curl` and the
+other packages install the versions the unpinned `apt-get update` finds.
+Its stages:
+
+- `agent-builder` copies `package.json`, `package-lock.json`, `nx.json`,
+  `tsconfig.json`, `tsconfig.base.json` and the trees `app`, `bundles`,
+  `packages` and `tools`, and installs npm 11.13.0. It runs
+  `npm ci --ignore-scripts`, so no lifecycle script runs, then Nx's
+  `post-install` step itself; generates the Prisma client; compiles
+  `packages/storage` and the host with `tsc --build`; writes the platform
+  schemas; and runs
+  `NX_DAEMON=false npx nx run doric-host:build-bundles --skip-nx-cache`, the
+  target a local build runs, with no Nx daemon and no Nx cache.
+  `build-bundles` builds every Nx project tagged `type:bundle`, then
+  `stage --all` stages every directory `bundles/<group>/<id>` that holds a
+  `manifest.json` into `app/backend/doric-host/dist/bundles`
+  ([`project.json`](project.json),
+  [`build/cli.ts`](../../../packages/bundle/src/build/cli.ts)). A failing
+  bundle build fails the image build. It then moves `dist/index.*` and
+  `dist/lib` under `app/backend/doric-host/dist/src`, the path the host's
+  start command names.
+- `agent-runtime` holds the built `/workspace` on the base image. Compose's
+  `migrate` service runs it.
+- `docker-runtime` adds nftables, the OpenSSH client and a static Dropbear
+  (`DROPBEAR_2026.94`, compiled in `dropbear-tools`) at
+  `/opt/doric/firecracker/dropbearmulti`, and sets `DORIC_SANDBOX_SSH=true`.
+  Compose's `docker` service runs it.
+- `runtime`, the final stage, adds the pinned Debian packages e2fsprogs,
+  iproute2, nftables, openssh-client, skopeo and socat, umoci 0.6.0 at
+  `/usr/local/bin/umoci`, and the Firecracker assets at the paths the
+  Firecracker provider reads by default
+  ([`firecracker-sandbox/src/lib/firecracker.ts`](../../../packages/firecracker-sandbox/src/lib/firecracker.ts)):
+  the VMM and jailer 1.16.1 from the x86_64 release at
+  `/usr/local/bin/firecracker` and `/usr/local/bin/jailer`; the Linux 6.18
+  guest kernel, compiled monolithic in `kernel-builder`, at
+  `/opt/doric/firecracker/vmlinux`; the initramfs assembled in
+  `initramfs-builder` from a static BusyBox 1.37.0, Dropbear and the boot
+  scripts in [`firecracker/`](firecracker), at
+  `/opt/doric/firecracker/initramfs.cpio`; and the static Dropbear at
+  `/opt/doric/firecracker/dropbearmulti`. It also copies the static BusyBox to
+  `/opt/doric/firecracker/busybox`. It creates the state and cache
+  directories `/var/lib/doric/firecracker` and `/var/cache/doric/firecracker`
+  with mode `0700` and sets `DORIC_HOST=0.0.0.0`, `DORIC_PORT=3000` and
+  `DORIC_SANDBOX_SSH=true`. Compose's `firecracker` service runs it.
+
+Each host stage runs `node app/backend/doric-host/dist/src/index.js` and
+exposes port 3000.
+
+The build context is filtered by [`.dockerignore`](../../../.dockerignore),
+which excludes `.git`, `.nx`, `.env` and `.env.*` at the repository root,
+every `dist`, `dist-*` and `node_modules` directory, every `*.log`,
+`models/**/artifact` and `tmp`. Its `.env` patterns match only at the root, so
+`COPY app ./app` copies `app/backend/doric-host/.env`, the file Compose reads
+the deploy credentials from, into `agent-builder`, and with `/workspace` into
+the `agent-runtime`, `docker-runtime` and `runtime` images.
+
+The Compose profiles ([`compose.yaml`](compose.yaml)) need a Linux Docker
+host: both host services share the host's network namespace. The `docker`
+profile hands its host the Docker socket and the `NET_ADMIN` capability for
+the nftables firewall the Docker provider manages
+([`docker-sandbox/src/lib/host.ts`](../../../packages/docker-sandbox/src/lib/host.ts)).
+The `firecracker` profile hands its host privileged mode, `/dev/kvm`,
+`/dev/net/tun`, the cgroup filesystem read-write and its state and cache
+volumes, and no Docker socket. The Firecracker provider runs the jailer as
+uid and gid 0 by default, and its preflight refuses a host that is not Linux
+x86_64, lacks read/write `/dev/kvm` or `/dev/net/tun`, cgroup v2, a working
+`nft`, or IP forwarding, lacks a Firecracker asset or the state and cache
+directories at their paths, runs another Firecracker or jailer than 1.16.1, or
+lacks `debugfs`, `ip`, `mkfs.ext4`, `mount`, `skopeo`, `ssh`, `ssh-keygen`,
+`truncate`, `umoci` or `umount`
+([`firecracker-sandbox/src/lib/preflight.ts`](../../../packages/firecracker-sandbox/src/lib/preflight.ts),
+[`firecracker-sandbox/src/lib/firecracker.ts`](../../../packages/firecracker-sandbox/src/lib/firecracker.ts),
+[`firecracker-sandbox` README](../../../packages/firecracker-sandbox/README.md)).
+That profile is a privileged harness for development and e2e runs, not a
+production isolation boundary. Both host services mount the `postgres-data`
+volume read-only at `/var/lib/doric/postgresql` and set `DORIC_STORAGE_PATH`
+to it, so the host measures the database's filesystem
+([Storage protection](#storage-protection)).
 
 ### The sandbox image
 
 The Docker profile runs sandboxes from the image built from
-[`.sandbox.Dockerfile`](.sandbox.Dockerfile). On top of the base image's Git it
-adds:
+[`.sandbox.Dockerfile`](.sandbox.Dockerfile), on `node:22-bookworm`. On top of
+the base image's Git it adds, each checked by the build:
 
-- the GitHub CLI;
-- Docker's engine and CLI;
+- the GitHub CLI 2.101.0, from its checksum-verified release, for `amd64` and
+  `arm64`;
 - the runtime libraries Electron needs, with Xvfb for headless runs, and the
-  xpra screen server with its HTML5 client;
-- esbuild under `/opt/doric/bundler`, so component previews bundle inside the
-  sandbox (on the plain image they bundle on the host, reading each file
-  through it).
+  xpra screen server with its HTML5 client under `/usr/share/xpra/www`, so a
+  sandbox builds desktop apps and serves its Project screen;
+- Debian's Docker engine and CLI, so a sandbox builds the images its Project
+  describes once a daemon is reachable;
+- esbuild 0.28.2, the version the
+  [`papercraft`](../../../bundles/features/papercraft/package.json) bundle
+  depends on, under `/opt/doric/bundler`, so component previews bundle inside
+  the sandbox; on an image without it they bundle on the host, reading each
+  file through it
+  ([`papercraft/src/host/sandbox.ts`](../../../bundles/features/papercraft/src/host/sandbox.ts)).
 
-Compose selects it through `DORIC_SANDBOX_IMAGE` (`doric-sandbox:local` by
-default); without that variable the host provisions the plain
-`node:22-bookworm` image. Build the tag before `up`:
+The image is a deployment choice read from the environment: both sandbox
+providers take `DORIC_SANDBOX_IMAGE` and default to the plain
+`node:22-bookworm`
+([`docker/src/host/sandbox.ts`](../../../bundles/sandboxes/docker/src/host/sandbox.ts),
+[`firecracker/src/host/sandbox.ts`](../../../bundles/sandboxes/firecracker/src/host/sandbox.ts)).
+Compose's `docker` service passes `DORIC_SANDBOX_IMAGE` with the default
+`doric-sandbox:local`. Build the tag before `up`:
 
 ```sh
 # from the repository root, before `docker compose --profile docker up`
 docker build -f app/backend/doric-host/.sandbox.Dockerfile -t doric-sandbox:local app/backend/doric-host
 ```
 
-Build it first: the provider pulls an image only when it is absent locally, so
-a tag that was never built fails the pool's image pull instead of silently
-falling back to the plain Node image. The `firecracker` profile resolves an
-anonymous **public** OCI image rather than a local tag, so it can only use this
-image once the tag is published or `DORIC_SANDBOX_IMAGE` is pointed at a public
-image.
+The Docker provider pulls an image only when the daemon does not hold it, so a
+tag that was never built fails the pool's image pull rather than falling back
+to the plain Node image
+([`docker-sandbox/src/lib/provider.ts`](../../../packages/docker-sandbox/src/lib/provider.ts)).
+
+The Firecracker provider reads no local Docker tag. It copies the image with
+`skopeo` from `docker://<image>` without credentials, as the `linux/amd64`
+manifest, so the image must be an anonymous public OCI image; a reference that
+is empty, holds `://` or holds whitespace fails with `Firecracker image must
+be a public OCI registry reference`
+([`firecracker-sandbox/src/lib/image.ts`](../../../packages/firecracker-sandbox/src/lib/image.ts)).
+This image serves Firecracker only once an `amd64` build of it is published to
+a public registry and `DORIC_SANDBOX_IMAGE` names it. Compose's `firecracker`
+service passes no `DORIC_SANDBOX_IMAGE`, so under Compose it runs
+`node:22-bookworm` ([`compose.yaml`](compose.yaml)).
 
 The sandbox's Docker CLI reaches a daemon only where the sandbox is given
-`/var/run/docker.sock` or the privileges `dockerd` needs, as Compose does for
-the host itself. Set `DORIC_SANDBOX_DOCKER_SOCKET=true` in the environment file
-to mount that socket into every Project sandbox. Compose leaves it off unless
-the environment file sets it, because a sandbox holding the socket can drive
-the host's Docker daemon; `.env.example` turns it on for local development.
-Keep it off where Projects are not yours.
+`/var/run/docker.sock` or the privileges `dockerd` needs. With
+`DORIC_SANDBOX_DOCKER_SOCKET=true`, and when the provider reaches the daemon
+over a Unix socket, the Docker provider mounts that socket at
+`/var/run/docker.sock` in every Project sandbox; any other value, or a
+connection that is not a Unix socket, leaves it out
+([`docker/src/host/sandbox.ts`](../../../bundles/sandboxes/docker/src/host/sandbox.ts),
+[`docker-sandbox/src/lib/docker.ts`](../../../packages/docker-sandbox/src/lib/docker.ts),
+[`docker-sandbox/src/lib/provider.ts`](../../../packages/docker-sandbox/src/lib/provider.ts)).
+Compose passes `false` unless the environment file sets the variable, because
+a sandbox holding the socket drives the host's Docker daemon;
+[`.env.example`](.env.example) sets it to `true` for local development. Keep
+it off where Projects are not yours.
 
 ### Build traps
 
@@ -1766,213 +1986,238 @@ Two traps break the image build or the deployed catalog:
   whose project has no tag is not built, so `stage` fails on its missing
   `dist/manifest.json` and the image build fails (the `.dockerignore` excludes
   `**/dist`, so no local build hides it). A tagged project outside
-  `bundles/<group>/<id>` is built but never staged, and nothing reports it: the
-  bundle is absent at runtime and its composition entry is reported missing.
-- `package-lock.json` must be generated with the npm major the build image runs
-  (`node:22-bookworm-slim` ships npm 10). A lock rewritten by a newer local npm
-  fails `npm ci` with `Missing: <package> from lock file`; regenerate it with
-  `npx npm@10 install --package-lock-only`.
+  `bundles/<group>/<id>` is built but never staged, and nothing reports it:
+  the bundle is not in `dist/bundles`, so the host never loads it
+  ([`project.json`](project.json),
+  [`build/cli.ts`](../../../packages/bundle/src/build/cli.ts)).
+- `package-lock.json` must be resolvable by npm 11: `agent-builder` installs
+  npm 11.13.0 before `npm ci`
+  ([`.Dockerfile`](.Dockerfile)). A lock rewritten by npm 10, the npm
+  `node:22-bookworm-slim` ships, fails `npm ci` with
+  `Missing: <package> from lock file`; regenerate it with
+  `npx npm@11 install --package-lock-only`.
 
 ### Rotating the PostgreSQL password
 
-To replace the PostgreSQL password of an existing deployment without losing
-data, alter the role through the container's trusted local socket instead of
-recreating the volume. The Compose project is named `doric-sandbox` (or `doric`
-when started with `npm run doric:docker:build`), and the role is your
-`DORIC_POSTGRES_USER`:
+To replace the PostgreSQL password of a deployment without losing data, alter
+the role inside the `postgres` container over its loopback address, which the
+PostgreSQL image trusts, instead of recreating the volume. The container is
+`<project>-postgres-1`, where the Compose project is `doric-sandbox`, or
+`doric` when started with `npm run doric:docker:build`; the role and database
+are your `DORIC_POSTGRES_USER` and `DORIC_POSTGRES_DB`:
 
 ```sh
 docker exec -it doric-sandbox-postgres-1 \
   psql -U doric -h 127.0.0.1 -d doric -c "ALTER ROLE doric WITH PASSWORD 'NEW'"
 ```
 
-## Provider upgrades
+Then set `DORIC_POSTGRES_PASSWORD` in `app/backend/doric-host/.env` and
+recreate the host service: `migrate` and both host services build
+`DORIC_DATABASE_URL` from it ([`compose.yaml`](compose.yaml)).
 
-The catalog advertises **OpenAI** (Responses-compatible endpoints) and
-**OpenRouter** (the former Unified implementation). Codex remains internal and
-is not advertised. LM Studio integrations and the raw OpenRouter adapter have
-been removed.
+## Provider kinds
 
-- The consolidation migration maps `unified` to `openrouter` and
-  `openai-compatible` to `openai`, preserving provider ids, credential
-  references, models and execution selections.
-- Compatible providers pointing at the standard OpenRouter URL, including the
-  bootstrap row, become `openrouter`.
-- Historical Project snapshots and events are preserved; usage reads still
-  recognize old `unified` events.
+The provider kinds are the ones the provider bundles of the default
+[`composition.json`](composition.json) register:
 
-Before upgrading a database with `lmstudio` or `lmstudio-openai` providers, use
-the previous app version to configure a supported replacement, select it for
-execution, and remove the old entries. The migration refuses those removed
-protocols instead of silently changing endpoints or deleting configuration.
+| Kind         | Serves                                                                                                           | Advertised |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- | ---------- |
+| `openai`     | Any endpoint that answers the OpenAI Responses API.                                                              | yes        |
+| `openrouter` | OpenRouter Chat Completions with curated model profiles, live capability discovery and structured-output repair. | yes        |
+| `claude`     | Anthropic Messages through a Claude Code subscription login.                                                     | yes        |
+| `codex`      | The ChatGPT Codex Responses backend.                                                                             | no         |
+
+Each kind is defined in its bundle's `src/host/kind.ts`
+([`openai`](../../../bundles/providers/openai/src/host/kind.ts),
+[`openrouter`](../../../bundles/providers/openrouter/src/host/kind.ts),
+[`claude`](../../../bundles/providers/claude/src/host/kind.ts),
+[`codex`](../../../bundles/providers/codex/src/host/kind.ts)).
+`GET /providers/kinds` lists the advertised kinds, and a kind that is not
+advertised is still accepted by `POST /providers/models` and `PUT /config`
+([Configuration and providers](#configuration-and-providers)).
+
+`prisma migrate deploy` refuses a database whose `provider_configuration`
+table holds a row of kind `lmstudio` or `lmstudio-openai`: the migration
+`20261008000000_consolidate_providers` raises `Replace LM Studio providers
+with OpenAI Responses or OpenRouter in the previous Doric version before
+applying this migration.` and no later migration is applied
+([`migration.sql`](../../../bundles/foundation/postgres/prisma/migrations/20261008000000_consolidate_providers/migration.sql)).
 
 ## Persistence and security
 
 ### Database
 
-PostgreSQL holds everything durable: Projects, Threads, provider histories and
-Thread event streams (kept in the generic `storage_*` tables of
-`storage.backend/v1`), the configuration's `settings/v1` document, and the
-credential table.
+PostgreSQL holds everything durable. The `postgres` bundle reaches it: it
+provides `storage.backend/v1`, on which the core builds `storage/v1`, and
+`secrets.backend/v1`, on which the core builds `secrets/v1`, and the shipped
+[`composition.json`](composition.json) chooses it for both
+([`postgres/src/host/postgres.ts`](../../../bundles/foundation/postgres/src/host/postgres.ts)).
+The [postgres bundle README](../../../bundles/foundation/postgres/README.md)
+gives every method, lock and limit of those two backends.
 
-- The schema and migrations live in the `postgres` bundle
-  (`bundles/foundation/postgres/prisma`);
-  `app/backend/doric-host/prisma.config.ts` points at them.
-- Apply migrations separately with `npx nx run doric-host:migrate` (Compose
-  runs its `migrate` service); startup does not apply them.
-- The history starts with the clean Project/Thread baseline, bootstrap
-  configuration, singleton constraint, and immutable-tree trigger. Later
-  migrations add, among others, Project and Thread names, per-turn provider-history
-  checkpoints that rewind truncates, Project colors, the credential store,
-  provider kinds and models, Thread working directories, usage and queue
-  pauses, the provider consolidation, generic storage, runtime documents,
-  registered credential kinds, the coalescing of stored Thread deltas and the
-  drop of the legacy Project and Thread tables. They do not convert Session
-  data.
-- The generic-storage migration converts the configuration tables into the
-  `host-config.configuration/v1` settings document, keeping its revision and
-  update time, verifies the conversion, and then drops those tables. It
-  cannot be reversed, so **back up the database first**.
-- The delta-coalescing migration (`20261021000000_coalesce_thread_deltas`)
-  rewrites the stored Thread event streams so each streamed response keeps
-  one entry per run of deltas instead of one per token. It cannot be
-  reversed and must run offline; follow
-  [Coalescing stored Thread deltas](#coalescing-stored-thread-deltas).
-- The drop migration (`20261117000000_drop_legacy_runtime_tables`) drops the
-  legacy `project`, `thread` and `thread_event` tables, which are empty since
-  the runtime-documents migration moved their rows. It refuses while any of
-  them still holds a row and cannot be reversed; follow
-  [Legacy rows at the drop migration](#legacy-rows-at-the-drop-migration).
+**Schema and migrations.** The Prisma schema and the migrations live in the
+bundle
+([`schema.prisma`](../../../bundles/foundation/postgres/prisma/schema.prisma),
+[`migrations/`](../../../bundles/foundation/postgres/prisma/migrations)), one
+`migration.sql` per directory, applied in name order.
+[`prisma.config.ts`](prisma.config.ts) points the Prisma CLI at both, with the
+datasource `DORIC_DATABASE_URL`, or
+`postgresql://doric:doric@127.0.0.1:5432/doric` when it is unset.
+`npx nx run doric-host:migrate` runs `prisma migrate deploy` with that config
+([`project.json`](project.json)), and the Compose `migrate` service runs the
+same command before either host service starts
+([`compose.yaml`](compose.yaml)). Startup never applies a migration. Prisma
+records each applied migration in its own `_prisma_migrations` table and
+applies only the ones not recorded there.
 
-Start from an empty database. A database with an older (pre-baseline) schema
-or migration history must be explicitly recreated by its operator before
-deployment. Neither the host nor the baseline deletes or resets an existing
-database automatically.
+The migrations leave these tables
+([`migrations/`](../../../bundles/foundation/postgres/prisma/migrations)):
 
-### Coalescing stored Thread deltas
+| Table                  | Columns                                                                                                                                                | Keys and constraints                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `credential`           | `id uuid`, `kind text`, `name text`, `username text?`, `email text?`, `secret text?`, `created_at timestamptz(3)`, `updated_at timestamptz(3)`         | primary key `id`; unique `(kind, name)`                                                                                                                                                 |
+| `storage_meta`         | `key text`, `value jsonb`                                                                                                                              | primary key `key`                                                                                                                                                                       |
+| `storage_type`         | `type text C`, `indexes jsonb`, `declared_at timestamptz(3)`                                                                                           | primary key `type`                                                                                                                                                                      |
+| `storage_document`     | `type text C`, `id text C`, `revision integer`, `value jsonb`, `updated_at timestamptz(3)`                                                             | primary key `(type, id)`; check `revision > 0`                                                                                                                                          |
+| `storage_index_entry`  | `type text C`, `index_name text C`, `key bytea`, `document_id text C`, `unique_key boolean`                                                            | primary key `(type, index_name, key, document_id)`; unique `(type, index_name, key) WHERE unique_key`; index `(type, document_id)`; `(type, document_id)` references `storage_document` |
+| `storage_stream`       | `stream text C`, `last_sequence integer` (default `0`)                                                                                                 | primary key `stream`                                                                                                                                                                    |
+| `storage_stream_entry` | `stream text C`, `sequence integer`, `value jsonb`, `created_at timestamptz(3)`                                                                        | primary key `(stream, sequence)`; `stream` references `storage_stream`                                                                                                                  |
+| `storage_commit`       | `position bigint`, `documents jsonb`, `streams jsonb`, `truncated jsonb` (default `[]`), `dropped jsonb` (default `[]`), `committed_at timestamptz(3)` | primary key `position`                                                                                                                                                                  |
+| `storage_truncation`   | `stream text C`, `position bigint`, `after_sequence integer`, `at_sequence integer`                                                                    | primary key `(stream, position)`; `stream` references `storage_stream`; `position` references `storage_commit`                                                                          |
+| `storage_blob`         | `hash text` (`sha256:<hex>`), `bytes bytea`, `size integer`, `created_at timestamptz(3)`                                                               | primary key `hash`                                                                                                                                                                      |
 
-`20261021000000_coalesce_thread_deltas` folds each run of consecutive
-`reasoning.delta`, `text.delta`, `refusal.delta` or `tool_call.delta` entries of
-a Thread's event stream into the run's first entry, which keeps its sequence
-and carries the whole delta, and drops deltas that say nothing. Conversations read the
-same; sequence numbers are never renumbered, so the removed entries leave
-gaps, and each stream still ends at its counter. On a database whose long
-Threads streamed token by token this removes most of the event rows (a
-646,307-entry database keeps 30,228).
+`text C` is `text COLLATE "C"`, so keys compare bytewise; `?` marks a nullable
+column, and every other column is `NOT NULL`. Every `timestamptz(3)` column
+defaults to the current time except `credential.updated_at`, which the client
+sets at each write; `credential.id` has no default, so the writer gives the
+UUID. Every foreign key is `ON UPDATE CASCADE` and `ON DELETE CASCADE`, except
+`storage_truncation.position`, which is `ON DELETE RESTRICT`. No other table,
+function, trigger or enum type remains.
 
-The migration verifies its result in the same transaction and aborts, changing
-nothing, on any mismatch. When it changes anything it increments the storage
-generation, so every desktop discards its local history snapshots and replays
-each conversation from the host. It records the `coalesced-thread-deltas` row
-of `storage_meta`, so applying it again does nothing. **It cannot be
-reversed**: the only rollback is restoring the backup taken in step 3.
+**Who reads and writes them.** The storage backend reads and writes the
+`storage_*` tables with raw SQL
+([`storage/`](../../../bundles/foundation/postgres/src/host/storage/)), and the
+secrets backend reads and writes `credential` through the generated Prisma
+client
+([`secrets/table.ts`](../../../bundles/foundation/postgres/src/host/secrets/table.ts)).
+No other code touches the database. The host stores these records through
+`storage/v1`:
 
-The examples use the Compose container `doric-postgres-1` and the role and
-database `doric`; substitute your own (`doric-sandbox-postgres-1` for the
-default Compose project name, your `DORIC_POSTGRES_USER` and
-`DORIC_POSTGRES_DB`).
+| Record                                 | Document id or stream                                   | Indexes                           | Defined in                                                                                      |
+| -------------------------------------- | ------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `core.settings/v1` document            | the settings id, such as `host-config.configuration/v1` | none                              | [`core/src/contracts/storage.ts`](../../../bundles/foundation/core/src/contracts/storage.ts)    |
+| `core.settings-generation/v1` document | `global`                                                | none                              | [`core/src/contracts/storage.ts`](../../../bundles/foundation/core/src/contracts/storage.ts)    |
+| `runtime.project/v1` document          | the Project id                                          | `byCreated`, `byOpen`             | [`runtime/src/contracts/storage.ts`](../../../bundles/runtime/runtime/src/contracts/storage.ts) |
+| `runtime.thread/v1` document           | the Thread id                                           | `byProject`, `byParent`, `byOpen` | [`runtime/src/contracts/storage.ts`](../../../bundles/runtime/runtime/src/contracts/storage.ts) |
+| `runtime.history/v1` document          | `<threadId>:<part>`, one provider-history part          | `byThread`                        | [`runtime/src/contracts/storage.ts`](../../../bundles/runtime/runtime/src/contracts/storage.ts) |
+| `runtime.attachment/v1` document       | `<threadId>:<attachmentId>`; the bytes are a blob       | `byProject`, `byThread`, `byBlob` | [`runtime/src/contracts/storage.ts`](../../../bundles/runtime/runtime/src/contracts/storage.ts) |
+| `runtime.migration/v1` document        | `legacy-prisma`                                         | none                              | [`runtime/src/contracts/storage.ts`](../../../bundles/runtime/runtime/src/contracts/storage.ts) |
+| `mcp.server/v1` document               | the server id                                           | `byProject`                       | [`mcp/src/host/store.ts`](../../../bundles/features/mcp/src/host/store.ts)                      |
+| Thread event stream                    | `runtime.thread.events/<threadId>`                      | none                              | [`runtime/src/host/store/events.ts`](../../../bundles/runtime/runtime/src/host/store/events.ts) |
 
-1. Quit the Doric desktop app on every machine that connects to this host.
-2. Stop the host (`Ctrl+C` on `nx serve doric-host`, or
-   `docker compose stop docker` / `firecracker`). Keep PostgreSQL running.
-   With Compose, do not run `up` with the new image before step 3: its
-   `migrate` service applies pending migrations.
-3. Back up the database:
+`storage_meta` holds two reserved records. `identity` is
+`{ hostId, storageGeneration }`, written by the first `identity` call
+([`identity.ts`](../../../bundles/foundation/postgres/src/host/storage/identity.ts));
+a desktop discards its local history snapshots when `storageGeneration`
+changes
+([`history/src/desktop/index.ts`](../../../bundles/desktop/history/src/desktop/index.ts)).
+`coalesced-thread-deltas` records that the stored Thread event streams keep
+one entry per run of consecutive deltas, with its counts; the migration that
+writes it does nothing when the record exists
+([`20261021000000_coalesce_thread_deltas`](../../../bundles/foundation/postgres/prisma/migrations/20261021000000_coalesce_thread_deltas/migration.sql)).
 
-   ```sh
-   docker exec doric-postgres-1 pg_dump -U doric -d doric -Fc > doric-before-coalesce.dump
-   ```
+**A new database.** `migrate` over an empty database leaves the
+`OPENROUTER_API_KEY` credential (kind `API_TOKEN`, id
+`00000000-0000-4000-8000-000000000002`, empty secret), the default
+configuration document, which names that credential as the token of the
+`openrouter` provider, the settings generation `global`, the
+`runtime.migration/v1` document `legacy-prisma` with zero counts, two
+`storage_commit` rows, so the host's first commit takes position 3, and the
+`coalesced-thread-deltas` record. The
+[postgres bundle README](../../../bundles/foundation/postgres/README.md#rows-the-migrations-leave)
+gives their values.
 
-4. Apply the migration, natively with `DORIC_DATABASE_URL` pointing at the
-   database (`npx nx run doric-host:migrate`), or with Compose
-   (`docker compose run --rm --build migrate`). It holds its transaction for
-   the whole rewrite, about 15 seconds for 650k entries.
-5. Check the result; `storageGeneration` of `identity` is one higher than
-   before, and the marker holds the entry counts:
+**Retention.** Nothing expires with time; a record stays until the code below
+removes it.
 
-   ```sh
-   docker exec doric-postgres-1 psql -U doric -d doric -c \
-     "SELECT key, value FROM storage_meta"
-   ```
+- Deleting a Thread deletes its documents and those of its descendant
+  Threads, with their history parts and attachment records, and drops their
+  event streams
+  ([`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts));
+  deleting a Project does the same for every Thread it holds
+  ([`store/projects.ts`](../../../bundles/runtime/runtime/src/host/store/projects.ts)).
+  Dropping a stream deletes its entries and truncation marks.
+- A rewind truncates the Thread's stream above the rewound sequence. The
+  stream's counter never decreases, so a sequence is never reused, and the
+  truncation leaves a mark under its commit position
+  ([`commit.ts`](../../../bundles/foundation/postgres/src/host/storage/commit.ts)).
+- A blob is deleted once no `runtime.attachment/v1` record names it
+  ([`store/attachments.ts`](../../../bundles/runtime/runtime/src/host/store/attachments.ts)).
+- `storage_commit`, the commit feed, and `storage_type` are never pruned; a
+  credential stays until `DELETE /credentials/:id`.
 
-6. Still with the host stopped, return the freed space to the filesystem.
-   `VACUUM FULL` locks the table while it rewrites it:
+**The startup check.** The `database_client` start step connects and then
+looks for the tables `project`, `thread` and `thread_event`: when all three
+exist and one of them holds a row, startup fails at `database_client` with
+`Legacy Project and Thread data has not been migrated; run prisma migrate deploy.`
+When the database cannot answer that check, startup goes on, and the first
+query that needs the database fails instead
+([`database.ts`](../../../bundles/foundation/postgres/src/host/database.ts),
+[`start.ts`](../../../bundles/foundation/postgres/src/host/start.ts)).
 
-   ```sh
-   docker exec doric-postgres-1 psql -U doric -d doric -c \
-     "VACUUM (FULL, ANALYZE) storage_stream_entry"
-   ```
+**When `migrate` stops.** A migration that finds data it cannot carry raises
+an exception and rolls its own transaction back; Prisma records the migration
+as failed and applies nothing after it. The exceptions are:
 
-7. Start the host, then the desktop. The snapshots of the previous generation
-   stay in the history bundle's cache directory, unused.
+- `Replace LM Studio providers with OpenAI Responses or OpenRouter in the previous Doric version before applying this migration.`
+  ([`20261008000000_consolidate_providers`](../../../bundles/foundation/postgres/prisma/migrations/20261008000000_consolidate_providers/migration.sql));
+- `A stored provider kind is not supported; replace it in the previous Doric version before applying this migration.`,
+  `Stored Doric model role is missing: EXECUTION` and
+  `The Doric configuration conversion could not be verified.`
+  ([`20261009000000_generic_storage`](../../../bundles/foundation/postgres/prisma/migrations/20261009000000_generic_storage/migration.sql));
+- `The Project and Thread migration could not be verified: …`
+  ([`20261010000000_runtime_documents`](../../../bundles/foundation/postgres/prisma/migrations/20261010000000_runtime_documents/migration.sql));
+- `The Thread delta coalescing could not be verified: …`
+  ([`20261021000000_coalesce_thread_deltas`](../../../bundles/foundation/postgres/prisma/migrations/20261021000000_coalesce_thread_deltas/migration.sql));
+- `Legacy table "<name>" holds <n> rows; …`, while `project`, `thread` or
+  `thread_event` holds a row
+  ([`20261117000000_drop_legacy_runtime_tables`](../../../bundles/foundation/postgres/prisma/migrations/20261117000000_drop_legacy_runtime_tables/migration.sql)).
 
-To roll back, stop the host and restore the backup over the database, for
-example `docker exec -i doric-postgres-1 pg_restore -U doric -d doric --clean --if-exists --single-transaction < doric-before-coalesce.dump`.
-The restored database has not recorded the migration, so the next
-`prisma migrate deploy` of this version applies it again.
+No migration can be reversed: back up a database whose data matters
+(`pg_dump`) before `migrate`. While a migration is recorded as failed,
+`migrate` refuses to run; after correcting the data,
+`npx prisma migrate resolve --rolled-back <migration> --config app/backend/doric-host/prisma.config.ts`
+clears the record and `npx nx run doric-host:migrate` applies it again.
 
-### Legacy rows at the drop migration
+**Recreating an incompatible database.** A database these migrations cannot
+bring to the schema above is incompatible: `migrate` stops on it, or the
+startup check refuses it. Neither the host nor `migrate` ever resets or
+deletes a database; an existing incompatible development database is
+recreated explicitly by its operator, which deletes all its data. With the
+host stopped, either:
 
-`20261117000000_drop_legacy_runtime_tables` drops the legacy `project`,
-`thread` and `thread_event` tables, with the `guard_thread_tree()` function and
-the `ProjectState` and `ThreadState` enums only they use. The runtime-documents
-migration (`20261010000000_runtime_documents`) moved their rows into the
-runtime's storage documents and streams and deleted them, so on a database
-that has run it the tables are empty. The drop migration locks the three
-tables and counts their rows in one transaction; if any table holds a row, it
-raises `Legacy table "<name>" holds <n> rows` and the transaction aborts, so
-nothing is dropped. Tables that are already gone are skipped. **It cannot be
-reversed**: the only way back is restoring the backup taken in step 3.
+- reset it in place with the Prisma CLI, which deletes everything in the
+  database of `DORIC_DATABASE_URL` and applies every migration (it asks for
+  confirmation; `--force` skips it):
 
-Until the tables are gone, the host's startup check reads them: when all three
-exist and one of them holds a row, the host fails at its `database_client` stage, whether or not the
-runtime-documents migration has run, so the host never serves an empty history
-over data it has not moved.
+  ```sh
+  export DORIC_DATABASE_URL=postgresql://USER:PASSWORD@127.0.0.1:5432/DB
+  npx prisma migrate reset --config app/backend/doric-host/prisma.config.ts
+  ```
 
-The examples use the same container, role and database as
-[Coalescing stored Thread deltas](#coalescing-stored-thread-deltas).
+- or, with Compose, delete the PostgreSQL volume and start again, so
+  `postgres` creates an empty database and `migrate` applies every migration
+  ([`compose.yaml`](compose.yaml)). From `app/backend/doric-host`:
 
-1. Quit the Doric desktop app on every machine that connects to this host.
-2. Stop the host (`Ctrl+C` on `nx serve doric-host`, or
-   `docker compose stop docker` / `firecracker`). Keep PostgreSQL running.
-   With Compose, do not run `up` with the new image before step 3: its
-   `migrate` service applies pending migrations.
-3. Back up the database:
+  ```sh
+  docker compose --profile docker down
+  docker volume rm doric-sandbox_postgres-data
+  docker compose --profile docker up -d
+  ```
 
-   ```sh
-   docker exec doric-postgres-1 pg_dump -U doric -d doric -Fc > doric-before-drop.dump
-   ```
-
-4. Apply the migration, natively with `DORIC_DATABASE_URL` pointing at the
-   database (`npx nx run doric-host:migrate`), or with Compose
-   (`docker compose run --rm --build migrate`).
-5. If it raises, a row was written to a legacy table after the
-   runtime-documents migration, and nothing was dropped. Either restore the
-   backup, or export the rows and delete them, in this order:
-
-   ```sh
-   docker exec doric-postgres-1 pg_dump -U doric -d doric --data-only \
-     -t thread_event -t thread -t project > doric-legacy-rows.sql
-   docker exec doric-postgres-1 psql -U doric -d doric -c \
-     'DELETE FROM thread_event; DELETE FROM thread; DELETE FROM project;'
-   ```
-
-   Then mark the failed migration as rolled back and deploy again:
-
-   ```sh
-   npx prisma migrate resolve --rolled-back 20261117000000_drop_legacy_runtime_tables --config app/backend/doric-host/prisma.config.ts
-   npx nx run doric-host:migrate
-   ```
-
-6. Start the host, then the desktop.
-
-Rolling the code back to a build whose `prisma/migrations` folder contains
-`20261010000000_runtime_documents` starts on the migrated database: AC10.5
-checked it with the build of `5a1da9b8` (see the phase 10 entry of
-[the feature doc](../../../docs/features/bundle-isolation.md#evolution)). A
-build without that folder could not serve this database before the drop either
-(Spec 1, §16), so the backup does not help it. The owner confirms this limit
-before the branch merges (OD-12).
+  The volume is `<project>_postgres-data`: `doric_postgres-data` for the
+  project `doric` of `npm run doric:docker:build`
+  ([With Docker Compose](#with-docker-compose)).
 
 ### Network exposure
 
@@ -1983,75 +2228,157 @@ client requests.
 
 ### Credentials
 
-The host owns one credential store for every secret it holds. Each credential
-is named and has a kind that fixes its fields:
+The host keeps every secret it holds in one credential store, one
+`credential` row per named credential. A credential's kind fixes its fields
+([`basic/secrets.ts`](../../../packages/bundle/src/contracts/basic/secrets.ts),
+[`git/src/host/credentials.ts`](../../../bundles/features/git/src/host/credentials.ts)):
 
-| Kind                | Fields                          | Use                                                |
-| ------------------- | ------------------------------- | -------------------------------------------------- |
-| `API_TOKEN`         | `secret`                        | Authentication: a provider key, the GitHub token.  |
-| `USERNAME_PASSWORD` | `username`, `secret`            | Authentication with a name.                        |
-| `GIT`               | `username`, `email` (no secret) | The identity the agent's git commands commit with. |
+| Kind                | Fields                          | Registered by    | Use                                                |
+| ------------------- | ------------------------------- | ---------------- | -------------------------------------------------- |
+| `API_TOKEN`         | `secret`                        | the platform     | Authentication: a provider key, the GitHub token.  |
+| `USERNAME_PASSWORD` | `username`, `secret`            | the platform     | Authentication with a name.                        |
+| `GIT`               | `username`, `email` (no secret) | the `git` bundle | The identity the agent's git commands commit with. |
 
-A secret is stored as an AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY` and
-is never answered over the API; the host redacts every stored secret from
-events and logs before persistence and keeps it out of tool payloads. The
-credential store was created by migration from the former provider environment
-names and the former GitHub columns, so every provider keeps its row with a
-credential whose secret is empty until its operator fills it, and the former
-plaintext GitHub token is re-entered once.
+The REST API's [Credentials](#credentials) routes manage them, and
+[the credentials feature](../../../docs/features/credentials.md) describes how
+the product uses them.
+
+**Encryption.** A non-empty secret is stored as the envelope
+`v1:<nonce>:<tag>:<ciphertext>`: AES-256-GCM under `DORIC_CREDENTIAL_KEY`,
+with a random 12-byte nonce, the 16-byte authentication tag and the UTF-8
+ciphertext, each in base64. An empty secret is stored as `''`, unencrypted
+([`envelope.ts`](../../../bundles/foundation/postgres/src/host/secrets/envelope.ts)).
+Secrets cross `secrets.backend/v1` in plaintext and are sealed only inside the
+postgres bundle; no route answers a secret.
+
+`DORIC_CREDENTIAL_KEY` has no default. Generate it with
+`openssl rand -base64 32` and keep it: a stored secret opens only under the
+key that sealed it. The postgres bundle reads the key at the first credential
+read or write and keeps the cipher it builds
+([`secrets/backend.ts`](../../../bundles/foundation/postgres/src/host/secrets/backend.ts)):
+
+- **Malformed** (not exactly 32 bytes of base64): every credential read and
+  write fails with `DORIC_CREDENTIAL_KEY must be 32 base64-encoded bytes.`,
+  so startup fails at `credential_activation`
+  ([Configuration](#configuration)).
+- **Unset or blank**: reads succeed while no stored credential holds a
+  non-empty secret; once one does, reading it fails with
+  `credential_key_required`
+  (`DORIC_CREDENTIAL_KEY is required while a stored credential holds a secret.`),
+  so startup fails at `credential_activation`. Storing any secret, `''`
+  included, fails with `credential_storage_unavailable`
+  (`DORIC_CREDENTIAL_KEY is required to store a credential secret.`), which
+  the API answers with `503`.
+- **Another key** than the one that sealed a secret, or a stored value that
+  is not a `v1` envelope: reading it fails with `credential_unreadable`; an
+  unreadable row is an error, never an empty secret.
+
+**Redaction.** The core replaces every occurrence of each non-empty stored
+secret with `[REDACTED]` in an event before it is written
+([`events/facade.ts`](../../../bundles/foundation/core/src/host/events/facade.ts),
+[`secrets/cache.ts`](../../../bundles/foundation/core/src/host/secrets/cache.ts))
+and in every log line
+([`shared/log.ts`](../../../bundles/foundation/core/src/shared/log.ts),
+[`shared/redact.ts`](../../../bundles/foundation/core/src/shared/redact.ts)).
+The runtime also redacts a token it has written into a sandbox, whether or not
+the store still holds it
+([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
+[`domain/redactor.ts`](../../../bundles/runtime/runtime/src/host/domain/redactor.ts)).
 
 ### Git and GitHub inside the sandbox
 
-The host applies the Git identity and the GitHub token to a Project's sandbox:
+The host applies the Git identity and the GitHub token to a Project's sandbox
+([`git-credentials.ts`](../../../bundles/runtime/runtime/src/host/domain/git-credentials.ts)):
 
-- `git config --global` for the identity;
+- `git config --global` `user.name` and `user.email` for the identity;
 - when a token is configured, `credential.helper store` plus a
-  `~/.git-credentials` written 0600, and a `~/.config/gh/hosts.yml` written
-  0600 so the token authenticates the sandbox's `gh`.
+  `~/.git-credentials` written 0600 with
+  `https://<username>:<token>@github.com`, and a `~/.config/gh/hosts.yml`
+  written 0600 so the token authenticates the sandbox's `gh`. The username is
+  the identity's, or `oauth2` without one.
 
-That happens when a lease is acquired and again whenever the current pair
-differs from the one the sandbox holds, because the chosen credentials follow
-the current configuration while every other value stays captured per Project.
+The credentials the configuration chooses are used. Without a choice, the
+identity is the one `GIT` credential, and the token the one `API_TOKEN`
+credential no provider names; none leaves that half off. A chosen credential
+that is missing, or several candidates, leave that half off with the warning
+`A credential was not applied: <reason>`, and the prompt goes on
+([`git-credentials.ts`](../../../bundles/runtime/runtime/src/host/domain/git-credentials.ts)).
+The host applies the pair when a lease is acquired and again whenever the
+current pair differs from the one the sandbox holds, because the chosen
+credentials follow the current configuration while every other value stays
+captured per Project
+([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)).
 The token travels only through the sandbox process environment, so it never
-appears in a tool argument, a tool result, an event, or a log line; a write
-that fails is a warning naming the Project and nothing else.
+appears in a command argument, a tool argument or result, an event, or a log
+line; a write that fails is the warning `Git credentials could not be applied`,
+naming the Project and nothing else.
 
 ## Storage protection
 
-The host checks available filesystem blocks at `DORIC_STORAGE_PATH` before
-dispatch and every three seconds during execution.
+The runtime checks the filesystem that holds the database before it dispatches
+each prompt and every three seconds while a run executes
+([`storage-pressure.ts`](../../../bundles/runtime/runtime/src/host/domain/storage-pressure.ts),
+[`runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)). The
+measurement is `statfs` of `DORIC_STORAGE_PATH`, the current directory when
+unset, and makes no database round trip
+([`health.ts`](../../../bundles/foundation/postgres/src/host/storage/health.ts)).
 
-- At **10% free or less**, or when the configured path cannot be measured,
-  execution pauses and the queue shows an error.
-- Free space above 10%, then resume the queue
-  (`POST /threads/:id/queue/resume`); recovery never starts automatically.
-- PostgreSQL disk-full errors are handled as the same pause, independently of
-  the probe.
+- At **10% free blocks or less**, or when the path cannot be measured,
+  execution pauses: the run is aborted, and the Thread becomes `ready` with
+  `queuePaused` and the error code `storage_low`, whose message is
+  `Execution paused: storage is low or unavailable. Free disk space above 10% and resume the queue.`
+  ([`storage-pause.ts`](../../../bundles/runtime/runtime/src/host/domain/storage-pause.ts)).
+  Queued inputs stay accepted.
+- A disk-full error from PostgreSQL (`53100`) or the operating system
+  (`ENOSPC`) pauses the same way, independently of the measurement.
+- Recovery never starts on its own. Free space above 10%, then resume the
+  queue (`POST /threads/:id/queue/resume`); while storage is still low, the
+  resume answers `409 thread_storage_low`.
 
 Compose sets `DORIC_STORAGE_PATH=/var/lib/doric/postgresql` and mounts its
-PostgreSQL volume there read-only. Native runs default to the current
-directory; set this variable to a path on the actual database filesystem. A
-local path does not measure a remote PostgreSQL server: remote deployments
-require a mount on that filesystem for proactive protection.
+PostgreSQL volume there read-only ([`compose.yaml`](compose.yaml)). A native
+run measures the current directory unless the variable points at the
+database's filesystem, and a local path does not measure a remote PostgreSQL
+server: a remote deployment needs a mount of that filesystem for proactive
+protection.
 
-If the disk is already completely full, the host retains any unsaved history
-and event in memory and refuses to resume until it can save them. Keep that
-host process alive while freeing space; a process crash cannot preserve unsaved
-data.
+When the disk is already full, the pause keeps the unsaved provider history
+and the pause events in memory, and a resume first writes them; until they
+are saved, the resume answers `409 thread_storage_low`
+([`storage-pause.ts`](../../../bundles/runtime/runtime/src/host/domain/storage-pause.ts),
+[`runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
+Keep that host process alive while freeing space: a process that exits loses
+what it holds in memory.
 
 ## Validation
 
-| Command                                          | What it covers                    |
-| ------------------------------------------------ | --------------------------------- |
-| `npx nx run doric-host:test`                     | The host suite.                   |
-| `npx nx run doric-host-e2e:e2e`                  | The full host workflow.           |
-| `npx nx run agent:test`                          | The reusable agent loop.          |
-| `node --test scripts/tests/spawn-agent.test.mjs` | The command-line client workflow. |
+Run each command from the repository root; the host's targets are in
+[`project.json`](project.json).
 
-The host targets build the bundled tools first.
+| Command                                          | What it does and checks                                                                                                                                          |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npx nx run doric-host:build`                    | Builds every project the host depends on, runs `build-bundles`, then compiles `src/` with `tsc` into `dist/`; a type error fails it.                             |
+| `npx nx run doric-host:build-bundles`            | Builds every Nx project tagged `type:bundle` and stages every bundle into `dist/bundles`; never cached.                                                          |
+| `npx nx run doric-host:test`                     | Builds the host, compiles `src/` and `tests/` into `dist-tests/` (`tsconfig.spec.json`), and runs `dist-tests/tests/*.test.js` with `node --test`; never cached. |
+| `npx nx run doric-host:migrate`                  | Applies the pending migrations to `DORIC_DATABASE_URL` ([Database](#database)); it checks nothing else.                                                          |
+| `npx nx run doric-host-e2e:e2e`                  | Builds the host and runs the full host workflow against a disposable database and Docker sandbox, scripting only the external LLM.                               |
+| `npx nx run agent:test`                          | The reusable agent loop the host depends on.                                                                                                                     |
+| `node --test scripts/tests/spawn-agent.test.mjs` | The [command-line client](#command-line-client).                                                                                                                 |
 
-To include persistence tests, supply `DORIC_TEST_DATABASE_URL` pointing to a
-dedicated PostgreSQL test instance. The e2e target also requires
-`DORIC_TEST_SANDBOX=true`; it creates a disposable database and Docker sandbox,
-and scripts only the external LLM. Without these variables, persistence cases
-in `doric-host:test` skip and `doric-host-e2e:e2e` fails before running.
+`doric-host:test` covers ([`tests/`](tests)): the boot and stop of the
+compiled host and its startup stages, the bundle composition and its order,
+what a desktop window may call (against
+[`bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json)), the
+desktop bridge, the sandbox provider choice, the Socket.IO buffer size, the
+credential adapter and its reference races, the migrations over seeded
+databases, persistence, and that no log line carries a resolved secret.
+
+The database cases need `DORIC_TEST_DATABASE_URL`, a connection to a dedicated
+PostgreSQL server whose role may create databases and schemas: each case
+creates its own and drops it afterwards
+([`helpers/host.ts`](tests/helpers/host.ts),
+[`helpers/persistence-fixture.ts`](tests/helpers/persistence-fixture.ts)).
+Without it, those cases skip. `DORIC_TEST_SANDBOX=true` also runs the cases
+that start a sandbox. `doric-host-e2e:e2e` requires both variables and fails
+before running any test without them
+([`doric-host-e2e/project.json`](../doric-host-e2e/project.json)).

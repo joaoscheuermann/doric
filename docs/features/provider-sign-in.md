@@ -1,0 +1,108 @@
+# Feature: Provider sign-in
+
+- Status: `implemented`
+
+## Problem
+
+The `claude` and `codex` provider kinds call models through a subscription login (a Claude Code login, a ChatGPT Codex login) rather than an API key. That login comes from an OAuth authorization in a browser, and the provider needs only its result: the authorization value it sends with each request. The reader needs to sign a Claude provider in from the settings window, where the host may run in a container or on another machine with no browser of its own. A host the reader's browser cannot reach still needs a way to get a value, and the value must never be printed, logged or echoed.
+
+## Decisions
+
+- The provider page's slot is `settings.provider.field`: an item replaces one field of the form of one kind, and the page does not show which bundle drew it. The Claude sign-in is such an item, drawn in place of the `claude` kind's `token` field.
+- A client part imports a value from another bundle's contracts module only when its manifest requires a contract of that bundle; otherwise it imports types only. A filler writes a slot's name as a literal and checks it by type. `claude-login` imports `settings/contracts` as types only, and `settings` imports nothing of `claude-login`.
+- `ProviderFieldView` carries `label`, the name of the stored credential that `value` names, so the sign-in row names the credential it is signed in with.
+- The sign-in row draws the sign-in message in its own row. While a drawn item reports `view.problem`, `settings` draws no "This provider cannot be saved yet" alert; it sets `problem` under the rule that drew that message.
+- An item is drawn in place of the field it names. An item whose props are not two non-empty strings is neither drawn nor reported, and `settings` draws the field. With two items for one kind and field, the first is drawn.
+- The answer event has no shared constant: `settings/contracts` exports none, and each side writes `'settings-provider-field'`.
+- The sign-in row writes no cache of `settings`. When `finish` answers, the element dispatches `settings-provider-field` with the credential's id; `settings` reads its credentials again and then writes the id into the field. The item is in the slot exactly while the client part of `claude-login` is active.
+- A sign-in that finishes after its element is gone hands nothing to the provider page and shows no success toast: it shows an info toast instead.
+- The host never opens a browser, because it may run where none runs; the window opens the URL the host answers. The in-app sign-in never reuses an existing Claude Code login: its access token expires within hours and nothing would refresh the stored copy.
+- The Claude and Codex OAuth profiles are defaults the `oauth` package owns: a caller passes only what it overrides, and the package supplies client id, endpoints, callback, scope and authorize parameters. The scripts write only the authorization value, under `CLAUDE_AUTHORIZATION` or `CODEX_AUTHORIZATION` by default.
+- The loopback callback server settles a sign-in only for the pending `state`. The paste mode of the Claude script requires `code#state`.
+
+## Current behavior and contracts
+
+### The units
+
+- [`claude-login`](../../bundles/features/claude-login/README.md), version 1.1.1, provides `claude.login/v1@1.0.0` and requires `secrets/v1`, `ui/v1` and `regions/v1`. Its host part runs the authorization and stores the credential; its client part draws the sign-in row. It has no desktop part ([manifest.json](../../bundles/features/claude-login/manifest.json), [src/host/index.ts](../../bundles/features/claude-login/src/host/index.ts), [src/client/index.ts](../../bundles/features/claude-login/src/client/index.ts)).
+- [`claude`](../../bundles/providers/claude/README.md) and [`codex`](../../bundles/providers/codex/README.md) provide the provider kinds of the same names. Each kind has a required `token` field that names a stored `API_TOKEN` credential carrying the authorization value; `claude` is advertised, `codex` is not ([bundles/providers/claude/src/host/kind.ts](../../bundles/providers/claude/src/host/kind.ts), [bundles/providers/codex/src/host/kind.ts](../../bundles/providers/codex/src/host/kind.ts)). Provider kinds and configured providers are described in [Models and providers](models-and-providers.md).
+- [`settings`](../../bundles/desktop/settings/README.md) declares the slot `settings.provider.field` and draws its items in the provider page ([bundles/desktop/settings/src/contracts/slots.ts](../../bundles/desktop/settings/src/contracts/slots.ts)).
+- The [`oauth`](../../packages/oauth/README.md) package holds the OAuth client, the two profiles, the loopback callback server and the resolver of Claude Code's own login. The scripts `npm run claude:oauth` and `npm run codex:oauth` run an authorization on the command line ([packages/oauth/src/lib/oauth.ts](../../packages/oauth/src/lib/oauth.ts), [scripts/claude-oauth.mjs](../../scripts/claude-oauth.mjs), [scripts/codex-oauth.mjs](../../scripts/codex-oauth.mjs)).
+- How a credential is stored is described in [Credentials](credentials.md).
+
+### The OAuth client
+
+- Every client runs the authorization-code flow with PKCE (`S256`). Its verifier and its `state` are 32 random bytes each, base64url-encoded; a callback whose `state` differs is refused with `oauth_state_mismatch` ([packages/oauth/src/lib/oauth.ts](../../packages/oauth/src/lib/oauth.ts), [packages/oauth/src/lib/utils/pkce.ts](../../packages/oauth/src/lib/utils/pkce.ts)).
+- The authorization value a client answers is `<scheme> <access token>`, where the scheme is the token response's `token_type`, else the profile's default `Bearer` ([packages/oauth/src/lib/oauth.ts](../../packages/oauth/src/lib/oauth.ts)).
+- The loopback callback server answers 404 for any other path, 409 when no sign-in is pending, and 400 for a request to the path whose `state` is not the pending one, which leaves the sign-in waiting. The redirect with the pending `state` settles it: 200, or 400 when it carries an OAuth error ([packages/oauth/src/lib/node.ts](../../packages/oauth/src/lib/node.ts)).
+
+### The Claude OAuth profile
+
+- The profile authorizes at `https://claude.com/cai/oauth/authorize` with `code=true`, exchanges tokens at `https://platform.claude.com/v1/oauth/token`, and uses Claude Code's public client id `9d1c250a-e61b-44d9-88ed-5944d1962f5e` and the scope `user:inference` ([packages/oauth/src/lib/claude-oauth.ts](../../packages/oauth/src/lib/claude-oauth.ts)).
+- Token requests have JSON bodies. The code exchange also sends the `state` and `expires_in: 31536000`, which asks for a login of one year ([packages/oauth/src/lib/claude-oauth.ts](../../packages/oauth/src/lib/claude-oauth.ts), [packages/oauth/src/lib/oauth.ts](../../packages/oauth/src/lib/oauth.ts)).
+- The callback is `http://localhost:54545/callback`, Claude Code's own; a caller binds port 54546 when 54545 is busy. The paste mode redirects to `https://platform.claude.com/oauth/code/callback` instead ([packages/oauth/src/lib/claude-oauth.ts](../../packages/oauth/src/lib/claude-oauth.ts)).
+
+### Claude Code's own login
+
+`resolveClaudeAuth` reads the login Claude Code keeps; `npm run claude:oauth` uses it to reuse a long login ([packages/oauth/src/lib/claude.ts](../../packages/oauth/src/lib/claude.ts), [scripts/claude-oauth.mjs](../../scripts/claude-oauth.mjs)).
+
+- It answers `CLAUDE_AUTHORIZATION` from the environment when set, then `CLAUDE_CODE_OAUTH_TOKEN` ([packages/oauth/src/lib/claude.ts](../../packages/oauth/src/lib/claude.ts)).
+- On macOS, with no `claudeHome` option and no `CLAUDE_CONFIG_DIR`, it reads the Keychain entry `Claude Code-credentials` through `security find-generic-password`. That login is never refreshed or written back; an expired one is refused with `claude_keychain_login_expired`, unless `refresh: false` is set. `keychain: false` skips the Keychain ([packages/oauth/src/lib/claude.ts](../../packages/oauth/src/lib/claude.ts)).
+- Otherwise, or when the Keychain has no entry, it reads `.credentials.json` under `claudeHome`, `CLAUDE_CONFIG_DIR` or `~/.claude`; a missing file is `claude_credentials_missing` ([packages/oauth/src/lib/claude.ts](../../packages/oauth/src/lib/claude.ts)).
+- A file login within five minutes of expiry is refreshed through the JSON refresh grant and written back atomically: the file is read again just before the write, only `claudeAiOauth` is replaced, and a private temp file (mode 0600) is renamed over it. An expired login without a refresh token is `claude_refresh_token_missing`. `refresh: false` reads the login as it is, so a caller can judge its expiry before touching it ([packages/oauth/src/lib/claude.ts](../../packages/oauth/src/lib/claude.ts)).
+
+### The `claude.login/v1` contract
+
+`claude.login/v1` 1.0.0 has two methods, both taking no input and an optional call whose `signal` cancels, both exposed to desktop windows. The full shape, the errors and the seams of the host part are in the [`claude-login` README](../../bundles/features/claude-login/README.md) ([src/contracts/index.ts](../../bundles/features/claude-login/src/contracts/index.ts), [src/host/login.ts](../../bundles/features/claude-login/src/host/login.ts)).
+
+| Method     | Behavior                                                                                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start()`  | Prepares a fresh sign-in and answers `{ url }`, the `https:` authorization URL. A sign-in already waiting is cancelled and replaced.                          |
+| `finish()` | Waits for the browser's callback, stores the authorization value and answers the stored credential's public view (`CredentialDescription`), never the secret. |
+
+| Code                       | When                                                                                                                 |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `claude_login_not_started` | `finish` with no sign-in waiting.                                                                                    |
+| `claude_login_busy`        | `finish` while another `finish` waits on the same sign-in.                                                           |
+| `claude_login_aborted`     | The sign-in is cancelled or replaced while a call waits; nothing is stored.                                          |
+| `claude_login_failed`      | The callback server cannot be bound, or the authorization or the code exchange fails; the message carries the cause. |
+
+### The sign-in on the host
+
+- `start` binds the loopback callback at `localhost:54545/callback`, or `localhost:54546/callback` when the port is in use, creates a Claude OAuth client whose token store is in memory only and whose browser opener only records the URL, starts the authorization in the background and answers its URL ([src/host/login.ts](../../bundles/features/claude-login/src/host/login.ts)).
+- One sign-in waits at a time per activation. It is cancelled when a newer `start` replaces it, after ten minutes (`CLAUDE_LOGIN_TIMEOUT_MS`), when the signal of the `finish` waiting on it aborts, and when the bundle deactivates. The callback server closes however the authorization ends ([src/host/login.ts](../../bundles/features/claude-login/src/host/login.ts), [src/host/index.ts](../../bundles/features/claude-login/src/host/index.ts)).
+- `finish` stores the authorization value alone through `secrets/v1` as the `API_TOKEN` credential named `Claude`. When the name is taken (`credential_name_taken`), it replaces the secret of the `API_TOKEN` credential named `Claude`. When the name `Claude` is taken by a credential of another kind, `finish` refuses with `credential_name_taken`. An error of `secrets/v1` keeps its own code rather than becoming `claude_login_failed`. A cancel that arrives with the callback already answered stores nothing ([src/host/login.ts](../../bundles/features/claude-login/src/host/login.ts)).
+- The value is passed only to `secrets/v1` and never logged. Nothing refreshes it: the stored value stops working when the login expires or is revoked ([src/host/login.ts](../../bundles/features/claude-login/src/host/login.ts)).
+- The callback reaches the host only where the browser's `localhost` is the host's: a host on the same machine, run natively or in Docker with `network_mode: host` ([src/host/login.ts](../../bundles/features/claude-login/src/host/login.ts)).
+
+### The sign-in row
+
+- The client part defines the element `claude-login-field` and adds to `settings.provider.field` the item `{ id: 'claude-login', tag: 'claude-login-field', props: { kind: 'claude', field: 'token' } }`, so the row takes the place of the `claude` kind's `token` field ([src/client/index.ts](../../bundles/features/claude-login/src/client/index.ts)).
+- `settings` sets the element's `view`: `{ kind, field, value?, label?, problem? }`. `label` is the name of the stored `API_TOKEN` credential that `value` names. `problem` is set only for a provider with an id whose draft cannot be saved: `missing` when the token is empty, `unknown` when it names no stored `API_TOKEN` credential ([bundles/desktop/settings/src/contracts/slots.ts](../../bundles/desktop/settings/src/contracts/slots.ts), [bundles/desktop/settings/src/client/domain/provider-fields.ts](../../bundles/desktop/settings/src/client/domain/provider-fields.ts)).
+- The element draws nothing until `view` is set. Then the row, labelled "Claude login", offers "Sign in with Claude" when not signed in and "Sign in again" with a `label`. Not signed in, it says "Signs in with a Claude Code subscription: the browser opens, and the login is stored as a credential this provider uses."; signed in, it says "Signed in: this provider uses the '<label>' credential. When Claude requests fail with an authentication error, the login expired or was revoked: sign in again." ([src/client/claude-login-field.tsx](../../bundles/features/claude-login/src/client/claude-login-field.tsx)).
+- For `missing` it shows "Sign in with Claude to finish this provider.", and for `unknown` "The credential this provider names is no longer stored: sign in with Claude again." While a drawn item reports a problem, `settings` draws no alert of its own for the page ([src/client/claude-login-field.tsx](../../bundles/features/claude-login/src/client/claude-login-field.tsx), [bundles/desktop/settings/src/client/components/organisms/settings-provider.tsx](../../bundles/desktop/settings/src/client/components/organisms/settings-provider.tsx)).
+- While a sign-in waits, the button reads "Waiting for the browser…" and is disabled, a "Cancel" button shows beside it, and the row shows "If the browser did not open, visit <url>" ([src/client/claude-login-field.tsx](../../bundles/features/claude-login/src/client/claude-login-field.tsx)).
+
+### The sign-in in the window
+
+- The hook `useClaudeLogin` calls `start` with its own abort signal, opens the answered URL in the system browser through `doric.browser/v1`, and then waits on `finish` with the same signal. A browser that does not open is not a failure: the sign-in goes on waiting with the URL shown ([src/client/use-claude-login.ts](../../bundles/features/claude-login/src/client/use-claude-login.ts), [src/client/api.ts](../../bundles/features/claude-login/src/client/api.ts)).
+- The adapter turns each refusal of `start` or `finish` into a `ClientError`: a contract error keeps its code and message; any other error is `internal`, "The request could not be completed." ([src/client/api.ts](../../bundles/features/claude-login/src/client/api.ts)).
+- When `finish` answers and the element is still mounted, the element dispatches the bubbling, composed DOM event `settings-provider-field` with `detail: { value: credential.id }`, and the hook shows the success toast "Claude is signed in." ([src/client/claude-login-field.tsx](../../bundles/features/claude-login/src/client/claude-login-field.tsx), [src/client/use-claude-login.ts](../../bundles/features/claude-login/src/client/use-claude-login.ts)).
+- `settings` answers the event by reading its credentials again and then writing the id into the `token` field, only if the open provider page is still of the `claude` kind ([bundles/desktop/settings/src/client/hooks/use-provider-page.ts](../../bundles/desktop/settings/src/client/hooks/use-provider-page.ts)).
+- Unmounting the element cancels nothing. A `finish` that answers after the element is gone dispatches nothing and shows the info toast "Claude sign-in finished after its page closed; sign in again from the provider page to use it." ([src/client/use-claude-login.ts](../../bundles/features/claude-login/src/client/use-claude-login.ts)).
+- A failure shows an error toast, except a failure after the hook's own Cancel, which stays silent. Cancel aborts the hook's signal, which cancels the call and, on the host, the sign-in. The toast ids and catalog follow [Error messages](error-messages.md) ([src/client/use-claude-login.ts](../../bundles/features/claude-login/src/client/use-claude-login.ts), [src/client/error-catalog.ts](../../bundles/features/claude-login/src/client/error-catalog.ts)).
+
+### The command-line sign-in
+
+- A host whose callback the browser cannot reach can run `npm run claude:oauth` on the machine with the browser. It writes the authorization value into the root `.env` under `CLAUDE_AUTHORIZATION`, or the key `CLAUDE_OAUTH_OUTPUT_KEY` names, from where it can be stored as a credential by hand. The `.env` file is written with mode 0600, and the script never prints the value ([scripts/claude-oauth.mjs](../../scripts/claude-oauth.mjs), [scripts/lib/oauth-env.mjs](../../scripts/lib/oauth-env.mjs)).
+- Before signing in, the script reuses `CLAUDE_CODE_OAUTH_TOKEN` or a `~/.claude` login good for at least 30 more days, read without refresh and without the Keychain; the value already under the output key is never reused ([scripts/claude-oauth.mjs](../../scripts/claude-oauth.mjs)).
+- With `--no-browser` or `CLAUDE_OAUTH_NO_BROWSER=1` the script runs the paste mode: it prints the authorization URL and asks for the code Claude's hosted page shows, `code#state`; a paste without the part after `#` is refused ([scripts/claude-oauth.mjs](../../scripts/claude-oauth.mjs)).
+- `CLAUDE_OAUTH_CLIENT_ID`, `CLAUDE_OAUTH_SCOPE` and `CLAUDE_OAUTH_CALLBACK_HOST`, `_PORT` and `_PATH` override the profile's defaults; with a port set, no fallback port is tried ([scripts/claude-oauth.mjs](../../scripts/claude-oauth.mjs)).
+
+### The Codex OAuth profile and backend
+
+- The Codex profile authorizes at `https://auth.openai.com/oauth/authorize` and exchanges tokens at `https://auth.openai.com/oauth/token` with the client id `app_EMoamEEZ73f0CkXaXp7hrann`, the scope `openid profile email offline_access api.connectors.read api.connectors.invoke`, and the authorize parameters `id_token_add_organizations=true`, `codex_cli_simplified_flow=true` and `originator=codex_cli_rs`. Its callback is `http://localhost:1455/auth/callback`; `npm run codex:oauth` binds port 1457 when 1455 is busy ([packages/oauth/src/lib/codex-oauth.ts](../../packages/oauth/src/lib/codex-oauth.ts), [scripts/codex-oauth.mjs](../../scripts/codex-oauth.mjs)).
+- Codex has no in-app sign-in. `npm run codex:oauth` writes the authorization value into the root `.env` under `CODEX_AUTHORIZATION`, or the key `CODEX_OAUTH_OUTPUT_KEY` names ([scripts/codex-oauth.mjs](../../scripts/codex-oauth.mjs)).
+- The `codex` kind sends the stored value to ChatGPT's Codex Responses backend (`https://chatgpt.com/backend-api/codex`), with `chatGptAccountId` as `ChatGPT-Account-ID` and `fedramp: 'true'` as `X-OpenAI-Fedramp` ([packages/llms/src/lib/providers/codex.ts](../../packages/llms/src/lib/providers/codex.ts), [bundles/providers/codex/src/host/kind.ts](../../bundles/providers/codex/src/host/kind.ts)).
+- Every Codex request streams, with `store: false`, without `temperature`, and with non-empty instructions: "You are Codex, a coding agent." when the request has none. A non-streaming call consumes the stream; a stream that ends without a final response is `missing_stream_finish` ([packages/llms/src/lib/providers/codex.ts](../../packages/llms/src/lib/providers/codex.ts), [packages/llms/src/lib/providers/openai.ts](../../packages/llms/src/lib/providers/openai.ts)).
+- The `claude` kind sends the stored value as it is when it names its `Bearer` scheme, as `x-api-key` when it is a Console key (`sk-ant-api…`), and under `Bearer` otherwise ([packages/llms/src/lib/providers/claude.ts](../../packages/llms/src/lib/providers/claude.ts)).

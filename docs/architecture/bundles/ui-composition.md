@@ -1,269 +1,181 @@
-# UI composta por bundles
+# UI composition
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes how bundles compose the UI of a Doric window as implemented on 2026-11-20.
 
-## Resumo
+## Summary
 
-A UI do Doric passa a ser inteiramente composta por bundles: as fronteiras públicas da UI são Web Components definidos por eles, e o renderer só tem um bootstrap técnico que põe um `<core-outlet>` no `body`; o path da URL escolhe a rota que aparece. No client, o core fornece por padrão `ui/v1` (definição e criação de elementos por tag), `navigation/v1` (rotas por path) e `regions/v1` (lugares com nome nos templates), descritos em [UI no client](./core.md#ui-no-client); outro bundle pode substituir qualquer um deles quando a composição o escolhe em `providers`. O bootstrap fica em `packages/desktop`, o runtime client do loader usado por `app/doric-renderer`, que nenhum bundle importa. Componentes se comunicam por propriedades JavaScript tipadas, atributos simples e eventos DOM de intenção visual; operações de domínio passam por stubs de serviço tipados. O catálogo client reúne as contribuições de UI dos bundles (rotas, views, comandos, componentes, menus, atalhos, temas). Tags de custom elements começam com o ID do bundle dono. Shadow DOM é escolha de cada componente, não exigência da plataforma.
+Every screen of a Doric window is drawn by bundles. The public boundary between them is the custom element: a bundle defines elements whose tag starts with its own id, and another bundle shows them by tag, without importing their code. The renderer holds no product UI. Its bootstrap activates the window's client parts and puts the core's outlet in the `body`; the path of the window's URL chooses the route that appears there ([`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts)).
 
-## Web Components como fronteira pública
+Four client contracts that the `core` bundle provides in each window carry the composition ([`core/src/client/index.ts`](../../../bundles/foundation/core/src/client/index.ts), [`core/manifest.json`](../../../bundles/foundation/core/manifest.json)):
 
-As **fronteiras públicas da UI são Web Components** definidos pelos bundles. O bootstrap do renderer, implementado em `packages/desktop` (o runtime client do loader que `app/doric-renderer` carrega; bundles não o importam), ativa as partes client, com o core primeiro, e põe um `<core-outlet>` no `body`. O outlet mostra a rota que casa com `location.pathname` chamando o `create` dela, que normalmente usa `ui.create` para entregar ao elemento os serviços do bundle dono por propriedade JavaScript. O bootstrap não contém `App`, `Settings`, sidebar, conversa, janelas nem lista fixa de nodes; carrega apenas o import map e o CSS base dos [pacotes compartilhados](./platform-packages.md).
+- `ui/v1` defines elements by tag and creates them with their owner's services;
+- `navigation/v1` registers routes, which are URL paths, and moves the window between them;
+- `regions/v1` keeps the items of named regions, the places where one bundle's frame shows other bundles' elements;
+- `commands/v1` registers and runs commands.
 
-> **Desatualizado.** Este documento ainda cita as regiões `layout.sidebar`,
-> `layout.header`, `layout.panel` e `layout.footer` e as abas de
-> `layout.tabs/v1`. Desde o passo 4(a) do isolamento de bundles, o layout 4.7.0
-> desenha as regiões do shell com nomes `shell.*`, dados pelo lugar na tela e
-> exportados como constantes `SHELL_*` de `layout/contracts`: `layout.header`
-> virou `shell.header.actions`, `layout.footer` virou
-> `shell.conversation.footer`, `layout.main.bottom` virou
-> `shell.conversation.bottom`, `layout.overlay` virou
-> `shell.conversation.overlay`, `layout.panel` virou `shell.panel` e
-> `layout.panel.footer` virou `shell.panel.footer`; um item sob o nome antigo
-> não aparece. O shell ganhou também `shell.sidebar`, `shell.sidebar.footer`,
-> `shell.titlebar.tabs`, `shell.page` e `shell.window.actions`. `layout.tabs/v1`
-> e `layout.panel/v2` não existem mais: o layout 4.0.0 fornece `layout.tabs/v2`,
-> em que o ícone de uma aba é o elemento que `iconTag` nomeia, no lugar dos
-> tipos de ícone de antes, e o dono das abas é o que `setOwner` nomeia, e
-> `layout.panel/v3`, em que o painel começa sem view selecionada. O
-> comportamento atual está em
-> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
-> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+A route's element, a region's items and the elements other contracts take by tag are created through `ui/v1`, so each element receives the services of the bundle that owns its tag. Elements talk to their surroundings through JavaScript properties, simple attributes and DOM events; a domain operation is a call to a service stub ([Services and channels](services-and-channels.md)). This document describes those mechanisms and the parts of a window built with them. The full shape of each core contract is in the [README of `core`](../../../bundles/foundation/core/README.md#window-client-contracts); the frame of the workspace window and its slots are in [The layout bundle](layout.md).
 
-> **Desatualizado.** Desde o passo 4(c) do isolamento de bundles, a sidebar de
-> Projects e Threads, as abas de Project e o Dashboard não são mais do layout: o
-> bundle `workspace` os desenha nos slots `shell.sidebar`,
-> `shell.sidebar.footer`, `shell.titlebar.tabs` e `shell.page` do
-> `<layout-workspace>`, que é só a moldura (layout 5.0.1), e o `chat` 1.9.1 abre
-> as abas de Thread. As regiões do Dashboard são `workspace.dashboard.nav`,
-> `workspace.dashboard.page` e `workspace.dashboard.footer`. O comportamento
-> atual está em
-> [docs/features/bundle-isolation.md](../../features/bundle-isolation.md#current-behavior-and-contracts);
-> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+## Elements are the boundary
 
-O core client não desenha telas de produto: define só `<core-outlet>`, `<core-region>`, `<core-not-found>` e `<core-unavailable>`. O workspace é o `<layout-workspace>` do bundle [layout](./layout.md), na rota `/`; o template dele tem as regiões `layout.sidebar`, `layout.header`, `layout.panel` e `layout.footer` e um `<core-outlet>` na área principal, onde `<chat-view>`, do bundle `chat`, aparece pela rota filha `/projects/:projectId/threads/:threadId`. A página de settings é o `<settings-page>` do bundle `settings`, na rota `/settings`, com a região `settings.sections` e um `<core-outlet>` para as seções. Outra composição pode registrar outras rotas ou dispensar a conversa.
+- **A tag belongs to the bundle that defines it.** `ui.define(tag, Class)` refuses, with `invalid_input`, a tag that does not start with the calling bundle's id followed by `-` (`core-outlet`, `layout-workspace`, `workspace-sidebar`, `chat-view`, `settings-page`). It records the bundle as the tag's owner through the platform contract `doric.elements/v1` and returns a `Disposable` ([`core/src/client/ui.ts`](../../../bundles/foundation/core/src/client/ui.ts)). The prefix keeps two bundles' tags apart with no registry of names.
+- **A tag is defined once per window.** A tag already defined in the window fails with `registration_conflict`. Disposing a definition leaves the tag defined and without an owner, because the browser cannot undefine a custom element, so a new implementation of a tag needs a new window document ([`elements.ts`](../../../packages/desktop/src/client/elements.ts)). The shape of `doric.elements/v1` (`define`, `owner`, `attach`, `release`), which only the window's active provider of `ui/v1` may call, is in [Contexts and capabilities](contexts.md#shapes-of-the-platform-contracts).
+- **An element is created with its owner's services.** `ui.create(tag, props?)` creates the element, gives it a `services` property that is a child scope of the owning bundle's services, then assigns `props` as properties, and returns it unconnected, so the first render already has both. Calls made through those services carry the owner as `call.caller`, whoever created the element. When no active bundle owns the tag, `create` answers a hidden `<core-unavailable>` whose `data-tag` names the tag ([`core/src/client/ui.ts`](../../../bundles/foundation/core/src/client/ui.ts), [`elements.ts`](../../../packages/desktop/src/client/elements.ts)). The child scope and its lifetime are in [Contexts and capabilities](contexts.md#lifetimes).
+- **Typed values go in properties.** Objects, ids and handles are JavaScript properties; an attribute holds only a simple value, such as the `name` of `<core-region>`, the `path` of `<core-not-found>` or the `data-tag` of `<core-unavailable>` ([`core` README](../../../bundles/foundation/core/README.md#structural-elements)).
+- **A visual intent is a DOM event.** An element tells the element around it what the reader did with a `CustomEvent` that has `bubbles: true` and `composed: true`, and the element that contains it decides what to do. The settings page's provider form, for example, takes a field's value from the `settings-provider-field` event that the item in its `settings.provider.field` slot dispatches, and stops the event at its frame ([`claude-login-field.tsx`](../../../bundles/features/claude-login/src/client/claude-login-field.tsx), [`provider-field-element.tsx`](../../../bundles/desktop/settings/src/client/components/molecules/provider-field-element.tsx)). A DOM event stays in the window; an operation that changes data goes through a service or a command.
+- **Disposal is explicit.** The bundle that creates an element keeps it while it only moves in the DOM, and calls `ui.dispose(element)` when the view closes for good. `dispose` acts once per element: it calls the element's `remove()` and `dispose()` when it has them, then ends the element's scope ([`core/src/client/ui.ts`](../../../bundles/foundation/core/src/client/ui.ts)). The core's structural elements and the elements built with `defineReactElement` tear down only when they are still disconnected a microtask after a disconnection, so a move within the document keeps their state ([`lifecycle.ts`](../../../bundles/foundation/core/src/client/elements/lifecycle.ts), [`react-element.ts`](../../../packages/desktop/src/react-element.ts)).
 
-Itens de região têm IDs sem versão, como `providers` na região `settings.sections`; são distintos das rotas, que são paths como `/settings/providers` ou `/projects/:projectId/threads/:threadId`.
+Inside its elements a bundle draws as it likes: plain DOM, React mounted in the element ([React inside Web Components](react-web-components.md)), or another library. Only the elements that cross a bundle's boundary are custom elements; a button or a shared component inside one is not.
 
-Cada bundle controla internamente o comportamento, estado local e renderização de seus elementos: pode usar Web Components puros, React montado dentro de um elemento ([React dentro de Web Components](./react-web-components.md)) ou outra tecnologia. Isso não obriga cada botão ou primitive vendorizada a virar um custom element.
+## Kinds of element
 
-## Propriedades, atributos e eventos DOM
+| Kind                | Who creates it                                                                                                                                                                 | How it is named                                                                                  | Example                                                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Structural          | The bootstrap (the outlet in the `body`) and the frames that draw regions and outlets                                                                                          | The core's four tags                                                                             | `<core-outlet>`, `<core-region>`, `<core-not-found>`, `<core-unavailable>`                                                                          |
+| Route element       | An outlet, through the route's `create(match)`                                                                                                                                 | The tag the route's `create` passes to `ui.create`; it receives the route's params as properties | `<layout-workspace>` at `/`, `<chat-view>` at a Thread's path                                                                                       |
+| Region item element | `<core-region>`, once per item, with `ui.create(tag, props)`, disposing the element when the item leaves; or the region's owner, which reads the items and creates them itself | The item's `tag`                                                                                 | `<workspace-sidebar>` in `shell.sidebar`; the element a `settings.provider.field` item names, which the settings page creates in place of one field |
+| Region data item    | Nobody: the region's owner reads the item and draws it itself                                                                                                                  | The item's `props` carry the data; `tag` names the filler's icon element                         | The `settings` entry in `account.menu`, whose `props` name a label and a command                                                                    |
+| Element by contract | The bundle that provides the contract, through `ui/v1`, from a tag another bundle gives it                                                                                     | A tag in the contract's input                                                                    | A viewer tab of `layout.tabs/v2`, a pane of `layout.stack/v2`, a block renderer of `chat.views/v1`                                                  |
+| Element by tag      | Any bundle that calls `ui.create` directly                                                                                                                                     | A tag it knows from the owner's contracts module or README                                       | An element of another bundle placed in a view of one's own                                                                                          |
 
-- As propriedades tipadas carregam objetos e handles de serviço; atributos HTML servem apenas para valores simples e refletíveis.
-- Eventos DOM com `bubbles: true` e `composed: true` comunicam intenções visuais que precisam atravessar um ShadowRoot. O elemento que contém o emissor decide como agir e usa o stub do serviço correspondente para operações de domínio ([serviços e canais](./services-and-channels.md)).
-- Toda tag começa com o ID do bundle dono seguido de hífen (`core-outlet`, `layout-workspace`, `chat-view`, `git-branch-event`, `settings-providers`). O `ui/v1` recusa em `define` uma tag que não comece com `<id do bundle chamador>-`, o que evita conflitos sem registro extra. IDs de contribuição continuam únicos no catálogo.
-- Como `customElements.define` não substitui uma definição na janela existente, troca de implementação ou versão de componente exige recarga da janela.
-- Fechar definitivamente uma view chama seu descarte (`dispose` de `ui/v1`); um mero movimento no DOM não deve destruir o estado de editor, terminal ou Monaco.
+The outlet and the region are described in the [README of `core`](../../../bundles/foundation/core/README.md#structural-elements); the outlet's matching, its depth and nested outlets in [Navigation](navigation.md#the-outlet-core-outlet). The account menu's items are data items: `account` draws each entry from its `props` (`label`, `command`, `input`) and runs the command through `commands/v1` when the reader picks it ([`account/src/contracts/index.ts`](../../../bundles/desktop/account/src/contracts/index.ts)). The contracts that take tags are in the READMEs of [`layout`](../../../bundles/desktop/layout/README.md) and [`chat`](../../../bundles/desktop/chat/README.md).
 
-## Catálogo client de contribuições
+## Regions and slots
 
-O catálogo client admite, conforme as funcionalidades reais forem extraídas:
+A region is a named list of items, `{ id, tag, props?, order? }`, kept by `regions/v1`. `add(region, item)` returns a `Disposable` and refuses an id already in the region with `registration_conflict`; `items(region)` answers the items sorted by `order`, absent last, then by add order, each with the `owner` that added it; `subscribe(region, listener)` runs the listener after every change ([`core/src/client/regions.ts`](../../../bundles/foundation/core/src/client/regions.ts), [`regions.ts`](../../../packages/bundle/src/contracts/basic/regions.ts)). A region needs no declaration to exist: any name can hold items, and an item in a region nobody draws is not shown.
 
-| Contribuição             | Uso                                                                                                                                           |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `route`                  | Padrão de path (como `/projects/:projectId/threads/:threadId`), `create(params)` do elemento e `parent` opcional.                             |
-| `view` e `tab`           | Tags de conteúdo navegável, com identidade e estado próprios; abas são abertas por `layout.tabs/v1`, não por rotas.                           |
-| `command` e `menuAction` | Ação visível e comando com `execute`, registrados no client ou no `desktopMain`.                                                              |
-| `settingsSection`        | Link na região `settings.sections` de `<settings-page>` (`{ id, tag: 'settings-link', props: { label, path } }`) e rota filha de `/settings`. |
-| `component`              | Tag reutilizável, ou montada numa região de `regions/v1`, com propriedades e eventos documentados pelo bundle dono.                           |
-| `menu`                   | Item do menu da aplicação ou do dock, pedido a `menus/v1` e ligado a um comando.                                                              |
-| `keybinding`             | Atalho de teclado pedido a `menus/v1`, ligado a um comando, com escopo e condição.                                                            |
-| `theme`                  | Variante dos valores dos tokens da plataforma (`doric.tokens/v1`); não redefine a estrutura do tema.                                          |
-
-Comandos são definidos com `defineCommand({ id, input, execute })`, cujo `execute(input, call, services)` recebe os serviços do bundle que registrou o comando, e registrados com `services.use(CommandsV1).register` na parte `client` (ou `desktopMain`), como descrito em [contratos](./contracts.md); `commands/v1` existe só no `desktopMain` e no `client`, nunca no `host`, então uma parte host não registra comandos; menus e atalhos ligados a eles estão em [menus nativos e atalhos](./menus-and-keybindings.md). As rotas usam o serviço de [navegação e rotas](./navigation.md), e os tokens do tema estão em [pacotes compartilhados e tokens do tema](./platform-packages.md).
-
-## Janelas, regiões e dependências visuais
-
-O core padrão abre a janela `workspace` em `/` e a janela `settings` em `/settings`; o que aparece nelas vem das rotas registradas, e os bundles preenchem as regiões dos templates por `regions/v1`. Uma janela é uma chave mais um path: um bundle que precisa de uma janela própria, como um diff ou um dashboard, a pede por `windows.open({ key, path })` de `windows/v1`, que o core expõe com suas políticas sobre o nativo `doric.windows/v1`, sem alterar `app/doric` (ver [janelas abertas pelo core](./windows.md)). O core fornece `windows/v1` e `menus/v1` no `desktopMain`; uma parte `client` que os declara em `requires` os alcança pela ponte para abrir e focar janelas ou pedir itens, atalhos e `setContext`. O dispatcher preenche `call.scope.windowKey` em toda chamada que sai de uma janela client, e é por ele que o core sabe de qual janela veio o pedido.
-
-Monaco, xterm e a geometria atual continuam dependências dos respectivos bundles padrão. React, Lexical, shadcn, Tailwind e o tema principal passam a ser [pacotes compartilhados da plataforma](./platform-packages.md).
-
-## Shadow DOM
-
-Shadow DOM é escolha do componente, não exigência da plataforma. Ele isola árvore e CSS.
-
-Para a conversa atual, a primeira extração deve usar Light DOM: Tailwind e fontes globais, portais Radix, seleção/caret e estilos Lexical já dependem do documento compartilhado.
-
-Um componente que adotar Shadow DOM precisa:
-
-- distribuir suas folhas de estilo;
-- expor custom properties/parts para tema;
-- direcionar portais ao próprio root;
-- verificar foco, seleção e acessibilidade.
-
-## Exemplos de consumo da UI
-
-Os trechos seguintes são **pseudocódigo da API proposta**, não código que o renderer atual já exporta. Cada parte client recebe um `ClientContext`, que só tem `services`, e obtém o serviço de UI na ativação com `const ui = services.use(UiV1)`; por isso declara `ui/v1` em `requires`. As referências `UiV1` e `CommandsV1` e o tipo `ClientContext` vêm de `bundle/contracts`, as referências e as definições sem lógica (hooks, eventos, settings) de outros bundles vêm de `<bundle>/contracts`, e o próprio bundle importa seus contratos por caminho relativo (`../contracts/index.js`). `ui.create(tag, props?)` cria o elemento de uma tag e lhe entrega, antes de conectá-lo ao DOM, os serviços do bundle dono da tag, com as chamadas atribuídas a ele em `call.caller` ([`ui.create` passo a passo](./core.md#uicreate-passo-a-passo)). Um consumidor não repassa os próprios serviços a outro bundle.
-
-### Bootstrap da janela
-
-O bootstrap técnico de `packages/desktop` não enumera janelas: o path da URL decide o que aparece. Depois de ativar as partes client, ele faz só isto:
+A **slot** is a region that one bundle draws and lets others fill. Its owner exports the name from its contracts module as a constant with no type annotation, so that its type is the literal, and draws it with that constant, either as a `<core-region name>` or by reading `items`. A filler writes the name as a string literal checked against the constant through a type-only import, so it loads in a window without the owner and a misspelled name fails its typecheck ([Bundle boundaries](boundaries.md#what-a-client-part-may-import-and-slot-names)):
 
 ```ts
-document.body.replaceChildren(document.createElement('core-outlet'));
+import type { SHELL_SIDEBAR } from 'layout/contracts';
+
+regions.add('shell.sidebar' satisfies typeof SHELL_SIDEBAR, {
+  id: 'navigation',
+  tag: 'workspace-sidebar',
+});
 ```
 
-O outlet mostra a rota que casa com o path da janela e, seguindo `parent`, a rota filha dentro do outlet do pai; veja [o outlet](./navigation.md#o-outlet-core-outlet).
+The slots of the shipped bundles, by owner:
 
-### A conversa por rota ou por tag
+| Owner                                                       | Slots                                                                                                                                                                                                                                                     | Declared in                                                                                     |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [`layout`](../../../bundles/desktop/layout/README.md)       | `shell.sidebar`, `shell.sidebar.footer`, `shell.titlebar.tabs`, `shell.page`, `shell.window.actions`, `shell.header.actions`, `shell.conversation.footer`, `shell.conversation.bottom`, `shell.conversation.overlay`, `shell.panel`, `shell.panel.footer` | [`layout/src/contracts/index.ts`](../../../bundles/desktop/layout/src/contracts/index.ts)       |
+| [`workspace`](../../../bundles/desktop/workspace/README.md) | `workspace.dashboard.nav`, `workspace.dashboard.page`, `workspace.dashboard.footer`                                                                                                                                                                       | [`workspace/src/contracts/index.ts`](../../../bundles/desktop/workspace/src/contracts/index.ts) |
+| [`settings`](../../../bundles/desktop/settings/README.md)   | `settings.sections`, `settings.provider.field`                                                                                                                                                                                                            | [`settings/src/contracts/slots.ts`](../../../bundles/desktop/settings/src/contracts/slots.ts)   |
+| [`account`](../../../bundles/desktop/account/README.md)     | `account.status`, `account.menu`                                                                                                                                                                                                                          | [`account/src/contracts/index.ts`](../../../bundles/desktop/account/src/contracts/index.ts)     |
 
-O `chat` define `<chat-view>` e registra a rota da Thread na própria ativação client:
+`layout` declares every `shell.*` slot, but two of them are drawn by `workspace`: the Project tab bar, which `workspace` puts in `shell.titlebar.tabs`, ends with a `<core-region>` of `shell.window.actions` while the route is `/` or `/projects` and of `shell.header.actions` on every other route; `layout` itself draws `shell.window.actions` at the end of the Project panel's header and does not draw `shell.header.actions` ([`navigation-elements.tsx`](../../../bundles/desktop/workspace/src/client/elements/navigation-elements.tsx), [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)). Where each `shell.*` slot appears and which bundles fill it are in [The layout bundle](layout.md#the-slots); each other owner's README describes its slots and the props of their items.
+
+## How a window is composed
+
+A window is a key and a path. The core opens the workspace window, key `workspace`, when the app is ready, at the last path that window had or at `/`, and the command `core.open-settings/v1` opens the settings window, key `settings`, at the path it is given ([`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`core/src/desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts)). A bundle that needs a window of its own asks `windows/v1` for a key and a path ([Windows](windows.md)). Every window then follows the same sequence:
+
+1. **The shell.** For any path outside the asset prefixes, the main process answers the window's navigation with the one shell page, adding the import map and a link to the platform theme, `desktop/ui/theme.css`, at the start of its `<head>` ([`shell.ts`](../../../app/desktop/doric/src/platform/protocol/shell.ts), [The `doric://` protocol](doric-protocol.md)). The shell's own stylesheet comes after the theme ([`doric-renderer` README](../../../app/desktop/doric-renderer/README.md)).
+2. **The bootstrap.** The shell's script calls `bootstrapWindow({})` ([`doric-renderer/src/bootstrap.ts`](../../../app/desktop/doric-renderer/src/bootstrap.ts)). It reads the window's description and applies its chrome, reads the window's catalog, and activates the client parts ([`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts)).
+3. **Activation.** The window's platform contracts, `doric.elements/v1` among them, are provided first; then a `<link>` to each scheduled client part's stylesheet is appended to `<head>`, in activation order; then each client part's `activate` runs, the foundation and the core before the others ([`activate.ts`](../../../packages/desktop/src/client/activate.ts), [`styles.ts`](../../../packages/desktop/src/client/styles.ts), [The core bundle](core.md#activation-order-foundation-core-others)). While they activate, the bundles define their elements, register their routes and add their region items.
+4. **The outlet.** The bootstrap replaces the `body`'s children with one `<core-outlet>`, where `core` is the id of the composition's core bundle. The outlet shows the root of the route chain that matches `location.pathname`, and each nested outlet shows the next route of the chain ([`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts), [`outlet.ts`](../../../bundles/foundation/core/src/client/elements/outlet.ts)). When no route matches, the outermost outlet shows `<core-not-found>`.
+5. **Ready or failure.** The bootstrap tells the main process the window is ready. An exception during these steps is reported to the main process as a `bootstrap` failure. A core that did not define its outlet, or, in the primary window, a quarantined core, is reported as a `core` failure; when the primary window reports one, the main process opens the splash again with its recovery actions ([`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts), [Splash and recovery](splash-and-recovery.md)).
+
+The full sequence, with each option of `bootstrapWindow`, is in the [README of `packages/desktop`](../../../packages/desktop/README.md#bootstrapwindow).
+
+### The workspace window
+
+In the shipped composition ([`composition.json`](../../../app/backend/doric-host/composition.json)) the workspace window is built from these pieces:
+
+- `layout` registers `/` with `<layout-workspace>`, the frame. The frame draws a `<core-region>` for each `shell.*` slot it draws and, in its conversation form, an inner `<core-outlet>` ([`layout/src/client/index.ts`](../../../bundles/desktop/layout/src/client/index.ts), [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)).
+- `workspace` adds `<workspace-sidebar>` to `shell.sidebar` and `<workspace-project-tabs>` to `shell.titlebar.tabs`, and while the route is `/` or `/projects` it adds `<workspace-dashboard>` to `shell.page` and `<workspace-sidebar-footer>` to `shell.sidebar.footer`. An item in `shell.page` switches the frame to its page form. `workspace` also registers `/projects` and `/projects/:projectId` as children of `/` ([`workspace/src/client/index.ts`](../../../bundles/desktop/workspace/src/client/index.ts)).
+- `chat` registers `/projects/:projectId/threads/:threadId` as a child of `/` with `<chat-view>`, which appears in the frame's inner outlet, and adds its composer to `shell.conversation.footer` ([`chat/src/client/index.ts`](../../../bundles/desktop/chat/src/client/index.ts)).
+- `account` adds `<account-status>` to `shell.window.actions`; `files`, `git`, `terminal`, `usage` and others add their items to the panel, the footers and the header actions ([The layout bundle](layout.md#the-slots)).
+
+So a Thread's path shows: `<core-outlet>` → `<layout-workspace>` → its inner `<core-outlet>` → `<chat-view>`, with the other bundles' elements in the frame's slots. How the window behaves is in the feature doc [UI redesign](../../features/ui-redesign.md); the routes of the window are in [Navigation](navigation.md#the-workspace-windows-paths).
+
+### The settings window
+
+`settings` registers `/settings` with `<settings-page>`, which draws the `settings.sections` region as its navigation and a `<core-outlet>` for the section. Each section is a child route of `/settings`, and its link is a `settings-link` item of `settings.sections` ([`settings/src/client/index.ts`](../../../bundles/desktop/settings/src/client/index.ts), [`settings-view.tsx`](../../../bundles/desktop/settings/src/client/views/settings-view.tsx)). The window's pages and sections are in the [README of `settings`](../../../bundles/desktop/settings/README.md#the-settings-window).
+
+## What a client part contributes
+
+A client part contributes to the window by calling contracts in its `activate`; nothing is declared in a separate catalog. Every registration it makes through its services is tracked in its activation scope, which is disposed in reverse order when the part deactivates ([Contexts and capabilities](contexts.md#lifetimes)).
+
+| Contribution                 | Contract                                               | Call                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Element                      | `ui/v1`                                                | `define(tag, Class)`                                                                                                                             |
+| Route                        | `navigation/v1`                                        | `register({ path, create(match), parent? })` ([Navigation](navigation.md))                                                                       |
+| Region item                  | `regions/v1`                                           | `add(region, { id, tag, props?, order? })`                                                                                                       |
+| Command                      | `commands/v1`                                          | `register(command)`, with a command defined by `defineCommand` ([Contracts](contracts.md))                                                       |
+| Menu item, keybinding        | `menus/v1`                                             | `addItem(item)`, `addKeybinding({ command, key, when? })`, served by the main process ([Menus and keybindings](menus-and-keybindings.md))        |
+| Tab, panel view, pane        | `layout.tabs/v2`, `layout.panel/v3`, `layout.stack/v2` | The `layout` contracts ([README of `layout`](../../../bundles/desktop/layout/README.md))                                                         |
+| Renderer in the conversation | `chat.views/v1`                                        | `registerRenderer`, `registerToolRenderer`, `registerFenceRenderer` and the others ([README of `chat`](../../../bundles/desktop/chat/README.md)) |
+
+In a window, `commands/v1` runs a command registered there and sends any other id to the main process through `core.commands/v1` ([`core/src/client/commands.ts`](../../../bundles/foundation/core/src/client/commands.ts)); no host part registers commands. The visual theme is not a contribution: a bundle reads the platform's tokens and adds no token of its own ([Platform packages and theme tokens](platform-packages.md#theme-tokens)).
+
+A bundle lists every contract it uses under `requires` or `optional` in its manifest, otherwise `services.use` throws `undeclared_requirement` ([The manifest line of every use](contexts.md#the-manifest-line-of-every-use)). The client part of `chat` shows most of the table ([`chat/src/client/index.ts`](../../../bundles/desktop/chat/src/client/index.ts), shortened):
 
 ```ts
-import { NavigationV1, UiV1, type ClientContext } from 'bundle/contracts';
-
-export function activate({ services }: ClientContext) {
+export function activate({ services }: ClientContext): Cleanup {
   const ui = services.use(UiV1);
-  ui.define('chat-view', ChatView);
+  ui.define('chat-view', ChatViewElement);
+  ui.define('chat-composer', ChatComposerElement);
 
   services.use(NavigationV1).register({
     path: '/projects/:projectId/threads/:threadId',
     parent: '/',
-    create: (params) => ui.create('chat-view', params),
+    create: (match) => ui.create('chat-view', match.params),
+  });
+  services
+    .use(RegionsV1)
+    .add(
+      'shell.conversation.footer' satisfies typeof SHELL_CONVERSATION_FOOTER,
+      { id: 'composer', tag: 'chat-composer', order: 40 },
+    );
+  services.use(CommandsV1).register(sendPromptCommand);
+  void services.use(MenusV1).addKeybinding({
+    command: SEND_PROMPT_COMMAND,
+    key: 'CmdOrCtrl+Enter',
+    when: { path: '/projects/:projectId/threads/:threadId' },
   });
 }
 ```
 
-O manifesto client do `chat` declara `requires: ['hooks/v1', 'ui/v1', 'navigation/v1', 'commands/v1', 'runtime.threads/v1']` (`hooks/v1` pela definição de `chat.hooks/v2` na ativação, omitida no recorte acima, `navigation/v1` pelo registro da rota, `commands/v1` pelo despacho de comandos a partir das intenções DOM dos cards, descrito adiante, e `runtime.threads/v1` pelo envio de prompt mostrado adiante) e `provides: ['chat.views/v1', 'chat.lexical/v1', 'chat.hooks/v2']`, como em [o bundle chat](./chat.md).
+## Styles
 
-Quem quer mostrar a conversa navega para o path dela ou cria o elemento pela tag:
+A window loads its styles in this order ([`shell.ts`](../../../app/desktop/doric/src/platform/protocol/shell.ts), [`activate.ts`](../../../packages/desktop/src/client/activate.ts)):
 
-```ts
-navigation.navigate(`/projects/${projectId}/threads/${threadId}`);
+1. **The platform theme**, `desktop/ui/theme.css`: preflight, fonts, tokens and the shared components' utilities ([Platform packages and theme tokens](platform-packages.md#styles-and-the-tailwind-rule)).
+2. **The shell's stylesheet**, which keeps only the rules for the whole window: the base layer every page wears, the `.chrome-bar` class and the footer's single font weight. It also emits the sorted set of utilities that the shared components and every bundle's client sources use, so that a class two sheets emit keeps the order one compiled stylesheet gives it ([`doric-renderer/src/styles.css`](../../../app/desktop/doric-renderer/src/styles.css)).
+3. **Each bundle's stylesheet**, one `<link data-bundle="<id>">` per scheduled client part that ships `client/styles.css`, in activation order ([`styles.ts`](../../../packages/desktop/src/client/styles.ts)). The build writes that file from the bundle's `src/client/styles.css` and from the CSS its client code imports; a bundle with neither ships none, as `workspace` and `account` ship none ([`parts.ts`](../../../packages/bundle/src/build/parts.ts)).
 
-// ou, para pôr a conversa num lugar próprio, como um dashboard:
-const chat = ui.create('chat-view', { projectId, threadId });
-container.replaceChildren(chat);
-```
+A bundle's sheet references `desktop/ui/tailwind.css` and imports Tailwind's utilities into the shared `utilities` layer; its build fails on `@theme`, so a bundle adds no token to the theme ([Platform packages and theme tokens](platform-packages.md#styles-and-the-tailwind-rule)). Because every sheet writes into one `utilities` layer, the later sheet wins between two equal rules: a sheet that emits a plain utility (`inline-flex`) after another sheet's responsive variant (`md:hidden`) overrides it. The sheets of the feature bundles `files`, `git`, `openui`, `resources`, `terminal`, `threads` and `usage` therefore `@source` the platform's components and the client folders of `layout`, `chat`, `settings`, `account` and `workspace`, so a class those bundles use is emitted in its sorted place and never lands after another sheet's variant ([`files/src/client/styles.css`](../../../bundles/features/files/src/client/styles.css)). The sheet of `layout` emits no utilities: it holds one rule of its own, the conversation footer's height, fill and blur, and relies on the shell's sheet for its classes ([`layout/src/client/styles.css`](../../../bundles/desktop/layout/src/client/styles.css)).
 
-`projectId` e `threadId` são propriedades tipadas do elemento. Se o `chat` não estiver ativo, `ui.create` devolve um `<core-unavailable>`. Uma conversa alternativa substitui o bundle `chat` na composição: registra o mesmo path `/projects/:projectId/threads/:threadId` com o próprio elemento, cuja tag leva o prefixo do seu ID. Sem o `chat`, `ui.create('chat-view', …)` devolve `<core-unavailable>`. Quem cria o elemento o mantém enquanto ele só muda de posição no DOM e chama `ui.dispose` ao fechar a view definitivamente.
+## Shadow DOM
 
-### Renderizador de bloco de outro bundle
+No element of the shipped bundles attaches a shadow root: every element renders in the window's document, under the theme, the shell's sheet and the bundle sheets in `<head>`. Shadow DOM is an element's choice, not a rule of the platform, and the platform works with it where it can:
 
-Um bundle client de Git registra sua tag e a associa a um tipo de **bloco projetado**, não diretamente ao evento bruto. Seu módulo host registra o evento em outra fase: o evento é definido com `defineEvent` no entrypoint `git/contracts`, que a parte host do próprio Git importa por `../contracts/index.js`, e registrado com `services.use(EventsV1).register(branchSwitchedEvent)` na ativação host, com `events/v1` no `requires` do host ([contratos](./contracts.md), [eventos e nodes](./events-and-nodes.md)). `ChatViewsV1` é a referência (`ref`) ao serviço `chat.views/v1`, cuja definição `chatViews`, com `defineService` e os `execute` dos métodos, fica no código client do `chat`; como `registerProjector` recebe funções e os dois métodos devolvem um `Disposable` (`z.custom`), eles só funcionam no mesmo processo, e o Git usa o serviço na parte client; o Git o importa de `chat/contracts`. Como a conversa é opcional para o Git, ele usa `whenAvailable` e não põe `chat.views/v1` em `requires`; o recorte abaixo usa com `use` apenas `ui/v1` e `commands/v1`. O manifesto client completo do Git, em [o bundle chat](./chat.md), declara no client `requires: ['hooks/v1', 'ui/v1', 'commands/v1', 'navigation/v1', 'regions/v1', 'windows/v1', 'menus/v1', 'git.commands/v1']`: `navigation/v1` porque a parte client registra as rotas `/git/diff/:threadId/:repository` e `/settings/git` com `services.use(NavigationV1)`, `regions/v1` pelo item `<git-changes>` que ela põe na região `layout.panel` do [layout](./layout.md), `windows/v1` porque `openComparisonCommand` abre a comparação com `windows.open({ key, path })` no path `/git/diff/:threadId/:repository`, `menus/v1` pelo item de menu, `hooks/v1` para consumir `chat.hooks/v2` com `whenAvailable`, e `git.commands/v1` porque `switchBranchCommand`, omitido aqui, usa o stub desse contrato.
+- an outlet counts the outlets above it across shadow roots, so a nested outlet inside a shadow root still finds its depth ([`outlet.ts`](../../../bundles/foundation/core/src/client/elements/outlet.ts));
+- `PortalContainerProvider` from `desktop/ui` sends the overlays of the shared components (dialogs, popovers, menus, tooltips) into a container the element names instead of the document's body, so a React root inside a shadow root keeps its overlays under its own styles ([`portal-container.tsx`](../../../packages/desktop/src/portal-container.tsx), [README of `packages/desktop`](../../../packages/desktop/README.md#portalcontainerprovider-and-useportalcontainer));
+- events that cross elements are `composed`, so they leave a shadow root.
 
-```ts
-import { CommandsV1, UiV1, type ClientContext } from 'bundle/contracts';
-import { ChatViewsV1 } from 'chat/contracts';
-import { openComparisonCommand } from './commands.js';
+The window links every stylesheet in the document's `<head>` ([`styles.ts`](../../../packages/desktop/src/client/styles.ts)), and a shadow root does not inherit them: an element that attaches one brings its own styles into it.
 
-class GitBranchEvent extends HTMLElement {
-  block!: { threadId: string; repository: string };
+## Replacing a piece
 
-  // Chamado pelo botão interno do card.
-  openComparison() {
-    this.dispatchEvent(
-      new CustomEvent('git:open-comparison', {
-        detail: {
-          threadId: this.block.threadId,
-          repository: this.block.repository,
-        },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-}
+A composition changes the UI by enabling other bundles; no file of the platform changes ([Composition and distribution](composition-and-distribution.md)).
 
-export function activate({ services }: ClientContext) {
-  const ui = services.use(UiV1);
+- **Another frame.** A bundle other than `layout` registers `/`. Without any bundle at `/`, a window opened there shows `<core-not-found>`, and a route whose `parent` is not registered fills the window from the top-level outlet ([The layout bundle](layout.md#a-composition-without-the-layout-or-with-another)).
+- **Another conversation or page.** A bundle registers the same path with its own element, whose tag carries its own id. A second registration of a path with the same shape fails with `route_conflict` ([`navigation.ts`](../../../bundles/foundation/core/src/client/navigation.ts)). Where the bundle that owned a tag is absent, `ui.create` of that tag answers `<core-unavailable>`.
+- **Another provider of a core contract.** `ui/v1`, `navigation/v1` and `regions/v1` have cardinality `one`; a composition that names another bundle for one of them under `providers` makes that bundle the active provider in each environment where it provides the contract, and the core's `provide` of it is inert. The catalog's rules for that choice are in [The core bundle](core.md#replacing-a-contract-the-core-provides).
 
-  // A tag começa com o ID do bundle chamador (`git-`); outra seria recusada.
-  ui.define('git-branch-event', GitBranchEvent);
+## Related documents
 
-  // `git.open-comparison/v1` é um comando definido com `defineCommand`.
-  services.use(CommandsV1).register(openComparisonCommand);
-
-  // A conversa é opcional para o Git: o registro só acontece se `chat` existir.
-  services.whenAvailable(ChatViewsV1, (views) =>
-    views.registerRenderer({
-      blockType: 'git.branch-change/v1',
-      elementTag: 'git-branch-event',
-    }),
-  );
-}
-```
-
-A definição e o registro são rastreados pelo loader e descartados em ordem inversa na desativação. O projetor de Git registra separadamente como `git.branch-switched/v1` produz ou atualiza esse bloco (ver [o bundle chat](./chat.md)). A conversa obtém o renderizador registrado e cria o card pela `elementTag` com `ui.create`, que acha o dono da tag no catálogo da janela e atribui ao elemento os serviços do Git, não os da conversa:
-
-```ts
-const renderer = viewRegistry.resolve(block.type);
-const card = ui.create(renderer.elementTag, { block });
-blockList.replaceChildren(card);
-```
-
-### Intenção DOM tratada pela conversa
-
-O card emite uma intenção DOM local. A conversa, ou outro elemento acima dele, a trata e despacha o comando `git.open-comparison/v1`, definido pelo Git com `defineCommand` e registrado em `commands/v1` do client; não é um serviço. O `execute` do comando, na definição do Git, decide onde abrir a comparação, por exemplo numa aba de `layout.tabs/v1` ou numa janela própria pedida a `windows/v1` com os serviços que recebe; nesse último caso, o manifesto client do Git declara também `windows/v1` em `requires`. O despacho é `commands.execute(ref ou id, input)`, como em [contratos](./contracts.md#comandos-definecommand); a conversa usa o ID para não importar `git/contracts`, e um bundle que quisesse a entrada tipada usaria a referência que o Git exportasse em `git/contracts`:
-
-```ts
-const commands = services.use(CommandsV1);
-
-blockList.addEventListener('git:open-comparison', (event) => {
-  const { threadId, repository } = (
-    event as CustomEvent<{ threadId: string; repository: string }>
-  ).detail;
-  void commands.execute('git.open-comparison/v1', { threadId, repository });
-});
-```
-
-Quem despacha o comando por `commands/v1` declara esse contrato em `requires`: o `chat` o declara no client, como visto acima, e qualquer outro bundle que despache o comando também o declara.
-
-### Comando de domínio como chamada de serviço
-
-Já uma operação de domínio é uma chamada de serviço. Por exemplo, o próprio `<chat-view>` envia um prompt por `runtime.threads/v1` (`RuntimeThreadsV1`, importado de `runtime/contracts`) sem conhecer HTTP, Socket.IO nem o preload concreto:
-
-```ts
-const threads = this.services.use(RuntimeThreadsV1, {
-  projectId: this.projectId,
-});
-await threads.sendPrompt(
-  { threadId: this.threadId, text },
-  { signal: this.abortController.signal },
-);
-```
-
-`RuntimeThreadsV1` é a referência (`ref`) ao serviço `runtime.threads/v1`; o bundle `runtime` escreve a definição com `defineService` e `defineMethod`, com o `execute` de cada método, e a fornece com `services.provide(definição)`. O serviço reúne o envio de prompt, a leitura de Threads e os controles de Threads filhas do `Host` atual, enquanto o bundle `threads` fica só com as tools de delegação e os cards. O dispatcher valida entrada e saída com o zod no mesmo processo e com o JSON Schema gerado quando a chamada atravessa processos ([contratos](./contracts.md)).
-
-O último argumento opcional de todo stub é um `call` pai ou `{ signal, deadline }`, como no `{ signal }` acima. No host, o `execute` do método recebe `(input, call, services)`: `call.caller` é o bundle que fez a chamada (aqui, `chat`), preenchido pelo dispatcher e nunca herdado; `call.scope.windowKey` identifica a janela de origem; e `call.signal` está ligado ao cancelamento do client. `services` são os serviços do `runtime`, ligados no `provide`. Se esse `execute` chamar outro serviço repassando o `call` recebido, o novo salto herda `scope`, `signal` e `trace`, mas seu `caller` passa a ser o próprio `runtime`.
-
-O stub faz o percurso client → preload → Electron main → serviço host e entrega a resposta ou um erro com `code` e `message`. O componente cancela assinaturas e chamadas ao fechar definitivamente; um simples reordenamento no DOM não deve apagar seu editor. `CustomEvent` é comunicação visual local, enquanto o histórico permanece no stream durável.
-
-### React, bootstrap das janelas e navegação
-
-Um exemplo completo de **React dentro de um Web Component** está em [React dentro de Web Components](./react-web-components.md); o bootstrap das janelas e a abertura de janelas pelo core estão em [janelas abertas pelo core](./windows.md); o registro e consumo de rotas estão em [navegação e rotas](./navigation.md); o workspace, as regiões `layout.*` e as abas estão em [o bundle layout](./layout.md).
-
-O core fornece o roteador `navigation/v1` (`register`, `navigate`, `back`, `current`, `subscribe`), que usa a History API e muda `location.pathname`, então voltar, avançar e recarregar funcionam como num site. As rotas são dos bundles: a rota de Thread, por exemplo, é `/projects/:projectId/threads/:threadId`, registrada pelo `chat` com `parent: '/'`, e aparece no `<core-outlet>` que o layout põe na área principal. Abas não são rotas: o layout cria e guarda os elementos delas. Abrir outra janela é `windows.open({ key, path })`, não navegação dentro da janela.
-
-## O que continua no Electron
-
-O Electron permanece responsável por `BrowserWindow`, splash, protocolo `doric://app` ([protocolo doric://](./doric-protocol.md)), download dos artefatos com verificação de integridade do cache, ciclo das conexões e IPC mínimo, e mantém o que já faz hoje no sandbox e no isolamento de contexto. Adaptadores para HTTP/Socket.IO e operações semânticas podem ser fornecidos por bundles.
-
-Os hooks do ciclo de vida são da plataforma. Depois que o provedor de `hooks/v1` de um ambiente ativa (o core, por padrão, ou o escolhido em `providers`), a plataforma daquele ambiente chama `define(AppHooksV1)` e passa a disparar `execute` nos pontos do ciclo de vida. No `client`, o bootstrap de cada janela define `WindowHooksV1` (`onCloseHook`, `onFlushHook`) no `hooks/v1` do client e o executa quando o main pede o fechamento da janela ([hooks e ciclo de vida](./hooks.md)). Qualquer bundle, não só o core, registra handlers desses hooks, como `hooks.use(AppHooksV1).onAppReadyHook(handler)` no desktop ou `hooks.use(WindowHooksV1).onCloseHook(handler)` no client, com `hooks/v1` em `requires`. O core abre a janela `{ key: 'workspace', path: '/' }` e monta o esqueleto do menu no seu handler de `onAppReadyHook`, não direto no `activate`. Uma falha do `activate` de um bundle leva à quarentena; uma falha de um handler de `onActivateHook` só vai ao diagnóstico; o Electron encerra janelas mesmo se um hook falhar. A tela de settings atual torna-se o `<settings-page>` do bundle `settings`, na rota `/settings`, com os links que os bundles põem em `settings.sections` e as seções como rotas filhas, como `/settings/providers`. Splash e recuperação continuam técnicos e na plataforma, como descrito em [splash e recuperação](./splash-and-recovery.md).
-
-## Distribuição padrão e composições alternativas
-
-Na distribuição padrão, o core abre a janela `workspace` em `/` e a janela `settings` em `/settings`. A sequência na janela principal é: janela em `/` → `<core-outlet>` → `<layout-workspace>`, do [layout](./layout.md), com sidebar, header, painel, abas e rodapé → `<chat-view>` no outlet do layout, quando o path é o de uma Thread. A página e as seções de settings vêm de `settings` e dos bundles de domínio.
-
-Uma composição alternativa troca o `layout` por outro bundle que registre `/`, troca o `chat` por outra conversa, ou troca o core (`"core"` na composição), usando os mesmos serviços e eventos; ela também pode substituir só `ui/v1`, `navigation/v1` ou `regions/v1`, escolhendo o provedor em `providers`. A escolha vale em cada ambiente em que o bundle escolhido fornece o contrato (aqui, o `client`); nos outros ambientes o provedor padrão continua. Os três são contratos de cardinalidade `one`: quando a composição escolhe outro provedor, o loader não registra a implementação do core para esse contrato naquele ambiente, e o `services.use` do próprio core devolve o provedor escolhido. Sem escolha em `providers`, o bundle substituto, que ativa depois do core, vai para quarentena com motivo. Ela pode usar os pacotes compartilhados ou ignorá-los; só o CSS base da plataforma é carregado sempre. Fontes de produto vêm dos tokens da plataforma; imagens e CSS específicos seguem junto do bundle client que os usa.
-
-A escolha visual pertence à composição do host; quando o host está indisponível, o splash mostra o estado da conexão e pode abrir a última composição conhecida em modo desconectado ([composição e distribuição pelo host](./composition-and-distribution.md)).
-
-## Relações
-
-- [Bundle core e quarentena](./core.md): abre as janelas em seus paths, fornece `ui/v1`, `navigation/v1`, `regions/v1`, `<core-outlet>` e `<core-region>` no client ([UI no client](./core.md#ui-no-client)) e `windows/v1` e `menus/v1` alcançáveis pelo client.
-- [O bundle layout](./layout.md): o workspace na rota `/`, as regiões `layout.*`, o outlet da área principal e `layout.tabs/v1`.
-- [Contratos e a família define\*](./contracts.md): comandos, serviços e eventos usados pela UI são definidos com `defineCommand`, `defineService` e `defineEvent`.
-- [Serviços entre bundles e canais de mensagens](./services-and-channels.md): define os stubs tipados, a ponte client→host e o papel do `CustomEvent` entre os canais.
-- [Contextos e capacidades](./contexts.md): descreve o `ClientContext`, só com `services`, que `ui.create` atribui a cada elemento, e a propagação de `call`.
-- [React dentro de Web Components](./react-web-components.md): mostra como publicar uma UI React atrás da fronteira de Web Component.
-- [Navegação e rotas](./navigation.md): rotas como paths, `parent` e o funcionamento de `<core-outlet>`.
-- [Janelas abertas pelo core](./windows.md): cobre `windows.open({ key, path })` e o bootstrap de cada janela no renderer.
-- [Pacotes compartilhados e tokens do tema](./platform-packages.md): define o import map, o CSS base e os tokens que a contribuição `theme` varia.
-- [Menus nativos e atalhos](./menus-and-keybindings.md): explica as contribuições `menu` e `keybinding` ligadas a comandos.
-- [O bundle chat](./chat.md): é dono de `<chat-view>`, da rota `/projects/:projectId/threads/:threadId` e do serviço de projetores e renderizadores usado no exemplo do Git.
-- [Eventos e nodes](./events-and-nodes.md): explica os eventos duráveis de onde vêm os blocos que os cards recebem.
-- [Protocolo doric://](./doric-protocol.md): cobre a origem `doric://app` de onde os bundles client são carregados e a shell servida para qualquer path de rota.
-- [Hooks e ciclo de vida](./hooks.md): a plataforma define `AppHooksV1` e `WindowHooksV1` e os dispara; qualquer bundle registra handlers.
-- [Splash e recuperação](./splash-and-recovery.md): a superfície técnica que permanece fora da UI composta.
-- [Composição e distribuição pelo host](./composition-and-distribution.md): a composição do host decide a escolha visual e o modo desconectado.
+- [The core bundle and quarantine](core.md): the client contracts and the structural elements, activation order and the choice of providers.
+- [The layout bundle](layout.md): the frame of the workspace window, its `shell.*` slots and its contracts.
+- [Navigation](navigation.md): routes as paths, `parent`, the outlet and the workspace window's paths.
+- [React inside Web Components](react-web-components.md): an element written in React, and creating and disposing it through `ui/v1`.
+- [Contexts and capabilities](contexts.md): the element's child scope and the shape of `doric.elements/v1`.
+- [Bundle boundaries](boundaries.md): what a client part may import, and how a bundle names a slot.
+- [Contracts](contracts.md): `defineCommand`, `defineService` and how a contract is referenced.
+- [Services and channels](services-and-channels.md): service stubs, and DOM events among the channels.
+- [Platform packages and theme tokens](platform-packages.md): the import map, the shared components, the theme and the Tailwind rule.
+- [Menus and keybindings](menus-and-keybindings.md): menu items and keybindings bound to commands.
+- [Windows](windows.md): opening a window by key and path.
+- [The `doric://` protocol](doric-protocol.md): the shell served for every route path.
+- [Hooks and the app's lifecycle](hooks.md): the window's close hooks that the bootstrap wires.
