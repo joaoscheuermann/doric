@@ -4,104 +4,123 @@
 of their own, and you stay in control of every step.**
 
 Give an agent a task and Doric hands it a real development environment: files,
-Git, a terminal, the web, and a screen it can run apps on. The agent works
-there, not on your laptop. Larger tasks can be split across a team of agents
-that you can inspect, steer and stop at any time. You run the backend and
-choose the model provider. Your code, conversations and keys stay on
+Git, a terminal, the web, and a screen it can run apps on. The agent works in
+that sandbox, not on your laptop. A larger task can be split across a team of
+agents that you can inspect, steer and stop at any time. You run the backend
+and choose the model provider; code, conversations and keys stay on
 infrastructure you control.
 
-> **Early development:** Doric does not yet have authentication. Run it locally
-> or on an isolated, trusted network. Do not expose its API to the internet.
+Doric has three applications and a set of bundles. The **host**
+([`app/backend/doric-host`](app/backend/doric-host/README.md)) is a Node.js
+server: one HTTP listener carries its REST routes and Socket.IO namespaces
+([`src/index.ts`](app/backend/doric-host/src/index.ts)), and the `runtime`
+bundle runs the agent loop of every Thread
+([`runner.ts`](bundles/runtime/runtime/src/host/domain/runner.ts)). The
+**desktop app** ([`app/desktop/doric`](app/desktop/doric/README.md)), an
+Electron app, is where you create Projects, talk to agents and review their
+work; every window it opens loads the page the **renderer shell**
+([`app/desktop/doric-renderer`](app/desktop/doric-renderer/README.md))
+builds. Almost everything they do comes from **bundles** under `bundles/`:
+tools, skills, model providers, sandboxes, storage and every part of the
+desktop UI.
 
-## Why Doric
-
-- **Agents get their own computer, not yours.** Each Project runs in its own
-  sandbox with Node.js, Git, the GitHub CLI and Docker preinstalled. Agents can
-  install packages, run servers and break things without touching your machine.
-  Your local checkout is never mounted.
-- **One agent can run a team.** An agent can split a large task into child
-  Threads, hand each one a self-contained job and collect the results. Every
-  child is a normal conversation you can open, read and redirect.
-- **Review UI like a designer, not like a diff.** With
-  [Papercraft](#papercraft-see-it-point-at-it-ship-it), the agent shows you a
-  live canvas of the interface built from your real components. You pin
-  comments on the exact element you mean, and the agent revises the UI behind
-  it.
-- **Nothing happens out of sight.** Browse the Project's files, review Git
-  diffs, follow the agent's terminals, watch apps on the sandbox's screen, and
-  see what every Thread, including its children, has cost you.
-- **Your models, your infrastructure.** Use OpenRouter or any OpenAI
-  Responses-compatible endpoint, choose the model and reasoning effort, and
-  keep history in your own PostgreSQL database, with credentials encrypted at
-  rest.
-- **Built to be extended.** Tools, skills, model providers, sandboxes, storage
-  and even the desktop UI are all bundles. Add what you need, or reuse the
-  agent runtime and model packages in your own TypeScript projects.
-
-## Papercraft: see it, point at it, ship it
-
-Asking an agent for UI changes usually means reading a diff and imagining the
-result, or describing in words which button you mean. Papercraft removes both
-problems.
-
-- **The agent shows the change.** It writes a short OpenUI Lang program in a
-  `papercraft` fence of its answer, and the conversation draws it as a live
-  canvas node while the answer streams, with your Project's own components and
-  exports, compiled and running with real state, hooks and interactions.
-- **You point at what you mean.** Click any element and leave a comment pinned
-  to it, Figma-style. The comment names the program statement behind the
-  element, so it reaches the agent as a precise instruction.
-- **The agent answers and revises.** It replies in each comment thread, asks a
-  pointed question when a comment is ambiguous, resolves what it fixed, and
-  writes a patch: a new fence with the same identity holding only the
-  statements that change. Every patch is a new revision beside the previous
-  one, so you can compare.
-- **It fits your stack.** Existing Storybook stories, `.storybook/preview`
-  providers and decorators, and your Tailwind v4 theme in light and dark all
-  work. Components you declare under `.doric/papercraft/schemas/` become a
-  library the agent can use by name. No other Project file is written.
-
-Open any program in its own canvas window to pan, zoom, isolate elements,
-browse the element tree and switch revisions. See the
-[Papercraft bundle](bundles/features/papercraft/README.md) for details.
-
-Beyond papercraft, the agent can answer with UI in the conversation itself:
-forms, tables and charts drawn from `openui-lang` fences, and a question form
-with which it asks you to choose. A click or an answer goes back to the agent
-as your next message. See the [OpenUI bundle](bundles/features/openui/README.md).
+> **No authentication.** The host has no login and no access control: anyone
+> who reaches its port can read every Project, change the settings and run
+> work ([`app.ts`](bundles/foundation/transport/src/host/app.ts)). The Compose
+> host of the [quick start](#quick-start) binds `0.0.0.0` on the host network,
+> so the API is on every interface of the machine, and `.env` cannot change
+> that ([`compose.yaml`](app/backend/doric-host/compose.yaml)). Run it locally
+> or on an isolated, trusted network, and never expose it to the internet.
 
 ## What you can do
 
-- **Organize work into Projects and Threads.** A **Project** owns a sandbox and
-  its files. A **Thread** is a conversation with its own history and prompt
-  queue. Threads in the same Project share files and can run at the same time.
-- **Delegate to multiple agents.** Agents create child Threads, assign tasks,
-  send follow-ups, read results and close finished work. Open any child to take
-  over the conversation yourself.
-- **Work with real development tools.** Agents find, read, edit and write
-  files, run commands and use Git inside the sandbox, and research on the web.
-  Open a manual terminal when you want to work alongside them.
-- **Review before you ship.** Comment on live UI canvases with Papercraft,
-  inspect project files, review Git diffs, switch branches, watch agent
-  terminals, and open the sandbox's screen in its own window to see graphical
-  apps the agent is running.
-- **Stay in control of execution.** Queue prompts, edit or remove them before
-  they run, steer a running prompt, and pause and resume work. Get a desktop
-  notification when a prompt finishes (on macOS, only from a code-signed
-  build).
-- **Pick up where you left off.** PostgreSQL keeps every conversation and Docker
-  volumes keep Project workspaces across backend restarts.
-- **Keep an eye on cost.** With OpenRouter, the conversation footer shows the
-  context used and the reported cost of the Thread and all its children.
-- **Integrate with other tools.** REST and Socket.IO expose Projects, Threads
-  and execution events to other clients.
+- **Organize work into Projects and Threads.** A Project owns one sandbox and
+  its files; a Thread is a conversation with its own history and prompt queue.
+  Threads of one Project share its files and can run at the same time
+  ([`model.ts`](bundles/runtime/runtime/src/contracts/model.ts),
+  [Projects and Threads](docs/features/projects-and-threads.md)).
+- **Let an agent run a team.** An agent creates child Threads, hands each a
+  self-contained task, sends follow-ups, reads results and closes finished
+  work; every child is a conversation you can open and take over
+  ([`thread-spawn.ts`](bundles/features/threads/src/host/tools/thread-spawn.ts),
+  [`threads`](bundles/features/threads/README.md),
+  [Delegation](docs/features/delegation.md)).
+- **Give agents real tools.** Agents find, read, edit and write files
+  ([`edit.ts`](bundles/features/files/src/host/tools/edit.ts)), run commands
+  ([`tool.ts`](bundles/features/terminal/src/host/tool.ts)), use Git
+  ([`git.ts`](bundles/features/git/src/host/tools/git.ts)) and research the
+  web ([`web.ts`](bundles/features/web/src/host/tools/web.ts)) inside the
+  sandbox ([Files](docs/features/files.md), [Terminal](docs/features/terminal.md),
+  [Git](docs/features/git.md), [Web research](docs/features/web-research.md)).
+  Each sandbox image ships Node.js, Git, `gh`, the Docker CLI and Xvfb
+  ([`.sandbox.Dockerfile`](app/backend/doric-host/.sandbox.Dockerfile)).
+- **See what happens.** Browse a Project's files
+  ([`files-tree.tsx`](bundles/features/files/src/client/tree/files-tree.tsx)),
+  review Git changes
+  ([`git-changes.tsx`](bundles/features/git/src/client/changes/git-changes.tsx)),
+  follow the agent's terminals or open your own
+  ([`terminal-view.tsx`](bundles/features/terminal/src/client/view/terminal-view.tsx)),
+  and watch graphical apps on the sandbox's screen
+  ([`elements.tsx`](bundles/features/screen/src/client/elements.tsx),
+  [Screen](docs/features/screen.md)).
+- **Review UI on a live canvas.** With Papercraft, the agent answers with a
+  `papercraft` fence that the conversation draws as a live preview built from
+  your Project's own components, Storybook stories and Tailwind v4 theme. You
+  pin a comment on the exact element you mean, and the agent replies in the
+  comment's thread and writes a revision
+  ([`fence.tsx`](bundles/features/papercraft/src/client/fence.tsx),
+  [`papercraft`](bundles/features/papercraft/README.md),
+  [Papercraft](docs/features/papercraft.md), [Comments](docs/features/comments.md)).
+- **Get answers as UI.** Forms, tables, charts, diagrams and question forms
+  drawn from `openui-lang` fences; a click or an answer goes back to the agent
+  as your next message
+  ([`fence-element.tsx`](bundles/features/openui/src/client/fence-element.tsx),
+  [`ask.tsx`](bundles/features/openui/src/client/question/ask.tsx),
+  [`openui`](bundles/features/openui/README.md),
+  [Generative UI](docs/features/generative-ui.md)).
+- **Control execution.** Queue prompts, edit or remove them before they run,
+  steer a running prompt, stop it, and pause and resume the queue
+  ([`runner.ts`](bundles/runtime/runtime/src/host/domain/runner.ts),
+  [Stop, steering and the queue of inputs](docs/features/prompt-control.md)).
+  The desktop shows a native notice when a prompt finishes outside your view;
+  on macOS only a code-signed build can show it
+  ([`notifications.ts`](app/desktop/doric/src/platform/native/notifications.ts)).
+- **Choose your models.** OpenRouter
+  ([`kind.ts`](bundles/providers/openrouter/src/host/kind.ts)), an OpenAI
+  Responses endpoint ([`kind.ts`](bundles/providers/openai/src/host/kind.ts))
+  and a Claude Code subscription login
+  ([`kind.ts`](bundles/providers/claude/src/host/kind.ts)) are provider kinds;
+  the conversation's execution picker sets a Thread's own provider, model and
+  reasoning effort
+  ([`execution-picker.tsx`](bundles/desktop/chat/src/client/components/organisms/execution-picker.tsx),
+  [Models and providers](docs/features/models-and-providers.md),
+  [Per-thread model](docs/features/per-thread-model.md)).
+- **Watch cost.** The conversation footer shows the context the selected
+  Thread uses and the cost of the Thread and its descendants
+  ([`cost-breakdown.tsx`](bundles/features/usage/src/client/components/cost-breakdown.tsx),
+  [`usage`](bundles/features/usage/README.md), [Usage](docs/features/usage.md)).
+- **Keep your history.** PostgreSQL keeps every conversation, setting and
+  credential ([`postgres.ts`](bundles/foundation/postgres/src/host/postgres.ts)),
+  with secrets encrypted with AES-256-GCM under `DORIC_CREDENTIAL_KEY`
+  ([`envelope.ts`](bundles/foundation/postgres/src/host/secrets/envelope.ts),
+  [Credentials](docs/features/credentials.md)); a Docker volume per Project
+  keeps its workspace across host restarts
+  ([`workspace.ts`](packages/docker-sandbox/src/lib/workspace.ts),
+  [`docker`](bundles/sandboxes/docker/README.md)).
+- **Integrate.** Other clients drive Projects, Threads and execution events
+  through the host's REST routes
+  ([`app.ts`](bundles/foundation/transport/src/host/app.ts)) and Socket.IO
+  namespaces
+  ([`workspace.ts`](bundles/foundation/transport/src/host/sockets/workspace.ts);
+  [Host API](docs/features/host-api.md), the
+  [reference](app/backend/doric-host/README.md#rest-api)).
 
 ## How it works
 
 ```text
 ┌──────────────────┐   REST + Socket.IO   ┌──────────────────────────┐
 │ Desktop app      │ ───────────────────▶ │ Doric host               │
-│ (Electron)       │                      │ agent runtime + bundles  │
+│ (Electron)       │                      │ bundles + agent runtime  │
 └──────────────────┘                      └──┬──────────┬─────────┬──┘
                                              │          │         │
                                      ┌───────▼──┐  ┌────▼─────┐ ┌─▼──────────┐
@@ -111,32 +130,46 @@ as your next message. See the [OpenUI bundle](bundles/features/openui/README.md)
                                      └──────────┘  └──────────┘ └────────────┘
 ```
 
-- The **desktop app** is where you create Projects, chat with agents and
-  review their work. It talks only to your host.
-- The **host** runs the agent loop for each Thread, gives agents their tools,
-  and streams every step back to the app as it happens.
-- **Bundles** supply almost everything the host and the app do: tools, skills,
-  model providers, sandboxes, storage and the UI. The host's
-  [composition](app/backend/doric-host/composition.json) decides which ones
-  are enabled.
+- The **host** listens on `DORIC_HOST:DORIC_PORT`, `0.0.0.0:3000` by default,
+  loads the bundles its composition enables, and logs `Doric listening` once
+  it accepts requests ([`src/index.ts`](app/backend/doric-host/src/index.ts)).
+  Startup never applies database migrations; the `migrate` target does
+  ([`project.json`](app/backend/doric-host/project.json)).
+- The **composition**
+  ([`composition.json`](app/backend/doric-host/composition.json)) lists the
+  enabled bundles, the bundle that provides each storage contract, and the
+  sandbox alternative, `alternatives.sandbox`: `DORIC_SANDBOX_PROVIDER` picks
+  `docker`, the default, or `firecracker`; the host applies the choice at boot
+  ([`boot.ts`](app/backend/doric-host/src/lib/bundles/boot.ts)).
+- The **desktop app** connects to `DORIC_HOST_URL`, or `http://127.0.0.1:3000`
+  when unset ([`main.ts`](app/desktop/doric/src/main.ts),
+  [`host-bridge.ts`](app/desktop/doric/src/platform/bridge/host-bridge.ts)). It
+  downloads the desktop parts of the bundles from the host and draws every
+  window with them; the shell page it loads holds no product UI
+  ([`doric-renderer`](app/desktop/doric-renderer/README.md)).
+- How bundles are declared, built, distributed and activated is in the
+  [architecture overview](docs/architecture/bundles.md) and the
+  [`bundle` package](packages/bundle/README.md).
 
 ## Quick start
 
-This guide runs the backend and desktop app on the same computer. You need:
+This guide runs the host and the desktop app on one computer. You need:
 
-- Git, **Node.js 22.12+ in the 22.x line**, and **npm 10** (matching the build
-  image).
-- Docker with Docker Compose v2, running and accessible to your user.
-- A model provider account and API key; the example below uses OpenRouter.
-- A fresh PostgreSQL database, provided by Compose below.
+- Git, **Node.js 22** and **npm 11.13.0**, the versions CI and the host image
+  use ([`ci.yml`](.github/workflows/ci.yml),
+  [`.Dockerfile`](app/backend/doric-host/.Dockerfile)). Install npm with
+  `npm install --global npm@11.13.0`: npm 10 refuses `npm ci` on this lockfile.
+- Docker with Docker Compose v2, running and reachable by your user.
+- A model provider key; the steps below use OpenRouter.
 
-The full Compose backend requires **Linux**. On **macOS**, use the local
-backend alternative in step 2 with Docker Desktop. Run all commands from the
-repository root, in a POSIX shell.
+The Compose backend needs **Linux**: its host services use the host network,
+and the Docker one sets up its egress rules with `nftables`
+([`compose.yaml`](app/backend/doric-host/compose.yaml),
+[`host.ts`](packages/docker-sandbox/src/lib/host.ts)). On **macOS**, run the
+host natively with Docker Desktop (step 2). Run every command from the
+repository root in a POSIX shell.
 
 ### 1. Prepare the checkout
-
-Clone this repository, enter its directory, and install dependencies:
 
 ```sh
 npm ci
@@ -145,35 +178,59 @@ openssl rand -hex 24
 openssl rand -base64 32
 ```
 
-Edit `app/backend/doric-host/.env`: use the first generated value for
-`DORIC_POSTGRES_PASSWORD` and the second for `DORIC_CREDENTIAL_KEY`. Keep the
-default database and username (`doric`). This file is ignored by Git. Keep the
-credential key across restarts: stored secrets cannot be decrypted without it.
+In `app/backend/doric-host/.env`, set `DORIC_POSTGRES_PASSWORD` to the first
+value and `DORIC_CREDENTIAL_KEY` to the second, and keep `doric` as the user
+and database ([`.env.example`](app/backend/doric-host/.env.example)). Git
+ignores the file. Keep the credential key: the host cannot decrypt a stored
+secret without it, and refuses to start when a stored credential holds a
+secret and the key is missing
+([`backend.ts`](bundles/foundation/postgres/src/host/secrets/backend.ts),
+[Credentials](docs/features/credentials.md)).
 
-Build the sandbox image, which includes Node.js, Git, the GitHub CLI, Docker,
-and the system libraries Electron needs, with Xvfb for headless runs:
+The same file sets `DORIC_SANDBOX_DOCKER_SOCKET=true`: every Project sandbox
+then gets the host's Docker socket, and with it the Docker daemon's authority
+over this machine. Set it to `false` where the Projects are not yours
+([`.env.example`](app/backend/doric-host/.env.example),
+[`sandbox.ts`](bundles/sandboxes/docker/src/host/sandbox.ts)).
+
+Build the sandbox image every Project runs in:
 
 ```sh
 docker build -f app/backend/doric-host/.sandbox.Dockerfile -t doric-sandbox:local app/backend/doric-host
 ```
 
-### 2. Start the backend
+### 2. Start the host
 
-**Linux — Docker Compose:**
+**Linux, with Docker Compose:**
 
 ```sh
 docker compose --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml --profile docker up -d --build
 docker compose --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml logs -f docker
 ```
 
-Compose starts PostgreSQL, applies database migrations, and starts the backend.
-Wait for `Doric listening`, then press Ctrl+C to leave the log view; the services
-keep running. The first image build can take several minutes.
+Compose starts PostgreSQL, runs the one-shot `migrate` service, and then
+starts the `docker` service, the host
+([`compose.yaml`](app/backend/doric-host/compose.yaml)). Wait for
+`Doric listening`, then press Ctrl+C to leave the log; the services keep
+running. The first build takes several minutes.
+
+The `docker` service sets `DORIC_HOST: 0.0.0.0` and uses the host network, so
+the unauthenticated API listens on port 3000 of every interface of this
+machine; no `.env` value changes that
+([`compose.yaml`](app/backend/doric-host/compose.yaml)). Keep the machine on
+a trusted network, or block the port at its firewall.
+
+These commands use the Compose project name of the file, `doric-sandbox`.
+`npm run doric:docker:build` runs the same `up --build` under the project name
+`doric` ([`package.json`](package.json)); the project name prefixes the
+volumes, so the two keep separate databases. Use one of them consistently,
+and pass `-p doric` to `logs` and `down` when you use the script.
 
 <details>
-<summary>macOS — run the backend locally with Docker Desktop</summary>
+<summary>macOS: run the host natively with Docker Desktop</summary>
 
-Start only PostgreSQL, then load the values from the file you just edited:
+Start only PostgreSQL, load the values of the file you edited, and run the
+host:
 
 ```sh
 docker compose --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml up -d --wait postgres
@@ -182,151 +239,353 @@ set -a
 set +a
 export DORIC_DATABASE_URL="postgresql://${DORIC_POSTGRES_USER}:${DORIC_POSTGRES_PASSWORD}@127.0.0.1:${DORIC_POSTGRES_PORT:-5432}/${DORIC_POSTGRES_DB}"
 export DORIC_HOST=127.0.0.1
-export DORIC_SANDBOX_PROVIDER=docker
 export DORIC_SANDBOX_IMAGE=doric-sandbox:local
 export DORIC_SANDBOX_SSH=false
-export DORIC_SANDBOX_DOCKER_SOCKET=true
 npx nx run doric-host:migrate
 npx nx serve doric-host
 ```
 
-Keep this terminal open. Repeat the environment-loading and export commands
-when starting the backend in a new shell. With Docker Desktop, the native
-host's free-space check measures the current directory by default, not the
-PostgreSQL volume inside Docker's VM; monitor Docker's available disk space too.
+Keep this terminal open, and load the variables again in every new shell that
+starts the host. The Docker provider reads `DORIC_SANDBOX_IMAGE` (default
+`node:22-bookworm`), `DORIC_SANDBOX_SSH` and `DORIC_SANDBOX_DOCKER_SOCKET`,
+which `.env` sets to `true` so a sandbox can build images
+([`sandbox.ts`](bundles/sandboxes/docker/src/host/sandbox.ts)). With
+`DORIC_SANDBOX_SSH=true` the provider also needs a static Dropbear binary
+that only the host image ships
+([host README](app/backend/doric-host/README.md#natively)). The native host
+measures free space in the current directory unless `DORIC_STORAGE_PATH`
+names another path, so watch Docker Desktop's own disk space as well
+([`health.ts`](bundles/foundation/postgres/src/host/storage/health.ts)).
 
 </details>
 
-In another terminal, confirm the API responds:
+In another terminal, check that the API answers
+([`projects.ts`](bundles/foundation/transport/src/host/routes/projects.ts)):
 
 ```sh
 curl --fail http://127.0.0.1:3000/projects
 ```
 
-Port `3000` serves the API. The desktop app connects to that address; it is not
-a browser interface.
-
 ### 3. Open the desktop app
 
-In a separate terminal at the repository root:
+In another terminal:
 
 ```sh
 npm run doric:dev
 ```
 
-This starts the renderer and Electron app together. Keep the terminal open and
-wait for the app to show **Connected**.
+The script builds the desktop's generation runner, serves the renderer on
+port 4200, and starts Electron once that port answers; when either process
+exits, the other stops ([`package.json`](package.json),
+[`webpack.config.js`](app/desktop/doric-renderer/webpack.config.js),
+[`serve.mjs`](app/desktop/doric/serve.mjs)). Electron starts with
+`--no-sandbox` when run as root or when `DORIC_ELECTRON_NO_SANDBOX=1` is set
+([`serve.mjs`](app/desktop/doric/serve.mjs)). Wait until the connection badge reads **Connected**
+([`connection-badge.tsx`](bundles/features/resources/src/client/monitor/connection-badge.tsx)).
 
 ### 4. Connect a model
 
-Open **Settings** from the conversation footer:
+A new database already holds an `openrouter` provider, an empty `API_TOKEN`
+credential named `OPENROUTER_API_KEY` that it authenticates with, and the
+execution default `deepseek/deepseek-v4-flash-0731` at effort `low`, with 32
+turns per prompt ([`postgres` README](bundles/foundation/postgres/README.md#rows-the-migrations-leave)).
+Open **Settings** from the account menu's **Settings** entry or the
+dashboard's **All settings**
+([`index.ts`](bundles/desktop/settings/src/client/index.ts)); its sections are
+listed in [`sections.ts`](bundles/desktop/settings/src/client/domain/sections.ts):
 
-1. In **Credentials**, add an `API_TOKEN` credential with your OpenRouter API
-   key, or fill the existing `OPENROUTER_API_KEY` credential.
-2. In **Providers**, add or edit a provider. Choose **OpenRouter** as
-   its kind, give it a name, and select that credential. Keep the default
-   endpoint and Models URL, then select a model that supports tool calling.
-3. In **Execution**, choose that provider and model, set the reasoning effort
-   when available, and choose a turn limit to bound each prompt's agent loop.
-4. Wait for settings to finish saving before sending your first prompt.
+1. In **Credentials**, give `OPENROUTER_API_KEY` your OpenRouter key.
+2. In **Execution**, keep or change the provider, a model that supports tool
+   calls, its reasoning effort and the turn limit of one prompt.
+3. Each change saves on its own after a short pause, and a toast reports the
+   save the host accepted or refused; wait for it before you send a prompt
+   ([`use-config-autosave.ts`](bundles/desktop/settings/src/client/hooks/use-config-autosave.ts),
+   [Settings](docs/features/settings.md)).
 
-Provider keys are stored through **Credentials**; setting an
-`OPENROUTER_API_KEY` environment variable alone does not configure the current
-platform. For commits and private GitHub repositories, also configure your Git
-identity and GitHub token under **Credentials** and **Versioning**.
+A provider authenticates with the `API_TOKEN` credential its `token` field
+names ([`kind.ts`](bundles/providers/openrouter/src/host/kind.ts),
+[Credentials](docs/features/credentials.md)). For commits and
+private GitHub repositories, add your Git identity and a GitHub token under
+**Credentials** and choose them in **Versioning**
+([`git`](bundles/features/git/README.md)).
 
-### 5. Start your first task
+### 5. Start a task
 
-Create a **Project** in the sidebar, then create a **Thread** inside it. Wait
-for the environment to finish preparing and send a prompt, for example:
+Create a **Project** in the sidebar and a **Thread** in it, wait for its
+sandbox to be ready, and send a prompt:
 
 > Create a small Node.js app in /workspace/hello with a README explaining how
 > to run it. Run it and show me the result.
 
-Use the Files and Changes panels to inspect the work. You can also ask the
-agent to clone a repository into `/workspace` and work there; your local
-checkout is not automatically mounted into the Project.
-
-Then try something bigger:
+The Files and Changes panels show the work. Your local checkout is not mounted
+into a Project: ask the agent to clone a repository into `/workspace`. Then
+try a team, or a UI preview:
 
 > Clone https://github.com/<you>/<repo> into /workspace. Split the open TODOs
 > between child threads, have each one fix and test its part, and summarize
 > what changed.
 
-Or try Papercraft on a UI change:
-
 > Show me a preview of a new empty state for the projects list before you
 > implement it.
 
-Click an element in the canvas, leave a comment, and send it with
-`Cmd/Ctrl+Enter`.
+On a preview, click an element, leave a comment, and send it with
+Cmd/Ctrl+Enter ([Papercraft](docs/features/papercraft.md)).
 
-## Things to know
-
-- **No authentication or user access controls yet.** Anyone who can reach the
-  backend can access its API, change settings, and run work. Compose binds it
-  to `0.0.0.0:3000`; restrict access at the host/network level. Credential
-  encryption does not provide API authentication.
-- **Active development.** Interfaces and database schemas can change before
-  1.0. Back up data you care about; incompatible older databases may need
-  explicit recreation, and startup never resets them for you.
-- **Agent actions have real effects.** Threads share their Project workspace.
-  Pausing a conversation or rewinding it through the API does not undo file
-  changes, commands, or
-  remote Git operations. Review changes before publishing them.
-- **Usage consumes resources.** Model calls can incur provider charges. Projects
-  retain sandbox capacity until terminated; deleting a Project also removes
-  its Docker workspace. The host pauses execution at 10% free storage or less,
-  or if the storage check fails; free space and explicitly resume the queue.
-- **Isolation depends on the host.** Docker Desktop uses its normal bridge/NAT
-  networking without Doric's Linux egress firewall rules. The Firecracker
-  Compose profile is an advanced Linux/KVM development option, and its
-  workspace files do not persist across sandbox recreation.
-
-To stop the Linux Compose backend while retaining its database and Project
-volumes:
+### Stop the host
 
 ```sh
 docker compose --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml --profile docker down
 ```
 
-For the macOS path, stop the native backend with Ctrl+C and use the same Compose
-command to stop PostgreSQL. Avoid `down -v` unless you intend to delete the
-Compose volumes, including the database.
+`down` keeps every volume. `down -v` deletes the volumes Compose declares,
+`postgres-data` (the database), `firecracker-state` and `firecracker-cache`
+([`compose.yaml`](app/backend/doric-host/compose.yaml)), and keeps the Project
+workspaces: the Docker provider creates each as its own volume,
+`doric-workspace-<project id>`, labelled `doric.sandbox.workspace`
+([`workspace.ts`](packages/docker-sandbox/src/lib/workspace.ts)). To delete
+those too, once the host is stopped (Docker refuses to remove a volume that
+a sandbox container still uses):
 
-## Build on Doric
+```sh
+docker volume ls -q --filter label=doric.sandbox.workspace | xargs -r docker volume rm
+```
 
-Doric is a TypeScript monorepo, and its pieces are meant to be reused.
+On macOS, stop the native host with Ctrl+C and PostgreSQL with the same
+`down` command.
 
-| You want to…                              | Start here                                                                                                                                                                           |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Run, configure or integrate with the host | [Backend and API](app/backend/doric-host/README.md)                                                                                                                                  |
-| Work on the desktop app                   | [Desktop app](app/desktop/doric/README.md), [renderer](app/desktop/doric-renderer/README.md)                                                                                         |
-| Add tools, skills, providers or UI        | [Bundle platform](packages/bundle/README.md), [core services](bundles/foundation/core/README.md)                                                                                     |
-| See how the built-in agent tools work     | [Files](bundles/features/files/README.md), [Git](bundles/features/git/README.md), [Threads](bundles/features/threads/README.md), [Papercraft](bundles/features/papercraft/README.md) |
-| Embed an agent loop in your own app       | [Agent runtime](packages/agent/README.md), [model integrations](packages/llms/README.md)                                                                                             |
-| Run code in isolated sandboxes            | [Sandbox](packages/sandbox/README.md), [Docker](packages/docker-sandbox/README.md), [pool](packages/sandpool/README.md)                                                              |
-| Contribute to the repository              | [GROUNDING.md](GROUNDING.md) and [AGENTS.md](AGENTS.md)                                                                                                                              |
+## Things to know
 
-Each package owns its technical README. Use `npx nx show projects` to discover
-the workspace and `npx nx show project <project>` to inspect its commands.
+- **Agent actions have real effects.** Threads of a Project share its
+  workspace. Stopping or pausing a prompt does not undo the file changes,
+  commands or remote Git operations already made: a stop aborts the run and
+  reverts nothing
+  ([`runner.ts`](bundles/runtime/runtime/src/host/domain/runner.ts),
+  [Stop, steering and the queue of inputs](docs/features/prompt-control.md)).
+- **Low storage pauses execution.** Before each prompt and every three seconds
+  of a run, the runtime asks the storage backend for its free space with
+  `storage/v1.health()`
+  ([`storage-pressure.ts`](bundles/runtime/runtime/src/host/domain/storage-pressure.ts));
+  the `postgres` backend measures the filesystem of `DORIC_STORAGE_PATH`, or of
+  the current directory when it is unset
+  ([`health.ts`](bundles/foundation/postgres/src/host/storage/health.ts)). At
+  10% free blocks or less, or when the path cannot be measured, the run stops
+  and the Thread's queue pauses with `storage_low` until you free space and
+  resume it
+  ([`storage-pause.ts`](bundles/runtime/runtime/src/host/domain/storage-pause.ts)).
+- **Sandboxes hold capacity.** A Project keeps its sandbox until it is
+  terminated, and deleting it removes its Docker workspace volume
+  ([`workspace.ts`](packages/docker-sandbox/src/lib/workspace.ts),
+  [`docker`](bundles/sandboxes/docker/README.md)). A Firecracker sandbox keeps
+  no workspace when it is recreated
+  ([`firecracker`](bundles/sandboxes/firecracker/README.md)).
+- **Isolation depends on the machine.** On Linux the Docker provider applies
+  its own `nftables` egress rules; on macOS and Windows it relies on Docker
+  Desktop's networking instead
+  ([`host.ts`](packages/docker-sandbox/src/lib/host.ts)). A sandbox given the
+  Docker socket (`DORIC_SANDBOX_DOCKER_SOCKET=true`) holds the Docker daemon's
+  authority over the machine. Compose defaults it to `false`, and the `.env`
+  of the [quick start](#1-prepare-the-checkout) turns it on
+  ([`compose.yaml`](app/backend/doric-host/compose.yaml),
+  [`.env.example`](app/backend/doric-host/.env.example)).
+- **Model calls cost money.** Every prompt calls your provider with your key.
 
-### Develop bundles without a full backend
+## Develop
 
-`npm run doric:fake-host` starts a **development-only** host inside the
-repository: the `doric.catalog/v1` distribution the desktop downloads is the
-staged bundle build (`app/backend/doric-host/dist/bundles`, staged on demand
-when absent), and the app-level contracts it answers come from an in-memory
-workspace — no Postgres, no Docker sandbox, no agent runtime. It listens on
-`127.0.0.1:3000`, the address the desktop already uses, so the app needs no
-configuration:
+Doric is an Nx and npm-workspaces monorepo in TypeScript
+([`nx.json`](nx.json), [`package.json`](package.json)). The workspaces are:
+
+| Folder             | What it holds                                                                                                                                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/backend/`     | The host, [`doric-host`](app/backend/doric-host/README.md), and its end-to-end suite `doric-host-e2e`                                                                                                                              |
+| `app/desktop/`     | The Electron app [`doric`](app/desktop/doric/README.md) (Nx project `doric-app`), the shell [`doric-renderer`](app/desktop/doric-renderer/README.md), the platform build `doric-platform` and the end-to-end suite `doric-app-e2e` |
+| `bundles/<group>/` | The 33 bundles, each with a `manifest.json`, a README and an `AGENTS.md`; their map is [Bundles](#bundles)                                                                                                                         |
+| `packages/`        | Libraries the host, the app and the bundles build on; see [Packages](#packages)                                                                                                                                                    |
+| `tools/`           | [`tool-okf`](tools/okf/README.md), the `okf_search` agent tool                                                                                                                                                                     |
+| `scripts/`         | Command-line scripts, among them the [fake host](scripts/fake-host/README.md)                                                                                                                                                      |
+| `tests/`           | The repository checks run by `npm run lint:test` and `npm run test:fake-host`                                                                                                                                                      |
+
+Use `npx nx show projects` to list the projects and
+`npx nx show project <project>` to see a project's targets, including those
+the `@nx/js/typescript` and `@nx/webpack` plugins infer
+([`nx.json`](nx.json)).
+
+### Scripts of the root
+
+Each runs from the repository root as `npm run <script>`
+([`package.json`](package.json)).
+
+| Script                   | What it runs                                                                                                                                                                                                                                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doric:dev`              | The desktop app in development, as in [step 3](#3-open-the-desktop-app)                                                                                                                                                                                                                                        |
+| `doric:docker:build`     | `docker compose -p doric … --profile docker up -d --build`, the Compose host under the project name `doric`                                                                                                                                                                                                    |
+| `doric:fake-host`        | The development [fake host](#develop-bundles-without-the-host)                                                                                                                                                                                                                                                 |
+| `doric:spawn-agent`      | `-- --prompt <text> [--url <url>] [--terminate]`: creates a Project and its root Thread on a running host (`DORIC_URL` or `http://127.0.0.1:3000`), sends the prompt and prints the events until it finishes ([`spawn-agent.mjs`](scripts/spawn-agent.mjs))                                                    |
+| `okf`                    | `-- <model-id>`: writes the Open Knowledge Format bundle of this repository under `.agents/bundles`, with the OpenAI-compatible endpoint `OKF_BASE_URL` (default `http://localhost:1234/v1`) and the key `OKF_API_KEY` ([`okf.mjs`](scripts/okf.mjs), [Knowledge bundles](docs/features/knowledge-bundles.md)) |
+| `claude:oauth`           | A Claude Code OAuth sign-in in the browser (`-- --no-browser` to paste the code), written as an authorization header to the root `.env` ([`claude-oauth.mjs`](scripts/claude-oauth.mjs), [Provider sign-in](docs/features/provider-sign-in.md))                                                                |
+| `codex:oauth`            | The same for Codex ([`codex-oauth.mjs`](scripts/codex-oauth.mjs))                                                                                                                                                                                                                                              |
+| `lint`, `lint:fix`       | Biome's linter over the repository, checking or fixing ([`biome.json`](biome.json))                                                                                                                                                                                                                            |
+| `format`, `format:check` | Biome's formatter, then Prettier, writing or checking                                                                                                                                                                                                                                                          |
+| `lint:test`              | The tests of the Biome configuration and of the bundle boundaries ([`lint.test.mjs`](tests/lint.test.mjs), [`boundaries.test.mjs`](tests/boundaries.test.mjs), [Boundaries](docs/architecture/bundles/boundaries.md))                                                                                          |
+| `test:fake-host`         | The test of the fake host's bundle staging ([`fake-host-bundles.test.mjs`](tests/fake-host-bundles.test.mjs))                                                                                                                                                                                                  |
+
+### Build and test
+
+```sh
+npx nx run doric-host:build           # the host, after every bundle it stages
+npx nx run doric-app:build            # the desktop app
+npx nx run bundle-<name>:test         # one bundle, for example bundle-chat
+npx nx test <package>                 # one package, for example agent
+```
+
+Every bundle has the targets `build`, `typecheck` and `test`, under the Nx name
+`bundle-<directory>` ([`bundles/desktop/chat/project.json`](bundles/desktop/chat/project.json)).
+CI runs these checks, in this order, on Node.js 22 with npm 11.13.0 and a
+PostgreSQL service ([`ci.yml`](.github/workflows/ci.yml)):
+
+```sh
+npx nx sync:check
+npm run lint:test
+npm run format:check
+npm run lint
+DORIC_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx run doric-host:migrate
+DORIC_TEST_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx test doric-host
+DORIC_TEST_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx run-many -t test --projects=tag:type:bundle
+npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app
+npm run test:fake-host
+npx nx test agent
+npx nx run-many -t build typecheck
+```
+
+Tests that need a database skip without `DORIC_TEST_DATABASE_URL`; those that
+start a sandbox run only with `DORIC_TEST_SANDBOX=true`
+([host README](app/backend/doric-host/README.md#validation)). Rules for
+changing the code, and the checks to run before a change is complete, are in
+[`AGENTS.md`](AGENTS.md) and the `AGENTS.md` of each folder.
+
+### Develop bundles without the host
+
+`npm run doric:fake-host` starts a development stand-in for the host on
+`127.0.0.1:3000`, the address the desktop uses by default
+([`main.mjs`](scripts/fake-host/main.mjs)). It serves the staged bundles of
+`app/backend/doric-host/dist/bundles`, staging the built bundles itself when
+that directory is absent, and answers from an in-memory workspace: no
+PostgreSQL, no sandbox and no model provider
+([`bundles.mjs`](scripts/fake-host/bundles.mjs)). A call it does not serve is
+refused with `unavailable` and logged as `?? UNKNOWN <contract> <method>`
+([`contracts.mjs`](scripts/fake-host/contracts.mjs),
+[`log.mjs`](scripts/fake-host/log.mjs)). After a bundle rebuild,
+`GET /reload` republishes the catalog.
 
 ```sh
 npm run doric:fake-host   # one terminal
 npm run doric:dev         # another
 ```
 
-It prints every contract call and refuses what it does not serve with
-`unavailable`, logged as `?? UNKNOWN <contract> <method>`, so the gap is
-visible while working on a bundle. `GET /reload` republishes the catalog after
-a bundle rebuild. See [`scripts/fake-host/README.md`](scripts/fake-host/README.md).
+Its options and the contracts it answers are in the
+[fake host README](scripts/fake-host/README.md).
+
+## Documentation
+
+- **Features** describe what a capability does across the bundles that
+  implement it, under [`docs/features/`](#features).
+- **Architecture** describes the mechanisms every bundle follows: manifests,
+  contracts, hooks, windows, storage, distribution. Start at
+  [Doric's architecture](docs/architecture/bundles.md), which indexes the
+  living architecture documents; [the bundle map](docs/architecture/bundles/feature-split.md)
+  maps each bundle to its function and its feature docs.
+- **READMEs** describe one unit each: its interface, behavior, configuration,
+  and how to build and test it.
+- **`AGENTS.md` files** hold the rules for changing the code of their folder,
+  starting at the root [`AGENTS.md`](AGENTS.md).
+
+### Features
+
+| Feature                                                                   | What it covers                                                                        |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [Projects and Threads](docs/features/projects-and-threads.md)             | The life of a Project and of a Thread: states, the queue, leases, recovery at startup |
+| [Conversation](docs/features/conversation.md)                             | The transcript, the composer, the trail, the lifecycle markers, the footer            |
+| [Stop, steering and the queue of inputs](docs/features/prompt-control.md) | Stopping a prompt, steering it, and the queue of inputs                               |
+| [Delegation](docs/features/delegation.md)                                 | Child Threads and the tools that create and steer them                                |
+| [Default agent](docs/features/default-agent.md)                           | The executor: system prompt, tool set, model resolution, provider history             |
+| [Skills](docs/features/skills.md)                                         | The skill catalog, `load_skill` and the skill sources                                 |
+| [Coding workflow](docs/features/coding-workflow.md)                       | The coding workflow, a skill loaded on demand                                         |
+| [Context compaction](docs/features/context-compaction.md)                 | Compaction of a Thread's context                                                      |
+| [Attachments](docs/features/attachments.md)                               | Images sent to the model as attachments                                               |
+| [Models and providers](docs/features/models-and-providers.md)             | Provider kinds, model catalogs, the configured providers and the default execution    |
+| [Per-thread model](docs/features/per-thread-model.md)                     | A Thread's own provider, model and effort                                             |
+| [Provider sign-in](docs/features/provider-sign-in.md)                     | The Claude Code sign-in and the Claude and Codex OAuth profiles                       |
+| [Credentials](docs/features/credentials.md)                               | Named credentials and the secret store                                                |
+| [Settings](docs/features/settings.md)                                     | The settings window: its sections, autosave and search                                |
+| [Files](docs/features/files.md)                                           | The file tools, the Files panel, the file tabs and the viewer                         |
+| [cwd tool](docs/features/cwd-tool.md)                                     | A Thread's working directory and the `cwd` tool                                       |
+| [Git](docs/features/git.md)                                               | Branches, the Changes view, comparisons, the `git` tool                               |
+| [Terminal](docs/features/terminal.md)                                     | Tracked commands and manual terminal sessions                                         |
+| [Screen](docs/features/screen.md)                                         | The screen of a Project's sandbox, and its relay                                      |
+| [Web research](docs/features/web-research.md)                             | The web tool                                                                          |
+| [MCP servers](docs/features/mcp.md)                                       | MCP servers per Project: their tools and their OAuth sign-in                          |
+| [Sandboxes](docs/features/sandboxes.md)                                   | One sandbox per Project: Docker, Firecracker and the pool                             |
+| [Generative UI](docs/features/generative-ui.md)                           | UI the agent writes in its answer, and the question form                              |
+| [Diagrams in OpenUI fences](docs/features/openui-diagrams.md)             | The diagram components                                                                |
+| [Papercraft](docs/features/papercraft.md)                                 | Live previews of a Project's code and the canvas window                               |
+| [Comments](docs/features/comments.md)                                     | Anchored comments and their attended state                                            |
+| [Usage](docs/features/usage.md)                                           | A Thread's usage, cost and context capacity                                           |
+| [Resource monitor](docs/features/resource-monitor.md)                     | The monitor of the host machine and of a Project's sandbox                            |
+| [Notifications](docs/features/notifications.md)                           | The native notice when a prompt finishes outside the reader's view                    |
+| [Local history](docs/features/local-history.md)                           | The desktop's snapshots of a Thread's history                                         |
+| [Thread archive](docs/features/thread-archive.md)                         | Archiving, restoring and pinning a Thread, and the rules that archive on their own    |
+| [The workspace window](docs/features/ui-redesign.md)                      | The window's frame, sidebar, tabs, dashboard, side panel and account status           |
+| [Error messages](docs/features/error-messages.md)                         | The text of the errors the window shows                                               |
+| [Host API](docs/features/host-api.md)                                     | The host's REST routes and Socket.IO namespaces                                       |
+| [Knowledge bundles](docs/features/knowledge-bundles.md)                   | Generating and searching Open Knowledge Format bundles                                |
+
+### Applications, scripts and tools
+
+- [Doric host](app/backend/doric-host/README.md): running and configuring the
+  host, its REST and Socket.IO reference, persistence and security.
+- [Desktop app](app/desktop/doric/README.md): the Electron main process, its
+  platform contracts and its packaging.
+- [Renderer shell](app/desktop/doric-renderer/README.md): the page every
+  desktop window loads.
+- [Fake host](scripts/fake-host/README.md): the development stand-in for the
+  host.
+- [`tool-okf`](tools/okf/README.md): the `okf_search` agent tool.
+
+### Bundles
+
+Each README describes the bundle's manifest, contracts, behavior and tests.
+
+| Group      | Bundles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundation | [`core`](bundles/foundation/core/README.md), [`host-config`](bundles/foundation/host-config/README.md), [`postgres`](bundles/foundation/postgres/README.md), [`transport`](bundles/foundation/transport/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Runtime    | [`runtime`](bundles/runtime/runtime/README.md), [`default`](bundles/runtime/default/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Providers  | [`openai`](bundles/providers/openai/README.md), [`openrouter`](bundles/providers/openrouter/README.md), [`claude`](bundles/providers/claude/README.md), [`codex`](bundles/providers/codex/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Sandboxes  | [`docker`](bundles/sandboxes/docker/README.md), [`firecracker`](bundles/sandboxes/firecracker/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Features   | [`files`](bundles/features/files/README.md), [`git`](bundles/features/git/README.md), [`terminal`](bundles/features/terminal/README.md), [`web`](bundles/features/web/README.md), [`threads`](bundles/features/threads/README.md), [`mcp`](bundles/features/mcp/README.md), [`usage`](bundles/features/usage/README.md), [`resources`](bundles/features/resources/README.md), [`screen`](bundles/features/screen/README.md), [`screen-relay`](bundles/features/screen-relay/README.md), [`comments`](bundles/features/comments/README.md), [`openui`](bundles/features/openui/README.md), [`papercraft`](bundles/features/papercraft/README.md), [`claude-login`](bundles/features/claude-login/README.md) |
+| Desktop    | [`layout`](bundles/desktop/layout/README.md), [`workspace`](bundles/desktop/workspace/README.md), [`account`](bundles/desktop/account/README.md), [`chat`](bundles/desktop/chat/README.md), [`settings`](bundles/desktop/settings/README.md), [`history`](bundles/desktop/history/README.md), [`notifications`](bundles/desktop/notifications/README.md)                                                                                                                                                                                                                                                                                                                                                   |
+
+### Packages
+
+| Package                                                         | What it is                                                                                      |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [`bundle`](packages/bundle/README.md)                           | The bundle platform: manifest, contracts, loader, build and distribution                        |
+| [`desktop`](packages/desktop/README.md)                         | The browser code every desktop window shares: UI, read helpers, the window protocol, the loader |
+| [`storage`](packages/storage/README.md)                         | The protocol of the storage backend contract                                                    |
+| [`agent`](packages/agent/README.md)                             | An embeddable agent loop                                                                        |
+| [`llms`](packages/llms/README.md)                               | One provider contract for chat, streaming, tool calls and model listing                         |
+| [`messages`](packages/messages/README.md)                       | An in-memory conversation history ready to send to a provider                                   |
+| [`tool`](packages/tool/README.md)                               | Typed, provider-neutral agent tools                                                             |
+| [`oauth`](packages/oauth/README.md)                             | The OAuth authorization-code flow with PKCE and the Claude Code and Codex profiles              |
+| [`sandbox`](packages/sandbox/README.md)                         | The provider-neutral sandbox contract                                                           |
+| [`docker-sandbox`](packages/docker-sandbox/README.md)           | The Docker sandbox provider                                                                     |
+| [`firecracker-sandbox`](packages/firecracker-sandbox/README.md) | The Firecracker microVM sandbox provider                                                        |
+| [`sandpool`](packages/sandpool/README.md)                       | A process-local pool of sandbox sessions                                                        |
+| [`session`](packages/session/README.md)                         | A process-local store of values keyed by ID, with single-flight creation                        |
+| [`okf`](packages/okf/README.md)                                 | Generation of Open Knowledge Format bundles                                                     |
+| [`victor`](packages/victor/README.md)                           | Ranked in-memory lexical, vector and hybrid search                                              |
+| [`state-machine`](packages/state-machine/README.md)             | Typed state machines built from a map of handlers                                               |
+| [`jsonl`](packages/jsonl/README.md)                             | Appending and reading JSON Lines files                                                          |
+| [`config`](packages/config/README.md)                           | A validator for agent configuration carried in message metadata                                 |
+
+## License
+
+MIT ([`LICENSE`](LICENSE)).

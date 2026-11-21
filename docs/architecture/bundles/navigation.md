@@ -65,7 +65,7 @@ The sections of `settings` are `profile`, `providers`, `execution`, `threads`, `
 
 In the workspace window the path is the selection ([`route-selection.ts`](../../../bundles/desktop/workspace/src/client/domain/route-selection.ts)):
 
-- `/` is Home, and `/projects` is the full list of Projects. On both, `workspace` adds `<workspace-dashboard>` to the frame's `shell.page` slot and `<workspace-sidebar-footer>` to `shell.sidebar.footer`; on any other path it removes them ([`workspace/src/client/index.ts`](../../../bundles/desktop/workspace/src/client/index.ts)). While `shell.page` holds an item, `<layout-workspace>` draws its page form, which has no Thread pane and no inner `<core-outlet>`, so the element of `/projects` is never created there: the route exists so that `/projects` matches and is not "not found" ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)). The Dashboard button in the sidebar header navigates to `/projects`, on the Dashboard and on every other path, and so does the sidebar's entry for all Projects ([`dashboard.tsx`](../../../bundles/desktop/workspace/src/client/components/organisms/dashboard.tsx), [`navigation-elements.tsx`](../../../bundles/desktop/workspace/src/client/elements/navigation-elements.tsx)).
+- `/` is Home, and `/projects` is the full list of Projects. On both, `workspace` adds `<workspace-dashboard>` to the frame's `shell.page` slot and `<workspace-sidebar-footer>` to `shell.sidebar.footer`; on any other path it removes them ([`workspace/src/client/index.ts`](../../../bundles/desktop/workspace/src/client/index.ts)). While `shell.page` holds an item, `<layout-workspace>` draws its page form, which has no conversation card and no inner `<core-outlet>`, so the element of `/projects` is never created there: the route exists so that `/projects` matches and is not "not found" ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)). Otherwise it draws its conversation form, whose conversation card holds the `<core-outlet>` where the child routes appear ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx), [layout](layout.md#the-two-forms)). The Dashboard button in the sidebar header navigates to `/projects`, on the Dashboard and on every other path, and so does the sidebar's entry for all Projects ([`dashboard.tsx`](../../../bundles/desktop/workspace/src/client/components/organisms/dashboard.tsx), [`navigation-elements.tsx`](../../../bundles/desktop/workspace/src/client/elements/navigation-elements.tsx)).
 - `/projects/<projectId>` is a Project with no Thread selected.
 - `/projects/<projectId>/threads/<threadId>` is a selected Thread. Opening this path directly selects that Thread; a link to it works from anywhere in the window.
 
@@ -119,7 +119,7 @@ After each change of the route, the core's client part sets the window's menu co
 
 1. When a window starts, the bootstrap replaces the children of `body` with one `<core-outlet>`, the top outlet ([`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts)).
 2. Each outlet counts its `<core-outlet>` ancestors, crossing shadow roots through their host, and shows the entry of `chain()` at that depth: the top outlet shows the root of the chain, an outlet inside the root's element shows the next entry, and so on. An outlet therefore works inside Shadow DOM.
-3. For `/projects/p1/threads/t1` the chain is `/` → `/projects/:projectId/threads/:threadId`. The top outlet shows `<layout-workspace>`; the `<core-outlet>` that the frame places in its Thread pane shows `<chat-view>` ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)).
+3. For `/projects/p1/threads/t1` the chain is `/` → `/projects/:projectId/threads/:threadId`. The top outlet shows `<layout-workspace>`; the `<core-outlet>` that the frame's conversation form places in its conversation card shows `<chat-view>` ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)).
 4. When the active route is the parent itself (path `/`), the outlet inside it has no entry and is empty. The parent decides what to show then; on `/` and `/projects` the frame draws its page form, which holds no inner outlet at all.
 
 ```text
@@ -128,8 +128,8 @@ URL: doric://app/projects/p1/threads/t1
 <body>
   <core-outlet>                                      ← top outlet, made by the bootstrap
     <layout-workspace>                               ← route "/" (layout)
-      … sidebar, header, slots …
-      <core-outlet>                                  ← outlet in the frame's Thread pane
+      … sidebar column, title bar, slots …
+      <core-outlet>                                  ← outlet in the conversation card
         <chat-view> (projectId="p1", threadId="t1")  ← child route (chat)
 ```
 
@@ -202,7 +202,8 @@ No bundle imports React Router. How a React element receives the properties the 
 ## Related documents
 
 - [README of `core`](../../../bundles/foundation/core/README.md): the full contract of `navigation/v1`, `ui/v1`, `regions/v1` and the structural elements.
-- [Core](core.md): what the core provides in each environment, and `ui.create` step by step.
+- [Core](core.md): what the core provides in each environment.
+- [UI composition](ui-composition.md#elements-are-the-boundary): `ui.create` step by step.
 - [Layout](layout.md): the shell that registers `/` and places the outlet of the child routes.
 - [Windows](windows.md): `windows/v1.open`, the last path of a key and closing a window.
 - [The `doric://` protocol](doric-protocol.md): the shell served for any route path.

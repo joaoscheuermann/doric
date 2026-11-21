@@ -319,7 +319,14 @@ importing their packages; `runtime.records/v1` and `runtime.lease/v1` come from
 - **Styles.** [`src/client/styles.css`](src/client/styles.css) scans no file
   and emits only the classes of one `@source inline(…)` list: the rows'
   hover, pressed and focus states and the actions' reveal. The other classes of
-  the elements come from the app window's own sheet.
+  the elements come from the app window's own sheet. A class added to
+  [`src/client/elements.tsx`](src/client/elements.tsx) that the app window's
+  sheet does not emit is also added to that list, and to the list that
+  [`tests/styles-cascade.test.ts`](tests/styles-cascade.test.ts) checks it
+  against, in the same order. A wider sheet would re-emit classes that move
+  other bundles' rules in the cascade of a window that loads every bundle
+  sheet; the test also fails when the built sheet reaches 8 KiB or re-emits
+  `border`, `transition-transform`, `hover:text-foreground` or `inline-flex`.
 
 ## Data and persistence
 

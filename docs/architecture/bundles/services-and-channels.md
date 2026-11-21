@@ -92,7 +92,7 @@ A provider rejects with a `ContractError` of its own code, and the code and mess
 
 ## The call
 
-Every `execute` of a method, a command or a tool, and every hook handler, receives the `call` of its hop ([`call.ts`](../../../packages/bundle/src/contracts/call.ts)):
+Every `execute` a bundle defines for a method, a command or a tool, and every hook handler, receives the `call` of its hop ([`call.ts`](../../../packages/bundle/src/contracts/call.ts), [`tools.ts`](../../../packages/tool/src/lib/tools.ts)):
 
 ```ts
 type CallScope = Readonly<Record<string, string>>;

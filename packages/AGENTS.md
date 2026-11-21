@@ -102,20 +102,6 @@ Add a feature to a package in these steps, in one change:
     `scopeKeyPattern`, `SCOPE_MAX_KEYS` and `SCOPE_MAX_VALUE`
     ([`bundle/src/contracts/call.ts`](bundle/src/contracts/call.ts)); a
     contract that carries a scope must use them, never limits of its own.
-- Keep `config` and `oauth` dependent on no workspace package: `config` keeps
-  its own `isRecord` and `ReasoningEffort` union
-  ([`config/src/lib/utils/object.ts`](config/src/lib/utils/object.ts),
-  [`config/src/lib/types/config.ts`](config/src/lib/types/config.ts)), and
-  `oauth` its own `asRecord`, `stringField`, `numberField` and
-  `diagnosticExcerpt`
-  ([`oauth/src/lib/utils/json.ts`](oauth/src/lib/utils/json.ts)).
-- Keep the two copies of `createFetchTransport`, in `llms` and `oauth`
-  ([`llms/src/lib/http.ts`](llms/src/lib/http.ts),
-  [`oauth/src/lib/http.ts`](oauth/src/lib/http.ts)); extract it into one
-  package only in the change that gives it a third consumer.
-- Never merge `excerpt` of `tool` (300 characters, marker `...`) with
-  `diagnosticExcerpt` of `llms` (2048) or `oauth` (500), both with the marker
-  `...[truncated]`: they differ in limit and marker.
 
 ### Components of `desktop`
 
@@ -174,21 +160,6 @@ Add a feature to a package in these steps, in one change:
   `tsconfig.spec.json`, which the `test` target compiles
   ([`desktop/tsconfig.spec.json`](desktop/tsconfig.spec.json)).
 
-### Commands that need an environment
-
-- Run `npx nx run docker-sandbox:e2e` after a change to `docker-sandbox`'s
-  `src/` or e2e tests, only where a Docker daemon is reachable: it provisions
-  real containers.
-- Run `npx nx run firecracker-sandbox:e2e` after a change to
-  `firecracker-sandbox`'s `src/` or e2e tests, only on a host that passes the
-  preflight the `firecracker-sandbox` README lists under
-  [`preflightFirecrackerHost`](firecracker-sandbox/README.md#preflightfirecrackerhostconfig):
-  the target runs it first and fails without such a host.
-- Never run `npx nx run llms:conformance-live` unless the user asks for it: it
-  makes paid calls to OpenRouter, and runs only with `OPENROUTER_API_KEY` set
-  and the argument `-- --yes-paid-conformance`
-  ([`llms/scripts/conformance-live.mjs`](llms/scripts/conformance-live.mjs)).
-
 ## Verify
 
 Run each command from the repository root, with the package's folder name in
@@ -217,7 +188,35 @@ npx nx run <name>:build
 - `npx nx sync:check`: run it after a change to a package's `package.json`
   dependencies or after adding a package.
 - `npx nx run sandpool:e2e`: run it after a change to `sandpool`'s `src/` or
-  e2e tests.
+  e2e tests; it needs no Docker or KVM, since its test creates in-process
+  sessions ([`sandpool.e2e.ts`](sandpool/tests/sandpool.e2e.ts)).
+- `DORIC_TEST_SANDBOX=true npx nx run docker-sandbox:test`: run it after a
+  change to `docker-sandbox`'s `src/` or to
+  `tests/workspace.docker.test.ts`, only where a Docker daemon is reachable
+  and can pull `node:22-slim` and `node:22-bookworm-slim`: without the
+  variable, the target skips those tests
+  ([`workspace.docker.test.ts`](docker-sandbox/tests/workspace.docker.test.ts)).
+- `npx nx run docker-sandbox:e2e`: run it after a change to
+  `docker-sandbox`'s `src/` or e2e tests, only where a Docker daemon is
+  reachable and can pull `node:22-slim` and `node:22-bookworm`, containers
+  reach the public internet over HTTPS, and an `ssh` client is on `PATH`:
+  it provisions real containers and fails when the daemon does not answer a
+  ping ([`sandbox.e2e.ts`](docker-sandbox/tests/sandbox.e2e.ts),
+  [`process.e2e.ts`](docker-sandbox/tests/process.e2e.ts)).
+- `npx nx run firecracker-sandbox:e2e`: run it after a change to
+  `firecracker-sandbox`'s `src/` or e2e tests, only on a host that passes
+  every check the `firecracker-sandbox` README lists under
+  [`preflightFirecrackerHost`](firecracker-sandbox/README.md#preflightfirecrackerhostconfig),
+  whose guest reaches the public internet over HTTPS, such as the
+  `firecracker` Compose profile its
+  [Host requirements](firecracker-sandbox/README.md#host-requirements) names:
+  the test runs the preflight first and fails without such a host
+  ([`sandbox.e2e.ts`](firecracker-sandbox/tests/sandbox.e2e.ts)).
+- `OPENROUTER_API_KEY=<key> npx nx run llms:conformance-live -- --yes-paid-conformance`:
+  run it only when the user asks for it: it makes paid calls to OpenRouter,
+  refuses to run without the key or the argument, and stops before any paid
+  call when the estimated worst-case cost exceeds USD 5
+  ([`llms/scripts/conformance-live.mjs`](llms/scripts/conformance-live.mjs)).
 - `npx nx run victor:benchmark`: run it after a change to `victor`'s
   [`lexical.ts`](victor/src/lib/lexical.ts),
   [`vector.ts`](victor/src/lib/vector.ts) or
@@ -248,3 +247,5 @@ npx nx run <name>:build
   `node packages/desktop/scripts/verify-provenance.mjs --record-registry <dir>`
   with the shadcn CLI's formatted output of every `registry` file in `<dir>`,
   or `--record <commit>` for the `renderer` entries.
+- `sandpool/dist-e2e/tests/sandpool.e2e.js`: do not edit it by hand;
+  `npx nx run sandpool:e2e` writes it.

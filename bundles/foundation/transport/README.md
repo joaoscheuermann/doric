@@ -244,7 +244,9 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
   answers `sandbox/v1.machines()`. `GET /vms/:id/ssh` reads the machine with
   `sandbox/v1.machine` (`404 vm_not_found` when absent), then
   `runtime/v2.vmSsh` (`409 vm_ssh_unavailable` when absent), and answers
-  `{ vm, ...access }`.
+  `{ vm, ...access }`. The machines are those of the active generation's
+  `sandbox/v1` provider, the `docker` or `firecracker` bundle
+  ([sandboxes](../../../docs/features/sandboxes.md)).
 - **Projects** ([`src/host/routes/projects.ts`](src/host/routes/projects.ts)):
   - Creation calls `runtime/v2.createProject` and adds
     `ssh: { href: '/projects/<id>/ssh' }` to the Project; a body without a
@@ -273,8 +275,7 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
     (`leaseResponse`): `missing` → `404 project_not_found`, `pending` →
     `202 { status: 'pending' }` with `Retry-After: 1`, `expired` →
     `410 project_files_expired`, `unavailable` →
-    `409 project_files_unavailable`; `/resources` answers any other
-    non-ready outcome with `409 project_resources_unavailable`. A ready read
+    `409 project_files_unavailable`. A ready read
     answers its value: a listing as `{ path, entries }`, content as
     `{ path, content, truncated, binary }`, a diff or change list as
     `{ path?, repositories }`, a file diff as the diff itself; `not_found`
@@ -290,7 +291,10 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
     each with its own call (`renameThread`, `setThreadCwd`,
     `setThreadExecution`) and without a transaction: a later refusal keeps the
     earlier changes. A refused `cwd` answers `400 invalid_cwd` with the
-    sentence of its reason (`outside`, `missing`, `not-directory`), an
+    sentence of its reason: `outside`
+    (`The working directory must stay inside the workspace.`), `missing`
+    (`No such directory.`) or `not-directory`
+    (`The working directory must be a directory.`); an
     inactive Thread `409 thread_inactive`; the execution's refusal is the one
     `restErrors.setThreadExecution` gives; a missing Thread answers
     `404 thread_not_found`. It answers the last Thread, and
@@ -314,7 +318,8 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
     `prompt`, `steer` and `rewind`, and `409 thread_<outcome>` for `resume`
     and `interrupt`.
   - `compact` answers `200` with `status`, `condensedMessages`,
-    `retainedMessages` and `tokensFreed`; `busy` answers `409 thread_busy`, a
+    `retainedMessages` and `tokensFreed`; `missing` answers
+    `404 thread_not_found`, `busy` answers `409 thread_busy`, a
     refusal
     `409 compaction_refused` with the sentence of its reason (`disabled`,
     `missing_history`, `nothing_to_compact`), `failed`

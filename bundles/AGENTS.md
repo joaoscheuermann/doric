@@ -40,11 +40,14 @@ an entry of the exceptions file.
   `bundles/<group>/<id>` path or a `"bundle-<id>"` name into a build file of
   `doric-host`, and never put an id with no manifest into its
   `composition.json`.
-- Make every contract method and contribution that crosses a process take and
-  return plain data: such a contribution names an element tag and gives props,
-  its element answers with DOM events, and it passes no function, component or
-  live object except a subscription listener. A method or contribution that
-  stays in one process may take a function or a React element.
+- Make every contract method you add take and return plain data, and every
+  contribution you add to another bundle's surface name an element tag and give
+  props, with its element answering with DOM events; pass no function,
+  component or live object through either, except a subscription listener and
+  the `Disposable` that ends a registration or subscription. Do not reshape an
+  existing contract that only moves to another bundle to meet this rule. Read
+  [Two rules for the content of a contract](../docs/architecture/bundles/contracts.md#two-rules-for-the-content-of-a-contract)
+  before you add a contract method or contribution; no test checks this rule.
 - Keep every boundary rule a machine can check as a test that CI runs, and
   record every standing violation as one entry of
   [`tests/boundary-exceptions.json`](../tests/boundary-exceptions.json).

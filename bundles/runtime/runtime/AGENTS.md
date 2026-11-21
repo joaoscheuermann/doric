@@ -23,15 +23,25 @@ contracts and hooks.
 
 - Read [`README.md`](README.md) for what the bundle does, its contracts and its
   data before you change it.
-- Never support running an older runtime against data a newer one wrote: the
-  document schemas of [`src/contracts/storage.ts`](src/contracts/storage.ts)
-  are strict and every write is validated, so a field a newer runtime writes
-  makes every write of an older one to that document fail, and no change may
-  add code that serves an older runtime.
+- Never support running an older runtime against data a newer one wrote, and
+  never add code that serves one: the document schemas of
+  [`src/contracts/storage.ts`](src/contracts/storage.ts) are strict and
+  `storage/v1` validates every write
+  ([`facade.ts`](../../foundation/core/src/host/storage/facade.ts));
+  `src/host/store/` writes each change to a Project or Thread document over
+  the stored document, so a field a newer runtime writes there makes every
+  write of an older one to that document fail; it writes each history
+  document whole, so an older one drops the field; and `read` of
+  [`src/host/store/attachments.ts`](src/host/store/attachments.ts) parses each
+  attachment document, so an older one answers it as missing.
 - Add a field to a document schema of `src/contracts/storage.ts` only as an
-  optional field, read every document that lacks it, and raise the version of
-  that storage type under `provides` of [`manifest.json`](manifest.json) in the
-  same change.
+  optional field, because stored documents lack it: the next write of a stored
+  Project or Thread document is validated without it, and `read` of
+  `src/host/store/attachments.ts` answers as missing an attachment document
+  the schema rejects. Handle its absence wherever `src/host/store/` reads it,
+  as `toThread` of [`src/host/store/threads.ts`](src/host/store/threads.ts)
+  does, and raise the minor of that storage type's `provides` entry and of
+  the `version` of [`manifest.json`](manifest.json) in the same change.
 - Declare each contract method in its file of `src/contracts/` with its input
   and output schemas in that file's `*Methods` object, and provide it in
   `src/host/services/<contract>.ts` by spreading that entry into `defineMethod`;

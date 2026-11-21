@@ -65,83 +65,41 @@ reuses that logger ([`src/host/index.ts`](src/host/index.ts)).
 
 The contract is declared in
 [`packages/bundle/src/contracts/basic/models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)
-and imported from `bundle/contracts`. It runs in the `host` environment only
-and has cardinality `many`: every provider bundle registers its own record
-([`packages/bundle/src/contracts/basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts)).
+and imported from `bundle/contracts`. It runs in the `host` environment and
+has cardinality `many`; this bundle registers exactly one record, with
+`{ cardinality: 'many' }` ([`src/host/provider.ts`](src/host/provider.ts)).
 The full shape of the contract — the inputs and outputs of its six methods,
 `ModelKindDescriptor`, `ModelField`, `CatalogResult`, `ModelIconChoice`, the
 `icons` limits and the `LanguageModel` handle that `create` answers — is in
 the [`packages/bundle` README](../../../packages/bundle/README.md#the-modelsproviderv1-contract).
-This bundle registers exactly one record, with `{ cardinality: 'many' }`
-([`src/host/provider.ts`](src/host/provider.ts)). The contract has no
-optional methods, so a record implements all six methods below, and it
-defines no events.
+This bundle implements all six methods and emits no events.
 
-### Methods and what `codex` answers
+| Method              | `codex` answer                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `kind()`            | the descriptor of [The `codex` kind](#the-codex-kind)                                                        |
+| `advertised()`      | `false`: `models/v1.kinds()`, and so `GET /providers/kinds`, does not list the kind                          |
+| `catalog(input)`    | always `{ status: 'absent' }`, with no request: the kind defines no catalog                                  |
+| `create(input)`     | the built Codex provider, as in [Building a provider](#building-a-provider)                                  |
+| `catalogCapacity()` | `false`: the built provider's `models()` reports no context capacity                                         |
+| `icons(input)`      | `{ provider: 'openai', models: ['openai', …] }`, one `'openai'` per listed model, whatever the configuration |
 
-| Method                            | Input                                                                                             | Output                                   | `codex` answer                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------- |
-| `kind()`                          | none                                                                                              | `ModelKindDescriptor`                    | the descriptor of [The `codex` kind](#the-codex-kind)                            |
-| `advertised()`                    | none                                                                                              | `boolean`                                | `false`                                                                          |
-| `catalog(input)`                  | `{ configuration: Record<string, string>, secret?: string }` (strict)                             | `CatalogResult`                          | always `{ status: 'absent' }`, with no request                                   |
-| `create(input)`                   | `{ providerId: string, values: Record<string, string>, secret?: () => Promise<string> }` (strict) | `LanguageModel` (a process-local handle) | the built Codex provider, as in [Building a provider](#building-a-provider)      |
-| `catalogCapacity()` (minor 1.1.0) | none                                                                                              | `boolean`                                | `false`                                                                          |
-| `icons(input)` (minor 1.2.0)      | `{ configuration: Record<string, string>, models: string[] }` (strict)                            | `ModelIconChoice`                        | `{ provider: 'openai', models: ['openai', …] }`, one `'openai'` per listed model |
-
-`advertised()` decides whether `models/v1.kinds()` (and so
-`GET /providers/kinds`) lists the kind; `models/v1.kind('codex')` resolves it
-either way
+Each answer is defined in [`src/host/kind.ts`](src/host/kind.ts) and turned
+into a method by [`src/host/provider.ts`](src/host/provider.ts).
+`models/v1.kind('codex')` resolves the kind although it is not advertised
 ([`bundles/foundation/core/src/host/models/registry.ts`](../../foundation/core/src/host/models/registry.ts),
-[`bundles/foundation/core/src/host/models/index.ts`](../../foundation/core/src/host/models/index.ts)).
-`catalogCapacity()` decides whether the built provider's `models()` reports
-context capacity to `models/v1.contextWindow`; `false` means it does not
+[`bundles/foundation/core/src/host/models/index.ts`](../../foundation/core/src/host/models/index.ts)),
+and `models/v1.contextWindow` reads context capacity only from a kind whose
+`catalogCapacity()` is `true`
 ([`bundles/foundation/core/src/host/models/capacity.ts`](../../foundation/core/src/host/models/capacity.ts)).
 
-`create` receives `secret` as a callback that crosses no process: the
-contract marks it a local callback
-([`packages/bundle/src/contracts/basic/models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)),
-and `models/v1` passes it when the provider's configuration names a
-credential in its first `secret` field
-([`bundles/foundation/core/src/host/models/providers.ts`](../../foundation/core/src/host/models/providers.ts)).
-The output is a handle made with `toLanguageModel`, a copy of the answered
-object's own properties on a prototype of its own: back in the host process
-that built it, it is the object `create` answered; anywhere else any use of it
-is refused as `local_only`.
-
-`icons` limits: `models` holds at most 1000 names (`MODEL_ICON_MAX_MODELS`),
-each at most 512 characters (`MODEL_ICON_MAX_NAME`); every icon name in the
-answer is 1 to 64 characters, `provider` may be absent, and `models` has the
-input's length and order, with `null` for a model without an icon of its own.
-The choice is pure: it does no I/O and reads no secret, and a throw makes
-`icons` reject.
-
-### Data shapes
-
-`ModelKindDescriptor` (strict):
-
-| Key                 | Type                                       | Meaning                                                                                  |
-| ------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `id`                | `string`                                   | the kind id                                                                              |
-| `label`             | `string`                                   | the kind's display name                                                                  |
-| `description`       | `string`                                   | one sentence on what the kind connects to                                                |
-| `fields`            | `ModelField[]`                             | the values a provider of the kind carries                                                |
-| `lists`             | `('models' \| 'reasonings')[]`             | the lists a provider of the kind keeps                                                   |
-| `modelsFromCatalog` | `boolean`, optional                        | whether the model list is the live catalog                                               |
-| `site`              | `{ url: string, label: string }`, optional | the `https:` site a provider page links to, with a non-empty control label (minor 1.3.0) |
-
-`ModelField` (strict): `key`, `label` (strings), `kind` (`text`, `url`,
-`number`, `enum` or `secret`), `required` (boolean), and optional
-`description`, `placeholder`, `options` (strings) and `advanced` (boolean). A
-`secret` field's value is the id of a stored `API_TOKEN` credential, which the
-host resolves; it never holds the secret itself.
-
-`CatalogResult`: `{ status: 'read', models: CatalogModel[] }` or
-`{ status: 'absent' | 'failed' }`. `CatalogModel` has `id`, `reasonings` and
-`parameters` (string arrays) and `mandatory` (boolean), optional `name` and
-`defaultEffort`, and may carry more keys.
-
-`ModelIconChoice` (strict): optional `provider` (icon name) and `models`
-(icon name or `null` per requested model).
+`models/v1` passes `create` its `secret` callback when the provider's
+configuration names a credential in the kind's first `secret` field, `token`
+([`bundles/foundation/core/src/host/models/providers.ts`](../../foundation/core/src/host/models/providers.ts)):
+the field's stored value is the id of an `API_TOKEN` credential
+([`src/host/kind.ts`](src/host/kind.ts)), which the host resolves, never the
+authorization value itself. The `icons` choice is pure: it does no I/O and
+reads no secret ([`src/host/kind.ts`](src/host/kind.ts)), and a throw makes
+`icons` reject ([`src/host/provider.ts`](src/host/provider.ts)).
 
 ## The `codex` kind
 

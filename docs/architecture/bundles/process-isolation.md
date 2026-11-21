@@ -47,20 +47,7 @@ On `SIGINT` or `SIGTERM` it closes the HTTP server and the sockets, runs `onHost
 
 ### `doric.network/v1`
 
-The native listeners live only in the kernel. The kernel provides `doric.network/v1`, a host-only platform contract, with one method ([`network.ts`](../../../packages/bundle/src/contracts/network.ts), [`process/network.ts`](../../../packages/bundle/src/process/network.ts)):
-
-```ts
-type NetworkResources = { http: object; server: object; sockets: object };
-type NetworkListener = (
-  resources: NetworkResources,
-) => (() => void) | undefined;
-
-interface DoricNetwork {
-  register(listener: NetworkListener): Disposable;
-}
-```
-
-`http` is the shared Express router, `sockets` the Socket.IO server, and `server` the `http.Server` both are attached to, for an `upgrade` listener a router cannot express. The listener runs at once with the resources; disposing of the registration runs the cleanup it returned, once. A bundle never calls `listen`: the kernel owns the address, the bind and the close. The handles are local to the kernel process and never serialized, so a bundle that serves routes or sockets is listed under `resident`: `transport` ([README](../../../bundles/foundation/transport/README.md)) and `screen-relay` ([README](../../../bundles/features/screen-relay/README.md)).
+The native listeners live only in the kernel. The kernel provides `doric.network/v1`, a host-only platform contract whose one method, `register`, runs a listener at once with the host's Express app, its `http.Server` and its Socket.IO server ([`network.ts`](../../../packages/bundle/src/contracts/network.ts), [`process/network.ts`](../../../packages/bundle/src/process/network.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). Its full shape, the cleanup and the refusal from a generation process are in [Services and channels](services-and-channels.md#native-handles-doricnetworkv1). A bundle never calls `listen`: the kernel owns the address, the bind and the close. The handles are local to the kernel process and never serialized, so a bundle that serves routes or sockets is listed under `resident`: `transport` ([README](../../../bundles/foundation/transport/README.md)) and `screen-relay` ([README](../../../bundles/features/screen-relay/README.md)).
 
 ## Generations
 
@@ -90,7 +77,7 @@ A process that exits before `ready` is started again, up to three attempts (`sta
 
 ### The envelope
 
-The kernel and a generation each hold one end of a `ProcessLink`: request correlation, cancellation, deadlines, handles exported to the other side, and the close of the channel ([`link.ts`](../../../packages/bundle/src/runtime/envelope/link.ts)). Every request carries the hop's call metadata ([`messages.ts`](../../../packages/bundle/src/runtime/envelope/messages.ts)):
+The kernel and a generation each hold one end of a `ProcessLink`: request correlation, cancellation, deadlines, handles exported to the other side, and the close of the channel ([`link.ts`](../../../packages/bundle/src/runtime/envelope/link.ts)). The full shapes of the init, the wire messages, the link and the value encoding are in the bundle package README: [Generation processes and the envelope](../../../packages/bundle/README.md#generation-processes-and-the-envelope), [Wire messages](../../../packages/bundle/README.md#wire-messages), [`ProcessLink` and `Transport`](../../../packages/bundle/README.md#processlink-and-transport) and [Values, errors and calls](../../../packages/bundle/README.md#values-errors-and-calls). Every request carries the hop's call metadata ([`messages.ts`](../../../packages/bundle/src/runtime/envelope/messages.ts)):
 
 ```ts
 interface WireCall {

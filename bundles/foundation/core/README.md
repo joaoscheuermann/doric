@@ -494,6 +494,13 @@ the platform defines `API_TOKEN` (requires `secret`) and `USERNAME_PASSWORD`
 | `registerReferences(source)`         | `() → Iterable<string>`, local                                                                                   | `Disposable`                                     |
 | `view()`                             | none, local                                                                                                      | `{ list(), redactions(), addRedaction(secret) }` |
 
+The `Secrets` interface declares an optional last call argument on every
+method but `registerReferences` and `view`. Every input object is strict: an
+unknown field is `invalid_input`
+([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)). A kind
+definition that lists a field as both required and optional is `invalid_input`
+(`A credential field cannot be both required and optional.`).
+
 Behavior ([`src/host/secrets/facade.ts`](src/host/secrets/facade.ts),
 [`src/host/secrets/cache.ts`](src/host/secrets/cache.ts)):
 
@@ -501,32 +508,52 @@ Behavior ([`src/host/secrets/facade.ts`](src/host/secrets/facade.ts),
   answers every later read; a failed load is retried by the next call. The
   cache starts in the backend's order and is sorted by `localeCompare` of the
   name after each save; a removal keeps the order.
-- `resolve` of an id not stored is `credential_missing`; of a credential whose
-  kind the call's generation does not see, `unknown_kind`.
+- `resolve` of an id not stored is `credential_missing`
+  (`Credential <id> is not stored.`); of a credential whose kind the call's
+  generation does not see, `unknown_kind`
+  (`Credential kind <kind> is not registered.`). Such a credential stays in
+  `list` and `describe`.
+- A description leaves out an empty `username` or `email`, and `hasSecret` is
+  false for an empty secret.
 - `create`, `update` and `delete` run in the write queue. `create` refuses an
   unknown kind (`unknown_kind`) and values that break the kind's field set
-  (`credential_invalid`, with the message of `credentialFieldsMessage`),
+  (`credential_invalid`,
+  `A <id> credential requires <required> and carries no other field.`, or
+  `… and may also carry <optional>.` when the kind has optional fields),
   writes the row with a new UUID through `secrets.backend/v1.put`, and saves
   it in the cache. `update` refuses a missing id (`credential_missing`) and a
-  change of kind (`credential_kind_immutable`), merges the input, checks the
-  field set and writes the row. A name already used by a credential of the
-  same kind is the backend's `credential_name_taken`; a secret written with no
-  credential key is its `credential_storage_unavailable`.
+  change of kind (`credential_kind_immutable`,
+  `Credential <id> is a <kind> credential; its kind cannot change.`), merges
+  the input, refuses a kind the call does not see (`unknown_kind`), checks
+  the field set and writes the row.
+  A name already used by a credential of the same kind is the backend's
+  `credential_name_taken`; a secret written with no credential key is its
+  `credential_storage_unavailable`. Loading the credentials, which any read
+  or write may start, fails with the backend's `credential_key_required` (no
+  credential key while a stored credential holds a secret) or
+  `credential_unreadable` (a stored secret it cannot decrypt); the next call
+  tries the load again. The backend sets these codes' messages, as the
+  [postgres README](../postgres/README.md) describes for its own.
 - `delete` answers `referenced`, touching nothing, while a registered
   reference source names the id; otherwise it deletes through the backend
   and, on `deleted`, drops the credential from the cache at once.
 - `resolveByKind` refuses an unknown kind, leaves out `exclude`, and is
-  `credential_ambiguous` when more than one credential of the kind remains.
-- `registerKind` is `duplicate_credential_kind` when a kind of that id is
-  visible to the registration's generation, built-in kinds included.
+  `credential_ambiguous` when more than one credential of the kind remains
+  (`More than one <kind> credential is stored; name the one to use.`).
+- `registerKind` is `duplicate_credential_kind`
+  (`Duplicate credential kind "<id>": it is already registered.`) when a kind
+  of that id is visible to the registration's generation, built-in kinds
+  included. Disposing the registration releases the name.
 - The redaction list is every non-empty stored secret, in cache order, then
   every secret added with `view().addRedaction` (an empty one is ignored).
-  `watchRedactions` delivers the list once the credentials are loaded and
-  again after every create, update, delete and added redaction; a write
-  resolves only after every watcher received the list it produced, and a
-  failing watcher does not fail the write.
-- `view()` is `unavailable` until the credentials are loaded. No method logs,
-  and no error carries a secret.
+  `watchRedactions` delivers the list once the credentials are loaded (the
+  subscription starts the load; a failed load leaves the watcher waiting for
+  the next change) and again after every create, update, `deleted` delete and
+  added redaction; a write resolves only after every watcher received the
+  list it produced, and a failing watcher does not fail the write. A disposed
+  watcher receives nothing more.
+- `view()` is `unavailable` (`Credentials are not loaded.`) until the
+  credentials are loaded. No method logs, and no error carries a secret.
 
 ### `events/v1`
 
@@ -704,7 +731,12 @@ activation ([`src/desktop/commands.ts`](src/desktop/commands.ts)):
 
 The settings window is 960 × 720, at least 720 × 520, with an integrated title
 bar ([`src/desktop/appearance.ts`](src/desktop/appearance.ts)). The core
-knows no settings route of its own.
+knows no settings route of its own. No menu item or keybinding targets the
+command: the core's menu skeleton holds only Electron's role menus
+([`src/desktop/menu.ts`](src/desktop/menu.ts)), and the
+[settings bundle](../../desktop/settings/README.md) runs it from its account
+menu and Dashboard footer entries with `{ defaultPath: '/settings' }`
+([`settings/src/client/index.ts`](../../desktop/settings/src/client/index.ts)).
 
 ### `windows/v1`
 
@@ -749,6 +781,13 @@ where `path` is an active route pattern.
 | `addKeybinding({ command, key, when? })`                        | `Promise<void>` |
 | `setContext({ key: 'path' \| 'focus', value: string \| null })` | `Promise<void>` |
 
+`id`, `location`, `command`, `label` and `key` are strings, `order` a
+number, and `when.path` and `when.focus` are strings; every input object is
+strict, and an unknown field is `invalid_input`
+([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
+The `Menus` interface declares no call argument; the runtime still takes a
+call or call options passed after the input, as for any method.
+
 `location` is `app/<menu>` or `dock`; `command` is a command id.
 
 Behavior ([`src/desktop/menus.ts`](src/desktop/menus.ts)): `addItem` and
@@ -757,7 +796,7 @@ caller's `{ bundleId, version, generation }`. `setContext` sets the context
 of the calling window, whose key it takes from `call.scope.windowKey`; a call
 from no window is `invalid_input`. How main builds the menu, matches `when`
 and dispatches commands is described in
-[Native menus and keybindings](../../../docs/architecture/bundles/menus-and-keybindings.md).
+[Menus and keybindings](../../../docs/architecture/bundles/menus-and-keybindings.md).
 
 ### App start and activation
 

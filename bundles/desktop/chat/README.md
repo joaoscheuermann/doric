@@ -278,12 +278,15 @@ interface InputRendererSpec {
   detail `{ chosen: boolean }`); the chat keeps it, sets `view` again and stops
   the event at the element's frame. An element may define `toggle(): void`,
   which the conversation's toggle key calls and which must answer with the same
-  event; without it the toggle key gives the opposite of what the block shows,
-  where a tool block shows open while its call runs and, once settled, open only
-  with `openByDefault`, and an input block shows folded once settled
+  event; without it the toggle key gives the opposite of what the block shows:
+  the reader's last choice when there is one; else a tool block, alone or as a
+  step of an activity summary, shows open while its call runs, and once settled
+  only with `openByDefault`, and in both cases only once the call has arguments,
+  a result or an error; an input block shows folded
   ([`src/client/components/molecules/view-element.tsx`](src/client/components/molecules/view-element.tsx),
   [`src/client/domain/collapsible.ts`](src/client/domain/collapsible.ts),
   [`src/client/components/organisms/conversation/nodes/tool-turn-node.tsx`](src/client/components/organisms/conversation/nodes/tool-turn-node.tsx),
+  [`src/client/components/organisms/conversation/nodes/activity-turn-node.tsx`](src/client/components/organisms/conversation/nodes/activity-turn-node.tsx),
   [`src/client/components/organisms/conversation/nodes/input-turn-node.tsx`](src/client/components/organisms/conversation/nodes/input-turn-node.tsx)).
 - A second tool or input registration of a name or source fails with
   `registration_conflict` (`details` name the owner; the first wins). A spec that
@@ -368,7 +371,7 @@ interface ComposerItemData {
   pin?: number; // the number the owner's surface shows
   inReplyTo?: string; // the root a reply continues
   refs?: { title?: string; source?: string }; // what the prompt names the target by
-  // the `message` kind only; the chat reads it, the exported type does not declare it:
+  // not in the exported type; the chat reads it on any item and writes it on its own `message` items:
   seat?: {
     turn: string; // the answer turn's key
     block: number; // the 0-based block the selection starts in
@@ -542,8 +545,9 @@ All exported from `chat/contracts` ([`src/contracts/index.ts`](src/contracts/ind
   `{ commentId, target }` (the target without `revision`, so the latest
   drawing of the target answers): bubbles, composed, from the header button of
   a reply row's pin popover, and from a comment card's "go to" when the target
-  is not a `message` or the transcript no longer draws its passage; the bundle
-  that draws the target opens it
+  is not a `message` or the transcript no longer draws its passage; before it
+  goes out, the chat scrolls the conversation's latest block of that target
+  into view and flashes it; the bundle that draws the target opens it
   ([`src/client/utility/comment-thread.ts`](src/client/utility/comment-thread.ts),
   [`src/client/components/molecules/comment-thread-pin.tsx`](src/client/components/molecules/comment-thread-pin.tsx),
   [`src/client/hooks/use-go-to-comment.ts`](src/client/hooks/use-go-to-comment.ts)).
@@ -718,6 +722,10 @@ no cached first draw without `history`, and no model icon without `models/v1`.
   typing opens a `message` comment right after the paragraph or list item the
   selection ends in, with its words highlighted
   ([`src/client/components/organisms/conversation/plugins/comment-selection.tsx`](src/client/components/organisms/conversation/plugins/comment-selection.tsx)).
+  The item records where it stands as `data.seat`; an item that has one and an
+  anchor quote stands in the transcript at that block while its turn is drawn
+  ([`src/client/domain/composer-stack.ts`](src/client/domain/composer-stack.ts),
+  [`src/client/domain/comment-seats.ts`](src/client/domain/comment-seats.ts)).
   Every stack item, the chat's and other bundles', is drawn inside the prompt
   above the reader's words, as a card with the passage and an arrow that goes
   to it ([`src/client/components/organisms/composer-stack.tsx`](src/client/components/organisms/composer-stack.tsx)).
@@ -803,12 +811,13 @@ the reader's words
   its id is `thread:<threadId>`
   ([`src/client/domain/thread-views.ts`](src/client/domain/thread-views.ts),
   [`src/client/services/thread-views.ts`](src/client/services/thread-views.ts)).
-  It takes them at activation and again on each change of `navigation/v1`,
-  `layout.tabs/v2` or the records, taking the new views before disposing the
-  old ones, so a Thread on screen before and after keeps its stream and a view
-  whose stream ended is taken again. It reaches the records only through
-  `whenAvailable`: without a provider it holds none. Deactivation unsubscribes
-  from the three sources and disposes every view.
+  It reaches the records only through `whenAvailable`: it takes the views when
+  a provider is available, at activation or when one registers later, and again
+  on each change of `navigation/v1`, `layout.tabs/v2` or the records, taking the
+  new views before disposing the old ones, so a Thread on screen before and
+  after keeps its stream and a view whose stream ended is taken again. Without
+  a provider it holds none. When the provider goes away, and at deactivation, it
+  unsubscribes from the three sources and disposes every view.
 
 ## The execution picker
 
