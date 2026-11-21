@@ -10,16 +10,17 @@ bundle skill files are built and registered is described in
 
 ## Manifest
 
-| Field         | Value                                                    |
-| ------------- | -------------------------------------------------------- |
-| `id`          | `web`                                                    |
-| `version`     | `1.0.0`                                                  |
-| `engines`     | `doric` `^1.0.0`                                         |
-| `description` | `Web research capability for the Doric agent.`           |
-| `provides`    | none                                                     |
-| `requires`    | `tools/v1@^1.2.0`                                        |
-| `optional`    | none                                                     |
-| Parts         | host (`src/host/`), and the skill files of `src/skills/` |
+| Field             | Value                                                    |
+| ----------------- | -------------------------------------------------------- |
+| `manifestVersion` | `1`                                                      |
+| `id`              | `web`                                                    |
+| `version`         | `1.0.0`                                                  |
+| `engines`         | `doric` `^1.0.0`                                         |
+| `description`     | `Web research capability for the Doric agent.`           |
+| `provides`        | none                                                     |
+| `requires`        | `tools/v1@^1.2.0`                                        |
+| `optional`        | none                                                     |
+| Parts             | host (`src/host/`), and the skill files of `src/skills/` |
 
 ([manifest.json](manifest.json), [project.json](project.json))
 
@@ -43,7 +44,8 @@ None. The contracts module exports nothing
   ([packages/bundle/src/contracts/basic/tools.ts](../../../packages/bundle/src/contracts/basic/tools.ts)).
   `tools/v1` lists tools by `order`, then by registration, so 700 places `web`
   between the [`files` bundle](../files/README.md)'s `tree` (600) and `write`
-  (800) ([bundles/features/files/src/host/index.ts](../files/src/host/index.ts)).
+  (800) ([bundles/features/files/src/host/index.ts](../files/src/host/index.ts),
+  [docs/features/files.md](../../../docs/features/files.md)).
 - `skills/v1`: the bundle's own code never calls it. The bundle loader
   registers the skill files on the bundle's behalf, once every host bundle of
   the activation phase has activated, so that `allowed-tools` resolves against
@@ -134,9 +136,13 @@ A strict object, the same shape for every action:
 }
 ```
 
-The file also exports the types `WebSearchResult`, `WebPageOutput`,
-`WebFindMatch` and `WebOutput` for these shapes; the package does not export
-them.
+The tool-call layer checks each return against this schema and fails a
+non-matching one with a `ToolErrorObject` of code `invalid_output`
+([packages/tool/src/lib/tools.ts](../../../packages/tool/src/lib/tools.ts)).
+
+`src/host/tools/web.ts` exports `createTool`, the schemas `input` and
+`output`, and the types `WebSearchResult`, `WebPageOutput`, `WebFindMatch` and
+`WebOutput` for these shapes; the package exports none of them.
 
 ### `search`
 
@@ -144,9 +150,10 @@ them.
    `Missing query for search`.
 2. Clamps `limit` (default 5) to 1–10.
 3. Fetches `https://duckduckgo.com/html/?q=<query>`.
-4. Reads every `<a>` whose class contains `result__a` as a result (its `href`
-   and its content as title) and every `<a>` whose class contains
-   `result__snippet` as a snippet; the n-th snippet belongs to the n-th
+4. Reads every `<a>` whose quoted `class` attribute contains `result__a` and
+   comes before its `href` as a result (its `href` and its content as title),
+   and every `<a>` whose quoted `class` attribute contains `result__snippet`
+   as a snippet; a result `<a>` whose `href` comes before its `class` is not read; the n-th snippet belongs to the n-th
    result, and a result with no snippet gets `''`. Titles and snippets are
    cleaned: tags removed, entities decoded, whitespace collapsed and trimmed.
 5. Normalizes each URL: a protocol-relative URL gets `https:`; a URL with a
@@ -193,24 +200,27 @@ them.
 - Title: the content of the first `<title>` element, cleaned as search titles
   are; `''` when there is none.
 - Text, in order: drop the `<head>` element; drop every `script`, `style` and
-  `noscript` element; turn `<br>` and the closing tags of `p`, `div`, `li`,
-  `h1`–`h6` and `tr` into line breaks; replace every remaining tag with a
-  space; decode entities; trim each line, collapse runs of spaces and tabs to
-  one space and drop empty lines; remove all whitespace, line breaks included,
+  `noscript` element; turn `<br>` and `<br/>` without attributes and the
+  closing tags of `p`, `div`, `li`, `h1`–`h6` and `tr` into line breaks;
+  replace every remaining tag, a `<br>` with attributes included, with a
+  space; decode entities; trim each line, collapse each run of two or more
+  spaces or tabs to one space and drop empty lines; remove all whitespace, line breaks included,
   before `.`, `,`, `;`, `:`, `!` and `?`; collapse three or more line breaks
   to two; trim.
-- Entities decoded: decimal and hexadecimal numeric references, and `&amp;`,
-  `&lt;`, `&gt;`, `&quot;`, `&apos;`, `&#39;` and `&nbsp;`; any other entity
-  stays as written.
+- Entities decoded: decimal numeric references (`&#123;`), hexadecimal ones
+  with a lowercase `x` (`&#x7b;`), and `&amp;`, `&lt;`, `&gt;`, `&quot;`,
+  `&apos;`, `&#39;` and `&nbsp;`, which becomes a plain space (U+0020); any
+  other entity, `&#X7b;` included, stays as written.
 
 ([src/host/tools/web.ts](src/host/tools/web.ts), [tests/web.test.ts](tests/web.test.ts))
 
 ## Side effects
 
-Each action makes exactly one HTTP GET request through the host process's
-`fetch`, with a desktop Chrome `user-agent` header, to DuckDuckGo for `search`
-and to the given URL for the other two. The request is aborted after 20
-seconds; it is not tied to the prompt's abort signal. The tool never touches
+Each call that passes its argument checks makes exactly one HTTP GET request
+through the host process's `fetch`, with a desktop Chrome `user-agent` header,
+to DuckDuckGo for `search` and to the given URL for the other two; a call that
+fails them makes none. The request, reading of the body included, is aborted
+after 20 seconds; it is not tied to the prompt's abort signal. The tool never touches
 the Project's sandbox or files
 ([src/host/tools/web.ts](src/host/tools/web.ts)).
 
@@ -239,6 +249,24 @@ The response body is read whole, with no size limit; `maxChars` applies only
 to the extracted text ([src/host/tools/web.ts](src/host/tools/web.ts)).
 
 ## Errors and failure behavior
+
+### At activation
+
+Each of these fails the bundle's activation. `duplicate_tool` is the code of
+the `ContractError` that `activate` throws; the other three are the codes of
+the loader's `ActivationFailure`
+([packages/bundle/src/loader/activate.ts](../../../packages/bundle/src/loader/activate.ts),
+[bundles/foundation/core/src/host/tools.ts](../../foundation/core/src/host/tools.ts)).
+The activation loop quarantines the bundle with `registration_failed` for `duplicate_tool`, and with the listed code for the other three; a skill failure comes after the phase and also withdraws the `web` tool ([packages/bundle/src/runtime/activation.ts](../../../packages/bundle/src/runtime/activation.ts)).
+
+| Code                  | When                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `duplicate_tool`      | `tools/v1.register` throws it when another bundle in the same generation view already registered a tool named `web` |
+| `missing_dependency`  | the bundle has a skill file and no `skills/v1` provider is active                                                   |
+| `skill_invalid`       | a skill file cannot be read or parsed                                                                               |
+| `registration_failed` | `skills/v1` rejects the skill, `unavailable_tool` included                                                          |
+
+### During a call
 
 A missing argument or a failed request is returned as output, not thrown:
 `error` holds the message, `detail` is `''`, `results` and `matches` are empty,
@@ -272,11 +300,15 @@ npx nx run bundle-web:test
 npx nx run bundle-web:build
 ```
 
-- `build` compiles `src/` to `dist/` with `tsc`, then runs the bundle build,
-  which checks each skill file and copies it to `dist/skills/<folder>/SKILL.md`,
-  copies `manifest.json` and builds the host part
+- `build` compiles `src/` to `dist/` with `tsc`, then runs the bundle build:
+  it validates `manifest.json` and copies it to `dist/`, checks each skill file
+  and copies it to `dist/skills/<folder>/SKILL.md`, imports
+  `dist/host/index.js` and dry-activates it, failing when the part provides or
+  defines a contract missing from `provides`, and writes the JSON Schemas,
+  `contracts.json` and `package.json` into `dist/`
   ([project.json](project.json),
-  [packages/bundle/src/build/cli.ts](../../../packages/bundle/src/build/cli.ts)).
+  [packages/bundle/src/build/cli.ts](../../../packages/bundle/src/build/cli.ts),
+  [packages/bundle/src/build/record.ts](../../../packages/bundle/src/build/record.ts)).
 - `test` compiles `src/` and `tests/` to `dist-tests/` and runs
   `dist-tests/tests/*.test.js` with `node --test`
   ([project.json](project.json)).

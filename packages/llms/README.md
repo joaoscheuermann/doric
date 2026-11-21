@@ -28,6 +28,8 @@ Users:
 - **Packages**: [agent](../agent/README.md),
   [messages](../messages/README.md) and [okf](../okf/README.md).
 - **Applications**: the [host](../../app/backend/doric-host/README.md).
+- **Scripts**: [`scripts/okf.mjs`](../../scripts/okf.mjs) builds an OpenAI
+  provider with `createFetchTransport` and `createOpenAiProvider`.
 
 The feature that configures providers from settings is described in
 [Models and providers](../../docs/features/models-and-providers.md).
@@ -39,8 +41,9 @@ The feature that configures providers from settings is described in
 `dist/index.d.ts`; the `@org/source` condition resolves to the TypeScript
 source inside the workspace). Runtime dependencies are `pino` (the logger
 type), `zod` (schemas), `tool` (JSON and tool types, see
-[tool](../tool/README.md)) and `tslib`. Everything below is exported from that
-entry; anything not listed is private.
+[tool](../tool/README.md)) and `tslib`. Every value and type named in this
+README's code blocks and export lists is exported from that entry; a helper
+the README calls internal is not.
 
 ## Quick start
 
@@ -71,8 +74,26 @@ for await (const event of provider.stream({
 Defined in [`src/lib/types/provider.ts`](./src/lib/types/provider.ts).
 
 ```ts
+type ProviderId = string;
+interface ProviderMetadata {
+  id: ProviderId;
+  name: string;
+  baseUrl: string;
+}
+interface ProviderCapabilities {
+  streaming: boolean;
+  embeddings: boolean;
+  reranking: boolean;
+  tools: boolean;
+  reasoning: boolean;
+  modelListing: boolean;
+  oauth: boolean;
+  serviceTier: boolean;
+  structuredOutputs: boolean;
+}
+
 interface LlmProvider {
-  readonly metadata: ProviderMetadata; // { id, name, baseUrl }
+  readonly metadata: ProviderMetadata;
   readonly capabilities: ProviderCapabilities;
   complete(request): Promise<ProviderFinished<Output>>; // see Structured output
   stream(request): AsyncIterable<ProviderStreamEvent<Output>>;
@@ -90,6 +111,23 @@ interface LlmProvider {
 always present; without one it resolves to `ProviderFinished<Output>`
 (`Output` defaults to `JsonValue`).
 
+```ts
+type StructuredOutputSchema = z.ZodType;
+type StructuredOutputValue<Schema extends StructuredOutputSchema> =
+  z.output<Schema>;
+type ProviderStructuredFinished<Output> = Omit<
+  ProviderFinished<Output>,
+  'structured'
+> & { structured: Output };
+// Re-exported from `tool`:
+type JsonPrimitive = string | number | boolean | null;
+type JsonArray = readonly JsonValue[];
+interface JsonObject {
+  readonly [key: string]: JsonValue;
+}
+type JsonValue = JsonPrimitive | JsonArray | JsonObject;
+```
+
 ### Requests
 
 ```ts
@@ -100,7 +138,7 @@ interface ProviderRequest<
   model: string; // must not be blank
   messages: readonly ProviderMessage[]; // at least one
   tools?: readonly ToolDefinition[]; // from `tool`: name, description, inputSchema, strict
-  toolChoice?: 'auto' | 'required' | 'none' | { name: string };
+  toolChoice?: ProviderToolChoice;
   parallelToolCalls?: boolean;
   schema?: Schema; // a Zod schema; see Structured output
   effort?: ReasoningEffort;
@@ -115,19 +153,28 @@ interface ProviderMessage {
   content?: string | readonly ProviderContentPart[];
   name?: string;
   toolCallId?: string; // on a tool message
-  toolResultStatus?: 'completed' | 'incomplete';
-  toolCalls?: readonly ProviderToolCall[]; // { id, name, arguments: string, index? }
-  replay?: readonly ProviderReplayItem[]; // opaque JSON objects, see Replay
+  toolResultStatus?: ProviderToolResultStatus;
+  toolCalls?: readonly ProviderToolCall[];
+  replay?: readonly ProviderReplayItem[]; // see Replay
 }
+
+type ProviderToolChoice = 'auto' | 'required' | 'none' | { name: string };
+type ProviderToolResultStatus = 'completed' | 'incomplete';
+type ProviderToolCall = ToolCallRequest; // from `tool`: { id, name, arguments: string, index? }
+type ProviderReplayItem = JsonObject; // opaque, kept only for replay
 
 type ProviderContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; imageUrl: string }; // a data: URL or an https: URL
+type ProviderImagePart = Extract<ProviderContentPart, { type: 'image' }>;
+
+interface ReasoningRequest {
+  effort?: ReasoningEffort;
+  summary?: 'auto' | 'concise' | 'detailed';
+}
 
 interface ProviderCallFlags {
-  reasoning?:
-    | boolean
-    | { effort?: ReasoningEffort; summary?: 'auto' | 'concise' | 'detailed' };
+  reasoning?: boolean | ReasoningRequest;
   serviceTier?: 'auto' | 'default' | 'priority';
   includeUsage?: boolean;
   includeStructuredSchemaOnSystemPrompt?: boolean;
@@ -149,18 +196,26 @@ requires a model."); an empty `messages` list is `missing_input`.
 ### Results
 
 ```ts
+type FinishReason =
+  | 'stop'
+  | 'length'
+  | 'tool_calls'
+  | 'content_filter'
+  | 'error'
+  | 'cancelled'
+  | 'unknown';
+
+interface ReasoningMetadata {
+  text?: string;
+  effort?: ReasoningEffort;
+  summary?: string;
+}
+
 interface ProviderFinished<Output = JsonValue> {
   text: string;
-  finishReason:
-    | 'stop'
-    | 'length'
-    | 'tool_calls'
-    | 'content_filter'
-    | 'error'
-    | 'cancelled'
-    | 'unknown';
+  finishReason: FinishReason;
   usage?: UsageMetadata;
-  reasoning?: { text?: string; effort?: ReasoningEffort; summary?: string };
+  reasoning?: ReasoningMetadata;
   refusal?: string;
   toolCalls: readonly ProviderToolCall[];
   replay?: readonly ProviderReplayItem[];
@@ -220,7 +275,11 @@ Unless it throws, a stream opens with `response.started` and ends with either
 one `response.finished` or one `error` event. A delta whose text is
 empty is never emitted ([`common.ts`](./src/lib/providers/common.ts)). An
 unreadable event (not a JSON object) ends the stream with an `error` event of
-code `malformed_stream_event` whose message is the event's text. Every other
+code `malformed_stream_event` whose message is the event's raw text, not
+bounded by `diagnosticExcerpt`
+([`openai.ts`](./src/lib/providers/openai.ts),
+[`openrouter/core.ts`](./src/lib/providers/openrouter/core.ts),
+[`claude.ts`](./src/lib/providers/claude.ts)). Every other
 failure — invalid input or credentials, a refused request, a dropped
 connection, the caller's abort — is thrown from the iterator, not emitted,
 either before `response.started` or after some events (see
@@ -246,8 +305,12 @@ interface ProviderRerankRequest {
   topN?: number;
   signal?: AbortSignal;
 }
+interface ProviderRerankResult {
+  index: number;
+  relevanceScore: number;
+}
 interface ProviderRerankFinished {
-  results: readonly { index: number; relevanceScore: number }[];
+  results: readonly ProviderRerankResult[];
   usage?: UsageMetadata;
 }
 ```
@@ -289,11 +352,18 @@ interface Model {
 
 `validateModel(model)` resolves to the listed model with that id and rejects
 with `missing_model` ("<name> model is not available: <model>") when the list
-lacks it.
+lacks it ([`openai.ts`](./src/lib/providers/openai.ts),
+[`openrouter.ts`](./src/lib/providers/openrouter.ts),
+[`claude.ts`](./src/lib/providers/claude.ts); Codex uses the OpenAI one).
+Claude also matches an id with or without its date suffix.
 
 ### Capabilities
 
-`ProviderCapabilities` is a set of booleans each factory fixes:
+Each factory fixes its capabilities
+([`openai.ts`](./src/lib/providers/openai.ts),
+[`openrouter/core.ts`](./src/lib/providers/openrouter/core.ts),
+[`claude.ts`](./src/lib/providers/claude.ts),
+[`codex.ts`](./src/lib/providers/codex.ts)):
 
 | Provider     | streaming | embeddings | reranking | tools | reasoning | modelListing | oauth | serviceTier | structuredOutputs |
 | ------------ | --------- | ---------- | --------- | ----- | --------- | ------------ | ----- | ----------- | ----------------- |
@@ -320,14 +390,17 @@ Implemented in [`structured.ts`](./src/lib/providers/structured.ts).
   provider. A refusal or a tool call, text that is not JSON, and JSON that fails
   `schema.safeParse` all reject with `invalid_structured_output`; on success the
   finish carries the parsed value as `structured`. The diagnostic of a schema
-  failure lists each issue as `path: message`, joined by `; `; the diagnostic of
-  unparseable text is its excerpt, or, when the text is empty,
-  `response text was empty; finishReason=<reason>` followed by
-  `outputTokens=<n>` and `reasoningTokens=<n>` when usage reports them.
+  failure lists each issue as `path: message`, its path segments joined by `.`
+  (an issue with no path shows its message alone), the issues joined by `; `.
+  The diagnostic of unparseable text is its excerpt, or, when the text is empty
+  or whitespace only, `response text was empty; finishReason=<reason>` followed
+  by `; outputTokens=<n>` and `; reasoningTokens=<n>` when usage reports them.
+  Refusals and tool calls carry no diagnostic.
 - **`stream` with a schema** on OpenAI, Codex and Claude streams as usual and
   does not validate: its `response.finished` carries no `structured` value.
   OpenRouter buffers and validates instead (see [OpenRouter](#openrouter)).
-- **Strict schemas.** `isStrictCompatible` treats a JSON Schema as strict when
+- **Strict schemas.** An internal rule (`isStrictCompatible`, not exported)
+  treats a JSON Schema as strict when
   every object with `properties` has `additionalProperties: false` and lists
   every property in `required`, recursively. OpenAI and OpenRouter send the
   unmodified schema and mark it `strict` only when it already passes; a tool's
@@ -366,16 +439,18 @@ Defined in [`src/lib/types/http.ts`](./src/lib/types/http.ts) and
 [`src/lib/http.ts`](./src/lib/http.ts).
 
 ```ts
+type HttpMethod = 'GET' | 'POST';
+type HttpHeaders = Readonly<Record<string, string>>;
 interface HttpRequest {
-  method: 'GET' | 'POST';
+  method: HttpMethod;
   url: string;
-  headers?: Record<string, string>;
+  headers?: HttpHeaders;
   body?: string;
   signal?: AbortSignal;
 }
 interface HttpResponse {
   status: number;
-  headers: Record<string, string>;
+  headers: HttpHeaders;
   body: string;
 }
 type HttpStreamChunk = string | Uint8Array;
@@ -398,11 +473,14 @@ interface HttpTransport {
   400 or more into the HTTP error below, and parses the body as a JSON object,
   failing with `invalid_json` otherwise
   ([`providers/http.ts`](./src/lib/providers/http.ts)).
-- `parseSseEvents(chunks)` parses server-sent events across arbitrary chunk
-  boundaries into `{ event?, data, done }`: `data` lines are joined by
-  newlines, comment lines are skipped, an event is emitted at each blank line
-  and at the end of input, and `done` is true when the data is `[DONE]`
-  ([`sse.ts`](./src/lib/utils/sse.ts)).
+- `parseSseEvents(chunks: AsyncIterable<HttpStreamChunk>):
+AsyncGenerator<SseEvent>` parses server-sent events across arbitrary chunk
+  boundaries (`\n` or `\r\n` lines, bytes decoded as UTF-8) into
+  `interface SseEvent { event?: string; data: string; done: boolean }`: `data`
+  lines are joined by newlines, lines starting with `:` are skipped, a blank
+  line or the end of input emits an event only when an `event` or `data` field
+  was read since the last one, and `done` is true when the trimmed data is
+  `[DONE]` ([`sse.ts`](./src/lib/utils/sse.ts)).
 
 A test transport implements the two methods. For example, with OpenRouter:
 
@@ -442,13 +520,30 @@ credential store; the host resolves the value. Signing in is the
 - **OpenRouter** requires `apiKey`; a blank one fails with `auth_missing`
   ("OpenRouter provider requires an API key.")
   ([`openrouter/auth.ts`](./src/lib/providers/openrouter/auth.ts)).
-- **Claude** and **Codex** take `authorization` (see their sections).
+- **Claude** requires `authorization`; a blank one fails with `auth_missing`
+  (see [Claude](#claude)).
+- **Codex** takes `authorization` through the OpenAI rules above: it is sent
+  exactly as given, and a blank value counts as absent, so the request goes
+  out with no `authorization` header rather than failing
+  ([`codex.ts`](./src/lib/providers/codex.ts),
+  [`auth.ts`](./src/lib/providers/auth.ts)).
 
 ## Errors
 
-Every failure is a `ProviderErrorObject`, an `Error` named `ProviderError`
-whose `message` is the data's message and whose `data` is a `ProviderError`
-([`provider-error.ts`](./src/lib/classes/provider-error.ts)):
+Every failure an adapter raises is a `ProviderErrorObject`, an `Error` named
+`ProviderError` whose `message` is the data's message and whose `data` is a
+`ProviderError` ([`provider-error.ts`](./src/lib/classes/provider-error.ts)).
+Other failures keep their own type: aborts and transport errors that pass
+through (below), the `TypeError`s a factory throws at construction (logger,
+`maxStructuredOutputRepairs`), and the `Error`s of
+[provider kinds](#provider-kinds).
+
+```ts
+class ProviderErrorObject extends Error {
+  constructor(data: ProviderError, options?: ErrorOptions); // options.cause
+  readonly data: ProviderError;
+}
+```
 
 ```ts
 interface ProviderError {
@@ -516,17 +611,23 @@ requires a Pino-compatible logger.") at construction when the value lacks a
   when the request's signal is aborted or the error is an `AbortError`. A
   stream ends at its first `error` event (`failed`) or `response.finished`
   (`cancelled` or `failed` when the finish reason says so, `completed`
-  otherwise); a stream the consumer stops reading is `cancelled`.
+  otherwise); a stream that ends with neither event logs `completed`; a
+  stream the consumer stops reading is `cancelled`.
 - Fields are counts and identifiers only: `model`, `messageCount`,
   `toolCount`, `hasSchema` when a completion or stream starts; `finishReason`,
   `toolCount` and the usage counts (`inputTokens` … `searchUnits`, `cost`,
-  `costUnit`, `upstreamCost`) when it ends; `dimensions` of an embedding;
-  `documentCount` and `resultCount` of a rerank; `modelCount` of a listing.
-  No message, response text, replay item or credential is logged.
+  `costUnit`, `upstreamCost`) when it completes from a finish; `model` when an
+  embedding starts and `dimensions` plus usage counts when it completes;
+  `model` and `documentCount` when a rerank starts and `resultCount` plus usage
+  counts when it completes; `modelCount` when a listing completes; `model` when
+  a validation starts and completes. `failed` and `cancelled` lines, and a
+  stream's `completed` without a finish, carry no fields. No message, response
+  text, replay item or credential is logged.
 
 The package does not classify, redact or sanitize content, and has no
 per-request flag for it. Error diagnostics keep provider content unredacted,
-bounded in size; parse errors may keep their original `cause`. Displaying,
+bounded in size, except the message of `malformed_stream_event`, which is the
+raw event text, unbounded; parse errors may keep their original `cause`. Displaying,
 storing and logging an error is the caller's decision, and the injected logger
 (which a caller may disable) controls log output.
 
@@ -618,8 +719,9 @@ interface OpenRouterProviderDeps {
 value throws `TypeError` at construction. `metadata` is always
 `openRouterMetadata` (`id: 'openrouter'`, `baseUrl` the default).
 
-**Catalog.** `models()` reads `GET {modelsUrl}` and maps each entry to a
-`Model` with `contextWindow` from `context_length` (else
+**Catalog.** `models()` reads `GET {modelsUrl}` and maps each entry of `data`
+to a `Model` with `id` from `id` (an entry without one is kept with id `''`),
+`name` from `name`, `contextWindow` from `context_length` (else
 `top_provider.context_length`, else `architecture.context_length`),
 `inputModalities` from `architecture.input_modalities`, `provider:
 'openrouter'` and the entry as `raw`
@@ -632,12 +734,21 @@ catalog is served, or the failure is thrown when there is none. A caller's
 abort rejects its own wait without cancelling the shared load. A model's
 support is its catalog entry's `supported_parameters`; a model the catalog does
 not list has none; when no catalog can be read, support is unknown.
+`validateModel` reads the same shared catalog.
+
+Two operations read the catalog. Every `stream` without a schema awaits the
+model's catalog entry before it emits `response.started`, to add its
+`contextWindow`, so with a cold or expired cache the first event waits for the
+catalog load (up to its 5-second timeout); a failed load gives no window and
+does not fail the stream. The request policy below reads it only when a
+request has tools or a schema.
 
 **Request policy**
 ([`openrouter/prepare.ts`](./src/lib/providers/openrouter/prepare.ts),
 [`openrouter/profiles.ts`](./src/lib/providers/openrouter/profiles.ts)). The
-catalog is consulted only when a request has tools or a schema. A profile is
-chosen by the model id's prefix:
+policy checks consult the catalog only when a request has tools or a schema;
+otherwise support is unknown. A profile is chosen by the model id's prefix by
+an internal rule (`openRouterProfileForModel`, not exported):
 
 | Prefix         | Lab       | Forced tool choice    | Forced choice with reasoning | Replay     | Strict tools |
 | -------------- | --------- | --------------------- | ---------------------------- | ---------- | ------------ |
@@ -656,8 +767,8 @@ chosen by the model id's prefix:
 | `minimax/`     | minimax   | `auto`/`none` only    | yes                          | all        | no           |
 | any other      | unknown   | from the catalog only | no                           | tool turns | no           |
 
-`openRouterProfileForModel` reads every lab's tools as supported except
-`unknown`'s. In order, a request is then:
+Every named lab's profile treats tools as supported; `unknown`'s does not. In
+order, a request is then:
 
 1. rejected with `unsupported_structured_tools` when it has both tools and a
    schema ("…Use the agent terminal-tool contract for tool-enabled structured
@@ -666,9 +777,13 @@ chosen by the model id's prefix:
    does not support `tools` (by the catalog, or by the profile when support is
    unknown);
 3. for a forced choice (`required` or a named tool): rejected with
-   `incompatible_model_request` when reasoning is requested (an effort other
-   than `none`, or `flags.reasoning` set) and the profile refuses forced choice
-   with reasoning; rejected with `unsupported_model_feature` when the catalog
+   `incompatible_model_request` when reasoning is requested and the profile
+   refuses forced choice
+   with reasoning (reasoning is requested when the request's effort — its
+   `effort`, else `flags.reasoning.effort` — is set and is not `none`; with no
+   effort, when `flags.reasoning` is `true` or an object; so
+   `flags.reasoning: false` and `flags.reasoning: { effort: 'none' }` are not
+   reasoning); rejected with `unsupported_model_feature` when the catalog
    lacks `tool_choice` (or, with unknown support, the profile is not full) or
    when a named lab's profile allows only `auto`/`none`;
 4. given a structured mode: `json_schema` when the catalog lists
@@ -677,9 +792,16 @@ chosen by the model id's prefix:
 5. normalized: when the catalog lacks `tool_choice`, `none` drops the tools and
    the choice and `auto` drops the choice; `parallelToolCalls` is dropped unless
    the catalog lists `parallel_tool_calls`; and when `parallelToolCalls` is
-   `false` and tools remain, a system message ("# Tool use … Call at most one
-   available tool in each response. …") is placed after the authored system
-   messages.
+   `false` and tools remain, this system message is placed after the authored
+   system messages:
+
+   ```text
+   # Tool use
+
+   Call at most one available tool in each response.
+   This limit applies only to the current response, not to the task or node.
+   After receiving the result, call another tool in a later response when more work or recovery is needed.
+   ```
 
 **Body** (`openRouterBody(request, stream, options?)`,
 [`openrouter/body.ts`](./src/lib/providers/openrouter/body.ts)): `model`;
@@ -706,25 +828,35 @@ text, `reasoning` (or `reasoning_content`), `refusal`, `tool_calls` and
 `finish_reason` when it is `stop`, `length`, `tool_calls`, `content_filter`,
 `cancelled`, `error` (also for `failed`), else `unknown`. With a schema, the
 answer is validated; an `invalid_structured_output` failure is retried up to
-`maxStructuredOutputRepairs` times, each attempt appending the rejected answer
-(with its replay) as an assistant message and a user message headed
-"# Structured output correction" asking for one corrected JSON object. Usage
-is summed over the attempts (costs only when their units agree). Any other
-error, or the last failure, rejects.
+`maxStructuredOutputRepairs` times, each attempt appending to the previous
+attempt's messages the rejected answer (its text, with its replay) as an
+assistant message and this user message:
+
+```text
+# Structured output correction
+
+The previous response was rejected because it did not match the required JSON object schema.
+Return exactly one corrected JSON object. Do not include Markdown or explanatory text.
+```
+
+Usage is summed over the attempts (costs only when their units agree). Any
+other error, or the last failure, rejects.
 
 **Stream.** Without a schema: `response.started` carries the model's catalog
 `contextWindow` when known; each chunk yields `usage`, `text.delta`,
-`reasoning.delta`, `refusal.delta` and `tool_call.delta` events; a chunk with
-an `error` field ends the stream with an `error` event of code
+`reasoning.delta`, `refusal.delta` and `tool_call.delta` events; a chunk whose
+`error` field is an object ends the stream with an `error` event of code
 `provider_error` ("OpenRouter stream error.") whose diagnostic is the chunk;
-at `[DONE]` or the end of input every accumulated call is emitted as
-`tool_call.done`, then `response.finished` with the last finish reason seen.
+every choice of every chunk sets the finish reason from its `finish_reason`
+(`unknown` when it has none), so the last choice read decides; at `[DONE]` or
+the end of input every accumulated call is emitted as `tool_call.done`, then
+`response.finished` with that finish reason (`unknown` when no choice came).
 With a schema the stream is atomic: it runs `complete` (with its repairs),
 then yields `response.started`, one `text.delta` with the whole text when it is
 not empty, and `response.finished` with the validated `structured` value; a
 failure rejects the iterator.
 
-The behavior of each lab family and the paid live check are described in
+The research behind each lab's profile, with its primary sources, is in
 [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md).
 
 ### Claude
@@ -742,59 +874,151 @@ interface ClaudeProviderDeps {
 }
 ```
 
-- **Requests** go to `{baseUrl}/v1/messages?beta=true` with
+- **Requests** go to `POST {baseUrl}/v1/messages?beta=true` with
   `anthropic-version: 2023-06-01`, `anthropic-beta:
 oauth-2025-04-20,claude-code-20250219` (plus
   `thinking-binding-controls-2026-08-01` when the body sets `thinking`),
   `x-app: cli` and `user-agent` `claudeUserAgent`
-  (`claude-cli/2.1.309 (external, cli)`). The credential picks its header: a
-  value that starts with `Bearer ` is sent as `authorization` as it is; one that
-  starts with `sk-ant-api` as `x-api-key`; any other under `Bearer`. A blank
-  value fails with `auth_missing`.
-- **Body** ([`claude/body.ts`](./src/lib/providers/claude/body.ts)): `system`
-  opens with the block "You are Claude Code, Anthropic's official CLI for
-  Claude." followed by the caller's system text as a second block, the last
-  block marked `cache_control: ephemeral`, and the request carries a top-level
-  `cache_control: ephemeral`; `temperature` is never sent; `max_tokens` is
-  `maxOutputTokens`, else 64000 for a stream and 16000 otherwise. The effort
-  becomes `output_config.effort` at a level the model takes, and models that
-  think by default (5.x families, Fable, Mythos) get an adaptive `thinking`
-  with `block_binding: { prefix_mismatch_behavior: 'drop_block' }`
-  ([`claude/models.ts`](./src/lib/providers/claude/models.ts)). Tool choice is
-  Anthropic's object form; on models that refuse forced tool use, `required`
-  and a named tool become `auto`; `parallelToolCalls: false` adds
-  `disable_parallel_tool_use: true`. A schema has no native mode here: the
-  answer of `complete` is validated locally, and the flag can put the schema on
-  the system prompt.
-- **Results** ([`claude/parse.ts`](./src/lib/providers/claude/parse.ts)): thinking
-  deltas are `reasoning.delta`; Claude's own content blocks are kept as tagged
-  replay; `stop_reason` maps to `stop` (`end_turn`, `stop_sequence`,
-  `pause_turn`), `length` (`max_tokens`, `model_context_window_exceeded`),
-  `tool_calls` (`tool_use`), `content_filter` (`refusal`) or `unknown`.
-- **Stream errors.** An error event ends the stream with an `error` event whose
-  code is Anthropic's error type (else `provider_error`) and whose message is
-  "Claude stream error (<type>): <message>"; `overloaded_error`, `api_error` and
-  `rate_limit_error` are retryable unless the error code is
-  `enforced_spend_limit_reached`. A stream that ends without `message_stop`
-  ends with a retryable `incomplete_stream` error.
-- **HTTP errors** keep Anthropic's message ("claude request failed with HTTP
-  <status>: <message>", plus " Sign in with Claude again to renew the login."
-  on 401), `retryAfterMs` from `retry-after` (seconds or a date), `requestId`
-  from `request-id`, and are never retryable on a spend cap.
-- **Models.** `models()` reads every page of `GET {baseUrl}/v1/models?beta=true`
-  (`limit=1000`, then `after_id` while `has_more`), each with `name` from
-  `display_name`, `contextWindow` from `max_input_tokens`, and
-  `inputModalities` `['text', 'image']` or `['text']` when
-  `capabilities.image_input.supported` says. `validateModel` accepts an id with
-  or without its date suffix. A stream's `response.started` carries the
-  model's `contextWindow`, read from a catalog listed once per provider
-  instance; a failed listing gives no window and never fails a request.
-- `embedding` and `rerank` reject (`unsupported_embeddings`,
-  `unsupported_reranking`).
+  (`claude-cli/2.1.309 (external, cli)`).
+- **Credential.** The value is read (a source is called) and trimmed; blank
+  fails with `auth_missing` ("Claude provider received an empty auth value.").
+  A value that starts with `bearer` (any case) followed by whitespace is sent
+  as `authorization` as it is; one that starts with `sk-ant-api` as
+  `x-api-key`; any other as `authorization: Bearer <value>`.
 
-The full wire mapping (messages, tool results, images, effort levels per model,
-usage) is in
-[MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md#the-claude-kind).
+**Body** ([`claude/body.ts`](./src/lib/providers/claude/body.ts)):
+
+- `system` is two text blocks: "You are Claude Code, Anthropic's official CLI
+  for Claude.", then the caller's system messages' text joined by a blank line
+  (left out when empty). The last block carries
+  `cache_control: { type: 'ephemeral' }`, and the body carries the same
+  top-level `cache_control`.
+- `messages` are built from the non-system messages:
+  - a user message is a list of `text` blocks and `image` blocks in order
+    (empty text dropped); an image's `source` is
+    `{ type: 'base64', media_type, data }` for a `data:` URL that carries
+    `;base64,`, and `{ type: 'url', url }` otherwise;
+  - a tool message is a user turn holding one
+    `{ type: 'tool_result', tool_use_id, content }` block, `content` being the
+    text, or text and image blocks when the result carries images, with
+    `is_error: true` when `toolResultStatus` is `incomplete`;
+  - an assistant message is its tagged Claude replay blocks, sent
+    byte-for-byte, when it has some and their `tool_use` blocks name the
+    message's tool calls (same count, same ids, same order); otherwise it is the
+    replay's `thinking` and `redacted_thinking` blocks, then a `text` block
+    (when the text is not empty), then one
+    `{ type: 'tool_use', id, name, input }` per tool call, `input` being its
+    arguments parsed as a JSON object, or `{}`;
+  - a turn with no blocks is dropped and consecutive turns of one role are
+    merged into one, so a run of tool results (and a user message after them)
+    is one user message;
+  - when the last turn is the assistant's and holds no `tool_use` block, a user
+    turn "Continue from where your previous response ended." is added.
+- `tools` are `{ name, description, input_schema }`. `tool_choice` is sent only
+  when there are tools, and then only when `toolChoice` is set or
+  `parallelToolCalls` is `false`: `auto` and `none` as `{ type }`, `required`
+  as `{ type: 'any' }`, a named tool as `{ type: 'tool', name }`, no choice as
+  `{ type: 'auto' }`; on a model that refuses forced tool use, `required` and a
+  named tool become `{ type: 'auto' }`; `parallelToolCalls: false` adds
+  `disable_parallel_tool_use: true` unless the type is `none`.
+- `temperature` is never sent. `max_tokens` is `maxOutputTokens`, else 64000
+  for a stream and 16000 otherwise.
+- A schema has no native mode: `complete` validates the answer locally, and
+  `flags.includeStructuredSchemaOnSystemPrompt` can put the schema on the
+  system prompt.
+
+**Models and effort** ([`claude/models.ts`](./src/lib/providers/claude/models.ts)).
+A model id is read as `claude-<family>-<major>[-<minor>]`, the family one of
+`opus`, `sonnet`, `haiku`, `fable`, `mythos` (lowercased, a missing minor read
+as 0, a date or `@` suffix allowed); an id that does not match is treated as a
+model that takes no effort, does not think by default and accepts forced tool
+choice.
+
+| Model                                                   | Effort levels taken                     | Thinks by default | Refuses forced tool choice                          |
+| ------------------------------------------------------- | --------------------------------------- | ----------------- | --------------------------------------------------- |
+| Any family at major 5 or later, Fable, Mythos           | `low`, `medium`, `high`, `xhigh`, `max` | yes               | Opus and Sonnet from 5.5; Fable and Mythos from 5.1 |
+| Opus 4.7 and later 4.x                                  | `low`, `medium`, `high`, `xhigh`, `max` | no                | no                                                  |
+| Opus 4.6                                                | `low`, `medium`, `high`, `max`          | no                | no                                                  |
+| Opus 4.5                                                | `low`, `medium`, `high`                 | no                | no                                                  |
+| Sonnet 4.6 and later 4.x                                | `low`, `medium`, `high`, `max`          | no                | no                                                  |
+| Any other (Haiku 4.x, Sonnet 4.5 and older, older Opus) | none                                    | no                | no                                                  |
+
+- The request's effort becomes `output_config.effort`: `none` and `minimal`
+  become `low`; a level the model takes is sent as is; a level it lacks becomes
+  `high`, or its strongest level when it lacks `high`; a model that takes none
+  gets no `output_config`.
+- A model that thinks by default gets
+  `thinking: { type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } }`
+  (and the binding beta header); no other model gets a `thinking` field.
+
+**Results** ([`claude/parse.ts`](./src/lib/providers/claude/parse.ts)):
+
+- `complete` reads `content`: `text` blocks are the text, `thinking` blocks the
+  reasoning text, each `tool_use` block a tool call whose arguments are its
+  `input` as JSON (`{}` when absent).
+- A stream reads Anthropic's events: `message_start` (usage);
+  `content_block_start` opens a block; `text_delta` is `text.delta`,
+  `thinking_delta` is `reasoning.delta`, `signature_delta` extends a thinking
+  block's signature, `input_json_delta` on a `tool_use` block is
+  `tool_call.delta`; `content_block_stop` emits `tool_call.done` for a
+  `tool_use` block whose accumulated JSON (`{}` when empty) parses as an object,
+  so a block a `max_tokens` stop cut off is never a call; `message_delta`
+  carries `stop_reason`, `stop_details` and usage; `message_stop` emits
+  `response.finished`.
+- `stop_reason` maps to `stop` (`end_turn`, `stop_sequence`, `pause_turn`),
+  `length` (`max_tokens`, `model_context_window_exceeded`), `tool_calls`
+  (`tool_use`), `content_filter` (`refusal`) or `unknown`.
+- A refusal keeps no text, tool calls or replay; `refusal` is "Claude declined
+  to answer", then ` (<stop_details.category>)` when present, then
+  `: <stop_details.explanation>` or `.`.
+- Replay is kept only for a turn that holds a `thinking` block with a
+  signature or a `redacted_thinking` block: every block (`thinking` with its
+  signature, `redacted_thinking`, non-empty `text`, valid `tool_use`) in order,
+  each tagged `{ provider: 'claude', block }`; a thinking block without a
+  signature is left out.
+- Usage: `inputTokens` is the sum of `input_tokens`,
+  `cache_creation_input_tokens` and `cache_read_input_tokens` (those present),
+  with `cacheWriteTokens` and `cachedInputTokens` as the last two;
+  `outputTokens` is `output_tokens`; `reasoningTokens` is `thinking_tokens` (at
+  the top or in `output_tokens_details`); `totalTokens` is input plus output.
+  A stream merges each payload's numeric counts into the ones reported before
+  and emits a `usage` event with the merged counts each time.
+
+**Errors:**
+
+- A stream payload of type `error`, or one with an `error` object, ends the
+  stream with an `error` event whose code is Anthropic's error type (else
+  `provider_error`), whose message is "Claude stream error (<type>): <message>"
+  (each part left out when absent, ending in `.` without a message), whose
+  diagnostic is the payload, and which is retryable for `overloaded_error`,
+  `api_error` and `rate_limit_error` unless `error.details.error_code` is
+  `enforced_spend_limit_reached`.
+- A stream that ends without `message_stop` ends with a retryable
+  `incomplete_stream` error ("Claude stream ended before the response
+  finished.").
+- A refused request or stream (status 400 or more) is `auth_failed` (401, 403)
+  or `http_error`, with the message "claude request failed with HTTP
+  <status>: <Anthropic's message>" (`.` without one) plus " Sign in with Claude
+  again to renew the login." on 401; retryable for 429 and 5xx unless the
+  spend cap code is present; `retryAfterMs` from `retry-after` (seconds, or an
+  HTTP date, never negative); `requestId` from the `request-id` header, else the
+  body's `request_id`; the body as diagnostic.
+
+**Catalog.** `models()` reads every page of
+`GET {baseUrl}/v1/models?beta=true&limit=1000`, adding
+`&after_id=<last_id, else the last listed id>` while `has_more` is `true`; each
+entry with an id becomes a `Model` with `name` from `display_name`,
+`contextWindow` from `max_input_tokens`, and `inputModalities`
+`['text', 'image']` or `['text']` when `capabilities.image_input.supported` is
+a boolean. `validateModel` accepts an id with or without its 8-digit date
+suffix. A stream's `response.started` carries the model's `contextWindow`,
+read from a catalog the provider lists once and keeps for its lifetime; a
+failed listing is kept as an empty catalog, so it gives no window and never
+fails a request.
+
+`embedding` and `rerank` reject (`unsupported_embeddings`,
+`unsupported_reranking`). The research behind these rules, with its primary
+sources, is in [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md).
 
 ### Codex
 
@@ -806,7 +1030,7 @@ backend through the OpenAI adapter. It is not listed by `providerKinds`.
 interface CodexProviderDeps {
   transport: HttpTransport;
   logger: Logger;
-  authorization: SecretSource; // sent exactly as the authorization header
+  authorization: SecretSource; // sent exactly as the authorization header; blank sends none
   chatGptAccountId?: SecretSource; // sent as ChatGPT-Account-ID
   fedramp?: boolean; // true sends X-OpenAI-Fedramp: true
   baseUrl?: string; // default https://chatgpt.com/backend-api/codex
@@ -815,7 +1039,11 @@ interface CodexProviderDeps {
 
 The body is the OpenAI body without `temperature`, with `store: false`, and
 with `instructions` "You are Codex, a coding agent." when the request has no
-system text. A blank `chatGptAccountId` fails with `auth_missing`. `complete`
+system text. A blank `authorization` is treated as absent, so the request is
+sent with no `authorization` header; a blank `chatGptAccountId` fails with
+`auth_missing` ("Codex provider received an empty auth value."). `metadata` is
+always `codexMetadata` (`id: 'codex'`, `baseUrl` the default), whatever
+`baseUrl` is given. `complete`
 runs a stream and resolves with its `response.finished` (validated when there
 is a schema), rejects with the stream's `error`, or with
 `missing_stream_finish` when the stream ends without either. `models()` reads
@@ -828,10 +1056,12 @@ shows for each kind and builds a provider from the values it stores.
 
 ```ts
 type ProviderKindId = 'openai' | 'openrouter' | 'codex' | 'claude';
+type ProviderFieldKind = 'text' | 'url' | 'number' | 'enum' | 'secret';
+type ProviderListId = 'models' | 'reasonings';
 interface ProviderField {
   key: string;
   label: string;
-  kind: 'text' | 'url' | 'number' | 'enum' | 'secret';
+  kind: ProviderFieldKind;
   required: boolean;
   description?: string;
   placeholder?: string;
@@ -843,7 +1073,7 @@ interface ProviderKind {
   label: string;
   description: string;
   fields: readonly ProviderField[];
-  lists: readonly ('models' | 'reasonings')[];
+  lists: readonly ProviderListId[];
   modelsFromCatalog?: boolean;
   site?: { url: string; label: string };
 }
@@ -859,12 +1089,25 @@ type ConfiguredProvider = LlmProvider & {
 };
 ```
 
-| Kind         | Fields                                                                                                                        | Lists                  | Other                                              |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------- |
-| `openai`     | `endpoint` (url, advanced, placeholder the default base URL); `token` (secret, optional)                                      | `models`, `reasonings` |                                                    |
-| `openrouter` | `endpoint`; `token` (required); `maxStructuredOutputRepairs` (number, advanced, placeholder `2`); `modelsUrl` (url, advanced) | `models`, `reasonings` | `site`: `https://openrouter.ai`, "Open OpenRouter" |
-| `codex`      | `endpoint`; `token` (required); `chatGptAccountId` (text); `fedramp` (enum `true`/`false`, placeholder `false`)               | none                   |                                                    |
-| `claude`     | `endpoint`; `token` (required)                                                                                                | `models`, `reasonings` | `modelsFromCatalog: true`                          |
+The kinds, in order:
+
+| Kind         | Label      | Description                                                                                                         | Lists                  | Other                                              |
+| ------------ | ---------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------- |
+| `openai`     | OpenAI     | "Any endpoint that answers the OpenAI Responses API, under its own identity."                                       | `models`, `reasonings` |                                                    |
+| `openrouter` | OpenRouter | "OpenRouter Chat Completions with curated model profiles, live capability discovery, and structured-output repair." | `models`, `reasonings` | `site`: `https://openrouter.ai`, "Open OpenRouter" |
+| `codex`      | Codex      | "The ChatGPT Codex Responses backend, authenticated with a Codex authorization value."                              | none                   |                                                    |
+| `claude`     | Claude     | "Anthropic Messages through a Claude Code subscription login, authenticated with a Claude authorization value."     | `models`, `reasonings` | `modelsFromCatalog: true`                          |
+
+Their fields, each listed with its kind:
+
+| Key                          | Label                     | Field kind               | Required                       | Advanced | Placeholder                                                                                                                                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Kinds        |
+| ---------------------------- | ------------------------- | ------------------------ | ------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `endpoint`                   | Endpoint                  | `url`                    | no                             | yes      | the kind's default base URL (`https://api.openai.com/v1`, `https://openrouter.ai/api/v1`, `https://chatgpt.com/backend-api/codex`, `https://api.anthropic.com`) | "Overrides the base URL requests are sent to."                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | all, first   |
+| `token`                      | Token                     | `secret`                 | no for `openai`, yes otherwise | no       |                                                                                                                                                                 | `openai`: "Names the stored API_TOKEN credential to authenticate with. Absent leaves the auth header off, which a compatible endpoint may accept."; `openrouter`: "Names the stored API_TOKEN credential this provider authenticates with."; `codex`: "Names the stored API_TOKEN credential that carries the Codex authorization value."; `claude`: "Names the stored API_TOKEN credential that carries the Claude authorization value: a Claude sign-in, a `claude setup-token` value, or a Console API key." | all, second  |
+| `maxStructuredOutputRepairs` | Structured output repairs | `number`                 | no                             | yes      | `2`                                                                                                                                                             | "How many corrected attempts a rejected structured response gets."                                                                                                                                                                                                                                                                                                                                                                                                                                              | `openrouter` |
+| `modelsUrl`                  | Models URL                | `url`                    | no                             | yes      | `https://openrouter.ai/api/v1/models`                                                                                                                           | "Where this provider lists the models it serves and what each one accepts."                                                                                                                                                                                                                                                                                                                                                                                                                                     | `openrouter` |
+| `chatGptAccountId`           | ChatGPT account ID        | `text`                   | no                             | no       |                                                                                                                                                                 | "The account id sent as ChatGPT-Account-ID beside the authorization value."                                                                                                                                                                                                                                                                                                                                                                                                                                     | `codex`      |
+| `fedramp`                    | FedRAMP                   | `enum` (`true`, `false`) | no                             | no       | `false`                                                                                                                                                         | "Sends X-OpenAI-Fedramp for a FedRAMP ChatGPT account."                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `codex`      |
 
 A `token` value names a stored credential; the host resolves it and passes the
 value or a source.
@@ -878,8 +1121,10 @@ value or a source.
   Claude); `endpoint` becomes `baseUrl`; `identity` is passed to the OpenAI
   factory only. Every non-`token` value must be a string (else "Provider value
   <key> is a literal, not a source."); `maxStructuredOutputRepairs` must parse
-  as a finite number (and then pass the OpenRouter factory's own check) and
-  `fedramp` must be `true` or `false`. An absent value
+  as a finite number (else "Provider value maxStructuredOutputRepairs is not a
+  number: <value>"), and then pass the OpenRouter factory's own check;
+  `fedramp` must be `true` or `false` (else "Provider value fedramp is not a
+  flag: <value>"). An absent value
   leaves the factory's default. The result carries `kind` and its fields as
   `configuration`.
 
@@ -920,7 +1165,11 @@ interface CatalogModel {
 
 - `ModelIconName` is the icon names; `isModelIconName(value)` tests an own key;
   `modelIconSvg(name)` returns the SVG text.
-- `modelFamilies` lists, in matching order, `{ icon, lab, word }` for claude
+- `modelFamilies: readonly ModelFamily[]`, where
+  `interface ModelFamily { icon: ModelIconName; lab: OpenRouterLab; word: string }`
+  and `OpenRouterLab` (a type that is not exported) is one of the labs of the
+  OpenRouter table, lists, in
+  matching order, `{ icon, lab, word }` for claude
   (`anthropic`), gemini, gemma, openai (`gpt`), deepseek, qwen and meta
   (`llama`).
 - `openRouterModelIcon(model)` is the icon of the family whose lab the
@@ -948,8 +1197,12 @@ OPENROUTER_API_KEY=… npx nx run llms:conformance-live -- --yes-paid-conformanc
   `tool_call` (one `add` call with `parallelToolCalls: false`) and
   `tool_replay` (the answer after the tool result, with the call's replay).
   Each call permits up to 1,024 output tokens.
+- These pre-flight refusals throw uncaught: stdout gets no report and the
+  process exits with Node's status for an uncaught error.
 - Progress is written by Pino to stderr (level `LLMS_CONFORMANCE_LOG_LEVEL`,
-  default `debug`; `apiKey`, `authorization` and `token` fields are redacted).
+  default `debug`; the paths `apiKey`, `authorization`, `token`, `*.apiKey`
+  and `*.authorization` are redacted as `[redacted]`, so a nested `token` is
+  not).
   Stdout holds only the final JSON report
   `{ ok, budgetUsd, estimatedWorstCaseUsd, results }`, where a failed result
   names its `stage` and the provider error's `error`, `provider`, `code`,

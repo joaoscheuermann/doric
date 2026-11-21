@@ -16,7 +16,8 @@ Project belongs to the bundles that own the Project's files and sandbox.
 - Read [`README.md`](README.md) for what the bundle does before adding to it.
 - Add a new operation on web content as a new value of `action` in the `input`
   schema of `src/host/tools/web.ts`, with its own optional input fields, and
-  dispatch it from `execute` in the same file.
+  dispatch it from `execute` in the same file, with its own branch before the
+  final `findInPage` call, which `execute` runs for every other action.
 - Keep `input` and `output` strict, and give every return path of the tool,
   `webError` included, a value that fits `output`: the tool-call layer rejects
   an unknown input key and a return that fails `output`.
@@ -29,11 +30,17 @@ Project belongs to the bundles that own the Project's files and sandbox.
 - Accept a URL only through `normalizedUrl`, which admits `http:` and `https:`
   only.
 - Make every request through `fetchText`, with the fetch function and timeout
-  `createTool` receives: it applies the timeout and the `user-agent` header, and
-  it is the only seam the tests replace.
+  `createTool` receives: it applies the timeout and the `user-agent` header,
+  and the tests replace only the fetch function it calls.
 - Clamp every new numeric input to a default and a maximum with `clamp`, as
   `limit` and `maxChars` are, and state both in the README's Limits.
 - Register tools only in `src/host/index.ts`, through `tools/v1`.
+- Put a new tool in its own file `src/host/tools/<name>.ts`, built with
+  `defineTool` of `tool` with strict `input` and `output`; register it in
+  `src/host/index.ts` with an `order` no other bundle's tool uses (search
+  `order:` under `bundles/*/*/src/host/`), test it in `tests/<name>.test.ts`,
+  and update the registration test of `tests/activate.test.ts`, which expects
+  exactly one tool.
 - Keep the `web` tool at `alwaysAvailable: true` and `order: 700`, and the
   `web-research` skill at `order: 1200`: these are global positions in the
   tool list and the skill catalog the model sees, and 700 sits between the
@@ -65,9 +72,10 @@ Project belongs to the bundles that own the Project's files and sandbox.
 - `npx nx run bundle-web:typecheck`: run it after any change under `src/`.
 - `npx nx run bundle-web:test`: run it after any change under `src/` or
   `tests/`.
-- `npx nx run bundle-web:build`: run it after a change to `manifest.json`,
-  `package.json`, a `tsconfig*.json` file, `src/contracts/` or a file under
-  `src/skills/`, since the build checks every skill file.
+- `npx nx run bundle-web:build`: run it after any change under `src/`, or to
+  `manifest.json`, `package.json` or a `tsconfig*.json` file: the build
+  dry-activates the host part against the manifest and checks every skill
+  file.
 
 ## Generated files
 

@@ -8,12 +8,12 @@ Part of [Doric](../../README.md). The flows across units that use it are describ
 
 ## Who uses it
 
-| User                                                                       | What it uses                                                                                                                                                                                                                    |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The bundle [`claude-login`](../../bundles/features/claude-login/README.md) | `createClaudeOAuth`, the Claude callback constants, `createLocalCallbackServer`, `createFetchTransport` and the client types, for the in-app Claude sign-in ([login.ts](../../bundles/features/claude-login/src/host/login.ts)) |
-| The bundle [`mcp`](../../bundles/features/mcp/README.md)                   | `createLocalCallbackServer` and `OAuthCallback`, for the redirect of an MCP server's OAuth sign-in ([oauth.ts](../../bundles/features/mcp/src/host/oauth.ts))                                                                   |
-| `npm run claude:oauth`                                                     | `createClaudeOAuth`, `resolveClaudeAuth`, the callback server, `openBrowser` ([claude-oauth.mjs](../../scripts/claude-oauth.mjs))                                                                                               |
-| `npm run codex:oauth`                                                      | `createCodexOAuth`, the callback server, `openBrowser` ([codex-oauth.mjs](../../scripts/codex-oauth.mjs))                                                                                                                       |
+| User                                                                       | What it uses                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The bundle [`claude-login`](../../bundles/features/claude-login/README.md) | `createClaudeOAuth`, the Claude callback constants, `createLocalCallbackServer`, `createFetchTransport` and the client types, for the in-app Claude sign-in ([login.ts](../../bundles/features/claude-login/src/host/login.ts))                                         |
+| The bundle [`mcp`](../../bundles/features/mcp/README.md)                   | `createLocalCallbackServer` and `OAuthCallback`, for the redirect of an MCP server's OAuth sign-in ([oauth.ts](../../bundles/features/mcp/src/host/oauth.ts))                                                                                                           |
+| `npm run claude:oauth`                                                     | `createClaudeOAuth`, `resolveClaudeAuth`, `createFetchTransport`, `createLocalCallbackServer`, `openBrowser`, the Claude callback constants, `CLAUDE_OAUTH_HOSTED_REDIRECT_URI` and `CLAUDE_AUTHORIZATION_ENV_KEY` ([claude-oauth.mjs](../../scripts/claude-oauth.mjs)) |
+| `npm run codex:oauth`                                                      | `createCodexOAuth`, `createFetchTransport`, `createLocalCallbackServer`, `openBrowser`, the Codex callback constants and `CODEX_AUTHORIZATION_ENV_KEY` ([codex-oauth.mjs](../../scripts/codex-oauth.mjs))                                                               |
 
 ## Entry point
 
@@ -115,11 +115,11 @@ interface OAuthTransport {
 }
 ```
 
-The package persists nothing itself, except the two CLI login files the resolvers refresh ([Existing Codex credentials](#existing-codex-credentials), [Existing Claude Code credentials](#existing-claude-code-credentials)). A client's tokens live wherever the caller's `OAuthTokenStore` keeps them.
+The package persists nothing itself, except the two CLI login files the resolvers refresh ([Existing Codex credentials](#existing-codex-credentials), [Existing Claude Code credentials](#existing-claude-code-credentials); [codex.ts](src/lib/codex.ts), [claude.ts](src/lib/claude.ts)). A client's tokens live wherever the caller's `OAuthTokenStore` keeps them ([oauth.ts](src/lib/oauth.ts)).
 
 ## Errors
 
-Every failure the package detects is an `OAuthErrorObject` ([oauth-error.ts](src/lib/classes/oauth-error.ts)). Failures of the injected or Node boundaries pass through unwrapped: a rejection of the transport, the token store or the browser opener, a listen error of the callback server, and a failed write of a CLI login file.
+Every failure the package detects is an `OAuthErrorObject` ([oauth-error.ts](src/lib/classes/oauth-error.ts)). Failures of the injected or Node boundaries pass through unwrapped: a rejection of the transport, the token store or the browser opener, a rejection of a custom `keychain` reader, a listen error of the callback server, a rejection of `LocalCallbackServer.close()` by Node's `server.close` (as on a second call), and a failed write of a CLI login file ([oauth.ts](src/lib/oauth.ts), [node.ts](src/lib/node.ts), [codex.ts](src/lib/codex.ts), [claude.ts](src/lib/claude.ts)).
 
 ```ts
 class OAuthErrorObject extends Error {
@@ -171,7 +171,7 @@ function createOAuthClient(options: CreateOAuthClientOptions): OAuthClient;
 4. It checks the callback: an `error` fails with `oauth_callback_error` and the message `errorDescription`, else `error`; a `state` other than its own fails with `oauth_state_mismatch`; a missing or empty `code` fails with `oauth_missing_code`. The `iss` field is not compared.
 5. It exchanges the code at `profile.tokenEndpoint` (below), saves the record with `tokenStore.save` and returns it.
 
-**`refresh()`** loads the stored record, fails with `oauth_missing_refresh_token` when it has no refresh token, sends the refresh grant, and saves and returns the new record. When the response carries no `refresh_token`, the saved record keeps the previous one ([oauth.ts](src/lib/oauth.ts)).
+**`refresh()`** loads the stored record, fails with `oauth_missing_refresh_token` when there is no record or it has no refresh token, sends the refresh grant, and saves and returns the new record. When the response carries no `refresh_token`, the saved record keeps the previous one ([oauth.ts](src/lib/oauth.ts)).
 
 **`credential()`** loads the stored record (`oauth_missing_record` when there is none). When `forceRefresh` is `true`, or the record has an `expiresAt` no more than `refreshSkewMs` after `clock()`, it refreshes first, as `refresh()` does. It returns the record rendered by `renderCredential`. A record without `expiresAt` is never refreshed on its own ([oauth.ts](src/lib/oauth.ts)).
 
@@ -184,9 +184,9 @@ Each token call is a `POST` to `profile.tokenEndpoint` with `accept: application
 | Code exchange | `grant_type=authorization_code`, `client_id`, `client_secret` (when set), `code`, `code_verifier`, `redirect_uri` |
 | Refresh       | `grant_type=refresh_token`, `refresh_token`, `client_id`, `client_secret` (when set)                              |
 
-With `tokenRequest: 'form'` (the default) the body is `application/x-www-form-urlencoded` and holds exactly those fields. With `tokenRequest: 'json'` the body is `application/json`, and the code exchange also sends `state` and every entry of `profile.tokenExchangeParams`.
+With `tokenRequest: 'form'` (the default) the body is `application/x-www-form-urlencoded` and holds exactly those fields. With `tokenRequest: 'json'` the body is `application/json`, unset fields are left out, and the code exchange body is `{ ...fields, state, ...profile.tokenExchangeParams }`: an entry of `tokenExchangeParams` overrides `state` or a field of the same name.
 
-A response with status 400 or above fails with `oauth_token_exchange_failed` or `oauth_refresh_failed`, carrying `status` and `diagnostic`. A body that is not JSON, not a JSON object, or has no string `access_token` fails with `oauth_invalid_token_response`. Otherwise the record is: `accessToken` from `access_token`; `refreshToken`, `tokenType` and `scope` from the string fields `refresh_token`, `token_type` and `scope`; `expiresAt` as `clock() + expires_in * 1000` when `expires_in` is a finite number; and `claims` from `parseTokenClaims(accessToken)` ([oauth.ts](src/lib/oauth.ts), [json.ts](src/lib/utils/json.ts)).
+A response with status 400 or above fails with `oauth_token_exchange_failed` or `oauth_refresh_failed`, carrying `status` and `diagnostic`. A body that is not JSON, not a JSON object, or has no string `access_token` fails with `oauth_invalid_token_response`, carrying `diagnostic`, and the JSON parse error as `cause` when the body is not JSON. Otherwise the record is: `accessToken` from `access_token`; `refreshToken`, `tokenType` and `scope` from the string fields `refresh_token`, `token_type` and `scope`; `expiresAt` as `clock() + expires_in * 1000` when `expires_in` is a finite number; and `claims` from `parseTokenClaims(accessToken)` ([oauth.ts](src/lib/oauth.ts), [json.ts](src/lib/utils/json.ts)).
 
 ### `renderCredential` and `parseTokenClaims`
 
@@ -220,50 +220,38 @@ function createClaudeOAuth(options: CreateClaudeOAuthOptions): OAuthClient;
 // CreateCodexOAuthOptions and createCodexOAuth have the same shape.
 ```
 
-The callback constants are values a caller passes to `createLocalCallbackServer`; the clients themselves use only the `redirectUri` they are given.
+The clients use only the `redirectUri` they are given ([oauth.ts](src/lib/oauth.ts)); the callback constants below are values a caller passes to `createLocalCallbackServer` to build it.
 
-### Claude Code
+```ts
+const claudeOAuthProfile: OAuthProfile;
+const codexOAuthProfile: OAuthProfile;
+```
 
-[claude-oauth.ts](src/lib/claude-oauth.ts):
+| `OAuthProfile` field    | `claudeOAuthProfile`                                      | `codexOAuthProfile`                                                                            |
+| ----------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `provider` / `profile`  | `anthropic` / `claude-code`                               | `openai` / `codex`                                                                             |
+| `authorizationEndpoint` | `https://claude.com/cai/oauth/authorize`                  | `https://auth.openai.com/oauth/authorize`                                                      |
+| `tokenEndpoint`         | `https://platform.claude.com/v1/oauth/token`              | `https://auth.openai.com/oauth/token`                                                          |
+| `authorizationParams`   | `code=true`                                               | `id_token_add_organizations=true`, `codex_cli_simplified_flow=true`, `originator=codex_cli_rs` |
+| `defaultScope`          | `user:inference`                                          | `openid profile email offline_access api.connectors.read api.connectors.invoke`                |
+| `defaultTokenScheme`    | `Bearer`                                                  | `Bearer`                                                                                       |
+| `tokenRequest`          | `json`                                                    | not set (form)                                                                                 |
+| `tokenExchangeParams`   | `{ expires_in: 31536000 }` (asks for a login of one year) | not set                                                                                        |
 
-| Export                                  | Value                                                                                      |
-| --------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `claudeOAuthProfile.provider`/`profile` | `anthropic` / `claude-code`                                                                |
-| `authorizationEndpoint`                 | `https://claude.com/cai/oauth/authorize`                                                   |
-| `tokenEndpoint`                         | `https://platform.claude.com/v1/oauth/token`                                               |
-| `authorizationParams`                   | `{ code: 'true' }`                                                                         |
-| `defaultScope`                          | `user:inference`                                                                           |
-| `defaultTokenScheme`                    | `Bearer`                                                                                   |
-| `tokenRequest`                          | `json`                                                                                     |
-| `tokenExchangeParams`                   | `{ expires_in: 31536000 }` (asks for a login of one year)                                  |
-| `CLAUDE_OAUTH_CLIENT_ID`                | `9d1c250a-e61b-44d9-88ed-5944d1962f5e` (Claude Code's public client id)                    |
-| `CLAUDE_OAUTH_CALLBACK_HOST`            | `localhost`                                                                                |
-| `CLAUDE_OAUTH_CALLBACK_PORT`            | `54545`                                                                                    |
-| `CLAUDE_OAUTH_FALLBACK_CALLBACK_PORT`   | `54546`, for when the default port is busy                                                 |
-| `CLAUDE_OAUTH_CALLBACK_PATH`            | `/callback`                                                                                |
-| `CLAUDE_OAUTH_HOSTED_REDIRECT_URI`      | `https://platform.claude.com/oauth/code/callback`, the redirect of the paste-the-code mode |
-| `CLAUDE_AUTHORIZATION_ENV_KEY`          | `CLAUDE_AUTHORIZATION`                                                                     |
+The module constants ([claude-oauth.ts](src/lib/claude-oauth.ts), [codex-oauth.ts](src/lib/codex-oauth.ts)):
 
-### Codex
+| Constant                                                                     | Value                                                                                      |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `CLAUDE_OAUTH_CLIENT_ID`                                                     | `9d1c250a-e61b-44d9-88ed-5944d1962f5e` (Claude Code's public client id)                    |
+| `CLAUDE_OAUTH_CALLBACK_HOST` / `_PORT` / `_FALLBACK_CALLBACK_PORT` / `_PATH` | `localhost` / `54545` / `54546`, for when the default port is busy / `/callback`           |
+| `CLAUDE_OAUTH_HOSTED_REDIRECT_URI`                                           | `https://platform.claude.com/oauth/code/callback`, the redirect of the paste-the-code mode |
+| `CLAUDE_AUTHORIZATION_ENV_KEY`                                               | `CLAUDE_AUTHORIZATION`                                                                     |
+| `CODEX_OAUTH_CLIENT_ID`                                                      | `app_EMoamEEZ73f0CkXaXp7hrann`                                                             |
+| `CODEX_OAUTH_CALLBACK_HOST` / `_PORT` / `_FALLBACK_CALLBACK_PORT` / `_PATH`  | `localhost` / `1455` / `1457` / `/auth/callback`                                           |
+| `CODEX_OAUTH_ORIGINATOR`                                                     | `codex_cli_rs`, the `originator` parameter of `codexOAuthProfile`                          |
+| `CODEX_AUTHORIZATION_ENV_KEY`                                                | `CODEX_AUTHORIZATION`                                                                      |
 
-[codex-oauth.ts](src/lib/codex-oauth.ts):
-
-| Export                                 | Value                                                                                          |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `codexOAuthProfile.provider`/`profile` | `openai` / `codex`                                                                             |
-| `authorizationEndpoint`                | `https://auth.openai.com/oauth/authorize`                                                      |
-| `tokenEndpoint`                        | `https://auth.openai.com/oauth/token`                                                          |
-| `authorizationParams`                  | `id_token_add_organizations=true`, `codex_cli_simplified_flow=true`, `originator=codex_cli_rs` |
-| `defaultScope`                         | `openid profile email offline_access api.connectors.read api.connectors.invoke`                |
-| `defaultTokenScheme`                   | `Bearer`                                                                                       |
-| `tokenRequest`                         | not set (form)                                                                                 |
-| `CODEX_OAUTH_CLIENT_ID`                | `app_EMoamEEZ73f0CkXaXp7hrann`                                                                 |
-| `CODEX_OAUTH_CALLBACK_HOST`            | `localhost`                                                                                    |
-| `CODEX_OAUTH_CALLBACK_PORT`            | `1455`                                                                                         |
-| `CODEX_OAUTH_FALLBACK_CALLBACK_PORT`   | `1457`                                                                                         |
-| `CODEX_OAUTH_CALLBACK_PATH`            | `/auth/callback`                                                                               |
-| `CODEX_OAUTH_ORIGINATOR`               | `codex_cli_rs`                                                                                 |
-| `CODEX_AUTHORIZATION_ENV_KEY`          | `CODEX_AUTHORIZATION`                                                                          |
+The two `*_AUTHORIZATION_ENV_KEY` constants name the environment variable an authorization value travels under. The package itself does not read them: the resolvers read `CLAUDE_AUTHORIZATION` and `CODEX_AUTHORIZATION` by name ([claude.ts](src/lib/claude.ts), [codex.ts](src/lib/codex.ts)), and the scripts use the constants as their default output key ([claude-oauth.mjs](../../scripts/claude-oauth.mjs), [codex-oauth.mjs](../../scripts/codex-oauth.mjs)).
 
 ## Node boundaries
 
@@ -356,14 +344,14 @@ function resolveCodexAuth(
 function codexCredentialFromToken(value: string): CodexCredential;
 ```
 
-`resolveCodexAuth` resolves the login the Codex CLI holds, with no browser. Blank values count as absent. It takes the first of ([codex.ts](src/lib/codex.ts)):
+`resolveCodexAuth` resolves the login the Codex CLI holds, with no browser. The values `CODEX_AUTHORIZATION`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `OPENAI_API_KEY`, `personal_access_token`, `tokens.access_token`, `tokens.account_id` and the `chatgpt_account_id` claim are trimmed, a blank one counts as absent, and a credential carries the trimmed value. `CODEX_HOME`, `codexHome` and `auth_mode` are used as given: a blank `CODEX_HOME` names the current directory, and a blank `auth_mode` is an unsupported mode ([codex.ts](src/lib/codex.ts), [text.ts](src/lib/utils/text.ts)). It takes the first of ([codex.ts](src/lib/codex.ts)):
 
-1. `CODEX_AUTHORIZATION`: read by `codexCredentialFromToken`, which strips a leading `Bearer ` (any case) and answers a `personal-access-token` credential for a token starting `at-`, else a `chatgpt` credential. An empty value fails with `codex_auth_missing`.
+1. `CODEX_AUTHORIZATION`: read by `codexCredentialFromToken`, which strips a leading `Bearer ` (any case) and answers a `personal-access-token` credential for a token starting `at-`, else a `chatgpt` credential. Called directly with a blank value, `codexCredentialFromToken` fails with `codex_auth_missing`.
 2. `CODEX_API_KEY`: an `api-key` credential.
 3. `CODEX_ACCESS_TOKEN`: a `personal-access-token` credential when it starts `at-`; any other value is an agent identity JWT and fails with `codex_agent_identity_unsupported`.
 4. `auth.json` under `codexHome`, else `CODEX_HOME`, else `~/.codex`. A missing file, or one whose JSON is not an object, fails with `codex_auth_missing`; an unreadable file or invalid JSON with `codex_auth_read_failed`.
 
-The file's mode is `auth_mode` with `-` and `_` removed and lowercased; without `auth_mode` it is `personalaccesstoken` when `personal_access_token` is present, `apikey` when `OPENAI_API_KEY` is present, else `chatgpt`:
+The file's mode is `auth_mode` with `-` and `_` removed and lowercased; without `auth_mode` it is `personalaccesstoken` when `personal_access_token` is present (even blank, which then fails with `codex_personal_access_token_missing`), `apikey` when `OPENAI_API_KEY` is present (even blank, which then fails with `codex_api_key_missing`), else `chatgpt`:
 
 | Mode                           | Answer                                                                                                        |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
@@ -375,7 +363,7 @@ The file's mode is `auth_mode` with `-` and `_` removed and lowercased; without 
 
 A `chatgpt` credential's `accountId` is `tokens.account_id`, else the `chatgpt_account_id` claim; `fedramp: true` is set when the `chatgpt_account_is_fedramp` claim is `true`. Both claims are read from the `https://api.openai.com/auth` object of the access token's JWT payload, over that of `tokens.id_token`.
 
-When the access token's `exp` claim is no more than five minutes after `now()` and the file has a `tokens.refresh_token`, the login is refreshed first: a JSON `POST` to the Codex token endpoint with `client_id`, `grant_type=refresh_token` and `refresh_token`. A status of 400 or above fails with `codex_refresh_failed` (with `status` and `diagnostic`); a body that is not a JSON object with `codex_refresh_invalid_response`. The returned `id_token`, `access_token` and `refresh_token` replace the ones in `tokens`, `last_refresh` is set to the ISO time of `now()`, and the whole file is written back in place with mode 0600 before the credential is answered. An expiring token with no refresh token is answered as it is ([codex.ts](src/lib/codex.ts)).
+When the access token's `exp` claim is no more than five minutes after `now()` and the file has a `tokens.refresh_token`, the login is refreshed first: a JSON `POST` to the Codex token endpoint with `client_id`, `grant_type=refresh_token` and `refresh_token`. A status of 400 or above fails with `codex_refresh_failed` (with `status` and `diagnostic`); a body that is not a JSON object with `codex_refresh_invalid_response`. The returned `id_token`, `access_token` and `refresh_token` replace the ones in `tokens`, `last_refresh` is set to the ISO time of `now()`, and the whole file is overwritten in place, before the credential is answered, as JSON indented by two spaces with a trailing newline. An existing file keeps its permissions; mode 0600 applies only when the file no longer exists and the write creates it. An expiring token with no refresh token is answered as it is ([codex.ts](src/lib/codex.ts)).
 
 ## Existing Claude Code credentials
 
@@ -404,16 +392,16 @@ function resolveClaudeAuth(
 ): Promise<ClaudeCredential>;
 ```
 
-`resolveClaudeAuth` resolves the login Claude Code holds, with no browser. Blank values count as absent. It takes the first of ([claude.ts](src/lib/claude.ts)):
+`resolveClaudeAuth` resolves the login Claude Code holds, with no browser. The values `CLAUDE_AUTHORIZATION`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CONFIG_DIR` and the login's `accessToken` are trimmed, a blank one counts as absent, and a credential carries the trimmed value; the `claudeHome` option is used as given ([claude.ts](src/lib/claude.ts), [text.ts](src/lib/utils/text.ts)). It takes the first of ([claude.ts](src/lib/claude.ts)):
 
 1. `CLAUDE_AUTHORIZATION`: an `authorization` credential. A value starting `Bearer` and a space (any case) is the `authorization` as given; any other value is prefixed with `Bearer `. `token` is the value without the scheme.
 2. `CLAUDE_CODE_OAUTH_TOKEN`: an `oauth` credential with `Bearer <token>`.
 3. The macOS Keychain login. The reader is `options.keychain` when it is a function; none when it is `false`; otherwise, only on `darwin` with no `claudeHome` option and no `CLAUDE_CONFIG_DIR`, `security find-generic-password -s "Claude Code-credentials" -w`, with a 60-second timeout, where a failure or empty output means no entry. A Keychain value that is not a JSON object is ignored. A Keychain login is never refreshed or written: with `refresh` not `false`, one whose expiry has passed fails with `claude_keychain_login_expired`, whose message tells the reader to run `claude` to renew it.
 4. `.credentials.json` under `claudeHome`, else `CLAUDE_CONFIG_DIR`, else `~/.claude`. A missing file fails with `claude_credentials_missing`; an unreadable file or invalid JSON with `claude_credentials_read_failed`; a JSON value that is not an object counts as an empty file.
 
-A login is the `claudeAiOauth` object: `accessToken`, `refreshToken`, `expiresAt` (an ISO-8601 string or epoch milliseconds), `scopes` and `subscriptionType`. Its credential is `kind: 'oauth'` with `Bearer <accessToken>`, the expiry in epoch milliseconds, and `scopes` and `subscriptionType` when present; a login without an access token fails with `claude_access_token_missing`.
+A login is the `claudeAiOauth` object: `accessToken`, `refreshToken`, `expiresAt` (an ISO-8601 string or epoch milliseconds), `scopes` and `subscriptionType`. Its credential is `kind: 'oauth'` with `Bearer <accessToken>`, the expiry in epoch milliseconds, and `scopes` and `subscriptionType` when present; a login without an access token fails with `claude_access_token_missing`. An `expiresAt` string `Date.parse` cannot read counts as no expiry: the login is never refreshed or refused as expired, and its credential has no `expiresAt` ([claude.ts](src/lib/claude.ts)).
 
-A file login whose expiry is no more than five minutes after `now()` is refreshed, unless `refresh` is `false`, which answers the login as it is so a caller can judge `expiresAt` first. Without a refresh token, a login not yet expired is answered as it is and an expired one fails with `claude_refresh_token_missing`. The refresh is a JSON `POST` to `https://platform.claude.com/v1/oauth/token` with `grant_type=refresh_token`, `refresh_token` and `client_id`; a status of 400 or above fails with `claude_refresh_failed` (with `status` and `diagnostic`), a body that is not a JSON object with `claude_refresh_invalid_response`. The response's `access_token`, `refresh_token`, `expires_in` (as `expiresAt = now() + expires_in * 1000`) and space-separated `scope` (as `scopes`) replace the login's fields they are present for. The refreshed login is written back before the credential is answered: the file is read again, only `claudeAiOauth` is replaced, and the JSON is written to `.credentials.<pid>.<random>.tmp` beside it with mode 0600 and renamed over the file, so a reader never sees half a file; the temp file is removed when the write fails ([claude.ts](src/lib/claude.ts)).
+A file login whose expiry is no more than five minutes after `now()` is refreshed, unless `refresh` is `false`, which answers the login as it is so a caller can judge `expiresAt` first. Without a refresh token, a login not yet expired is answered as it is and an expired one fails with `claude_refresh_token_missing`. The refresh is a JSON `POST` to `https://platform.claude.com/v1/oauth/token` with `grant_type=refresh_token`, `refresh_token` and `client_id`; a status of 400 or above fails with `claude_refresh_failed` (with `status` and `diagnostic`), a body that is not a JSON object with `claude_refresh_invalid_response`. The response's `access_token`, `refresh_token`, `expires_in` (as `expiresAt = now() + expires_in * 1000`) and space-separated `scope` (as `scopes`) replace the login's fields they are present for. The refreshed login is written back before the credential is answered: the file is read again and only its `claudeAiOauth` is replaced, and the result, JSON indented by two spaces with a trailing newline, is written to `.credentials.<pid>.<random>.tmp` beside it with mode 0600 and renamed over the file, so a reader never sees half a file; the temp file is removed and the error rethrown when the write or rename fails. When that second read finds no file or fails, the file is written with `claudeAiOauth` alone, and every other key it held is lost ([claude.ts](src/lib/claude.ts)).
 
 ## Build and test
 
