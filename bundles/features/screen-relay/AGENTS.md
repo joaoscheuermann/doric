@@ -48,7 +48,7 @@ publishes them through `screen.relay/v1`.
   host listener that file already builds.
 - Add a new method of `screen.relay/v1` to `ScreenRelay` and
   `screenRelayMethods` in [`src/contracts/index.ts`](src/contracts/index.ts),
-  as a strict `zod` input of plain data, implement it on `ScreenRelayServer`
+  as a strict `zod` input, implement it on `ScreenRelayServer`
   in `src/host/relay.ts`, map it in `src/host/service.ts`, and test it
   through the provided definition in [`tests/host.test.ts`](tests/host.test.ts).
 - Test the host part with the hand-made services object of

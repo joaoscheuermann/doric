@@ -260,19 +260,18 @@ throws it only for failures it owns ([`agent-error.ts`](src/lib/classes/agent-er
 Provider, tool-registry and callback errors pass through unchanged, except as
 [Provider retries](#provider-retries) states. The codes:
 
-| Code                  | Message                                           | Thrown when                           |
-| --------------------- | ------------------------------------------------- | ------------------------------------- |
-| `concurrent_run`      | `Agent instances do not support concurrent runs.` | A run starts while another is active. |
-| `turn_limit_exceeded` | `Agent exceeded its <maxTurns>-turn limit.`       | A turn would exceed `maxTurns`.       |
-
-| `invalid_structured_output` | `Agent run ended without terminal structured output.`, `Agent terminal structured output must be the only tool call.`, `Agent terminal structured output arguments must be valid JSON.`, `Agent terminal structured output failed schema validation.` (with `diagnostic`) | An invalid submission after the repair budget is spent. |
-| `output_truncated` | `The model reached its output limit in the middle of a tool call, so the call was not run.` | A turn that finished on `length` is rejected (an invalid batch or terminal submission); the cause is the rejection. |
-| `provider_refusal` | `The model declined to answer.` or `The model declined to answer: <refusal>` | A turn ends on `content_filter`. |
-| `missing_provider_finish` | `Provider stream ended without a response.finished event.` | A `stream` turn ends with neither a finish nor an `error` event. |
-| `tool_result_serialization_failed` | `Tool result could not be serialized to JSON.` | A handler's result cannot be serialized. |
-| `tool_input_serialization_failed` | `Tool input could not be serialized to JSON.` | The ledger cannot serialize a call's payload. |
-| `tool_call_id_invalid` | `Tool call storage produced an empty observation ID.` | The ID factory gives a non-string, empty or whitespace-only ID. |
-| `tool_call_id_collision` | `Tool call storage produced a duplicate observation ID.` | The ID factory repeats an ID. |
+| Code                               | Message                                                                                                                                                                                                                                                                   | Thrown when                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `concurrent_run`                   | `Agent instances do not support concurrent runs.`                                                                                                                                                                                                                         | A run starts while another is active.                                                                               |
+| `turn_limit_exceeded`              | `Agent exceeded its <maxTurns>-turn limit.`                                                                                                                                                                                                                               | A turn would exceed `maxTurns`.                                                                                     |
+| `invalid_structured_output`        | `Agent run ended without terminal structured output.`, `Agent terminal structured output must be the only tool call.`, `Agent terminal structured output arguments must be valid JSON.`, `Agent terminal structured output failed schema validation.` (with `diagnostic`) | An invalid submission after the repair budget is spent.                                                             |
+| `output_truncated`                 | `The model reached its output limit in the middle of a tool call, so the call was not run.`                                                                                                                                                                               | A turn that finished on `length` is rejected (an invalid batch or terminal submission); the cause is the rejection. |
+| `provider_refusal`                 | `The model declined to answer.` or `The model declined to answer: <refusal>`                                                                                                                                                                                              | A turn ends on `content_filter`.                                                                                    |
+| `missing_provider_finish`          | `Provider stream ended without a response.finished event.`                                                                                                                                                                                                                | A `stream` turn ends with neither a finish nor an `error` event.                                                    |
+| `tool_result_serialization_failed` | `Tool result could not be serialized to JSON.`                                                                                                                                                                                                                            | A handler's result cannot be serialized.                                                                            |
+| `tool_input_serialization_failed`  | `Tool input could not be serialized to JSON.`                                                                                                                                                                                                                             | The ledger cannot serialize a call's payload.                                                                       |
+| `tool_call_id_invalid`             | `Tool call storage produced an empty observation ID.`                                                                                                                                                                                                                     | The ID factory gives a non-string, empty or whitespace-only ID.                                                     |
+| `tool_call_id_collision`           | `Tool call storage produced a duplicate observation ID.`                                                                                                                                                                                                                  | The ID factory repeats an ID.                                                                                       |
 
 Invalid run options throw `TypeError`: `Agent maxTurns must be a positive safe
 integer.` and `Agent maxToolCallRepairs must be a non-negative safe integer.`
@@ -360,7 +359,7 @@ tool; a function is called each time a call is answered, with the tool's name
 its first `cap` characters followed by `\n… [truncated <omitted> of <total>
 characters]`. The record keeps the full output, so the cap only limits what
 the next turn reads. Caps are not validated, so a negative or non-integer cap
-is used as given ([`agent.ts`](src/lib/agent.ts)).
+is used as given ([`agent.ts`](src/lib/agent.ts), [`run.ts`](src/lib/utils/run.ts)).
 
 A function that throws ends the run with its error
 ([`run-tools.ts`](src/lib/utils/run-tools.ts)). For a successful call the
@@ -408,7 +407,7 @@ already contains is left out, and an empty chain reads `The tool failed
 without a message.` The same `maxToolResultChars` cap applies.
 
 The model then corrects the call, works around it or reports it; `maxTurns`
-bounds a model that keeps calling a failing tool. Three failures end the run
+bounds a model that keeps calling a failing tool. Besides a cap function that throws (above), three failures end the run
 instead, each after `tool.failed`: a handler that throws while the run's signal
 is aborted (with the handler's error), a result that cannot be serialized, and
 a record the ledger refuses.
@@ -485,12 +484,15 @@ The `diagnostic` lists the first ten Zod issues, each as:
 ```text
 - Field: <path segments joined with ".", or <root>>
   Kind: <issue code>
-  Expected: <expected>        (only when Zod gives a string)
+  Expected: <expected>
   Problem: <first line of the Zod message>
   <each further line of the message, indented>
 ```
 
-It never copies the rejected value. The correction of an invalid submission
+The `Expected:` line appears only when Zod gives a string. Whitespace runs in
+the issue code become `_`; each message line has its whitespace collapsed to
+single spaces, and empty lines are dropped. It never copies the rejected
+value. The correction of an invalid submission
 is stored as a user message ([`structured-output.ts`](src/lib/utils/structured-output.ts)):
 
 ```md
@@ -603,7 +605,8 @@ and `maxToolCallRepairs` come later, and their order differs by mode:
 - `complete`: after the input is stored and steering is taken; not at all when
   a resumed history is already answered.
 
-Either failure ends the run and so answers pending calls like any other error.
+In both modes the schema conversion runs before `maxToolCallRepairs`. Either
+failure ends the run before any provider turn, so no call is pending.
 
 ### Provider retries
 

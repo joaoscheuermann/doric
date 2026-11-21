@@ -235,18 +235,70 @@ interface ToastErrorInput {
 function toastError(input: ToastErrorInput): void;
 ```
 
-`toastError` shows a `compact`, unannounced notice, without Retry, as a `sonner` custom toast (`data-slot="error-toast"`, 356 px wide). It lives 4,000 ms (sonner pauses it while the pointer is over the toaster or the window is hidden) and does not expire while its details are open. A later call with the same `id` replaces it in place, with its details closed. It needs the window's `Toaster` mounted to be seen; it returns nothing and never throws.
+`toastError` shows a `compact`, unannounced notice, without Retry, as a `sonner` custom toast (`data-slot="error-toast"`, 356 px wide). It lives 4,000 ms (sonner pauses it while the pointer is over the toaster or the window is hidden) and does not expire while its details are open; closing them shows it again for a fresh 4,000 ms. A later call with the same `id` replaces it in place, with its details closed. It needs the window's `Toaster` mounted to be seen; it returns nothing and never throws.
 
 #### How a notice words an error
 
-`describeError(info, { catalog?, fallbackCode? })` returns `{ title, explanation, retryable, tone }`; it is internal to the module, so the shared entries exist once per window ([`error-copy.ts`](src/error-copy.ts)):
+`describeError(info, { catalog?, fallbackCode? })` returns `{ title, explanation, retryable, tone }`. No entry point exports it or the shared catalog, so the shared entries exist once per window, in the platform's `error-notice` file ([`error-copy.ts`](src/error-copy.ts)):
 
 1. The catalog is `catalog` merged over the shared catalog; the caller's entry wins for a code both list.
 2. The headline level is the first of `[info, ...info.causes]` whose code has an entry and is not `internal`. Without one, `fallbackCode`'s entry titles the outermost level; without that, the first `internal` level takes the `internal` entry; without that, the `unknown` entry titles the outermost level.
 3. `explanation` is the entry's explanation with `{provider}` replaced by the headline level's provider, else `info.provider`, else `the provider`. Without one, it is the first line of the headline level's message, else of `info.message`, else `The operation could not be completed.`; a line over 200 characters is cut to 199 and ends with `…`.
 4. `retryable` is the entry's flag unless the headline level says `retryable: false`; under the `unknown` fallback it is the headline level's own flag, default `true`. `tone` is the entry's, default `error`.
 
-The shared catalog holds the codes the platform packages define (`bundle`, `llms`, `agent`, `tool`), among them `unknown` and `internal` ("Something went wrong", retryable), `unavailable`, `disconnected`, `generation_lost`, `protocol_error` ("Doric host unavailable"), `invalid_input`, `not_found`, `conflict`, `revision_conflict`, `limit_exceeded`, the `credential_*` codes, the provider codes (`network_error`, `rate_limit_error`, `overloaded_error`, `api_error`, `http_error`, `auth_*`, …), the model and agent codes (`missing_model`, `output_truncated`, `turn_limit_exceeded`, `concurrent_run`, …) and the tool codes (`handler_failed`, `invalid_payload`, `unknown_tool`, `invalid_schema`, …); [`error-copy.ts`](src/error-copy.ts) states each entry's title, explanation and Retry flag. A bundle passes its own codes in its own `catalog`. The behavior of error messages across the app is in the feature doc [Error messages](../../docs/features/error-messages.md).
+The shared catalog holds the codes the platform packages define (`bundle`, `llms`, `agent`, `tool`); every entry has tone `error`. A bundle passes its own codes, and its own wording for a shared code, in its own `catalog` ([`error-copy.ts`](src/error-copy.ts)):
+
+| Code                               | Title                      | Explanation                                                          | Retry |
+| ---------------------------------- | -------------------------- | -------------------------------------------------------------------- | ----- |
+| `unknown`                          | Something went wrong       | —                                                                    | yes   |
+| `internal`                         | Something went wrong       | —                                                                    | yes   |
+| `unavailable`                      | Doric host unavailable     | This window lost its connection to the Doric host.                   | yes   |
+| `disconnected`                     | Doric host unavailable     | This window lost its connection to the Doric host.                   | yes   |
+| `generation_lost`                  | Doric host unavailable     | This window lost its connection to the Doric host.                   | yes   |
+| `protocol_error`                   | Doric host unavailable     | This window lost its connection to the Doric host.                   | yes   |
+| `invalid_output`                   | Unexpected output          | —                                                                    | yes   |
+| `invalid_input`                    | Request refused            | —                                                                    | no    |
+| `not_found`                        | Not found                  | —                                                                    | no    |
+| `conflict`                         | Not possible right now     | —                                                                    | no    |
+| `revision_conflict`                | Changed elsewhere          | Something else changed this first. Retry to use the latest version.  | yes   |
+| `limit_exceeded`                   | Limit reached              | —                                                                    | no    |
+| `credential_missing`               | Credential not found       | —                                                                    | no    |
+| `credential_invalid`               | Credential rejected        | —                                                                    | no    |
+| `credential_name_taken`            | Name already used          | Another credential already has this name.                            | no    |
+| `credential_kind_immutable`        | Kind cannot change         | A stored credential keeps its kind; create a new credential instead. | no    |
+| `credential_storage_unavailable`   | Secret storage unavailable | The host cannot store credential secrets right now.                  | yes   |
+| `network_error`                    | Provider unreachable       | Doric could not reach {provider}.                                    | yes   |
+| `incomplete_stream`                | Response cut off           | {provider} ended the response before it finished.                    | yes   |
+| `rate_limit_error`                 | Rate limit reached         | {provider} is limiting requests; wait a moment, then retry.          | yes   |
+| `overloaded_error`                 | Provider overloaded        | {provider} is overloaded; wait a moment, then retry.                 | yes   |
+| `api_error`                        | Provider error             | {provider} reported an error while answering.                        | yes   |
+| `provider_error`                   | Provider error             | {provider} reported an error while answering.                        | yes   |
+| `http_error`                       | Provider request failed    | {provider} answered with an error status.                            | yes   |
+| `auth_failed`                      | Sign-in rejected           | {provider} refused the credentials.                                  | no    |
+| `auth_missing`                     | Credentials missing        | {provider} needs a credential.                                       | no    |
+| `auth_ambiguous`                   | Credentials ambiguous      | More than one credential matches {provider}.                         | no    |
+| `malformed_stream_event`           | Unreadable response        | {provider} sent a response Doric could not read.                     | yes   |
+| `missing_stream_finish`            | Unreadable response        | {provider} sent a response Doric could not read.                     | yes   |
+| `invalid_json`                     | Unreadable data            | —                                                                    | yes   |
+| `missing_model`                    | No model chosen            | —                                                                    | no    |
+| `unsupported_model_feature`        | Not supported by the model | —                                                                    | no    |
+| `incompatible_model_request`       | Not supported by the model | —                                                                    | no    |
+| `output_truncated`                 | Response too long          | The model stopped at its output limit.                               | yes   |
+| `provider_refusal`                 | The model refused          | —                                                                    | no    |
+| `turn_limit_exceeded`              | Turn limit reached         | The agent stopped after its maximum number of turns.                 | yes   |
+| `missing_provider_finish`          | Response ended early       | The model's response ended without a finish.                         | yes   |
+| `invalid_structured_output`        | Unexpected model output    | —                                                                    | yes   |
+| `concurrent_run`                   | Already running            | A run is already in progress.                                        | no    |
+| `tool_call_id_collision`           | Invalid tool call          | —                                                                    | yes   |
+| `tool_call_id_invalid`             | Invalid tool call          | —                                                                    | yes   |
+| `tool_input_serialization_failed`  | Invalid tool call          | —                                                                    | yes   |
+| `tool_result_serialization_failed` | Invalid tool call          | —                                                                    | yes   |
+| `handler_failed`                   | Tool failed                | —                                                                    | no    |
+| `invalid_payload`                  | Invalid tool input         | —                                                                    | no    |
+| `unknown_tool`                     | Unknown tool               | —                                                                    | no    |
+| `invalid_schema`                   | Invalid tool definition    | —                                                                    | no    |
+
+The behavior of error messages across the app is in the feature doc [Error messages](../../docs/features/error-messages.md).
 
 ### `ModelIcon` and `svgMask`
 
@@ -308,7 +360,7 @@ interface CommentPinProps
     VariantProps<typeof commentPinVariants> {}
 ```
 
-A teardrop `<button type="button">` with `data-state` and `data-size`: `open` is primary, `await` `--paper-orange`, `done` `--paper-green`, `draft` a dashed primary outline; sizes are 20, 24 and 28 px. It is presentation only: the caller wires what a press does ([`comment-pin.tsx`](src/comment-pin.tsx)).
+A teardrop `<button type="button">` with `data-state` (the `state` prop as passed, absent when it is not) and `data-size` (`md` when not passed): `open` is primary, `await` `--paper-orange`, `done` `--paper-green`, `draft` a dashed primary outline; sizes are 20, 24 and 28 px. It is presentation only: the caller wires what a press does ([`comment-pin.tsx`](src/comment-pin.tsx)).
 
 ### Identity (`desktop/ui/identity`, `desktop/ui/reader-avatar`)
 
@@ -360,12 +412,14 @@ function FileTree(props: {
 }): JSX.Element;
 ```
 
-`FileTree` renders `<li>` items to hang from a `SidebarMenu` (`role="tree"`) or a `SidebarMenuSub`, starting at `depth`. It reads nothing: the whole tree arrives in `entries`, and `expanded` decides what is drawn. Under each open directory it draws the `pending` row first (when `pending.directory` is that path), then one `loadingDirectoryNotice` line when the path is in `loading` (the row is marked `aria-busy`), else its children, else — with no pending row — `emptyDirectoryNotice`. Rows are `role="treeitem"` with `aria-level`, `aria-posinset`, `aria-setsize`, `aria-expanded` (directories) and `aria-selected`; click, Enter or Space opens a file (`actions.open`) or toggles a directory (`actions.toggle`), ArrowRight expands a closed directory and ArrowLeft collapses an open one. A decoration adds its `description` to the row's label and tooltip (the tooltip is the path) and draws a pinned badge: a directory's `count`, a file's `letter`, in the `tone` classes. `rowMenu(node)` gives the content of the row's context menu; `null` or no `rowMenu` means none. The tree is windowed: only the lines that intersect the visible part of the nearest clipping ancestors are drawn, plus an overscan of half a viewport and at least 12 lines (64 lines before the first measurement), with spacers holding the height of the rest; the focused row and the pending row stay drawn when scrolled away. A row is 1.75 rem, a notice 1.5 rem ([`tree-window.ts`](src/panels/tree-window.ts)).
+`FileTree` renders `<li>` items to hang from a `SidebarMenu` (`role="tree"`) or a `SidebarMenuSub`, starting at `depth`. It reads nothing: the whole tree arrives in `entries`, and `expanded` decides what is drawn. Under each open directory it draws the `pending` row first (when `pending.directory` is that path), then one `loadingDirectoryNotice` line when the path is in `loading` (the row is marked `aria-busy`), else its children, else — with no pending row — `emptyDirectoryNotice`. Rows are `role="treeitem"` with `aria-level`, `aria-posinset`, `aria-setsize`, `aria-expanded` (directories) and `aria-selected`; click, Enter or Space opens a file (`actions.open`) or toggles a directory (`actions.toggle`), ArrowRight expands a closed directory and ArrowLeft collapses an open one. A decoration adds its `description` to the row's label and tooltip (the tooltip is the path) and draws a pinned badge: a directory's `count`, a file's `letter`; the name and the badge take the `tone` classes; `struck` strikes a file's name through, and a row whose decoration has no `tone` shows no change colour. `rowMenu(node)` gives the content of the row's context menu; `null` or no `rowMenu` means none. The tree is windowed: only the lines that intersect the visible part of the nearest clipping ancestors are drawn, plus an overscan of half a viewport and at least 12 lines (64 lines before the first measurement), with spacers holding the height of the rest; the focused row and the pending row stay drawn when scrolled away. A row is 1.75 rem, a notice 1.5 rem ([`tree-window.ts`](src/panels/tree-window.ts)).
 
 **Tree helpers** ([`tree-guides.tsx`](src/panels/tree-guides.tsx), [`tree-skeleton.tsx`](src/panels/tree-skeleton.tsx), [`expansion.ts`](src/panels/expansion.ts)):
 
-- `indentation(depth)`: a row's left padding, `0.375 + 1.25 × depth` rem. `treeClassName`: the class of the nested `SidebarMenuSub` that holds a level. `TreeGuides({ depth })`: the vertical lines that mark a row's depth.
-- `rowInteraction(selected)`: deprecated; no row in this repository calls it, and its value stays as it is for bundles that do.
+- `indentation(depth)`: a row's left padding, `` `${0.375 + 1.25 × depth}rem` ``.
+- `treeClassName`: `'mx-0 w-full min-w-0 translate-x-0 gap-0 overflow-hidden border-0 px-0 py-0'`, the class of the nested `SidebarMenuSub` that holds a level.
+- `TreeGuides({ depth })`: `null` at depth 0; otherwise an `aria-hidden`, `pointer-events-none` overlay (`absolute inset-0 z-10`) holding one 1 px `bg-sidebar-border` vertical line per level, at `left: ${0.875 + 1.25 × level}rem` for `level` 0 to `depth − 1`.
+- `rowInteraction(selected)`: `'hover:bg-sidebar-accent active:bg-sidebar-accent'` when `selected`, else `'hover:bg-transparent hover:text-sidebar-foreground active:bg-transparent active:text-sidebar-foreground'`. No file in this repository calls it.
 - `TreeSkeleton({ label, root? })`: a `role="status"`, `aria-busy` placeholder named by `label` that mirrors tree rows during the first read; `root` adds one row above, for the node the tree hangs from.
 - `toggleExpanded(expanded, path)`: a new set with `path` added when absent and removed when present.
 
@@ -395,23 +449,95 @@ function TabStrip(props: {
 const compactTabClassName: string;
 ```
 
-A horizontally scrolling row of shadcn tabs (`TabsList` with `activateOnFocus`) or, for `toggle`, a `role="group"` of toggles, labelled `label`. Tabs reorder by drag (after 6 px of pointer movement, along the horizontal axis, auto-scrolling the strip) or by keyboard (dnd-kit's Space sort, or Alt+Shift+ArrowLeft/ArrowRight to swap with a neighbour); each reorder calls `onMove(from, to)`. While sorting, tab widths are frozen. The selected tab scrolls into view when the selection, order or strip size changes; a vertical wheel over an overflowing strip scrolls it sideways. Clicking or pressing Enter on the selected tab calls `onReselect`; clicking a toggle calls `onSelect`. With `onClose`, each tab has a close button labelled `Close <label>`; in the `project` variant a middle click also closes. `tabMenu(id)` gives the content of a tab's context menu. `compactTabClassName` is the shared chrome of project and resource tabs. The hooks behind it, `useTabStrip(ids, selected, onMove)` and `useSortableTab(id, frozen?)`, are exported for strips that compose their own tabs.
+A horizontally scrolling row of shadcn tabs (`TabsList` with `activateOnFocus`) or, for `toggle`, a `role="group"` of toggles, labelled `label`. Tabs reorder by drag (after 6 px of pointer movement, along the horizontal axis, auto-scrolling the strip) or by keyboard (dnd-kit's Space sort, or Alt+Shift+ArrowLeft/ArrowRight to swap with a neighbour); each reorder calls `onMove(from, to)`. While sorting, tab widths are frozen. The selected tab scrolls into view when the selection, order or strip size changes; a wheel over an overflowing strip without Ctrl scrolls it sideways by the larger of `deltaX` and `deltaY`, times 1, 16 or the strip's `clientWidth` for `deltaMode` 0, 1, 2. Clicking or pressing Enter on the selected tab calls `onReselect`; clicking a toggle calls `onSelect`. With `onClose`, each tab has a close button labelled `Close <ariaLabel ?? label>`; in the `project` variant a middle click also closes. `tabMenu(id)` gives the content of a tab's context menu. `compactTabClassName` is the shared chrome of project and resource tabs, the string `'relative flex h-[28px] items-center gap-[6px] rounded-[6px] px-[8px] text-[12px] leading-[16px] font-[500] text-[var(--paper-gray-3)] hover:bg-[color-mix(in_srgb,currentColor_7.5%,transparent)] hover:text-[var(--paper-gray-2)] data-[active=true]:bg-[var(--paper-control)] data-[active=true]:text-[var(--paper-gray-1)] shadow-none data-[active=true]:hover:bg-[var(--paper-control)] [-webkit-app-region:no-drag] [&:has(:focus-visible)]:outline-2 [&:has(:focus-visible)]:-outline-offset-1 [&:has(:focus-visible)]:outline-[var(--paper-focus)]'`.
+
+The hooks behind it are exported for strips that compose their own tabs:
+
+```ts
+type FrozenTab = { readonly width: number; readonly close?: CSSProperties }; // not exported by name
+function useTabStrip(
+  ids: readonly string[],
+  selected: string | undefined,
+  onMove: (from: string, to: string) => void,
+): {
+  root: RefObject<HTMLDivElement>; // the scrolling strip
+  frozen: ReadonlyMap<string, FrozenTab> | undefined; // set while sorting
+  sorting: boolean; // frozen !== undefined
+  sensors: SensorDescriptor[]; // pointer (6 px activation) and keyboard (sortable coordinates)
+  start(): void;
+  end(event: DragEndEvent): void;
+  cancel(): void;
+  canScroll(element: Element): boolean; // only the strip auto-scrolls
+  keyDown(event: KeyboardEvent, id: string): void;
+};
+function useSortableTab(
+  id: string,
+  frozen?: FrozenTab,
+): ReturnType<typeof useSortable> & {
+  style: CSSProperties;
+  closeStyle: CSSProperties | undefined; // frozen?.close
+};
+```
+
+- `start` measures every `[data-tab-id]` element of the strip and freezes its width, and the width, `marginLeft` and `opacity` of its `[data-slot="tab-close"]` control (with `transition: 'none'`). `end` unfreezes and calls `onMove(active.id, over.id)` when the tab was dropped over another tab; `cancel` unfreezes.
+- `keyDown`: while sorting, it prevents the default of the arrow keys, Space and Enter, so dnd-kit's listener handles them alone; otherwise Alt+Shift+ArrowLeft/ArrowRight prevents the default, stops propagation and calls `onMove(id, neighbour)` when there is a neighbour on that side.
+- The selection reveal (`scrollIntoView` with `nearest`, on selection, order and strip resize, not while sorting) and the sideways wheel listener (non-passive) are effects of `useTabStrip`.
+- `useSortableTab` returns dnd-kit's `useSortable(id)` result with a transition of 150 ms `ease-out`, plus `style`: `width` from `frozen`, the dnd-kit translate transform, `transition: 'none'` while dragging (else the sortable transition or `'none'`) and `zIndex: 1` while dragging.
 
 **State and feedback** ([`panel-state.tsx`](src/panels/panel-state.tsx), [`read-feedback.tsx`](src/panels/read-feedback.tsx), [`use-read-error.ts`](src/panels/use-read-error.ts), [`move-item.ts`](src/panels/move-item.ts), [`toolbar-divider.tsx`](src/panels/toolbar-divider.tsx)):
 
 - `PanelState({ title, description, icon? })`: an `Empty` state with a folder icon by default.
-- `useReadError(error, refreshing, onRetry, toastId?)`: while `error` is a string and the surface is not refreshing, shows one `toast.error('Unable to update', { description: error, duration: 8000, action: 'Try again' })` per distinct message, under `toastId` or an id of its own; `error === undefined` or unmount dismisses it. `ReadFeedback({ error?, refreshing, onRetry, toastId? })` is the same as a component that renders nothing. Cached content stays on screen.
+- `useReadError(error, refreshing, onRetry, toastId?)`: while `error` is a string and the surface is not refreshing, shows one `toast.error('Unable to update', { description: error, duration: 8000, action: 'Try again' })` per distinct message, under `toastId` or an id of its own; "Try again" calls `onRetry` and lets the same message show again; `error === undefined` or unmount dismisses it. `ReadFeedback({ error?, refreshing, onRetry, toastId? })` is the same as a component that renders nothing. Cached content stays on screen.
 - `moveItem(items, from, to)`: a new array with the item at `from` moved to `to`; the same array when either index is out of range or they are equal.
-- `ToolbarDivider()`: a short vertical `Separator`; deprecated, no product surface draws it.
+- `ToolbarDivider()`: a vertical `Separator`, 16 px tall (`h-4`), centred in its row. No product surface draws it.
 
 ### Code view and diff editor (`desktop/ui/code`)
 
 Monaco loads with a dynamic import the first time an editor mounts, once per window, so importing the subpath does not load it ([`monaco.ts`](src/code/monaco.ts)). The loaded module registers the codicon font and the CSS, HTML, JavaScript, Markdown, Python, Rust, shell, SQL, TypeScript, XML and YAML languages, and starts only Monaco's editor worker, from `workers/editor.worker.js` beside the loaded chunk ([`monaco-runtime.ts`](src/code/monaco-runtime.ts), [`editor.worker.ts`](src/code/editor.worker.ts)).
 
 - `fileLanguage(path)`: the Monaco language id by extension, case-insensitive (`ts`, `tsx`, `cts`, `mts` → `typescript`; `js`, `jsx`, `cjs`, `mjs` → `javascript`; `md`, `markdown`; `py`; `rs`; `sh`, `bash`, `zsh` → `shell`; `sql`; `css`; `html`, `htm`; `xml`, `svg` → `xml`; `yaml`, `yml`); anything else, a name without an extension or a dotfile is `plaintext`. JSON is `plaintext`, because its language service needs a worker of its own ([`language.ts`](src/code/language.ts)).
-- `CodeView({ language, value })`: one read-only editor per mounted view, created with the first text and disposed on unmount; later text and language are applied to the same model, keeping the view state. It uses the container's `font-mono` family at 12 px, no minimap, no overview ruler, no sticky scroll, no line highlight, 10 px scrollbars that pass the wheel on at an edge, and no word wrap ([`code-view.tsx`](src/code/code-view.tsx)).
-- `DiffEditor({ original, modified, language, diffTokens, toolbar, footer })`: a read-only inline diff that keeps its editor and models across refreshes. `toolbar` and `footer` render with `DiffControls`: `counts` (`{ added, removed }` lines, `{0, 0}` when the texts are equal, `undefined` until computed), `layout` (`'unified'` at first; `'split'` shows the sides side by side when the editor is wider than 700 px), `onLayout(value)` and `onNavigate('previous' | 'next')`. `diffTokens` (`{ added, removed }`) names the palette tokens of the added and removed lines ([`diff-editor.tsx`](src/code/diff-editor.tsx), [`diff-counts.ts`](src/code/diff-counts.ts)).
-- Theme: both editors define a Monaco theme from the document's palette at creation, for dark when the root element has the class `dark` and light otherwise, converting `oklch(…)` tokens to hex; a colour that does not resolve keeps Monaco's default. A diff gets its own theme per pair of tokens, with the added and removed colours at alpha `0x33` for text and `0x18` for lines. Both redefine the theme when the system colour scheme changes ([`code-view-theme.ts`](src/code/code-view-theme.ts), [`oklch.ts`](src/code/oklch.ts)).
+- `CodeView({ language, value })`: one read-only editor per mounted view, created with the first text and disposed on unmount; later text and language are applied to the same model, keeping the view state. It uses the container's `font-mono` family at 12 px, 12 px of padding above and below, `scrollBeyondLastLine: false`, no minimap, no overview ruler, no sticky scroll, no line highlight, 10 px scrollbars without shadows that pass the wheel on at an edge, and no word wrap. The container is a `div` with `data-slot="code-view"` and `min-h-0 flex-1 font-mono` ([`code-view.tsx`](src/code/code-view.tsx)).
+- `DiffEditor({ original, modified, language, diffTokens, toolbar, footer })`: a read-only inline diff that keeps its editor and models across refreshes. `toolbar` and `footer` render before and after a `<section aria-label="File comparison">` with `DiffControls`:
+
+  ```ts
+  type DiffControls = {
+    readonly counts:
+      | { readonly added: number; readonly removed: number }
+      | undefined;
+    readonly layout: string; // 'unified' at first
+    readonly onLayout: (value: string) => void;
+    readonly onNavigate: (direction: 'previous' | 'next') => void; // goToDiff
+  };
+  ```
+
+  `counts` are `{ added: 0, removed: 0 }` when the texts are equal, `undefined` until Monaco computes the diff, and otherwise the lines inside Monaco's changed ranges, clamped to each text's line count, where a text's final newline does not count as a line. The diff is compact (inline) when `layout` is `'unified'` or the editor is 700 px wide or less; `'split'` wider than that shows the sides side by side. Whitespace changes count (`ignoreTrimWhitespace: false`), and there is no revert icon and no overview ruler. `diffTokens` (`{ added, removed }`) names the palette tokens of the added and removed lines ([`diff-editor.tsx`](src/code/diff-editor.tsx), [`diff-counts.ts`](src/code/diff-counts.ts)).
+
+- Theme: both editors define a Monaco theme at creation and again when the system colour scheme changes, reading the palette from `getComputedStyle(document.documentElement)`. The mode is `dark` when the root element has the class `dark`, else `light`. The theme is named `doric-light` or `doric-dark`, or `<that name>-diff-<added>-<removed>` for a diff (one theme per pair of tokens); its base is `vs` or `vs-dark` with `inherit: false`. A value is used as is when it is `#rrggbb`, and otherwise converted from `oklch(…)` to hex; a colour that does not resolve is left out, so Monaco's default answers for it ([`code-view-theme.ts`](src/code/code-view-theme.ts), [`oklch.ts`](src/code/oklch.ts)).
+
+  | Monaco colour                                                                                                                                                                                      | Source                                                    |
+  | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+  | `editor.background`                                                                                                                                                                                | `--background`                                            |
+  | `editor.foreground`, `editorWidget.foreground`                                                                                                                                                     | `--foreground`                                            |
+  | `editorLineNumber.foreground`, `editorLineNumber.activeForeground`                                                                                                                                 | `--muted-foreground`                                      |
+  | `editorIndentGuide.background1`, `editorIndentGuide.activeBackground1`, `editorWidget.border`, `scrollbarSlider.background`, `scrollbarSlider.hoverBackground`, `scrollbarSlider.activeBackground` | `--border`                                                |
+  | `editorCursor.foreground`                                                                                                                                                                          | `--primary`                                               |
+  | `editor.selectionBackground`                                                                                                                                                                       | `--accent`                                                |
+  | `editorError.foreground`                                                                                                                                                                           | `--destructive`                                           |
+  | `editorWidget.background`                                                                                                                                                                          | `--card`                                                  |
+  | `diffEditor.insertedTextBackground`, `diffEditor.removedTextBackground`                                                                                                                            | the `added` / `removed` token with alpha `33` (diff only) |
+  | `diffEditor.insertedLineBackground`, `diffEditor.removedLineBackground`                                                                                                                            | the `added` / `removed` token with alpha `18` (diff only) |
+  | `editorBracketHighlight.foreground1`, `2`, `3`                                                                                                                                                     | the `keyword`, `type` and `number` hues                   |
+
+  | Hue       | Light                  | Dark                   | Token rules                              |
+  | --------- | ---------------------- | ---------------------- | ---------------------------------------- |
+  | `comment` | `--muted-foreground`   | `--muted-foreground`   | `comment`                                |
+  | `keyword` | `oklch(0.5 0.13 152)`  | `oklch(0.78 0.13 152)` | `keyword`, `tag`                         |
+  | `string`  | `oklch(0.51 0.11 62)`  | `oklch(0.81 0.09 70)`  | `string`, `regexp`, `attribute.value`    |
+  | `number`  | `oklch(0.5 0.1 200)`   | `oklch(0.8 0.09 205)`  | `number`                                 |
+  | `type`    | `oklch(0.48 0.13 285)` | `oklch(0.79 0.09 288)` | `type`, `keyword.type`, `attribute.name` |
+  | `name`    | `oklch(0.46 0.1 250)`  | `oklch(0.82 0.06 245)` | `identifier`, `variable`, `predefined`   |
+
+  Each rule sets the token's `foreground`; a rule matches its own token name and every dotted name below it, and a name no rule states keeps the default foreground. Two more rules set `emphasis` to italic and `strong` to bold.
 
 ### Viewport (`desktop/ui/viewport`)
 
@@ -446,7 +572,9 @@ function wheelGesture(input: WheelGestureInput): WheelGesture | undefined;
 ```
 
 - `zoomAt` multiplies the scale by `factor` (clamped) and keeps `origin` (default `0, 0`) under the pointer.
-- `fitViewport` centres `content` in `area` minus `margin` (default 24) on each side, at a scale never above 1 and never below 0.25; `undefined` when the content has no area, `IDENTITY` when the area minus margins has none.
+- `ContentBounds` is `{ readonly x: number; readonly y: number; readonly width: number; readonly height: number }`, a box in content coordinates. `fitViewport` scales by `clampScale(min(1, (area.width − 2 × margin) / content.width, (area.height − 2 × margin) / content.height))` with `margin` default 24, and centres the box: `tx = (area.width − content.width × scale) / 2 − content.x × scale`, and `ty` alike. It returns `undefined` when the content's width or height is 0 or less, and `IDENTITY` when the area minus margins has none.
+- `toContent` maps a surface point to content coordinates: `((x − tx) / scale, (y − ty) / scale)`.
+- `WheelGestureInput` is `{ deltaX; deltaY; deltaMode; zoom: boolean; captured: boolean; pageHeight: number }`, and `WheelGesture` is `{ kind: 'zoom'; factor } | { kind: 'pan'; dx; dy }`.
 - `wheelGesture({ deltaX, deltaY, deltaMode, zoom, captured, pageHeight })`: with `zoom` (Ctrl/⌘ or a pinch), `{ kind: 'zoom', factor: 1.1 }` when `deltaY < 0`, else `1 / 1.1`; otherwise, when `captured`, `{ kind: 'pan', dx: −deltaX × s, dy: −deltaY × s }` with `s` = 1, 16 or `pageHeight || 800` for `deltaMode` 0, 1, 2; otherwise `undefined`, and the caller leaves the wheel to the page.
 
 ### `CommandPrimitive`
@@ -482,15 +610,96 @@ interface Tokens {
 }
 ```
 
-- Each variant sets the shadcn colours (`--background`, `--foreground`, `--card`, `--popover`, `--primary`, `--secondary`, `--muted`, `--accent`, `--destructive`, `--warning`, each with its `-foreground`, and `--border`, `--input`, `--ring`, `--chart-1`…`--chart-5`, `--sidebar*`), the `--paper-*` palette (surfaces, controls, ghost hover and pressed, grays 1–5, blues 2–5, orange, red, green, focus, selection, control shadow) and the shadows (`--shadow-color`, `--shadow-2xs` … `--shadow-2xl`).
+- Each variant sets the shadcn colours, the `--paper-*` palette and the shadows; the values are the tables below.
 - `shared` sets `--font-sans` and `--font-serif` (`'Noto Sans', -apple-system, BlinkMacSystemFont, sans-serif`), `--font-mono` and `--font-conversation` (`'IBM Plex Mono', monospace`), `--font-weight-normal` (400), `--font-weight-medium` (500), `--radius` (6px), `--paper-radius-control` (6px), `--paper-radius-panel` (8px), `--paper-text-sm|base|lg` (10, 12, 13 px), the shadow parameters, `--tracking-normal` and `--spacing` (0.25rem).
 - `trafficLight.reservedWidth` is `insetX + 3 × size + 2 × 8 + insetX`, the room a chrome bar keeps for the macOS window buttons.
+- The shared shadow parameters are `--shadow-x` `0px`, `--shadow-y` `4px`, `--shadow-blur` `12px`, `--shadow-spread` `-2px`, `--shadow-opacity` `0.1`; `--tracking-normal` is `0em`.
+
+The colours of each variant:
+
+| Variable                       | Light                                                                                                  | Dark                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `--background`                 | `#fbf8f2`                                                                                              | `#1c1a17`                                                                                     |
+| `--foreground`                 | `#2e2a25`                                                                                              | `#e8e2d6`                                                                                     |
+| `--card`                       | `#f3eee5`                                                                                              | `#24211d`                                                                                     |
+| `--card-foreground`            | `#2e2a25`                                                                                              | `#e8e2d6`                                                                                     |
+| `--popover`                    | `#f3eee5`                                                                                              | `#24211d`                                                                                     |
+| `--popover-foreground`         | `#2e2a25`                                                                                              | `#e8e2d6`                                                                                     |
+| `--primary`                    | `#3b352e`                                                                                              | `#ede4d3`                                                                                     |
+| `--primary-foreground`         | `#f3ecdf`                                                                                              | `#1c1a17`                                                                                     |
+| `--secondary`                  | `#f7f3ec`                                                                                              | `#332f29`                                                                                     |
+| `--secondary-foreground`       | `#2e2a25`                                                                                              | `#e8e2d6`                                                                                     |
+| `--muted`                      | `#ece6db`                                                                                              | `#2d2924`                                                                                     |
+| `--muted-foreground`           | `#6e665c`                                                                                              | `#a39a8e`                                                                                     |
+| `--accent`                     | `#e3dccf`                                                                                              | `#36312b`                                                                                     |
+| `--accent-foreground`          | `#2e2a25`                                                                                              | `#e8e2d6`                                                                                     |
+| `--destructive`                | `#b3361f`                                                                                              | `#f0a08f`                                                                                     |
+| `--destructive-foreground`     | `#fbf8f2`                                                                                              | `#1c1a17`                                                                                     |
+| `--warning`                    | `#8f5a12`                                                                                              | `#e9b75a`                                                                                     |
+| `--warning-foreground`         | `#fbf8f2`                                                                                              | `#1c1a17`                                                                                     |
+| `--border`                     | `#e2dbce`                                                                                              | `#3a3530`                                                                                     |
+| `--input`                      | `#d8d0c2`                                                                                              | `#423c36`                                                                                     |
+| `--ring`                       | `#8a7f70`                                                                                              | `#d9cdb6`                                                                                     |
+| `--chart-1`                    | `#3b352e`                                                                                              | `#ede4d3`                                                                                     |
+| `--chart-2`                    | `#5a5248`                                                                                              | `#d2c3a6`                                                                                     |
+| `--chart-3`                    | `#7a7064`                                                                                              | `#a39a8e`                                                                                     |
+| `--chart-4`                    | `#a39a8e`                                                                                              | `#7a7064`                                                                                     |
+| `--chart-5`                    | `#c9bda8`                                                                                              | `#5a5248`                                                                                     |
+| `--sidebar`                    | `#f3eee5`                                                                                              | `#24211d`                                                                                     |
+| `--sidebar-foreground`         | `#2e2a25`                                                                                              | `#e8e2d6`                                                                                     |
+| `--sidebar-primary`            | `#3b352e`                                                                                              | `#ede4d3`                                                                                     |
+| `--sidebar-primary-foreground` | `#f3ecdf`                                                                                              | `#1c1a17`                                                                                     |
+| `--sidebar-accent`             | `#ece6db`                                                                                              | `#2d2924`                                                                                     |
+| `--sidebar-accent-foreground`  | `#2e2a25`                                                                                              | `#e8e2d6`                                                                                     |
+| `--sidebar-border`             | `#e2dbce`                                                                                              | `#3a3530`                                                                                     |
+| `--sidebar-ring`               | `#8a7f70`                                                                                              | `#d9cdb6`                                                                                     |
+| `--paper-root`                 | `#fbf8f2`                                                                                              | `#1c1a17`                                                                                     |
+| `--paper-panel`                | `#f3eee5`                                                                                              | `#24211d`                                                                                     |
+| `--paper-panel-highlight-1`    | `#ece6db`                                                                                              | `#2d2924`                                                                                     |
+| `--paper-panel-highlight-2`    | `#e3dccf`                                                                                              | `#36312b`                                                                                     |
+| `--paper-separator`            | `#e2dbce`                                                                                              | `#3a3530`                                                                                     |
+| `--paper-separator-highlight`  | `#d8d0c2`                                                                                              | `#423c36`                                                                                     |
+| `--paper-control`              | `#f7f3ec`                                                                                              | `#332f29`                                                                                     |
+| `--paper-control-border`       | `#e2dbce`                                                                                              | `transparent`                                                                                 |
+| `--paper-control-pressed`      | `#faf7f1`                                                                                              | `#36312b`                                                                                     |
+| `--paper-control-icon`         | `#2e2a2559`                                                                                            | `#e8e2d666`                                                                                   |
+| `--paper-ghost-hover`          | `#2e2a250f`                                                                                            | `#e8e2d60f`                                                                                   |
+| `--paper-ghost-pressed`        | `#2e2a2516`                                                                                            | `#e8e2d616`                                                                                   |
+| `--paper-thumbnail`            | `#2e2a2513`                                                                                            | `#e8e2d61a`                                                                                   |
+| `--paper-thumbnail-selected`   | `#f1eadc`                                                                                              | `#3a342c`                                                                                     |
+| `--paper-gray-1`               | `#2e2a25cc`                                                                                            | `#e8e2d6e6`                                                                                   |
+| `--paper-gray-2`               | `#2e2a2599`                                                                                            | `#e8e2d6a6`                                                                                   |
+| `--paper-gray-3`               | `#2e2a2580`                                                                                            | `#e8e2d693`                                                                                   |
+| `--paper-gray-4`               | `#2e2a256c`                                                                                            | `#e8e2d680`                                                                                   |
+| `--paper-gray-5`               | `#2e2a251a`                                                                                            | `#e8e2d61a`                                                                                   |
+| `--paper-blue-2`               | `#8a7f70`                                                                                              | `#ede4d3`                                                                                     |
+| `--paper-blue-3`               | `#776c5e`                                                                                              | `#e2d6bf`                                                                                     |
+| `--paper-blue-4`               | `#64594c`                                                                                              | `#d2c3a6`                                                                                     |
+| `--paper-blue-5`               | `#4a433b`                                                                                              | `#bba986`                                                                                     |
+| `--paper-orange`               | `#c98a2b`                                                                                              | `#e9a94a`                                                                                     |
+| `--paper-red`                  | `#c0442f`                                                                                              | `#f08a7a`                                                                                     |
+| `--paper-green`                | `#5e8a4c`                                                                                              | `#9cc48a`                                                                                     |
+| `--paper-focus`                | `#a89b86`                                                                                              | `#d9cdb6`                                                                                     |
+| `--paper-selection`            | `#d9cdb680`                                                                                            | `#d9cdb640`                                                                                   |
+| `--paper-shadow-control`       | `inset 0 1px #fff8, inset 0 0 1px 1px #fff8, 0 0.5px 1px #00000018, 0 0 1px #0001, 0 0 4px -1px #0001` | `inset 0 1px #ffffff08, inset 0 0 1px 0.5px #fff1, 0 1px 0.5px #00000018, 0 0 3px -1px #000a` |
+
+| Variable         | Both variants                                                              |
+| ---------------- | -------------------------------------------------------------------------- |
+| `--shadow-color` | `hsl(0 0% 0%)`                                                             |
+| `--shadow-2xs`   | `0 1px 2px 0 hsl(0 0% 0% / 0.05)`                                          |
+| `--shadow-xs`    | `0 1px 3px 0 hsl(0 0% 0% / 0.07)`                                          |
+| `--shadow-sm`    | `0 2px 6px -1px hsl(0 0% 0% / 0.08), 0 1px 2px 0 hsl(0 0% 0% / 0.05)`      |
+| `--shadow`       | `0 2px 6px -1px hsl(0 0% 0% / 0.08), 0 1px 2px 0 hsl(0 0% 0% / 0.05)`      |
+| `--shadow-md`    | `0 4px 12px -2px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.06)`   |
+| `--shadow-lg`    | `0 8px 20px -4px hsl(0 0% 0% / 0.1), 0 2px 6px -2px hsl(0 0% 0% / 0.06)`   |
+| `--shadow-xl`    | `0 12px 28px -6px hsl(0 0% 0% / 0.12), 0 4px 8px -2px hsl(0 0% 0% / 0.06)` |
+| `--shadow-2xl`   | `0 16px 40px -8px hsl(0 0% 0% / 0.16)`                                     |
 
 [`css.ts`](src/tokens/css.ts) turns them into CSS:
 
 - `windowVariables(tokens)`: `--doric-titlebar-height` (`<titlebarHeight>px`), `--doric-window-background` (`var(--background)`), and `--doric-safe-top`, `--doric-safe-left`, `--doric-safe-right` (`0px`).
 - `tokensCss(tokens)`: the text of `tokens.css` — a generated-file comment, `:root` with the light variant and the shared tokens, the dark variant under `@media (prefers-color-scheme: dark)` and under `.dark`, then `:root` with the window variables.
-- `resolvedVariables(tokens, variant = tokens.defaultVariant)`: the shared tokens, that variant and the window variables in one record. The platform contract `doric.tokens/v1` answers this record ([`doric.tokens/v1`](../../docs/architecture/bundles/platform-packages.md#doricstokensv1)).
+- `resolvedVariables(tokens, variant = tokens.defaultVariant)`: the shared tokens, that variant and the window variables in one record. The platform contract `doric.tokens/v1` answers this record ([`doric.tokens/v1`](../../docs/architecture/bundles/platform-packages.md#dorictokensv1)).
 
 `desktop:build` runs [`build-tokens.mjs`](scripts/build-tokens.mjs) after compiling, which writes `src/styles/tokens.css` and `dist/tokens.json` from the compiled module. Both are generated: edit `tokens.ts` and rebuild. The main process reads `tokens.json` for the chrome bar's measures and the native window background.
 
@@ -503,7 +712,7 @@ The rules a bundle stylesheet follows (no `@theme`, `@source` of `packages/deskt
 
 ### Fonts
 
-The faces are vendored under [`assets/fonts`](assets/fonts) as variable `woff2` files, one per subset, and declared in [`fonts.css`](src/styles/fonts.css): **Noto Sans** (weights 100–900, normal and italic; Latin and Latin Extended; license `NotoSans-OFL.txt`) and **IBM Plex Mono** (weights 100–700, normal and italic; Latin1, Latin2, Latin3 and Pi; license `IBMPlexMono-OFL.txt`). The URLs are relative to `src/styles/`; the platform build copies the files and rewrites the URLs ([Fonts](../../docs/architecture/bundles/platform-packages.md#fonts)).
+The faces are vendored under [`assets/fonts`](assets/fonts) as variable `woff2` files, one per subset, and declared in [`fonts.css`](src/styles/fonts.css): **Noto Sans** (weights 100–900, normal and italic; Latin and Latin Extended; license `NotoSans-OFL.txt`) and **IBM Plex Mono** (weights 100–700, normal and italic; Latin1, Latin2, Latin3 and Pi; license `IBMPlexMono-OFL.txt`). Each of the 12 `@font-face` rules covers one face, style and subset, with `font-display: swap` and the subset's `unicode-range`, so a window downloads only the subsets its text uses. The URLs are relative to `src/styles/`; the platform build copies the files and rewrites the URLs ([Fonts](../../docs/architecture/bundles/platform-packages.md#fonts)).
 
 ## Reads (`desktop/reads`)
 
@@ -537,7 +746,7 @@ function refreshQueries(
 ): Promise<void>;
 ```
 
-- `createRefreshQueue` coalesces bursts: the first `request()` schedules `read` after `delayMs`; requests while a run is scheduled join it, and requests during a run cause exactly one more run after it. Every waiting `request()` resolves when a run finishes with no request left pending. `dispose()` cancels the timer and resolves every waiter; later requests resolve at once ([`refresh.ts`](src/reads/refresh.ts)).
+- `createRefreshQueue` coalesces bursts: the first `request()` schedules `read` after `delayMs`; requests while a run is scheduled join it, and requests during a run cause exactly one more run after it. Every waiting `request()` resolves when a run finishes with no request left pending. `dispose()` cancels the timer and resolves every waiter; later requests resolve at once. When `read` rejects, the waiters resolve all the same (no `request()` ever rejects) and the rejection is left unhandled ([`refresh.ts`](src/reads/refresh.ts)).
 - `refreshQueries` keeps one such queue per `QueryClient` and `scope`. A run invalidates (without refetching) and then refetches the active queries `matches` selects, never cancelling a fetch in flight; queries that were fetching when it started are refetched once more after they settle, when they succeeded with ready data. A periodic call (`periodic = true`) skips queries in error and queries whose data is an object with a `status` other than `'ready'`, because those own their retry schedule; any non-periodic call in the same burst includes them.
 
 ### Read policy and messages
@@ -594,39 +803,79 @@ type ErrorCatalog = Readonly<Record<string, ErrorCatalogEntry>>;
 
 ## The window–main protocol (`desktop/protocol`)
 
-Types and zod schemas only, browser-safe; every schema is `.strict()` ([`protocol.ts`](src/client/protocol.ts)). How main and the window use them — the bridge, scopes, exposure and the host — is in [Services and channels](../../docs/architecture/bundles/services-and-channels.md#calls-from-a-desktop-window).
+Browser-safe types, zod schemas and constants, plus the function `remoteMethodSpecFromSchema`; every object schema is `.strict()` ([`protocol.ts`](src/client/protocol.ts)). How main and the window use them — the bridge, scopes, exposure and the host — is in [Services and channels](../../docs/architecture/bundles/services-and-channels.md#calls-from-a-desktop-window).
 
-| Export                                               | Value or shape                                                                                                                                                                                                                                                                                                     |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DESKTOP_CHANNEL`                                    | `'doric:desktop'`, the one `ipcMain.handle` channel of every window and the splash                                                                                                                                                                                                                                 |
-| `DESKTOP_PUSH_CHANNEL`                               | `'doric:desktop:push'`, main's pushes to a window                                                                                                                                                                                                                                                                  |
-| `SHELL_CONTRACT`                                     | `'doric.shell/v1'`                                                                                                                                                                                                                                                                                                 |
-| `WindowChrome`, `windowChromeSchema`                 | `{ titleBar: 'native' \| 'integrated' \| 'none'; height: number; safeArea: { top, left, right: number } }`                                                                                                                                                                                                         |
-| `WindowMode`                                         | `'connected' \| 'disconnected-copy' \| 'last-good-core'`                                                                                                                                                                                                                                                           |
-| `WindowDescription`, `windowDescriptionSchema`       | `{ key: string \| null; kind: 'window' \| 'technical'; primary: boolean; path: string; generation: number \| null; chrome: WindowChrome; mode: WindowMode; tokens: Record<string, string>; app: { version: string } }`; `key` and `generation` are `null` for the splash                                           |
-| `WindowFailure`, `windowFailureSchema`               | `{ kind: 'core' \| 'bootstrap'; bundleId?: string; message: string }`                                                                                                                                                                                                                                              |
-| `CloseRequest`, `closeRequestSchema`                 | `{ phase: 'close' \| 'flush'; forced: boolean; deadline: number }` (epoch ms, `0` = none)                                                                                                                                                                                                                          |
-| `CloseAnswer`, `closeAnswerSchema`                   | `{ allow: true } \| { allow: false; reason: string }`                                                                                                                                                                                                                                                              |
-| `RemoteMethodSpec`, `remoteMethodSpecSchema`         | `{ tuple: number \| null; local: boolean; stream: boolean; expose?: MethodExposure }`                                                                                                                                                                                                                              |
-| `remoteMethodSpecFromSchema(input, output, expose?)` | The spec of a method from its JSON Schemas: `tuple` is the `prefixItems` length of an array input; `stream` when the input has a stream item; `local` when any process-local value (a `LOCAL_KEY` marker) appears in the input other than the stream listener, or in the output of a non-stream method             |
-| `RemoteContract`, `remoteContractSchema`             | `{ id; environment: 'desktopMain' \| 'host'; bundleId; version; contractVersion; cardinality: 'one' \| 'many'; methods: Record<string, RemoteMethodSpec> }`                                                                                                                                                        |
-| `WindowPart`                                         | `{ entry: string; styles?: string }`, the `doric://app/bundles/<id>@<version>/client/` URLs of a client part                                                                                                                                                                                                       |
-| `WindowCatalog`                                      | `{ generation; resolved: ResolvedEnvironment; parts: Record<string, WindowPart>; remote: readonly RemoteContract[]; hostId: string; storageGeneration: number }`                                                                                                                                                   |
-| `BridgeScope`                                        | A call scope (`callScopeSchema`) without the key `windowKey` in any letter case; the schema refuses it                                                                                                                                                                                                             |
-| `BridgeCallEnvelope`, `bridgeCallEnvelopeSchema`     | `{ id (non-empty); contract; method; input; bundleId: string \| null; scope?; deadline; traceparent }`; `bundleId: null` is the window platform                                                                                                                                                                    |
-| `BridgeError`, `bridgeErrorSchema`                   | `{ code; message; details? }`, a `ContractError` as it crosses the IPC                                                                                                                                                                                                                                             |
-| `BridgeResultPayload`, `bridgeResultPayloadSchema`   | `{ ok: true; output } \| { ok: false; error: BridgeError }`                                                                                                                                                                                                                                                        |
-| `BridgeStreamEvent`                                  | `{ type: 'event'; event } \| { type: 'end'; error? }`                                                                                                                                                                                                                                                              |
-| `DoricDesktopApi`                                    | What the preload exposes as `window.doric.desktop`: `describeWindow()`, `ready()`, `reportFailure(info)`, `onCloseRequested(handler)`, `onChromeChanged(listener)`, `catalog()`, `call(envelope)`, `cancel(id)`, `subscribe(envelope, listener)`; the `on*` and `subscribe` methods return an unsubscribe function |
-| `desktopRequestSchema`, `DesktopRequest`             | What the preload sends on `doric:desktop`, discriminated by `op`: `describeWindow`, `ready`, `reportFailure`, `catalog`, `call`, `cancel`, `subscribe`, `unsubscribe`, `closeAnswer`; each takes an optional integer `generation`                                                                                  |
-| `desktopPushSchema`, `DesktopPush`                   | What main pushes, discriminated by `type`: `close-requested` (`id`, `request`), `chrome` (`chrome`), `event` (`id`, `event`), `end` (`id`, `error?`)                                                                                                                                                               |
-| `ShellKeybinding`, `shellKeybindingSchema`           | `{ key: string; command: string }`                                                                                                                                                                                                                                                                                 |
-| `ShellCommandRequest`, `shellCommandRequestSchema`   | `{ id; command; input }`                                                                                                                                                                                                                                                                                           |
-| `ShellCommandResult`, `shellCommandResultSchema`     | `{ id; ok: true } \| { id; ok: false; error: BridgeError }`                                                                                                                                                                                                                                                        |
-| `ShellDiagnostic`, `shellDiagnosticSchema`           | `{ kind: 'quarantine'; bundleId; reason: { code; message } } \| { kind: 'report'; entry: { bundleId; kind; message; details? } } \| { kind: 'recovery'; reason }`                                                                                                                                                  |
-| `shellMethods`, `ShellMethod`                        | The methods of `doric.shell/v1` and whether each is a stream: `keybindings`, `commands`, `connection` (streams); `keybinding`, `commandResult`, `log`, `diagnostic`, `openExternal`, `appearanceGet`, `appearanceSet` (calls)                                                                                      |
+| Export                                               | Value or shape                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DESKTOP_CHANNEL`                                    | `'doric:desktop'`, the one `ipcMain.handle` channel of every window and the splash                                                                                                                                                                                                                     |
+| `DESKTOP_PUSH_CHANNEL`                               | `'doric:desktop:push'`, main's pushes to a window                                                                                                                                                                                                                                                      |
+| `SHELL_CONTRACT`                                     | `'doric.shell/v1'`                                                                                                                                                                                                                                                                                     |
+| `WindowChrome`, `windowChromeSchema`                 | `{ titleBar: 'native' \| 'integrated' \| 'none'; height: number; safeArea: { top, left, right: number } }`                                                                                                                                                                                             |
+| `WindowMode`                                         | `'connected' \| 'disconnected-copy' \| 'last-good-core'`                                                                                                                                                                                                                                               |
+| `WindowDescription`, `windowDescriptionSchema`       | `{ key: string \| null; kind: 'window' \| 'technical'; primary: boolean; path: string; generation: number \| null; chrome: WindowChrome; mode: WindowMode; tokens: Record<string, string>; app: { version: string } }`; `key` and `generation` are `null` for the splash                               |
+| `WindowFailure`, `windowFailureSchema`               | `{ kind: 'core' \| 'bootstrap'; bundleId?: string; message: string }`                                                                                                                                                                                                                                  |
+| `CloseRequest`, `closeRequestSchema`                 | `{ phase: 'close' \| 'flush'; forced: boolean; deadline: number }` (epoch ms, `0` = none)                                                                                                                                                                                                              |
+| `CloseAnswer`, `closeAnswerSchema`                   | `{ allow: true } \| { allow: false; reason: string }`                                                                                                                                                                                                                                                  |
+| `RemoteMethodSpec`, `remoteMethodSpecSchema`         | `{ tuple: number \| null; local: boolean; stream: boolean; expose?: MethodExposure }`                                                                                                                                                                                                                  |
+| `remoteMethodSpecFromSchema(input, output, expose?)` | The spec of a method from its JSON Schemas: `tuple` is the `prefixItems` length of an array input; `stream` when the input has a stream item; `local` when any process-local value (a `LOCAL_KEY` marker) appears in the input other than the stream listener, or in the output of a non-stream method |
+| `RemoteContract`, `remoteContractSchema`             | `{ id; environment: 'desktopMain' \| 'host'; bundleId; version; contractVersion; cardinality: 'one' \| 'many'; methods: Record<string, RemoteMethodSpec> }`                                                                                                                                            |
+| `WindowPart`                                         | `{ entry: string; styles?: string }`, the `doric://app/bundles/<id>@<version>/client/` URLs of a client part                                                                                                                                                                                           |
+| `WindowCatalog`                                      | `{ generation; resolved: ResolvedEnvironment; parts: Record<string, WindowPart>; remote: readonly RemoteContract[]; hostId: string; storageGeneration: number }`                                                                                                                                       |
+| `BridgeScope`                                        | A call scope (`callScopeSchema`) without the key `windowKey` in any letter case; the schema refuses it                                                                                                                                                                                                 |
+| `BridgeCallEnvelope`, `bridgeCallEnvelopeSchema`     | `{ id (non-empty); contract; method; input; bundleId: string \| null; scope?; deadline; traceparent }`; `bundleId: null` is the window platform                                                                                                                                                        |
+| `BridgeError`, `bridgeErrorSchema`                   | `{ code; message; details? }`, a `ContractError` as it crosses the IPC                                                                                                                                                                                                                                 |
+| `BridgeResultPayload`, `bridgeResultPayloadSchema`   | `{ ok: true; output } \| { ok: false; error: BridgeError }`                                                                                                                                                                                                                                            |
+| `BridgeStreamEvent`                                  | `{ type: 'event'; event } \| { type: 'end'; error? }`                                                                                                                                                                                                                                                  |
+| `DoricDesktopApi`                                    | What the preload exposes as `window.doric.desktop` ([below](#doricdesktopapi))                                                                                                                                                                                                                         |
+| `desktopRequestSchema`, `DesktopRequest`             | What the preload sends on `doric:desktop`, discriminated by `op`: `describeWindow`, `ready`, `reportFailure`, `catalog`, `call`, `cancel`, `subscribe`, `unsubscribe`, `closeAnswer`; each takes an optional integer `generation`                                                                      |
+| `desktopPushSchema`, `DesktopPush`                   | What main pushes, discriminated by `type`: `close-requested` (`id`, `request`), `chrome` (`chrome`), `event` (`id`, `event`), `end` (`id`, `error?`)                                                                                                                                                   |
+| `ShellKeybinding`, `shellKeybindingSchema`           | `{ key: string; command: string }`                                                                                                                                                                                                                                                                     |
+| `ShellCommandRequest`, `shellCommandRequestSchema`   | `{ id; command; input }`                                                                                                                                                                                                                                                                               |
+| `ShellCommandResult`, `shellCommandResultSchema`     | `{ id; ok: true } \| { id; ok: false; error: BridgeError }`                                                                                                                                                                                                                                            |
+| `ShellDiagnostic`, `shellDiagnosticSchema`           | `{ kind: 'quarantine'; bundleId; reason: { code; message } } \| { kind: 'report'; entry: { bundleId; kind; message; details? } } \| { kind: 'recovery'; reason }`                                                                                                                                      |
+| `shellMethods`, `ShellMethod`                        | The methods of `doric.shell/v1` and whether each is a stream: `keybindings`, `commands`, `connection` (streams); `keybinding`, `commandResult`, `log`, `diagnostic`, `openExternal`, `appearanceGet`, `appearanceSet` (calls)                                                                          |
 
-`doric.shell/v1` is platform-internal: a window calls it only with `bundleId: null`. A stream takes no input and delivers its items through `subscribe`.
+### `DoricDesktopApi`
+
+```ts
+interface DoricDesktopApi {
+  describeWindow(): Promise<WindowDescription>;
+  ready(): Promise<void>;
+  reportFailure(info: WindowFailure): Promise<void>;
+  onCloseRequested(
+    handler: (request: CloseRequest) => Promise<CloseAnswer | undefined>,
+  ): () => void;
+  onChromeChanged(listener: (chrome: WindowChrome) => void): () => void;
+  catalog(): Promise<WindowCatalog>;
+  call(envelope: BridgeCallEnvelope): Promise<BridgeResultPayload>;
+  cancel(id: string): void;
+  subscribe(
+    envelope: BridgeCallEnvelope,
+    listener: (event: BridgeStreamEvent) => void,
+  ): () => void;
+}
+```
+
+The `on*` methods and `subscribe` return the function that unsubscribes. A bridge error is an answer (`{ ok: false, error }`), never a rejection of `call`.
+
+### `doric.shell/v1`
+
+`doric.shell/v1` is platform-internal: a window calls it only with `bundleId: null`. A stream takes no input (`[]`) and delivers its items through `subscribe`. What each method carries, as the window runtime sends and reads it ([`bridge.ts`](src/client/bridge.ts) and the callers below):
+
+| Method          | Input                                                                          | Output or stream item                         | Window caller             |
+| --------------- | ------------------------------------------------------------------------------ | --------------------------------------------- | ------------------------- |
+| `keybindings`   | none (stream)                                                                  | the whole `ShellKeybinding[]` table, per item | `installKeybindings`      |
+| `keybinding`    | `{ key }`, the accelerator string of the matched binding (not the key pressed) | none                                          | `installKeybindings`      |
+| `commands`      | none (stream)                                                                  | one `ShellCommandRequest` per item            | `serveShellCommands`      |
+| `commandResult` | a `ShellCommandResult`                                                         | none                                          | `serveShellCommands`      |
+| `log`           | a `LogRecord` (`bundle/contracts`)                                             | none                                          | `doric.log/v1` sink       |
+| `diagnostic`    | a `ShellDiagnostic`                                                            | none                                          | `WindowDiagnostics`       |
+| `connection`    | none (stream)                                                                  | one `ConnectionStatus` per item               | `provideConnection`       |
+| `openExternal`  | `{ url }`                                                                      | none                                          | `doric.browser/v1.open`   |
+| `appearanceGet` | `{}`                                                                           | `{ theme }`                                   | `doric.appearance/v1.get` |
+| `appearanceSet` | `{ theme }`                                                                    | none                                          | `doric.appearance/v1.set` |
+
+`keybinding`, `commandResult`, `log` and `diagnostic` are sent fire-and-forget (`shellNotify`, not exported): a throw or a rejection is dropped.
 
 ## The window runtime (`desktop/client`)
 
@@ -656,8 +905,19 @@ The shell sequence of every window ([`bootstrap.ts`](src/client/bootstrap.ts)):
 1. `describeWindow()`; apply the chrome to the root element and follow `onChromeChanged`.
 2. `catalog()`; `activateClientBundles` (below).
 3. Wire the close answers, install the keybindings and serve the shell commands.
-4. Mount. With `mount`, call it. Without, replace the body's children with `<<core>-outlet>`, where `<core>` is the composition's core bundle.
-5. Report. Any exception up to here → `reportFailure({ kind: 'bootstrap', message })`. In the primary window, a quarantined core → `reportFailure({ kind: 'core', bundleId, message })` with the quarantine reasons joined by `; ` (or `Core bundle "<core>" is quarantined.`). Without `mount`, a core that did not define `<core>-outlet` → the same report, with `Core bundle "<core>" did not define <<core>-outlet>.` when it is not quarantined. Otherwise `ready()`.
+4. Decide, with `<core>` the composition's core bundle and `quarantined` its failure when the diagnostics hold it quarantined (`bundleId: <core>`, message: its quarantine reasons joined by `; `, or `Core bundle "<core>" is quarantined.` when there are none):
+   - With `mount`: await `mount({ description })`; the failure is `quarantined` in the primary window, else none.
+   - Without `mount`, in this order: in the primary window with `quarantined`, that is the failure and the body is left untouched; else, when the registry has no `<core>-outlet`, the failure is `quarantined` (in any window) or else `Core bundle "<core>" did not define <<core>-outlet>.`, and the body is left untouched; else the body's children are replaced by one `<<core>-outlet>` element and there is no failure.
+5. Report: a failure → `reportFailure({ kind: 'core', bundleId, message })`; none → `ready()`. An exception thrown in steps 1–4 (a rejected call, a failed activation step, a throwing `mount`) → `reportFailure({ kind: 'bootstrap', message })` with the error's message, and neither `ready()` nor a core report follows.
+
+```ts
+interface ElementRegistry {
+  define(tag: string, element: CustomElementConstructor): void;
+  get(tag: string): CustomElementConstructor | undefined;
+}
+```
+
+`ElementRegistry` is the part of `customElements` the runtime uses ([`elements.ts`](src/client/elements.ts)).
 
 `applyChrome(chrome, root = document.documentElement)` sets `--doric-titlebar-height`, `--doric-safe-top`, `--doric-safe-left` and `--doric-safe-right` in px on the root's inline style ([`chrome.ts`](src/client/chrome.ts)).
 
@@ -702,7 +962,7 @@ All are registered under the principal `doric` ([`platform.ts`](src/client/platf
 - `provideClientPlatform(platform, { resolved, diagnostics, desktop, tokens, app })` provides the platform services shared with the other environments (`doric.catalog/v1`, `doric.bundle/v1`, `doric.log/v1`, `doric.diagnostics/v1`) — log records go to main with `doric.shell/v1.log`, fire-and-forget — and two client contracts with cardinality `one`: `doric.tokens/v1.get()` answers a copy of the description's `tokens`, and `doric.about/v1.get()` answers `{ version }` from the description's `app`.
 - `WindowDiagnostics` is a `DiagnosticsStore` that also forwards each quarantine, report and recovery to main with `doric.shell/v1.diagnostic` (a `ShellDiagnostic`), fire-and-forget.
 - `provideElements(platform, { principals, diagnostics, registry? })` provides `doric.elements/v1`, callable only by the window's active `ui/v1` provider (else `ContractError('not_owner')`). `define({ tag, element, owner })` defines the custom element and records its owner; a tag already defined in the registry or recorded fails with `registration_conflict`, and disposing the registration leaves the tag defined with no owner. `owner(tag)` answers the owner while its principal is open and not quarantined. `attach(element)` gives the element a child scope of its owner's services as `element.services` (`unavailable` when the tag has no active owner); `release(element)` disposes that scope and reports a failed dispose as `dispose_failed`. With no `customElements`, calls fail with `unavailable`.
-- `provideConnection(platform, desktop)` provides `doric.connection/v1`: `status()` starts as `'disconnected'`, follows main's `doric.shell/v1.connection` stream, ignoring items that are not a valid status, and `subscribe(listener)` reports only changes; a listener that throws does not stop the others. It returns the stream's subscription.
+- `provideConnection(platform, desktop)` provides `doric.connection/v1`: `status()` is a `ConnectionStatus`, `'connected'` or `'disconnected'` ([Contracts](../../docs/architecture/bundles/contracts.md)); it starts as `'disconnected'`, follows main's `doric.shell/v1.connection` stream, ignoring items that are not a valid status, and `subscribe(listener)` reports only changes; a listener that throws does not stop the others. It returns the stream's subscription.
 - `provideBrowser(platform, desktop)` provides `doric.browser/v1.open(url)`, which calls `doric.shell/v1.openExternal({ url })`; main checks the URL before the system browser opens it.
 - `provideAppearance(platform, desktop)` provides `doric.appearance/v1`: `get()` calls `appearanceGet` and `set({ theme })` calls `appearanceSet`; the window holds no preference of its own.
 
@@ -712,16 +972,16 @@ The contracts themselves are defined in `bundle/contracts` ([Contracts](../../do
 
 [`bridge.ts`](src/client/bridge.ts):
 
-- `remoteContractRecord(desktop, contract)`: a provider record with `origin: 'remote'` whose `invoke` sends a `BridgeCallEnvelope` (a call id unique in the window, `bundleId` of the caller, the scope without `windowKey`, the call's deadline and `traceparent`) through `desktop.call` and returns the output, or throws the answer's error as a `ContractError`. A method with a tuple input splits its trailing call argument by the tuple length; main validates the input. A `local` method throws `ContractError('local_only')`. A stream method takes its listener as the last input item (else `invalid_input`), subscribes, and returns a Disposable; items reach the listener until main sends `end` (with the error, if any) or the Disposable unsubscribes. Aborting a plain call's signal sends `cancel(id)`; the provider decides how the call ends.
+- `remoteContractRecord(desktop, contract)`: a provider record with `origin: 'remote'` whose `invoke` sends a `BridgeCallEnvelope` (a call id unique in the window, `<prefix>-<n>` with a prefix of up to 8 random base-36 characters drawn once per window and a counter from 1, `bundleId` of the caller, the scope without `windowKey`, the call's deadline and `traceparent`) through `desktop.call` and returns the output, or throws the answer's error as a `ContractError`. A method with a tuple input splits its trailing call argument by the tuple length; main validates the input. A `local` method throws `ContractError('local_only')`. A stream method takes its listener as the last input item (else `invalid_input`), subscribes, and returns a Disposable; items reach the listener until main sends `end` (with the error, if any) or the Disposable unsubscribes. Aborting a plain call's signal sends `cancel(id)`, at once when the signal is already aborted; the call is still sent, and the provider decides how it ends. Stream subscriptions use the same id scheme; `shellCall`/`shellStream` envelopes too.
 - `bridgeError(error)`: the `ContractError` of a `BridgeError`.
 - `withoutWindowKey(call)`: the call's scope without `windowKey`, or `undefined` when nothing else is left.
 - `shellCall(desktop, method, input)` and `shellStream(desktop, method, listener)`: a `doric.shell/v1` call or stream with `bundleId: null`, deadline `0` and a new trace.
 
 ### Close, commands, keybindings and styles
 
-- `answerClose(request, windowHooks)` ([`close.ts`](src/client/close.ts)): in phase `close`, `{ allow: true }` when forced or without hooks, else the answer of `WindowHooksV1.onClose`, with no deadline. In phase `flush`, runs `onFlush` with the request's deadline (when non-zero), ignores its outcome and answers `{ allow: true }`; main enforces the deadline. `wireClose({ desktop, windowHooks })` answers every `onCloseRequested` with it and returns the unsubscribe function.
+- `answerClose(request, windowHooks)` ([`close.ts`](src/client/close.ts)): in phase `close`, `{ allow: true }` when forced or without hooks, else the answer of `WindowHooksV1.onClose`, with no deadline; when that hook throws or rejects, `answerClose` rejects and builds no answer. In phase `flush`, runs `onFlush` with the request's deadline (when non-zero), ignores its outcome and answers `{ allow: true }`; main enforces the deadline. `wireClose({ desktop, windowHooks })` answers every `onCloseRequested` with it and returns the unsubscribe function.
 - `serveShellCommands({ desktop, services })` ([`commands.ts`](src/client/commands.ts)): for each request of main's `doric.shell/v1.commands` stream, runs `CommandsV1.execute(command, input ?? {})` and answers `commandResult` with `{ id, ok: true }` or `{ id, ok: false, error }`.
-- `installKeybindings({ desktop, target?, mac? })` ([`keybindings.ts`](src/client/keybindings.ts)): follows the window's table from the `doric.shell/v1.keybindings` stream and installs one capture-phase `keydown` listener; a key that matches a binding is prevented and sent to main with `keybinding({ key })`. An empty table intercepts nothing. `mac` defaults to whether `navigator.platform` starts with `Mac`. Returns a Disposable. How main builds the table and dispatches the command is in [Menus and keybindings](../../docs/architecture/bundles/menus-and-keybindings.md).
+- `installKeybindings({ desktop, target?, mac? })` ([`keybindings.ts`](src/client/keybindings.ts)): follows the window's table from the `doric.shell/v1.keybindings` stream and installs one capture-phase `keydown` listener; a key that matches a binding is prevented and sent to main with `keybinding({ key })`. An empty table intercepts nothing. `mac` defaults to whether `navigator.platform` starts with `mac` in any letter case (`/^mac/i`). Returns a Disposable. How main builds the table and dispatches the command is in [Menus and keybindings](../../docs/architecture/bundles/menus-and-keybindings.md).
 - `parseAccelerator(accelerator, mac)`: an Electron-style accelerator (`CmdOrCtrl+Shift+P`) as a chord; modifiers `cmd`/`command`/`meta`/`super`, `ctrl`/`control`, `cmdorctrl`/`commandorcontrol` (Meta on macOS, Control elsewhere), `alt`/`option`, `shift`, case-insensitive; key aliases `esc`, `return`, `space`, `plus`, `up`, `down`, `left`, `right`, `del`. `undefined` for an unknown modifier or an empty key. `matchesChord(event, chord)`: the event's lowercased `key` and all four modifier flags match.
 - `insertBundleStyles({ order, parts, document? })` ([`styles.ts`](src/client/styles.ts)): appends one `<link rel="stylesheet" data-bundle="<id>">` to `<head>` for each id in `order` whose part has `styles`, and returns the links.
 
@@ -730,10 +990,10 @@ The contracts themselves are defined in `bundle/contracts` ([Contracts](../../do
 | Target                     | What it runs                                                                                                                                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `nx run desktop:build`     | `tsc --build tsconfig.lib.json` into `dist/`, then [`build-tokens.mjs`](scripts/build-tokens.mjs), which writes `src/styles/tokens.css` and `dist/tokens.json`. Depends on the build of `bundle`                                                                                           |
-| `nx run desktop:typecheck` | `tsc --build tsconfig.json --emitDeclarationOnly`                                                                                                                                                                                                                                          |
+| `nx run desktop:typecheck` | `tsc --build tsconfig.json --emitDeclarationOnly`, after the build of `bundle`                                                                                                                                                                                                             |
 | `nx run desktop:test`      | After `build`: compiles the tests and the component stories with `tsconfig.spec.json` into `dist-tests/`, runs [`verify-provenance.mjs`](scripts/verify-provenance.mjs), then `node --test` over `tests/`, `tests/client/`, `tests/reads/` and `tests/identity/` (DOM through `happy-dom`) |
 
-The targets are defined in [`project.json`](project.json). `stories/` holds the components' stories. The platform build in `app/desktop/doric-platform` bundles `desktop/ui` and its subpaths for the windows ([Platform packages and theme tokens](../../docs/architecture/bundles/platform-packages.md#how-the-platform-files-are-built)).
+The targets are defined in [`project.json`](project.json). `stories/` holds the components' stories. [`.storybook/preview.tsx`](.storybook/preview.tsx) is the harness Papercraft previews and Storybook wrap every story in: it imports `theme.css` and has one decorator that puts the story inside a `TooltipProvider` and a `div` with `bg-background p-6 text-foreground`. The platform build in `app/desktop/doric-platform` bundles `desktop/ui` and its subpaths for the windows ([Platform packages and theme tokens](../../docs/architecture/bundles/platform-packages.md#how-the-platform-files-are-built)).
 
 ## Related documents
 

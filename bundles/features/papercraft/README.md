@@ -379,9 +379,9 @@ Chat creates `<papercraft-fence>` for each `papercraft` fence and sets its
 - The header shows the title and `rev <n>`. Its buttons, shown in the node
   only while it is focused: `Abrir` (the node only), which runs
   `papercraft.open-canvas/v2` and is disabled without a Thread in scope;
-  `Comentar` (`C`), which toggles comment mode and carries the count of
-  pending and drafted comments; and, once a thread of the revision is
-  resolved, `Mostrar resolvidos` / `Esconder resolvidos`. In the canvas
+  `Comentar` (`C`), disabled while no composer is active, which toggles
+  comment mode and carries the count of pending and drafted comments; and,
+  once any thread it shows is resolved, `Mostrar resolvidos` / `Esconder resolvidos`. In the canvas
   window, `Enviar ao agente (<n>)` shows while there are drafts
   ([`src/client/surface/preview-header.tsx`](src/client/surface/preview-header.tsx),
   [`src/client/surface/controller.ts`](src/client/surface/controller.ts)).
@@ -394,7 +394,10 @@ Chat creates `<papercraft-fence>` for each `papercraft` fence and sets its
   `Editar comentário…` while editing a draft) and a close button (`Fechar`).
   Each message's menu has `Copiar texto` and, for a draft, `Editar` and
   `Remover da pilha`; the thread's menu has `Copiar âncora` and, for a draft
-  root, `Remover da pilha`, else the resolved-threads toggle
+  root, `Remover da pilha`, else the resolved-threads toggle. A thread has a
+  `Resolver` button, `Reabrir` once resolved; a drafted message reads
+  `na pilha` in place of its time; the menus are labelled `Mais ações` and
+  `Mais ações do comentário`
   ([`src/client/surface/thread-popover.tsx`](src/client/surface/thread-popover.tsx)).
   A new comment's field reads `Adicionar comentário`
   ([`src/client/surface/pins-layer.tsx`](src/client/surface/pins-layer.tsx)).

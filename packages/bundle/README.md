@@ -22,27 +22,28 @@ tooling.
 
 ## Who uses it
 
-| Kind     | Users                                                                                                                                                        | Entries                                             |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| Bundles  | Every bundle under [`/bundles`](../../bundles): its parts, its contracts module, its tests, and its `build` target                                           | `bundle/contracts`, `bundle/testing`, the build CLI |
-| Apps     | [`doric-host`](../../app/backend/doric-host/README.md) boots the kernel with `startKernel`                                                                   | `bundle`, `bundle/contracts`                        |
-| Apps     | The desktop app [`doric`](../../app/desktop/doric/README.md) runs `desktopMain` generations and the window bridge                                            | `bundle/runtime`, `bundle/contracts`                |
-| Packages | [`tool`](../tool/README.md) (`defineTool` over `tools/v1`), [`storage`](../storage/README.md) (in-memory foundation), `desktop` (window bootstrap, elements) | `bundle/contracts`, `bundle/runtime`, `bundle`      |
-| Bundles  | A host part that compiles modules for the windows (Papercraft previews)                                                                                      | `bundle/externals`                                  |
+| Kind     | Users                                                                                                                                                                                                                                                                                   | Entries                                             |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Bundles  | Every bundle under [`/bundles`](../../bundles): its parts, its contracts module, its tests, and its `build` target                                                                                                                                                                      | `bundle/contracts`, `bundle/testing`, the build CLI |
+| Bundles  | The embedded foundation host parts [`host-config`](../../bundles/foundation/host-config/README.md), [`postgres`](../../bundles/foundation/postgres/README.md) and [`transport`](../../bundles/foundation/transport/README.md) (`EmbeddedBundle`; `host-config` also `contractDocument`) | `bundle` (types), `bundle/runtime`                  |
+| Apps     | [`doric-host`](../../app/backend/doric-host/README.md) boots the kernel with `startKernel` and serves the bridge (`PLATFORM_VERSION`, exposure)                                                                                                                                         | `bundle`, `bundle/runtime`, `bundle/contracts`      |
+| Apps     | The desktop app [`doric`](../../app/desktop/doric/README.md) runs `desktopMain` generations and the window bridge                                                                                                                                                                       | `bundle/runtime`, `bundle/contracts`                |
+| Packages | [`tool`](../tool/README.md) (`defineTool` over `tools/v1`), [`storage`](../storage/README.md) (in-memory foundation), `desktop` (window bootstrap, elements)                                                                                                                            | `bundle/contracts`, `bundle/runtime`, `bundle`      |
+| Packages | The package's own build ([`parts.ts`](src/build/parts.ts))                                                                                                                                                                                                                              | `bundle/externals`                                  |
 
 ## Entry points
 
 `package.json` `exports` ([`package.json`](package.json)); each entry resolves
 to `src/` under the `@org/source` condition and to `dist/` otherwise.
 
-| Entry              | Source                                             | Runs in          | Audience                                       |
-| ------------------ | -------------------------------------------------- | ---------------- | ---------------------------------------------- |
-| `bundle/contracts` | [`src/contracts/index.ts`](src/contracts/index.ts) | Node and browser | Bundle authors                                 |
-| `bundle/runtime`   | [`src/runtime/index.ts`](src/runtime/index.ts)     | Node and browser | The platform (apps, `desktop`); never a bundle |
-| `bundle`           | [`src/index.ts`](src/index.ts)                     | Node             | The host, build tooling, foundation tests      |
-| `bundle/testing`   | [`src/testing/index.ts`](src/testing/index.ts)     | Node and browser | Bundle unit tests                              |
-| `bundle/externals` | [`src/build/externals.ts`](src/build/externals.ts) | Node and browser | Build tooling                                  |
-| `bundle/schemas/*` | `dist/schemas/*`, written by the build             | Data             | Anyone                                         |
+| Entry              | Source                                             | Runs in          | Audience                                                                      |
+| ------------------ | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------- |
+| `bundle/contracts` | [`src/contracts/index.ts`](src/contracts/index.ts) | Node and browser | Bundle authors                                                                |
+| `bundle/runtime`   | [`src/runtime/index.ts`](src/runtime/index.ts)     | Node and browser | Apps, `desktop`, embedded foundation host parts, bundle tests                 |
+| `bundle`           | [`src/index.ts`](src/index.ts)                     | Node             | The host, build tooling, embedded foundation host parts (types), bundle tests |
+| `bundle/testing`   | [`src/testing/index.ts`](src/testing/index.ts)     | Node and browser | Bundle unit tests                                                             |
+| `bundle/externals` | [`src/build/externals.ts`](src/build/externals.ts) | Node and browser | Build tooling                                                                 |
+| `bundle/schemas/*` | `dist/schemas/*`, written by the build             | Data             | Anyone                                                                        |
 
 `bundle/contracts` and `bundle/runtime` import only relative modules and
 `zod`: `tsconfig.browser.json` typechecks them with the DOM library and no Node
@@ -587,9 +588,12 @@ method table — and `bundle/contracts` exports its ref, its interface and its
 method table (`<name>Methods`). A provider must implement exactly that table
 ([`basic/index.ts`](src/contracts/basic/index.ts),
 [`services.ts`](src/runtime/services.ts)). The methods, data and errors of
-each contract are described with its default provider, the `core` bundle, in
-the [core README](../../bundles/foundation/core/README.md); the backends with
-[`postgres`](../../bundles/foundation/postgres/README.md).
+each contract are described with its provider: the contracts `core` provides
+in the [core README](../../bundles/foundation/core/README.md); the backends
+with [`postgres`](../../bundles/foundation/postgres/README.md);
+`models.provider/v1`, which `core` consumes, with each model provider (for
+example [`claude`](../../bundles/providers/claude/README.md#provided-contract-modelsproviderv1-130))
+and in [Models and providers](../../docs/features/models-and-providers.md).
 
 ```ts
 interface BasicContractSpec {
@@ -625,12 +629,8 @@ function basicContractSpec(id: string): BasicContractSpec | undefined;
 | `windows/v1`         | `WindowsV1`        | `desktopMain`           | one         |                      | [`windows.ts`](src/contracts/basic/windows.ts)       |
 | `menus/v1`           | `MenusV1`          | `desktopMain`           | one         |                      | [`menus.ts`](src/contracts/basic/menus.ts)           |
 
-Each source file also exports the contract's types and zod schemas, such as
-`Storage`, `StoredDocument`, `storedDocumentSchema`, `CommitBatch`,
-`Secrets`, `CredentialRef`, `Models`, `CatalogModel`, `Tools`,
-`ContractTool`, `RouteRegistration`, `RegionItem`, `OpenWindowRequest`,
-`Keybinding`, `EventSinkSpec`, `SettingsEntry` and `RegisteredSkill`; each is
-the shape of a method's input or output in that file. The exported helpers
+Each source file also exports the contract's types and zod schemas, listed in
+[Exports per source file](#exports-per-source-file). The exported helpers
 with behavior of their own are:
 
 ```ts
@@ -701,6 +701,192 @@ recognizes the method and validates each item
 `x-doric-local` holds a value local to its process; it crosses the envelope
 only as a handle ([Process isolation](../../docs/architecture/bundles/process-isolation.md#the-envelope)).
 
+#### Exports per source file
+
+Every file exports the contract's interface, its ref (see the table above)
+and its method table `<name>Methods` (`MethodSpecs`: one `{ input, output,
+expose? }` per method). A `<name>Schema` is a zod schema and the type of the
+same name without `Schema` is its `z.output` (`z.input` where noted). Method
+semantics are in the provider's README (see above).
+
+[`commands.ts`](src/contracts/basic/commands.ts):
+
+| Export           | Meaning                                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `Commands`       | `register(command: Registrable<BoundCommand>): Disposable`; `execute(command: AnyServiceRef \| ContractId, input?, call?): Promise<void>` |
+| `isBoundCommand` | See the helpers above                                                                                                                     |
+| `CommandExecute` | `(input: unknown, call: Call) => Promise<void>`                                                                                           |
+
+[`events.ts`](src/contracts/basic/events.ts):
+
+| Export                | Meaning                                                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Events`              | `register(definition)`, `sink(spec)`, `append(definition, payload, call?)`                                                                              |
+| `EventSinkSpec`       | `{ scopeKeys: readonly string[]; stream: string; scopeDescription?: string }`: where the rows of appended events go; `{key}` in `stream` is a scope key |
+| `eventSinkSpecSchema` | 1–`SCOPE_MAX_KEYS` unique keys matching `scopeKeyPattern`, `stream` 1–256 characters, every `{placeholder}` among the keys                              |
+
+[`hooks.ts`](src/contracts/basic/hooks.ts):
+
+| Export             | Meaning                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Hooks`            | What `services.use(HooksV1)` returns: `define(C)`, `use(C)`, `whenAvailable(C, callback)`                                       |
+| `HooksProvider`    | What a `hooks/v1` provider implements: `define`, `register`, `whenDefined`, `execute`; `HooksV1` is `ref<Hooks, HooksProvider>` |
+| `HookOutput<H>`    | What a handler returns: nothing for `observe`/`sequence`, the input's output type for `transform`, `Decision` for `decide`      |
+| `HookHandler<H>`   | `(input, call: Call) => HookOutput<H> \| Promise<HookOutput<H>>`                                                                |
+| `AnyHookHandler`   | `(input: unknown, call: Call) => unknown`: a handler as the provider stores it                                                  |
+| `HookHandle<C>`    | What `define(C)` returns to the owner: per hook, `execute(input, call?): Promise<HookOutput>`                                   |
+| `HookRegistrar<C>` | What `use(C)` returns to a consumer: per hook, `(handler) => Disposable`                                                        |
+
+[`log.ts`](src/contracts/basic/log.ts):
+
+| Export      | Meaning                                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------- |
+| `Log`       | `debug`, `info`, `warn`, `error(message, fields?, call?): void`; a level never throws and is never awaited |
+| `LogFields` | `Readonly<Record<string, unknown>>`                                                                        |
+
+[`menus.ts`](src/contracts/basic/menus.ts):
+
+| Export                           | Meaning                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------------- |
+| `Menus`                          | `addItem(item)`, `addKeybinding(binding)`, `setContext({ key: 'path' \| 'focus', value })`   |
+| `MenuWhen`, `menuWhenSchema`     | `{ path?: string; focus?: string }`: the active route pattern and focus that enable an entry |
+| `MenuItem`, `menuItemSchema`     | `{ id, location ('app/<menu>' or 'dock'), command, label, when?, order? }`                   |
+| `Keybinding`, `keybindingSchema` | `{ command, key, when? }`                                                                    |
+| `menuContextSchema`              | The input of `setContext`                                                                    |
+
+[`models.ts`](src/contracts/basic/models.ts):
+
+| Export                                             | Meaning                                                                                                                                                                       |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Models`, `ModelsProvider`                         | The `models/v1` and `models.provider/v1` interfaces                                                                                                                           |
+| `ModelField`, `modelFieldSchema`                   | One configuration field of a model kind: `{ key, label, kind: 'text' \| 'url' \| 'number' \| 'enum' \| 'secret', required, description?, placeholder?, options?, advanced? }` |
+| `ModelKindDescriptor`, `modelKindDescriptorSchema` | `{ id, label, description, fields: ModelField[], lists: ('models' \| 'reasonings')[], modelsFromCatalog?, site?: { url (https:), label } }`                                   |
+| `CatalogModel`, `catalogModelSchema`               | One model of a kind's catalog (loose object)                                                                                                                                  |
+| `CatalogResult`, `catalogResultSchema`             | `{ status: 'read'; models: CatalogModel[] } \| { status: 'absent' \| 'failed' }`                                                                                              |
+| `LanguageModel`, `languageModelSchema`             | An opaque, process-local model handle (`x-doric-local: 'object'`)                                                                                                             |
+| `toLanguageModel`                                  | See the helpers above                                                                                                                                                         |
+| `ResolvedModel`                                    | `{ providerId, model, effort?, languageModel }`                                                                                                                               |
+| `ModelRequest`                                     | `{ providerId, model, effort? }`                                                                                                                                              |
+| `ModelsConfiguration`                              | `Readonly<Record<string, unknown>>`                                                                                                                                           |
+| `ModelsProviderCreateInput`                        | `{ providerId: string; values: Readonly<Record<string, string>>; secret?: () => Promise<string> }`: what `models.provider/v1.create` receives                                 |
+| `MODEL_ICON_*`                                     | See the helpers above                                                                                                                                                         |
+| `modelIconSvgSchema`                               | One icon: a string of at most `MODEL_ICON_MAX_LENGTH` characters starting with `<svg`                                                                                         |
+| `ModelIconChoice`, `modelIconChoiceSchema`         | `{ provider?: name; models: (name \| null)[] }`: the icons a provider chooses, per requested model in order                                                                   |
+| `ModelIconRequest`, `modelIconRequestSchema`       | `{ providerId, models }` or `{ kind, configuration, models }`                                                                                                                 |
+| `ModelIconAnswers`, `modelIconAnswersSchema`       | `{ svgs: Record<name, svg>; answers: ModelIconChoice[] }`, in request order                                                                                                   |
+
+[`navigation.ts`](src/contracts/basic/navigation.ts):
+
+| Export                           | Meaning                                                                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `Navigation`                     | `register`, `navigate(path, { replace? })`, `back`, `forward`, `history` (both optional in the table), `current`, `chain`, `subscribe` |
+| `RouteMatch`, `routeMatchSchema` | `{ path, pattern, params: Record<string, string> }`                                                                                    |
+| `RouteRegistration`              | `{ path; create(match: RouteMatch): object; parent?: string }`                                                                         |
+| `RouteEntry`                     | `{ match; route }`: one route of the active chain                                                                                      |
+| `NavigationHistory`              | `{ canGoBack: boolean; canGoForward: boolean }`                                                                                        |
+
+[`regions.ts`](src/contracts/basic/regions.ts):
+
+| Export                           | Meaning                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `Regions`                        | `add(region, item): Disposable`, `items(region)`, `subscribe(region, listener)` |
+| `RegionItem`, `regionItemSchema` | `{ id, tag, props?: Record<string, unknown>, order? }`                          |
+| `RegionEntry`                    | A `RegionItem` with `owner`: the `bundleId` that added it                       |
+
+[`secrets.ts`](src/contracts/basic/secrets.ts):
+
+| Export                                                                                            | Meaning                                                                                                        |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `Secrets`, `SecretsBackend`                                                                       | The `secrets/v1` and `secrets.backend/v1` interfaces; the backend stores plaintext across the contract         |
+| `CredentialKind`, `credentialKindSchema`                                                          | A registered kind name: `/^[A-Z][A-Z0-9_]{1,31}$/`                                                             |
+| `credentialFieldNames`, `CredentialField`                                                         | `'username' \| 'email' \| 'secret'`                                                                            |
+| `CredentialValues`                                                                                | `{ username?, email?, secret? }`                                                                               |
+| `CredentialFieldSet`                                                                              | `{ required: CredentialField[]; optional: CredentialField[] }`                                                 |
+| `CredentialKindDefinition`, `credentialKindDefinitionSchema`                                      | `{ id: CredentialKind; required; optional; label?: string }`; no field both required and optional              |
+| `builtinCredentialKinds`, `credentialFieldsSatisfied`, `credentialFieldsMessage`, `isSecretsView` | See the helpers above                                                                                          |
+| `CredentialRef`, `credentialRefSchema`                                                            | `{ id: string }`                                                                                               |
+| `Secret`, `secretSchema`                                                                          | `{ id, kind, name, username?, email?, secret? }`                                                               |
+| `CredentialDescription`, `credentialDescriptionSchema`                                            | The public view: `{ id, kind, name, username?, email?, hasSecret }`; never the secret                          |
+| `CredentialCreate`, `credentialCreateSchema`                                                      | `{ kind, name, username?, email?, secret? }`                                                                   |
+| `CredentialUpdate`, `credentialUpdateSchema`                                                      | Every field optional; `username`, `email`, `secret` absent or `null` keep the stored value, any string sets it |
+| `CredentialWrite`, `credentialWriteSchema`                                                        | The same as `CredentialDescription`                                                                            |
+| `credentialDeleteResultSchema`                                                                    | `'deleted' \| 'missing' \| 'referenced'`                                                                       |
+| `ResolveByKindOptions` (`z.input`), `resolveByKindOptionsSchema`                                  | `{ exclude?: string[] }`: ids removed before the one-match rule                                                |
+| `SecretsView`                                                                                     | An in-process, synchronous view of the provider's cache; never crosses a boundary                              |
+| `ReferenceSource`                                                                                 | `() => Iterable<string>`: the credential ids a holder references now                                           |
+| `StoredSecret`, `storedSecretSchema`                                                              | `Secret` plus `createdAt?`, `updatedAt?`: what the backend stores                                              |
+
+[`settings.ts`](src/contracts/basic/settings.ts):
+
+| Export                                    | Meaning                                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `Settings`                                | `register`, `get`, `entry`, `set(definition, value, options?, call?)`, `subscribe`       |
+| `SettingsEntry<T>`, `settingsEntrySchema` | `{ value: T; revision: number; version: string; updatedAt: string; generation: number }` |
+| `SettingsSetOptions`                      | `{ expectedRevision?: number }`                                                          |
+
+[`skills.ts`](src/contracts/basic/skills.ts):
+
+| Export                                     | Meaning                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------ |
+| `Skills`                                   | `register(skill: SkillSchemaInput, options?): Disposable`, `list(call?)` |
+| `RegisteredSkill`, `registeredSkillSchema` | `{ bundleId, alwaysAvailable, order?: orderKey, skill: SkillRecord }`    |
+| `SkillRegistrationOptions`                 | `{ alwaysAvailable?: boolean; order?: number }`                          |
+
+[`storage.ts`](src/contracts/basic/storage.ts):
+
+| Export                                                       | Meaning                                                                                                                    |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `Storage`, `StorageBackend`                                  | The `storage/v1` and `storage.backend/v1` interfaces                                                                       |
+| `StoredDocument`, `storedDocumentSchema`                     | `{ type, id, revision: int, value }`                                                                                       |
+| `StorageQuery`, `storageQuerySchema`                         | `{ type, index, equals: IndexValue[], range?: { gt?, gte?, lt?, lte? }, order?: 'asc' \| 'desc', limit: 1–1000, cursor? }` |
+| `StoragePage`, `storagePageSchema`                           | `{ items: StoredDocument[]; cursor? }`                                                                                     |
+| `StreamRead`, `streamReadSchema`                             | `{ stream, afterSequence: int ≥ 0, limit: int > 0 }`                                                                       |
+| `StreamEntry`, `streamEntrySchema`                           | `{ sequence: int > 0, value, createdAt }` (`createdAt` set by the backend at commit)                                       |
+| `TruncationMark`, `truncationMarkSchema`                     | `{ afterSequence, atSequence }`: entries above `afterSequence` were removed when the stream stood at `atSequence`          |
+| `StreamPage`, `streamPageSchema`                             | `{ entries, lastSequence, truncations }`; `truncations` are the marks that removed entries the reader may hold             |
+| `expectedRevisionSchema`                                     | `{ type, id, revision: int ≥ 0 }`; revision 0 means "must not exist"                                                       |
+| `CommitBatch`, `commitBatchSchema`                           | One atomic batch, applied in the order expect → delete → put → dropStreams → truncate → append, or not at all              |
+| `commitResultSchema`                                         | `{ position: int }`                                                                                                        |
+| `StorageHealth`, `storageHealthSchema`                       | `{ status: 'ok' \| 'unavailable', writable, reason?, disk?: { blocks, availableBlocks } }`                                 |
+| `StorageIdentity`, `storageIdentitySchema`                   | `{ hostId: uuid, storageGeneration: int > 0 }`                                                                             |
+| `StorageCapabilities`, `storageCapabilitiesSchema`           | `{ maxBatch, maxDocumentBytes, maxAppendBytes }`, positive integers                                                        |
+| `feedRequestSchema`                                          | `{ after: int, limit: int > 0 }`                                                                                           |
+| `FeedPage`, `feedPageSchema`                                 | `{ commits: { position, documents: { type, id }[], streams, truncated, dropped }[] }`                                      |
+| `StorageDeclaration` (`z.input`), `storageDeclarationSchema` | `{ type, indexes: { name, fields, unique? }[] }`                                                                           |
+
+[`tools.ts`](src/contracts/basic/tools.ts):
+
+| Export                                       | Meaning                                                                                                                                        |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Tools`                                      | `register(tool: Registrable<ContractTool>, options): Disposable`, `list(call?)`, `catalog(call?)`                                              |
+| `ContractToolDefinition`                     | `{ name, description?, inputSchema: JsonObject, outputSchema: JsonObject, strict? }`: what a model sees                                        |
+| `ToolIssueView`                              | `{ path: string; message: string }`                                                                                                            |
+| `ToolPayloadCheck`                           | `{ success: true; data } \| { success: false; issues: ToolIssueView[] }`                                                                       |
+| `ContractTool`                               | `{ name, description?, input: ZodObject, output, definition, settings: object[], resultModalities?, check?(payload), execute(payload, call) }` |
+| `RegisteredTool`                             | `{ bundleId, alwaysAvailable, order?, projectId?, tool: ContractTool }`                                                                        |
+| `ToolCatalogEntry`, `toolCatalogEntrySchema` | `{ name, description?, settings: object[] }`: plain data, as `GET /tools` lists it                                                             |
+| `ToolRegistrationOptions`                    | `{ alwaysAvailable: boolean; order?: number; projectId?: string }`                                                                             |
+| `orderKeySchema`, `isContractTool`           | See the helpers above                                                                                                                          |
+
+[`ui.ts`](src/contracts/basic/ui.ts):
+
+| Export               | Meaning                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| `Ui`                 | `define(tag, element): Disposable`, `create(tag, props?): object`, `dispose(element)` |
+| `ElementConstructor` | `abstract new (...args: never[]) => object`: a custom element class                   |
+
+[`windows.ts`](src/contracts/basic/windows.ts) (types are `z.input`):
+
+| Export                                         | Meaning                                                                                                                                                               |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Windows`                                      | `open(request: OpenWindowRequest, call?): Promise<void>`                                                                                                              |
+| `WindowAppearance`, `windowAppearanceSchema`   | `{ size?: { width, height, minWidth?, minHeight? }, titleBar: 'native' \| 'integrated' \| 'none' (default 'integrated'), background: token name (default 'window') }` |
+| `PathWindowRequest`, `pathWindowRequestSchema` | `{ key, path, appearance?, primary? }`: a window showing an app route                                                                                                 |
+| `WindowView`, `windowViewSchema`               | `{ path: string` (host-relative, starts with `/`)`; partition: string` (the Electron session partition)`; title?: string }`                                           |
+| `ViewWindowRequest`, `viewWindowRequestSchema` | `{ key, view: WindowView, appearance?, primary? }`: a window showing a page on the host                                                                               |
+| `OpenWindowRequest`, `openWindowRequestSchema` | One of the two; each shape is strict, so a request names exactly one                                                                                                  |
+| `openWindowResultSchema`                       | `z.void()`                                                                                                                                                            |
+
 ### Platform contracts
 
 `bundle/contracts` exports the ref and the interface of each `doric.*`
@@ -762,13 +948,85 @@ The catalog's quarantine codes are exported as `quarantineCodes`:
 `kernel_requires_generation`. When each is set is described in [The core
 bundle and quarantine](../../docs/architecture/bundles/core.md#quarantine).
 
+The other exports of [`platform.ts`](src/contracts/platform.ts) and
+[`network.ts`](src/contracts/network.ts) are the data of those contracts:
+
+| Export                                                 | Type or value                                                                                                                                                                                                                                      |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Phase`                                                | `'foundation' \| 'core' \| 'others'`                                                                                                                                                                                                               |
+| `BundleState`                                          | `'active' \| 'quarantined' \| 'disabled' \| 'inactive'`                                                                                                                                                                                            |
+| `QuarantineCode`, `QuarantineReason`                   | `(typeof quarantineCodes)[number]`; `{ code: QuarantineCode; message: string; contract?: string }`                                                                                                                                                 |
+| `CatalogManifest`                                      | The validated v1 manifest the catalog publishes: `{ manifestVersion: 1; id; version; engines: { doric }; provides; requires; optional?; desktopScope?: Record<string, string[]>; description? }`                                                   |
+| `CatalogComposition`                                   | `{ core: string; enabled: readonly string[]; providers: Readonly<Record<string, string>> }`                                                                                                                                                        |
+| `ContractProvider`                                     | `{ bundleId: string; version: string` (the contract version in `provides`)`; bundleVersion: string }`                                                                                                                                              |
+| `CatalogBundle`                                        | `{ id: string; version: string; description?: string; state: BundleState; phase?: Phase; manifest?: CatalogManifest; reasons: readonly QuarantineReason[] }`                                                                                       |
+| `CatalogContract`                                      | `{ id: string; environment: Environment; cardinality: 'one' \| 'many'; providers: readonly ContractProvider[] }`                                                                                                                                   |
+| `CatalogSnapshot`                                      | `{ generation: number; composition; bundles: readonly CatalogBundle[]; order: readonly string[]` (activation order)`; contracts: readonly CatalogContract[]; storage?: StorageIdentity }`                                                          |
+| `CatalogChange`, `catalogChangeSchema`                 | `{ generation: int }`: an item of `doric.catalog/v1.watch()`                                                                                                                                                                                       |
+| `DistributionFile`, `distributionFileSchema`           | `{ path: string` (non-empty, `/` separators)`; sha256: string` (64 lowercase hex)`; size: int ≥ 0 }`                                                                                                                                               |
+| `DistributionParts`                                    | `{ desktopMain?: string; client?: string; clientStyles?: string; contracts?: string }`: paths of the built parts                                                                                                                                   |
+| `DistributionBundle`                                   | `{ id; version; state: BundleState; reasons; manifest?: CatalogManifest; descriptor?: JsonObject; files: readonly DistributionFile[]; parts: DistributionParts }`                                                                                  |
+| `DistributionCatalog`, `distributionCatalogSchema`     | `{ generation: int; hostBoot: string` (non-empty, random per host process)`; platformVersion: string; composition; storage?; host: CatalogSnapshot; bundles: readonly DistributionBundle[] }`                                                      |
+| `DistributionArtifact`, `distributionArtifactSchema`   | `{ sha256: string; base64: string }`: one distributed file by hash                                                                                                                                                                                 |
+| `DiagnosticError`                                      | `{ at: string; bundleId: string; kind: string; message: string; details?: unknown }`                                                                                                                                                               |
+| `DiagnosticBundle`                                     | `{ id; version; state: BundleState; phase?: Phase; reasons: readonly QuarantineReason[]; activationMs?: number }`                                                                                                                                  |
+| `Diagnostics`                                          | `{ generation: number; mode: 'normal' \| 'recovery'; recovery?: { reason: string }; issues: readonly string[]; bundles: readonly DiagnosticBundle[]; errors: readonly DiagnosticError[]; consumers: Readonly<Record<string, readonly string[]>> }` |
+| `DiagnosticReport`                                     | `{ bundleId: string; kind: string; message: string; details?: unknown }`                                                                                                                                                                           |
+| `BundleDescription`                                    | `{ bundleId: string; version: string; generation: number; environment: Environment }`                                                                                                                                                              |
+| `LogRecord`                                            | `{ level: 'debug' \| 'info' \| 'warn' \| 'error'; message; fields?; bundleId; version; generation; environment; scope?: CallScope; traceId?: string }`                                                                                             |
+| `MenuSkeleton`                                         | `readonly { id: string; label: string; role?: string; submenu?: MenuSkeleton }[]`                                                                                                                                                                  |
+| `WINDOW_CAPTURE_MAX_SIDE`                              | `4096`                                                                                                                                                                                                                                             |
+| `WindowCaptureRequest`, `windowCaptureRequestSchema`   | `{ key: string` (non-empty)`; rect: { x ≥ 0; y ≥ 0; width; height }` (sides positive, at most `WINDOW_CAPTURE_MAX_SIDE`)` }`                                                                                                                       |
+| `WindowCapture`, `windowCaptureSchema`                 | `{ png: string` (base64)`; width: int > 0; height: int > 0` (device pixels)`; scale: number > 0 }`                                                                                                                                                 |
+| `MigrationRequest`                                     | `{ key: string; marker: string }`                                                                                                                                                                                                                  |
+| `MigrationResult`                                      | `'migrated' \| 'none' \| 'skipped' \| 'failed'`                                                                                                                                                                                                    |
+| `migrationKeyPattern`                                  | `/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/`: a localStorage key a migration may copy                                                                                                                                                                      |
+| `migrationMarkerPattern`                               | `/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/`: the name of the marker record                                                                                                                                                                                  |
+| `NotificationRequest`, `notificationRequestSchema`     | `{ title: string; body: string }`                                                                                                                                                                                                                  |
+| `ConnectionStatus`, `connectionStatusSchema`           | `'connected' \| 'disconnected'`                                                                                                                                                                                                                    |
+| `browserUrlSchema`                                     | A string of at most 8192 characters that parses as an absolute `https:` URL                                                                                                                                                                        |
+| `DoricTheme`, `doricThemeSchema`                       | `'dark' \| 'light' \| 'system'`                                                                                                                                                                                                                    |
+| `WorkHold`, `workHoldSchema`                           | `{ key: string` (1–256)`; label?: string` (≤ 256)` }`                                                                                                                                                                                              |
+| `GenerationState`                                      | `'starting' \| 'active' \| 'draining' \| 'stopped' \| 'failed'`                                                                                                                                                                                    |
+| `GenerationDescription`, `generationDescriptionSchema` | `{ generation: int; incarnation: int; state: GenerationState }`                                                                                                                                                                                    |
+| `PeerSignal`                                           | `{ topic: string` (1–128)`; payload?: unknown }`                                                                                                                                                                                                   |
+| `startupLevelSchema`                                   | `'debug' \| 'info' \| 'warn' \| 'error'`                                                                                                                                                                                                           |
+| `NetworkResources`                                     | `{ http: object; server: object` (the host's shared `http.Server`)`; sockets: object }`                                                                                                                                                            |
+
+`DoricNetwork.register` takes a `(resources: NetworkResources) => (() =>
+void) | undefined`; the listener type is not exported.
+
 ## `bundle/runtime`
 
 The service runtime shared by the host kernel, the host's generation
 processes, the desktop main process and every window
-([`src/runtime/index.ts`](src/runtime/index.ts)). Bundles never import it.
-It re-exports `definePlatformService`, `platformContracts` and
-`PlatformContractSpec` from the contracts, and the modules below.
+([`src/runtime/index.ts`](src/runtime/index.ts)). Apps, the `desktop`
+package, embedded foundation host parts (`host-config` imports
+`contractDocument`) and bundle tests import it; desktop parts may, client,
+chunk, worker and frame parts may not ([Build tooling](#build-tooling)).
+It re-exports from the contracts what only the platform uses
+([`define.ts`](src/contracts/define.ts),
+[`platform.ts`](src/contracts/platform.ts)):
+
+```ts
+function definePlatformService<M extends Record<string, AnyMethodDefinition>>(
+  idOrRef: ContractId | AnyServiceRef,
+  methods: M,
+): ServiceDefinition<ContractId, M>; // always cardinality 'one'
+interface PlatformContractSpec {
+  readonly environments: readonly Environment[];
+  readonly methods: MethodSpecs;
+}
+const platformContracts: Readonly<
+  Record<PlatformContractId, PlatformContractSpec>
+>; // frozen
+type PlatformContractId = keyof typeof platformContracts; // the doric.* service ids
+```
+
+`definePlatformService` checks the id like `defineService`
+(`Invalid service contract ID "<id>".`) and throws a `TypeError`
+`"<id>" is not a platform contract ID.` for an id that does not start with
+`doric.`. The rest of the entry is the modules below.
 
 ### Directory and principals
 
@@ -975,13 +1233,45 @@ every failure goes to `onError` ([`scope.ts`](src/runtime/scope.ts)).
 ### Manifest, composition and descriptor
 
 ```ts
-const manifestV1Schema, manifestV0Schema;
-type ManifestV1, ManifestV1Input, ManifestV0;
-const semverString, semverRange;   // zod strings checked by isVersion / isRange
-interface ContractEntry { readonly id: string; readonly major: number; readonly spec: string }
+// The interfaces below spell out the z.output type aliases of the schemas.
+const semverString: z.ZodType<string>; // checked by isVersion
+const semverRange: z.ZodType<string>; // checked by isRange
+const manifestV1Schema: z.ZodType<ManifestV1, ManifestV1Input>; // strict
+interface ManifestV1 {
+  readonly manifestVersion: 1;
+  readonly id: string; // /^[a-z][a-z0-9-]*$/, not "doric"
+  readonly version: string; // semverString
+  readonly engines: { readonly doric: string }; // semverRange
+  readonly provides: readonly string[]; // "<id>/v<major>@<version>"; input default []
+  readonly requires: readonly string[]; // "<id>/v<major>@<range>"; input default []
+  readonly optional?: readonly string[]; // contract ids
+  readonly desktopScope?: Readonly<Record<string, readonly string[]>>; // contract id → ≤ SCOPE_MAX_KEYS keys
+  readonly description?: string; // trimmed, non-empty
+} // ManifestV1Input: the same with provides and requires optional
+const manifestV0Schema: z.ZodType<ManifestV0>; // strict
+interface ManifestV0 {
+  readonly name: string; // trimmed, non-empty
+  readonly description: string; // trimmed, non-empty
+  readonly tools: readonly { path: string; alwaysAvailable: boolean }[]; // path tools/<file>.js
+  readonly skills: readonly { path: string; alwaysAvailable: boolean }[]; // path skills/<dir>/SKILL.md
+}
+interface ContractEntry {
+  readonly id: string;
+  readonly major: number;
+  readonly spec: string;
+}
 function parseContractEntry(entry: string): ContractEntry | undefined; // "<id>/v<major>@<version-or-range>"
-interface LegacyResource { readonly path: string; readonly alwaysAvailable: boolean }
-interface ReadManifest { readonly manifest: ManifestV1; readonly legacy?: { tools: readonly LegacyResource[]; skills: readonly LegacyResource[] } }
+interface LegacyResource {
+  readonly path: string;
+  readonly alwaysAvailable: boolean;
+}
+interface ReadManifest {
+  readonly manifest: ManifestV1;
+  readonly legacy?: {
+    tools: readonly LegacyResource[];
+    skills: readonly LegacyResource[];
+  };
+}
 function parseManifest(document: unknown): ReadManifest;
 function convertV0(v0: ManifestV0): ReadManifest;
 function v0BundleId(name: string): string; // the name itself
@@ -998,15 +1288,33 @@ The fields and rules of version 1 are in [The bundle
 manifest](../../docs/architecture/bundles/manifest.md).
 
 ```ts
-const compositionSchema;  // { core, enabled (≥ 1), resident?, providers (default {}), required?, alternatives? }
-const requiredSchema;     // { contracts: ContractId[] = [], bundles: string[] = [] }
-const alternativeSchema;  // { env, default, options (≥ 1, contains default) }
-type Composition, Alternative;
+const compositionSchema: z.ZodType<Composition>; // strict
+const requiredSchema: z.ZodType<Composition['required']>; // strict
+const alternativeSchema: z.ZodType<Alternative>; // strict; options contains default
+interface Composition {
+  core: string; // non-empty
+  enabled: string[]; // ≥ 1 non-empty ids
+  resident?: string[]; // bundle ids of installed host parts sharing the host process
+  providers: Record<string, string>; // contract id → bundle id; input default {}
+  required?: { contracts: string[]; bundles: string[] }; // each input default []
+  alternatives?: Record<string, Alternative>; // names /^[a-z][a-z0-9-]*$/
+}
+interface Alternative {
+  env: string; // non-empty
+  default: string; // non-empty, one of options
+  options: string[]; // ≥ 1 non-empty
+}
 type AlternativeChoices = Readonly<Record<string, string>>;
 type Variables = Readonly<Record<string, string | undefined>>;
 function parseComposition(document: unknown): Composition;
-function selectAlternatives(composition: Composition, variables: Variables): AlternativeChoices;
-function enableAlternatives(composition: Composition, choices: AlternativeChoices): Composition;
+function selectAlternatives(
+  composition: Composition,
+  variables: Variables,
+): AlternativeChoices;
+function enableAlternatives(
+  composition: Composition,
+  choices: AlternativeChoices,
+): Composition;
 function enabledAlternatives(composition: Composition): AlternativeChoices;
 ```
 
@@ -1020,11 +1328,31 @@ described in [Composition and
 distribution](../../docs/architecture/bundles/composition-and-distribution.md).
 
 ```ts
-const descriptorKinds: readonly ['service', 'hooks', 'event', 'command', 'settings', 'storage-type'];
-type DescriptorKind;
-const descriptorEntrySchema; // { id, version, kind, environment, cardinality, local, schema }
-const descriptorSchema;      // { descriptorVersion: 1, bundle: { id, version }, contracts: DescriptorEntry[] }
-type Descriptor, DescriptorEntry;
+const descriptorKinds: readonly [
+  'service',
+  'hooks',
+  'event',
+  'command',
+  'settings',
+  'storage-type',
+];
+type DescriptorKind = (typeof descriptorKinds)[number];
+const descriptorEntrySchema: z.ZodType<DescriptorEntry>; // strict
+interface DescriptorEntry {
+  id: string; // contractIdPattern
+  version: string; // semverString
+  kind: DescriptorKind;
+  environment: Environment;
+  cardinality: Cardinality;
+  local: boolean;
+  schema: string; // path relative to the bundle's dist, e.g. "schemas/hooks/v1.json"
+}
+const descriptorSchema: z.ZodType<Descriptor>; // strict
+interface Descriptor {
+  descriptorVersion: 1;
+  bundle: { id: string; version: string };
+  contracts: DescriptorEntry[];
+}
 function parseDescriptor(document: unknown): Descriptor;
 function emptyDescriptor(id: string, version: string): Descriptor;
 ```
@@ -1400,13 +1728,452 @@ The envelope between processes is exported from
 | [`validators.ts`](src/runtime/envelope/validators.ts) | `SchemaValidators`, `SchemaCheck`, `SchemaIssue`, `documentMethodSpecs`, `memberSpec`, `validatorSchema`: checks of JSON Schema members at a boundary                                                                                                               |
 | [`memory.ts`](src/runtime/envelope/memory.ts)         | `createTransportPair`, `TransportPair`: two connected in-memory transports                                                                                                                                                                                          |
 
-The messages, the handles and the control plane are described in [Process
-isolation](../../docs/architecture/bundles/process-isolation.md#the-envelope).
+Why the envelope works as it does is described in [Process
+isolation](../../docs/architecture/bundles/process-isolation.md#the-envelope);
+its exports follow.
+
+#### Wire messages
+
+From [`messages.ts`](src/runtime/envelope/messages.ts). Every message is
+validated with `wireMessageSchema` on receipt.
+
+```ts
+interface WireCall {
+  readonly caller: Caller; // filled by the sending dispatcher
+  readonly scope?: CallScope; // on receipt, entries with a bad key or a non-string value are dropped
+  readonly trace: TraceContext; // the hop span the sender created
+  readonly deadline: number; // epoch ms; 0 = none
+  readonly generation: number; // the pinned operation generation; 0 = unpinned
+}
+
+// Envelope messages
+interface CallMessage extends WireCall {
+  readonly kind: 'call';
+  readonly id: string; // `${side}:${counter}`, unique per sending side
+  readonly contract: string;
+  readonly method: string;
+  readonly input: unknown; // encoded
+  readonly provider?: string; // the bundle of the record the sender resolved
+  readonly record?: string; // that record's key, for a bundle with several records
+  readonly oneway?: true; // no result is sent back
+}
+interface InvokeMessage extends WireCall {
+  readonly kind: 'invoke';
+  readonly id: string;
+  readonly handle: string; // a handle the receiver exported
+  readonly method?: string; // 'execute' or 'check' for a tool, 'run' for a scoped callback
+  readonly args: readonly unknown[]; // encoded
+}
+type ResultMessage =
+  | {
+      readonly kind: 'result';
+      readonly id: string;
+      readonly ok: true;
+      readonly output: unknown;
+    }
+  | {
+      readonly kind: 'result';
+      readonly id: string;
+      readonly ok: false;
+      readonly error: WireError;
+    };
+interface CancelMessage {
+  readonly kind: 'cancel';
+  readonly id: string;
+}
+interface ReleaseMessage {
+  readonly kind: 'release';
+  readonly handle: string;
+}
+// Streams across the desktop bridge and the main <-> window IPC; the process
+// link between the kernel and a generation does not serve them.
+interface SubscribeMessage extends WireCall {
+  readonly kind: 'subscribe';
+  readonly id: string;
+  readonly contract: string;
+  readonly method: string;
+  readonly input: unknown; // without the listener
+}
+interface EventMessage {
+  readonly kind: 'event';
+  readonly id: string;
+  readonly values: readonly unknown[];
+} // [item]
+interface UnsubscribeMessage {
+  readonly kind: 'unsubscribe';
+  readonly id: string;
+}
+interface EndMessage {
+  readonly kind: 'end';
+  readonly id: string;
+  readonly error?: WireError;
+}
+type EnvelopeMessage =
+  | CallMessage
+  | InvokeMessage
+  | ResultMessage
+  | CancelMessage
+  | ReleaseMessage
+  | SubscribeMessage
+  | EventMessage
+  | UnsubscribeMessage
+  | EndMessage;
+
+// Errors
+interface WireError {
+  readonly code: string; // ContractError.code, else 'internal'
+  readonly message: string;
+  readonly details?: unknown;
+  readonly thrown?: WireThrown;
+}
+type WireThrown =
+  | { readonly kind: 'value'; readonly value: unknown }
+  | WireThrownError;
+interface WireThrownError {
+  readonly kind: 'error';
+  readonly name: string; // Reflect.get(error, 'name')
+  readonly prototype: string; // constructor name, looked up in the receiver's registry
+  readonly own: readonly WireOwnProperty[]; // getOwnPropertyNames order
+}
+type WireOwnProperty =
+  | {
+      readonly key: string;
+      readonly enumerable: boolean;
+      readonly value: unknown;
+    }
+  | {
+      readonly key: string;
+      readonly enumerable: boolean;
+      readonly error: WireThrownError;
+    };
+
+// Control plane (kernel <-> runner); never routed to bundles
+interface RemoteProviderDescriptor {
+  readonly contractId: string;
+  readonly bundleId: string;
+  readonly key?: string; // the record's identity, for several records of a many contract
+  readonly version: string; // the providing bundle's version
+  readonly contractVersion: string;
+  readonly environment: Environment;
+  readonly cardinality: Cardinality;
+  readonly schema:
+    | { readonly kind: 'basic' }
+    | { readonly kind: 'platform' }
+    | { readonly kind: 'document'; readonly document: JsonObject };
+}
+type ControlMessage =
+  | { readonly kind: 'init'; readonly init: unknown } // a GenerationInit, validated by the runner
+  | { readonly kind: 'ready'; readonly order: readonly string[] }
+  | { readonly kind: 'provide'; readonly descriptor: RemoteProviderDescriptor }
+  | {
+      readonly kind: 'unprovide';
+      readonly contractId: string;
+      readonly bundleId: string;
+      readonly key?: string;
+    }
+  | { readonly kind: 'diagnostics'; readonly snapshot: Diagnostics }
+  | { readonly kind: 'catalog'; readonly snapshot: CatalogSnapshot }
+  | {
+      readonly kind: 'platform-log';
+      readonly level: 'info' | 'warn' | 'error';
+      readonly fields: Readonly<Record<string, unknown>>;
+      readonly message: string;
+    }
+  | {
+      readonly kind: 'lifecycle';
+      readonly id: string;
+      readonly hook: AppLifecycleHook;
+      readonly input: unknown;
+    }
+  | {
+      readonly kind: 'lifecycle-result';
+      readonly id: string;
+      readonly ok: true;
+      readonly output: unknown;
+    }
+  | {
+      readonly kind: 'lifecycle-result';
+      readonly id: string;
+      readonly ok: false;
+      readonly error: WireError;
+    }
+  | { readonly kind: 'stop' }
+  | { readonly kind: 'stopped' };
+type AppLifecycleHook =
+  | 'onAppReadyHook'
+  | 'onAppActivateHook'
+  | 'onBeforeQuitHook'
+  | 'onGenerationReadyHook'
+  | 'onConnectionChangedHook';
+const appLifecycleHooks: readonly AppLifecycleHook[]; // frozen, in that order
+
+type WireMessage = EnvelopeMessage | ControlMessage;
+const wireMessageSchema: z.ZodType<WireMessage>;
+const wireErrorSchema: z.ZodType<WireError>;
+const remoteProviderDescriptorSchema: z.ZodType<RemoteProviderDescriptor>;
+const controlKinds: ReadonlySet<string>; // the eleven ControlMessage kinds
+function isControlMessage(message: WireMessage): message is ControlMessage;
+```
+
+`lifecycle` and `lifecycle-result` are declared and accepted by
+`wireMessageSchema`, but no code sends them; `appLifecycleHooks` is read by
+no code outside the module.
+
+#### `ProcessLink` and `Transport`
+
+From [`link.ts`](src/runtime/envelope/link.ts) and
+[`memory.ts`](src/runtime/envelope/memory.ts):
+
+```ts
+interface Transport {
+  send(message: WireMessage): void; // throws once the channel is closed
+  onMessage(listener: (message: unknown) => void): () => void;
+  onClose(listener: (reason: LinkCloseReason) => void): () => void;
+  close(): void;
+}
+type LinkCloseReason =
+  | { readonly kind: 'stopped' }
+  | {
+      readonly kind: 'exited';
+      readonly code: number | null;
+      readonly signal: string | null;
+    }
+  | { readonly kind: 'disconnected' };
+interface ResolveTarget {
+  readonly contract: string;
+  readonly method: string;
+  readonly provider?: string;
+  readonly record?: string;
+}
+interface ProcessLinkOptions {
+  readonly transport: Transport;
+  readonly side: 'kernel' | 'generation'; // the kernel overwrites caller.generation
+  readonly generation: number; // of the process on the generation side
+  readonly incarnation?: number;
+  readonly validators: SchemaValidators;
+  readonly errors: ErrorClassRegistry;
+  resolve(target: ResolveTarget): ProviderRecord | undefined; // a local provider only
+  principalOf?(bundleId: string): Principal | undefined; // for scoped callbacks
+  report?(entry: DiagnosticReport): void;
+  readonly generationSignal?: AbortSignal; // aborts the calls this side serves
+  readonly now?: () => number;
+}
+interface CallTarget {
+  readonly contract: string;
+  readonly method: string;
+  readonly input: unknown; // encoded
+  readonly provider?: string;
+  readonly record?: string;
+} // the inline type of the three methods below; not exported
+
+class ProcessLink implements CodecHost {
+  constructor(options: ProcessLinkOptions);
+  readonly side: 'kernel' | 'generation';
+  readonly generation: number;
+  readonly incarnation: number;
+  readonly validators: SchemaValidators;
+  readonly mirrors: Map<string, unknown>;
+  get closeReason(): LinkCloseReason | undefined;
+  get closeSignal(): AbortSignal; // aborted when the channel closes
+  get inFlight(): number; // outbound calls awaiting a result + inbound calls not answered
+  get openStreams(): number;
+  onClose(listener: (reason: LinkCloseReason) => void): () => void; // called at once when already closed
+  onIdle(listener: () => void): () => void; // each time inFlight drops to 0
+  onControl(listener: (message: ControlMessage) => void): () => void;
+  sendControl(message: ControlMessage): void;
+  close(): void; // closes the transport; reason { kind: 'stopped' }
+  forgetStream(end: (error: ContractError) => void): void;
+  request(target: CallTarget, call: Call): Promise<unknown>; // resolves with the encoded output
+  oneway(target: CallTarget, call: Call): void; // never throws
+  optimistic(
+    bundleId: string,
+    target: CallTarget,
+    call: Call,
+    exported: readonly string[],
+    end?: (error: ContractError) => void,
+  ): Disposable; // a local Disposable now; the acknowledgement later
+  activating(bundleId: string): () => void; // keep refusals for settle; returns the end mark
+  settle(bundleId: string): Promise<void>; // rejects with the first refusal
+  // CodecHost
+  exportHandle(target: ExportTarget): string;
+  exported(handle: string): ExportTarget | undefined;
+  invoke(
+    handle: string,
+    method: string | undefined,
+    args: readonly unknown[],
+    call: Call,
+  ): Promise<unknown>;
+  run(handle: string, call: Call): string; // one run of a scoped callback; returns the run handle
+  release(handle: string): void;
+  detachedCall(): Call; // caller doric, a new trace
+  principalOf(bundleId: string): Principal | undefined;
+  report(bundleId: string, kind: string, error: unknown): void;
+}
+
+interface TransportPair {
+  readonly left: Transport;
+  readonly right: Transport;
+  sever(reason?: LinkCloseReason): void; // ends both sides; default an exit by SIGKILL
+}
+function createTransportPair(): TransportPair; // structured-clones on send, delivers on a microtask, in order
+```
+
+When the call's signal aborts, `request` sends `cancel`; the serving side
+aborts the provider's call, with a `TimeoutError` when the deadline has
+elapsed. Once the channel closes, every pending and later request rejects with
+`generation_lost` (`Generation <n> exited.`, details `{ generation,
+incarnation }`), and each open stream registration ends with it. A message that
+fails `wireMessageSchema` is reported to `report` as `protocol_error`; when it
+is a `call`, `invoke` or `subscribe` with an `id`, the sender receives a
+`protocol_error` result.
+
+#### Values, errors and calls
+
+From [`values.ts`](src/runtime/envelope/values.ts),
+[`errors.ts`](src/runtime/envelope/errors.ts) and
+[`call-meta.ts`](src/runtime/envelope/call-meta.ts):
+
+```ts
+const WIRE_KEY = '$doric';
+type CallbackMode = 'async' | 'listener' | 'scoped';
+type LocalKind =
+  | 'callback'
+  | 'disposable'
+  | 'object'
+  | 'call'
+  | 'hooks'
+  | 'definition'
+  | 'tool';
+type WireValue = // the wire form of a local value, keyed by WIRE_KEY
+  | { readonly $doric: 'call' }
+  | {
+      readonly $doric: 'callback';
+      readonly handle: string;
+      readonly mode: CallbackMode;
+    }
+  | { readonly $doric: 'disposable'; readonly handle: string }
+  | { readonly $doric: 'object'; readonly handle: string }
+  | {
+      readonly $doric: 'hooks';
+      readonly id: string;
+      readonly hooks: Readonly<
+        Record<string, { kind: HookKind; input: JsonObject; order?: HookOrder }>
+      >;
+    }
+  | {
+      readonly $doric: 'definition';
+      readonly kind: 'event' | 'settings' | 'storage-type';
+      readonly id: string;
+      readonly schema: JsonObject;
+      readonly indexes?: readonly StorageIndex[];
+    }
+  | {
+      readonly $doric: 'tool';
+      readonly handle: string;
+      readonly name: string;
+      readonly description?: string;
+      readonly definition: ContractToolDefinition;
+      readonly settings: readonly object[];
+      readonly resultModalities?: readonly string[];
+    };
+type ExportTarget =
+  | {
+      readonly kind: 'callback';
+      readonly fn: (...args: unknown[]) => unknown;
+      readonly mode: CallbackMode;
+      readonly principal?: Principal;
+      readonly parentScope?: DisposalScope;
+    }
+  | { readonly kind: 'disposable'; readonly value: Disposable }
+  | { readonly kind: 'object'; readonly value: object }
+  | { readonly kind: 'tool'; readonly tool: ContractTool };
+interface CodecHost {
+  /* the CodecHost members of ProcessLink above */
+}
+interface CodecContext {
+  readonly host: CodecHost;
+  readonly call: Call; // the call the value travels with
+  readonly exports?: string[]; // handles exported while encoding
+}
+function encodeValue(
+  value: unknown,
+  kinds: ReadonlySet<LocalKind>,
+  context: CodecContext,
+): unknown;
+function decodeValue(value: unknown, context: CodecContext): unknown;
+
+interface MethodPlan {
+  readonly refused?: string; // why the method cannot cross (local_only)
+  readonly oneway?: boolean;
+  readonly optimistic?: boolean;
+  readonly listener?: number; // index of a stream method's listener among the input's items
+  readonly input?: ReadonlySet<LocalKind>; // undefined = plain data
+  readonly output?: ReadonlySet<LocalKind>;
+  prepare?(input: unknown): unknown;
+  finish?(output: unknown, input: unknown): unknown;
+}
+function fixedPlan(contractId: string, method: string): MethodPlan | undefined; // basic and doric.* methods
+function documentPlan(
+  label: string,
+  input: unknown,
+  output: unknown,
+): MethodPlan; // from member JSON Schemas
+function planFor(
+  contractId: string,
+  method: string,
+  members: { readonly input: z.ZodType; readonly output: z.ZodType },
+): MethodPlan; // fixedPlan, else documentPlan of the members
+
+interface RemoteToolCallView {
+  readonly name: string;
+  readonly description?: string;
+  readonly input: z.ZodObject;
+  readonly output: z.ZodType;
+  readonly definition: ContractToolDefinition;
+  execute(payload: unknown): Promise<unknown>;
+  check(payload: unknown): Promise<ToolPayloadCheck>;
+}
+class RemoteTool implements ContractTool {
+  constructor(wire: Extract<WireValue, { $doric: 'tool' }>, host: CodecHost);
+} // check and execute run in the registering process
+
+interface ErrorClassRegistry {
+  register(errorClass: abstract new (...args: never[]) => Error): void;
+  lookup(name: string): (abstract new (...args: never[]) => Error) | undefined;
+}
+function createErrorClassRegistry(): ErrorClassRegistry; // always knows ContractError
+function encodeError(value: unknown): WireError;
+function decodeError(wire: WireError, classes: ErrorClassRegistry): unknown;
+
+function toWireCall(call: Call): WireCall;
+interface RestoreOptions {
+  readonly signals: readonly AbortSignal[]; // cancel, link close, receiving runtime
+  readonly callerGeneration?: number; // the kernel overwrites caller.generation
+  readonly now?: () => number;
+}
+function restoreCall(meta: WireCall, options: RestoreOptions): Call;
+```
+
+`encodeValue` replaces each local value by its `WireValue` and exports a
+handle for it; a local value of a kind outside `kinds` throws `local_only`
+(`<what> is local to its process and cannot cross the envelope.`).
+`decodeValue` rebuilds the local values and keeps plain data as sent; one wire
+form always yields one mirror per link. `encodeError` keeps a
+`ContractError`'s code (else `internal`) and the thrown value; `decodeError`
+returns a `ContractError` when nothing was thrown along, the thrown value as
+is, or an error rebuilt on the prototype of its constructor name: the
+registered class, else the standard error class of that name, else `Error`
+(a `DOMException` is constructed anew); own properties are restored with
+their enumerability, nested errors such as `cause` included.
+`restoreCall` rebuilds the branded `Call`; its signal aborts with the given
+signals and, at the deadline, with a `TimeoutError`.
 
 ## `bundle` (Node)
 
-The Node entry for the host, the build and foundation tests
-([`src/index.ts`](src/index.ts)). It re-exports, from `bundle/runtime`,
+The Node entry for the host, the build, embedded foundation host parts
+(`EmbeddedBundle`, as a type) and bundle tests
+([`src/index.ts`](src/index.ts)); desktop, client, chunk, worker and frame
+parts may not import it ([Build tooling](#build-tooling)). It re-exports, from `bundle/runtime`,
 the manifest, composition and descriptor schemas and types, `convertV0`,
 `resolveEnvironment`, the alternatives helpers, `PLATFORM_VERSION`,
 `PLATFORM_ASSETS_VERSION`, `runGeneration` and its types; and, from
