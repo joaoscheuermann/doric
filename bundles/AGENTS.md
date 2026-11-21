@@ -4,7 +4,9 @@ Apply these rules to every bundle under `bundles/<group>/<id>/`, after the root
 [`AGENTS.md`](../AGENTS.md) and before the bundle's own `AGENTS.md`. Read
 [`docs/architecture/bundles/boundaries.md`](../docs/architecture/bundles/boundaries.md)
 before a change that adds a contract, a slot, a dependency between bundles or
-an entry of the exceptions file.
+an entry of the exceptions file, and
+[`docs/features/bundle-isolation.md`](../docs/features/bundle-isolation.md) for
+the decisions behind the boundary rules before changing one of them.
 
 ## Boundaries
 
@@ -102,7 +104,8 @@ an entry of the exceptions file.
 - Put the bundle's contract declarations, their types and its slot names in
   `src/contracts/`, exported from `src/contracts/index.ts`, which the package
   exports as `<id>/contracts`.
-- Declare a contract only with the `define*` functions of `bundle/contracts`.
+- Declare a contract only with `ref` and the `define*` functions of
+  `bundle/contracts`.
 - Never import `src/host`, `src/desktop` or `src/client` from `src/contracts/`,
   and never import a Node built-in there: the window loads the module as
   `<id>/contracts` through its import map.

@@ -866,8 +866,24 @@ the rewrite and rechecks agents and skills against its system prompt.
 
 **Failure.** A failure after `compaction.started` records
 `{ type: 'compaction.failed', code, error }`, `code` being
-`unsafe_boundary` or `summarizer_failed`; `compact` answers
-`{ status: 'failed', code }`, and a run goes on with its history uncondensed.
+`unsafe_boundary` or `summarizer_failed`; any other error, a storage error
+while saving the rewritten history or appending `compaction.finished`
+included, is recorded as `summarizer_failed`. `compact` answers
+`{ status: 'failed', code }`, and a run goes on with its messages uncondensed.
+A storage error on the append of `compaction.finished` comes after the
+rewritten history is saved: a manual `compact` leaves the Thread on the
+rewritten history, and a run's next history save, at the latest the one it
+makes when it ends, replaces it with the run's uncondensed messages. When
+storage also rejects `compaction.failed`, `compact` throws the runtime's
+persistence error, which carries the storage error, and a run ends on it; the
+bracket stays open over the rewritten history when the failure followed its
+save. A storage error on `compaction.started` is thrown the same way. After a
+context overflow, in either case, `run` can reject with the provider's error,
+and the runtime answers with its persistence error
+([`src/host/compact.ts`](src/host/compact.ts),
+[`src/host/executor.ts`](src/host/executor.ts),
+[`bundles/runtime/runtime/src/host/domain/session.ts`](../../runtime/runtime/src/host/domain/session.ts),
+[`bundles/runtime/runtime/src/host/domain/runner.ts`](../../runtime/runtime/src/host/domain/runner.ts)).
 
 **Loaded skills** ([`src/host/skills/loaded.ts`](src/host/skills/loaded.ts),
 [`loaded-skills.md`](src/host/prompts/loaded-skills.md)). The skills loaded in

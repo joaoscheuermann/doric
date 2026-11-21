@@ -6,7 +6,7 @@
 
 Bundles call one another through **versioned services**. A service is a contract with an id that carries its major version (`runtime.workspace/v1`); one bundle provides it with `services.provide(definition)`, and another reaches it with `services.use(ref)`, which returns a typed stub. The stub does not tell where the provider runs: in the same process, in another process of the same machine, in the desktop process or in the host behind the desktop bridge ([`services.ts`](../../../packages/bundle/src/runtime/services.ts), [`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
 
-Every method a provider implements receives `(input, call, services)`. `call` is the envelope of one hop: who made it, the scope it acts on, its cancellation signal and its trace. The platform fills `call` and transports its scope without reading it, except `windowKey`, the one key it reserves ([`call.ts`](../../../packages/bundle/src/contracts/call.ts), [`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)).
+Every method a provider implements receives `(input, call, services)`. `call` is the envelope of one hop: who made it, the scope it acts on, its cancellation signal and its trace. The platform fills `call` and transports its scope without reading it, except `windowKey`, the one key it reserves, which a window's dispatcher and the desktop process set ([`call.ts`](../../../packages/bundle/src/contracts/call.ts), [`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)).
 
 A desktop window serves the contracts its own client parts provide; it reaches every other service only through the desktop process, over one IPC channel, `doric:desktop`, and the desktop process alone talks to the host. A method is reachable from a window only when its contract exposes it to the desktop; the default is deny ([`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`exposure.ts`](../../../packages/bundle/src/runtime/exposure.ts)).
 
@@ -92,31 +92,7 @@ A provider rejects with a `ContractError` of its own code, and the code and mess
 
 ## The call
 
-Every `execute` a bundle defines for a method, a command or a tool, and every hook handler, receives the `call` of its hop ([`call.ts`](../../../packages/bundle/src/contracts/call.ts), [`tools.ts`](../../../packages/tool/src/lib/tools.ts)):
-
-```ts
-type CallScope = Readonly<Record<string, string>>;
-
-interface Caller {
-  readonly bundleId: string;
-  readonly version: string;
-  readonly generation: number;
-}
-
-interface Call {
-  readonly caller: Caller; // the bundle that made this hop
-  readonly scope?: CallScope;
-  readonly signal: AbortSignal;
-  readonly trace: { readonly traceparent: string }; // W3C: 00-<32 hex>-<16 hex>-01
-}
-
-interface CallOptions {
-  readonly signal?: AbortSignal;
-  readonly deadline?: number; // epoch milliseconds; 0 or absent means none
-}
-
-type CallArg = Call | CallOptions;
-```
+Every `execute` a bundle defines for a method, a command or a tool, and every hook handler, receives the `call` of its hop ([`call.ts`](../../../packages/bundle/src/contracts/call.ts), [`tools.ts`](../../../packages/tool/src/lib/tools.ts)). A `call` carries `caller` (`{ bundleId, version, generation }`), an optional `scope`, a `signal` and a W3C `trace`; a stub's last argument, `CallArg`, is a parent `Call` or `{ signal?, deadline? }`, the deadline in epoch milliseconds, `0` or absent meaning none. The full shape is in the [`bundle` README](../../../packages/bundle/README.md#call).
 
 A bundle never builds a `call`. The dispatcher of the calling process builds one per hop ([`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)):
 
@@ -129,16 +105,13 @@ A provider passes the call it received as the last argument of every stub call i
 
 ### The scope
 
-`call.scope` is a record the platform transports and does not read. `callScopeSchema` bounds it: keys match `scopeKeyPattern` (`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`), at most `SCOPE_MAX_KEYS` (16) keys, each value at most `SCOPE_MAX_VALUE` (512) characters ([`call.ts`](../../../packages/bundle/src/contracts/call.ts)). The scope of a hop is built in this order, later sources winning ([`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)):
+`call.scope` is a record of string keys and values that the platform transports and does not read; its bounds, its keys, their owners and who sets each are in [Contexts](contexts.md#scope-keys). The scope of a hop is built in this order, later sources winning ([`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)):
 
 1. the parent call's scope;
 2. the scope bound by `services.use(ref, scope)`;
 3. `windowKey`, when the dispatcher of a window or the desktop process sets it.
 
-A scope with no key is absent. The keys belong to the bundles that read them; the core's providers also read some of them: `tools/v1` reads `projectId`, `events/v1` the keys its event sink names, and `hooks/v1` and `menus/v1` read `windowKey` ([Core](core.md#the-scope-keys-the-core-reads)):
-
-- **`windowKey`** is the platform's. In a window, every call a provider of that window receives carries the window's key ([`activate.ts`](../../../packages/desktop/src/client/activate.ts)). A call that leaves the window drops the exact key `windowKey` ([`bridge.ts`](../../../packages/desktop/src/client/bridge.ts)); a scope that names it in another letter case is sent as it is, and the desktop process refuses the whole request when it parses it ([`protocol.ts`](../../../packages/desktop/src/client/protocol.ts), [The dispatcher in the desktop process](#the-dispatcher-in-the-desktop-process)). The desktop process then sets it, from the window the request came from, on every call it forwards ([`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)). No manifest may list it under `desktopScope` ([`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts)). In a host or `desktopMain` process the dispatcher does not remove a `windowKey` a bundle binds with `use`.
-- **`projectId`, `threadId` and `promptId`** are the `runtime` bundle's. A caller binds them with `services.use(ref, { projectId, threadId, promptId })` or passes on the scope it serves with `services.use(ref, call.scope)`; a provider reads them from `call.scope`. `runtime/contracts` exports `runtimeScope(scope)`, which builds that record and leaves absent keys out, and `readRuntimeScope(call)`, which returns the three keys of a call, absent ones `undefined` ([`scope.ts`](../../../bundles/runtime/runtime/src/contracts/scope.ts)). The runtime's own providers read the keys with `readRuntimeScope` ([`bindings.ts`](../../../bundles/runtime/runtime/src/host/domain/bindings.ts), [`lease.ts`](../../../bundles/runtime/runtime/src/host/services/lease.ts), [`attachments.ts`](../../../bundles/runtime/runtime/src/host/services/attachments.ts)); other bundles write the record and read `call.scope` directly, and no source outside the runtime's tests calls `runtimeScope` ([`library.ts`](../../../bundles/features/papercraft/src/host/library.ts), [`provider.ts`](../../../bundles/features/terminal/src/host/provider.ts)).
+A scope with no key is absent. A call that leaves a window drops `windowKey`, and the desktop process sets it again from the window the request came from ([The dispatcher in the desktop process](#the-dispatcher-in-the-desktop-process)). No manifest may list `windowKey` under `desktopScope` ([`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts)). In a host or `desktopMain` process nothing removes a `windowKey` that a bundle binds with `services.use(ref, scope)`; the provider receives it as bound ([`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)). The keys `projectId`, `threadId` and `promptId` are the `runtime` bundle's; a caller binds them with `services.use(ref, { projectId, threadId, promptId })` ([`scope.ts`](../../../bundles/runtime/runtime/src/contracts/scope.ts)). The core providers that read scope keys are listed in [Core](core.md#the-scope-keys-the-core-reads).
 
 ### A running prompt's controls
 
@@ -165,71 +138,11 @@ The method returns a `Disposable` that unsubscribes. A stream delivers items as 
 
 The desktop process (Electron main) is the only client of the host. It reaches the host at `http://127.0.0.1:3000`, or at `DORIC_HOST_URL` when that variable is set; the host bridge and the connection monitor both follow it ([`main.ts`](../../../app/desktop/doric/src/main.ts), [`host-bridge.ts`](../../../app/desktop/doric/src/platform/bridge/host-bridge.ts)). An app window never opens HTTP or Socket.IO: its sandboxed preload exposes one object, `window.doric.desktop`, and nothing else ([`preload.ts`](../../../app/desktop/doric/src/app/api/preload.ts)). A view window is the exception: it has no preload and no bundle contracts, and its own `WebContents` loads a page of the host origin in a session of its own ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)).
 
-`window.doric.desktop` speaks over exactly two channels: `doric:desktop`, a request to main, and `doric:desktop:push`, main's pushes to the window ([`desktop.ts`](../../../app/desktop/doric/src/app/api/desktop.ts), [`push.ts`](../../../app/desktop/doric/src/platform/windows/push.ts)):
+`window.doric.desktop` speaks over exactly two channels: `doric:desktop`, a request to main, and `doric:desktop:push`, main's pushes to the window ([`desktop.ts`](../../../app/desktop/doric/src/app/api/desktop.ts), [`push.ts`](../../../app/desktop/doric/src/platform/windows/push.ts)). It is the window's whole reach outside itself: it describes the window, reports readiness and failure, answers close requests, listens for chrome changes, reads the window's catalog, and sends calls, cancellations and stream subscriptions, each call as a `BridgeCallEnvelope`: a call id unique in the window, the contract, method and input, the calling client bundle (`null` for the window platform), the scope without `windowKey`, the deadline and the `traceparent`. Its shape is in the [`desktop` README](../../../packages/desktop/README.md#doricdesktopapi), and those of the envelope and the answers in [its protocol table](../../../packages/desktop/README.md#the-windowmain-protocol-desktopprotocol) ([`protocol.ts`](../../../packages/desktop/src/client/protocol.ts)).
 
-```ts
-interface DoricDesktopApi {
-  describeWindow(): Promise<WindowDescription>;
-  ready(): Promise<void>;
-  reportFailure(info: WindowFailure): Promise<void>;
-  onCloseRequested(
-    handler: (request: CloseRequest) => Promise<CloseAnswer | undefined>,
-  ): () => void;
-  onChromeChanged(listener: (chrome: WindowChrome) => void): () => void;
-  catalog(): Promise<WindowCatalog>;
-  call(envelope: BridgeCallEnvelope): Promise<BridgeResultPayload>;
-  cancel(id: string): void;
-  subscribe(
-    envelope: BridgeCallEnvelope,
-    listener: (event: BridgeStreamEvent) => void,
-  ): () => void;
-}
+Under that API, the preload sends one request per operation on `doric:desktop`, and main pushes on `doric:desktop:push`. Both are unions of strict objects; every request carries an optional `generation`, the generation the window's page was rendered with; main reads it only on `describeWindow` and `catalog`, to pin a window that is not pinned yet, and ignores it on every other request and on every request from the splash. The requests, discriminated by `op`, are `describeWindow`, `ready`, `reportFailure` (with `info`), `catalog`, `call` and `subscribe` (each with an `envelope`, a `BridgeCallEnvelope`), `cancel` and `unsubscribe` (each with the call's `id`), and `closeAnswer` (with the close request's `id` and the `answer`). The pushes, discriminated by `type`, are `close-requested` (an `id` and the `request`), `chrome` (the window's `chrome`), `event` (one stream item, with the stream's `id`) and `end` (the stream's `id` and an optional `error`). Their full shapes are in the [`desktop` README](../../../packages/desktop/README.md#the-windowmain-protocol-desktopprotocol).
 
-interface BridgeCallEnvelope {
-  readonly id: string; // unique in the window
-  readonly contract: string;
-  readonly method: string;
-  readonly input: unknown;
-  readonly bundleId: string | null; // the calling client bundle; null for the window platform
-  readonly scope?: CallScope; // never windowKey
-  readonly deadline: number; // epoch milliseconds; 0 means none
-  readonly traceparent: string;
-}
-
-type BridgeResultPayload =
-  | { ok: true; output: unknown }
-  | { ok: false; error: { code: string; message: string; details?: unknown } };
-
-type BridgeStreamEvent =
-  | { type: 'event'; event: unknown }
-  | {
-      type: 'end';
-      error?: { code: string; message: string; details?: unknown };
-    };
-```
-
-Under that API, the preload sends one request per operation on `doric:desktop`, and main pushes on `doric:desktop:push`. Both are unions of strict objects; every request carries an optional `generation`, the generation the window's page was rendered with, which main uses to pin a window that is not pinned yet:
-
-```ts
-type DesktopRequest =
-  | { op: 'describeWindow'; generation?: number }
-  | { op: 'ready'; generation?: number }
-  | { op: 'reportFailure'; info: WindowFailure; generation?: number }
-  | { op: 'catalog'; generation?: number }
-  | { op: 'call'; envelope: BridgeCallEnvelope; generation?: number }
-  | { op: 'cancel'; id: string; generation?: number }
-  | { op: 'subscribe'; envelope: BridgeCallEnvelope; generation?: number }
-  | { op: 'unsubscribe'; id: string; generation?: number }
-  | { op: 'closeAnswer'; id: string; answer: CloseAnswer; generation?: number };
-
-type DesktopPush =
-  | { type: 'close-requested'; id: string; request: CloseRequest }
-  | { type: 'chrome'; chrome: WindowChrome }
-  | { type: 'event'; id: string; event: unknown } // one stream item
-  | { type: 'end'; id: string; error?: BridgeError }; // the stream ended
-```
-
-These are the types and schemas (`desktopRequestSchema`, `desktopPushSchema`) of [`protocol.ts`](../../../packages/desktop/src/client/protocol.ts). Every operation a window asks of the host or of the desktop process is a contract call or stream on this channel: Projects, Threads, configuration, terminals, usage, each Thread watch, the selected Project's tree, the connection status and native notifications alike. Main handles `doric:desktop` with one dispatcher ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
+Their schemas are `desktopRequestSchema` and `desktopPushSchema` in [`protocol.ts`](../../../packages/desktop/src/client/protocol.ts). Every operation a window asks of the host or of the desktop process is a contract call or stream on this channel: Projects, Threads, configuration, terminals, usage, each Thread watch, the selected Project's tree, the connection status and native notifications alike. Main handles `doric:desktop` with one dispatcher ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
 
 ### Routing in the window
 
@@ -323,25 +236,9 @@ The exposed set is pinned by a snapshot test: [`bridge-exposure.test.ts`](../../
 
 ## Native handles: `doric.network/v1`
 
-The kernel owns the host's HTTP listener, its Socket.IO server and the generic `/doric/bridge` namespace. Bundles reach the listeners through `doric.network/v1`, a host-only platform contract the kernel provides ([`network.ts`](../../../packages/bundle/src/contracts/network.ts), [`process/network.ts`](../../../packages/bundle/src/process/network.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)):
+The kernel owns the host's HTTP listener, its Socket.IO server and the generic `/doric/bridge` namespace. Bundles reach the listeners through `doric.network/v1`, a host-only platform contract the kernel provides ([`network.ts`](../../../packages/bundle/src/contracts/network.ts), [`process/network.ts`](../../../packages/bundle/src/process/network.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). Its one method, `register`, takes a listener, a function that receives the host's native resources and may return a cleanup function. The resources are `http`, the Express app on which routes are registered; `server`, the `http.Server` that the app and the Socket.IO server are attached to, for an `upgrade` listener that no route sees; and `sockets`, the Socket.IO server over the same listener. Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts).
 
-```ts
-interface NetworkResources {
-  readonly http: object; // the host's Express app, on which the routes are registered
-  readonly server: object; // the http.Server both are attached to, for an `upgrade` listener
-  readonly sockets: object; // the Socket.IO server over the same listener
-}
-
-type NetworkListener = (
-  resources: NetworkResources,
-) => (() => void) | undefined;
-
-interface DoricNetwork {
-  register(listener: NetworkListener): Disposable;
-}
-```
-
-`register` runs the listener at once with the resources and returns a `Disposable`; disposing of it runs the cleanup the listener returned, once. Like every `Disposable` a stub returns, it is tracked in the bundle's scope, so the cleanup runs when the bundle deactivates. The resources are local to the kernel process and never serialized, so only a bundle that runs in the kernel uses the contract; from a generation process, `register` is refused with `local_only`, because its listener is a function that the envelope does not carry ([Process isolation](process-isolation.md#doricnetworkv1), [`values.ts`](../../../packages/bundle/src/runtime/envelope/values.ts)). The kernel passes the resources it created: the Express app, the `http.Server` and the Socket.IO server ([`doric-host/src/index.ts`](../../../app/backend/doric-host/src/index.ts)). A bundle never calls `listen`: the kernel owns the address, the bind and the close.
+`register` runs the listener at once with the resources and returns a `Disposable`; disposing of it runs the cleanup the listener returned, once. Like every `Disposable` a stub returns, it is tracked in the bundle's scope, so the cleanup runs when the bundle deactivates. The resources are local to the kernel process and never serialized, so only a bundle that runs in the kernel uses the contract; from a generation process, `register` is refused with `local_only`, because its listener is a function that the envelope does not carry ([Process isolation](process-isolation.md#doricnetworkv1), [`values.ts`](../../../packages/bundle/src/runtime/envelope/values.ts)). The kernel passes the resources it created ([`doric-host/src/index.ts`](../../../app/backend/doric-host/src/index.ts)). A bundle never calls `listen`: the kernel owns the address, the bind and the close.
 
 The `transport` bundle registers every product route and namespace through it ([`transport/src/host/index.ts`](../../../bundles/foundation/transport/src/host/index.ts), [transport README](../../../bundles/foundation/transport/README.md)); `screen-relay` attaches a WebSocket `upgrade` listener to `server` ([`screen-relay/src/host/index.ts`](../../../bundles/features/screen-relay/src/host/index.ts), [screen-relay README](../../../bundles/features/screen-relay/README.md)).
 

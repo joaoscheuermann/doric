@@ -2480,7 +2480,10 @@ unset, and makes no database round trip
 - Recovery never starts on its own. Free space above 10%, then resume the
   queue (`POST /threads/:id/queue/resume`); while storage is still low, the
   resume answers `409 thread_storage_low` with that message
-  ([`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts);
+  ([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+  whose `409`, code and message come from `conflict` in
+  [`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts);
+  `resumeQueue` in [`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts);
   [prompt control](../../../docs/features/prompt-control.md)).
 
 Compose sets `DORIC_STORAGE_PATH=/var/lib/doric/postgresql` and mounts its

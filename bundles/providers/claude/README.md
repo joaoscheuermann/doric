@@ -53,18 +53,16 @@ on `bundle`, `llms`, `pino` and `tslib`.
 the kind definition in [`src/host/kind.ts`](src/host/kind.ts). All methods
 run in the host. The full shape of the contract is in the
 [`packages/bundle` README](../../../packages/bundle/README.md#the-modelsproviderv1-contract).
+This bundle implements all six methods and emits no events.
 
-| Method                                    | Since | Input                                                                                                   | Output                                                                                           |
-| ----------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `kind()`                                  | 1.0.0 | none                                                                                                    | the kind descriptor (below)                                                                      |
-| `advertised()`                            | 1.0.0 | none                                                                                                    | `true`                                                                                           |
-| `catalog({ configuration, secret? })`     | 1.0.0 | `configuration: Record<string, string>` (the kind's values), `secret?: string`                          | `{ status: 'read', models: CatalogModel[] }` or `{ status: 'absent' }` or `{ status: 'failed' }` |
-| `create({ providerId, values, secret? })` | 1.0.0 | `providerId: string`, `values: Record<string, string>`, `secret?: () => Promise<string>`                | a process-local language model handle                                                            |
-| `catalogCapacity()`                       | 1.1.0 | none                                                                                                    | `true`                                                                                           |
-| `icons({ configuration, models })`        | 1.2.0 | `configuration: Record<string, string>`, `models: string[]` (at most 1000, each at most 512 characters) | `{ provider: 'claude', models: 'claude'[] }`, one entry per requested model                      |
-
-From 1.3.0 the kind descriptor may carry an optional `site` key; this kind
-has no site, so its descriptor has no `site` key.
+| Method              | `claude` answer                                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `kind()`            | the descriptor of [Kind descriptor](#kind-descriptor)                                                                       |
+| `advertised()`      | `true`: `models/v1.kinds()`, and so `GET /providers/kinds`, lists the kind                                                  |
+| `catalog(input)`    | `read`, `absent` or `failed`, as in [`catalog`](#catalog)                                                                   |
+| `create(input)`     | the built `llms` Claude provider, as in [`create`](#create) and [The built provider](#the-built-provider)                   |
+| `catalogCapacity()` | `true`: the built provider's `models()` reports a model's context window and input modalities when the listing carries them |
+| `icons(input)`      | `{ provider: 'claude', models }`, with `'claude'` for each requested model, in the input's order                            |
 
 ### Kind descriptor
 
@@ -87,6 +85,7 @@ authorization value.`
 - `lists`: the `lists` of the `llms` `claude` kind (`providerKind('claude')`),
   which are `models` and `reasonings`, so a list the `llms` kind gains reaches
   the settings tables with no change here.
+- No `site` key: no provider page links a site for this kind.
 - `modelsFromCatalog`: `true` (taken from the `llms` `claude` kind). The
   configuration fill writes every model `catalog()` lists into the provider's
   models on each save, and the settings page shows that list read-only instead

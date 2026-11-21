@@ -136,16 +136,7 @@ A rewind is one commit: it expects the Thread document's revision, truncates the
 
 The `history` bundle, in the desktop's main process, provides `history.snapshots/v1`: a best-effort snapshot of each Thread's event log, one JSON file per Thread, so a conversation renders at once when it opens and the event stream reconciles it afterwards ([`history/src/desktop/index.ts`](../../../bundles/desktop/history/src/desktop/index.ts), [`store.ts`](../../../bundles/desktop/history/src/desktop/store.ts)). The files live under the bundle's `doric.cache/v1` directory, at `<hostId>/<storageGeneration>/<threadId>.json`, with `hostId` and `threadId` URI-encoded, and with the identity read from the `storage` field of `doric.catalog/v1`, which the desktop takes from the host's catalog ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts)); a different database or another storage generation therefore never shows another history, and without an identity the store is disabled. When merging, the store drops held events that a `history.truncated` event discarded. Pending writes are flushed in `onBeforeQuitHook` and on deactivation. The [history README](../../../bundles/desktop/history/README.md) gives the contract, the merge rule and the limits.
 
-`doric.cache/v1` is a platform contract of the desktop's main process; a bundle lists it nowhere in its manifest. Its shape is one method ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)):
-
-```ts
-interface DoricCache {
-  /** Absolute cache directory of the calling bundle. */
-  directory(call?: CallArg): Promise<string>;
-}
-```
-
-The desktop answers `<userData>/bundle-cache/<bundleId>`, creating it when it is missing; a caller id that is not a bundle id is `invalid_input` ([`native/cache.ts`](../../../app/desktop/doric/src/platform/native/cache.ts), [`paths.ts`](../../../app/desktop/doric/src/platform/paths.ts)).
+`doric.cache/v1` is the platform contract of the desktop's main process that gives the calling bundle its own cache directory; a bundle lists it nowhere in its manifest. Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts). For `history`, the desktop answers `<userData>/bundle-cache/history`, under the desktop app's user-data directory (`<userData>`), creating it when it is missing. A caller id that is not a bundle id gets `invalid_input` ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [`broker.ts`](../../../app/desktop/doric/src/platform/generation/broker.ts), [`native/cache.ts`](../../../app/desktop/doric/src/platform/native/cache.ts), [`paths.ts`](../../../app/desktop/doric/src/platform/paths.ts)).
 
 ## Related documents
 

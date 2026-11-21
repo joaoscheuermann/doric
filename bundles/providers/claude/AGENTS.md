@@ -27,7 +27,7 @@ to its own provider bundle.
   catalog parsing here: put them in `packages/llms` and call them from
   `src/host/kind.ts` through `createClaudeProvider` and `claudeCatalogModel`,
   and add their tests, and their text in the
-  [`llms` README](../../../packages/llms/README.md#claude-integration), in
+  [`llms` README](../../../packages/llms/README.md#claude), in
   `packages/llms` in the same change.
 - Keep the descriptor deeply equal to `providerKind('claude')` of `llms`: read
   `lists` and `modelsFromCatalog` from it, and change a field or text of the

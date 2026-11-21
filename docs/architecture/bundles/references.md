@@ -34,7 +34,7 @@ State outside the database has its own owner. A Project has one sandbox, shared 
 
 ## `defineTool` and the `define*` family
 
-A tool is written like a service method. `defineTool` of `packages/tool` ([`tools.ts`](../../../packages/tool/src/lib/tools.ts), [`types/tool.ts`](../../../packages/tool/src/lib/types/tool.ts)):
+A tool is written like a service method. `defineTool` of `packages/tool` ([`tool` README](../../../packages/tool/README.md#defining-a-tool-definetool), [`tools.ts`](../../../packages/tool/src/lib/tools.ts), [`types/tool.ts`](../../../packages/tool/src/lib/types/tool.ts)):
 
 - takes `name`, an optional `description`, `input` (a `z.object`), `output` (a zod schema) and `execute(payload, call, services)`, and optionally `strict` (default `true`), `inputSchema`, `settings` and `resultModalities`;
 - refuses an `input` that is not a `z.ZodObject`, an `inputSchema` whose `type` is not `object`, and a schema `z.toJSONSchema` cannot represent, each with the error `invalid_schema`;

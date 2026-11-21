@@ -106,30 +106,15 @@ When the app is not packaged, windows open through `doric://app` as well. Whethe
 
 ## Copying storage from the `file://` origin: `doric.migrations/v1`
 
-The packaged app can copy a `localStorage` key once from the `file://` origin, which no app window loads, into `doric://app`, where the windows read it. The platform contract `doric.migrations/v1` exposes this to the `desktopMain` environment; the caller names only the key and a marker, and the origins and the pages belong to the platform. `call` is the caller's call context, a `Call` or call options, described in [contracts](./contracts.md#the-call) ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`call.ts`](../../../packages/bundle/src/contracts/call.ts)).
+The packaged app can copy a `localStorage` key once from the `file://` origin, which no app window loads, into `doric://app`, where the windows read it. The platform contract `doric.migrations/v1` exposes this to the `desktopMain` environment; the caller names only the key and a marker, and the origins and the pages belong to the platform. Its one method, `storage`, takes the `key` to copy and the `marker`, the name of the desktop state record that marks the copy done, and answers `migrated`, `none`, `skipped` or `failed` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). Its shape is in [Contexts](./contexts.md#shapes-of-the-platform-contracts).
 
-```ts
-interface DoricMigrations {
-  storage(request: MigrationRequest, call?: CallArg): Promise<MigrationResult>;
-}
-
-interface MigrationRequest {
-  /** The localStorage key to copy: /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/ */
-  readonly key: string;
-  /** The name of the desktop state record that marks the copy done: /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/ */
-  readonly marker: string;
-}
-
-type MigrationResult = 'migrated' | 'none' | 'skipped' | 'failed';
-```
-
-The request schema is strict: no other field is accepted. `storage` runs as follows ([`storage-origin.ts`](../../../app/desktop/doric/src/platform/migration/storage-origin.ts), [`state.ts`](../../../app/desktop/doric/src/platform/state.ts)):
+The request schema is strict: no other field is accepted. The key matches `/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/` and the marker `/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). A request that fails the schema rejects with `invalid_input` before `storage` runs, and no marker is recorded ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)). `storage` runs as follows ([`storage-origin.ts`](../../../app/desktop/doric/src/platform/migration/storage-origin.ts), [`state.ts`](../../../app/desktop/doric/src/platform/state.ts)):
 
 1. When the desktop state's `migrations[marker]` is `true`, it returns `skipped`.
 2. When the app is not packaged, it records the marker and returns `skipped`; a development profile copies nothing.
 3. It loads `assets/legacy-origin.html`, an empty page of the `file://` origin, in a hidden sandboxed window and reads the key. When the key holds no string, it records the marker and returns `none`.
 4. It loads `doric://app/platform/splash@<v>/blank.html` in a second hidden window and writes the value only when the key is not set there, records the marker and returns `migrated`.
-5. Any failure is logged as `Storage origin migration failed` with the marker, and the result is `failed`. When loading a page, reading or writing the key fails, the platform records the marker anyway; when recording the marker itself fails, the marker stays unrecorded. `storage` does not reject, and both hidden windows are destroyed.
+5. Any failure is logged as `Storage origin migration failed` with the marker, and the result is `failed`. When loading a page, reading or writing the key fails, the platform records the marker anyway; when recording the marker itself fails, the marker stays unrecorded. A valid request never rejects, and both hidden windows are destroyed.
 
 The `core` bundle's `desktopMain` part calls it in `onAppReadyHook`, after it sets the menu skeleton and before it opens the primary window, and awaits the answer, with the key `doric.selection` and the marker `selectionOrigin`; a call that fails is logged and the window opens anyway ([`migrations.ts`](../../../bundles/foundation/core/src/desktop/migrations.ts), [`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts); see the [`core` README](../../../bundles/foundation/core/README.md)). `doric.selection` is the selection the `workspace` bundle reads, at `/` only, to restore the selected Thread, and removes once the restore settles, or, after a failed lookup, once a later selection is written ([`route-selection.ts`](../../../bundles/desktop/workspace/src/client/stores/route-selection.ts); see the [`workspace` README](../../../bundles/desktop/workspace/README.md)).
 

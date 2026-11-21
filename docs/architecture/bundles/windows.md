@@ -212,17 +212,11 @@ A preview frame is an `<iframe sandbox="allow-scripts">` with an opaque origin. 
 
 ## `doric.browser/v1`: the system browser
 
-A window may not open windows; `doric.browser/v1` is its one way out of the app. It exists only in the `client` environment ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)):
+A window may not open windows; `doric.browser/v1` is its one way out of the app. It exists only in the `client` environment, and its one method, `open`, takes a URL and resolves with no value once main has handed it to the operating system's browser ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts).
 
-```ts
-interface DoricBrowser {
-  open(url: string, call?: CallArg): Promise<void>;
-}
-```
+The URL must be an absolute `https:` URL of at most 8,192 characters; anything else is `invalid_input`, and a URL that is not `https:` fails with the message `Expected an https URL.`. The window's platform forwards it to main as the platform-internal call `doric.shell/v1.openExternal`; main checks the URL again against the same schema and hands it to Electron's `shell.openExternal`, logging only its origin, since the query may carry a sign-in's state ([`browser.ts`](../../../packages/desktop/src/client/browser.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). `settings`, `mcp` and `claude-login` use it to open a provider's or a server's authorization page ([`settings-api.ts`](../../../bundles/desktop/settings/src/client/api/settings-api.ts), [`mcp/src/client/api.ts`](../../../bundles/features/mcp/src/client/api.ts), [`claude-login/src/client/api.ts`](../../../bundles/features/claude-login/src/client/api.ts)).
 
-`url` must be an absolute `https:` URL of at most 8,192 characters; anything else is `invalid_input`, and a URL that is not `https:` fails with the message `Expected an https URL.`. The window's platform forwards it to main as the platform-internal call `doric.shell/v1.openExternal`; main checks the URL again against the same schema and hands it to Electron's `shell.openExternal`, logging only its origin, since the query may carry a sign-in's state ([`browser.ts`](../../../packages/desktop/src/client/browser.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). `settings`, `mcp` and `claude-login` use it to open a provider's or a server's authorization page ([`settings-api.ts`](../../../bundles/desktop/settings/src/client/api/settings-api.ts), [`mcp/src/client/api.ts`](../../../bundles/features/mcp/src/client/api.ts), [`claude-login/src/client/api.ts`](../../../bundles/features/claude-login/src/client/api.ts)).
-
-The other platform contracts that exist only in `client`, `doric.elements/v1`, `doric.connection/v1`, `doric.about/v1` and `doric.appearance/v1`, and those a window shares with other environments, are in [Contexts](contexts.md#shapes-of-the-platform-contracts).
+The other platform contracts that exist only in `client`, `doric.elements/v1`, `doric.connection/v1`, `doric.about/v1` and `doric.appearance/v1`, and those a window shares with other environments, are in [Contexts](contexts.md#shapes-of-the-platform-contracts); what `doric.appearance/v1` does is in [Native window appearance](window-appearance.md#doricappearancev1).
 
 ## Related documents
 

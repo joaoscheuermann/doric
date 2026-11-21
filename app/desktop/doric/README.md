@@ -304,12 +304,12 @@ Main runs the app lifecycle hooks of `doric.app.hooks/v1` (`onAppReadyHook`, `on
 
 ### The storage copy
 
-`doric.migrations/v1.storage({ key, marker })` never rejects. It answers ([`storage-origin.ts`](src/platform/migration/storage-origin.ts)):
+A `doric.migrations/v1.storage({ key, marker })` request that fails the schema (a strict `{ key, marker }`, the key matching `^[A-Za-z][A-Za-z0-9_.:-]{0,127}$` and the marker `^[A-Za-z][A-Za-z0-9_.-]{0,63}$`) rejects with `invalid_input` before `storage` runs, and no marker is recorded ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts), [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). A valid request never rejects, and it records the marker unless recording it fails. It answers ([`storage-origin.ts`](src/platform/migration/storage-origin.ts)):
 
 - `skipped` when `marker` is already recorded in `state.json`;
 - `skipped`, recording the marker, in an unpackaged run;
 - otherwise main opens a hidden, sandboxed, context-isolated window at the `file://` URL of `assets/legacy-origin.html` and reads `localStorage.getItem(key)`. When the value is not a string, it records the marker and answers `none`. Else it opens a second hidden window at `doric://app/platform/splash@<v>/blank.html` and sets the key there only when it is unset, records the marker and answers `migrated`;
-- `failed` when any step throws: the error is logged "Storage origin migration failed" and the marker is still recorded.
+- `failed` when any step throws: the error is logged "Storage origin migration failed" and the marker is recorded, unless recording it is the step that fails.
 
 Both hidden windows are destroyed at the end. The mechanism is described in [The `doric://app` protocol](../../../docs/architecture/bundles/doric-protocol.md).
 

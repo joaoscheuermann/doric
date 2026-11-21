@@ -47,7 +47,7 @@ On `SIGINT` or `SIGTERM` it closes the HTTP server and the sockets, runs `onHost
 
 ### `doric.network/v1`
 
-The native listeners live only in the kernel. The kernel provides `doric.network/v1`, a host-only platform contract whose one method, `register`, runs a listener at once with the host's Express app, its `http.Server` and its Socket.IO server ([`network.ts`](../../../packages/bundle/src/contracts/network.ts), [`process/network.ts`](../../../packages/bundle/src/process/network.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). Its full shape, the cleanup and the refusal from a generation process are in [Services and channels](services-and-channels.md#native-handles-doricnetworkv1). A bundle never calls `listen`: the kernel owns the address, the bind and the close. The handles are local to the kernel process and never serialized, so a bundle that serves routes or sockets is listed under `resident`: `transport` ([README](../../../bundles/foundation/transport/README.md)) and `screen-relay` ([README](../../../bundles/features/screen-relay/README.md)).
+The native listeners live only in the kernel. The kernel provides `doric.network/v1`, a host-only platform contract whose one method, `register`, runs a listener at once with the host's Express app, its `http.Server` and its Socket.IO server ([`network.ts`](../../../packages/bundle/src/contracts/network.ts), [`process/network.ts`](../../../packages/bundle/src/process/network.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts); the cleanup and the refusal from a generation process are in [Services and channels](services-and-channels.md#native-handles-doricnetworkv1). A bundle never calls `listen`: the kernel owns the address, the bind and the close. The handles are local to the kernel process and never serialized, so a bundle that serves routes or sockets is listed under `resident`: `transport` ([README](../../../bundles/foundation/transport/README.md)) and `screen-relay` ([README](../../../bundles/features/screen-relay/README.md)).
 
 ## Generations
 
@@ -119,37 +119,13 @@ To stop a generation the kernel sends `stop`; the runner deactivates its bundles
 
 The kernel provides `doric.generation/v1`, a host-only platform contract that a bundle uses without declaring it ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`platform-providers.ts`](../../../packages/bundle/src/runtime/platform-providers.ts)). A host with no generation manager does not provide it.
 
-```ts
-type GenerationState =
-  | 'starting'
-  | 'active'
-  | 'draining'
-  | 'stopped'
-  | 'failed';
-interface GenerationDescription {
-  generation: number;
-  incarnation: number;
-  state: GenerationState;
-}
-interface WorkHold {
-  key: string; // 1 to 256 characters
-  label?: string; // at most 256 characters
-}
-interface PeerSignal {
-  topic: string; // 1 to 128 characters
-  payload?: unknown;
-}
+A bundle uses it to learn which generation it serves, to keep that generation alive while it drains, and to signal its own bundle in the other live generations. Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts). Its three methods behave as follows:
 
-interface DoricGeneration {
-  describe(call?: CallArg): Promise<GenerationDescription>;
-  hold(work: WorkHold, call?: CallArg): Disposable;
-  signal(signal: PeerSignal, call?: CallArg): Promise<void>;
-}
-```
+- `describe` answers `{ generation, incarnation, state }` for the caller's generation: the generation the call is pinned to while it is not stopped, else the active one, or during a respawn the generation being started again. With no generation at all it fails `unavailable` ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)).
+- `hold` takes a work hold `{ key, label? }`, a key of 1 to 256 characters and a label of at most 256, on the generation `describe` resolves to and returns its `Disposable`; disposing of it ends the hold and may end a drain. It fails `unavailable` when there is no generation, or when the one it resolves to is stopped, as when the host is stopping.
+- `signal` takes `{ topic, payload? }`, a topic of 1 to 128 characters, and delivers `onPeerSignalHook` to every other live generation, with the sender's bundle as `from.bundleId` and, as the sender generation, the caller's generation as `describe` resolves it; while the host stops, or with no generation, it sends nothing.
 
-- `describe` answers the caller's generation: the generation the call is pinned to while it is not stopped, else the active one, or during a respawn the generation being started again. With no generation at all it fails `unavailable` ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)).
-- `hold` takes a work hold on the generation `describe` resolves to and returns its `Disposable`; disposing of it ends the hold and may end a drain. It fails `unavailable` when there is no generation, or when the one it resolves to is stopped, as when the host is stopping.
-- `signal` delivers `onPeerSignalHook` to every other live generation, with the sender's bundle as `from.bundleId` and, as the sender generation, the caller's generation as `describe` resolves it; while the host stops, or with no generation, it sends nothing.
+An input outside these bounds fails `invalid_input` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
 
 ### Generation hooks
 

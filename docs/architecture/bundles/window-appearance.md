@@ -97,20 +97,10 @@ Native notifications are drawn by the operating system ([`notifications.ts`](../
 
 ### `doric.appearance/v1`
 
-A platform contract of the `client` environment, available from platform 1.3.0. A bundle does not list it in its manifest; on an older app it has no provider, so a bundle detects it with `services.whenAvailable` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)).
+A platform contract of the `client` environment, available from platform 1.3.0. A bundle does not list it in its manifest; on an older app it has no provider, so a bundle detects it with `services.whenAvailable` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`version.ts`](../../../packages/bundle/src/runtime/version.ts)). It reads and saves the theme preference, one of `dark`, `light` or `system`. Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts).
 
-```ts
-interface DoricAppearance {
-  get(call?: CallArg): Promise<{ readonly theme: 'dark' | 'light' | 'system' }>;
-  set(
-    input: { readonly theme: 'dark' | 'light' | 'system' },
-    call?: CallArg,
-  ): Promise<void>;
-}
-```
-
-- `get()` returns the saved preference, `dark` when none is saved or it is unreadable.
-- `set({ theme })` writes `appearance.json` atomically and only then sets `nativeTheme.themeSource` to `resolveThemeSource` of the new value, which repaints every window. It rejects `invalid_input` for a value outside the three themes and `unavailable` when the file cannot be written; the saved preference and the shown theme are then unchanged ([`appearance.ts`](../../../app/desktop/doric/src/platform/appearance.ts), [`appearance-store.ts`](../../../app/desktop/doric/src/platform/appearance-store.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
+- `get()` takes no input and resolves `{ theme }`, the saved preference, `dark` when none is saved or it is unreadable.
+- `set({ theme })` resolves with no value once it writes `appearance.json` atomically and only then sets `nativeTheme.themeSource` to `resolveThemeSource` of the new value, which repaints every window. It rejects `invalid_input` for a value outside the three themes and `unavailable` when the file cannot be written; the saved preference and the shown theme are then unchanged ([`appearance.ts`](../../../app/desktop/doric/src/platform/appearance.ts), [`appearance-store.ts`](../../../app/desktop/doric/src/platform/appearance-store.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
 - In an unpackaged run with `DORIC_THEME` set to a valid theme, `set` saves the choice but repaints nothing, since `DORIC_THEME` still wins, and `get` answers the saved preference, not the theme shown ([`appearance.ts`](../../../app/desktop/doric/src/platform/appearance.ts)).
 
 The window answers it through main ([`appearance.ts`](../../../packages/desktop/src/client/appearance.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). The `settings` bundle's Appearance section uses it, and is offered only while a provider exists ([`settings` README](../../../bundles/desktop/settings/README.md)).

@@ -14,8 +14,10 @@ Doric has three applications and a set of bundles. The **host**
 ([`app/backend/doric-host`](app/backend/doric-host/README.md)) is a Node.js
 server: one HTTP listener carries its REST routes and Socket.IO namespaces
 ([`src/index.ts`](app/backend/doric-host/src/index.ts)), and the `runtime`
-bundle runs the agent loop of every Thread
-([`runner.ts`](bundles/runtime/runtime/src/host/domain/runner.ts)). The
+bundle queues and runs each Thread's prompts
+([`runner.ts`](bundles/runtime/runtime/src/host/domain/runner.ts)) through the
+agent loop of the `default` bundle
+([`executor.ts`](bundles/runtime/default/src/host/executor.ts)). The
 **desktop app** ([`app/desktop/doric`](app/desktop/doric/README.md)), an
 Electron app, is where you create Projects, talk to agents and review their
 work; every window it opens loads the page the **renderer shell**
