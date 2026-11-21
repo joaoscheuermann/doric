@@ -80,8 +80,9 @@ const SLUG_MAX = 20;
  * characters, with no leading or trailing `_`. 'GitHub Copilot' →
  * 'github_copilot'. It never holds `__`, so the first `__` after
  * `mcp__<slug>` ends the slug and two servers' tools never share a name.
- * Pure; shared by the host, the desktop part and other bundles (the default
- * agent's skill locators `mcp/<slug>/<name>`).
+ * Pure; shared by the host and the desktop part, and the group of the skills
+ * the host offers as a skill source (the default agent's skill locators
+ * `mcp/<slug>/<name>`).
  */
 export const serverSlug = (name: string): string =>
   name
@@ -200,7 +201,8 @@ export interface McpToolView {
 /**
  * One skill a connected server serves through the MCP Skills extension
  * (`io.modelcontextprotocol/skills`), as the reader sees it. The default
- * agent lists these skills and loads one only through `readSkill`.
+ * agent lists and loads these skills through `default.skill-sources/v1`,
+ * which this bundle provides over `readSkill`.
  */
 export interface McpSkillView {
   /** The URI of its SKILL.md: unique within the server (names need not be). */

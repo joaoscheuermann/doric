@@ -2,12 +2,19 @@ import { posix } from 'node:path';
 
 import {
   type Call,
+  LogV1,
   type Services,
   type SkillRecord,
   SkillsV1,
 } from 'bundle/contracts';
-import { McpV1, serverSlug } from 'mcp/contracts';
 import { RuntimeLeaseV1, RuntimeWorkspaceV1 } from 'runtime/contracts';
+
+import {
+  type SkillSourceEntry,
+  type SkillSources,
+  SkillSourcesV1,
+  skillSourcesMethods,
+} from '../../contracts/index.js';
 
 /** The folder of workspace skills, relative to the Thread's working directory. */
 const WORKSPACE_SKILLS_DIR = '.agents/skills';
@@ -21,23 +28,29 @@ const WORKSPACE_SKILL_HEAD_BYTES = 4096;
 /** How long the one scan command may run. */
 const WORKSPACE_SCAN_TIMEOUT_MS = 5000;
 
+/** How long one skill source's `list` may take: the limit of the scan. */
+const SOURCE_LIST_TIMEOUT_MS = WORKSPACE_SCAN_TIMEOUT_MS;
+
+/** The id of the working directory's skills (`cwd/<name>`): no source takes it. */
+const WORKSPACE_SOURCE_ID = 'cwd';
+
 /** Where a catalog skill comes from, and what `load_skill` needs to read it. */
 type SkillOrigin =
   | { readonly kind: 'bundle'; readonly body: string }
   /** `path`: the skill's SKILL.md, absolute in the sandbox. */
   | { readonly kind: 'workspace'; readonly path: string }
+  /** A skill of a `default.skill-sources/v1` provider, the bundle `bundleId`. */
   | {
-      readonly kind: 'mcp';
-      readonly serverId: string;
-      readonly serverName: string;
-      /** `serverSlug(serverName)`, from `mcp/contracts`. */
-      readonly serverSlug: string;
-      readonly uri: string;
+      readonly kind: 'source';
+      readonly bundleId: string;
+      readonly group?: string;
+      /** What the source's `read` takes. */
+      readonly reference: string;
     };
 
 /**
  * One skill a catalog list offers. `name`: the bundle skill's name, the
- * workspace skill's directory name, or the MCP skill's frontmatter name.
+ * workspace skill's directory name, or the name its source gives.
  * `description`: as its source gives it, raw.
  */
 export interface CatalogSkill {
@@ -60,8 +73,21 @@ export interface RunSkills {
   readonly builtIn: readonly CatalogSkill[];
   /** In scan (sorted glob) order; [] when the scan failed or found none. */
   readonly workspace: readonly CatalogSkill[];
-  /** Connected servers in McpV1.list order, each server's skills in its order. */
+  /** Every skill source's skills, in provider order, each in the source's own order. */
   readonly server: readonly CatalogSkill[];
+}
+
+/** One provider of `default.skill-sources/v1`, named by its bundle id. */
+export interface SkillSource {
+  readonly bundleId: string;
+  readonly api: SkillSources;
+}
+
+/** What one skill source offered to one read. */
+export interface SourceSkills {
+  readonly bundleId: string;
+  /** In the source's order; undefined when it was left out this time. */
+  readonly skills: readonly CatalogSkill[] | undefined;
 }
 
 /**
@@ -128,27 +154,108 @@ const workspaceSkills = async (
   return skills;
 };
 
-const serverSkills = async (
+/**
+ * The providers of `default.skill-sources/v1` now, in provider order, but
+ * the one whose bundle id is `cwd`: a snapshot, taken for one call.
+ */
+export const skillSources = (services: Services): readonly SkillSource[] => {
+  const found: SkillSource[] = [];
+  services
+    .whenAvailable(SkillSourcesV1, (api, { bundleId }) => {
+      if (bundleId !== WORKSPACE_SOURCE_ID) found.push({ bundleId, api });
+    })
+    .dispose();
+  return found;
+};
+
+/** The bundle ids each prompt's Call has already warned about. */
+const warned = new WeakMap<Call, Set<string>>();
+
+/** Logs once per `call` and source that the source was left out. */
+const warnLeftOut = (
+  bundleId: string,
+  reason: string,
   call: Call,
   services: Services,
-): Promise<readonly CatalogSkill[]> =>
-  (await services.use(McpV1).list(call))
-    .filter(({ status }) => status.state === 'connected')
-    .flatMap(({ id, name: serverName, skills }) =>
-      skills.map(
-        ({ uri, name, description }): CatalogSkill => ({
-          name,
-          description,
-          origin: {
-            kind: 'mcp',
-            serverId: id,
-            serverName,
-            serverSlug: serverSlug(serverName),
-            uri,
-          },
-        }),
-      ),
+): void => {
+  const seen = warned.get(call) ?? new Set<string>();
+  warned.set(call, seen);
+  if (seen.has(bundleId)) return;
+  seen.add(bundleId);
+  try {
+    const logged: unknown = services
+      .use(LogV1)
+      .warn('Skill source left out', { bundleId, reason }, call);
+    // A log that fails leaves the skills as they are.
+    if (logged instanceof Promise) logged.catch(() => undefined);
+  } catch {
+    // A log that fails leaves the skills as they are.
+  }
+};
+
+/** `answer`, or a rejection once `ms` milliseconds pass without one. */
+const within = <T>(answer: Promise<T>, ms: number): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`No answer within ${ms} ms.`)),
+      ms,
     );
+    answer.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+
+/** One entry of a source, as the catalog lists it. */
+const sourceSkill = (
+  bundleId: string,
+  { group, name, description, reference }: SkillSourceEntry,
+): CatalogSkill => ({
+  name,
+  description,
+  origin: {
+    kind: 'source',
+    bundleId,
+    ...(group === undefined ? {} : { group }),
+    reference,
+  },
+});
+
+/** The skills of one source, or undefined (and a warning) when it is left out. */
+const listSource = async (
+  { bundleId, api }: SkillSource,
+  cwd: string,
+  call: Call,
+  services: Services,
+): Promise<SourceSkills> => {
+  let answer: unknown;
+  try {
+    answer = await within(api.list({ cwd }, call), SOURCE_LIST_TIMEOUT_MS);
+  } catch (error) {
+    warnLeftOut(
+      bundleId,
+      error instanceof Error ? error.message : String(error),
+      call,
+      services,
+    );
+    return { bundleId, skills: undefined };
+  }
+  const parsed = skillSourcesMethods.list.output.safeParse(answer);
+  if (!parsed.success) {
+    warnLeftOut(bundleId, parsed.error.message, call, services);
+    return { bundleId, skills: undefined };
+  }
+  return {
+    bundleId,
+    skills: parsed.data.skills.map((entry) => sourceSkill(bundleId, entry)),
+  };
+};
 
 /**
  * Reads the skills of one prompt run under `call`.
@@ -158,21 +265,25 @@ const serverSkills = async (
  *   directory and the head of its SKILL.md; a file without a frontmatter
  *   description is skipped. Missing provider, rejection, a non-zero or null
  *   exit code, or a timeout → workspace [].
- * - MCP: McpV1.list(call); only connected servers, with their skills. Missing
- *   provider or rejection → server []. No skill text is read here.
- * Never rejects because of the workspace or MCP sources.
+ * - Sources: readSourceSkills; a source left out offers nothing. No skill
+ *   text is read here.
+ * Never rejects because of the workspace or the skill sources.
  */
 export const readRunSkills = async (
   cwd: string,
   call: Call,
   services: Services,
 ): Promise<RunSkills> => {
-  const [bundle, workspace, server] = await Promise.all([
+  const [bundle, workspace, sources] = await Promise.all([
     bundleSkills(call, services),
     readWorkspaceSkills(cwd, call, services),
-    readServerSkills(call, services),
+    readSourceSkills(cwd, call, services),
   ]);
-  return { ...bundle, workspace, server: server ?? [] };
+  return {
+    ...bundle,
+    workspace,
+    server: sources.flatMap(({ skills }) => skills ?? []),
+  };
 };
 
 /**
@@ -189,14 +300,22 @@ export const readWorkspaceSkills = (
   workspaceSkills(cwd, call, services).catch(() => []);
 
 /**
- * The connected MCP servers' skills from McpV1.list(call), in list order.
- * Never rejects: missing provider or rejection → undefined.
+ * The skills of every `default.skill-sources/v1` provider (but `cwd`), in
+ * provider order, each asked in parallel for the prompt working directory
+ * `cwd`. A source whose `list` answers after 5,000 ms, rejects, or answers
+ * what fails the contract's schema offers `skills: undefined` this time, and
+ * is logged through `log/v1` once per `call`. Never rejects.
  */
-export const readServerSkills = (
+export const readSourceSkills = (
+  cwd: string,
   call: Call,
   services: Services,
-): Promise<readonly CatalogSkill[] | undefined> =>
-  serverSkills(call, services).catch(() => undefined);
+): Promise<readonly SourceSkills[]> =>
+  Promise.all(
+    skillSources(services).map((source) =>
+      listSource(source, cwd, call, services),
+    ),
+  );
 
 /**
  * The Thread's working directory now, from RuntimeWorkspaceV1.cwd(call).

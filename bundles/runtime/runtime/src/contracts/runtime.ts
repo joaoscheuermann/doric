@@ -32,7 +32,7 @@ import {
 } from './watches.js';
 
 /*
- * runtime/v1: Projects, boot recovery, host stop and the live notices of the
+ * runtime/v2: Projects, boot recovery, host stop and the live notices of the
  * workspace (design 57 §2.2). API mínima: one method per WorkspaceService
  * operation the transport and the kernel call today.
  */
@@ -171,7 +171,7 @@ export interface Runtime {
   watch(listener: RuntimeListener, call?: CallArg): Disposable;
   /**
    * The `/projects` namespace as a stream (stage 9 R-STREAM, 1.2.0): one
-   * snapshot of the Project, its Threads and terminals, then its Project and
+   * snapshot of the Project and its Threads, then its Project and
    * Thread notices. Remote-callable; the desktop bridge subscribes to it.
    */
   watchProject(
@@ -248,4 +248,4 @@ export const runtimeMethods = {
   watchProject: watchMethods.project,
 } as const;
 
-export const RuntimeV1 = ref<Runtime>('runtime/v1');
+export const RuntimeV2 = ref<Runtime>('runtime/v2');

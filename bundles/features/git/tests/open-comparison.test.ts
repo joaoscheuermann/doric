@@ -1,7 +1,8 @@
 // git.open-comparison/v1 (stage 10, §2.7, D10-1): a Changes row opens its
 // comparison as a workspace tab with today's tab id, title, accessible name
-// and tooltip, through `layout.tabs/v1`; the current tab names the row the
-// Changes view selects.
+// and tooltip, through `layout.tabs/v2`, drawn with the icon element
+// `git-file-diff-icon` (bundle isolation 4(a) change 4); the current tab names
+// the row the Changes view selects.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -9,7 +10,7 @@ import { describe, test } from 'node:test';
 import { defineMethod, defineService } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import {
-  LayoutTabsV1,
+  LayoutTabsV2,
   layoutTabsMethods,
   type TabRequest,
 } from 'layout/contracts';
@@ -25,7 +26,7 @@ describe('git.open-comparison/v1', () => {
     const harness = createTestServices({
       bundle: { id: 'git-client' },
       provide: [
-        defineService(LayoutTabsV1.id, {
+        defineService(LayoutTabsV2.id, {
           open: defineMethod({
             ...layoutTabsMethods.open,
             execute: async (request: TabRequest) => {
@@ -59,7 +60,7 @@ describe('git.open-comparison/v1', () => {
         repository: 'packages/app',
         path: 'src/main.ts',
       },
-      icon: 'file-diff',
+      iconTag: 'git-file-diff-icon',
       ariaLabel: 'main.ts changes',
       tooltip: 'src/main.ts',
     });

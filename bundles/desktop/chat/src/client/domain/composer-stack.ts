@@ -4,7 +4,7 @@
 // the prompt envelope's (`prompt-envelope.ts`). The chat never interprets a
 // target — it reads only the anchor's own fields, which the `comments`
 // bundle's four anchor forms name (`docs/architecture/bundles/comments.md`,
-// "A âncora").
+// "The anchor").
 
 import type { ComposerItem } from '../../contracts/index.js';
 

@@ -1,10 +1,11 @@
 // The Screens pane as the sidebar mounts it: the element's own React root and
-// its reads of `layout.workspace/v1`, the rows of the current Project's views,
+// its reads of `workspace.selection/v1` (the selected Project's id) and
+// `runtime.records/v1` (its name), the rows of the current Project's views,
 // and the header element that opens another view.
 //
 // The layout draws the group's frame — header, collapse control and panel
 // (`layout.stack/v2`) — so these elements draw only the rows and the add
-// control. The layout rebuilds its records on every read, so a read whose
+// control. The selection answers a fresh object on every read, so a read whose
 // snapshot identity changes on every call makes `useSyncExternalStore`
 // re-render without end — React's "Maximum update depth exceeded" (#185) — and
 // a sidebar row's own controls need the sidebar scope the element's root does
@@ -17,6 +18,8 @@ import { after, before, test } from 'node:test';
 import type { ClientContext, Services } from 'bundle/contracts';
 import type { ReactElementInstance } from 'desktop/ui';
 import { Window } from 'happy-dom';
+import type { Project, RuntimeRecords } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
 import type { ScreenView } from '../../src/contracts/index.js';
 
@@ -38,7 +41,6 @@ const installed = [
 let act: (callback: () => void | Promise<void>) => Promise<void>;
 let defineScreenElements: typeof import('../../src/client/elements.js')['defineScreenElements'];
 let createScreenViewsStore: typeof import('../../src/client/store.js')['createScreenViewsStore'];
-let LayoutWorkspaceV1: typeof import('../../src/client/peers.js')['LayoutWorkspaceV1'];
 let ScreenViewsV1: typeof import('../../src/contracts/index.js')['ScreenViewsV1'];
 
 before(async () => {
@@ -54,7 +56,6 @@ before(async () => {
 
   ({ defineScreenElements } = await import('../../src/client/elements.js'));
   ({ createScreenViewsStore } = await import('../../src/client/store.js'));
-  ({ LayoutWorkspaceV1 } = await import('../../src/client/peers.js'));
   ({ ScreenViewsV1 } = await import('../../src/contracts/index.js'));
 });
 
@@ -62,6 +63,9 @@ after(async () => {
   await window.happyDOM.abort();
   await window.happyDOM.close();
 });
+
+const idOf = (contract: unknown): string =>
+  (contract as { readonly id?: string }).id ?? '';
 
 /** The services stub: only what the elements' hooks reach, by contract. */
 const servicesFor = (apiOf: (contract: unknown) => unknown): Services =>
@@ -99,25 +103,41 @@ const other: ScreenView = {
   status: { kind: 'waiting' },
 };
 
-/** The layout's records: a fresh object per read, as it builds them. */
-const workspaceFor = (project?: {
+/** The Project record `runtime.records/v1` holds for `project`. */
+const projectRecord = (project: {
+  readonly id: string;
+  readonly name: string;
+}): Project => ({
+  ...project,
+  state: 'ready',
+  configRevision: 0,
+  createdAt: '',
+  updatedAt: '',
+});
+
+/**
+ * `workspace.selection/v1` on `project`: a fresh object per read, and the
+ * number of reads. `records` holds the Project's record.
+ */
+const selectionFor = (project?: {
   readonly id: string;
   readonly name: string;
 }) => {
   let selections = 0;
 
   return {
-    selectedThread: () =>
-      project === undefined ? undefined : { id: 't1', projectId: project.id },
-    selection: () => {
+    current: () => {
       selections += 1;
 
       return project === undefined
         ? {}
-        : { project, thread: { id: 't1', projectId: project.id } };
+        : { projectId: project.id, threadId: 't1' };
     },
     subscribe: () => ({ dispose: () => undefined }),
     reads: () => selections,
+    records: createRecordsApi({
+      projects: project === undefined ? [] : [projectRecord(project)],
+    }),
   };
 };
 
@@ -132,7 +152,9 @@ const mount = (
     /** Records `remove` and `retry` calls as `[method, id]`. */
     readonly calls?: [string, unknown][];
     readonly views: readonly ScreenView[];
-    readonly workspace: ReturnType<typeof workspaceFor>;
+    readonly selection: ReturnType<typeof selectionFor>;
+    /** `runtime.records/v1`; the selection's records by default. */
+    readonly records?: RuntimeRecords;
     /** Serves no `screen.views/v1`, which disables every row. */
     readonly withoutScreens?: boolean;
   },
@@ -141,7 +163,8 @@ const mount = (
     added = [],
     calls = [],
     views,
-    workspace,
+    selection,
+    records = selection.records,
     withoutScreens = false,
   } = options;
   const store = createScreenViewsStore();
@@ -162,11 +185,13 @@ const mount = (
     },
   };
   const services = servicesFor((contract) =>
-    contract === LayoutWorkspaceV1
-      ? workspace
-      : withoutScreens
-        ? undefined
-        : screens,
+    idOf(contract) === 'workspace.selection/v1'
+      ? selection
+      : idOf(contract) === 'runtime.records/v1'
+        ? records
+        : idOf(contract) === 'screen.views/v1' && !withoutScreens
+          ? screens
+          : undefined,
   );
   const name = `screen-pane-${tag++}`;
   window.customElements.define(
@@ -178,7 +203,7 @@ const mount = (
   ) as unknown as ReactElementInstance;
   element.services = services;
 
-  return { added, element, name, workspace };
+  return { added, element, name, selection };
 };
 
 const mountIn = async (
@@ -197,10 +222,10 @@ const mountIn = async (
 };
 
 test('the rows element draws the current Project views only', async () => {
-  const workspace = workspaceFor({ id: 'p1', name: 'Doric' });
+  const selection = selectionFor({ id: 'p1', name: 'Doric' });
   const { element } = await mountIn('sidebar', {
     views: [view, other],
-    workspace,
+    selection,
   });
 
   try {
@@ -211,8 +236,8 @@ test('the rows element draws the current Project views only', async () => {
     // A read that keeps its identity settles after a handful of them; the loop
     // this guards against reads thousands.
     assert.ok(
-      workspace.reads() < 50,
-      `selection() was read ${workspace.reads()} times`,
+      selection.reads() > 0 && selection.reads() < 50,
+      `current() was read ${selection.reads()} times`,
     );
   } finally {
     await act(() => element.dispose());
@@ -223,7 +248,7 @@ test('the rows element draws the current Project views only', async () => {
 test('the rows element shows nothing without a selected Project', async () => {
   const { element } = await mountIn('sidebar', {
     views: [view, other],
-    workspace: workspaceFor(undefined),
+    selection: selectionFor(undefined),
   });
 
   try {
@@ -243,7 +268,7 @@ test('the header element opens the selected Project screen', async () => {
   const { element } = await mountIn('groupAction', {
     added,
     views: [view],
-    workspace: workspaceFor({ id: 'p1', name: 'Doric' }),
+    selection: selectionFor({ id: 'p1', name: 'Doric' }),
   });
 
   try {
@@ -262,12 +287,42 @@ test('the header element opens the selected Project screen', async () => {
   }
 });
 
+test("the header element names the screen after the selected Project's record as it is renamed", async () => {
+  const added: unknown[] = [];
+  const selection = selectionFor({ id: 'p1', name: 'Doric' });
+  const { element } = await mountIn('groupAction', {
+    added,
+    views: [view],
+    selection,
+  });
+
+  try {
+    await act(async () => {
+      await selection.records.renameProject({
+        projectId: 'p1',
+        name: 'Renamed',
+      });
+    });
+    const action = element.querySelector('[aria-label="New screen view"]');
+    assert.notEqual(action, null);
+
+    await act(() => {
+      (action as unknown as { click(): void }).click();
+    });
+
+    assert.deepEqual(added, [{ projectId: 'p1', label: 'Renamed' }]);
+  } finally {
+    await act(() => element.dispose());
+    window.document.body.replaceChildren();
+  }
+});
+
 test('the header element cannot open a screen without a Project', async () => {
   const added: unknown[] = [];
   const { element } = await mountIn('groupAction', {
     added,
     views: [view],
-    workspace: workspaceFor(undefined),
+    selection: selectionFor(undefined),
   });
 
   try {
@@ -359,7 +414,7 @@ const withRows = async (
   const { element } = await mountIn('sidebar', {
     calls,
     views,
-    workspace: workspaceFor(project),
+    selection: selectionFor(project),
   });
 
   try {
@@ -493,7 +548,7 @@ test('T-5.9: each view row has the unselected fill and the menu-button ring; its
 test('T-5.9: a disabled row, without the screens service, takes no fill or ring', async () => {
   const { element } = await mountIn('sidebar', {
     views: [view, failed],
-    workspace: workspaceFor({ id: 'p1', name: 'Doric' }),
+    selection: selectionFor({ id: 'p1', name: 'Doric' }),
     withoutScreens: true,
   });
   try {
@@ -624,12 +679,12 @@ test('activating registers the Screens pane through layout.stack/v2, without siz
 
 // T-3.8 (sidebar alignment §9.4): the pane is registered through
 // `layout.stack/v2`, so the manifest requires it and no longer v1.
-test('the screen manifest is 2.0.3 and requires layout.stack/v2@^2.0.0, not v1', () => {
+test('the screen manifest is 2.0.4 and requires layout.stack/v2@^2.0.0, not v1', () => {
   const manifest = JSON.parse(
     readFileSync('bundles/features/screen/manifest.json', 'utf8'),
   ) as { version: string; requires: string[] };
 
-  assert.equal(manifest.version, '2.0.3');
+  assert.equal(manifest.version, '2.0.4');
   assert.ok(manifest.requires.includes('layout.stack/v2@^2.0.0'));
   assert.ok(
     !manifest.requires.some((entry) => entry.startsWith('layout.stack/v1@')),

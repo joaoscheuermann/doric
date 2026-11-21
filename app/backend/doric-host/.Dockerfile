@@ -24,77 +24,25 @@ COPY tools ./tools
 # file"; pinning the major here keeps the builder and the toolchain in step.
 RUN npm install --global npm@11.13.0
 
-# Lifecycle scripts are initially disabled because dependencies are untrusted
-# build inputs. Nx's required setup is then invoked explicitly. Direct tsc
-# builds avoid coupling the container build to the Nx task graph, and the Doric
-# entrypoint is placed at the path expected by its package metadata. Each
-# bundle is compiled to its own `dist`; the bundle build CLI then validates its
-# manifest and skills, builds its desktop and client parts with esbuild (a root
-# devDependency, so `npm ci` installs it), dry-activates its parts to write the
-# contract descriptor and JSON Schemas, and `stage` copies each bundle's whole
-# `dist` (`desktop/`, `client/` and `contracts/` included, which the host
-# distributes to the desktop, the client's chunks `client/chunks/` among them)
-# into `app/backend/doric-host/dist/bundles/<id>`. `openui` is listed before
-# `papercraft` in both lists, as in the composition.
-# The papercraft bundle also gets its sandbox runner, `dist/sandbox/runner.mjs`,
-# the one script the host copies into a sandbox to bundle a preview there (as
-# its Nx `build` target writes it).
-# The `web-research` skill is the `web` bundle's; the copy left in `files`
-# is removed from its dist until the source is deleted.
-# A failing bundle build stops the image build here rather than at boot. The
-# Prisma client is generated into the `postgres` bundle, which owns the schema;
-# the Doric config only points at it.
+# Lifecycle scripts are disabled because dependencies are untrusted build
+# inputs; Nx's required post-install step is then invoked explicitly. The
+# Prisma client is generated before compiling, and the Doric entrypoint is
+# placed at the path expected by its package metadata.
+# Nx's `build-bundles` target is the single definition of the bundle build: it
+# builds every project tagged `type:bundle`, then `stage` stages every
+# `bundles/<group>/<id>` that holds a manifest into
+# `app/backend/doric-host/dist/bundles/<id>`. The Nx plugins and the task runner
+# come from the lockfile; `--ignore-scripts` keeps any lifecycle script from
+# running. `NX_DAEMON=false` keeps
+# the build from starting a background daemon and `--skip-nx-cache` forces
+# every task to run. A failing bundle build stops the image build here rather
+# than at boot.
 RUN npm ci --ignore-scripts \
  && node node_modules/nx/bin/post-install \
  && npx prisma generate --config app/backend/doric-host/prisma.config.ts \
- && npx tsc --build \
-      packages/storage/tsconfig.lib.json \
-      bundles/foundation/postgres/tsconfig.json \
-      app/backend/doric-host/tsconfig.lib.json \
-      bundles/foundation/core/tsconfig.json \
-      bundles/features/files/tsconfig.json \
-      bundles/features/git/tsconfig.json \
-      bundles/features/threads/tsconfig.json \
-      bundles/runtime/runtime/tsconfig.json \
-      bundles/features/terminal/tsconfig.json \
-      bundles/features/claude-login/tsconfig.json \
-      bundles/runtime/default/tsconfig.json \
-      bundles/providers/openai/tsconfig.json \
-      bundles/providers/openrouter/tsconfig.json \
-      bundles/providers/codex/tsconfig.json \
-      bundles/providers/claude/tsconfig.json \
-      bundles/sandboxes/docker/tsconfig.json \
-      bundles/sandboxes/firecracker/tsconfig.json \
-      bundles/features/web/tsconfig.json \
-      bundles/features/usage/tsconfig.json \
-      bundles/desktop/notifications/tsconfig.json \
-      bundles/foundation/transport/tsconfig.json \
-      bundles/foundation/host-config/tsconfig.json \
-      bundles/features/resources/tsconfig.json \
-      bundles/features/screen/tsconfig.json \
-      bundles/features/screen-relay/tsconfig.json \
-      bundles/desktop/layout/tsconfig.json \
-      bundles/desktop/chat/tsconfig.json \
-      bundles/desktop/history/tsconfig.json \
-      bundles/features/comments/tsconfig.json \
-      bundles/features/openui/tsconfig.json \
-      bundles/features/papercraft/tsconfig.json \
-      bundles/features/mcp/tsconfig.json \
-      --force \
- && npx tsc -p bundles/desktop/settings/tsconfig.json \
+ && npx tsc --build packages/storage/tsconfig.lib.json app/backend/doric-host/tsconfig.lib.json --force \
  && node packages/bundle/dist/build/platform-schemas.js \
- && for manifest in bundles/*/*/manifest.json; do \
-      node packages/bundle/dist/build/cli.js build "${manifest%/manifest.json}" || exit 1; \
-    done \
- && npx esbuild bundles/features/papercraft/src/sandbox/main.ts --bundle \
-      --platform=node --target=node22 --format=esm --log-level=warning \
-      --outfile=bundles/features/papercraft/dist/sandbox/runner.mjs \
- && node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles \
-      bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads \
-      bundles/runtime/runtime bundles/runtime/default bundles/providers/openai bundles/providers/openrouter \
-      bundles/providers/codex bundles/providers/claude bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web \
-      bundles/features/terminal bundles/features/claude-login bundles/features/usage bundles/features/resources bundles/features/screen bundles/features/screen-relay bundles/desktop/notifications \
-      bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/comments bundles/features/openui bundles/features/papercraft bundles/features/mcp bundles/foundation/transport bundles/foundation/host-config \
+ && NX_DAEMON=false npx nx run doric-host:build-bundles --skip-nx-cache \
  && mkdir -p app/backend/doric-host/dist/src \
  && mv app/backend/doric-host/dist/index.* app/backend/doric-host/dist/src/ \
  && mv app/backend/doric-host/dist/lib app/backend/doric-host/dist/src/

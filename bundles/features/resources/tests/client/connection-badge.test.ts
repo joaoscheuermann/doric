@@ -1,8 +1,10 @@
 // The connection badge `<resources-monitor>` draws in the account status slot
 // (T-2.3, UR24, spec §2.7): its tone and glyphs without a click, its warning
 // thresholds as the polls advance, its accessible description, the popover a
-// click opens, the badge without a layout (G10), the glyphs' provenance, and
-// the region it registers into (T-2.1).
+// click opens, the badge without the records or the selection (G10), the
+// glyphs' provenance, and the region it registers into (T-2.1). The selected
+// Project comes from `workspace.selection/v1` and the connection from
+// `runtime.records/v1` (step 4(d)).
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -11,6 +13,7 @@ import { describe, test } from 'node:test';
 
 import type { RegionItem, Services } from 'bundle/contracts';
 import { svgMask } from 'desktop/ui/svg-mask';
+import { createRecordsApi } from 'runtime/testing';
 
 import type {
   HostResources,
@@ -25,7 +28,7 @@ import {
 } from '../../stories/support/resources.js';
 import { fakeServices } from '../../stories/support/services.js';
 import {
-  fixtureWorkspace,
+  fixtureSelection,
   monitorServices,
 } from '../../stories/support/workspace.js';
 import {
@@ -91,7 +94,10 @@ const liveReadings = (initial: {
     current,
     services: (connected = true): Services =>
       monitorServices({
-        workspace: fixtureWorkspace(projectId, { connected }),
+        selection: fixtureSelection(projectId),
+        records: createRecordsApi({
+          connection: connected ? 'connected' : 'disconnected',
+        }),
         host: () => current.host,
         project: () => current.project,
       }),
@@ -232,13 +238,30 @@ describe('the connection badge', () => {
     });
   });
 
-  test('shows Disconnected without a layout.workspace/v1 provider (G10)', async () => {
+  test('shows Disconnected without a runtime.records/v1 provider (G10)', async () => {
+    await withMonitor(monitorServices({ records: null }), async (rendered) => {
+      const badge = badgeOf(rendered);
+      assert.equal(badge.dataset.status, 'disconnected');
+      assert.equal(descriptionOf(badge), 'Disconnected');
+    });
+  });
+
+  test('polls the machine only without a workspace.selection/v1 provider', async () => {
+    let projectReads = 0;
     await withMonitor(
-      monitorServices({ workspace: null }),
+      monitorServices({
+        selection: null,
+        project: () => {
+          projectReads += 1;
+          return readyProject(containerReading({ at: at(0) }));
+        },
+      }),
       async (rendered) => {
+        await rendered.advance();
         const badge = badgeOf(rendered);
-        assert.equal(badge.dataset.status, 'disconnected');
-        assert.equal(descriptionOf(badge), 'Disconnected');
+        assert.equal(badge.dataset.status, 'connected');
+        assert.equal(descriptionOf(badge), 'Connected');
+        assert.equal(projectReads, 0, 'resources/v1.project was called.');
       },
     );
   });
@@ -259,7 +282,8 @@ describe('the resources popover', () => {
 
   test('is headed "Connected" while no reading has arrived', async () => {
     const services = fakeServices({
-      'layout.workspace/v1': fixtureWorkspace(undefined),
+      'workspace.selection/v1': fixtureSelection(undefined),
+      'runtime.records/v1': createRecordsApi(),
       'resources/v1': {
         host: () => new Promise(() => undefined),
         project: () => new Promise(() => undefined),
@@ -316,7 +340,7 @@ describe('the cloud glyphs', () => {
 });
 
 describe('the resources region (T-2.1)', () => {
-  test('the activation adds the badge to layout.account.status and nothing to layout.global-footer', async () => {
+  test('the activation adds the badge to account.status and nothing to layout.global-footer', async () => {
     installWindow();
     const { activate } = await import('../../src/client/index.js');
     const added: [string, RegionItem][] = [];
@@ -334,7 +358,7 @@ describe('the resources region (T-2.1)', () => {
     try {
       assert.deepEqual(added, [
         [
-          'layout.account.status',
+          'account.status',
           { id: 'resources', tag: 'resources-monitor', order: 10 },
         ],
       ]);

@@ -60,7 +60,7 @@ export const WithoutLayout = {
   render: () => (
     <MonitorElement
       name="without-layout"
-      services={monitorServices({ workspace: null })}
+      services={monitorServices({ selection: null, records: null })}
     />
   ),
 };

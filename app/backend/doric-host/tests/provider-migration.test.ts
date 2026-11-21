@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import type { Database } from 'postgres/prisma';
+import type { Database } from 'postgres/testing';
 
 import { legacyLoad } from './helpers/legacy-config-load.js';
 import {

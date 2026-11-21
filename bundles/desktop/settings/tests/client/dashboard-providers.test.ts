@@ -1,9 +1,9 @@
 // The Providers group of the /projects dashboard as the user meets it: the
 // settings bundle draws one row per configured provider into the dashboard's
-// side menu (`layout.dashboard.nav`) and a provider's page into the
-// dashboard's main area (`layout.dashboard.page`), opened through
-// `layout.dashboard/v1`. A probe bundle plays the layout: it provides that
-// contract and mounts the two settings elements the way the layout's
+// side menu (`workspace.dashboard.nav`) and a provider's page into the
+// dashboard's main area (`workspace.dashboard.page`), opened through
+// `workspace.dashboard/v1`. A probe bundle plays `workspace`: it provides
+// that contract and mounts the two settings elements the way the workspace's
 // dashboard does, the nav element always and the page element while the page
 // it names is the active one.
 
@@ -59,6 +59,7 @@ const openrouter = {
     { key: 'token', label: 'Token', kind: 'secret', required: true },
   ],
   lists: ['models', 'reasonings'],
+  site: { url: 'https://openrouter.ai', label: 'Open OpenRouter' },
 };
 
 const openai = {
@@ -166,22 +167,41 @@ const host = (initial: unknown = configuration): Record<string, HostAnswer> => {
   };
 };
 
-interface LayoutDashboard {
+interface WorkspaceDashboard {
   active(): string | undefined;
   show(id: string): void;
   close(): void;
   subscribe(listener: () => void): Disposable;
 }
 
-const LayoutDashboardV1 = ref<LayoutDashboard>('layout.dashboard/v1');
+const WorkspaceDashboardV1 = ref<WorkspaceDashboard>('workspace.dashboard/v1');
 
 /**
- * The layout's side of the dashboard: `layout.dashboard/v1` with the method
- * schemas the layout declares, the dashboard route mounting the Providers
+ * The workspace's side of the dashboard: `workspace.dashboard/v1` with the
+ * method schemas `workspace` declares, the dashboard route mounting the Providers
  * group, and the provider page's host mounted while that page is active.
  */
-const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
+/** The part of `settings.models/v1` T-40 reads, by id as the chat reads it. */
+interface SettingsModels {
+  view(): {
+    readonly status: string;
+    readonly listsModels?: boolean;
+    readonly groups?: readonly {
+      readonly choices: readonly { readonly label: string }[];
+    }[];
+  };
+  subscribe(listener: () => void): Disposable;
+}
+
+const SettingsModelsV1 = ref<SettingsModels>('settings.models/v1');
+
+/**
+ * `workspace`'s side of the dashboard; with `models`, the probe also plays the
+ * chat's footer picker in the same window: it requires `settings.models/v1`.
+ */
+const dashboardProbe = (options: { readonly models?: boolean } = {}) => {
   let active: string | undefined;
+  let models: SettingsModels | undefined;
   const shown: string[] = [];
   const listeners = new Set<() => void>();
   let root: HTMLElement | undefined;
@@ -210,12 +230,19 @@ const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
   };
 
   const probe: ProbeBundle = {
-    requires: ['ui/v1@^1.0.0', 'navigation/v1@^1.0.0'],
-    provides: ['layout.dashboard/v1@1.0.0'],
+    requires: [
+      'ui/v1@^1.0.0',
+      'navigation/v1@^1.0.0',
+      ...(options.models === true ? ['settings.models/v1@^1.0.0'] : []),
+    ],
+    provides: ['workspace.dashboard/v1@1.0.0'],
     activate: (context) => {
       services = context.services;
+      if (options.models === true) {
+        models = context.services.use(SettingsModelsV1);
+      }
       context.services.provide(
-        defineService(LayoutDashboardV1, {
+        defineService(WorkspaceDashboardV1, {
           active: defineMethod({
             input: noInput,
             output: z.string().optional(),
@@ -249,10 +276,6 @@ const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
         create: () => {
           root = document.createElement('div');
           root.append(create('settings-dashboard-providers'));
-          // The conversation footer's picker, mounted in the same window.
-          if (options.picker === true) {
-            root.append(create('settings-execution-picker'));
-          }
           drawPage();
           return root;
         },
@@ -265,8 +288,10 @@ const layoutProbe = (options: { readonly picker?: boolean } = {}) => {
     probe,
     /** The pages `show` was asked for, in order. */
     shown: (): readonly string[] => [...shown],
-    /** The layout closing the page, as the dashboard's own controls do. */
-    close: (): void => services?.use(LayoutDashboardV1).close(),
+    /** `workspace` closing the page, as the dashboard's own controls do. */
+    close: (): void => services?.use(WorkspaceDashboardV1).close(),
+    /** `settings.models/v1` as the probe received it, with `models`. */
+    models: (): SettingsModels | undefined => models,
   };
 };
 
@@ -283,20 +308,20 @@ afterEach(async () => {
 
 const openDashboard = async (
   options: {
-    readonly picker?: boolean;
+    readonly models?: boolean;
     readonly stored?: unknown;
     /** Host answers over the defaults. */
     readonly answers?: Readonly<Record<string, HostAnswer>>;
   } = {},
 ) => {
-  const layout = layoutProbe(options);
+  const dashboard = dashboardProbe(options);
   opened = await openSettingsWindow({
     url: 'doric://app/projects',
     host: { ...host(options.stored), ...options.answers },
-    probe: layout.probe,
+    probe: dashboard.probe,
   });
   await settle(20);
-  return { window: opened, layout };
+  return { window: opened, dashboard };
 };
 
 const rows = (window: SettingsWindow): HTMLElement[] => [
@@ -392,9 +417,9 @@ test("the Providers group draws the host's icon for a provider, a server for one
 });
 
 test('a provider row opens its page in the dashboard and is the active row', async () => {
-  const { window, layout } = await openProviderPage('openrouter');
+  const { window, dashboard } = await openProviderPage('openrouter');
 
-  assert.deepEqual(layout.shown(), [PAGE_ID]);
+  assert.deepEqual(dashboard.shown(), [PAGE_ID]);
   assert.equal(pageHeading(window), 'openrouter');
   assert.deepEqual(activeRows(window), ['openrouter']);
   assert.equal(field(window, 'provider-name').value, 'openrouter');
@@ -429,6 +454,55 @@ test("the OpenRouter page opens the provider's site in the browser; other kinds 
   );
 });
 
+/** The page of the provider `name`, with the kinds the host answers. */
+const openPageWithKinds = async (name: string, kinds: readonly unknown[]) => {
+  const dashboard = await openDashboard({
+    answers: { 'models/v1.kinds': () => kinds },
+  });
+  rowOf(dashboard.window, name).click();
+  await settle(20);
+  return dashboard;
+};
+
+const headerButtons = (window: SettingsWindow): HTMLElement[] => [
+  ...window.document.querySelectorAll<HTMLElement>(
+    'settings-dashboard-provider header button',
+  ),
+];
+
+test("T6.2: a kind's descriptor names the site its page opens and the control's label, for a kind settings never named", async () => {
+  const { window } = await openPageWithKinds('acme', [
+    openrouter,
+    openai,
+    { ...acme, site: { url: 'https://acme.test/console', label: 'Open Acme' } },
+  ]);
+
+  const site = window.document.querySelector<HTMLElement>(
+    'settings-dashboard-provider [aria-label="Open Acme"]',
+  );
+  assert.ok(site !== null, 'The Acme page offers no site link.');
+  site.click();
+  await settle(20);
+  assert.deepEqual(
+    window.received('doric.shell/v1.openExternal').map((call) => call.input),
+    [{ url: 'https://acme.test/console' }],
+  );
+});
+
+test('T6.2: a kind whose site is not https draws no site control on its page', async () => {
+  const { window } = await openPageWithKinds('acme', [
+    openrouter,
+    openai,
+    {
+      ...acme,
+      site: { url: 'http://insecure.test', label: 'Open Insecure' },
+    },
+  ]);
+
+  assert.equal(pageHeading(window), 'acme');
+  assert.deepEqual(headerButtons(window), []);
+});
+
 test('a change on the provider page saves itself once typing settles', async () => {
   const { window } = await openProviderPage('openrouter');
 
@@ -445,8 +519,8 @@ test('a change on the provider page saves itself once typing settles', async () 
   );
 });
 
-test("a model the provider page adds reaches the footer picker's list without a window focus, with no Thread selected (T-40)", async () => {
-  // No provider lists a model, so the picker offers a typed field; the
+test("a model the provider page adds reaches settings.models/v1's groups without a window focus, and its subscribers are called (T-40)", async () => {
+  // No provider lists a model, so the view asks for a typed model; the
   // default runs on a typed model of the local server.
   const stored = {
     ...configuration,
@@ -456,18 +530,24 @@ test("a model the provider page adds reaches the footer picker's list without a 
     })),
     models: { execution: { providerId: 'lmstudio', model: 'local-1' } },
   };
-  const { window } = await openDashboard({ picker: true, stored });
+  const { window, dashboard } = await openDashboard({ models: true, stored });
+  const models = dashboard.models();
+  assert.ok(
+    models !== undefined,
+    'No provider of settings.models/v1 reached a bundle that requires it.',
+  );
+  let heard = 0;
+  const subscription = models.subscribe(() => {
+    heard += 1;
+  });
+  await settle(20);
   rowOf(window, 'openrouter').click();
   await settle(20);
 
-  const picker = (): HTMLElement => {
-    const trigger = window.document.querySelector<HTMLElement>(
-      'settings-execution-picker [aria-label="Execution model"]',
-    );
-    assert.ok(trigger !== null, 'The footer picker is not drawn.');
-    return trigger;
-  };
-  assert.equal(picker().tagName, 'INPUT');
+  const before = models.view();
+  assert.equal(before.status, 'ready');
+  assert.equal(before.listsModels, false);
+  heard = 0;
 
   const add = [
     ...window.document.querySelectorAll<HTMLElement>(
@@ -486,17 +566,19 @@ test("a model the provider page adds reaches the footer picker's list without a 
   assert.equal(window.received('host-config/v1.replace').length, 1);
   await settle(20);
 
-  // The provider now lists a model: the picker draws its list's trigger, still
-  // locked on the workspace default since no Thread is selected.
-  assert.equal(picker().tagName, 'BUTTON');
+  // The provider now lists a model: the view's groups hold it, and it got
+  // there with no window focus (the test dispatches none).
+  const after = models.view();
+  assert.equal(after.status, 'ready');
+  assert.equal(after.listsModels, true);
   assert.ok(
-    picker().hasAttribute('disabled') || picker().hasAttribute('data-disabled'),
-    'The picker is not locked without a selected Thread.',
+    (after.groups ?? []).some((group) =>
+      group.choices.some((choice) => choice.label === 'deepseek/v4'),
+    ),
+    'The added model is not among the groups.',
   );
-  assert.equal(
-    picker().getAttribute('title'),
-    'New threads start on the workspace default. Change it in Settings.',
-  );
+  assert.ok(heard > 0, 'No subscriber heard the saved configuration.');
+  subscription.dispose();
 });
 
 test('renaming a provider on its page renames its row', async () => {
@@ -534,7 +616,7 @@ test('closing the window within the debounce saves the pending provider change',
 });
 
 test('the add-provider action opens a new provider page with its kind picker', async () => {
-  const { window, layout } = await openDashboard();
+  const { window, dashboard } = await openDashboard();
 
   const add = window.document.querySelector<HTMLElement>(
     'settings-dashboard-providers [aria-label="Add provider"]',
@@ -544,7 +626,7 @@ test('the add-provider action opens a new provider page with its kind picker', a
   add.click();
   await settle(20);
 
-  assert.deepEqual(layout.shown(), [PAGE_ID]);
+  assert.deepEqual(dashboard.shown(), [PAGE_ID]);
   assert.equal(pageHeading(window), 'Add provider');
   assert.ok(
     window.document.getElementById('provider-kind') !== null,
@@ -553,10 +635,10 @@ test('the add-provider action opens a new provider page with its kind picker', a
 });
 
 test('the dashboard closing the page leaves no provider open', async () => {
-  const { window, layout } = await openProviderPage('openrouter');
+  const { window, dashboard } = await openProviderPage('openrouter');
   assert.deepEqual(activeRows(window), ['openrouter']);
 
-  layout.close();
+  dashboard.close();
   await settle(20);
 
   assert.deepEqual(activeRows(window), []);

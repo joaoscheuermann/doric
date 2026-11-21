@@ -23,13 +23,23 @@ export const RUNTIME_DIST = resolve('bundles/runtime/runtime/dist');
 export const COMMENTS_DIST = resolve('bundles/features/comments/dist');
 /** The real settings bundle: the settings window and the execution picker. */
 export const SETTINGS_DIST = resolve('bundles/desktop/settings/dist');
+/**
+ * The real workspace bundle (bundle isolation 4(c)): the navigation and the
+ * `workspace.*` contracts `files`, `git` and the chat read.
+ */
+export const WORKSPACE_DIST = resolve('bundles/desktop/workspace/dist');
+/** The real account bundle (bundle isolation 4(b)): the account menu. */
+export const ACCOUNT_DIST = resolve('bundles/desktop/account/dist');
+/**
+ * The real registrants of `chat.views/v1` tool and input drawings besides
+ * `files` (bundle isolation 5(b)): the terminal, threads and default bundles,
+ * added by `workspaceDistribution({ drawings: true })`.
+ */
+export const TERMINAL_DIST = resolve('bundles/features/terminal/dist');
+export const THREADS_DIST = resolve('bundles/features/threads/dist');
+export const DEFAULT_DIST = resolve('bundles/runtime/default/dist');
 /** The real host-config bundle: only its manifest, descriptor and schemas. */
 const HOST_CONFIG_DIST = resolve('bundles/foundation/host-config/dist');
-/**
- * The real claude-login bundle: only its contracts module, which the settings
- * client imports (`claude-login/contracts`) for its optional sign-in.
- */
-const CLAUDE_LOGIN_DIST = resolve('bundles/features/claude-login/dist');
 
 /** The host-only foundation that satisfies the core's backends. */
 export const memoryFoundation: FixtureBundle = {
@@ -107,7 +117,9 @@ export const coreBundle = async (): Promise<BuiltBundle> =>
  * A host-only provider of `contracts`, cut from a built bundle: its real
  * versions, schemas, `desktopScope` and contracts part (other bundles import
  * `<id>/contracts`), no host part and no requirements of its own (the host
- * answers the calls; the desktop only routes them).
+ * answers the calls; the desktop only routes them). A named client contract
+ * (`runtime.records/v1`) is kept too, with the bundle's client part, which
+ * provides it in each window over the host contracts kept beside it.
  */
 export const hostOnlyBundle = async (
   dist: string,
@@ -115,8 +127,8 @@ export const hostOnlyBundle = async (
 ): Promise<BuiltBundle> => {
   const real = await builtBundle(dist);
   const wanted = new Set(contracts);
-  const entries = contractsOf(real.bundle).filter(
-    (entry) => entry.environment === 'host' && wanted.has(entry.id),
+  const entries = contractsOf(real.bundle).filter((entry) =>
+    wanted.has(entry.id),
   );
   const manifest = {
     ...real.bundle.manifest,
@@ -141,8 +153,13 @@ export const hostOnlyBundle = async (
     content.set(entry.schema, await readFile(join(dist, entry.schema)));
   }
 
+  const client = entries.some((entry) => entry.environment === 'client');
+
   for (const file of real.bundle.files) {
-    if (file.path.startsWith('contracts/')) {
+    if (
+      file.path.startsWith('contracts/') ||
+      (client && file.path.startsWith('client/'))
+    ) {
       content.set(file.path, await readFile(join(dist, file.path)));
     }
   }
@@ -164,10 +181,14 @@ export const hostOnlyBundle = async (
       manifest: manifest as DistributionBundle['manifest'],
       descriptor: descriptor as unknown as DistributionBundle['descriptor'],
       files,
-      parts:
-        real.bundle.parts.contracts === undefined
+      parts: {
+        ...(real.bundle.parts.contracts === undefined
           ? {}
-          : { contracts: real.bundle.parts.contracts },
+          : { contracts: real.bundle.parts.contracts }),
+        ...(!client || real.bundle.parts.client === undefined
+          ? {}
+          : { client: real.bundle.parts.client }),
+      },
     },
     artifacts,
     phase: 'others',
@@ -290,22 +311,40 @@ export const coreDistribution = async (
 const HOST_ONLY_DISTS = [RUNTIME_DIST, COMMENTS_DIST, HOST_CONFIG_DIST];
 
 /**
+ * The contracts each host-only cut keeps whether or not a real bundle
+ * requires them: the runtime's records mirror (`runtime.records/v1`, which
+ * the layout takes as optional) with the host contracts its client part
+ * reads.
+ */
+const HOST_ONLY_KEPT: Readonly<Record<string, readonly string[]>> = {
+  [RUNTIME_DIST]: ['runtime.records/v1', 'runtime/v2', 'runtime.threads/v1'],
+};
+
+/**
  * The workspace distribution: the real core, layout, resources, git, files,
- * chat, usage and settings, the memory foundation, and host-only cuts of the runtime,
+ * chat, usage, settings, workspace and account, the memory foundation, and host-only cuts of the runtime,
  * comments and host-config bundles that provide the host contracts those
- * bundles `require` and none of them provides (`runtime/v1`,
- * `runtime.threads/v1`, `runtime.lease/v1`, `runtime.workspace/v1`,
+ * bundles `require` and none of them provides (`runtime/v2`,
+ * `runtime.threads/v1`, `runtime.records/v1` with the runtime's client part,
+ * `runtime.lease/v1`, `runtime.workspace/v1`,
  * `runtime.attachments/v1`, `runtime.usage/v1`, `comments/v1`,
  * `host-config/v1`) with their real versions and schemas.
  * The host answers those calls, and the real bundles' own host contracts
  * (`git.commands/v1`, `files/v1`, `usage/v1`; see the e2e `workspace-host`),
  * and the core's that the settings bundle calls (`models/v1`, `secrets/v1`,
- * `tools/v1`). The claude-login bundle comes as its contracts module alone,
- * providing nothing: the settings client imports it, and its sign-in stays
- * unavailable. `bundles` adds fixture bundles after them.
+ * `tools/v1`). `bundles` adds fixture bundles after them.
+ *
+ * With `drawings`, the real terminal, threads and default bundles come too
+ * (bundle isolation 5(b), AC5.4): with `files` they are every bundle that
+ * draws a tool call or an input in the transcript. Their host contracts
+ * (`terminal/v1` among them) are the e2e host's to answer, and the host-only
+ * cuts gain what they require that no real bundle provides.
  */
 export const workspaceDistribution = async (
-  input: { readonly bundles?: readonly FixtureBundle[] } = {},
+  input: {
+    readonly bundles?: readonly FixtureBundle[];
+    readonly drawings?: boolean;
+  } = {},
 ): Promise<{
   readonly catalog: DistributionCatalog;
   readonly artifacts: ReadonlyMap<string, Buffer>;
@@ -319,6 +358,15 @@ export const workspaceDistribution = async (
     await builtBundle(CHAT_DIST),
     await builtBundle(USAGE_DIST),
     await builtBundle(SETTINGS_DIST),
+    await builtBundle(WORKSPACE_DIST),
+    await builtBundle(ACCOUNT_DIST),
+    ...(input.drawings === true
+      ? [
+          await builtBundle(TERMINAL_DIST),
+          await builtBundle(THREADS_DIST),
+          await builtBundle(DEFAULT_DIST),
+        ]
+      : []),
   ];
   const provided = new Set(
     real.flatMap(({ bundle }) => contractsOf(bundle).map((entry) => entry.id)),
@@ -332,8 +380,13 @@ export const workspaceDistribution = async (
   const hostOnly: BuiltBundle[] = [];
 
   for (const dist of HOST_ONLY_DISTS) {
+    const kept = new Set(HOST_ONLY_KEPT[dist] ?? []);
     const ids = contractsOf((await builtBundle(dist)).bundle)
-      .filter((entry) => entry.environment === 'host' && missing.has(entry.id))
+      .filter(
+        (entry) =>
+          kept.has(entry.id) ||
+          (entry.environment === 'host' && missing.has(entry.id)),
+      )
       .map((entry) => entry.id);
 
     if (ids.length > 0) {
@@ -342,7 +395,7 @@ export const workspaceDistribution = async (
   }
 
   return builtDistribution({
-    built: [...real, ...hostOnly, await hostOnlyBundle(CLAUDE_LOGIN_DIST, [])],
+    built: [...real, ...hostOnly],
     bundles: [...(input.bundles ?? [])],
   });
 };

@@ -9,10 +9,9 @@
 
 import { posix } from 'node:path';
 
-import type { FileChange } from 'runtime/contracts';
 import { type Sandbox, workspacePathKind } from 'sandbox';
 
-import type { Discard } from '../contracts/index.js';
+import type { Discard, FileChange } from '../contracts/index.js';
 import { readProjectChanges, under } from './changes.js';
 
 /** What one Discard asks for, with the Thread it runs on. */

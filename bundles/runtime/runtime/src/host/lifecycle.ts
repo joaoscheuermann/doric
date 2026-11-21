@@ -16,7 +16,7 @@ import type { ProjectStore, ThreadStore } from './store/types.js';
  * handover between generation processes, the drain of a replaced generation
  * and the host stop. The host kernel no longer calls these; the runtime's
  * start and stop hooks and its generation hooks (handover.ts) do. The
- * `runtime/v1` methods of the same names call them too, for one version.
+ * `runtime/v2` methods of the same names call them too.
  */
 
 export interface RuntimeLifecycle {

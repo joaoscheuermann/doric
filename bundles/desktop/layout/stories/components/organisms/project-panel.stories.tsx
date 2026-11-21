@@ -1,3 +1,5 @@
+import { RegionsV1 } from 'bundle/contracts';
+import { useRegionItems } from 'desktop/ui/element-host';
 import { SidebarScope } from 'desktop/ui/sidebar';
 import { ActivityIcon } from 'lucide-react';
 import { type CSSProperties, useState } from 'react';
@@ -7,7 +9,7 @@ import {
   ProjectPanel,
   ProjectPanelTabs,
 } from '../../../src/client/components/organisms/project-panel.js';
-import { useRegionItems } from '../../../src/client/hooks/use-region-items.js';
+import { layoutServices } from '../../../src/client/services/layout-services.js';
 import { LayoutHost } from '../../support/layout-host.js';
 
 const fill = { '--sidebar-width': '100%' } as CSSProperties;
@@ -29,7 +31,10 @@ function Panel({
   readonly regions?: boolean;
 }) {
   const [active, setActive] = useState(initial);
-  const registered = useRegionItems('layout.panel');
+  const registered = useRegionItems(
+    layoutServices().use(RegionsV1),
+    'shell.panel',
+  );
   const items = regions ? registered : [];
   return (
     <SidebarScope>

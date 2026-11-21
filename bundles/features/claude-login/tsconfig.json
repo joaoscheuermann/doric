@@ -8,11 +8,23 @@
     "declaration": true,
     "declarationMap": true,
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts"],
+  "exclude": ["src/client/**"],
   "references": [
-    { "path": "../../../packages/bundle" },
-    { "path": "../../../packages/oauth" }
+    {
+      "path": "../../desktop/settings"
+    },
+    {
+      "path": "../../../packages/oauth"
+    },
+    {
+      "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../../packages/desktop"
+    }
   ]
 }

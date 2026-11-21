@@ -16,26 +16,37 @@ import { once } from '../shared/state.js';
 import { SETTINGS_APPEARANCE } from './appearance.js';
 
 /**
- * `core.open-settings/v1`: opens the settings window at `path`, `/settings`
- * by default. Without a `path`, an open settings window is only focused and
- * keeps its section (D9-7, as the gear does today); with one,
- * `doric.windows/v1` focuses the window and navigates it when the path
- * differs (P2).
+ * `core.open-settings/v1`: opens the settings window at `path`. Without a
+ * `path`, an open settings window is only focused and keeps its section
+ * (D9-7); with no window open, a new one opens at the caller's
+ * `defaultPath`, and with neither the input is `invalid_input`. With a
+ * `path`, `doric.windows/v1` focuses the window and navigates it when the
+ * path differs (P2). The core knows no settings route of its own.
  */
 export const openSettings = defineCommand({
   id: 'core.open-settings/v1',
   input: openSettingsInput,
-  execute: async ({ path }, call, services) => {
+  execute: async ({ path, defaultPath }, call, services) => {
     const windows = services.use(DoricWindowsV1);
 
     if (path === undefined && (await windows.focus('settings', call))) {
       return;
     }
 
+    const target = path ?? defaultPath;
+
+    if (target === undefined) {
+      throw new ContractError(
+        'invalid_input',
+        'core.open-settings/v1 needs a path or a defaultPath when no settings window is open.',
+        { command: 'core.open-settings/v1' },
+      );
+    }
+
     await windows.open(
       {
         key: 'settings',
-        path: path ?? '/settings',
+        path: target,
         appearance: SETTINGS_APPEARANCE,
       },
       call,

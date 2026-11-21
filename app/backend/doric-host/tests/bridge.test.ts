@@ -484,9 +484,9 @@ void test('a desktop caller reaches only the host methods its providers expose (
       ['secrets/v1', 'resolve', credential],
       ['secrets/v1', 'resolveByKind', ['OPENAI', 'key']],
       ['secrets/v1', 'redactions', []],
-      ['runtime/v1', 'recover', []],
-      ['runtime/v1', 'dispose', []],
-      ['runtime/v1', 'vmSsh', randomUUID()],
+      ['runtime/v2', 'recover', []],
+      ['runtime/v2', 'dispose', []],
+      ['runtime/v2', 'vmSsh', randomUUID()],
       ['runtime.threads/v1', 'spawn', 'prompt'],
       [
         'runtime.threads/v1',
@@ -508,14 +508,14 @@ void test('a desktop caller reaches only the host methods its providers expose (
     const watch = await firstOf(
       host.desktop,
       'd:w1',
-      'runtime/v1',
+      'runtime/v2',
       'watch',
       [],
     );
     assert.equal('end' in watch ? watch.end.code : undefined, 'unavailable');
-    // The refused dispose did not reach the runtime: it still answers.
+    // The refused dispose did not reach the runtime: the host still answers.
     assert.deepEqual(
-      await output(host.desktop, 'runtime.terminals/v1', 'list', randomUUID()),
+      await output(host.desktop, 'terminal/v1', 'list', randomUUID()),
       [],
     );
   });
@@ -586,13 +586,9 @@ void test('the runtime watches stream over the bridge and through the generation
   await withHost(async (host) => {
     const projectId = randomUUID();
     assert.deepEqual(
-      await firstOf(
-        host.desktop,
-        'd:w2',
-        'runtime.terminals/v1',
-        'watchProject',
-        [projectId],
-      ),
+      await firstOf(host.desktop, 'd:w2', 'terminal/v1', 'watchProject', [
+        projectId,
+      ]),
       { item: { kind: 'snapshot', projectId, terminals: [] } },
     );
     const refused = await firstOf(

@@ -1,4 +1,9 @@
 import { Button } from 'desktop/ui/button';
+import {
+  blockToggled,
+  type Chosen,
+  CollapsibleBlock,
+} from 'desktop/ui/collapsible-block';
 import { cn } from 'desktop/ui/utils';
 import {
   $getNodeByKey,
@@ -23,11 +28,7 @@ import {
   DELEGATED_INPUT_BLOCK,
   type DelegatedInputBlock,
 } from '../../../../../contracts/index.js';
-import {
-  blockToggled,
-  type Chosen,
-  settledOpenness,
-} from '../../../../domain/collapsible.js';
+import { settledOpenness } from '../../../../domain/collapsible.js';
 import { DELEGATED_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { DelegatedInput } from '../../../../domain/delegated.js';
 import type { UserTurn } from '../../../../domain/projector.js';
@@ -36,7 +37,6 @@ import {
   chatViewsRegistry,
   GENERIC_BLOCK_TAG,
 } from '../../../../services/views.js';
-import { CollapsibleBlock } from '../../../molecules/collapsible-block.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { ReadonlyMarkdown } from '../readonly-markdown.js';
 import { ChatBlocksContext } from './chat-block-node.js';

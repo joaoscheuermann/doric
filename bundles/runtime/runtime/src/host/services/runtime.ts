@@ -1,27 +1,32 @@
 import { defineMethod, defineService } from 'bundle/contracts';
 
-import { RuntimeV1, runtimeMethods } from '../../contracts/runtime.js';
+import { RuntimeV2, runtimeMethods } from '../../contracts/runtime.js';
 import type { Notices } from '../domain/notices.js';
 import type { WorkspaceService } from '../domain/types.js';
 import type { RuntimeLifecycle } from '../lifecycle.js';
 import type { Watches } from './watches.js';
 
 /*
- * runtime/v1 (design 57 §2.2, §4.9): Projects, the boot recovery, the host
- * stop and the live notices, one method per WorkspaceService operation.
+ * runtime/v2 (design 57 §2.2, §4.9): Projects, the boot recovery, the host
+ * stop and the live notices, one method per WorkspaceService operation. Its
+ * Project watch streams no terminals, which the `terminal` bundle's
+ * terminal/v1 streams.
  */
+
+interface RuntimeServiceDeps {
+  readonly service: WorkspaceService;
+  readonly notices: Notices;
+  readonly watches: Watches;
+  readonly lifecycle: RuntimeLifecycle;
+}
+
 export const runtimeService = ({
   service,
   notices,
   watches,
   lifecycle,
-}: {
-  readonly service: WorkspaceService;
-  readonly notices: Notices;
-  readonly watches: Watches;
-  readonly lifecycle: RuntimeLifecycle;
-}) =>
-  defineService(RuntimeV1, {
+}: RuntimeServiceDeps) =>
+  defineService(RuntimeV2, {
     recover: defineMethod({
       ...runtimeMethods.recover,
       execute: () => lifecycle.recover(),

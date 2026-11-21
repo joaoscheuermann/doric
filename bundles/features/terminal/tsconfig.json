@@ -14,19 +14,31 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../../../packages/bundle"
+      "path": "../../../packages/tool"
     },
     {
       "path": "../../../packages/sandbox"
     },
     {
-      "path": "../../../packages/tool"
+      "path": "../../runtime/runtime"
     },
     {
-      "path": "../../../packages/desktop"
+      "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../desktop/workspace"
+    },
+    {
+      "path": "../../desktop/layout"
     },
     {
       "path": "../../../packages/docker-sandbox"
+    },
+    {
+      "path": "../../desktop/chat"
+    },
+    {
+      "path": "../../../packages/desktop"
     }
   ],
   "exclude": ["src/client/**"]

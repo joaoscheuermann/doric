@@ -5,11 +5,9 @@ import {
   defineService,
   hooksMethods,
   type LogFields,
-  LogV1,
   logMethods,
   modelsMethods,
   type Secret,
-  SecretsV1,
   type Services,
   type StorageHealth,
   storageMethods,
@@ -19,35 +17,22 @@ import { createTestServices } from 'bundle/testing';
 import { ConfigurationV1, configurationMethods } from 'host-config/contracts';
 import type { Sandbox } from 'sandbox';
 import type { SandboxLease } from 'sandpool';
-import {
-  type TerminalService,
-  TerminalServiceV1,
-  TerminalV1,
-} from 'terminal/contracts';
-import { createTerminalHost, type TerminalHost } from 'terminal/host';
-import { z } from 'zod';
 
 import type {
   ConfigurationValue,
   DoricConfiguration,
 } from '../../../src/contracts/configuration.js';
-import type { RuntimeLease } from '../../../src/contracts/lease.js';
 import {
+  type RuntimeLease,
   RuntimeLeaseV1,
-  runtimeLeaseMethods,
 } from '../../../src/contracts/lease.js';
 import type { ProjectColor } from '../../../src/contracts/model.js';
 import {
   type Runtime,
   type RuntimeNotice,
   type RuntimeOwner,
-  RuntimeV1,
+  RuntimeV2,
 } from '../../../src/contracts/runtime.js';
-import { readRuntimeScope } from '../../../src/contracts/scope.js';
-import {
-  type RuntimeTerminals,
-  RuntimeTerminalsV1,
-} from '../../../src/contracts/terminals.js';
 import {
   type RuntimeThreads,
   RuntimeThreadsV1,
@@ -65,10 +50,6 @@ import { createBindings } from '../../../src/host/domain/bindings.js';
 import type { WorkspaceService } from '../../../src/host/domain/types.js';
 import type { ModelCatalogSource } from '../../../src/host/domain/usage-context.js';
 import { provideRuntime, runtimeStores } from '../../../src/host/index.js';
-import {
-  type ProjectResourcesReader,
-  ResourcesV1,
-} from '../../../src/host/peers.js';
 import { createPorts } from '../../../src/host/ports.js';
 import type {
   ProjectStore,
@@ -153,9 +134,6 @@ export interface ToolHost {
   readonly threads: RuntimeThreads;
   readonly workspace: RuntimeWorkspace;
   readonly lease: RuntimeLease;
-  readonly terminal: {
-    run(input: unknown, call?: { signal?: AbortSignal }): Promise<unknown>;
-  };
 }
 
 export type HarnessRun = ScriptedRun & { readonly tools: ToolHost };
@@ -233,21 +211,12 @@ export const createHarness = (options: HarnessOptions = {}) => {
     }));
   const sandbox = sandboxProvider(options.sandbox);
   let consumer: Services | undefined;
-  let terminalHost: TerminalHost | undefined;
-  const consumed = (): Services => {
-    if (consumer === undefined) throw new Error('The harness is not ready.');
-    return consumer;
-  };
   const toolsFor = (scope: CallScope): ToolHost => {
     if (consumer === undefined) throw new Error('The harness is not ready.');
     return {
       threads: consumer.use(RuntimeThreadsV1, scope),
       workspace: consumer.use(RuntimeWorkspaceV1, scope),
       lease: consumer.use(RuntimeLeaseV1, scope),
-      terminal: consumer.use(
-        TerminalV1,
-        scope,
-      ) as unknown as ToolHost['terminal'],
     };
   };
   const script: Script = (run) =>
@@ -341,11 +310,6 @@ export const createHarness = (options: HarnessOptions = {}) => {
         execute: async ([, hook, input]) => {
           hooks.push({ hook, input });
           await options.onHook?.(hook, input);
-          // The terminal bundle's handler, as its activation registers it.
-          if (hook === 'onThreadsClosingHook')
-            await terminalHost?.threadsClosing(
-              input as Parameters<TerminalHost['threadsClosing']>[0],
-            );
           return undefined;
         },
       }),
@@ -407,52 +371,16 @@ export const createHarness = (options: HarnessOptions = {}) => {
       threads,
       ports,
       bindings,
-      terminal: (): TerminalService => consumed().use(TerminalServiceV1),
-      resources: (): ProjectResourcesReader => consumed().use(ResourcesV1),
       archiveSchedule,
     },
-  );
-  // The terminal sessions are the `terminal` bundle's (stage 10 host
-  // switch): its real host part, over the runtime contracts.
-  terminalHost = createTerminalHost({
-    secrets: runtimeSide.services.use(SecretsV1),
-    workspace: () => consumed().use(RuntimeWorkspaceV1),
-    threads: () => consumed().use(RuntimeThreadsV1),
-    log: () => runtimeSide.services.use(LogV1),
-  });
-  definitions.push(terminalHost.definition);
-  // resources/v1 as the `resources` bundle answers it: the calling Project's
-  // container on the lease it holds now, read through runtime.lease/v1.
-  const resourceReads: (string | undefined)[] = [];
-  definitions.push(
-    defineService(ResourcesV1, {
-      project: defineMethod({
-        input: runtimeLeaseMethods.resources.input,
-        output: z.any(),
-        execute: (_input, call, services) => {
-          resourceReads.push(readRuntimeScope(call).projectId);
-          return services
-            .use(RuntimeLeaseV1, call.scope)
-            .withLease(async (sandbox) => {
-              const stats = await sandbox.stats?.();
-              return {
-                ...stats,
-                status: stats === undefined ? 'unavailable' : 'ready',
-                at: epoch,
-              } as const;
-            });
-        },
-      }),
-    }),
   );
   const consumerSide = createTestServices({
     bundle: { id: 'consumer' },
     provide: definitions,
   });
   consumer = consumerSide.services;
-  const runtime: Runtime = consumer.use(RuntimeV1);
+  const runtime: Runtime = consumer.use(RuntimeV2);
   const threadsApi: RuntimeThreads = consumer.use(RuntimeThreadsV1);
-  const terminals: RuntimeTerminals = consumer.use(RuntimeTerminalsV1);
   const workspace: RuntimeWorkspace = consumer.use(RuntimeWorkspaceV1);
   const usage: RuntimeUsage = consumer.use(RuntimeUsageV1);
   const notices: RuntimeNotice[] = [];
@@ -480,18 +408,6 @@ export const createHarness = (options: HarnessOptions = {}) => {
       terminate: (id) => runtime.terminateProject(id),
       delete: (id) => runtime.deleteProject(id),
       ssh: (id) => leaseOf({ projectId: id }).ssh(),
-      files: (id, path) =>
-        leaseOf({ projectId: id }).files(path === undefined ? {} : { path }),
-      file: (id, path) => leaseOf({ projectId: id }).file({ path }),
-      tree: (id, path) =>
-        leaseOf({ projectId: id }).tree(path === undefined ? {} : { path }),
-      diff: (id, path) =>
-        leaseOf({ projectId: id }).diff(path === undefined ? {} : { path }),
-      changes: (id, path) =>
-        leaseOf({ projectId: id }).changes(path === undefined ? {} : { path }),
-      fileDiff: (id, repository, path) =>
-        leaseOf({ projectId: id }).fileDiff({ repository, path }),
-      resources: (id) => leaseOf({ projectId: id }).resources(),
       withLease: (id, task) => leaseOf({ projectId: id }).withLease(task),
     },
     threads: {
@@ -526,12 +442,6 @@ export const createHarness = (options: HarnessOptions = {}) => {
       setCwd: (id, cwd) => threadsApi.setThreadCwd({ id, cwd }),
       setExecution: (id, execution) =>
         threadsApi.setThreadExecution({ id, ...execution }),
-      git: (id) => leaseOf({ threadId: id }).git(),
-      branches: (id, branch, cwd) =>
-        leaseOf({ threadId: id }).branches({
-          ...(branch === undefined ? {} : { branch }),
-          ...(cwd === undefined ? {} : { cwd }),
-        }),
       prompt: (id, prompt) => threadsApi.prompt({ id, prompt }),
       retry: (id) => threadsApi.retry({ id }),
       steer: (id, prompt, options) =>
@@ -593,11 +503,6 @@ export const createHarness = (options: HarnessOptions = {}) => {
     service,
     runtime,
     threads: threadsApi,
-    terminals,
-    /** The `terminal` bundle's terminal/v1, which owns the sessions. */
-    terminal: consumer.use(TerminalServiceV1),
-    /** The Project of every resources/v1 `project` read, in order. */
-    resourceReads,
     lease: leaseOf,
     stores: { projects, threads },
     notices,
@@ -657,7 +562,6 @@ export const createHarness = (options: HarnessOptions = {}) => {
     dispose: async () => {
       await runtime.dispose();
       await cleanup();
-      terminalHost?.dispose();
       await consumerSide.dispose();
       await runtimeSide.dispose();
       if (options.backend === undefined) await backend.close();

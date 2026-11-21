@@ -35,11 +35,17 @@ export interface DrawnBlock {
 export interface ChatBlocksSource {
   readonly blocks: ReadonlyMap<string, DrawnBlock>;
   readonly ui: Pick<Ui, 'create' | 'dispose'> | null;
+  /** The shown Thread's Project, which a tool or input element's `view` names. */
+  readonly projectId: string | null;
+  /** The shown Thread, which a tool or input element's `view` names. */
+  readonly threadId: string | null;
 }
 
 export const ChatBlocksContext = createContext<ChatBlocksSource>({
   blocks: new Map(),
   ui: null,
+  projectId: null,
+  threadId: null,
 });
 
 /** The host element of one block, kept while its tag stays the same. */

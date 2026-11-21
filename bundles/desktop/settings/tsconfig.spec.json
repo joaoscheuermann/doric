@@ -16,15 +16,13 @@
     "src/client/appearance-section.ts",
     "src/client/domain/*.ts",
     "src/client/services/*.ts",
+    "src/contracts/**/*.ts",
     "tests/*.ts",
     "tests/support/**/*.ts"
   ],
   "references": [
     {
       "path": "../../../packages/bundle/tsconfig.lib.json"
-    },
-    {
-      "path": "../../features/claude-login"
     }
   ]
 }

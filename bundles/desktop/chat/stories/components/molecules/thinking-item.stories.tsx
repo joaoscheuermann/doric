@@ -1,5 +1,6 @@
+import type { Chosen } from 'desktop/ui/collapsible-block';
+
 import { ThinkingItem } from '../../../src/client/components/molecules/thinking-item.js';
-import type { Chosen } from '../../../src/client/domain/collapsible.js';
 import { WithChosen } from '../../support/chosen.js';
 
 const reasoning =

@@ -1,6 +1,6 @@
 // Where git's region items go (T-2.5, spec §2.6, S9): the working directory
-// and branch sit in the Files column's footer (`layout.panel.footer`), no
-// longer in the conversation's footer band (`layout.footer`).
+// and branch sit in the Files column's footer (`shell.panel.footer`), no
+// longer in the conversation's footer band (`shell.conversation.footer`).
 //
 // `gitRegions` lives in the client entry point, whose import graph reaches the
 // elements; they read browser globals such as `navigator` only when they run
@@ -21,5 +21,19 @@ const regionsOf = (id: string): string[] =>
     .map((entry) => entry.region);
 
 test('the working directory item is in the Files footer, not the conversation footer', () => {
-  assert.deepEqual(regionsOf('git-cwd'), ['layout.panel.footer']);
+  assert.deepEqual(regionsOf('git-cwd'), ['shell.panel.footer']);
+});
+
+// Bundle isolation 4(a) change 4: the Changes view's icon is the element
+// `git-file-diff-icon` git defines (`iconTag`), no longer the `icon` kind the
+// layout drew; its badge stays.
+test('the Changes view is drawn with the git-file-diff-icon element', () => {
+  const changes = gitRegions.find(
+    (entry) => entry.region === 'shell.panel' && entry.item.id === 'changes',
+  );
+  assert.deepEqual(changes?.item.props, {
+    label: 'Changes',
+    iconTag: 'git-file-diff-icon',
+    badgeTag: 'git-changes-badge',
+  });
 });

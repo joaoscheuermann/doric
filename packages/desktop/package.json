@@ -59,6 +59,30 @@
       "import": "./dist/chrome-bar.js",
       "default": "./dist/chrome-bar.js"
     },
+    "./ui/element-host": {
+      "@org/source": "./src/element-host.tsx",
+      "types": "./dist/element-host.d.ts",
+      "import": "./dist/element-host.js",
+      "default": "./dist/element-host.js"
+    },
+    "./ui/model-icon": {
+      "@org/source": "./src/model-icon.tsx",
+      "types": "./dist/model-icon.d.ts",
+      "import": "./dist/model-icon.js",
+      "default": "./dist/model-icon.js"
+    },
+    "./ui/collapsible-block": {
+      "@org/source": "./src/collapsible-block.tsx",
+      "types": "./dist/collapsible-block.d.ts",
+      "import": "./dist/collapsible-block.js",
+      "default": "./dist/collapsible-block.js"
+    },
+    "./ui/choice-list": {
+      "@org/source": "./src/choice-list.tsx",
+      "types": "./dist/choice-list.d.ts",
+      "import": "./dist/choice-list.js",
+      "default": "./dist/choice-list.js"
+    },
     "./ui/error-notice": {
       "@org/source": "./src/error-notice.tsx",
       "types": "./dist/error-notice.d.ts",

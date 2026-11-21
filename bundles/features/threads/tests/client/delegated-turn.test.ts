@@ -1,20 +1,13 @@
 // Another Thread's input in a conversation, as the reader meets it once the
 // threads bundle draws it for chat (`chat.delegated-input/v1`): the label,
 // the sender, the status and the text, the open state the reader controls,
-// and opening the sender's conversation when the layout's tree knows it.
+// and opening the sender's conversation when `runtime.records/v1` holds it.
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
-import {
-  type ClientContext,
-  defineMethod,
-  defineService,
-  disposableSchema,
-  functionSchema,
-  noInput,
-} from 'bundle/contracts';
-import { z } from 'zod';
+import type { RuntimeRecords, Thread } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
 import {
   openThreadsWindow,
@@ -32,7 +25,8 @@ const thread = {
   id: threadId,
   name: 'Fix the parser',
   projectId,
-  state: 'idle',
+  state: 'ready',
+  lastSequence: 0,
   cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -80,47 +74,31 @@ const host = {
   }),
 };
 
-/** A layout standing in for the sidebar tree, which may learn the sender. */
-const layout = () => {
-  let sender: Record<string, unknown> | undefined;
+/**
+ * `runtime.records/v1` as the window's records, which may learn the sender:
+ * the conversation's own Thread is known from the start, the sender once
+ * `know` is called, and every change tells the subscribers.
+ */
+const records = () => {
+  let sender: Thread | undefined;
   const listeners = new Set<() => void>();
+  const own = thread as unknown as Thread;
+  const recordsApi: RuntimeRecords = {
+    ...createRecordsApi({ threads: [own] }),
+    thread: (id) =>
+      id === threadId ? own : id === senderId ? sender : undefined,
+    subscribe: (listener) => {
+      const heard = () => listener();
+      listeners.add(heard);
+      return { dispose: () => void listeners.delete(heard) };
+    },
+  };
   return {
     know(name: string) {
-      sender = { ...thread, id: senderId, name };
+      sender = { ...own, id: senderId, name };
       for (const listener of [...listeners]) listener();
     },
-    probe: {
-      provides: ['layout.workspace/v1'],
-      activate: ({ services }: ClientContext) => {
-        services.provide(
-          defineService('layout.workspace/v1', {
-            thread: defineMethod({
-              input: z.string(),
-              output: z.unknown(),
-              execute: (id: string) =>
-                id === threadId ? thread : id === senderId ? sender : undefined,
-            }),
-            selectedThread: defineMethod({
-              input: noInput,
-              output: z.unknown(),
-              execute: () => thread,
-            }),
-            subscribe: defineMethod({
-              input: functionSchema<() => void>(),
-              output: disposableSchema,
-              execute: (listener: () => void) => {
-                listeners.add(listener);
-                return {
-                  dispose: () => {
-                    listeners.delete(listener);
-                  },
-                };
-              },
-            }),
-          }),
-        );
-      },
-    },
+    recordsApi,
   };
 };
 
@@ -159,7 +137,7 @@ afterEach(async () => {
   opened = undefined;
 });
 
-test('a delegated instruction opens on its words, from a sender the tree does not know', async () => {
+test('a delegated instruction opens on its words, from a sender the records do not hold', async () => {
   opened = await openThreadsWindow({ url, host });
   await settle();
   await deliver(opened, [instruction]);
@@ -223,9 +201,9 @@ test("the conversation's toggle reaches the element, and the reader's choice sta
   assert.match(turnOf(opened)?.textContent ?? '', /Fix the parser first/);
 });
 
-test("a sender the layout's tree knows is named and opens its conversation", async () => {
-  const tree = layout();
-  opened = await openThreadsWindow({ url, host, probe: tree.probe });
+test('a sender the records hold is named and opens its conversation', async () => {
+  const held = records();
+  opened = await openThreadsWindow({ url, host, recordsApi: held.recordsApi });
   await settle();
   await deliver(opened, [instruction]);
 
@@ -234,7 +212,7 @@ test("a sender the layout's tree knows is named and opens its conversation", asy
     'SPAN',
   );
 
-  tree.know('Parent planner');
+  held.know('Parent planner');
   await settle(50);
 
   const link = turnOf(opened)?.querySelector(`button[title="${senderId}"]`);

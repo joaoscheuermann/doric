@@ -1,10 +1,10 @@
 import { ConversationTerminals } from '../../../src/client/components/templates/conversation-terminals.js';
 import { ThreadPane } from '../../../src/client/components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../../../src/client/components/templates/workspace-layout.js';
-import { checkoutTabs, planThread } from '../../support/data.js';
 import { type LayoutFixture, LayoutHost } from '../../support/layout-host.js';
 import { Placeholder } from '../../support/placeholder.js';
 import { ContentFrame, WorkspaceShell } from '../../support/shell.js';
+import { checkoutTabs, conversationLabel } from '../../support/tabs.js';
 import { windowDecorator } from '../../support/window-frame.js';
 
 function Conversation() {
@@ -12,10 +12,7 @@ function Conversation() {
     <ConversationTerminals>
       <ContentFrame>
         <ThreadPane>
-          <Placeholder
-            tag="chat-thread"
-            label={`Conversation: ${planThread.name}`}
-          />
+          <Placeholder tag="chat-thread" label={conversationLabel} />
         </ThreadPane>
       </ContentFrame>
     </ConversationTerminals>

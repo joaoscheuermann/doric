@@ -26,7 +26,6 @@ import { sectionPath } from '../../src/client/domain/section-route.js';
 import { queryKeys } from '../../src/client/queries/keys.js';
 import {
   claudeCatalog,
-  claudeCredential,
   credentials as credentialFixtures,
   openRouterCatalog,
   providerKinds,
@@ -46,7 +45,6 @@ export type Answer<T> = T | { readonly pending: true } | Error;
 
 /** What the fake host stores and answers. Each read defaults to a fixture. */
 export type StoryHost = {
-  readonly claudeLogin?: Answer<Credential>;
   readonly config?: Answer<DoricConfiguration>;
   readonly kinds?: Answer<readonly ProviderKind[]>;
   readonly tools?: Answer<readonly ToolCatalogEntry[]>;
@@ -162,11 +160,6 @@ export const createStoryServices = (host: StoryHost = {}): StoryServices => {
   const list = (): readonly Credential[] => settled(stored) ?? [];
 
   const contracts: Record<string, unknown> = {
-    'claude.login/v1': {
-      start: () =>
-        Promise.resolve({ url: 'https://claude.com/cai/oauth/authorize' }),
-      finish: () => answer(host.claudeLogin ?? claudeCredential),
-    },
     'doric.browser/v1': { open: () => Promise.resolve() },
     'host-config/v1': {
       current: () => answer(config),
@@ -240,6 +233,17 @@ export const createStoryServices = (host: StoryHost = {}): StoryServices => {
       },
     },
     'navigation/v1': navigation,
+    // No other bundle is composed: the provider page's field slot is empty.
+    'regions/v1': {
+      add: noRegistration,
+      items: () => [],
+      subscribe: noRegistration,
+    },
+    'ui/v1': {
+      define: noRegistration,
+      create: (tag: string) => document.createElement(tag),
+      dispose: () => {},
+    },
     'hooks/v1': {
       use: () => ({
         onCloseHook: noRegistration,

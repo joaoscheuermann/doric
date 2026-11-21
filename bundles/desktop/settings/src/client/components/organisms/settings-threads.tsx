@@ -1,3 +1,4 @@
+import { ChoiceList } from 'desktop/ui/choice-list';
 import {
   Field,
   FieldContent,
@@ -17,7 +18,6 @@ import {
   type Configuration,
   updateAutoArchive,
 } from '../../domain/config.js';
-import { ChoiceList } from '../molecules/choice-list.js';
 
 type SettingsThreadsProps = {
   readonly draft: Configuration;

@@ -19,7 +19,7 @@ import { type Fake, serve as serveHost } from './support/host.js';
 /*
  * agents/doric's socket suite, run against the transport bundle: the
  * snapshots read runtime contracts and the live notices arrive through
- * `runtime/v1.watch`, the terminal ones through `terminal/v1.watchProject`
+ * `runtime/v2.watch`, the terminal ones through `terminal/v1.watchProject`
  * (stage 10 §4). Across processes a notice and a snapshot read's answer
  * travel on the same ordered envelope link (host-stages-crossreview.md §3),
  * and the algorithm tolerates either order anyway: it subscribes before it
@@ -179,7 +179,7 @@ const serve = async (reads: Reads = {}, runtime: Fake = {}) => {
   };
 };
 
-void test('subscribes to runtime/v1 once on activation and releases it on cleanup', async () => {
+void test('subscribes to runtime/v2 once on activation and releases it on cleanup', async () => {
   const calls: string[] = [];
   const host = await serve(
     {},

@@ -59,7 +59,7 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
       const line = (msg: string) =>
         startup(lines).find((entry) => entry.msg === msg);
 
-      assert.equal(line('Bundles loaded')?.bundleCount, 30);
+      assert.equal(line('Bundles loaded')?.bundleCount, 32);
       assert.equal(line('Bundles loaded')?.toolCount, 19);
       assert.equal(
         line('Sandbox pool configured')?.sandboxProviderName,
@@ -144,7 +144,10 @@ void test('legacy Project rows the stage-7 migration never moved fail the boot a
 }, async () => {
   assert.ok(connectionString);
   const database = await freshDatabase(connectionString, {
-    skip: (migration) => migration.endsWith('_runtime_documents'),
+    // Without stage 7 and the drop, the legacy tables stay and keep the row.
+    skip: (migration) =>
+      migration.endsWith('_runtime_documents') ||
+      migration.endsWith('_drop_legacy_runtime_tables'),
   });
   try {
     await database.query(

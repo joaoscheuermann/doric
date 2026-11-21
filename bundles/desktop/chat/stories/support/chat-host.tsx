@@ -1,7 +1,8 @@
 // A stand-in for the host the chat's views and elements read, so their stories
 // draw a real conversation and composer without a running Doric. The chat
 // reaches the host through its activation services (`initChat`) and the
-// sidebar tree (`setWorkspace`); this world answers both from the fixtures:
+// window's selection (`setWorkspaceSelection`); this world answers both from
+// the fixtures, the Thread records through `runtime.records/v1`:
 // `runtime.threads/v1` replays each Thread's log and queue, `chat.composer/v1`
 // holds each Thread's draft and stack, and the rest (`ui/v1`, `navigation/v1`,
 // `commands/v1`, `doric.connection/v1`) answer the way a quiet window does.
@@ -13,16 +14,15 @@ import type { Services } from 'bundle/contracts';
 import { Toaster } from 'desktop/ui/sonner';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import type { ReactNode } from 'react';
+import { createRecordsApi } from 'runtime/testing';
 
 import { setModelsApi } from '../../src/client/api/model-icons.js';
 import type { ThreadQueue } from '../../src/client/domain/queue.js';
 import type { Thread, ThreadEvent } from '../../src/client/domain/workspace.js';
 import { chatQueryClient } from '../../src/client/queries/client.js';
 import { queryKeys } from '../../src/client/queries/keys.js';
-import {
-  initChat,
-  setWorkspace,
-} from '../../src/client/services/chat-services.js';
+import { initChat } from '../../src/client/services/chat-services.js';
+import { setWorkspaceSelection } from '../../src/client/stores/execution-sources.js';
 import type {
   ComposerItem,
   ComposerWatchItem,
@@ -307,8 +307,16 @@ const ui = {
 /** The commands a card's intent ran, newest last, for a story to show. */
 export const executedCommands: { command: string; input?: unknown }[] = [];
 
+/** `runtime.records/v1` over the story Threads, which never change. */
+const runtimeRecords = {
+  ...createRecordsApi(),
+  thread: (threadId: string) => records.get(threadId),
+  subscribe: () => disposable(),
+};
+
 const implementations: Readonly<Record<string, unknown>> = {
   'runtime.threads/v1': runtimeThreads,
+  'runtime.records/v1': runtimeRecords,
   // Stories hold no images: an attach is refused and a reference reads as its name.
   'runtime.attachments/v1': {
     attach: () => Promise.reject(new Error('Stories keep no attachments.')),
@@ -365,34 +373,35 @@ export const storyServices = (
   } as Services;
 };
 
-// The sidebar tree --------------------------------------------------------
+// The selection -----------------------------------------------------------
 
-let selected: string | undefined;
-const workspaceListeners = new Set<() => void>();
+let selected: { readonly projectId?: string; readonly threadId?: string } = {};
+const selectionListeners = new Set<() => void>();
 
-const workspace = {
-  thread: (threadId: string) => records.get(threadId),
-  selectedThread: () =>
-    selected === undefined ? undefined : records.get(selected),
+/** `workspace.selection/v1`: the same object until the selection changes. */
+const selection = {
+  current: () => selected,
   subscribe: (listener: () => void) => {
-    workspaceListeners.add(listener);
-    return disposable(() => workspaceListeners.delete(listener));
+    selectionListeners.add(listener);
+    return disposable(() => selectionListeners.delete(listener));
   },
 };
 
-/** Selects a Thread in the tree, as the sidebar does; `undefined` for none. */
+/** Selects a Thread, as the sidebar does; `undefined` for none. */
 export const selectThread = (threadId: string | undefined): void => {
-  if (selected === threadId) return;
-  selected = threadId;
+  if (selected.threadId === threadId) return;
+  const thread = threadId === undefined ? undefined : records.get(threadId);
+  selected =
+    thread === undefined ? {} : { projectId: thread.projectId, threadId };
   queueMicrotask(() => {
-    for (const listener of [...workspaceListeners]) listener();
+    for (const listener of [...selectionListeners]) listener();
   });
 };
 
 let installed = false;
 
 /**
- * Activates the chat over the story host: the activation services, the tree,
+ * Activates the chat over the story host: the activation services, the selection,
  * and the queue every Thread holds already in the window's query client. Once
  * per window; every later call is a no-op.
  */
@@ -402,7 +411,7 @@ export const installChatHost = (): Services => {
   installed = true;
   initChat(services);
   setModelsApi(storyModels);
-  setWorkspace(workspace);
+  setWorkspaceSelection(selection);
   for (const thread of records.values())
     chatQueryClient.setQueryData(
       queryKeys.threadQueue(thread.id),

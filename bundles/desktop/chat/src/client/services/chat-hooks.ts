@@ -1,17 +1,24 @@
-// The owner handle of `chat.hooks/v1`, defined once at activation; the
-// surface executes `onMountHook`, `onUnmountHook` and
-// `onBeforeRenderBlockHook` through it.
+// The owner handle of `chat.hooks/v2`, defined once at activation; the
+// surface executes `onMountHook`, `onUnmountHook`, `onBeforeRenderBlockHook`
+// and `onThreadUpdateHook` through it.
 
 import type { HookHandle } from 'bundle/contracts';
 
-import type { ChatHooksV1 } from '../../contracts/index.js';
+import type { ChatHooksV2 } from '../../contracts/index.js';
 
-export type ChatHooks = HookHandle<typeof ChatHooksV1>;
+/** The owner handle of `chat.hooks/v2`. */
+export type ChatHooks = HookHandle<typeof ChatHooksV2>;
 
-let current: ChatHooks | undefined;
+/**
+ * What the surfaces execute: every hook but `onSandboxActivityHook`, which
+ * only `watchSandboxActivity` executes.
+ */
+export type SurfaceChatHooks = Omit<ChatHooks, 'onSandboxActivityHook'>;
 
-export const chatHooks = (): ChatHooks | undefined => current;
+let current: SurfaceChatHooks | undefined;
 
-export const setChatHooks = (hooks: ChatHooks | undefined): void => {
+export const chatHooks = (): SurfaceChatHooks | undefined => current;
+
+export const setChatHooks = (hooks: SurfaceChatHooks | undefined): void => {
   current = hooks;
 };

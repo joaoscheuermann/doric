@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { recordActivation, stageBundles } from 'bundle';
 import { SecretsBackendV1, StorageBackendV1 } from 'bundle/contracts';
 
-import { PostgresDatabaseV1 } from '../src/contracts/index.js';
 import { activate } from '../src/host/index.js';
 import { postgresEmbedded } from '../src/testing.js';
 import { createTestDatabase, skipWithoutDatabase } from './support/database.js';
@@ -45,7 +44,7 @@ const withoutEnvironment = async (run: () => Promise<void>) => {
   }
 };
 
-void test('the dry activation records the three services without a database', async () => {
+void test('the dry activation records the two services without a database', async () => {
   await withoutEnvironment(async () => {
     const manifest = JSON.parse(
       await readFile(join(bundleRoot, 'manifest.json'), 'utf8'),
@@ -61,7 +60,6 @@ void test('the dry activation records the three services without a database', as
       [
         ['storage.backend/v1', 'service'],
         ['secrets.backend/v1', 'service'],
-        ['postgres.database/v1', 'service'],
       ],
     );
   });
@@ -87,11 +85,6 @@ void test('the installed bundle boots as the chosen foundation without a databas
           'active',
         );
 
-        const database = platform.services.use(PostgresDatabaseV1);
-
-        await assert.rejects(database.connect(), {
-          message: 'DORIC_DATABASE_URL is required.',
-        });
         await assert.rejects(platform.storageIdentity(), {
           message: 'DORIC_DATABASE_URL is required.',
         });
@@ -132,7 +125,6 @@ void test('over a database, the identity is published in the catalog and stays t
     let identity: unknown;
 
     try {
-      await first.platform.services.use(PostgresDatabaseV1).connect();
       identity = await first.platform.storageIdentity();
       assert.deepEqual(first.platform.catalog().storage, identity);
       assert.deepEqual(

@@ -5,7 +5,7 @@
 import { type ComponentType, type ReactNode, useEffect, useRef } from 'react';
 
 /**
- * Draws a story as a `layout.panel.footer` item: inside the Files column's
+ * Draws a story as a `shell.panel.footer` item: inside the Files column's
  * 40 px footer band (no border, no fill), in its one 28 px row, at the bottom
  * of a 328 px column on `bg-sidebar` that is tall enough for the upward
  * popovers.

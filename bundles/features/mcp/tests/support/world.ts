@@ -1,7 +1,7 @@
 // The world an `mcp` test runs in: the host part activated beside fakes of
 // every contract it requires, each standing for a real boundary — storage/v1
 // over the in-memory backend, a recording secrets/v1, a recording tools/v1, a
-// hooks/v1 whose runtime hooks the test fires, runtime/v1 notices the test
+// hooks/v1 whose runtime hooks the test fires, runtime/v2 notices the test
 // publishes, a runtime.lease/v1 over a fake sandbox, and a recording
 // runtime.attachments/v1. An Environment holds what outlives one activation
 // (storage, credentials, sandbox), so a test can activate the bundle again.
@@ -41,6 +41,7 @@ import {
   toolsMethods,
 } from 'bundle/contracts';
 import { createTestServices, type TestServices } from 'bundle/testing';
+import { type SkillSources, SkillSourcesV1 } from 'default/contracts';
 import {
   type AttachInput,
   type Attachment,
@@ -48,7 +49,7 @@ import {
   RuntimeLeaseV1,
   type RuntimeListener,
   type RuntimeNotice,
-  RuntimeV1,
+  RuntimeV2,
   runtimeAttachmentsMethods,
   runtimeLeaseMethods,
   runtimeMethods,
@@ -458,6 +459,14 @@ export interface LoggedWarning {
   readonly fields?: unknown;
 }
 
+/** One provider of `default.skill-sources/v1`, bound to the Call of one prompt. */
+export interface SkillSourceProvider {
+  /** The bundle `whenAvailable` reports the provider from. */
+  readonly bundleId: string;
+  list(input: { readonly cwd: string }): ReturnType<SkillSources['list']>;
+  read(input: { readonly reference: string }): ReturnType<SkillSources['read']>;
+}
+
 /** The world one activation of the bundle runs in. */
 export interface World {
   readonly env: Environment;
@@ -466,6 +475,12 @@ export interface World {
   mcp(projectId: string): Mcp;
   /** mcp/v1 called with no Project scope. */
   readonly unscoped: Mcp;
+  /**
+   * Every provider of `default.skill-sources/v1` now, in `whenAvailable`
+   * order, each called as a prompt of the Project calls it, or with no scope
+   * when `projectId` is absent.
+   */
+  skillSources(projectId?: string): readonly SkillSourceProvider[];
   readonly registrations: readonly Registration[];
   /** The names a `remote` registry refused, in order. */
   readonly refused: readonly string[];
@@ -483,7 +498,7 @@ export interface World {
   projectClosing(projectId: string): Promise<void>;
   /** Fires runtime.hooks/v1.onProjectReadyHook and awaits its handlers. */
   projectReady(projectId: string): Promise<void>;
-  /** Publishes a runtime/v1 notice to every watcher. */
+  /** Publishes a runtime/v2 notice to every watcher. */
   notice(notice: RuntimeNotice): void;
   /** Images the bundle attached, in order. */
   readonly attached: readonly AttachInput[];
@@ -617,7 +632,7 @@ export const activateWorld = async (
     error: () => undefined,
   });
 
-  const runtime = fake(RuntimeV1.id, runtimeMethods, {
+  const runtime = fake(RuntimeV2.id, runtimeMethods, {
     watch: (listener: RuntimeListener) => {
       listeners.add(listener);
 
@@ -723,6 +738,25 @@ export const activateWorld = async (
     test,
     mcp,
     unscoped: test.services.use(McpV1),
+    skillSources: (projectId) => {
+      const call = test.call(
+        projectId === undefined
+          ? undefined
+          : { projectId, threadId: 'thread-1', promptId: 'prompt-1' },
+      );
+      const found: SkillSourceProvider[] = [];
+      test.services
+        .whenAvailable(SkillSourcesV1, (api, { bundleId }) => {
+          found.push({
+            bundleId,
+            list: (input) => api.list(input, call),
+            read: (input) => api.read(input, call),
+          });
+        })
+        .dispose();
+
+      return found;
+    },
     registrations,
     refused,
     live,

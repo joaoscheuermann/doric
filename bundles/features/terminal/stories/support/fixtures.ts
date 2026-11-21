@@ -130,3 +130,106 @@ export const outputs: Readonly<Record<string, string>> = {
   [userShell.id]: shellOutput,
   [startingBuild.id]: longOutput,
 };
+
+// The chat drawings --------------------------------------------------------
+// The fixtures of the `terminal` call and background result stories, moved
+// with them from the chat's `stories/support/fixtures.ts` (bundle isolation
+// 5(b), change 4).
+
+/** A terminal command's compact result, as `terminal.compact.v1` writes it. */
+export const terminalResult = (input: {
+  readonly command: string;
+  readonly stdout?: readonly string[];
+  readonly stderr?: readonly string[];
+  readonly tail?: readonly string[];
+  readonly omitted?: number;
+  readonly exitCode?: number;
+  readonly durationMs?: number;
+}): string => {
+  const stream = (
+    head: readonly string[],
+    tail: readonly string[] = [],
+    omitted = 0,
+  ) => ({
+    bytes: [...head, ...tail].join('\n').length,
+    lines: head.length + tail.length + omitted,
+    head,
+    tail,
+    omitted_lines: omitted,
+    omitted_bytes: omitted * 48,
+    truncated: omitted > 0,
+  });
+  const exitCode = input.exitCode ?? 0;
+  return JSON.stringify({
+    schema: 'terminal.compact.v1',
+    command: input.command,
+    working_directory: '/workspace/storefront',
+    exit_code: exitCode,
+    duration_ms: input.durationMs ?? 2_340,
+    termination_reason: 'exited',
+    success: exitCode === 0,
+    stdout: stream(input.stdout ?? [], input.tail, input.omitted),
+    stderr: stream(input.stderr ?? []),
+  });
+};
+
+export const testCommand = 'npm test -- --run src/checkout';
+
+/**
+ * The prompt a settled background command writes into its Thread, as
+ * `terminal/v1` frames it: the header, the outcome, and the last of each
+ * stream the host kept.
+ */
+export const backgroundResult = (input: {
+  readonly terminalId: string;
+  /** The prompt that started the command. */
+  readonly promptId: string;
+  readonly command: string;
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly exitCode?: number;
+  readonly reason?: 'exited' | 'timeout' | 'terminated' | 'failed';
+  readonly durationMs?: number;
+}): string =>
+  [
+    '# Background terminal result',
+    '',
+    `Terminal: ${input.terminalId}`,
+    `Originating prompt: ${input.promptId}`,
+    `Command: ${input.command}`,
+    `Exit code: ${input.exitCode ?? 0}`,
+    `Reason: ${input.reason ?? 'exited'}`,
+    `Duration: ${input.durationMs ?? 2_340} ms`,
+    '',
+    '## Standard output (last 12000 characters)',
+    '',
+    input.stdout ?? '',
+    '',
+    '## Standard error (last 12000 characters)',
+    '',
+    input.stderr ?? '',
+  ].join('\n');
+
+export const terminalArgs = (command: string, background = false): string =>
+  JSON.stringify({
+    command,
+    working_directory: '/workspace/storefront',
+    ...(background ? { background: true } : {}),
+  });
+
+export const passingTests = [
+  ' RUN  v2.1.4 /workspace/storefront',
+  '',
+  ' ✓ src/checkout/checkout.test.tsx (6 tests) 182ms',
+  ' ✓ src/checkout/total.test.ts (4 tests) 9ms',
+  '',
+  ' Test Files  2 passed (2)',
+  '      Tests  10 passed (10)',
+  '   Duration  1.94s',
+];
+
+export const failingTests = [
+  ' FAIL  src/checkout/checkout.test.tsx > Checkout > uses the primary token',
+  'AssertionError: expected "bg-white" to contain "bg-primary"',
+  ' ❯ src/checkout/checkout.test.tsx:42:31',
+];

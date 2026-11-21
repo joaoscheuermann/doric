@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { LlmProvider } from 'llms';
+import { type LlmProvider, providerKind } from 'llms';
 
 import {
   frozenKind,
@@ -9,11 +9,13 @@ import {
   recordingTransport,
 } from './support/world.js';
 
-void test('the openai record answers the frozen llms kind, is advertised and reports no catalog capacity', async () => {
+void test('the openai record answers the frozen llms kind without a site, is advertised and reports no catalog capacity', async () => {
   const { world, provider } = await providerWorld('openai');
 
   try {
     assert.deepEqual(await provider.kind(), frozenKind());
+    assert.deepEqual(await provider.kind(), providerKind('openai'));
+    assert.equal('site' in (await provider.kind()), false);
     assert.equal(await provider.advertised(), true);
     assert.equal(await provider.catalogCapacity(), false);
   } finally {

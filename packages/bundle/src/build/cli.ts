@@ -302,7 +302,42 @@ export const buildBundle = async (
   return { manifest, descriptor, documents };
 };
 
-/** `stage <dest> <bundleDir...>`: replaces `<dest>/<id>` with each bundle's dist. */
+/**
+ * The bundle directories below `root`: every `<root>/<group>/<id>` that holds
+ * a `manifest.json`, sorted by path in code-unit order. Files, and
+ * directories without a manifest such as `node_modules`, are skipped.
+ */
+export const bundleDirectories = async (
+  root: string,
+): Promise<readonly string[]> => {
+  const found: string[] = [];
+
+  for (const group of await readdir(root, { withFileTypes: true })) {
+    if (!group.isDirectory()) {
+      continue;
+    }
+
+    const groupDir = join(root, group.name);
+
+    for (const entry of await readdir(groupDir, { withFileTypes: true })) {
+      const dir = join(groupDir, entry.name);
+
+      if (entry.isDirectory() && (await exists(join(dir, 'manifest.json')))) {
+        found.push(dir);
+      }
+    }
+  }
+
+  return found.sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+};
+
+/**
+ * `stage <dest> <bundleDir...>`: replaces `<dest>/<id>` with each bundle's
+ * dist. Rejects with a BuildError naming the bundle directory when its
+ * `dist/manifest.json` is missing.
+ */
 export const stageBundles = async (
   destination: string,
   bundleDirs: readonly string[],
@@ -313,9 +348,15 @@ export const stageBundles = async (
 
   for (const bundleDir of bundleDirs) {
     const dist = join(resolve(bundleDir), 'dist');
-    const manifest = manifestV1Schema.parse(
-      await readJson(join(dist, 'manifest.json')),
-    );
+    const manifestPath = join(dist, 'manifest.json');
+
+    if (!(await exists(manifestPath))) {
+      throw new BuildError(
+        `${bundleDir}: dist/manifest.json is missing; build the bundle first`,
+      );
+    }
+
+    const manifest = manifestV1Schema.parse(await readJson(manifestPath));
     const staged = join(target, manifest.id);
 
     await rm(staged, { recursive: true, force: true });
@@ -327,11 +368,13 @@ export const stageBundles = async (
 };
 
 const usage =
-  'Usage: cli.js build [--development] <bundleDir> | stage <dest> <bundleDir...> | copy-md <from> <to>';
+  'Usage: cli.js build [--development] <bundleDir> | stage <dest> <bundleDir...> | stage <dest> --all <root> | copy-md <from> <to>';
 
 /**
  * Runs one CLI command: `build [--development] <bundleDir>`,
- * `stage <dest> <bundleDir...>` or `copy-md <from> <to>` (copyMarkdown).
+ * `stage <dest> <bundleDir...>`, `stage <dest> --all <root>` (every bundle
+ * directory `<root>/<group>/<id>` with a `manifest.json`) or
+ * `copy-md <from> <to>` (copyMarkdown).
  * Rejects with a BuildError carrying `usage` for any other arguments, and
  * with the command's own error when it fails.
  */
@@ -346,6 +389,15 @@ export const runCli = async (args: readonly string[]): Promise<void> => {
     rest[0] === '--development'
   ) {
     await buildBundle(rest[1] as string, { mode: 'development' });
+  } else if (command === 'stage' && rest[1] === '--all') {
+    if (rest.length !== 3) {
+      throw new BuildError(usage);
+    }
+
+    await stageBundles(
+      rest[0] as string,
+      await bundleDirectories(rest[2] as string),
+    );
   } else if (command === 'stage' && rest.length >= 2) {
     await stageBundles(rest[0] as string, rest.slice(1));
   } else if (command === 'copy-md' && rest.length === 2) {

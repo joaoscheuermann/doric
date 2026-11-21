@@ -11,7 +11,7 @@ const observe = (run: () => Promise<unknown> | undefined): void => {
 };
 
 /**
- * `chat.hooks/v1` `onMountHook` when a conversation opens on a Thread, and
+ * `chat.hooks/v2` `onMountHook` when a conversation opens on a Thread, and
  * `onUnmountHook` when it closes or moves to another Thread.
  */
 export const useMountHooks = (projectId: string, threadId: string): void => {

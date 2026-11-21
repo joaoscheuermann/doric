@@ -15,6 +15,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "bundle": "0.0.1",
+    "default": "0.0.1",
     "oauth": "0.0.1",
     "runtime": "0.0.1",
     "sandbox": "0.0.1",

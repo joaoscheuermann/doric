@@ -2,21 +2,30 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import type {
-  AnyServiceDefinition,
-  Call,
-  CallScope,
-  HostContext,
-  Services,
+import {
+  type AnyServiceDefinition,
+  type Call,
+  type CallScope,
+  type HostContext,
+  ref,
+  type Services,
 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
-import { TerminalV1 } from 'terminal/contracts';
 
 import {
   RuntimeLeaseV1,
   RuntimeThreadsV1,
   RuntimeWorkspaceV1,
 } from '../../src/contracts/index.js';
+
+/**
+ * `terminal/v1` as the stage-1 adapter served it: `run` only. The contract is
+ * the `terminal` bundle's; the recording names it by its id, so the runtime's
+ * tests import nothing of that bundle.
+ */
+const TerminalV1 = ref<{ run(input: unknown): Promise<unknown> }>(
+  'terminal/v1',
+);
 
 /*
  * Golden transcripts of the stage-1 `host-adapter` (design 57 §13, 57-WP-0).

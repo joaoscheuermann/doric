@@ -386,7 +386,7 @@ test('the conversation’s vertical bar ends where a floating footer begins, and
 
   assert.deepEqual(
     [...declared(unlayered(sheet), VERTICAL_BAR)],
-    [['height', 'calc(100% - var(--chat-footer-height, 0px))']],
+    [['height', 'calc(100% - var(--shell-conversation-footer-height, 0px))']],
   );
 });
 
@@ -395,7 +395,7 @@ test('a block scrolled into view stops above a floating footer', async () => {
 
   assert.equal(
     declared(unlayered(sheet), VIEWPORT).get('scroll-padding-bottom'),
-    'var(--chat-footer-height, 0px)',
+    'var(--shell-conversation-footer-height, 0px)',
   );
 });
 
@@ -408,13 +408,13 @@ test('the conversation’s scroll root is its own stacking context, and keeps it
   assert.equal(root.get('font-weight'), '300');
 });
 
-test('the viewer footer band is as tall as --chat-footer-height, the background at 70 % under a 2 px blur', async () => {
+test('the viewer footer band is as tall as --shell-conversation-footer-height, the background at 70 % under a 2 px blur', async () => {
   const sheet = await readFile(stylesheet, 'utf8');
 
   assert.deepEqual(
     [...declared(unlayered(sheet), "[data-slot='chat-thread-footer']")],
     [
-      ['height', 'var(--chat-footer-height)'],
+      ['height', 'var(--shell-conversation-footer-height)'],
       [
         'background-color',
         'color-mix(in oklab, var(--background) 70%, transparent)',

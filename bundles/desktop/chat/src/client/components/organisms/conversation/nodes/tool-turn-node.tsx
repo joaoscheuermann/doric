@@ -1,4 +1,5 @@
 import { type ErrorInfo, sameErrorInfo } from 'desktop/reads';
+import { blockToggled, type Chosen } from 'desktop/ui/collapsible-block';
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -10,14 +11,13 @@ import {
 } from 'lexical';
 import type { JSX } from 'react/jsx-runtime';
 
-import {
-  blockToggled,
-  type Chosen,
-  toolOpenness,
-} from '../../../../domain/collapsible.js';
+import { toolOpenness } from '../../../../domain/collapsible.js';
 import { TOOL_TURN_BLOCK } from '../../../../domain/conversation-nodes.js';
 import type { ToolTurn } from '../../../../domain/projector.js';
-import { ToolItem } from '../../../molecules/tool-item.js';
+import { toolDrawing } from '../../../../domain/tool-drawing.js';
+import { chatViewsRegistry } from '../../../../services/views.js';
+import { ToolSurface } from '../../../molecules/tool-surface.js';
+import { toggleHostedView } from '../../../molecules/view-element.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
@@ -125,8 +125,9 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     return (
       <WidgetFocus nodeKey={this.__key}>
         {(focused) => (
-          <ToolItem
+          <ToolSurface
             args={this.__args}
+            callId={this.__callId}
             chosen={this.__chosen}
             error={this.__error}
             focused={focused}
@@ -137,8 +138,10 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
                 if ($isToolTurnNode(node)) node.setChosen(chosen);
               })
             }
+            promptId={this.__promptId}
             result={this.__result}
             status={this.__status}
+            toggleKey={this.__key}
           />
         )}
       </WidgetFocus>
@@ -151,8 +154,17 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
     this.getWritable().__chosen = chosen;
   }
 
-  /** The reader opens or closes the block: their next choice is its opposite. */
+  /**
+   * The reader opens or closes the block: a registered element that defines
+   * `toggle()` answers for itself (O2); otherwise their next choice is the
+   * opposite of what the block shows.
+   */
   toggle(): void {
+    if (toggleHostedView(this.__key)) return;
+    const { openByDefault } = toolDrawing(
+      this.__name,
+      chatViewsRegistry()?.toolRenderers() ?? new Map(),
+    );
     this.setChosen(
       blockToggled(
         this.__chosen,
@@ -161,7 +173,7 @@ export class ToolTurnNode extends DecoratorNode<JSX.Element> {
           this.__args,
           this.__result,
           this.__error,
-          this.__name,
+          openByDefault,
         ),
       ),
     );

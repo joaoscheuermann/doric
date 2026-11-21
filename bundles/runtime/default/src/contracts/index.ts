@@ -1,6 +1,7 @@
 // Public contracts of the `default` bundle. It provides `executor/v1`, which
 // the `runtime` bundle owns (D-S6-04), and owns `default.hooks/v1` and
-// `default.agents/v1`.
+// `default.agents/v1`. It also declares `default.skill-sources/v1`, which it
+// does not provide: a bundle that offers skills to the agent provides it.
 
 import {
   type CallArg,
@@ -143,3 +144,59 @@ export const defaultAgentsMethods = {
 
 /** default.agents/v1, as the `default` bundle provides it. */
 export const DefaultAgentsV1 = ref<DefaultAgents>('default.agents/v1');
+
+/** One skill a source offers to the agent. */
+export interface SkillSourceEntry {
+  /** A second part of the skill's id, such as an MCP server's slug. */
+  readonly group?: string;
+  /** The skill's name; with the source and the group it is unique. */
+  readonly name: string;
+  readonly description: string;
+  /** What `read` takes; only the source reads it. */
+  readonly reference: string;
+}
+
+/**
+ * default.skill-sources/v1: a host many-contract that `default` declares and
+ * does not provide. Each provider is a source of skills, named by the
+ * `bundleId` `whenAvailable` gives with it; `default` names its skills
+ * `<bundleId>/<group>/<name>`, or `<bundleId>/<name>` without a group, and
+ * ignores a provider whose `bundleId` is `cwd`.
+ */
+export interface SkillSources {
+  /** The skills the source offers to the prompt of `call.scope`, whose working directory is `cwd`. */
+  list(
+    input: { readonly cwd: string },
+    call?: CallArg,
+  ): Promise<{ readonly skills: readonly SkillSourceEntry[] }>;
+  /** One skill's text, and the sentence that says where it comes from. The source bounds the time the read may take. */
+  read(
+    input: { readonly reference: string },
+    call?: CallArg,
+  ): Promise<{ readonly origin?: string; readonly text: string }>;
+}
+
+const skillSourceEntrySchema = z
+  .object({
+    group: z.string().min(1).optional(),
+    name: z.string().min(1),
+    description: z.string(),
+    reference: z.string().min(1),
+  })
+  .strict();
+
+export const skillSourcesMethods = {
+  list: {
+    input: z.object({ cwd: z.string() }).strict(),
+    output: z.object({ skills: z.array(skillSourceEntrySchema) }).strict(),
+  },
+  read: {
+    input: z.object({ reference: z.string().min(1) }).strict(),
+    output: z
+      .object({ origin: z.string().optional(), text: z.string() })
+      .strict(),
+  },
+} as const satisfies MethodSpecs;
+
+/** default.skill-sources/v1, as a source of skills provides it. */
+export const SkillSourcesV1 = ref<SkillSources>('default.skill-sources/v1');

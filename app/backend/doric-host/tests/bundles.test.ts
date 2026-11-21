@@ -344,9 +344,10 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
     // and `papercraft` features are anchored comments and the live preview
     // they pin to. The `mcp` feature is
     // the Project's MCP servers and the tools they bring. The `openui`
-    // feature draws UI in the conversation (OpenUI slice 1). No bundle is
-    // quarantined.
-    assert.equal(host.bundleCount, 30);
+    // feature draws UI in the conversation (OpenUI slice 1). The `account`
+    // and `workspace` desktop bundles (bundle isolation 4(b), 4(c)) have no
+    // host part. No bundle is quarantined.
+    assert.equal(host.bundleCount, 32);
     // `firecracker` is staged beside `docker` but not enabled (D10-9).
     assert.equal(
       diagnostics.bundles.find(({ id }) => id === 'firecracker')?.state,
@@ -380,6 +381,8 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
         docker: ['active', 'others'],
         notifications: ['active', 'others'],
         layout: ['active', 'others'],
+        account: ['active', 'others'],
+        workspace: ['active', 'others'],
         settings: ['active', 'others'],
         chat: ['active', 'others'],
         history: ['active', 'others'],
@@ -410,7 +413,6 @@ void test('the catalog and diagnostics list every bundle active, the foundation 
       ['runtime', 'resources'],
       ['runtime', 'screen'],
       ['screen-relay', 'screen'],
-      ['claude-login', 'settings'],
       ['comments', 'papercraft'],
       ['runtime', 'mcp'],
       // openui requires chat.views/v1 and chat.send/v1 (chat), the runtime's
@@ -619,15 +621,15 @@ void test('a composition without the runtime has no structural provider and boot
       structural(host.platform, logger),
       (error: unknown) =>
         error instanceof BundleRecoveryError &&
-        /runtime\/v1/u.test(error.message) &&
-        // The transport requires runtime/v1, so it cannot serve either.
+        /runtime\/v2/u.test(error.message) &&
+        // The transport requires the runtime, so it cannot serve either.
         /transport/u.test(error.message),
     );
     assert.ok(
       lines.some(
         ({ msg, reason }) =>
           msg === 'Bundle recovery mode' &&
-          reason?.includes('runtime/v1') === true,
+          reason?.includes('runtime/v2') === true,
       ),
     );
     // The refusal stopped the platform; stopping again is a no-op.
@@ -663,7 +665,7 @@ void test('a generation that cannot start leaves no structural provider and boot
         structural(host.platform),
         (error: unknown) =>
           error instanceof BundleRecoveryError &&
-          ['runtime/v1', 'executor/v1', 'sandbox/v1'].every((id) =>
+          ['runtime/v2', 'executor/v1', 'sandbox/v1'].every((id) =>
             error.message.includes(id),
           ),
       );
@@ -719,7 +721,7 @@ void test('after boot, an activation that leaves no structural provider takes th
     };
     active?.(1);
     assert.equal(reasons.length, 1);
-    assert.match(reasons[0] ?? '', /runtime\/v1, executor\/v1, sandbox\/v1/u);
+    assert.match(reasons[0] ?? '', /runtime\/v2, executor\/v1, sandbox\/v1/u);
     assert.ok(lines.some(({ msg }) => msg === 'Bundle recovery mode'));
 
     stop();

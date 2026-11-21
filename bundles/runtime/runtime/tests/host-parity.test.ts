@@ -4,7 +4,6 @@ import test from 'node:test';
 import { defineMethod, defineService } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import type { SandboxExecInput } from 'sandbox';
-import type { Terminal as TerminalRunner } from 'terminal/contracts';
 import type { z } from 'zod';
 
 import {
@@ -13,7 +12,6 @@ import {
   RuntimeThreadsV1,
   type RuntimeWorkspace,
   runtimeThreadsMethods,
-  type TerminalControl,
   type ThreadControl,
   type ThreadView,
   type threadViewSchema,
@@ -37,13 +35,6 @@ type WithoutCall<F> = F extends (...args: infer P) => infer R
 
 type Controls<I> = { readonly [K in keyof I]: WithoutCall<I[K]> };
 
-type Run = TerminalRunner['run'] extends (
-  input: infer I,
-  call?: infer _C,
-) => infer R
-  ? (input: I) => R
-  : never;
-
 const parity = {
   threads:
     same<
@@ -63,19 +54,12 @@ const parity = {
         WorkspaceControl['location']
       >
     >(),
-  terminalRun:
-    same<
-      Equal<
-        Awaited<ReturnType<Run>>,
-        Awaited<ReturnType<TerminalControl['run']>>
-      >
-    >(),
   exec: same<Equal<LeaseExecInput, Omit<SandboxExecInput, 'signal'>>>(),
   viewSchema:
     same<z.output<typeof threadViewSchema> extends ThreadView ? true : false>(),
 } as const;
 
-void test('the tool-host facade mirrors the runtime and terminal contracts', () => {
+void test('the tool-host facade mirrors the runtime contracts', () => {
   assert.deepEqual(
     Object.values(parity),
     Object.values(parity).map(() => true),

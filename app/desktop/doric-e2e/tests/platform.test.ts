@@ -178,7 +178,9 @@ describe('desktop platform, default composition', () => {
   });
 
   test('settings opens once at /settings with today’s size; a second open focuses it', async () => {
-    await booted.platform.runCommand('core.open-settings/v1');
+    await booted.platform.runCommand('core.open-settings/v1', {
+      defaultPath: '/settings',
+    });
 
     const settings = await booted.window('settings');
 

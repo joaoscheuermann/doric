@@ -1,10 +1,11 @@
-// The window services `<resources-monitor>` reads: `layout.workspace/v1`
-// for the selected Project and `resources/v1` for the readings, both over
-// fixtures.
+// The window services `<resources-monitor>` reads: `workspace.selection/v1`
+// for the selected Project, `runtime.records/v1` for the connection and
+// `resources/v1` for the readings, all over fixtures.
 
 import type { Services } from 'bundle/contracts';
+import type { RuntimeRecords } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
-import type { LayoutWorkspace } from '../../src/client/api/peers.js';
 import type {
   HostResources,
   ProjectResourcesResult,
@@ -18,19 +19,21 @@ import {
 } from './resources.js';
 import { fakeServices } from './services.js';
 
+/** The part of `workspace.selection/v1` the monitor reads. */
+export interface FixtureSelection {
+  current(): { readonly projectId?: string };
+  subscribe(listener: () => void): { dispose(): void };
+}
+
 /**
- * A workspace that shows one Project and never changes its selection or its
- * connection. `connected` defaults to `true`. `subscribe` never notifies.
+ * A selection that holds one Project and never changes. `subscribe` never
+ * notifies.
  */
-export const fixtureWorkspace = (
+export const fixtureSelection = (
   selectedProjectId: string | undefined = projectId,
-  options: { readonly connected?: boolean } = {},
-): LayoutWorkspace => ({
-  selection: () =>
-    selectedProjectId === undefined
-      ? {}
-      : { project: { id: selectedProjectId } },
-  connected: () => options.connected ?? true,
+): FixtureSelection => ({
+  current: () =>
+    selectedProjectId === undefined ? {} : { projectId: selectedProjectId },
   subscribe: () => ({ dispose: () => undefined }),
 });
 
@@ -50,17 +53,25 @@ const fixtureResources = (input: {
   },
 });
 
+/**
+ * The monitor's services. `selection` defaults to `fixtureSelection()` and
+ * `records` to connected records; `null` leaves that provider out.
+ */
 export const monitorServices = (
   input: {
-    readonly workspace?: LayoutWorkspace | null;
+    readonly selection?: FixtureSelection | null;
+    readonly records?: RuntimeRecords | null;
     readonly host?: () => HostResources;
     readonly project?: () => ProjectResourcesResult;
   } = {},
 ): Services =>
   fakeServices({
-    ...(input.workspace === null
+    ...(input.selection === null
       ? {}
-      : { 'layout.workspace/v1': input.workspace ?? fixtureWorkspace() }),
+      : { 'workspace.selection/v1': input.selection ?? fixtureSelection() }),
+    ...(input.records === null
+      ? {}
+      : { 'runtime.records/v1': input.records ?? createRecordsApi() }),
     'resources/v1': fixtureResources({
       host: input.host ?? hostReading,
       project: input.project ?? (() => readyProject(containerReading())),

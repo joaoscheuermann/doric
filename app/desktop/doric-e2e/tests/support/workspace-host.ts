@@ -1,7 +1,7 @@
 // The host side of a workspace window: the Projects and Threads of the
 // prototype (Figma `99:8035`, `99:8508`, `85:7520`), answered over the fake
 // host for what the real core, layout, resources, chat, files and git bundles
-// call (`runtime/v1`, `runtime.threads/v1`, `resources/v1`, and through
+// call (`runtime/v2`, `runtime.threads/v1`, `resources/v1`, and through
 // `workspace-content` `files/v1` and `git.commands/v1`).
 
 import type { FakeHost } from './harness';
@@ -351,13 +351,13 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
   const threadsOf = (projectId: unknown) =>
     THREADS.filter((item) => item.projectId === projectId);
 
-  host.serve('runtime/v1', 'projects', () => ({ items: [...PROJECTS] }));
-  host.serve('runtime/v1', 'project', (input) => {
+  host.serve('runtime/v2', 'projects', () => ({ items: [...PROJECTS] }));
+  host.serve('runtime/v2', 'project', (input) => {
     const id = Array.isArray(input) ? input[0] : input;
 
     return PROJECTS.find((item) => item.id === id);
   });
-  host.serve('runtime/v1', 'projectActivity', () =>
+  host.serve('runtime/v2', 'projectActivity', () =>
     [...PROJECTS]
       .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
       .map((item) => ({
@@ -368,7 +368,7 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
           : {}),
       })),
   );
-  host.stream('runtime/v1', 'watchProject', (input, push) => {
+  host.stream('runtime/v2', 'watchProject', (input, push) => {
     const { projectId } = first(input);
 
     push({
@@ -376,7 +376,6 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
       projectId,
       project: PROJECTS.find((item) => item.id === projectId) ?? null,
       threads: threadsOf(projectId),
-      terminals: [],
     });
   });
   host.serve('runtime.threads/v1', 'threads', (input) => ({

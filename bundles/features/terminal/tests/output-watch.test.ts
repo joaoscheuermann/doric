@@ -350,27 +350,74 @@ describe('terminal output watch', () => {
     assert.equal(terminals.openStreams.length, 0);
   });
 
-  test('a newer watch of the same terminal replaces the older one', async () => {
-    const { terminals, watches } = setup(async () => snapshotOf('text'));
-    const older: TerminalOutputUpdate[] = [];
-    const newer: TerminalOutputUpdate[] = [];
-    const stopOlder = watches.watch(
+  test('two watchers of one terminal share its watch: each gets every chunk and the stream closes when the last one stops', async () => {
+    // A chat row and a workspace terminal tab may watch the same terminal at
+    // once; neither may cut the other off.
+    class CountingTerminals extends FakeTerminals {
+      disposals = 0;
+
+      override watchProject(
+        projectId: string,
+        observer: StreamObserver<TerminalWatchItem>,
+      ): Disposable {
+        const stream = super.watchProject(projectId, observer);
+        return {
+          dispose: () => {
+            this.disposals += 1;
+            stream.dispose();
+          },
+        };
+      }
+    }
+    const terminals = new CountingTerminals();
+    const watches = createTerminalWatches({
+      terminals,
+      snapshot: async () => snapshotOf('text'),
+      connection: new FakeConnection(),
+      schedule: () => () => undefined,
+    });
+    const row: TerminalOutputUpdate[] = [];
+    const tab: TerminalOutputUpdate[] = [];
+    const stopRow = watches.watch(
       'terminal',
       0,
-      (update) => void older.push(update),
+      (update) => void row.push(update),
     );
-    await tick();
-    watches.watch('terminal', 0, (update) => void newer.push(update));
+    const stopTab = watches.watch(
+      'terminal',
+      0,
+      (update) => void tab.push(update),
+    );
     await tick();
 
     terminals.emit(listSnapshot([terminal]));
     await tick();
-    stopOlder();
+    terminals.emit(output(' more', 9));
 
-    assert.deepEqual(older, []);
-    assert.equal(newer.length, 1);
+    const both: TerminalOutputUpdate[] = [
+      { kind: 'snapshot', data: 'text', sequence: 4, truncated: false },
+      { kind: 'output', data: ' more', sequence: 9 },
+    ];
+    assert.deepEqual(row, both, 'the first watcher is cut off');
+    assert.deepEqual(tab, both);
     assert.equal(terminals.openStreams.length, 1);
+
+    stopRow();
+    terminals.emit(output('!', 10));
+
+    assert.deepEqual(row, both, 'a stopped watcher still receives output');
+    assert.deepEqual(tab, [
+      ...both,
+      { kind: 'output', data: '!', sequence: 10 },
+    ]);
+    assert.equal(terminals.disposals, 0, 'the first stop closed the stream');
+
+    stopTab();
+
+    assert.equal(terminals.disposals, 1);
+    assert.equal(terminals.openStreams.length, 0);
     watches.close();
+    assert.equal(terminals.disposals, 1, 'close disposed the stream again');
   });
 });
 

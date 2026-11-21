@@ -122,3 +122,14 @@ export const iconLookupFrom = (
     model: (providerId, model) => models.get(providerId)?.get(model),
   };
 };
+
+/**
+ * The icons a surface draws after one observation of its icons read: no
+ * request (`asked` false) or a failed read answers `noIcons`, since an icon is
+ * never an error the reader has to act on; else the answer, or `undefined`
+ * before the first one.
+ */
+export const iconsFrom = (
+  asked: boolean,
+  state: { readonly isError: boolean; readonly data?: IconLookup },
+): IconLookup | undefined => (!asked || state.isError ? noIcons : state.data);

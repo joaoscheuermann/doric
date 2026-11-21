@@ -1,0 +1,24 @@
+{
+  "manifestVersion": 1,
+  "id": "workspace",
+  "version": "1.0.0",
+  "engines": {
+    "doric": "^1.8.0"
+  },
+  "description": "Choosing what the window shows: Projects, Threads and the selection.",
+  "provides": [
+    "workspace.selection/v1@1.0.0",
+    "workspace.hooks/v1@1.0.0",
+    "workspace.sidebar/v1@1.0.0",
+    "workspace.dashboard/v1@1.0.0"
+  ],
+  "requires": [
+    "hooks/v1@^1.0.0",
+    "ui/v1@^1.0.0",
+    "navigation/v1@^1.1.0",
+    "regions/v1@^1.0.0",
+    "commands/v1@^1.0.0",
+    "runtime.records/v1@^1.0.0",
+    "layout.tabs/v2@^2.0.0"
+  ]
+}

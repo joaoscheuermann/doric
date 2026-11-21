@@ -1,7 +1,6 @@
-// D9-10: a held conversation that saw a sandbox-writing tool completion, or
-// a Thread whose working directory or state changed, tells the files/Git
-// refresh coordinator through `onSandboxActivityHook`, once per Project per
-// store change, exactly when `use-project-refresh.ts` refreshed it before.
+// D9-10, D12: a Thread the chat starts to hold, whose working directory
+// changes or whose run ends tells the files/Git refresh coordinator through
+// `chat.hooks/v2` `onSandboxActivityHook`, once per Project per store change.
 
 import { changedSandboxProjects } from '../domain/project-refresh.js';
 import type { ThreadChatsStore } from '../stores/thread-chats.js';

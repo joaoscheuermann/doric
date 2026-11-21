@@ -1,250 +1,113 @@
-# O bundle layout
+# The layout bundle: the window's shell
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes the shell of the workspace window as implemented on 2026-11-20.
 
-## Resumo
+## Summary
 
-O `layout` é o bundle client que desenha o workspace: a moldura que hoje é `app/doric-renderer/src/views/app.tsx`, com sidebar de Projects e Threads, header, painel lateral, abas, rodapé e a área principal. Ele registra a rota `/` e, no template do seu elemento `<layout-workspace>`, põe um `<core-outlet>` onde as rotas filhas aparecem (a conversa, por exemplo) e quatro regiões que outros bundles preenchem. Também fornece `layout.tabs/v1`, para que outros bundles abram abas de arquivo, diff ou terminal. O layout não conhece a conversa, os arquivos nem o terminal: só sabe onde cada coisa fica. Os mecanismos que ele usa (`ui/v1`, `navigation/v1`, `<core-outlet>`, `regions/v1` e `<core-region>`) são do [core](./core.md).
+`layout` is the client bundle that draws the frame of the workspace window and declares its slots. It registers the route `/` and defines its element, `<layout-workspace>`; the frame puts a `<core-outlet>` where the child routes appear and a `<core-region>` for each slot that other bundles fill ([`client/index.ts`](../../../bundles/desktop/layout/src/client/index.ts), [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)). It also provides four client contracts, `layout.tabs/v2`, `layout.panel/v3`, `layout.conversation/v1` and `layout.stack/v2`, through which other bundles open viewer tabs, select the Project panel's view, show a split under the conversation and add groups to the sidebar ([`manifest.json`](../../../bundles/desktop/layout/manifest.json)).
 
-## O que o layout fornece
+The shell draws no navigation and no feature of its own. It reads no records: the sidebar of Projects and Threads, the Project tabs and the Dashboard are elements of the [`workspace`](../../../bundles/desktop/workspace/README.md) bundle in the shell's slots, and the conversation, Files, Git, terminals and usage are other bundles' elements ([`workspace/src/client/index.ts`](../../../bundles/desktop/workspace/src/client/index.ts); the other fillers are listed under [The slots](#the-slots)). Without those bundles the frame draws its slots empty. The mechanisms it builds on, `ui/v1`, `navigation/v1`, `regions/v1`, `<core-outlet>` and `<core-region>`, are the [core](core.md)'s. This document says what the shell owns, the slots it declares and how a bundle fills them; the [README of `layout`](../../../bundles/desktop/layout/README.md) gives every contract's full shape, and the feature doc [UI redesign](../../features/ui-redesign.md) says how the window behaves.
 
-| Funcionalidade           | Como os outros bundles usam                                                                                                                               |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rota `/`                 | Registram rotas filhas com `parent: '/'`, que aparecem na área principal.                                                                                 |
-| Sidebar                  | Mostra Projects e Threads, em duas abas (Chat e Archived); clicar numa Thread navega para `/projects/:projectId/threads/:threadId`.                       |
-| Header                   | Mostra o Project e a Thread da rota ativa; ações de outros bundles entram na região `layout.header`.                                                      |
-| Painel lateral           | Mostra um item da região `layout.panel` por vez, com um seletor entre eles (como Files e Changes hoje).                                                   |
-| Rodapé                   | Mostra os itens da região `layout.footer`, como uso e recursos.                                                                                           |
-| Grupos extras da sidebar | Panes registrados em `layout.stack/v2`, presos ao fim da coluna, sem divisórias nem tamanhos; o layout desenha o grupo e o cabeçalho de 28 px de cada um. |
-| Linhas da sidebar        | `layout.sidebar/v1` 1.1.0: linhas sob cada Thread; `busy` opcional deixa a linha ativa enquanto responde verdadeiro.                                      |
-| Abas                     | `layout.tabs/v1`: `open`, `close` e `focus` de abas, num painel ao lado da área principal.                                                                |
-| Abrir settings           | O botão do rodapé da sidebar despacha o comando `core.open-settings/v1`.                                                                                  |
+## What the shell owns
 
-O layout não fornece mais `layout.stack/v1`: `layout.stack/v2` o substitui, e um bundle que ainda exige a v1 fica em quarentena.
+| Part              | What the shell does                                                                                                                                                                                                                                                                                                       | Implementation                                                                                                                                                                                                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Route `/`         | Registers `/` with `navigation/v1`, creating `<layout-workspace>` through `ui/v1`; sets the document title to `Doric`                                                                                                                                                                                                     | [`client/index.ts`](../../../bundles/desktop/layout/src/client/index.ts), [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)                                                                                                                                     |
+| The two forms     | Draws the page form while `shell.page` holds an item, and the conversation form otherwise                                                                                                                                                                                                                                 | [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)                                                                                                                                                                                                               |
+| The outlet        | Puts one `<core-outlet>` in the conversation card, where a child route of `/` appears                                                                                                                                                                                                                                     | [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)                                                                                                                                                                                                               |
+| Viewer tabs       | Keeps the tabs of each owner and draws those of the active owner beside the conversation. It keeps the active owner's open tab elements in the page and hides the unselected ones; when the owner changes, the previous owner's elements are detached but not disposed, and they come back when that owner is named again | [`workspace-tabs.tsx`](../../../bundles/desktop/layout/src/client/components/organisms/workspace-tabs.tsx), [`stores/workspace-tabs.ts`](../../../bundles/desktop/layout/src/client/stores/workspace-tabs.ts)                                                                                             |
+| Project panel     | Draws the `shell.panel` items as an icon tab strip beside the conversation; the panel is always shown, resizes, and cannot be hidden. The reader can reorder the icon tabs by dragging; the order is kept in the component's state and is not persisted                                                                   | [`project-panel.tsx`](../../../bundles/desktop/layout/src/client/components/organisms/project-panel.tsx), [`stores/panel.ts`](../../../bundles/desktop/layout/src/client/stores/panel.ts), [`workspace-layout.tsx`](../../../bundles/desktop/layout/src/client/components/templates/workspace-layout.tsx) |
+| Sidebar stack     | Draws one group per `layout.stack/v2` pane after the `shell.sidebar` items, above the quarantine notice                                                                                                                                                                                                                   | [`project-sidebar.tsx`](../../../bundles/desktop/layout/src/client/components/organisms/project-sidebar.tsx), [`stores/stack.ts`](../../../bundles/desktop/layout/src/client/stores/stack.ts)                                                                                                             |
+| Quarantine notice | Draws one warning notice in the sidebar column when the window's catalog lists quarantined bundles                                                                                                                                                                                                                        | [`bundle-health.ts`](../../../bundles/desktop/layout/src/client/domain/bundle-health.ts), [`use-quarantine-notice.ts`](../../../bundles/desktop/layout/src/client/hooks/use-quarantine-notice.ts)                                                                                                         |
+| Toaster           | Holds the window's only toaster                                                                                                                                                                                                                                                                                           | [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)                                                                                                                                                                                                               |
 
-## Como funciona
+### The two forms
 
-### 1. A janela abre em `/`
+The page form draws the sidebar column (the `shell.sidebar` items, the quarantine notice, then the `shell.sidebar.footer` items) beside the title bar (`shell.titlebar.tabs`) over the page (`shell.page`). The conversation form draws the sidebar column (the `shell.sidebar` items, the stack panes, the quarantine notice, then the `shell.sidebar.footer` items, [`project-sidebar.tsx`](../../../bundles/desktop/layout/src/client/components/organisms/project-sidebar.tsx)); the title bar; the conversation card with the outlet, the `shell.conversation.footer` band floating over its bottom, the `shell.conversation.overlay` layer over it and, while an item asks for it, the `shell.conversation.bottom` split under it; the viewer tabs; and the Project panel, whose header ends with `shell.window.actions` and whose foot is `shell.panel.footer` ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)).
 
-O core abre a janela principal com `windows.open({ key: 'workspace', path: '/' })`. A janela carrega a shell, ativa as partes client na ordem (core primeiro) e põe um `<core-outlet>` no `body`. O outlet procura a rota de `/` e encontra a do layout.
+Both forms draw one `<core-region name="shell.sidebar">` element, which the frame moves between them within one commit, so the sidebar's items keep their elements when the form changes. The `shell.sidebar.footer` region is drawn only while it has items ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)).
 
-### 2. O layout registra a rota e define o elemento
+### The quarantine notice
+
+The shell reads the snapshot of `doric.catalog/v1` once per mount of the sidebar column, through its activation services; the contract's full shape is in [The core bundle and quarantine](core.md#doriccatalogv1). Of that snapshot it uses each bundle's `id`, `version`, `state` and `reasons`. When at least one bundle has the state `quarantined`, the notice has the code `bundle_quarantined`, the message `Turned off: <ids>.` with the quarantined ids joined by `, ` in the snapshot's order, the title "1 extension couldn't start" or "N extensions couldn't start", the tone `warning`, and one detail line per quarantined bundle, keyed `<id>@<version>`, whose value is each reason's message followed by ` (<contract>)` when the reason names one, joined by `; `, or `no reason given`. The notice is not retryable, and its only action is Copy details. When no bundle is quarantined, or the read throws, there is no notice ([`bundle-health.ts`](../../../bundles/desktop/layout/src/client/domain/bundle-health.ts), [`bundle-health-notice.tsx`](../../../bundles/desktop/layout/src/client/components/molecules/bundle-health-notice.tsx), [`use-quarantine-notice.ts`](../../../bundles/desktop/layout/src/client/hooks/use-quarantine-notice.ts)). The regions a quarantined bundle would fill stay empty.
+
+## The slots
+
+A slot is a region of `regions/v1` that the shell draws as a `<core-region>`. An item is `{ id, tag, order?, props? }`; the core sorts the items by `order`, absent last, then by add order, and refuses a second item with the same id in one region with `registration_conflict`; `<core-region>` creates each item's element from `tag` through `ui/v1` once and disposes it when the item leaves the region ([`core/src/client/regions.ts`](../../../bundles/foundation/core/src/client/regions.ts), [`core/src/client/elements/region.ts`](../../../bundles/foundation/core/src/client/elements/region.ts)). The shell's slots carry elements with no props type, except `shell.panel` ([`layout/src/contracts/index.ts`](../../../bundles/desktop/layout/src/contracts/index.ts)). The [`layout` README](../../../bundles/desktop/layout/README.md) is the home of each slot's placement ([Slots](../../../bundles/desktop/layout/README.md#slots)) and of `PanelItemProps` ([`layout.panel/v3`](../../../bundles/desktop/layout/README.md#layoutpanelv3-300)); the table below restates where the shell draws each slot and adds who fills it in the default composition.
+
+| Slot                         | Constant                     | Where the shell draws it                                                                                                    | Filled in the default composition by                                              |
+| ---------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `shell.sidebar`              | `SHELL_SIDEBAR`              | The sidebar column, in both forms                                                                                           | `workspace` (`<workspace-sidebar>`)                                               |
+| `shell.sidebar.footer`       | `SHELL_SIDEBAR_FOOTER`       | The sidebar column's foot, under the quarantine notice                                                                      | `workspace` (`<workspace-sidebar-footer>`), while the route is `/` or `/projects` |
+| `shell.titlebar.tabs`        | `SHELL_TITLEBAR_TABS`        | The title bar, in both forms                                                                                                | `workspace` (`<workspace-project-tabs>`)                                          |
+| `shell.page`                 | `SHELL_PAGE`                 | The page form's body; an item here switches the frame to the page form                                                      | `workspace` (`<workspace-dashboard>`), while the route is `/` or `/projects`      |
+| `shell.window.actions`       | `SHELL_WINDOW_ACTIONS`       | The end of the Project panel's header, in the conversation form                                                             | `account` (`<account-status>`)                                                    |
+| `shell.header.actions`       | `SHELL_HEADER_ACTIONS`       | Declared by the shell but not drawn by it; the `shell.titlebar.tabs` item draws it                                          | `terminal` (its "New terminal" button)                                            |
+| `shell.conversation.footer`  | `SHELL_CONVERSATION_FOOTER`  | A 44 px band floating over the conversation's bottom                                                                        | `chat` (the execution picker and the composer), `usage`                           |
+| `shell.conversation.bottom`  | `SHELL_CONVERSATION_BOTTOM`  | A split under the conversation, shown while an item asks for it through `layout.conversation/v1`; its items mount only then | None                                                                              |
+| `shell.conversation.overlay` | `SHELL_CONVERSATION_OVERLAY` | A layer over the conversation that never intercepts a pointer; its items place themselves                                   | None                                                                              |
+| `shell.panel`                | `SHELL_PANEL`                | The Project panel's views; only the selected item's element is mounted                                                      | `files`, `git`                                                                    |
+| `shell.panel.footer`         | `SHELL_PANEL_FOOTER`         | One 28 px row under the Project panel                                                                                       | `git` (the working directory and branch)                                          |
+
+The fillers are in [`workspace/src/client/index.ts`](../../../bundles/desktop/workspace/src/client/index.ts), [`account/src/client/index.ts`](../../../bundles/desktop/account/src/client/index.ts), [`terminal/src/client/index.ts`](../../../bundles/features/terminal/src/client/index.ts), [`chat/src/client/index.ts`](../../../bundles/desktop/chat/src/client/index.ts), [`usage/src/client/index.ts`](../../../bundles/features/usage/src/client/index.ts), [`files/src/client/index.ts`](../../../bundles/features/files/src/client/index.ts) and [`git/src/client/index.ts`](../../../bundles/features/git/src/client/index.ts).
+
+Two slots are drawn by a filler rather than by the shell. `workspace`'s Project tab bar, the element it puts in `shell.titlebar.tabs`, ends with a `<core-region>` of `shell.window.actions` while the route is `/` or `/projects` (the page form) and of `shell.header.actions` on every other route ([`navigation-elements.tsx`](../../../bundles/desktop/workspace/src/client/elements/navigation-elements.tsx)). In a composition without `workspace`, neither appears in the title bar.
+
+A `shell.panel` item carries the props `PanelItemProps`, `{ label, iconTag?, badgeTag? }`: the panel's tab trigger draws the `iconTag` element as the view's icon and the `badgeTag` element inside the trigger, and `label` names the view ([`project-panel.tsx`](../../../bundles/desktop/layout/src/client/components/organisms/project-panel.tsx), [`layout/src/contracts/index.ts`](../../../bundles/desktop/layout/src/contracts/index.ts)).
+
+### Filling a slot
+
+The shell exports one constant per slot from `layout/contracts`, with no type annotation, so that its type is the literal name, and uses the constants as values in its own drawing ([`layout/src/contracts/index.ts`](../../../bundles/desktop/layout/src/contracts/index.ts), [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)). A bundle that fills a slot adds its item with `regions/v1.add` and writes the name as a string literal checked against the constant through a type-only import, and a misspelled name fails its typecheck. A filler that requires no `layout.*` contract, such as `account`, therefore loads in a window without `layout`, and its item is not drawn ([`account/src/client/index.ts`](../../../bundles/desktop/account/src/client/index.ts), [`account/manifest.json`](../../../bundles/desktop/account/manifest.json)):
 
 ```ts
-// layout, client/index.ts (pseudocódigo da API proposta)
-import { NavigationV1, UiV1, type ClientContext } from 'bundle/contracts';
-import { LayoutWorkspace } from './workspace.js';
-import { layoutTabs } from './tabs.js';
+import type { SHELL_WINDOW_ACTIONS } from 'layout/contracts';
 
-export function activate({ services }: ClientContext) {
-  const ui = services.use(UiV1);
-  ui.define('layout-workspace', LayoutWorkspace);
-
-  services.provide(layoutTabs);
-
-  services.use(NavigationV1).register({
-    path: '/',
-    create: () => ui.create('layout-workspace'),
+const item = services
+  .use(RegionsV1)
+  .add('shell.window.actions' satisfies typeof SHELL_WINDOW_ACTIONS, {
+    id: 'account',
+    tag: 'account-status',
   });
-}
 ```
 
-`ui.create('layout-workspace')` cria o elemento e entrega a ele os serviços do próprio `layout` (veja [`ui.create` passo a passo](./core.md#uicreate-passo-a-passo)). Dentro do elemento, o layout lê esses serviços em `this.services`.
+The rule for slot names and for what a client part may import is in [Bundle boundaries](boundaries.md#what-a-client-part-may-import-and-slot-names). A filler adds and disposes its item whenever it likes: `workspace` adds the Dashboard to `shell.page` while the route is `/` or `/projects` and disposes it on any other route, which is what switches the frame between its forms ([`workspace/src/client/index.ts`](../../../bundles/desktop/workspace/src/client/index.ts)).
 
-### 3. O template do workspace
+## Child routes
 
-`<layout-workspace>` é escrito em React montado dentro do Web Component, como em [React dentro de Web Components](./react-web-components.md), e reaproveita os componentes atuais (`WorkspaceLayout`, `ProjectSidebar`, `WorkspaceHeader`, `WorkspaceTabs`) e os componentes shadcn dos [pacotes compartilhados](./platform-packages.md). A estrutura que ele monta é esta:
+A route registered with `parent: '/'` appears in the shell's outlet. In the default composition `workspace` registers `/projects` and `/projects/:projectId`, and `chat` registers the conversation, `/projects/:projectId/threads/:threadId` ([`workspace/src/client/index.ts`](../../../bundles/desktop/workspace/src/client/index.ts), [`chat/src/client/index.ts`](../../../bundles/desktop/chat/src/client/index.ts)). The outlet shows the next route of the active chain; how the chain and nested outlets work is in [Navigation](navigation.md).
 
-```text
-<layout-workspace>
-  <aside>                                   sidebar
-    árvore de Projects e Threads            (do layout, dados de runtime.threads/v1)
-    botão New Thread                        (do próprio layout, sob a árvore)
-    painéis dos grupos                     panes de `layout.stack/v2`
-    (telas, MCP, …)                        presos ao fim da coluna
-    botão Settings                          (despacha core.open-settings/v1)
-  <header>
-    Project / Thread da rota ativa
-    <core-region name="layout.header">      ações
-  <main>
-    painel superior do split
-      moldura da conversa
-        <core-outlet>                       rota filha; vazio em "/"
-        <footer>                            faixa flutuante de 44 px
-          <core-region name="layout.footer">  rodapé
-  <section>                                 abas abertas por layout.tabs/v1
-  <aside>
-    <core-region name="layout.panel">       painel lateral
-    <core-region name="layout.panel.footer">  rodapé da coluna Files
-```
+## The contracts
 
-Quando a rota ativa é `/`, o `<core-outlet>` de `<main>` fica vazio e o layout mostra o estado vazio atual ("No thread selected").
+All four are client contracts, provided in each workspace window on activation, and their state lives only in that window: nothing is persisted, and deactivation resets the panel's selection, the split's requests and the stack, but not the tabs or the owner ([`client/index.ts`](../../../bundles/desktop/layout/src/client/index.ts)). Their methods, schemas and errors are in the [README of `layout`](../../../bundles/desktop/layout/README.md#contracts-provided) and in [`layout/src/contracts/index.ts`](../../../bundles/desktop/layout/src/contracts/index.ts).
 
-### 4. A sidebar navega
+| Contract                       | What it lets another bundle do                                                                                                                                                                                                                                                                                                                                    | Required by                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `layout.tabs/v2@2.0.0`         | Open, focus, retitle and close viewer tabs, each drawn by an element the shell creates through `ui/v1` and disposes when the tab closes; read the selected tab; subscribe; and name the owner whose tabs the frame shows (`setOwner`). Opening a tab while no owner is named fails with `unavailable`                                                             | `workspace`, `chat`, `files`, `git`, `terminal` |
+| `layout.panel/v3@3.0.0`        | Select the Project panel's view by its `shell.panel` item id. The panel starts with no view selected, and an id no item has yet is kept until that item registers                                                                                                                                                                                                 | `files`                                         |
+| `layout.conversation/v1@1.0.0` | Show or hide the `shell.conversation.bottom` split for one item; the split is shown while any item asked for it                                                                                                                                                                                                                                                   | None                                            |
+| `layout.stack/v2@2.0.0`        | Register a sidebar pane with a title, an order, a content element, a header element for the pane's own action, and whether it can collapse and starts open; read and drive a pane's open state. The shell draws each pane's 28 px header; an open pane takes its content's height up to 40% of the column. A duplicate pane id fails with `registration_conflict` | `mcp`, `screen`                                 |
 
-A seleção de Project e Thread é a rota ativa. A sidebar não guarda seleção própria:
+The tabs belong to owners, which are keys another bundle names: the shell does not know what an owner is. In the default composition `workspace` names the route's Thread as the owner, else the selected Project, so each Thread and each Project keeps its own tabs ([`layout-tabs.ts`](../../../bundles/desktop/layout/src/client/services/layout-tabs.ts), [`workspace/src/client/index.ts`](../../../bundles/desktop/workspace/src/client/index.ts)). `files` selects the Files view when it activates ([`files/src/client/index.ts`](../../../bundles/features/files/src/client/index.ts)). The services are in [`layout-tabs.ts`](../../../bundles/desktop/layout/src/client/services/layout-tabs.ts), [`layout-panel.ts`](../../../bundles/desktop/layout/src/client/services/layout-panel.ts), [`layout-conversation.ts`](../../../bundles/desktop/layout/src/client/services/layout-conversation.ts) and [`layout-stack.ts`](../../../bundles/desktop/layout/src/client/services/layout-stack.ts); the bundles that require them list them under `requires` in their `manifest.json`.
 
-```ts
-// dentro de <layout-workspace>
-const navigation = this.services.use(NavigationV1);
+## Manifest
 
-function openThread(projectId: string, threadId: string) {
-  navigation.navigate(`/projects/${projectId}/threads/${threadId}`);
-}
+`layout` provides the four contracts above and requires `hooks/v1@^1.0.0`, `ui/v1@^1.0.0`, `navigation/v1@^1.1.0`, `regions/v1@^1.0.0` and `commands/v1@^1.0.0`, all provided by the core; its client calls neither `hooks/v1` nor `commands/v1`. It lists nothing under `optional`, has no settings, and has `engines.doric` `^1.8.0` ([`manifest.json`](../../../bundles/desktop/layout/manifest.json)). It reads `doric.catalog/v1`, which, as a platform contract, it does not list ([Manifest](manifest.md#platform-contracts)).
 
-// destaque da linha selecionada
-// dentro do componente React da sidebar; atualiza a cada navegação
-const { params } = useSyncExternalStore(
-  navigation.subscribe,
-  navigation.current,
-);
-const selectedThreadId = params.threadId;
-```
+## A composition without the layout, or with another
 
-O destaque acompanha cliques, voltar e avançar porque o componente assina o roteador; veja [elemento React](./navigation.md#elemento-react).
+- Nothing registers `/`, so a window opened at `/` shows the core's `<core-not-found>` ([`outlet.ts`](../../../bundles/foundation/core/src/client/elements/outlet.ts)).
+- A route whose `parent` is not registered is the first of its chain, so it appears in the top-level outlet and fills the window ([`route-match.ts`](../../../bundles/foundation/core/src/client/route-match.ts)).
+- A bundle that requires a `layout.*` contract (`workspace`, `chat`, `files`, `git`, `terminal`, `mcp`, `screen`) is quarantined with `missing_dependency` ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)).
 
-Expansão de linhas e abas abertas continuam sendo estados do layout, independentes da rota.
+Another shell replaces `layout` by registering `/` itself. A second registration of the same path fails with `route_conflict` ([`navigation.ts`](../../../bundles/foundation/core/src/client/navigation.ts)). The bundles listed above stay quarantined unless an enabled bundle provides the `layout.*` contracts they require at versions their ranges accept ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)).
 
-### 5. A conversa aparece no outlet
+## Related documents
 
-O `chat` registra `/projects/:projectId/threads/:threadId` com `parent: '/'`. Navegar para `/projects/p1/threads/t1` faz o outlet de topo manter o `<layout-workspace>` e o outlet de `<main>` mostrar `<chat-view>` com `projectId` e `threadId`. Trocar de Thread só atribui os novos parâmetros ao mesmo `<chat-view>`; veja [o outlet](./navigation.md#o-outlet-core-outlet).
-
-### 6. Outros bundles preenchem as regiões
-
-Uma região é um lugar com nome no template, marcado com `<core-region name="…">`. Um bundle põe um elemento seu nela com `regions.add`:
-
-```ts
-// files, client/index.ts
-const ui = services.use(UiV1);
-ui.define('files-tree', FilesTree);
-
-const regions = services.use(RegionsV1);
-regions.add('layout.panel', { id: 'files', tag: 'files-tree' });
-```
-
-`<core-region>` cria cada item com `ui.create(tag, props)`, na ordem de `order` e depois na ordem de ativação, e o remove quando o bundle dono é desativado. Se o layout não estiver na composição, nenhuma `<core-region name="layout.panel">` existe e os itens simplesmente não aparecem.
-
-Na composição padrão:
-
-| Região          | Bundle      | Elemento                                      |
-| --------------- | ----------- | --------------------------------------------- |
-| `layout.header` | `terminal`  | `<terminal-new-button>`, que cria um terminal |
-| `layout.panel`  | `files`     | `<files-tree>`, a árvore de arquivos          |
-| `layout.panel`  | `git`       | `<git-changes>`, a lista de Changes           |
-| `layout.footer` | `usage`     | `<usage-summary>`, contexto, tokens e custo   |
-| `layout.footer` | `resources` | `<resources-monitor>`, métricas de máquina    |
-
-O composer não é do layout: ele faz parte de `<chat-view>`, no bundle `chat`.
-
-### 7. Abas: `layout.tabs/v1`
-
-Abas mantêm várias views vivas ao mesmo tempo, como o `WorkspaceTabs` atual. O outlet mostra uma rota por vez, então abas não são rotas: são elementos que o layout cria e guarda.
-
-```ts
-// layout, client/tabs.ts (pseudocódigo da API proposta)
-import { UiV1, defineMethod, defineService } from 'bundle/contracts';
-import { z } from 'zod';
-
-// abas abertas e aba em foco; o estado fica no módulo, um por geração
-const tabs = new Map<string, { title: string; element: HTMLElement }>();
-let focusedId: string | undefined;
-
-export const layoutTabs = defineService('layout.tabs/v1', {
-  open: defineMethod({
-    input: z.object({
-      id: z.string(),
-      title: z.string(),
-      tag: z.string(),
-      props: z.record(z.string(), z.unknown()).optional(),
-    }),
-    output: z.void(),
-    execute: async ({ id, title, tag, props }, call, services) => {
-      if (!tabs.has(id)) {
-        const element = services.use(UiV1).create(tag, props);
-        tabs.set(id, { title, element });
-      }
-      focusedId = id;
-    },
-  }),
-  close: defineMethod({
-    input: z.object({ id: z.string() }),
-    output: z.void(),
-    execute: async ({ id }, call, services) => {
-      const tab = tabs.get(id);
-      if (!tab) return;
-      services.use(UiV1).dispose(tab.element);
-      tabs.delete(id);
-      if (focusedId === id) focusedId = undefined;
-    },
-  }),
-  focus: defineMethod({
-    input: z.object({ id: z.string() }),
-    output: z.void(),
-    execute: async ({ id }) => {
-      if (tabs.has(id)) focusedId = id;
-    },
-  }),
-});
-
-// layout, contracts/index.ts: só o ID e o tipo
-import { ref } from 'bundle/contracts';
-import type { layoutTabs } from '../client/tabs.js';
-export const LayoutTabsV1 = ref<typeof layoutTabs>('layout.tabs/v1');
-```
-
-Cada `execute` recebe `(input, call, services)`, com os serviços do próprio `layout`, ligados no `provide`. Quem abre abas importa só `LayoutTabsV1` de `layout/contracts`.
-
-```ts
-// git, client: abrir o diff de um arquivo numa aba
-services.whenAvailable(LayoutTabsV1, (tabs) =>
-  tabs.open({
-    id: `diff:${repository}:${path}`,
-    title: path,
-    tag: 'git-file-diff',
-    props: { threadId, repository, path },
-  }),
-);
-```
-
-- As abas pertencem à Thread da rota ativa, como hoje: trocar de Thread mostra as abas daquela Thread.
-- `open` com um `id` já aberto só foca a aba.
-- O layout cria o elemento com `ui.create(tag, props)` e o mantém montado enquanto a aba existir, mesmo quando outra aba está em foco; fechar a aba chama `ui.dispose`.
-- Quem abre abas usa `whenAvailable`, porque uma composição sem `layout` não tem abas. O mesmo diff continua disponível numa janela própria pelo comando `git.open-comparison/v1`.
-
-## Manifesto
-
-```json
-{
-  "manifestVersion": 1,
-  "id": "layout",
-  "version": "1.0.0",
-  "engines": { "doric": "^1.0.0" },
-  "provides": ["layout.tabs/v1@1.0.0"],
-  "requires": [
-    "ui/v1@^1.0.0",
-    "navigation/v1@^1.0.0",
-    "commands/v1@^1.0.0",
-    "runtime.threads/v1@^1.0.0"
-  ]
-}
-```
-
-O layout só tem parte `client`. Ele lê Projects e Threads por `runtime.threads/v1`, pela ponte client → host, e despacha `core.open-settings/v1` por `commands/v1`.
-
-## O que acontece sem o layout
-
-- O path `/` fica sem rota e o outlet de topo mostra `<core-not-found>`.
-- Uma rota cujo `parent` não está registrado aparece direto no outlet de topo. Sem o layout, `/projects/p1/threads/t1` mostra só o `<chat-view>`, ocupando a janela.
-- Itens das regiões `layout.*` não aparecem, e `layout.tabs/v1` não existe para quem o consulta com `whenAvailable`.
-
-Para trocar o layout, a composição tira o `layout` e põe outro bundle que registre `/`. Dois bundles registrando `/` é um conflito de rota, e o segundo vai para quarentena com motivo.
-
-## Relações
-
-- [Bundle core](./core.md): fornece `ui/v1`, `navigation/v1`, `regions/v1`, `<core-outlet>` e `<core-region>`, que o layout usa, e abre a janela principal em `/`.
-- [Navegação e rotas](./navigation.md): rotas como paths, `parent` e o funcionamento do outlet.
-- [O bundle chat](./chat.md): a rota filha `/projects/:projectId/threads/:threadId` que aparece no outlet do layout.
-- [UI composta por bundles](./ui-composition.md): Web Components como fronteira, propriedades, eventos DOM e regiões.
-- [React dentro de Web Components](./react-web-components.md): como `<layout-workspace>` monta React dentro do elemento.
-- [Divisão das funcionalidades atuais](./feature-split.md): de onde vem cada parte do workspace atual.
-- [Janelas abertas pelo core](./windows.md): a janela `workspace` que o core abre em `/`.
+- [The core bundle and quarantine](core.md): `ui/v1`, `navigation/v1`, `regions/v1`, the outlet and the region elements, and `doric.catalog/v1`.
+- [Navigation](navigation.md): routes, `parent` and nested outlets.
+- [UI composition](ui-composition.md): elements and regions as the boundary between bundles.
+- [Bundle boundaries](boundaries.md): what a client part may import, and how a bundle names a slot.
+- [Contracts](contracts.md): how a contract is declared and referenced.
+- [Manifest](manifest.md): `provides`, `requires` and platform contracts.
+- [UI redesign](../../features/ui-redesign.md): how the workspace window behaves.
+- [README of `layout`](../../../bundles/desktop/layout/README.md) and [README of `workspace`](../../../bundles/desktop/workspace/README.md).

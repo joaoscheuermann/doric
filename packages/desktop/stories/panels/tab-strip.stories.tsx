@@ -88,7 +88,7 @@ const workspaceTabs: readonly StripTab[] = [
     icon: <GitCompareIcon />,
   },
   { id: 'terminal', label: 'zsh — doric', icon: <TerminalIcon /> },
-  { id: 'readme', label: 'GROUNDING.md', icon: <FileIcon /> },
+  { id: 'readme', label: 'AGENTS.md', icon: <FileIcon /> },
 ];
 
 const panelTabs: readonly StripTab[] = [

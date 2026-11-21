@@ -1,4 +1,4 @@
-// layout.tabs/v1@1.2.0 (S15, T-4.4.7 layout part, T-4.4.9): a tab carries the
+// layout.tabs/v2 (S15, T-4.4.7 layout part, T-4.4.9): a tab carries the
 // menu entries its opener states, and `retitle` changes an open tab's title,
 // since `open` with an open id only selects it.
 
@@ -13,7 +13,7 @@ import { createElement, type ReactElement } from 'react';
 import { emptyTabs } from '../src/client/domain/workspace-tabs.js';
 import { createLayoutTabs } from '../src/client/services/layout-tabs.js';
 import { workspaceTabsStore } from '../src/client/stores/workspace-tabs.js';
-import { LayoutTabsV1 } from '../src/contracts/index.js';
+import { LayoutTabsV2 } from '../src/contracts/index.js';
 
 const ui = {
   create: (tag: string): object => ({ tag }),
@@ -21,12 +21,13 @@ const ui = {
 };
 
 const setup = (owner: string | undefined = 'thread-1') => {
+  workspaceTabsStore.getState().setOwner(owner);
   const harness = createTestServices({
     bundle: { id: 'probe' },
-    provide: [createLayoutTabs({ ui, owner: () => owner })],
+    provide: [createLayoutTabs({ ui })],
   });
   return {
-    tabs: harness.services.use(LayoutTabsV1),
+    tabs: harness.services.use(LayoutTabsV2),
     tabOf: (key: string, id: string) =>
       (workspaceTabsStore.getState().threads[key] ?? emptyTabs).items.find(
         (item) => item.id === id,
@@ -45,7 +46,7 @@ beforeEach(() => {
   workspaceTabsStore.setState({ threads: {} });
 });
 
-describe('layout.tabs/v1@1.2.0 menu', () => {
+describe('layout.tabs/v2 menu', () => {
   test('a tab keeps the menu entries it was opened with, in order', async () => {
     const { tabs, tabOf, dispose } = setup();
     const ran: string[] = [];
@@ -152,7 +153,7 @@ describe('layout.tabs/v1@1.2.0 menu', () => {
   }
 });
 
-describe('layout.tabs/v1@1.2.0 retitle', () => {
+describe('layout.tabs/v2 retitle', () => {
   test('changes the title of an open tab of the active owner', async () => {
     const { tabs, tabOf, dispose } = setup();
     await tabs.open({ id: 'terminal:1', title: 'npm test', tag: 'x-term' });
@@ -212,22 +213,37 @@ describe('layout.tabs/v1@1.2.0 retitle', () => {
 });
 
 describe('the layout manifest', () => {
-  test('provides layout.tabs/v1@1.2.0, layout.panel/v2@2.0.0 (not v1), layout.sidebar/v1@1.1.0 and layout.stack/v2@2.0.0 (not v1) at version 3.2.0 and requires runtime.threads/v1@^1.8.0 (T-1.10, T-2.11, T-3.8, T-5.7, conversation-footer T-4, thread-archive)', () => {
+  test('is the frame and its slots only at version 5.0.1: provides exactly layout.tabs/v2, layout.panel/v3, layout.stack/v2 and layout.conversation/v1, requires nothing of the runtime and lists nothing optional (bundle isolation AC4.7, step 4(c))', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/desktop/layout/manifest.json', 'utf8'),
-    ) as { version: string; provides: string[]; requires: string[] };
+    ) as {
+      version: string;
+      description: string;
+      provides: string[];
+      requires: string[];
+      optional?: string[];
+    };
 
-    assert.equal(manifest.version, '3.2.0');
-    assert.ok(manifest.requires.includes('runtime.threads/v1@^1.8.0'));
-    assert.ok(manifest.provides.includes('layout.stack/v2@2.0.0'));
-    assert.ok(
-      !manifest.provides.some((entry) => entry.startsWith('layout.stack/v1@')),
-      'The layout still provides layout.stack/v1.',
+    assert.equal(manifest.version, '5.0.1');
+    assert.equal(
+      manifest.description,
+      "The workspace window's frame and its slots.",
     );
-    assert.ok(manifest.provides.includes('layout.tabs/v1@1.2.0'));
-    assert.ok(manifest.provides.includes('layout.sidebar/v1@1.1.0'));
-    assert.ok(!manifest.provides.includes('layout.sidebar/v1@1.0.0'));
-    assert.ok(manifest.provides.includes('layout.panel/v2@2.0.0'));
-    assert.ok(!manifest.provides.includes('layout.panel/v1@1.0.0'));
+    assert.deepEqual([...manifest.provides].sort(), [
+      'layout.conversation/v1@1.0.0',
+      'layout.panel/v3@3.0.0',
+      'layout.stack/v2@2.0.0',
+      'layout.tabs/v2@2.0.0',
+    ]);
+    assert.deepEqual(
+      manifest.requires.filter((entry) => entry.startsWith('runtime')),
+      [],
+      'The layout still requires a runtime contract.',
+    );
+    assert.equal(
+      manifest.optional,
+      undefined,
+      'The layout still lists optional contracts.',
+    );
   });
 });

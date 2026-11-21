@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
   "id": "threads",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "engines": {
-    "doric": "^1.0.0"
+    "doric": "^1.10.0"
   },
   "description": "Delegation capabilities for creating and steering direct child threads.",
   "provides": [],
@@ -13,5 +13,5 @@
     "ui/v1@^1.0.0",
     "navigation/v1@^1.0.0"
   ],
-  "optional": ["default.agents/v1"]
+  "optional": ["default.agents/v1", "chat.views/v1", "runtime.records/v1"]
 }

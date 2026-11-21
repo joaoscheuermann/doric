@@ -53,7 +53,7 @@ type WorkspaceLayoutProps = {
    */
   readonly viewerOpenBottom?: boolean;
   /**
-   * The Files column's panel: the selected `layout.panel` view. Absent when
+   * The Files column's panel: the selected `shell.panel` view. Absent when
    * unsupported. When it is given, the column is always shown, full height
    * and not collapsible: 328 px by default, between 14rem and 30rem.
    */

@@ -230,7 +230,11 @@ describe('the platform import map', () => {
     for (const name of [
       ...components,
       'chrome-bar',
+      'element-host',
       'error-notice',
+      'model-icon',
+      'choice-list',
+      'collapsible-block',
       'react-element',
       'utils',
       'tokens',

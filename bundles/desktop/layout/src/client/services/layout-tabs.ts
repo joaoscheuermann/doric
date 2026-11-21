@@ -1,10 +1,9 @@
-// layout.tabs/v1 (stage 9, §5.6): other bundles open tabs in the workspace's
-// tab strip. The tabs belong to the active route's Thread, else to the
-// selected Project, exactly as the workspace's own file, diff and terminal
-// tabs do; an element tab shows the element `ui/v1` created for it. 1.1.0
-// (WP-10P, R-9.3): the trigger's icon, aria label and tooltip, closing in a
-// named owner, and the current tab with its change notifications. 1.2.0
-// (S15): a tab's own menu entries, and `retitle`.
+// layout.tabs/v2 (bundle isolation 4a): other bundles open tabs in the
+// workspace's tab strip. The tabs belong to the owner the tabs store names
+// through `setOwner` — the active route's Thread, else the selected Project —
+// and each tab shows the element `ui/v1` created for it. The trigger's icon is
+// an element (`iconTag`), a tab may ask for an open bottom, a tab carries its
+// own menu entries, and `close` and `retitle` can reach every owner.
 
 import {
   ContractError,
@@ -15,10 +14,11 @@ import {
 
 import {
   type CurrentTab,
-  LayoutTabsV1,
+  LayoutTabsV2,
   layoutTabsMethods,
   type TabRequest,
 } from '../../contracts/index.js';
+import type { WorkspaceTab } from '../domain/workspace-tabs.js';
 import { workspaceTabsStore } from '../stores/workspace-tabs.js';
 import { watchAll } from './subscription.js';
 
@@ -26,10 +26,6 @@ export const noTabOwnerMessage = 'No thread or project is selected.';
 
 export interface LayoutTabsOptions {
   readonly ui: Pick<Ui, 'create' | 'dispose'>;
-  /** The owner of the active tabs: a Thread id or `project:<id>`. */
-  readonly owner: () => string | undefined;
-  /** Calls the listener after every change of the owner; returns its stop. */
-  readonly watchOwner?: (listener: () => void) => () => void;
 }
 
 /**
@@ -45,115 +41,138 @@ const settled = (operation: () => void): Promise<void> => {
   }
 };
 
-export const createLayoutTabs = ({
-  ui,
-  owner,
-  watchOwner,
-}: LayoutTabsOptions) => {
-  const activeOwner = (): string => {
-    const current = owner();
-    if (current === undefined) {
-      throw new ContractError('unavailable', noTabOwnerMessage);
-    }
-    return current;
+const activeOwner = (): string => {
+  const current = workspaceTabsStore.getState().owner;
+  if (current === undefined) {
+    throw new ContractError('unavailable', noTabOwnerMessage);
+  }
+  return current;
+};
+
+const tabOf = (tabOwner: string, id: string) =>
+  workspaceTabsStore
+    .getState()
+    .threads[tabOwner]?.items.find((tab) => tab.id === id);
+
+/** The tab operations, over the owner the tabs store names. */
+const operations = ({ ui }: LayoutTabsOptions) => {
+  const dispose = (tab: WorkspaceTab) => {
+    if (tab.kind === 'element') ui.dispose(tab.element);
   };
+  return {
+    open: (input: TabRequest) =>
+      settled(() => {
+        const tabOwner = activeOwner();
+        const tabs = workspaceTabsStore.getState();
+        if (tabOf(tabOwner, input.id) !== undefined) {
+          tabs.select(tabOwner, input.id);
+          return;
+        }
+        const element = ui.create(input.tag, input.props);
+        tabs.open(tabOwner, {
+          kind: 'element',
+          id: input.id,
+          tag: input.tag,
+          title: input.title,
+          element,
+          ...(input.props === undefined ? {} : { props: input.props }),
+          ...(input.iconTag === undefined ? {} : { iconTag: input.iconTag }),
+          ...(input.openBottom === undefined
+            ? {}
+            : { openBottom: input.openBottom }),
+          ...(input.ariaLabel === undefined
+            ? {}
+            : { ariaLabel: input.ariaLabel }),
+          ...(input.tooltip === undefined ? {} : { tooltip: input.tooltip }),
+          ...(input.menu === undefined ? {} : { menu: input.menu }),
+        });
+      }),
+    close: ({
+      id,
+      threadId,
+      everyOwner,
+    }: {
+      readonly id: string;
+      readonly threadId?: string;
+      readonly everyOwner?: boolean;
+    }) =>
+      settled(() => {
+        if (everyOwner === true) {
+          for (const tab of workspaceTabsStore.getState().closeEverywhere(id))
+            dispose(tab);
+          return;
+        }
+        const tabOwner = threadId ?? activeOwner();
+        const tab = tabOf(tabOwner, id);
+        if (tab === undefined) return;
+        workspaceTabsStore.getState().close(tabOwner, id);
+        dispose(tab);
+      }),
+    focus: ({ id }: { readonly id: string }) =>
+      settled(() => {
+        const tabOwner = activeOwner();
+        if (tabOf(tabOwner, id) === undefined) return;
+        workspaceTabsStore.getState().select(tabOwner, id);
+      }),
+    retitle: ({
+      id,
+      title,
+      threadId,
+      everyOwner,
+    }: {
+      readonly id: string;
+      readonly title: string;
+      readonly threadId?: string;
+      readonly everyOwner?: boolean;
+    }) =>
+      settled(() => {
+        if (everyOwner === true) {
+          workspaceTabsStore.getState().retitleEverywhere(id, title);
+          return;
+        }
+        const tabOwner = threadId ?? activeOwner();
+        if (tabOf(tabOwner, id) === undefined) return;
+        workspaceTabsStore.getState().retitle(tabOwner, id, title);
+      }),
+    current: (): CurrentTab | undefined => {
+      const { owner, threads } = workspaceTabsStore.getState();
+      if (owner === undefined) return undefined;
+      const state = threads[owner];
+      const tab = state?.items.find((item) => item.id === state.selected);
+      if (tab === undefined) return undefined;
+      return tab.kind === 'element' && tab.props !== undefined
+        ? { id: tab.id, props: tab.props }
+        : { id: tab.id };
+    },
+    // The owner lives in the tabs store, so its changes reach this listener.
+    subscribe: (listener: () => void) =>
+      watchAll(listener, [(notify) => workspaceTabsStore.subscribe(notify)]),
+  };
+};
 
-  const tabOf = (tabOwner: string, id: string) =>
-    workspaceTabsStore
-      .getState()
-      .threads[tabOwner]?.items.find((tab) => tab.id === id);
-
-  return defineService(LayoutTabsV1, {
-    open: defineMethod({
-      ...layoutTabsMethods.open,
-      execute: (input: TabRequest) =>
-        settled(() => {
-          const tabOwner = activeOwner();
-          const tabs = workspaceTabsStore.getState();
-          if (tabOf(tabOwner, input.id) !== undefined) {
-            tabs.select(tabOwner, input.id);
-            return;
-          }
-          const element = ui.create(input.tag, input.props);
-          tabs.open(tabOwner, {
-            kind: 'element',
-            id: input.id,
-            tag: input.tag,
-            title: input.title,
-            element,
-            ...(input.props === undefined ? {} : { props: input.props }),
-            ...(input.icon === undefined ? {} : { icon: input.icon }),
-            ...(input.ariaLabel === undefined
-              ? {}
-              : { ariaLabel: input.ariaLabel }),
-            ...(input.tooltip === undefined ? {} : { tooltip: input.tooltip }),
-            ...(input.menu === undefined ? {} : { menu: input.menu }),
-          });
-        }),
-    }),
-    close: defineMethod({
-      ...layoutTabsMethods.close,
-      execute: ({
-        id,
-        threadId,
-      }: {
-        readonly id: string;
-        readonly threadId?: string;
-      }) =>
-        settled(() => {
-          const tabOwner = threadId ?? activeOwner();
-          const tab = tabOf(tabOwner, id);
-          if (tab === undefined) return;
-          workspaceTabsStore.getState().close(tabOwner, id);
-          if (tab.kind === 'element') ui.dispose(tab.element);
-        }),
-    }),
-    focus: defineMethod({
-      ...layoutTabsMethods.focus,
-      execute: ({ id }: { readonly id: string }) =>
-        settled(() => {
-          const tabOwner = activeOwner();
-          if (tabOf(tabOwner, id) === undefined) return;
-          workspaceTabsStore.getState().select(tabOwner, id);
-        }),
-    }),
+/** Provides `layout.tabs/v2` over the tabs store and its owner. */
+export const createLayoutTabs = (options: LayoutTabsOptions) => {
+  const tabs = operations(options);
+  return defineService(LayoutTabsV2, {
+    open: defineMethod({ ...layoutTabsMethods.open, execute: tabs.open }),
+    close: defineMethod({ ...layoutTabsMethods.close, execute: tabs.close }),
+    focus: defineMethod({ ...layoutTabsMethods.focus, execute: tabs.focus }),
     retitle: defineMethod({
       ...layoutTabsMethods.retitle,
-      execute: ({
-        id,
-        title,
-        threadId,
-      }: {
-        readonly id: string;
-        readonly title: string;
-        readonly threadId?: string;
-      }) =>
-        settled(() => {
-          const tabOwner = threadId ?? activeOwner();
-          if (tabOf(tabOwner, id) === undefined) return;
-          workspaceTabsStore.getState().retitle(tabOwner, id, title);
-        }),
+      execute: tabs.retitle,
     }),
     current: defineMethod({
       ...layoutTabsMethods.current,
-      execute: (): CurrentTab | undefined => {
-        const tabOwner = owner();
-        if (tabOwner === undefined) return undefined;
-        const state = workspaceTabsStore.getState().threads[tabOwner];
-        const tab = state?.items.find((item) => item.id === state.selected);
-        if (tab === undefined) return undefined;
-        return tab.kind === 'element' && tab.props !== undefined
-          ? { id: tab.id, props: tab.props }
-          : { id: tab.id };
-      },
+      execute: tabs.current,
     }),
     subscribe: defineMethod({
       ...layoutTabsMethods.subscribe,
-      execute: (listener: () => void) =>
-        watchAll(listener, [
-          (notify) => workspaceTabsStore.subscribe(notify),
-          ...(watchOwner === undefined ? [] : [watchOwner]),
-        ]),
+      execute: tabs.subscribe,
+    }),
+    setOwner: defineMethod({
+      ...layoutTabsMethods.setOwner,
+      execute: ({ owner }: { readonly owner?: string }) =>
+        workspaceTabsStore.getState().setOwner(owner),
     }),
   });
 };

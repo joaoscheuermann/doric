@@ -43,7 +43,7 @@ export const sectionHosts = {
   credentials: portalHosts<Record<string, never>>([]),
 } as const satisfies Record<SectionId, unknown>;
 
-/** The `layout.dashboard.page` item id of the dashboard's provider page. */
+/** The `workspace.dashboard.page` item id of the dashboard's provider page. */
 export const PROVIDER_PAGE_ID = 'settings.provider';
 
 /**

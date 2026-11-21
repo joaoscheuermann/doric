@@ -267,7 +267,7 @@ export const canvasPathOf = (input: {
  */
 export const SEND_COMMAND = 'papercraft.send/v1';
 
-/* The command bar (papercraft/README.md, "A barra de comandos") ------------------ */
+/* The command bar (papercraft/README.md, "The command bar") ------------------ */
 
 /** The armed tool of the canvas: `select` is the entry default. */
 export type PreviewTool = 'select' | 'comment' | 'pan';
@@ -335,7 +335,7 @@ export interface RevisionReading {
 
 /* papercraft.snapshot/v1 ---------------------------------------------------- */
 
-// The desktopMain capture of a window's own pixels (isolamento.md, "O
+// The desktopMain capture of a window's own pixels (isolamento.md, "The
 // snapshot"): a window asks for a rectangle of its viewport and gets a PNG,
 // which it keeps as the stand-in of a preview frame it unmounts. The main
 // process captures the window's contents, so the opaque-origin preview frames

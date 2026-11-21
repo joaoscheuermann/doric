@@ -1,7 +1,8 @@
 // The Project panel's content and its compact controls. The controls live in
 // the Files column header; the panel itself starts directly with its content.
 
-import type { RegionEntry } from 'bundle/contracts';
+import { type RegionEntry, UiV1 } from 'bundle/contracts';
+import { ElementHost } from 'desktop/ui/element-host';
 import { TabStrip } from 'desktop/ui/panels';
 import {
   Sidebar,
@@ -9,11 +10,10 @@ import {
   SidebarGroup,
   SidebarGroupContent,
 } from 'desktop/ui/sidebar';
-import { FileDiffIcon, FileIcon, FilesIcon, TerminalIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 import { movedPanelOrder, panelOrder } from '../../domain/panel-order.js';
-import { ElementHost } from '../molecules/element-host.js';
+import { layoutServices } from '../../services/layout-services.js';
 
 /** A view the layout draws itself (a provisional feature). */
 export interface PanelBuiltIn {
@@ -23,31 +23,16 @@ export interface PanelBuiltIn {
   readonly badge?: ReactNode;
 }
 
-/** The icon names a `layout.panel` item may carry. */
-export const panelIcon = (name: unknown): ReactNode => {
-  switch (name) {
-    case 'files':
-      return <FilesIcon />;
-    case 'file-diff':
-      return <FileDiffIcon />;
-    case 'file':
-      return <FileIcon />;
-    case 'terminal':
-      return <TerminalIcon />;
-    default:
-      return null;
-  }
-};
-
 const text = (value: unknown): string =>
   typeof value === 'string' ? value : '';
 
 type ProjectPanelProps = {
-  readonly active: string;
+  /** The selected view; absent, no view is drawn. */
+  readonly active: string | undefined;
   readonly builtIns?: readonly PanelBuiltIn[];
   /** What a built-in view shows; drawn while one is selected. */
   readonly builtInContent?: ReactNode;
-  /** The `layout.panel` region items. */
+  /** The `shell.panel` region items. */
   readonly items: readonly RegionEntry[];
 };
 
@@ -93,15 +78,19 @@ export function ProjectPanelTabs({
           const entry = items.find((candidate) => candidate.id === id);
           if (entry === undefined) return [];
           const badgeTag = entry.props?.badgeTag;
+          const iconTag = entry.props?.iconTag;
           return [
             {
               id,
               label: text(entry.props?.label),
               iconOnly: true,
-              icon: panelIcon(entry.props?.icon),
+              icon:
+                typeof iconTag === 'string' && iconTag !== '' ? (
+                  <ElementHost ui={layoutServices().use(UiV1)} tag={iconTag} />
+                ) : null,
               badge:
                 typeof badgeTag === 'string' && badgeTag !== '' ? (
-                  <ElementHost tag={badgeTag} />
+                  <ElementHost ui={layoutServices().use(UiV1)} tag={badgeTag} />
                 ) : undefined,
             },
           ];
@@ -130,6 +119,7 @@ export function ProjectPanel({
               ? builtInContent
               : item !== undefined && (
                   <ElementHost
+                    ui={layoutServices().use(UiV1)}
                     key={item.id}
                     tag={item.tag}
                     {...(item.props === undefined ? {} : { props: item.props })}

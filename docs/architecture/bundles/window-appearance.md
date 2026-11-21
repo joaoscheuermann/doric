@@ -1,184 +1,117 @@
-# Aparência nativa da janela
+# Native window appearance
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes the native appearance of Doric's windows as implemented on 2026-11-20.
 
-## Resumo
+## Summary
 
-A aparência nativa de uma janela do Doric, como barra de título, tamanho e cor de fundo, é dividida em três partes com donos distintos. A chamada de abertura declara só a intenção, os tokens da plataforma definem medidas e cores, e o Electron main converte intenção e tokens em opções nativas. O main devolve à janela a área segura resolvida, e o shell a expõe como variáveis CSS que o componente `ChromeBar` de `desktop/ui` aplica. Assim o main deixa de conhecer medidas do CSS do renderer, e o renderer deixa de adivinhar onde o main colocou os controles da janela.
+A window's native appearance (its size, title bar, background color and theme) is split between three owners. The caller that opens a window states an intent, never Electron options. The platform's tokens state the measures and colors. Electron main turns intent and tokens into native options, then tells the window the safe area it left for the native controls; the window's shell writes that area as CSS variables, which the bars a bundle draws read. Main therefore knows no CSS of the renderer, and the renderer never guesses where main put the window buttons.
 
-## Problema atual
+The app's theme is one preference for every window: `dark` by default, `light`, or `system`. Main gives it to Electron's `nativeTheme` before the first window opens, and the splash, every renderer, the code editors, the toasts and open terminals follow it.
 
-Hoje o main conhece medidas do CSS do renderer. `titleBarOptions` em `app/doric/src/main.ts` calcula `trafficLightPosition: { x: 14, y: 12 }` a partir da altura de `.chrome-bar` (2.25rem, 36px) em `styles.css`. O splash usa `backgroundColor: '#1c1b19'` fixo. O renderer, por sua vez, precisa reservar espaço para os controles da janela sem saber onde o main os colocou. Se um layout alternativo mudar a altura da barra, os controles ficam desalinhados.
+## Intent: `appearance`
 
-## Divisão de responsabilidade
-
-A proposta divide a responsabilidade em três partes:
-
-| Parte           | Dono                 | Responsabilidade                                                                   |
-| --------------- | -------------------- | ---------------------------------------------------------------------------------- |
-| Intenção        | Chamada de abertura  | Declara o tipo de barra de título, tamanhos e o token de fundo                     |
-| Medidas e cores | Tokens da plataforma | `--doric-titlebar-height` e `--doric-window-background`, exportados também em JSON |
-| Aplicação       | Electron main        | Converte intenção e tokens em opções nativas e informa a área segura à janela      |
-
-### Intenção na chamada de abertura
-
-A chamada de abertura, por `windows/v1` ou `doric.windows/v1`, declara a intenção, nunca opções nativas. Um bundle comum abre janelas pelo serviço `windows/v1`, que o core expõe com suas políticas. `windows/v1` é um contrato básico: `bundle/contracts` exporta a referência `WindowsV1` e o seu tipo, como `DesktopContext`, e o core fornece a definição com `execute` (`coreWindows`, escrita com `defineService(WindowsV1, { open: defineMethod({ input, output, execute }) })`):
+Every window request carries an optional `appearance` of type `WindowAppearance`, validated by `windowAppearanceSchema`, which fills the defaults ([`windows.ts`](../../../packages/bundle/src/contracts/basic/windows.ts)):
 
 ```ts
-import { type DesktopContext, WindowsV1 } from 'bundle/contracts';
-
-export const activate = async ({ services }: DesktopContext) => {
-  await services.use(WindowsV1).open({
-    key: 'graph',
-    path: '/graph',
-    appearance: {
-      size: { width: 960, height: 640, minWidth: 600, minHeight: 400 },
-    },
-  });
-};
-```
-
-A janela carrega o path `/graph`, que o bundle `graph` registra como rota na sua parte `client` ([navegação e rotas](./navigation.md)). O manifesto do bundle `graph` declara em `requires` tudo o que o código usa com `use`, embora o core forneça esses contratos por padrão: `windows/v1`, que o exemplo acima usa, e `ui/v1` e `navigation/v1`, porque a parte `client` define o elemento e registra a rota `/graph`:
-
-```json
 {
-  "manifestVersion": 1,
-  "id": "graph",
-  "version": "1.0.0",
-  "engines": { "doric": "^1.0.0" },
-  "requires": ["windows/v1@^1.0.0", "ui/v1@^1.0.0", "navigation/v1@^1.0.0"]
+  size?: { width: number; height: number; minWidth?: number; minHeight?: number };
+  titleBar?: 'native' | 'integrated' | 'none'; // default 'integrated'
+  background?: string; // a token name, not a color; default 'window'
 }
 ```
 
-`windows/v1` é fornecido no `desktopMain`, por isso uma parte `client` que o declara em `requires` também pode chamar `services.use(WindowsV1).open(...)` com a mesma `appearance`: a chamada atravessa a ponte até o core no main, e o dispatcher preenche `call.scope.windowKey` com a janela de origem.
+- `native`: the operating system's frame and title bar.
+- `integrated`: on macOS, the title bar is hidden and the native window buttons (the traffic lights) stay visible over the page, which draws its own draggable title bar. On Windows and Linux it is the native frame.
+- `none`: no frame.
 
-O core abre a janela principal em `/`, a rota do [layout](./layout.md), pelo contrato nativo `doric.windows/v1` no `onAppReadyHook` com a mesma forma de aparência. O hook é definido pela plataforma em `AppHooksV1`; depois que o provedor de `hooks/v1` do `desktopMain` ativa (o core, por padrão, ou o escolhido em `providers`), a plataforma chama `define(AppHooksV1)` e dispara `execute` quando todos os bundles do desktop ativaram:
+Main applies the mode when it creates the window ([`appearance.ts`](../../../app/desktop/doric/src/platform/windows/appearance.ts), [`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)).
 
-```ts
-import {
-  AppHooksV1,
-  type DesktopContext,
-  DoricWindowsV1,
-  HooksV1,
-} from 'bundle/contracts';
+`doric.windows/v1` opens two kinds of window ([Windows](windows.md)). An **app window** loads an app route in the window's shell, with the app's preload and bundle contracts. A **view window** shows one page of the host in a `WebContentsView` filling the window, with no preload, no shell and no bundle contracts. Both take their native options from the same `appearance`, and an `integrated` view window on macOS keeps its window buttons visible; but a view window gets no chrome description, no `chrome` event and no safe-area variables, so on macOS an `integrated` view window has a hidden title bar over a page that draws none ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)).
 
-export const activate = ({ services }: DesktopContext) => {
-  const nativeWindows = services.use(DoricWindowsV1);
-  services
-    .use(HooksV1)
-    .use(AppHooksV1)
-    .onAppReadyHook(async (_input, call) => {
-      await nativeWindows.open(
-        {
-          key: 'workspace',
-          path: '/',
-          appearance: {
-            size: { width: 1280, height: 800, minWidth: 900, minHeight: 600 },
-          },
-        },
-        call,
-      );
-    });
-};
-```
+A bundle opens a window through the core's service `windows/v1`, which runs `core.hooks/v1.onBeforeOpenWindowHook` and prefixes the key with the caller's bundle id (`<bundle>:<key>`) before it calls `doric.windows/v1`, or through `doric.windows/v1` itself, as the core and `screen` do ([`core/src/desktop/windows.ts`](../../../bundles/foundation/core/src/desktop/windows.ts), [`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`core/src/desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts), [`screen/src/desktop/index.ts`](../../../bundles/features/screen/src/desktop/index.ts), [`core` README](../../../bundles/foundation/core/README.md#windowsv1), [Windows](windows.md#windowsv1-windows-other-bundles-ask-for), [Who opens windows](windows.md#who-opens-windows)). Both take the same `appearance`; the requests, keys and methods are in [Windows](windows.md). The core opens the workspace window at 1280×800 (minimum 960×640) and the settings window at 960×720 (minimum 720×520), both `integrated` ([`appearance.ts`](../../../bundles/foundation/core/src/desktop/appearance.ts), [`index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts)).
 
-Os dois serviços aceitam a mesma `appearance`; `windows/v1` só aplica as políticas do core antes de repassar a chamada para `doric.windows/v1`.
+## Measures and colors: the tokens
 
-`doric.windows/v1` é contrato da plataforma: sempre existe, o core o usa com `use` sem declará-lo em `requires`, e nenhum bundle o fornece.
+`desktop/ui` states the window tokens once, in its token module, and generates `tokens.json` from it ([`tokens.ts`](../../../packages/desktop/src/tokens/tokens.ts), [Platform packages and theme tokens](platform-packages.md)):
 
-O core repassa ao stub de `doric.windows/v1`, como último argumento, o `call` recebido pelo handler do hook ou pela operação de `windows/v1`. O dispatcher herda desse pai `scope`, `signal` e `trace`, mas não o `caller`: o `call.caller` do salto novo é sempre `{ bundleId, version, generation }` do core, preenchido pelo dispatcher. Assim, quando `graph` chama `windows/v1`, o `caller` que o core recebe é `graph`, e o `caller` do salto seguinte, para `doric.windows/v1`, é o core. Sem um `call` pai, o stub aceita `{ signal, deadline }`.
+| Token                               | Value                                                     |
+| ----------------------------------- | --------------------------------------------------------- |
+| `window.titlebarHeight`             | 40 (CSS px), also `--doric-titlebar-height`               |
+| `window.trafficLight.size`          | 12                                                        |
+| `window.trafficLight.insetX`        | 14                                                        |
+| `window.trafficLight.reservedWidth` | 80: the inset, three buttons, two 8 px gaps and the inset |
+| `window.backgrounds.window`         | The `--background` of the light and the dark variant      |
 
-`titleBar` aceita:
+Main reads `tokens.json` once ([`tokens.ts`](../../../app/desktop/doric/src/platform/tokens.ts)). A `background` that names no token throws while main creates the window, so `doric.windows/v1.open` rejects ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)). The contract `doric.tokens/v1`, in `client` and `desktopMain`, has one method, `get()`, which returns the shared tokens, the default (light) variant and the window variables as a record of strings ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`tokens.ts`](../../../app/desktop/doric/src/platform/tokens.ts), [`platform.ts`](../../../packages/desktop/src/client/platform.ts), [Platform packages and theme tokens](platform-packages.md#dorictokensv1)). The window variables are fixed values, not the live safe area: `--doric-titlebar-height` is `40px`, `--doric-window-background` is `var(--background)`, and `--doric-safe-top`, `--doric-safe-left` and `--doric-safe-right` are `0px`. The live values are the ones the shell writes ([Safe area](#safe-area)).
 
-- `native`: barra do sistema.
-- `integrated`: controles nativos sobre o conteúdo, como hoje no macOS. É o padrão.
-- `none`: sem moldura, reservado às janelas técnicas do app, como o splash.
+## Native options
 
-`background` nomeia um token, não uma cor literal, e o padrão é `window`.
+Main resolves the constructor options of a window from its appearance, the tokens, the platform and the primary display's work area ([`appearance.ts`](../../../app/desktop/doric/src/platform/windows/appearance.ts)):
 
-Os serviços `windows/v1` e `doric.windows/v1`, as chaves de janela e `describeWindow` são descritos em [janelas abertas pelo core](./windows.md).
+- **Size.** Width and height are clamped between a fixed minimum of 320×240 and the work area; without a `size`, the window is 800×600. `minWidth` and `minHeight` pass through.
+- **Background.** The `background` token's dark or light color, chosen by `nativeTheme.shouldUseDarkColors`. When the native theme changes, main sets every window's background to the `window` token's new color ([`main.ts`](../../../app/desktop/doric/src/main.ts)).
+- **Title bar.** `integrated` on macOS gives `titleBarStyle: 'hidden'` and puts the traffic lights at `x = insetX` (14) and `y = (titlebarHeight − size) / 2` (14), so they sit centered in a 40 px bar; main then keeps the window buttons visible. `none` gives `frame: false`. Otherwise Electron's default frame stays ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)).
 
-### Tokens da plataforma
+The splash is a technical window with its own options: frameless, 610×487, not resizable, with rounded corners and the `window` background of the current theme ([`window.ts`](../../../app/desktop/doric/src/platform/splash/window.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [Splash and recovery](splash-and-recovery.md)).
 
-As medidas e cores vêm dos tokens do tema: `--doric-titlebar-height` e `--doric-window-background`. Eles são publicados pelo contrato `doric.tokens/v1` e exportados também em JSON, para que o main e o splash os leiam sem depender do CSS do renderer. A origem e a distribuição dos tokens estão em [pacotes compartilhados e tokens do tema](./platform-packages.md).
+## Safe area
 
-### Aplicação pelo main
-
-O main lê os tokens em JSON e resolve as opções:
-
-```ts
-const nativeOptions = (
-  appearance: WindowAppearance,
-  tokens: ThemeTokens,
-): Electron.BrowserWindowConstructorOptions => {
-  const size = clampToWorkArea(appearance.size);
-  const backgroundColor = tokens.color(
-    appearance.background,
-    nativeTheme.shouldUseDarkColors,
-  );
-  if (appearance.titleBar !== 'integrated' || process.platform !== 'darwin') {
-    return { ...size, backgroundColor };
-  }
-
-  const height = tokens.titlebarHeight; // 36
-  return {
-    ...size,
-    backgroundColor,
-    titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 14, y: (height - trafficLightSize) / 2 },
-  };
-};
-```
-
-Fora do macOS, a primeira entrega mantém a moldura nativa, como hoje; `titleBarOverlay` fica como evolução para Windows e Linux.
-
-## Área segura
-
-O main devolve à janela a área segura resolvida em `describeWindow().chrome`:
+Main describes the chrome it left to each app window (not to a view window) as `WindowChrome` ([`protocol.ts`](../../../packages/desktop/src/client/protocol.ts), [`appearance.ts`](../../../app/desktop/doric/src/platform/windows/appearance.ts)):
 
 ```json
 {
   "titleBar": "integrated",
-  "height": 36,
-  "safeArea": { "top": 0, "left": 78, "right": 0 }
+  "height": 40,
+  "safeArea": { "top": 0, "left": 80, "right": 0 }
 }
 ```
 
-O shell grava esses valores como `--doric-safe-top`, `--doric-safe-left` e `--doric-titlebar-height` em `:root`. Em tela cheia o macOS esconde os controles; o main envia a nova área segura, e o shell atualiza as variáveis.
+`safeArea.left` is `reservedWidth`; it is 0 for `none` and while the window is in fullscreen, where macOS hides the window buttons and their space returns to the content. The value does not depend on the platform: it is 80 for a `native` window too, and on Windows and Linux, where no window buttons sit over the page; what a bar does with it is the bar's own rule ([The bars that read the safe area](#the-bars-that-read-the-safe-area)). The window gets the chrome in its description when the shell starts, and again in a `chrome` event each time it enters or leaves fullscreen ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). The shell writes `--doric-titlebar-height`, `--doric-safe-top`, `--doric-safe-left` and `--doric-safe-right` on the root element both times ([`chrome.ts`](../../../packages/desktop/src/client/chrome.ts), [`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts)).
 
-## `ChromeBar`
+## The bars that read the safe area
 
-`desktop/ui` fornece um componente `ChromeBar` que aplica a altura, o recuo da área segura e as regiões de arraste. Na janela principal, quem o usa é o header do `<layout-workspace>`, do [bundle layout](./layout.md):
+The page draws the draggable title area; main draws nothing there but the traffic lights. The bars read `--doric-safe-left`, not `--doric-titlebar-height`: every bar in an app window is fixed at 40 px.
 
-```tsx
-import { ChromeBar } from 'desktop/ui/chrome-bar';
+- `desktop/ui` sets `.chrome-bar { height: var(--doric-titlebar-height) }` ([`theme.css`](../../../packages/desktop/src/styles/theme.css)), but the window's shell sheet, loaded after it, sets `.chrome-bar { height: 40px }` again, so a `.chrome-bar` in an app window is 40 px ([`styles.css`](../../../app/desktop/doric-renderer/src/styles.css)). The bars of `settings`, `terminal`, `files` and `git` use the class ([`settings-window.tsx`](../../../bundles/desktop/settings/src/client/components/templates/settings-window.tsx), [`terminal-view.tsx`](../../../bundles/features/terminal/src/client/view/terminal-view.tsx), [`file-view.tsx`](../../../bundles/features/files/src/client/file/file-view.tsx), [`diff-footer.tsx`](../../../bundles/features/git/src/client/diff/diff-footer.tsx)).
+- `desktop/ui` also exports a `ChromeBar` component: a `.chrome-bar` with a drag region that, unless `inset` is false, pads its start by `--doric-safe-left` on every platform ([`chrome-bar.tsx`](../../../packages/desktop/src/chrome-bar.tsx)). No bundle renders it; its stories do ([`chrome-bar.stories.tsx`](../../../packages/desktop/stories/chrome-bar.stories.tsx)).
+- In the workspace window, the bar at the window's leading edge is the `workspace` bundle's sidebar header, at the top of the sidebar column in both of the layout's forms. It is 40 px and draggable, and pads its start by `--doric-safe-left` (80 px when the variable is unset) only when `navigator.userAgent` contains `Mac`; elsewhere it pads 8 px ([`sidebar-header.tsx`](../../../bundles/desktop/workspace/src/client/components/organisms/sidebar-header.tsx), [`navigation-elements.tsx`](../../../bundles/desktop/workspace/src/client/elements/navigation-elements.tsx), [`dashboard.tsx`](../../../bundles/desktop/workspace/src/client/components/organisms/dashboard.tsx)).
+- The title bar is `workspace`'s Project tab bar, the filler of `shell.titlebar.tabs`, 40 px and draggable. It starts after the sidebar column, and no caller passes it `inset`, so it never pads by the safe area ([`project-tabs.tsx`](../../../bundles/desktop/workspace/src/client/components/organisms/project-tabs.tsx), [`navigation-elements.tsx`](../../../bundles/desktop/workspace/src/client/elements/navigation-elements.tsx)). Its end draws the slot `shell.window.actions` on `/` and `/projects` (the page form) and the slot `shell.header.actions` on every other route; `layout` declares `shell.header.actions` but does not draw it itself ([`layout` README](../../../bundles/desktop/layout/README.md), [`workspace` README](../../../bundles/desktop/workspace/README.md)).
+- The `layout` bundle draws no bar in the page form ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)). In the conversation form it draws two 40 px draggable strips: the viewer tabs' header (`workspace-viewer-header`), only while a viewer tab is open, and the Project panel's header (`workspace-files-header`), which holds the panel's tabs and ends with the slot `shell.window.actions` ([`workspace-layout.tsx`](../../../bundles/desktop/layout/src/client/components/templates/workspace-layout.tsx), [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx), [Layout](layout.md)).
+- A control inside a drag region opts out with `app-region: no-drag`, as the layout's resize handles and the Project panel's actions do ([`workspace-layout.tsx`](../../../bundles/desktop/layout/src/client/components/templates/workspace-layout.tsx), [`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx)).
 
-<ChromeBar>
-  <WorkspaceTitle />
-</ChromeBar>;
-```
+## Theme
 
-```css
-.chrome-bar {
-  height: var(--doric-titlebar-height);
-  padding-inline-start: var(--doric-safe-left);
-  -webkit-app-region: drag;
-}
-```
+The theme preference is `dark`, `light` or `system`, which follows the operating system ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). Main keeps it in `userData/doric/appearance.json` as `{ "theme": … }`; a missing, unparsable or unknown file reads as `dark` ([`appearance-store.ts`](../../../app/desktop/doric/src/platform/appearance-store.ts)).
 
-## Limites
+Main reads the file and sets `nativeTheme.themeSource` while the platform prepares, before it opens the splash and the first window, so both open in the saved theme ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). The value comes from `resolveThemeSource`: in an unpackaged run, `DORIC_THEME` set to exactly `light`, `dark` or `system` wins; otherwise the saved preference, and `dark` when none is saved. A packaged build (Electron's `app.isPackaged`) never reads `DORIC_THEME`, and the variable never changes what is saved ([`appearance.ts`](../../../app/desktop/doric/src/platform/appearance.ts)).
 
-- O main limita os tamanhos à área de trabalho do monitor e a um mínimo fixo.
-- O splash continua técnico e usa os mesmos tokens em JSON para a cor de fundo.
+Everything drawn by the app follows the native theme through `prefers-color-scheme`, which `nativeTheme.themeSource` drives, including changes while a window is open:
 
-## Relações
+- the splash ([`splash.css`](../../../app/desktop/doric/src/splash-page/splash.css));
+- each renderer, which keeps the `dark` class on its root equal to the media query ([`scheme.ts`](../../../app/desktop/doric-renderer/src/scheme.ts), [`bootstrap.ts`](../../../app/desktop/doric-renderer/src/bootstrap.ts));
+- the Monaco code view and diff editor ([`code-view.tsx`](../../../packages/desktop/src/code/code-view.tsx), [`diff-editor.tsx`](../../../packages/desktop/src/code/diff-editor.tsx));
+- the Sonner toasts, whose theme is `system` ([`sonner.tsx`](../../../packages/desktop/src/components/sonner.tsx));
+- an open terminal, which repaints on each change of the query ([`color-scheme.ts`](../../../bundles/features/terminal/src/client/view/color-scheme.ts), [`terminal-view.tsx`](../../../bundles/features/terminal/src/client/view/terminal-view.tsx)).
 
-- [Janelas abertas pelo core](./windows.md): define `windows/v1` sobre `doric.windows/v1`, as chaves e `describeWindow`, que carregam a intenção de aparência e devolvem a área segura; partes `client` chamam `windows/v1` pela ponte.
-- [Pacotes compartilhados e tokens do tema](./platform-packages.md): fornece `desktop/ui`, onde vive `ChromeBar`, e os tokens do tema exportados em CSS e JSON.
-- [Splash e recuperação](./splash-and-recovery.md): o splash é a janela técnica com `titleBar: 'none'` que lê a cor de fundo dos mesmos tokens em JSON.
-- [Protocolo doric://](./doric-protocol.md): o shell que grava as variáveis da área segura é servido pela origem `doric://app` sob a CSP da plataforma.
-- [Bundle core e quarentena](./core.md): o core é quem abre as janelas pelo `doric.windows/v1`, expõe `windows/v1` aos outros bundles e abre a janela principal em `/`.
-- [O bundle layout](./layout.md): desenha o workspace da rota `/`, cujo header usa `ChromeBar` para alinhar a barra com a área segura.
-- [Hooks e ciclo de vida](./hooks.md): define `AppHooksV1`, registrado pela plataforma no provedor de `hooks/v1`, e o `onAppReadyHook` em que o core abre a janela principal.
-- [Contratos](./contracts.md): descreve `bundle/contracts`, de onde vêm as referências `WindowsV1`, `HooksV1` e `DoricWindowsV1`, a definição `AppHooksV1` e `DesktopContext`, e a propagação de `call` entre saltos.
-- [Arquitetura de bundles](../bundles.md): documento principal que mostra como a aparência da janela se encaixa no restante da proposta.
+Native notifications are drawn by the operating system ([`notifications.ts`](../../../app/desktop/doric/src/platform/native/notifications.ts)).
+
+### `doric.appearance/v1`
+
+A platform contract of the `client` environment, available from platform 1.3.0. A bundle does not list it in its manifest; on an older app it has no provider, so a bundle detects it with `services.whenAvailable` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`version.ts`](../../../packages/bundle/src/runtime/version.ts)). It reads and saves the theme preference, one of `dark`, `light` or `system`. Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts).
+
+- `get()` takes no input and resolves `{ theme }`, the saved preference, `dark` when none is saved or it is unreadable.
+- `set({ theme })` resolves with no value once it writes `appearance.json` atomically and only then sets `nativeTheme.themeSource` to `resolveThemeSource` of the new value, which repaints every window. It rejects `invalid_input` for a value outside the three themes and `unavailable` when the file cannot be written; the saved preference and the shown theme are then unchanged ([`appearance.ts`](../../../app/desktop/doric/src/platform/appearance.ts), [`appearance-store.ts`](../../../app/desktop/doric/src/platform/appearance-store.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
+- In an unpackaged run with `DORIC_THEME` set to a valid theme, `set` saves the choice but repaints nothing, since `DORIC_THEME` still wins, and `get` answers the saved preference, not the theme shown ([`appearance.ts`](../../../app/desktop/doric/src/platform/appearance.ts)).
+
+The window answers it through main ([`appearance.ts`](../../../packages/desktop/src/client/appearance.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). The `settings` bundle's Appearance section uses it, and is offered only while a provider exists ([`settings` README](../../../bundles/desktop/settings/README.md)).
+
+## Related documents
+
+- [Windows](windows.md): `doric.windows/v1`, `windows/v1`, window keys and the window description that carries the chrome ([What an app window loads](windows.md#what-an-app-window-loads)).
+- [Platform packages and theme tokens](platform-packages.md): `desktop/ui`, its tokens and `tokens.json`.
+- [Splash and recovery](splash-and-recovery.md): the splash window.
+- [Layout](layout.md): the workspace window's regions and slots.
+- [UI composition](ui-composition.md): how bundles fill those slots.
+- [Core](core.md): the bundle that opens the workspace and settings windows.
+- [Hooks](hooks.md): `onAppReadyHook`, where the core opens the workspace window.
+- [Contracts](contracts.md): `bundle/contracts`, where `windowAppearanceSchema` and the `doric.*` contracts are defined.

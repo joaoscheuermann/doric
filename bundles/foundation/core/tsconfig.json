@@ -13,9 +13,6 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../../providers/claude"
-    },
-    {
       "path": "../../../packages/storage"
     },
     {
@@ -25,19 +22,10 @@
       "path": "../../../packages/tool"
     },
     {
-      "path": "../../providers/openrouter"
-    },
-    {
-      "path": "../../providers/openai"
-    },
-    {
       "path": "../../../packages/llms"
     },
     {
       "path": "../../../packages/desktop"
-    },
-    {
-      "path": "../../providers/codex"
     }
   ],
   "exclude": ["src/desktop/**", "src/client/**"]

@@ -1,564 +1,253 @@
-# Contratos e a família define\*
+# Contracts and the `define*` family
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes contracts, their ids, the call, the import rules, the contract descriptor and structural copies as the code implements them.
 
-## Resumo
+## Summary
 
-Um contrato é a parte pública e versionada de um bundle que outro bundle pode usar sem importar código interno: hooks, serviços, eventos, comandos, configuração e tipos de storage. Os contratos são escritos em zod e definidos por funções `define*` (`defineHook`, `defineHooks`, `defineService`, `defineMethod`, `defineEvent`, `defineCommand`, `defineSettings` e `defineStorageType`), no mesmo molde do `defineTool` que já existe em `packages/tool/src/lib/tools.ts`. O JSON Schema 2020-12 continua sendo o formato canônico serializável, mas é gerado do zod no build e publicado no catálogo; nenhum bundle escreve JSON Schema à mão. Serviços, métodos e comandos trazem o `execute` na própria definição, como uma tool: a definição fica no código da parte que fornece o contrato, e o entrypoint `contracts/` do bundle publica só uma referência tipada (`ref`), que é o que os consumidores importam. As funções `define*`, `ref` e as referências e os tipos dos contratos básicos vêm de `bundle/contracts`, porque qualquer bundle pode fornecê-los; o core fornece por padrão as definições com `execute`. Como o contexto de ativação só entrega `services`, todo registro e todo uso dessas definições passa por contratos de serviço (`hooks/v1`, `settings/v1`, `events/v1`, `commands/v1`, `tools/v1`, `storage/v1`), implementados pelo core por padrão e substituíveis por outro bundle. As definições expõem só as propriedades necessárias; um serviço declara apenas a cardinalidade, quando ela é `many`. Esta proposta não trata segurança. Este documento é a referência da especificação dessa API, das regras de IDs de contrato, da propagação de `call` e da substituição de provedores, incluindo a fundação que ativa antes do core.
+A contract is the public, versioned part of a bundle that another bundle may use without importing its code: a hooks contract, a service, an event, a command, a settings definition or a storage type. A contract is written in zod with one of the `define*` functions, `defineHook`, `defineHooks`, `defineService`, `defineMethod`, `defineEvent`, `defineCommand`, `defineSettings` and `defineStorageType`, or, for a service another bundle provides, declared as `ref<Interface>(id)`, and is named by a contract id that carries its major version, such as `git.commands/v1` ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`ids.ts`](../../../packages/bundle/src/contracts/ids.ts)). One zod definition gives the TypeScript type, the validation at run time and, generated at build time, the JSON Schema 2020-12 document that describes the contract where a call crosses processes ([`json-schema.ts`](../../../packages/bundle/src/runtime/json-schema.ts), [`cli.ts`](../../../packages/bundle/src/build/cli.ts), [`remote.ts`](../../../packages/bundle/src/runtime/envelope/remote.ts)). No bundle writes JSON Schema by hand.
 
-## O molde: `defineTool`
+The rule is: **a bundle reaches another bundle only through a contract that bundle publishes, and the only module of another bundle it imports is `<id>/contracts`.** At run time a contract is resolved by its id, never by a module: a consumer holds a `ref`, which carries only the id, and the runtime dispatches each call to the provider the catalog chose ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`services.ts`](../../../packages/bundle/src/runtime/services.ts)). The functions, the `ref` helper, the `Call` and `ContractError` types and the contracts of the platform and the basic services come from the browser-safe entry point `bundle/contracts` of `packages/bundle` ([`index.ts`](../../../packages/bundle/src/contracts/index.ts)).
 
-Hoje `defineTool`, em `packages/tool/src/lib/tools.ts`, recebe `name`, `description`, `input` (um `z.object`), `output` (um schema zod) e `execute`. Ele:
+## Contract ids
 
-- recusa um `input` que não seja `z.ZodObject`;
-- converte `input` e `output` para JSON Schema com `z.toJSONSchema`, e esse JSON Schema é o que vai para o provider;
-- valida a saída de `execute` com `safeParse` e transforma uma saída inválida em erro tipado.
+A contract id is lowercase segments separated by `.`, then `/v` and a positive major: it matches `contractIdPattern`, `^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*\/v[1-9][0-9]*$` ([`ids.ts`](../../../packages/bundle/src/contracts/ids.ts)). The id carries only the major; the full version of a contract is the one its provider lists under `provides` in its manifest, such as `git.commands/v1@1.1.0`. A consumer lists `<id>@<range>` under `requires`, such as `hooks/v1@^1.0.0`, and the bare id, with no version or range, under `optional`, such as `workspace.selection/v1` ([`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts), [`chat/manifest.json`](../../../bundles/desktop/chat/manifest.json)). The manifest fields are in [`provides`, `requires` and `optional`](manifest.md#provides-requires-and-optional). How a contract takes a minor or a major is in [Versioning](versioning.md).
 
-A família `define*` segue o mesmo desenho: uma única definição em zod dá o tipo TypeScript para quem escreve o código, a validação em runtime e o JSON Schema serializável. Onde existe lógica, ela fica na definição, num `execute`, como numa tool: em cada `defineMethod` de um serviço e em cada `defineCommand`. Num hook é diferente: a lógica é dos handlers que outros bundles registram, e o `execute` do hook é o disparo, que fica no handle que o dono recebe de `services.use(HooksV1).define(...)`.
+| Category                       | Form of the id                                                        | Examples                                                                                                                                                                                                                                                                                                                                                                                                                         | Who provides it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform                       | `doric.<name>/vN`                                                     | `doric.catalog/v1`, `doric.diagnostics/v1`, `doric.bundle/v1`, `doric.log/v1`, `doric.windows/v1`, `doric.menus/v1`, `doric.cache/v1`, `doric.migrations/v1`, `doric.tokens/v1`, `doric.about/v1`, `doric.notifications/v1`, `doric.generation/v1`, `doric.startup/v1`, `doric.elements/v1`, `doric.connection/v1`, `doric.browser/v1`, `doric.appearance/v1`, `doric.network/v1`, `doric.app.hooks/v1`, `doric.window.hooks/v1` | The platform only. Their environments and shapes are in [Platform contracts](contexts.md#platform-contracts)                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Basic services                 | The domain alone: `<domain>/vN`                                       | `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`, `settings/v1`, `secrets/v1`, `secrets.backend/v1`, `storage/v1`, `storage.backend/v1`, `events/v1`, `models/v1`, `models.provider/v1`, `commands/v1`, `ui/v1`, `navigation/v1`, `regions/v1`, `windows/v1`, `menus/v1`                                                                                                                                                            | [`core`](../../../bundles/foundation/core/README.md) by default, except `storage.backend/v1` and `secrets.backend/v1`, which [`postgres`](../../../bundles/foundation/postgres/README.md) provides, and `models.provider/v1`, which provider bundles such as [`openai`](../../../bundles/providers/openai/README.md) provide; any bundle may replace one. Their environments and cardinalities are in [The basic contracts](contexts.md#the-basic-contracts), their methods in [Basic contracts](../../../packages/bundle/README.md#basic-contracts) and in the core's README |
+| Declared for others to provide | The declaring bundle's form, or the domain alone                      | `executor/v1` and `sandbox/v1`, declared by [`runtime`](../../../bundles/runtime/runtime/README.md); `default.skill-sources/v1`, declared by [`default`](../../../bundles/runtime/default/README.md); `files.decorations/v1`, declared by [`files`](../../../bundles/features/files/README.md)                                                                                                                                   | Other bundles: `default` provides `executor/v1`, [`docker`](../../../bundles/sandboxes/docker/README.md) and [`firecracker`](../../../bundles/sandboxes/firecracker/README.md) provide `sandbox/v1`, [`mcp`](../../../bundles/features/mcp/README.md) provides `default.skill-sources/v1`, [`git`](../../../bundles/features/git/README.md) provides `files.decorations/v1`                                                                                                                                                                                                   |
+| A bundle's own                 | `<bundle>.<name>/vN`, or `<bundle>/vN` for the bundle's main contract | `git.commands/v1`, `chat.hooks/v2`, `runtime.records/v1`, `layout.tabs/v2`, `files/v1`, `runtime/v2`                                                                                                                                                                                                                                                                                                                             | The bundle whose id prefixes the contract id, such as [`chat`](../../../bundles/desktop/chat/README.md) for `chat.hooks/v2` and [`layout`](../../../bundles/desktop/layout/README.md) for `layout.tabs/v2`; the bundle's README describes the contract                                                                                                                                                                                                                                                                                                                        |
 
-`defineTool` continua sendo a API do pacote `tool`, com uma mudança proposta nesse pacote: hoje o `execute` recebe `(sandbox, host, payload, config)`; na proposta ele recebe `(payload, call, services)`, como `defineMethod` e `defineCommand`. `services` são os serviços do bundle que registrou a tool, ligados no registro, do mesmo jeito que hoje `sandbox` e `host` são ligados pela factory. O bundle registra a tool com `services.use(ToolsV1).register(gitTool, { alwaysAvailable: false })`.
+- **`doric.` is reserved.** `defineHooks`, `defineService`, `defineEvent`, `defineCommand`, `defineSettings` and `defineStorageType` throw on an id that starts with `doric.`; the platform declares its own contracts with internal variants, `definePlatformHooks` and `definePlatformService`, which `bundle/contracts` does not export ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`index.ts`](../../../packages/bundle/src/contracts/index.ts)). A bundle id may not be `doric`, the name of the platform's principal ([`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts), [`ids.ts`](../../../packages/bundle/src/contracts/ids.ts)). A `doric.*` contract always exists, is listed in no manifest, accepts no other provider, and `use` of it is always allowed ([`services.ts`](../../../packages/bundle/src/runtime/services.ts)).
+- **The prefix names the owner.** The catalog takes the first segment of an id as the bundle that owns the contract. It publishes a contract's cardinality in an environment from the first of these that gives one: the platform's fixed table, for a basic contract; the descriptor of the owner, when the owner provides the contract there; the descriptor of the provider the composition chose; the core's descriptor; the descriptor of the first live provider ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). How a composition chooses a provider is in [Providers and cardinality](composition-and-distribution.md#providers-and-cardinality). The basic services carry no bundle name, because the core is only their default provider; their cardinality, environments and method specifications come from that fixed table, `basicContracts`, which [The basic contracts](contexts.md#the-basic-contracts) lists ([`basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts)).
+- **Declared contracts.** A bundle may declare a contract for other bundles to provide: it writes the interface and the method schemas in its `contracts` entry point and lists the id under `requires` or `optional`, and each provider lists it under `provides` and depends on the declarer's package. The four ids of the third row are the constant `declaredContracts` of the boundary checks, each with its declarer. In the graph of bundles that must have no cycle, a manifest line gives an edge from the bundle that lists it to each provider of the id, except the declarer's own line for one of these ids, which gives an edge from each provider to the declarer. A newly declared contract is added to that constant; without it, the declarer's line gives an edge from the declarer to each provider, and the check reports a cycle wherever a provider also lists one of the declarer's contracts ([`boundaries.mjs`](../../../tests/support/boundaries.mjs), [`cycles`](boundaries.md#cycles)).
+- **Other names follow the same form.** Events, commands, settings and storage types are contracts with ids of their own, such as `comments.resolved/v1` or `runtime.thread/v1`. A custom element's tag starts with the id of the bundle that defines it, such as `chat-view`: `ui/v1.define` refuses a tag that does not start with `<calling bundle>-` with `invalid_input` ([`ui.ts`](../../../bundles/foundation/core/src/client/ui.ts)).
 
-## O objeto `call`
+## The `define*` family
 
-Todo `execute` de método, comando e tool recebe `(input, call, services)`, e todo handler de hook recebe `(input, call)`:
+Every `define*` function checks what the third column names when it runs, and returns a frozen object branded with its kind, which the runtime and the build recognize ([`define.ts`](../../../packages/bundle/src/contracts/define.ts)). The full signature of each function, its options and its error messages are in [The `define*` functions](../../../packages/bundle/README.md#the-define-functions) of the package README.
 
-```ts
-// pseudocódigo da API proposta
-interface Call {
-  readonly caller: { bundleId: string; version: string; generation: number };
-  readonly scope?: {
-    projectId?: string;
-    threadId?: string;
-    promptId?: string;
-    windowKey?: string;
-  };
-  readonly signal: AbortSignal;
-  readonly trace: TraceContext;
-}
-```
+| Function            | What it declares                                                                            | What it checks when it runs                                                                                        | Where it goes                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `defineHook`        | One hook: `kind`, the zod `input`, and `order` or `forOwner`                                | `kind` is `observe`, `transform`, `decide` or `sequence`; `order` only on `sequence`; `forOwner` only on `observe` | A member of `defineHooks`                                                                           |
+| `defineHooks`       | A hooks contract: an id and its hooks, each named by its key                                | The id matches the pattern and is not `doric.*`; every member comes from `defineHook`                              | `services.use(HooksV1).define(contract)` by the owner                                               |
+| `defineMethod`      | One method: `input`, `output`, `execute(input, call, services)` and an optional `expose`    | `execute` is a function; `expose` is `desktop` or absent                                                           | A member of `defineService`                                                                         |
+| `defineService`     | A service: an id or a `ref`, its methods, and `{ cardinality: 'many' }` as the only option  | The id matches the pattern and is not `doric.*`; every member comes from `defineMethod`; the option is that one    | `services.provide(definition)`                                                                      |
+| `defineEvent`       | A durable event: `type` and the zod object `payload`                                        | `type` matches the pattern and is not `doric.*`                                                                    | `services.use(EventsV1).register(definition)`, in a `host` part                                     |
+| `defineCommand`     | A command: `id`, `input` and `execute(input, call, services)`                               | `id` matches the pattern and is not `doric.*`                                                                      | `services.use(CommandsV1).register(definition)`, in a `desktopMain` or `client` part                |
+| `defineSettings`    | A bundle's settings: `id` and the zod `schema` of the value                                 | `id` matches the pattern and is not `doric.*`                                                                      | `services.use(SettingsV1).register(definition)`, in a `host` or `desktopMain` part                  |
+| `defineStorageType` | A storage type: `type`, the zod object `schema` and `indexes` (`name`, `fields`, `unique?`) | `type` matches the pattern and is not `doric.*`                                                                    | `services.use(StorageV1).defineType(definition)`, in a `host` part                                  |
+| `ref`               | A typed reference to a contract; its value holds only the id                                | The id matches the pattern; `doric.*` is accepted                                                                  | `services.use`, `services.whenAvailable`, `defineService(ref, …)` and `commands/v1.execute(ref, …)` |
 
-`call.caller` é preenchido pelo dispatcher da plataforma, nunca pelo bundle, e serve para diagnóstico, log e para o handler saber quem disparou a chamada. Não existe objeto de capacidades por execução: o handler obtém o que precisa como serviço e repassa `call`, por exemplo `services.use(EventsV1).append(definição, payload, call)` ou `services.use(ModelsV1, call.scope).resolve(ref)`. Os detalhes estão em [contextos e capacidades](./contexts.md).
+The environments in the last column are those in which the platform publishes `commands/v1`, `settings/v1`, `events/v1` and `storage/v1` ([`basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts)).
 
-### Propagação de `call`
+### Hooks
 
-Todo stub de serviço aceita como último argumento opcional um `call` pai (o `call` que o handler recebeu) ou `{ signal, deadline }`:
+`defineHook` takes no `output`: the kind fixes what a handler returns, nothing for `observe` and `sequence`, a value of the input schema for `transform`, and `{ allow: true }` or `{ allow: false, reason }` for `decide`. The owner fires a hook with `execute(input, call?)` on the handle `services.use(HooksV1).define(Contract)` returns, and an observer registers a handler with `use` or `whenAvailable` on the same contract ([`basic/hooks.ts`](../../../packages/bundle/src/contracts/basic/hooks.ts), [`facades.ts`](../../../packages/bundle/src/runtime/facades.ts)). How the provider of `hooks/v1` runs the handlers, their deadlines and the failure rule, and the hooks that ship, are in [Hooks and the app's lifecycle](hooks.md).
 
-- com um `call` pai, o dispatcher herda dele `scope`, `signal` e `trace`;
-- `call.caller` do salto novo é sempre o bundle que faz a chamada, preenchido pelo dispatcher, e nunca é herdado do pai;
-- o dispatcher preenche `scope.windowKey` em toda chamada que sai de uma janela client.
+### Services and methods
 
-No exemplo do git: no `execute(input, call, services)` de `switchBranch`, `call.caller` é o bundle que chamou o git. Quando o git chama `events/v1` repassando esse `call`, o novo salto herda `scope`, `signal` e `trace`, mas o `caller` que `events/v1` recebe é `git`.
-
-## JSON Schema canônico gerado do zod
-
-A decisão registrada em 2026-10-08 é: JSON Schema 2020-12 é o formato canônico serializável; o código pode gerá-lo a partir de zod. Com a família `define*`, a geração deixa de ser opcional para contratos de bundle:
-
-- o JSON Schema de cada contrato é gerado do zod no build do bundle e publicado no catálogo do host;
-- nenhum bundle escreve JSON Schema à mão;
-- a convenção de pasta `schemas/*.json` ("JSON Schemas referenciados pelo código") desaparece da lista de convenções do bundle, e com ela todos os `$ref` para arquivos de schema;
-- o JSON Schema gerado é o que atravessa processos e máquinas, o que o catálogo publica e o que a verificação de semver vai comparar quando voltar, suspensa até a publicação (etapa 11) (veja [versionamento semântico](./versioning.md)).
-
-O mesmo vale para o próprio manifesto: na proposta, o manifesto v1 é validado por um JSON Schema publicado em `doric://app/schemas/bundle-manifest/v1.json`, gerado a partir do schema zod de `packages/bundle` (veja [manifesto v1](./manifest.md)). Hoje `packages/bundle/src/lib/load.ts` valida só o formato atual, que passa a ser o manifesto v0, com zod em modo `strict`.
-
-### De onde vêm as funções
-
-As funções `define*` e `ref` vêm do subpath browser-safe `bundle/contracts` de `packages/bundle`, junto com:
-
-- as constantes dos contratos da plataforma: `DoricCatalogV1` (`doric.catalog/v1`), `DoricDiagnosticsV1` (`doric.diagnostics/v1`), `DoricBundleV1` (`doric.bundle/v1`), `DoricWindowsV1` (`doric.windows/v1`), `DoricMenusV1` (`doric.menus/v1`), `DoricCacheV1` (`doric.cache/v1`) e `DoricTokensV1` (`doric.tokens/v1`);
-- as definições de hooks da plataforma `AppHooksV1` (`doric.app.hooks/v1`) e `WindowHooksV1` (`doric.window.hooks/v1`);
-- os tipos `HostContext`, `DesktopContext`, `ClientContext`, `Services` e `Call`, que todo bundle importa daqui (partes `host` usam `HostContext`, partes `desktopMain` usam `DesktopContext` e partes `client` usam `ClientContext`);
-- as **referências** (`ref`) e os tipos dos contratos básicos: `HooksV1`, `LogV1`, `SettingsV1`, `SecretsV1`, `SecretsBackendV1`, `ToolsV1`, `SkillsV1`, `StorageV1`, `StorageBackendV1`, `EventsV1`, `ModelsV1`, `ModelsProviderV1`, `CommandsV1`, `UiV1`, `NavigationV1`, `RegionsV1`, `WindowsV1` e `MenusV1`.
-
-As referências e os tipos dos básicos ficam na plataforma porque qualquer bundle pode fornecer esses contratos. O core escreve as definições com `execute`, com a referência no lugar do ID (`defineService(WindowsV1, { open: defineMethod({ input, output, execute }) })`), e as fornece. Um provedor substituto como `myhooks`, o `postgres` (com `storage.backend/v1` e `secrets.backend/v1`) ou um core alternativo nomeado pela composição importa as mesmas referências de `bundle/contracts` e fornece a própria definição com `execute`.
-
-Os demais entrypoints seguem esta regra:
-
-- `core/contracts` exporta só o que é do core: `CoreHooksV1` (`core.hooks/v1`) e a referência `OpenSettingsCommandV1 = ref<typeof openSettings>('core.open-settings/v1')`, com `import type` da definição; a definição `openSettings`, com o `execute`, fica no código `desktopMain` do core (veja [comandos](#comandos-definecommand));
-- contratos de outros bundles vêm de `<bundle>/contracts`, por exemplo `git/contracts` ou `chat/contracts`;
-- o próprio bundle importa seus contratos por caminho relativo (`../contracts/index.js`), nunca pelo próprio `<bundle>/contracts`;
-- nenhum código de bundle importa o entrypoint `bundle`, que é o loader Node;
-- bundles não importam `packages/desktop`, que é o runtime client do loader usado por `app/doric-renderer`; componentes, tokens e Tailwind continuam em `desktop/ui`.
-
-## IDs de contrato
-
-Todo contrato tem um ID com major (`/vN`). O prefixo do ID diz quem é o dono e se outro bundle pode fornecê-lo:
-
-| Categoria         | Forma do ID                                                      | Exemplos                                                                                                                                                                                                                                                              | Substituível                                                                                                                                                                                                                                                                                                                                              |
-| ----------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plataforma        | `doric.<nome>/vN`                                                | `doric.catalog/v1`, `doric.diagnostics/v1`, `doric.bundle/v1`, `doric.windows/v1`, `doric.menus/v1`, `doric.cache/v1`, `doric.tokens/v1`, `doric.app.hooks/v1` (`AppHooksV1`), `doric.window.hooks/v1` (`WindowHooksV1`)                                              | Não                                                                                                                                                                                                                                                                                                                                                       |
-| Serviços básicos  | só o domínio: `<domínio>/vN`                                     | `hooks/v1`, `log/v1`, `settings/v1`, `secrets/v1`, `secrets.backend/v1`, `tools/v1`, `skills/v1`, `storage/v1`, `storage.backend/v1`, `events/v1`, `models/v1`, `models.provider/v1`, `commands/v1`, `ui/v1`, `navigation/v1`, `regions/v1`, `windows/v1`, `menus/v1` | Sim; o core fornece por padrão, exceto `storage.backend/v1` e `secrets.backend/v1`, cujo provedor padrão é `postgres`, e `models.provider/v1`, fornecido por bundles como `openai`, `openrouter` e `codex`                                                                                                                                                |
-| Papéis de domínio | só o domínio: `<domínio>/vN`                                     | `executor/v1`, `sandbox/v1`                                                                                                                                                                                                                                           | Sim; contratos `one` sem provedor no core, como `storage.backend/v1`: os provedores são bundles como `direct`, `docker` e `firecracker`. As referências e os tipos não estão em `bundle/contracts`; ficam em `runtime/contracts`, publicados pelo `runtime`, que os consome; cada provedor escreve sua definição com `defineService(ExecutorV1, { ... })` |
-| Outros bundles    | `<bundle>.<nome>/vN`, ou `<bundle>/vN` para o contrato principal | `git.commands/v1`, `git.hooks/v1`, `git.settings/v1`, `git.switch-branch/v1`, `git.branch-switched/v1`, `chat.views/v1`, `layout.tabs/v1`, `core.hooks/v1`, `runtime.threads/v1`, `runtime.thread/v1`, `files/v1`                                                     | Sim                                                                                                                                                                                                                                                                                                                                                       |
-
-- O prefixo `doric.` é reservado à plataforma; contratos `doric.*` são da plataforma, sempre existem, não aparecem no `provides` nem no `requires` de nenhum bundle e não aceitam outro provedor. `use` de um contrato `doric.*` é sempre permitido.
-- Os serviços básicos não levam o nome do core no ID, porque o core é só o provedor padrão.
-- Eventos, comandos, settings, tipos de storage e blocos de conteúdo seguem a mesma regra dos contratos de bundle: `git.branch-switched/v1`, `git.switch-branch/v1`, `git.settings/v1`, `runtime.thread/v1`, `git.branch-change/v1`.
-- Tags de custom elements começam com o ID do bundle dono (`core-outlet`, `layout-workspace`, `chat-view`, `git-branch-event`); o `ui/v1` recusa uma tag que não comece com `<id do bundle chamador>-`.
-
-## Substituição de provedores
-
-Qualquer contrato sem prefixo `doric.` pode ser fornecido por outro bundle, inclusive os serviços básicos do core. Se dois bundles habilitados fornecem o mesmo contrato de cardinalidade `one`, a composição escolhe o provedor em `providers`:
-
-```json
-{
-  "core": "core",
-  "providers": {
-    "hooks/v1": "myhooks",
-    "storage.backend/v1": "postgres",
-    "secrets.backend/v1": "postgres"
-  }
-}
-```
-
-### Cardinalidade
-
-A cardinalidade é a única opção de `defineService`, e só é escrita quando é `many`:
-
-- `one` (padrão): um provedor ativo por ambiente, escolhido pela composição. Os antigos papéis exclusivos passam a ser exatamente isso: `storage.backend/v1`, `secrets.backend/v1`, `runtime/v1`, `executor/v1` e `sandbox/v1`. O antigo `ctx.roles.provide('durableState', backend)` vira `services.provide(postgresStorage)`, com `postgresStorage = defineService(StorageBackendV1, { ... })`, e a composição escolhe o provedor.
-- `many`: vários provedores sem conflito, agregados pelo consumidor. Por exemplo, `openai`, `openrouter` e `codex` fornecem `models.provider/v1`, cada um registrando seu tipo configurável, seus campos e seu catálogo de modelos, e o `models/v1` do core agrega todos. Um contrato `many` não aparece em `providers`.
-
-Todo provedor de um contrato `many` declara `{ cardinality: 'many' }` na própria definição, e o loader compara essa cardinalidade com a do contrato publicado no catálogo. Um provedor que diverge, inclusive por omitir a opção, vai para quarentena com motivo. Assim a `ref` continua só com o ID, e o consumidor sabe pelo catálogo que o contrato é `many`.
-
-### Escolha por ambiente
-
-A escolha em `providers` vale em cada ambiente em que o bundle escolhido fornece o contrato; nos outros ambientes o provedor padrão continua. Quando a composição escolhe outro provedor para um contrato que o core também fornece, o loader não registra a implementação do core para esse contrato naquele ambiente, e o `services.use` do próprio core devolve o provedor escolhido.
-
-Sem escolha em `providers`, um segundo provedor de um contrato `one` vai para quarentena com motivo. Como a fundação e o core ativam antes dos demais bundles, é o bundle substituto que vai para quarentena se a composição não o escolher. Contratos `doric.*` são da plataforma e não aceitam outro provedor.
-
-### Fundação e ordem de ativação
-
-Em cada ambiente, o loader ativa nesta ordem:
-
-1. A **fundação**: os bundles escolhidos em `providers` para contratos que o core fornece ou consome, por exemplo `myhooks` para `hooks/v1` e `postgres` para `storage.backend/v1` e `secrets.backend/v1`. Bundles da fundação só podem declarar `requires` de contratos `doric.*`.
-2. O core, que pode declarar `requires` apenas de contratos que a fundação fornece (`storage.backend/v1`, `secrets.backend/v1`).
-3. Os demais bundles, em ordem de dependência.
-
-### Backends e fachadas
-
-`storage.backend/v1` e `secrets.backend/v1` são fornecidos pelo bundle `postgres` por padrão. O `secrets.backend/v1` padrão guarda cada segredo como envelope AES-256-GCM sob `DORIC_CREDENTIAL_KEY`, como o credential store atual do host. Sobre eles, o core fornece as fachadas:
-
-- `secrets/v1` resolve a referência que a operação declarou e aplica redação antes do log, como hoje;
-- `storage/v1` é a fachada sobre `storage.backend/v1`; tipos e registros são identificados pelo ID qualificado.
-
-### A plataforma como consumidora
-
-A plataforma é só mais um consumidor dos contratos básicos. Depois que o provedor de `hooks/v1` de um ambiente ativa (o core, por padrão, ou o escolhido em `providers`), a plataforma daquele ambiente chama `define(AppHooksV1)` e passa a disparar `execute` nos pontos do ciclo de vida. `WindowHooksV1` é definido pela plataforma no ambiente `client`: o bootstrap de cada janela o define no `hooks/v1` do client e o executa quando o main pede o fechamento da janela. Da mesma forma a plataforma lê settings, secrets, tools e storage pelos contratos, sem conhecer a implementação. A plataforma tem log próprio, independente do core. A composição e a quarentena estão em [composição e distribuição](./composition-and-distribution.md) e [bundle core e quarentena](./core.md).
-
-## O entrypoint `contracts/` de cada bundle
-
-O dono de um contrato o publica num entrypoint público `contracts/` do bundle. Hooks, eventos, settings e tipos de storage não têm lógica e são exportados como definições. Serviços e comandos têm `execute`, então a definição fica no código da parte que os fornece, e `contracts/` exporta só uma referência tipada criada com `ref`:
+A service carries its logic in its definition, as a tool does: each method has its `execute(input, call, services)`, where `services` are the services of the bundle that provided it, bound when it calls `services.provide(definition)` ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`context.ts`](../../../packages/bundle/src/contracts/context.ts), [`services.ts`](../../../packages/bundle/src/runtime/services.ts)). A method's `input` may be any zod type, not only an object. A method whose `input` is a `z.tuple` takes the tuple's items as positional arguments, as `ui/v1.define(tag, element)` and `commands/v1.execute(command, input?)` do. After them a stub takes the optional call argument of [The call](#the-call): a trailing parent call is always that argument, while a trailing `{ signal, deadline }` is that argument only when it lies beyond the tuple's length or the tuple item at its position rejects it, so `commands/v1.execute(command, { signal })` passes `{ signal }` as the command's input ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts), [`basic/ui.ts`](../../../packages/bundle/src/contracts/basic/ui.ts), [`basic/commands.ts`](../../../packages/bundle/src/contracts/basic/commands.ts)). A stub reads `then`, `toJSON`, `constructor`, `valueOf` and `toString` as `undefined`, so a method with one of those names cannot be called through a stub ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)). How a stub binds late and runs one call is in [Stubs](services-and-channels.md#stubs).
 
 ```ts
-// git, host/git-commands.ts: definição com execute
-export const gitCommands = defineService('git.commands/v1', {
-  switchBranch: defineMethod({
-    /* input, output, execute */
+// git, src/host/service.ts
+export const createGitService = (terminals: TerminalList) =>
+  defineService(GitCommandsV1, {
+    status: defineMethod({
+      expose: 'desktop',
+      ...gitMethods.status,
+      execute: (threadId: string, call: Call, services) =>
+        workspace(services, call).withThread(/* … */),
+    }),
+    // …
+  });
+```
+
+Passing the `ref` in place of the id makes the compiler check the methods against the interface the ref carries ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`types.ts`](../../../packages/bundle/src/contracts/types.ts)). In this example `gitMethods.status` holds the method's `input` and `output` schemas, which `git` exports from its `contracts` entry point together with the interface and the ref ([`git/src/contracts/index.ts`](../../../bundles/features/git/src/contracts/index.ts), [`git/src/host/service.ts`](../../../bundles/features/git/src/host/service.ts)).
+
+When a consumer calls a method, the runtime validates the input with the provider's `input` schema and hands the parsed value to `execute`, or rejects with `invalid_input`; it validates the result with the `output` schema, rejects with `invalid_output` when it fails, and returns the original value, never the parsed copy. An `output` schema is therefore descriptive: no default, transform or pipe ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts), [`define.ts`](../../../packages/bundle/src/contracts/define.ts)). A stub call fails with `unavailable` when the calling bundle is no longer active, when the contract has no active provider, and when the provider has no method of that name. In the host kernel, while no generation is active during a respawn, a call to a contract the latest generation provides waits for the next activation instead, and its signal aborts the wait ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts), [`manager.ts`](../../../packages/bundle/src/process/manager.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). Every error that crosses a contract is a `ContractError`, with a stable `code`, a `message` and optional `details`. It is recognized by its name `ContractError`, a string `code` and a string `message`, not by `instanceof`. Any other thrown value becomes code `internal`, with the message of an `Error`, the string itself, or `Internal error.` for any other value ([`error.ts`](../../../packages/bundle/src/contracts/error.ts)). Every code is listed in [Errors](../../../packages/bundle/README.md#errors) of the package README, and where each arises in [Errors](services-and-channels.md#errors).
+
+`provide` is refused with `undeclared_provide` when the manifest does not list the id under `provides`, and with `cardinality_mismatch` when the definition's cardinality differs from the one the catalog publishes. A provider of a basic contract must implement every method of the platform's table, may omit only the methods the table marks optional, may implement no method the table lacks, and must use the platform's schemas; otherwise it is refused with `contract_mismatch` ([`services.ts`](../../../packages/bundle/src/runtime/services.ts)). A refused `provide` throws, and the bundle records the error as a registration error; when it escapes `activate`, the bundle is quarantined with `cardinality_mismatch` for a cardinality mismatch and with `registration_failed` for any other refusal, not with `activate_failed` ([`services.ts`](../../../packages/bundle/src/runtime/services.ts), [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts)). A `provide` of a `one` contract that passes these checks, in a bundle other than the provider the catalog chose for that environment, registers nothing and returns an inert `Disposable`, without an error ([`services.ts`](../../../packages/bundle/src/runtime/services.ts)).
+
+- **Cardinality.** `one`, the default, is one active provider per environment, chosen by the composition under `providers` when two bundles provide the same contract; `many` is several providers at once. `use` of a `many` contract throws `many_contract_use`; a consumer aggregates its providers with `whenAvailable`, which runs once per provider ([`services.ts`](../../../packages/bundle/src/runtime/services.ts)). Every provider of a `many` contract declares `{ cardinality: 'many' }` in its definition; the catalog quarantines a provider whose descriptor disagrees with the contract's published cardinality ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). How a composition chooses a provider is in [Composition and distribution](composition-and-distribution.md).
+- **Exposure.** A method is reachable from a desktop window only when its definition says `expose: 'desktop'`. For a basic or platform contract the platform's table decides, and a provider that declares an exposure the table does not give is refused with `contract_mismatch` ([`expose.ts`](../../../packages/bundle/src/contracts/expose.ts), [`exposure.ts`](../../../packages/bundle/src/runtime/exposure.ts)).
+- **Process-local values.** A schema that uses a zod type JSON cannot carry (a function, `z.custom`, a symbol, a bigint, a date, a map, a set, a promise or NaN) is local. A local value marked with a codec, `callback`, `disposable` or `object`, crosses a process boundary as a handle; a value with none is refused with `local_only` where a call would cross ([`json-schema.ts`](../../../packages/bundle/src/runtime/json-schema.ts), [`values.ts`](../../../packages/bundle/src/runtime/envelope/values.ts)). A contract author sets the codec as zod metadata on the schema, `.meta({ 'x-doric-local': 'callback' })`, `'disposable'` or `'object'`: `callback` is a function invoked through a handle, `disposable` a registration released through a handle, and `object` a handle that only the process that exported it unwraps. `bundle/contracts` exports helpers for the common cases ([`basic/common.ts`](../../../packages/bundle/src/contracts/basic/common.ts)): `disposableSchema`, a `Disposable` with the `disposable` codec; `functionSchema<T>()`, a `z.custom` function with no codec, so it never crosses a process; `streamListener(itemSchema)`, a listener with the `callback` codec that makes the method a stream method, whose document records the item schema under `x-doric-stream`; and `noInput`, the empty tuple of a method with no arguments. How a stream delivers its items is in [Streams](services-and-channels.md#streams), and how calls cross processes in [Services and channels](services-and-channels.md).
+
+### Events, commands, settings and storage types
+
+An event, a settings definition and a storage type carry no logic, so a bundle exports these definitions from its `contracts` entry point as they are, as [`comments`](../../../bundles/features/comments/README.md) does below. A command carries its `execute`, so a bundle exports only a ref typed by the command's definition and its input schema, and the definition stays in the part that registers it ([A bundle's `contracts` entry point](#a-bundles-contracts-entry-point)).
+
+```ts
+// comments, src/contracts/index.ts
+export const commentsResolvedEvent = defineEvent({
+  type: 'comments.resolved/v1',
+  payload: z.looseObject({
+    commentId: z.string(),
+    resolved: z.boolean(),
   }),
 });
 
-// git, contracts/refs.ts: só os IDs e os tipos
-import { ref } from 'bundle/contracts';
-import type { gitCommands } from '../host/git-commands.js';
-import type { switchBranchCommand } from '../client/commands.js';
+// comments, src/host/index.ts, in activate
+const events = services.use(EventsV1);
+events.register(commentsResolvedEvent);
 
-export const GitCommandsV1 = ref<typeof gitCommands>('git.commands/v1');
-export const SwitchBranchCommandV1 = ref<typeof switchBranchCommand>(
-  'git.switch-branch/v1',
-);
-```
-
-`ref` guarda só o ID; os dois `import type` somem no build, então importar `git/contracts` no client não traz o código do host, e importá-lo no host não traz o código do client. O consumidor:
-
-1. importa só esse entrypoint, por exemplo `git/contracts` ou `default/contracts`;
-2. declara o ID do contrato em `requires` no manifesto, ou o consulta com `whenAvailable` quando a dependência é opcional.
-
-Em runtime, o loader resolve o contrato pelo ID, então o consumidor nunca importa código interno do dono. O import de `contracts/` traz referências, tipos e as definições sem lógica. A validação de um serviço ou comando acontece no provedor, com o zod da definição, e entre processos com o JSON Schema gerado dela e publicado no catálogo. O próprio dono não importa `git/contracts`: o código de `git` importa seus contratos por caminho relativo (`../contracts/index.js`).
-
-A regra de `requires` vale para todo contrato usado com `use`, inclusive os básicos do core (`hooks/v1`, `events/v1`, `settings/v1`, `tools/v1`, `commands/v1`, `ui/v1`, `storage/v1` e os demais). Contratos `doric.*` nunca entram em `requires`, porque sempre existem. Contratos opcionais usados com `whenAvailable` também não entram em `requires`.
-
-```ts
-// git, contracts/index.ts (pseudocódigo da API proposta)
-export { onBeforeSwitchBranchHook, GitHooksV1 } from './hooks.js';
-export { GitCommandsV1, SwitchBranchCommandV1 } from './refs.js'; // ref<typeof …>(id)
-export { branchSwitchedEvent } from './events.js';
-export { gitSettings } from './settings.js';
-```
-
-## Registro em código
-
-Tools, eventos, comandos, rotas, views, custom elements, settings, tipos de storage, hooks, janelas, menus e atalhos são registrados pelo código de ativação, cada um com seu schema e sempre por um contrato de serviço. Janelas, menus e atalhos são registrados por `windows/v1` e `menus/v1`, que o core expõe com suas políticas sobre os contratos nativos `doric.windows/v1` e `doric.menus/v1`, usados pelo core (veja [bundle core e quarentena](./core.md)). `windows/v1` (abrir e focar janelas pelas políticas do core) e `menus/v1` (itens, atalhos e `setContext`) são fornecidos no `desktopMain`, e partes `client` que os declaram em `requires` os alcançam pela ponte. O loader valida cada registro e detecta conflitos no momento do registro; um conflito coloca o bundle em quarentena com motivo. Tudo que um bundle registra por meio de serviços é rastreado pelo loader e descartado em ordem inversa na desativação.
-
-Com a família `define*`, cada registro recebe a definição em vez de um ID solto e um schema separado:
-
-```ts
-// git, host/index.ts (pseudocódigo da API proposta)
-import {
-  EventsV1,
-  HooksV1,
-  SettingsV1,
-  ToolsV1,
-  type HostContext,
-} from 'bundle/contracts';
-import {
-  GitHooksV1,
-  branchSwitchedEvent,
-  gitSettings,
-} from '../contracts/index.js';
-import { gitTool } from './git-tool.js';
-import { gitCommands } from './git-commands.js';
-
-export const activate = ({ services }: HostContext) => {
-  services.use(ToolsV1).register(gitTool, { alwaysAvailable: false });
-  services.use(EventsV1).register(branchSwitchedEvent);
-  services.use(SettingsV1).register(gitSettings);
-  services.use(HooksV1).define(GitHooksV1);
-  services.provide(gitCommands);
-};
-
-// git, client/index.ts
-import { CommandsV1, UiV1, type ClientContext } from 'bundle/contracts';
-import { ChatViewsV1 } from 'chat/contracts';
-import { switchBranchCommand } from './commands.js';
-import { GitBranchEvent } from './git-branch-event.js';
-
-export const activate = ({ services }: ClientContext) => {
-  services.use(UiV1).define('git-branch-event', GitBranchEvent);
-  services.use(CommandsV1).register(switchBranchCommand);
-  services.whenAvailable(ChatViewsV1, (views) =>
-    views.registerRenderer({
-      blockType: 'git.branch-change/v1',
-      elementTag: 'git-branch-event',
-    }),
+// comments, src/host/comments.ts, in an operation
+await services
+  .use(EventsV1)
+  .append(
+    commentsResolvedEvent,
+    { commentId: current.commentId, resolved: input.resolved },
+    call,
   );
-};
 ```
 
-O manifesto desse exemplo lista em `requires` todos os contratos que o código usa com `use`: `tools/v1`, `events/v1`, `settings/v1` e `hooks/v1` na parte `host`, mais `runtime.lease/v1`, que o `execute` de `switchBranch` usa (veja [hooks](./hooks.md)), e `runtime.workspace/v1`, que `gitTool` usa (veja [contextos e capacidades](./contexts.md)); e `ui/v1`, `commands/v1` e `git.commands/v1` na parte `client`, porque `switchBranchCommand` usa o stub de `git.commands/v1`. `chat.views/v1` não entra, porque é consumido com `whenAvailable`.
+- **Events.** `events/v1` has `register(definition)`, `append(definition, payload, call?)` and `sink(spec)` ([`basic/events.ts`](../../../packages/bundle/src/contracts/basic/events.ts)). The role of durable events is in [Events and nodes](events-and-nodes.md).
+- **Commands.** `register` binds the registering bundle's services to the command, so its `execute` receives `(input, call, services)`. Another bundle dispatches it with `services.use(CommandsV1).execute(command, input?, call?)`, where `command` is a ref or the id ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`registrable.ts`](../../../packages/bundle/src/contracts/registrable.ts), [`basic/commands.ts`](../../../packages/bundle/src/contracts/basic/commands.ts)). The ref of a command names the definition's type without importing it, such as `ref<CommandDefinition<'core.open-settings/v1', typeof openSettingsInput>>('core.open-settings/v1')` ([`core/src/contracts/commands.ts`](../../../bundles/foundation/core/src/contracts/commands.ts)). Menus and keybindings dispatch by id, as [Menus and keybindings](menus-and-keybindings.md) describes.
+- **Settings.** `settings/v1` has `register`, an asynchronous `get` and `entry`, `set` and `subscribe`, each typed by the definition passed ([`basic/settings.ts`](../../../packages/bundle/src/contracts/basic/settings.ts)); its full behavior is in [`settings/v1`](../../../bundles/foundation/core/README.md#settingsv1) of the core's README.
+- **Storage types.** `storage/v1` has `defineType` and the operations on records; the index fields are property paths of the schema ([`basic/storage.ts`](../../../packages/bundle/src/contracts/basic/storage.ts)). The storage contract is in [Storage](storage.md).
+
+### Tools
+
+A tool is defined with `defineTool` of the `tool` package ([`tool` README](../../../packages/tool/README.md#defining-a-tool-definetool)), in the same form: `input`, `output` and `execute(payload, call, services)`. It is registered with `services.use(ToolsV1).register(tool, …)`, which binds the registering bundle's services, so the tool that `tools/v1` holds is executed with `(payload, call)` ([`tools.ts`](../../../packages/tool/src/lib/tools.ts), [`basic/tools.ts`](../../../packages/bundle/src/contracts/basic/tools.ts), [`registrable.ts`](../../../packages/bundle/src/contracts/registrable.ts), [`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
+
+## The call
+
+Every `execute` of a method, a command or a tool definition receives `(input, call, services)`, and every hook handler receives `(input, call)`. A `Call` describes one hop, from one bundle to one provider ([`call.ts`](../../../packages/bundle/src/contracts/call.ts)):
+
+```ts
+interface Call {
+  readonly caller: Caller; // { bundleId, version, generation }
+  readonly scope?: CallScope; // Readonly<Record<string, string>>
+  readonly signal: AbortSignal;
+  readonly trace: TraceContext; // { traceparent }
+}
+```
+
+- `call.caller` is the bundle that made this hop: its `bundleId`, its `version` and the `generation` it runs in. The dispatcher fills it and never inherits it from a parent call ([`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts), [`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
+- `call.scope` is an optional record of strings whose keys belong to the bundles that read them, except `windowKey`, which the platform sets: a window's bridge removes it from a call that leaves the window, the desktop process refuses a request whose scope names it in any letter case, and sets it to the key of the window the call came from; in the host and in `desktopMain`, a scope a bundle binds may also carry it ([`client/bridge.ts`](../../../packages/desktop/src/client/bridge.ts), [`protocol.ts`](../../../packages/desktop/src/client/protocol.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)). The keys, their owners and their limits are in [Scope keys](contexts.md#scope-keys).
+- `call.signal` is the signal a handler passes on to its own work. With a parent call it is the parent's signal. Without one it is the `signal` the caller gave, or else a signal that aborts when the caller's generation ends; with a `deadline` it also aborts when the deadline passes, with an error named `TimeoutError` and the message `The call deadline elapsed.` ([`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)).
+- `call.trace` is the W3C trace context, `{ traceparent }` in the form `00-<32 hex trace id>-<16 hex span id>-<flags>`. A call without a parent starts a new trace with flags `01`; a call with a parent keeps the parent's trace id and flags and takes a new span id ([`trace.ts`](../../../packages/bundle/src/runtime/trace.ts), [`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)).
+
+Every method of a stub takes, after its input, an optional last argument ([`call.ts`](../../../packages/bundle/src/contracts/call.ts), [`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts), [`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)):
+
+- **A parent call**, the `call` the handler received. The new hop inherits the parent's signal, its deadline, the generation it is pinned to and its scope, and takes a child of its trace. Only a call the runtime created counts as a parent: the runtime freezes each call and brands it with a non-enumerable symbol, so a copy such as `{ ...call }` is not a parent.
+- **`{ signal, deadline }`**, with the deadline in epoch milliseconds. Only a plain object whose own keys are a non-empty subset of `signal` and `deadline`, with an `AbortSignal` and a finite number, counts as this argument.
+
+Any other last value is not a call argument: for a method whose input is a tuple it is part of the input, as [Services and methods](#services-and-methods) describes, and for any other method it is ignored. `services.use(contract, scope)` binds a scope to the stub it returns. The scope of a hop merges, key by key, the parent's scope, then the scope bound by `use`, then `windowKey`, a later source winning over an earlier one ([`context.ts`](../../../packages/bundle/src/contracts/context.ts), [`runtime/call.ts`](../../../packages/bundle/src/runtime/call.ts)). `windowKey` is set in two places. The desktop process sets it to the window's key when it makes a call on behalf of a window, and on every request that reaches it over a window's bridge, whatever the window sent ([`generation/process.ts`](../../../app/desktop/doric/src/platform/generation/process.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)). Inside a window, the client runtime wraps each provider the window itself holds, and a call to such a provider whose `scope.windowKey` is not the window's own key is rebuilt as a hop with the call as its parent and `windowKey` set to that key ([`client/activate.ts`](../../../packages/desktop/src/client/activate.ts)). How a stub call runs, step by step, and how the scope and the signal cross processes are in [The call](services-and-channels.md#the-call) and [The scope](services-and-channels.md#the-scope) of Services and channels; every field and helper of `Call` is in [`Call`](../../../packages/bundle/README.md#call) of the package README.
+
+## The `contracts` entry points and the import rules
+
+### `bundle/contracts`
+
+`bundle/contracts` imports only relative modules and zod, so every part may import it, in the host, in `desktopMain` and in a window ([`index.ts`](../../../packages/bundle/src/contracts/index.ts)). It exports the `define*` functions and `ref`; the types `Call`, `Services`, `HostContext`, `DesktopContext` and `ClientContext`, which a part's `activate` receives; `ContractError`; the refs of the basic services (`HooksV1`, `LogV1`, `ToolsV1`, `SkillsV1`, `SettingsV1`, `SecretsV1`, `SecretsBackendV1`, `StorageV1`, `StorageBackendV1`, `EventsV1`, `ModelsV1`, `ModelsProviderV1`, `CommandsV1`, `UiV1`, `NavigationV1`, `RegionsV1`, `WindowsV1`, `MenusV1`) with their interfaces; the refs of the platform's contracts, such as `DoricCatalogV1` and `DoricWindowsV1`, with `AppHooksV1` and `WindowHooksV1`, whose environments and shapes are in [Platform contracts](contexts.md#platform-contracts); and the schema helpers of [Process-local values](#services-and-methods), `disposableSchema`, `functionSchema`, `streamListener` and `noInput`, with the method specifications of the basic contracts ([`basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts), [`basic/common.ts`](../../../packages/bundle/src/contracts/basic/common.ts), [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`network.ts`](../../../packages/bundle/src/contracts/network.ts)). Every export, by source file, is in [Exports per source file](../../../packages/bundle/README.md#exports-per-source-file) of the package README. The refs and interfaces of the basic services live in the platform because any bundle may provide them: the core writes its definitions against the same refs, as does `postgres`, the provider of `storage.backend/v1` and `secrets.backend/v1`.
+
+`packages/bundle`, the package `bundle`, holds the bundle platform under these entry points: `bundle/contracts`, described here; `bundle/runtime`, the service runtime every process shares; `bundle`, the Node API: the loader that starts the host with `startHost`, and the build; `bundle/externals`, the import-map specifiers a window resolves; `bundle/testing`, for tests; and `bundle/schemas/*`, the platform's generated JSON Schema documents. It also holds the build CLI, `build <bundleDir>` ([`package.json`](../../../packages/bundle/package.json), [`index.ts`](../../../packages/bundle/src/index.ts), [`cli.ts`](../../../packages/bundle/src/build/cli.ts)).
+
+### A bundle's `contracts` entry point
+
+A bundle that publishes contracts exports them from `src/contracts/index.ts`, mapped in its `package.json` as `<id>/contracts`: the package `name` is the bundle id, and `exports["./contracts"]` points `@org/source` at `./src/contracts/index.ts` and `types`, `import` and `default` at `./dist/contracts/index.d.ts` and `./dist/contracts/index.js` ([`git/package.json`](../../../bundles/features/git/package.json), [`chat/package.json`](../../../bundles/desktop/chat/package.json)). The other fields of that `package.json` are in [What a bundle's `package.json` lists](boundaries.md#what-a-bundles-packagejson-lists). The entry point holds what a consumer needs and no implementation:
+
+- hooks contracts, events, settings and storage types, as definitions;
+- for a service, its interface, its ref, `ref<Interface>(id)`, and the `input` and `output` schemas of its methods, which the provider spreads into its `defineMethod` calls ([`git/src/contracts/index.ts`](../../../bundles/features/git/src/contracts/index.ts));
+- for a command, a ref typed by the definition, and the input schema.
+
+The definitions with `execute` stay in the part that provides them. A consumer lists the contract's id in its manifest, under `requires` when it cannot run without it and under `optional` when it can. `use` of an id that the manifest lists under neither and that the bundle does not provide throws `undeclared_requirement`, except `doric.*` ids and, for the core, the basic contracts; `whenAvailable` checks no manifest line, and the line an optional consumer lists is required by the boundary checks instead ([`services.ts`](../../../packages/bundle/src/runtime/services.ts), [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts), [Boundaries](boundaries.md)). The manifest fields are in [Manifest](manifest.md).
+
+### What a bundle may import
+
+- **Another bundle: only `<id>/contracts`.** A file under a bundle's `src/`, `tests/` or `stories/` names another bundle's package only as exactly `<id>/contracts`, never a subpath of it or of the package. A file under `tests/` or `stories/` may also name `<id>/testing`, and a file under `tests/` `<id>/package.json`; the exception goes by folder, not by the kind of file. No file anywhere imports `<package>/src/…` of a workspace package. A boundary check enforces both, with no standing exception ([`boundaries.mjs`](../../../tests/support/boundaries.mjs), [`boundary-exceptions.json`](../../../tests/boundary-exceptions.json)); the checks are in [Boundaries](boundaries.md).
+- **Its own contracts: by relative path.** A bundle's code imports its own contracts as `../contracts/index.js`, never as `<id>/contracts`. When the build compiles a `desktopMain` part, a `client` part, or a client's worker or chunk, it turns an import that resolves into the bundle's own `src/contracts/` into the external `<id>/contracts`, so that one instance of each contracts module, of `bundle/contracts` and of `zod` exists per process or window; a frame bundles its contracts instead ([`parts.ts`](../../../packages/bundle/src/build/parts.ts), [`externals.ts`](../../../packages/bundle/src/build/externals.ts)).
+- **The platform's packages, by part.** The build of a part refuses only the specifiers the last column names, and fails on one. It leaves the external specifiers to the window's import map or to the desktop runner's resolution, and bundles every other import into the part, an npm package as much as a workspace package such as `desktop/reads` ([`parts.ts`](../../../packages/bundle/src/build/parts.ts), [`externals.ts`](../../../packages/bundle/src/build/externals.ts)):
+
+  | Part                     | Left external, resolved at run time                                                                                                                                                                                                             | Bundled into the part                                             | The build refuses                                                                                                                                                                                                                                                                 |
+  | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `client`, and its chunks | `bundle/contracts`, `<id>/contracts`, `zod`, React, React DOM, Base UI, Lexical, and `desktop/ui` and its subpaths, which the window's import map serves                                                                                        | Every other import, such as `desktop/reads`                       | `bundle`, `bundle/runtime`, `desktop`, `desktop/client` and its subpaths                                                                                                                                                                                                          |
+  | A client's worker        | Nothing: a worker runs outside the window's import map, except an import of the bundle's own `src/contracts/`, which becomes `<id>/contracts`                                                                                                   | Every other import                                                | What `client` refuses                                                                                                                                                                                                                                                             |
+  | `desktopMain`            | `bundle/contracts`, `<id>/contracts`, `zod`, `electron` and Node built-ins, which the desktop runner resolves                                                                                                                                   | Every other import, `bundle/runtime` included                     | `bundle`, React, React DOM, Base UI, Lexical and every `desktop` entry point                                                                                                                                                                                                      |
+  | Frame                    | React, `react/jsx-runtime`, `react/jsx-dev-runtime`, React DOM, `react-dom/client` and Base UI, which the frame's import map serves                                                                                                             | Every other import, `zod` and the bundle's own contracts included | What `client` refuses; every `bundle/*` and `desktop/*` entry point, such as `bundle/contracts`, `desktop/ui` and `desktop/reads`; and every other specifier of the window's import map: `<id>/contracts`, Lexical, and the subpaths of React and React DOM the frame's map lacks |
+  | `host`                   | The build sets no rule; host parts import `bundle/contracts` and `<id>/contracts`, and the kernel-resident `transport`, `postgres` and `host-config` import the type `EmbeddedBundle` from `bundle`, and `host-config` imports `bundle/runtime` | —                                                                 | Nothing                                                                                                                                                                                                                                                                           |
+
+  [`desktop/ui`](../../../packages/desktop/README.md#shared-ui-desktopui) holds the shared components, tokens and styles; [`desktop/reads`](../../../packages/desktop/README.md#reads-desktopreads) holds the helpers every read surface shares: workspace paths, the refresh queue, the retry policy of a pending read and the error messages of a failed one ([`reads/index.ts`](../../../packages/desktop/src/reads/index.ts)). What each `desktop` entry point holds, and which part may import it, is in the [`desktop` README](../../../packages/desktop/README.md#what-a-bundle-part-may-import). Tests import `bundle/testing`.
+
+### Two rules for the content of a contract
+
+- **Data has one owner.** A record is read through a contract of the bundle that owns it. A bundle does not hand out another bundle's record types through its own contract, imported or retyped. It may publish a view of another bundle's data: a type it declares itself, holding what its own function produces from that data, read-only, with no field it does not use. No check decides this rule; it is applied in review ([Boundaries](boundaries.md)).
+- **Plain data in an added contract method.** A contract method that a change adds takes and returns plain data. A contribution to another bundle's surface names an element tag and gives props, and the element answers with DOM events; it passes no function, component or live object, except a subscription listener and the `Disposable` that ends a registration or subscription ([`context.ts`](../../../packages/bundle/src/contracts/context.ts), [`basic/common.ts`](../../../packages/bundle/src/contracts/basic/common.ts), [`basic/regions.ts`](../../../packages/bundle/src/contracts/basic/regions.ts)). A change that moves a contract to another bundle does not reshape it for this rule. It is applied in review ([Boundaries](boundaries.md)).
+
+## Structural copies
+
+Because a contract is resolved by its id, a bundle may write its own copy of another bundle's contract in place of importing `<owner>/contracts`:
+
+- **A service:** `ref<LocalInterface>(id)`, with an interface that lists the methods the bundle calls, such as `chat`'s copy of `workspace.selection/v1` ([`chat/src/client/api/workspace-selection.ts`](../../../bundles/desktop/chat/src/client/api/workspace-selection.ts)) or [`papercraft`](../../../bundles/features/papercraft/README.md)'s view of `doric.windows/v1` through its `capture` method only ([`papercraft/src/desktop/snapshot.ts`](../../../bundles/features/papercraft/src/desktop/snapshot.ts)).
+- **A hooks contract:** `defineHooks(id, …)` with the same id, hook names, kinds and inputs. The provider of `hooks/v1` matches a registration to the owner's definition by id and hook name, and a handler receives the input the owner's definition validated ([`core/src/shared/hooks.ts`](../../../bundles/foundation/core/src/shared/hooks.ts), [Hooks and the app's lifecycle](hooks.md#declaring-hooks)).
+
+A copy carries no code of the owner, so the runtime validates every call against the provider's definition, not against the copy, and nothing checks the copy's types against the owner's ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)). The copies in this repository exist for four reasons:
+
+- **The bundle runs without the owner.** `<owner>/contracts` is resolved only in a composition that contains the owner: a window's import map and a desktop generation's module resolution map `<id>/contracts` only for the bundles of their generation ([`import-map.ts`](../../../app/desktop/doric/src/platform/protocol/import-map.ts), [`module-hooks.ts`](../../../app/desktop/doric/src/platform/generation/module-hooks.ts)). Without the owner, the window's import map has no entry for `<owner>/contracts`, so a client part that imports it fails to load; in a desktop generation the specifier falls through to Node's own resolution. So a bundle that reaches the owner through `whenAvailable` and must load without it keeps a copy and lists the id under `optional`: `chat` for `workspace.selection/v1` and `workspace.hooks/v1`, and `files`, `git`, [`notifications`](../../../bundles/desktop/notifications/README.md) and [`openui`](../../../bundles/features/openui/README.md) for `chat.hooks/v2` ([`chat/manifest.json`](../../../bundles/desktop/chat/manifest.json), [`git/src/client/api/peers.ts`](../../../bundles/features/git/src/client/api/peers.ts)).
+- **The package takes no dependency on the owner's.** `runtime` keeps a copy of `core.event-hooks/v1`, so that its package does not depend on the core's, and lists the id under `requires` ([`runtime/src/host/peers.ts`](../../../bundles/runtime/runtime/src/host/peers.ts)).
+- **A copy narrowed to what the bundle calls.** [`terminal`](../../../bundles/features/terminal/README.md)'s host part keeps copies of `runtime.hooks/v1`, `runtime.threads/v1` and `runtime.workspace/v1`, each narrowed to the members it calls, although its package depends on `runtime` and its client part imports `runtime/contracts`; it lists the three ids under `requires` ([`terminal/src/host/peers.ts`](../../../bundles/features/terminal/src/host/peers.ts), [`terminal/src/client/peers.ts`](../../../bundles/features/terminal/src/client/peers.ts), [`terminal/manifest.json`](../../../bundles/features/terminal/manifest.json)).
+- **The app is older than the contract.** `bundle/contracts` is served by the app at run time, so a bundle that may load on an app whose `bundle/contracts` lacks a platform ref builds the ref from its id: [`account`](../../../bundles/desktop/account/README.md) does so for `doric.about/v1`, which it detects with `whenAvailable` ([`account/src/client/domain/about.ts`](../../../bundles/desktop/account/src/client/domain/about.ts), [`import-map.ts`](../../../app/desktop/doric/src/platform/protocol/import-map.ts), [`module-hooks.ts`](../../../app/desktop/doric/src/platform/generation/module-hooks.ts)).
+
+A copy does not remove the manifest line: the boundary check that reads each id a bundle's sources name, as a literal or through an import, requires it under `requires` or `optional`, `doric.*` ids aside, and counts the line in the graph of bundles that must have no cycle ([Boundaries](boundaries.md)).
+
+## The contract descriptor and schemas
+
+A bundle's Nx `build` target runs `tsc --build tsconfig.json`, then, in most bundles with a client part, `tsc -p tsconfig.client.json`, and last `node packages/bundle/dist/build/cli.js build <bundleDir>`, the build of the `packages/bundle` CLI; `build --development <bundleDir>` builds the parts with inline source maps ([`git/project.json`](../../../bundles/features/git/project.json), [`cli.ts`](../../../packages/bundle/src/build/cli.ts), [`parts.ts`](../../../packages/bundle/src/build/parts.ts)). Which bundles run which commands is in [How a bundle's parts are built](boundaries.md#how-a-bundles-parts-are-built). The CLI's build runs these steps ([`cli.ts`](../../../packages/bundle/src/build/cli.ts)):
+
+1. It validates the manifest; removes the outputs it generates, `dist/skills`, `dist/schemas`, `dist/contracts.json` and `dist/manifest.json`; copies the manifest to `dist/manifest.json`; validates and copies the skills; and copies the Markdown files below `src/host` to `dist/host`.
+2. It builds the `desktopMain` and `client` parts, with the import rules above; a client's workers, `src/client/workers/*.ts`, to `dist/client/workers/<name>.js`, with every import bundled except an import of the bundle's own `src/contracts/`, which becomes the external `<id>/contracts`; its chunks, `src/client/chunks/*.ts`, to `dist/client/chunks/<name>.js`, with the client's externals; and its frames, `src/client/frames/*.ts`, to `dist/client/frames/<name>.js` ([`parts.ts`](../../../packages/bundle/src/build/parts.ts)).
+3. It imports each built part, `host/index.js`, `desktop/index.js` and `client/index.js`, skipping a part with no built file, and fails when a part does not load, with `Loading <part> failed: …`, to which a client part's message adds that a client module may touch the DOM at import time only through `class … extends HTMLElement`, or when a part does not export an `activate` function. It dry-activates each part: `activate` runs against recording services ([`record.ts`](../../../packages/bundle/src/build/record.ts)). The recording keeps each `provide`, each `define` of a hooks contract that is not `doric.*`, and each `register` of an event, a settings definition or a command created with `defineCommand`, and each `defineType` of a storage type; a `many` service is kept once. Every other call is a no-op that returns an inert `Disposable`, and `whenAvailable` never calls back. `use` of an id the manifest lists under none of `requires`, `optional` and `provides`, `doric.*` aside, fails the build, on `hooks/v1` as on any service. A client part is imported under a DOM shim ([`dom-shim.ts`](../../../packages/bundle/src/build/dom-shim.ts)).
+4. It checks the recording against the manifest ([`record.ts`](../../../packages/bundle/src/build/record.ts)): a contract recorded twice in one environment, a recorded contract the manifest does not list under `provides`, a basic contract with the wrong cardinality, a method exposure the platform's table does not give, and an id of `provides` that no part records each fail the build. A contract recorded in two environments must generate the same document in both ([`cli.ts`](../../../packages/bundle/src/build/cli.ts)).
+5. It writes one JSON Schema document per contract to `dist/schemas/<contract id>.json`, the descriptor to `dist/contracts.json`, and `dist/package.json`, which marks `dist` as ES modules.
+
+The descriptor lists every contract the bundle provides, once per environment ([`descriptor.ts`](../../../packages/bundle/src/runtime/descriptor.ts)):
 
 ```json
 {
-  "provides": [
-    "git.commands/v1@1.3.0",
-    "git.hooks/v1@1.0.0",
-    "git.settings/v1@1.0.0",
-    "git.branch-switched/v1@1.0.0",
-    "git.switch-branch/v1@1.0.0",
-    "git.open-comparison/v1@1.0.0"
-  ],
-  "requires": [
-    "hooks/v1@^1.0.0",
-    "tools/v1@^1.0.0",
-    "events/v1@^1.0.0",
-    "settings/v1@^1.0.0",
-    "commands/v1@^1.0.0",
-    "ui/v1@^1.0.0",
-    "git.commands/v1@^1.0.0",
-    "runtime.lease/v1@^1.0.0",
-    "runtime.workspace/v1@^1.0.0"
+  "descriptorVersion": 1,
+  "bundle": { "id": "git", "version": "1.3.0" },
+  "contracts": [
+    {
+      "id": "git.commands/v1",
+      "version": "1.1.0",
+      "kind": "service",
+      "environment": "host",
+      "cardinality": "one",
+      "local": false,
+      "schema": "schemas/git.commands/v1.json"
+    }
   ]
 }
 ```
 
-As formas antigas `ctx.events.define(id, schema)` e `ctx.settings.define(id, schema)` dão lugar a `services.use(EventsV1).register(definição)` e `services.use(SettingsV1).register(definição)`. Partes `host` usam `HostContext`, partes `desktopMain` usam `DesktopContext` e partes `client` usam `ClientContext`; os três têm a mesma forma, `{ readonly services: Services }`, e `activate` pode devolver uma função de limpeza; veja [contextos e capacidades](./contexts.md).
-
-## Hooks: `defineHook` e `defineHooks`
-
-`defineHook` recebe só `kind` e `input`; o nome do hook é a chave em `defineHooks`. O registro e o uso passam por `hooks/v1`.
-
-```ts
-// git, contracts/hooks.ts
-import { defineHook, defineHooks } from 'bundle/contracts';
-import { z } from 'zod';
-
-export const onBeforeSwitchBranchHook = defineHook({
-  kind: 'decide',
-  input: z
-    .object({ projectId: z.string(), from: z.string(), to: z.string() })
-    .strict(),
-});
-
-export const GitHooksV1 = defineHooks('git.hooks/v1', {
-  onBeforeSwitchBranchHook,
-});
-```
-
-- `defineHook` define um único hook. `defineHooks` agrupa hooks sob um ID de contrato versionado, que é o que aparece em `provides` e `requires`.
-- `kind` fixa a saída, por isso `defineHook` não recebe `output`:
-
-  | `kind`      | Saída do handler                                                                               | Retorno de `execute` |
-  | ----------- | ---------------------------------------------------------------------------------------------- | -------------------- |
-  | `observe`   | Nenhuma                                                                                        | `Promise<void>`      |
-  | `transform` | Um valor do mesmo schema da entrada, o que permite encadear handlers                           | `Promise<Input>`     |
-  | `decide`    | `Decision`, que a plataforma define como `{ allow: true } \| { allow: false; reason: string }` | `Promise<Decision>`  |
-
-- Não há política de falha por hook. Para os três `kind`, um handler que falha ou passa do prazo padrão do provedor de `hooks/v1` é ignorado, a cadeia segue como se ele não existisse e a falha vai ao diagnóstico. Em `decide`, um handler ignorado não recusa. O prazo padrão não vale para os handlers de `WindowHooksV1`: o `onCloseHook` não tem prazo e o `onFlushHook` tem prazo fixo definido pela plataforma (veja [hooks](./hooks.md)).
-
-### Disparar: `execute`
-
-O dono define o contrato pelo serviço `hooks/v1` e dispara o hook com `execute`, como no `defineTool`:
-
-```ts
-const hooks = services.use(HooksV1);
-const gitHooks = hooks.define(GitHooksV1);
-const decision = await gitHooks.onBeforeSwitchBranchHook.execute(input, call);
-```
-
-`execute` valida a entrada com o zod, roda os handlers na ordem, valida a saída de cada handler, ignora o handler que falha ou passa do prazo padrão e devolve `Promise<void>` (`observe`), `Promise<Input>` (`transform`) ou `Promise<Decision>` (`decide`). O `call` repassado leva o escopo, o `signal` e o `trace` da chamada que originou o disparo; o `caller` que cada handler recebe é o dono que disparou o hook, conforme a [propagação de `call`](#propagação-de-call).
-
-### Consumir: `use` e `whenAvailable`
-
-O consumidor registra handlers com `hooks.use(GitHooksV1).onBeforeSwitchBranchHook(handler)` ou, se a dependência for opcional, com `hooks.whenAvailable(GitHooksV1, (h) => h.onBeforeSwitchBranchHook(handler))`, sempre sobre `const hooks = services.use(HooksV1)`. O handler recebe `(input, call)`, com `call.caller`, `call.scope`, `call.signal` e `call.trace`, e registra logs por `log/v1`. O registro devolve um descarte, liberado automaticamente quando o bundle que registrou é desativado.
-
-```ts
-// pseudocódigo da API proposta
-import { HooksV1 } from 'bundle/contracts';
-import { GitHooksV1 } from 'git/contracts';
-
-const hooks = services.use(HooksV1);
-
-hooks
-  .use(GitHooksV1)
-  .onBeforeSwitchBranchHook(async ({ to }, call) =>
-    to.startsWith('release/')
-      ? { allow: false, reason: 'Branches de release são protegidos.' }
-      : { allow: true },
-  );
-```
-
-### Hooks do app
-
-Os hooks do app são definidos com `defineHooks` pela plataforma, em `bundle/contracts`: `AppHooksV1` (`doric.app.hooks/v1`) para o ciclo de vida do app e das gerações, `WindowHooksV1` (`doric.window.hooks/v1`) para `onCloseHook` e `onFlushHook`. Qualquer bundle, não só o core, registra handlers dos hooks do app, com `hooks.use(AppHooksV1).onAppReadyHook(handler)`; não há mais o atalho `ctx.hooks.onAppReadyHook`. No client, `hooks.use(WindowHooksV1).onCloseHook(handler)` e `hooks.use(WindowHooksV1).onFlushHook(handler)` registram para a janela do client que chamou (o `call.scope.windowKey`, preenchido pelo dispatcher).
-
-Quem define e dispara esses hooks é a plataforma, como consumidora de `hooks/v1`:
-
-- depois que o provedor de `hooks/v1` de um ambiente ativa (o core, por padrão, ou o escolhido em `providers`), a plataforma daquele ambiente chama `define(AppHooksV1)` e passa a chamar `execute` nos pontos do ciclo de vida;
-- `WindowHooksV1` é definido pela plataforma no ambiente `client`: o bootstrap de cada janela o define no `hooks/v1` do client e executa `onCloseHook` e `onFlushHook` quando o main pede o fechamento da janela.
-
-Uma falha do `activate` de um bundle leva à quarentena; uma falha de um handler de `onActivateHook` (`observe`) só vai ao diagnóstico. O `onActivateHook` do próprio provedor de `hooks/v1` não é observável, porque ele ativa antes de o contrato existir.
-
-O modelo completo (quem define hooks, as tabelas de hooks do app e dos bundles, as regras de ordem e os exemplos entre bundles) está em [hooks e ciclo de vida](./hooks.md).
-
-## Serviços: `defineService` e `defineMethod`
-
-```ts
-// git, host/git-commands.ts (pseudocódigo da API proposta)
-import { defineMethod, defineService, HooksV1 } from 'bundle/contracts';
-import { z } from 'zod';
-import { RuntimeLeaseV1 } from 'runtime/contracts';
-import { GitHooksV1 } from '../contracts/index.js';
-
-export const gitCommands = defineService('git.commands/v1', {
-  switchBranch: defineMethod({
-    input: z.object({ projectId: z.string(), to: z.string() }).strict(),
-    output: z.object({ from: z.string(), to: z.string() }).strict(),
-    execute: async ({ projectId, to }, call, services) => {
-      const gitHooks = services.use(HooksV1).define(GitHooksV1);
-      const from = await currentBranch(projectId);
-      const decision = await gitHooks.onBeforeSwitchBranchHook.execute(
-        { projectId, from, to },
-        call,
-      );
-      if (!decision.allow)
-        throw new GitError('switch-refused', decision.reason);
-      /* ... usa services.use(RuntimeLeaseV1) e troca o branch ... */
-      return { from, to };
-    },
-  }),
-});
-
-// git, host/index.ts
-services.provide(gitCommands);
-
-// git, contracts/refs.ts (recorte)
-import { ref } from 'bundle/contracts';
-import type { gitCommands } from '../host/git-commands.js';
-
-export const GitCommandsV1 = ref<typeof gitCommands>('git.commands/v1');
-
-// qualquer consumidor, inclusive uma parte client
-await services.use(GitCommandsV1).switchBranch({ projectId, to }, call);
-```
-
-- `defineService` recebe o ID versionado, os métodos e, opcionalmente, `{ cardinality: 'many' }`; sem opções, a cardinalidade é `'one'` (veja [cardinalidade](#cardinalidade)).
-- `defineMethod` recebe `input`, `output` e `execute(input, call, services)`. `call` é a chamada, com `call.caller` preenchido pelo dispatcher e o escopo em `call.scope`; `services` são os serviços do bundle que forneceu o serviço, ligados em `services.provide(definição)`.
-- `execute` valida a entrada e a saída com o zod da definição, como o `defineTool`. Um erro rejeita a Promise com `code` e `message`, que o dispatcher repassa pela ponte.
-- O dono obtém seus handles com o próprio `services`: `services.use(HooksV1).define(GitHooksV1)` devolve sempre o mesmo handle para o mesmo dono, então pode ser chamado dentro do `execute`.
-- O consumidor usa a referência: `services.use(GitCommandsV1)` devolve um stub tipado por `typeof gitCommands`. Cada método do stub aceita como último argumento opcional um `call` pai ou `{ signal, deadline }`; veja a [propagação de `call`](#propagação-de-call).
-- Qualquer serviço fornecido no `desktopMain` ou no `host` é alcançável pela ponte por uma parte `client` que o declara em `requires` ou o consome com `whenAvailable`, como `windows/v1`, `menus/v1` e o `git.commands/v1` acima. Entre processos, a validação usa o JSON Schema gerado da definição e publicado no catálogo.
-- Um método cujo schema usa `z.custom` (funções, classes, elementos), como em `chat.views/v1`, só funciona no mesmo processo; o dispatcher recusa a chamada que atravessaria processos.
-- Outro bundle que fornece o mesmo contrato escreve a própria definição com o mesmo ID, ou com a referência no lugar do ID (`defineService(GitCommandsV1, { ... })`), o que faz o compilador conferir os métodos contra o tipo. A checagem de semver, suspensa até a etapa 11, vai comparar os JSON Schemas gerados com a versão publicada.
-
-Os serviços básicos seguem a mesma regra. `bundle/contracts` exporta as referências (`HooksV1`, `StorageV1`, `UiV1` e as demais), com os tipos dos contratos; o core escreve as definições com `execute` e as fornece, e outro bundle pode fornecer as suas no lugar:
-
-```ts
-// bundle/contracts (pseudocódigo da API proposta)
-export const StorageBackendV1 = ref<StorageBackend>('storage.backend/v1');
-export const ModelsProviderV1 = ref<ModelsProvider>('models.provider/v1');
-
-// openai, host/models.ts
-export const openaiModels = defineService(
-  ModelsProviderV1,
-  {
-    /* métodos com execute */
-  },
-  { cardinality: 'many' },
-);
-```
-
-O diretório de serviços, os stubs tipados e a ponte entre processos estão em [serviços entre bundles e canais de mensagens](./services-and-channels.md).
-
-## Eventos: `defineEvent`
-
-```ts
-export const branchSwitchedEvent = defineEvent({
-  type: 'git.branch-switched/v1',
-  payload: z
-    .object({
-      projectId: z.string(),
-      repository: z.string(),
-      from: z.string(),
-      to: z.string(),
-    })
-    .strict(),
-});
-
-const events = services.use(EventsV1);
-events.register(branchSwitchedEvent); // na ativação
-await events.append(branchSwitchedEvent, payload, call); // numa execução
-```
-
-- `type` é o ID com major; a versão completa vem de `provides` no manifesto (`git.branch-switched/v1@1.0.0`).
-- `payload` é o schema zod do evento durável.
-- `events.register` registra a definição na ativação; `events.append(definição, payload, call)` grava um evento validado numa execução, no escopo de `call`, e o publica como é.
-
-O papel dos eventos duráveis está em [eventos e nodes](./events-and-nodes.md).
-
-## Comandos: `defineCommand`
-
-Um comando tem uma forma só: `id`, `input` e `execute`, como uma tool. `commands/v1` existe no `desktopMain` e no `client`, não no `host`, então comandos são definidos e registrados na parte `client` ou `desktopMain` do bundle.
-
-```ts
-// git, client/commands.ts (pseudocódigo da API proposta)
-import { defineCommand } from 'bundle/contracts';
-import { z } from 'zod';
-import { GitCommandsV1 } from '../contracts/index.js';
-import { resolveSwitchBranchInput } from './switch-branch-input.js';
-
-export const switchBranchCommand = defineCommand({
-  id: 'git.switch-branch/v1',
-  input: z
-    .object({ projectId: z.string().optional(), to: z.string().optional() })
-    .strict(),
-  execute: async (input, call, services) => {
-    // menu e atalho despacham sem entrada: o Project vem da rota ativa e a branch, de um seletor
-    const { projectId, to } = await resolveSwitchBranchInput(
-      input,
-      call,
-      services,
-    );
-    await services.use(GitCommandsV1).switchBranch({ projectId, to }, call);
-  },
-});
-
-// git, client/index.ts, dentro de activate({ services })
-import { CommandsV1 } from 'bundle/contracts';
-import { switchBranchCommand } from './commands.js';
-
-services.use(CommandsV1).register(switchBranchCommand);
-
-// git, contracts/refs.ts (recorte), para despacho tipado por outros bundles
-import { ref } from 'bundle/contracts';
-import type { switchBranchCommand } from '../client/commands.js';
-
-export const SwitchBranchCommandV1 = ref<typeof switchBranchCommand>(
-  'git.switch-branch/v1',
-);
-
-// outro bundle
-await services.use(CommandsV1).execute(SwitchBranchCommandV1, {
-  projectId,
-  to: 'main',
-});
-```
-
-- `id` é o ID com major; a versão completa vem de `provides` no manifesto (`git.switch-branch/v1@1.0.0`, `git.open-comparison/v1@1.0.0`).
-- `execute(input, call, services)` recebe os serviços do bundle que registrou o comando, ligados em `register`.
-- Quem despacha usa a referência exportada em `contracts/` e recebe o tipo da entrada. Menus e atalhos despacham pelo ID, como em [menus nativos e atalhos](./menus-and-keybindings.md).
-- Uma ação disparada por outro bundle também é um comando, não um serviço: `git.open-comparison/v1` é definido na parte `client` do `git` e despachado pela conversa (`<chat-view>`) ou pelo layout. O core faz o mesmo com `core.open-settings/v1`, registrado no `desktopMain` e exportado como referência em `core/contracts`; veja [janelas](./windows.md).
-
-## Configuração: `defineSettings`
-
-```ts
-export const gitSettings = defineSettings({
-  id: 'git.settings/v1',
-  schema: z.object({ defaultRemote: z.string().default('origin') }).strict(),
-});
-
-const settings = services.use(SettingsV1);
-settings.register(gitSettings);
-const { defaultRemote } = await settings.get(gitSettings); // tipado por este schema
-settings.subscribe(gitSettings, (value) => {
-  /* ... */
-});
-```
-
-`settings.get` é assíncrono e devolve uma `Promise` com o valor tipado pela definição, porque a chamada pode atravessar processos até o provedor de `settings/v1`. `settings/v1` substitui os antigos `ctx.config` e `ctx.settings`; cada definição é identificada pelo ID qualificado, e a versão completa vem de `provides`. Uma major nova de settings registra sua migração junto da definição.
-
-## Tipos de storage: `defineStorageType`
-
-```ts
-export const threadType = defineStorageType({
-  type: 'runtime.thread/v1',
-  schema: z
-    .object({
-      projectId: z.string(),
-      parentThreadId: z.string().nullable(),
-      createdAt: z.string(),
-    })
-    .strict(),
-  indexes: [
-    { name: 'byProject', fields: ['projectId', 'createdAt'] },
-    { name: 'byParent', fields: ['parentThreadId', 'createdAt'] },
-  ],
-});
-
-services.use(StorageV1).defineType(threadType);
-```
-
-`storage/v1` é a fachada do core sobre `storage.backend/v1`, e cada tipo é identificado pelo ID qualificado; o provedor de `storage.backend/v1` é `postgres` por padrão, e a composição pode escolher outro em `providers`. Os campos de índice são caminhos de propriedade do schema; o backend os converte em JSON Pointer. O contrato de storage independente de backend está em [armazenamento genérico e histórico](./storage.md).
-
-## Tabela da família define\*
-
-| Função                        | Define                                                              | Registro ou uso                                                                    | Disparo                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `defineHook`                  | Um hook com `kind` e `input`                                        | Agrupado por `defineHooks`                                                         | `handle.<nome>.execute(input, call)`                                                               |
-| `defineHooks`                 | Um contrato de hooks versionado                                     | `hooks/v1`: `define`, `use`, `whenAvailable`                                       | Pelo dono                                                                                          |
-| `defineService`               | Um serviço versionado, com `cardinality` opcional                   | `services.provide(definição)`; consumidores usam `ref` com `use` e `whenAvailable` | Chamada de método pelo dispatcher, com `call`                                                      |
-| `defineMethod`                | Um método com `input`, `output` e `execute`                         | Dentro de `defineService`                                                          | `execute(input, call, services)`                                                                   |
-| `defineEvent`                 | Um evento durável com `type` e `payload`                            | `events/v1`: `register`                                                            | `events.append(evento, payload, call)`                                                             |
-| `defineCommand`               | Um comando com `id`, `input` e `execute`                            | `commands/v1` (`client` ou `desktopMain`): `register`                              | `commands.execute(ref ou ID, input)` por menu, atalho ou UI; roda `execute(input, call, services)` |
-| `defineSettings`              | A configuração de um bundle                                         | `settings/v1`: `register`                                                          | `await settings.get(definição)` tipado e `subscribe`                                               |
-| `defineStorageType`           | Um tipo de storage com índices                                      | `storage/v1`: `defineType`                                                         | Primitivas de storage                                                                              |
-| `ref` (de `bundle/contracts`) | A referência tipada a um serviço ou comando, só com o ID            | Exportada em `contracts/`; passada a `use`, `whenAvailable` e `commands.execute`   | —                                                                                                  |
-| `defineTool` (pacote `tool`)  | Uma tool com `input`, `output` e `execute(payload, call, services)` | `tools/v1`: `register`                                                             | Quando o modelo pede a tool, `execute(payload, call, services)`                                    |
-
-## O que não muda
-
-- O formato do manifesto não muda: `provides` e `requires` continuam listando IDs de contrato; veja [manifesto v1](./manifest.md).
-- Os IDs com major (`/vN`) e a política de versionamento não mudam. A verificação de build de semver, suspensa até a etapa 11, vai comparar os JSON Schemas gerados do zod; veja [versionamento semântico](./versioning.md).
-
-## Relações
-
-- [Arquitetura de bundles](../bundles.md): o documento principal, que mostra onde os contratos entram no conjunto.
-- [Manifesto v1](./manifest.md): lista os IDs de contrato em `provides` e `requires` e perde a convenção `schemas/*.json`.
-- [Hooks e ciclo de vida](./hooks.md): aplica `defineHook`, `defineHooks` e `execute` ao modelo de ciclo de vida, por `hooks/v1`, e aos exemplos entre bundles.
-- [Serviços entre bundles e canais de mensagens](./services-and-channels.md): usa `defineService` e `defineMethod` no diretório de serviços e na ponte entre processos.
-- [Contextos e capacidades](./contexts.md): define o contexto só com `services`, o objeto `call` e os contratos `events/v1`, `settings/v1`, `commands/v1`, `tools/v1`, `storage/v1` e `hooks/v1` que recebem as definições.
-- [Eventos e nodes](./events-and-nodes.md): explica os eventos duráveis definidos com `defineEvent`.
-- [Menus nativos e atalhos](./menus-and-keybindings.md): despacha os comandos definidos com `defineCommand`.
-- [Armazenamento genérico e histórico](./storage.md): consome os tipos e índices declarados com `defineStorageType`.
-- [Versionamento semântico](./versioning.md): compara os JSON Schemas gerados do zod para validar as versões dos contratos, mas a checagem está suspensa até a etapa 11.
-- [Navegação e rotas](./navigation.md): define `navigation/v1`, contrato básico em `bundle/contracts`, com rotas por path de URL (`register({ path, create, parent? })`), sem ID versionado nem schema de parâmetros.
-- [Composição e distribuição](./composition-and-distribution.md): escolhe o provedor de cada contrato substituível em `providers`, por ambiente.
-- [Bundle core e quarentena](./core.md): ativa depois da fundação, fornece os serviços básicos por padrão e recebe os bundles cujo registro de contrato falha ou conflita.
-- [Observabilidade](./observability.md): tira `bundleId`, `version` e `generation` de `call.caller`.
+`kind` is `service`, `hooks`, `event`, `command`, `settings` or `storage-type`; `version` is the one `provides` lists; `local` says that a member uses a process-local type.
+
+A schema document is JSON Schema 2020-12 with `$id` `doric:contract/<id>` and `x-doric-kind`, and holds each member under `$defs`; the document of a service with an exposed method also has a top-level `x-doric-expose`, beside `$defs`, that maps each exposed method to `desktop` ([`json-schema.ts`](../../../packages/bundle/src/runtime/json-schema.ts)):
+
+| Kind           | Members under `$defs`                         |
+| -------------- | --------------------------------------------- |
+| `service`      | `<method>.input` and `<method>.output`        |
+| `hooks`        | `<hook>.input`, each with `x-doric-hook-kind` |
+| `event`        | `payload`                                     |
+| `command`      | `input`                                       |
+| `settings`     | `value`                                       |
+| `storage-type` | `value`, with `x-doric-indexes`               |
+
+An input schema describes what a caller sends and an output schema what it receives. A process-local value appears as `{ "x-doric-local": "<codec>" }`, or `true` when it has no codec, and a stream listener records its item schema under `x-doric-stream`. The generator is the runtime's own, so the documents the build writes are the ones a live definition produces: a provider in a generation process announces a service to the kernel with the document generated from its definition, and a basic or platform contract with no document, by its id ([`schemas.ts`](../../../packages/bundle/src/build/schemas.ts), [`remote.ts`](../../../packages/bundle/src/runtime/envelope/remote.ts)). The documents ship with the bundle's other distributed files, `schemas/**` beside `manifest.json` and `contracts.json`, so that a desktop part can call the bundle's host contracts; a kernel-resident bundle, passed to the loader in code as an `EmbeddedBundle`, carries its manifest, its descriptor and its documents in that object ([`distribution.ts`](../../../packages/bundle/src/loader/distribution.ts), [`loader/catalog.ts`](../../../packages/bundle/src/loader/catalog.ts)).
+
+The loader reads `contracts.json` with the manifest and quarantines a bundle with `invalid_descriptor` when the file does not parse or does not match the descriptor schema; for a kernel-resident bundle it checks the descriptor the `EmbeddedBundle` carries the same way ([`read.ts`](../../../packages/bundle/src/loader/read.ts), [`discover.ts`](../../../packages/bundle/src/loader/discover.ts), [`loader/catalog.ts`](../../../packages/bundle/src/loader/catalog.ts)). The catalog then quarantines a bundle with `invalid_descriptor` when the file is missing, names another bundle or version, lists an id twice in one environment, lists an id `provides` lacks or with another version, or omits an id `provides` lists ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). A bundle whose manifest has no `manifestVersion` receives an empty descriptor, and its `contracts.json`, if any, is not read, as [A manifest without `manifestVersion`](manifest.md#a-manifest-without-manifestversion) describes ([`discover.ts`](../../../packages/bundle/src/loader/discover.ts), [`descriptor.ts`](../../../packages/bundle/src/runtime/descriptor.ts)). The platform's own documents, for the manifest, the composition, the descriptor and each basic and platform contract, are generated from the same zod schemas by [`platform-schemas.ts`](../../../packages/bundle/src/build/platform-schemas.ts), with `$id`s such as `doric://app/schemas/bundle-manifest/v1.json`.
+
+## Related documents
+
+- [`packages/bundle` README, The `define*` functions](../../../packages/bundle/README.md#the-define-functions): the full signatures of the `define*` functions and `ref`.
+- [Hooks and the app's lifecycle](hooks.md): `defineHook`, `defineHooks`, `execute` and the hooks that ship.
+- [Boundaries](boundaries.md): the boundary checks and the rules they enforce.
+- [Manifest](manifest.md): `provides`, `requires` and `optional`.
+- [Versioning](versioning.md): how a contract takes a minor or a major.
+- [Services and channels](services-and-channels.md): the stubs, the dispatcher and the calls between processes.
+- [Contexts](contexts.md): what a part's `activate` receives.
+- [Composition and distribution](composition-and-distribution.md): choosing the provider of a contract under `providers`.
+- [Core](core.md): the default provider of the basic services, and quarantine.
+- [Events and nodes](events-and-nodes.md), [Storage](storage.md), [Menus and keybindings](menus-and-keybindings.md): what the events, storage types and commands are used for.
+- [Observability](observability.md): where `call.caller` is reported.

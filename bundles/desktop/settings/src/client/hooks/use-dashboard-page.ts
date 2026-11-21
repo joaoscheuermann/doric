@@ -10,7 +10,7 @@ const subscribe = (listener: () => void): (() => void) => {
 const active = (): string | undefined => api().dashboard.active();
 
 /**
- * The id of the page the /projects dashboard shows (`layout.dashboard/v1`),
+ * The id of the page the /projects dashboard shows (`workspace.dashboard/v1`),
  * `undefined` while it shows the project list or without a dashboard.
  */
 export const useDashboardPage = (): string | undefined =>

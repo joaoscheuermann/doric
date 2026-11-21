@@ -3,17 +3,18 @@
 // (`app.tsx:126-135`): the tab id is today's diff key, its title the file's
 // name, its accessible name "<name> changes" and its tooltip the path.
 // Opening a comparison whose tab is open selects that tab. The tab's context
-// menu holds "Open file" (ui-redesign §4.4 A6), the diff toolbar's command.
+// menu holds "Open file" (ui-redesign §4.4 A6), the diff toolbar's command,
+// and its trigger draws the `git-file-diff-icon` element (`layout.tabs/v2`).
 
 import { CommandsV1, defineCommand } from 'bundle/contracts';
 import { baseName, joinPath } from 'desktop/reads';
 import {
   type CurrentTab,
-  type TabRequest as LayoutTabRequest,
-  LayoutTabsV1,
+  LayoutTabsV2,
+  type TabRequest,
 } from 'layout/contracts';
 import { FileIcon } from 'lucide-react';
-import { createElement, type ReactElement } from 'react';
+import { createElement } from 'react';
 
 import {
   OPEN_COMPARISON_COMMAND,
@@ -22,19 +23,11 @@ import {
 } from '../contracts/index.js';
 import { OPEN_FILE_COMMAND } from './api/peers.js';
 
-/**
- * A tab request whose menu items may carry `icon`, the item's 16 px leading
- * icon (`layout.tabs/v1@1.2.0` TabMenuItem), typed here until git reads that
- * version of the contract.
- */
-export type TabRequest = Omit<LayoutTabRequest, 'menu'> & {
-  readonly menu?: readonly (NonNullable<LayoutTabRequest['menu']>[number] & {
-    readonly icon?: ReactElement;
-  })[];
-};
-
 /** The tag of the diff tab's element. */
 export const FILE_DIFF_TAG = 'git-file-diff';
+
+/** The tag of the element drawn as the diff tab's and the Changes view's icon. */
+export const FILE_DIFF_ICON_TAG = 'git-file-diff-icon';
 
 /** The tab id of one comparison. */
 export const comparisonTabId = ({
@@ -61,7 +54,7 @@ export const comparisonTab = (
     repository: input.repository,
     path: input.path,
   },
-  icon: 'file-diff',
+  iconTag: FILE_DIFF_ICON_TAG,
   ariaLabel: `${baseName(input.path)} changes`,
   tooltip: input.path,
   ...(openFile === undefined
@@ -115,6 +108,6 @@ export const openComparisonCommand = defineCommand({
         })
         .catch(() => undefined);
     };
-    await services.use(LayoutTabsV1).open(comparisonTab(input, openFile), call);
+    await services.use(LayoutTabsV2).open(comparisonTab(input, openFile), call);
   },
 });

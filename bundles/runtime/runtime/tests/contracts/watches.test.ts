@@ -2,17 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { ContractError } from 'bundle/contracts';
+import { createTestServices } from 'bundle/testing';
 
-import type {
-  Project,
-  ProjectWatchItem,
-  Terminal,
-  TerminalWatchItem,
-  Thread,
-  ThreadEvent,
-  ThreadWatchItem,
+import {
+  type Project,
+  type ProjectWatchItem,
+  projectWatchItemSchema,
+  RuntimeV2,
+  type Thread,
+  type ThreadEvent,
+  type ThreadWatchItem,
 } from '../../src/contracts/index.js';
 import { createNotices } from '../../src/host/domain/notices.js';
+import { runtimeService } from '../../src/host/services/runtime.js';
 import {
   createWatches,
   type WatchReads,
@@ -48,7 +50,8 @@ const thread: Thread = {
   createdAt: '',
   updatedAt: '',
 };
-const terminal: Terminal = {
+/** A terminal session, which no runtime watch item carries any more. */
+const terminal = {
   id: 'terminal-1',
   projectId,
   threadId,
@@ -86,25 +89,10 @@ const setup = (reads: Partial<WatchReads> = {}) => {
         [event(1), event(2)].filter((value) => value.sequence > afterSequence),
       project: async () => project,
       projectThreads: async () => [thread],
-      terminals: async () => [],
       ...reads,
     },
   });
-  const { publisher } = notices;
-  const required = <T>(method: T | undefined): T => {
-    if (method === undefined) throw new Error('The publisher lacks a method.');
-    return method;
-  };
-  return {
-    watches,
-    errors,
-    publisher: {
-      ...publisher,
-      terminalUpdated: required(publisher.terminalUpdated),
-      terminalOutput: required(publisher.terminalOutput),
-      terminalRemoved: required(publisher.terminalRemoved),
-    },
-  };
+  return { watches, notices, errors, publisher: notices.publisher };
 };
 
 /** A listener that records every item and the end. */
@@ -272,7 +260,6 @@ void test('a project watch snapshots the tree and buffers its updates', async ()
   const gate = deferred<readonly Thread[]>();
   const { watches, publisher } = setup({
     projectThreads: () => gate.promise,
-    terminals: async () => [terminal],
   });
   const seen = recorder<ProjectWatchItem>();
   watches.project({ projectId }, seen.listener);
@@ -287,7 +274,6 @@ void test('a project watch snapshots the tree and buffers its updates', async ()
       projectId,
       project,
       threads: [thread],
-      terminals: [terminal],
     },
     { kind: 'thread-updated', thread: child },
     { kind: 'project-deleted', projectId },
@@ -310,48 +296,6 @@ void test('a project watch sees only its own Project and Threads', async () => {
   ]);
 });
 
-void test('a terminal watch buffers lifecycle notices but never output', async () => {
-  const gate = deferred<readonly Terminal[]>();
-  const { watches, publisher } = setup({ terminals: () => gate.promise });
-  const seen = recorder<TerminalWatchItem>();
-  watches.terminals(projectId, seen.listener);
-  const output = (data: string, offset: number) =>
-    publisher.terminalOutput({
-      projectId,
-      threadId,
-      terminalId: terminal.id,
-      data,
-      offset,
-    });
-  publisher.terminalUpdated(terminal);
-  // Output published before the snapshot is dropped: a client reads the
-  // bounded terminal snapshot instead.
-  output('lost', 4);
-  publisher.terminalRemoved({
-    projectId,
-    threadId,
-    terminalId: terminal.id,
-  });
-  gate.resolve([terminal]);
-  await seen.until(() => seen.items.length === 3);
-  output('kept', 8);
-  assert.deepEqual(seen.items, [
-    { kind: 'snapshot', projectId, terminals: [terminal] },
-    { kind: 'updated', terminal },
-    { kind: 'removed', projectId, threadId, terminalId: terminal.id },
-    {
-      kind: 'output',
-      output: {
-        projectId,
-        threadId,
-        terminalId: terminal.id,
-        data: 'kept',
-        offset: 8,
-      },
-    },
-  ]);
-});
-
 void test('a listener that fails does not stop the other watches', async () => {
   const { watches, publisher } = setup();
   const seen = recorder<ThreadWatchItem>();
@@ -365,14 +309,13 @@ void test('a listener that fails does not stop the other watches', async () => {
   assert.deepEqual(kinds(seen.items), ['snapshot', 'event:3']);
 });
 
-void test('the runtime contracts stream a real Thread, its Project and its terminals', async () => {
+void test('the runtime contracts stream a real Thread and its Project', async () => {
   const harness = createHarness();
   try {
     const created = await harness.readyProject();
     const child = await harness.createThread(created.id);
     const threadItems = recorder<ThreadWatchItem>();
     const projectItems = recorder<ProjectWatchItem>();
-    const terminalItems = recorder<TerminalWatchItem>();
     const watches = [
       harness.threads.watchThread(
         { threadId: child.id, afterSequence: 0 },
@@ -382,11 +325,9 @@ void test('the runtime contracts stream a real Thread, its Project and its termi
         { projectId: created.id },
         projectItems.listener,
       ),
-      harness.terminals.watchProject(created.id, terminalItems.listener),
     ];
     await threadItems.until(() => threadItems.items.length === 1);
     await projectItems.until(() => projectItems.items.length === 1);
-    await terminalItems.until(() => terminalItems.items.length === 1);
     assert.deepEqual(threadItems.items[0], {
       kind: 'snapshot',
       threadId: child.id,
@@ -400,11 +341,6 @@ void test('the runtime contracts stream a real Thread, its Project and its termi
       tree?.kind === 'snapshot' ? tree.threads.map((value) => value.id) : [],
       [child.id],
     );
-    assert.deepEqual(terminalItems.items[0], {
-      kind: 'snapshot',
-      projectId: created.id,
-      terminals: [],
-    });
 
     const accepted = await harness.threads.prompt({
       id: child.id,
@@ -434,6 +370,131 @@ void test('the runtime contracts stream a real Thread, its Project and its termi
   } finally {
     await harness.dispose();
   }
+});
+
+/*
+ * Bundle isolation step 7(a) (T7.1, AC7.1): runtime/v2 streams the Project
+ * and its Threads without the terminals, which the terminal bundle's
+ * terminal/v1 streams. A consumer reaches the service through the contract.
+ */
+
+/** runtime/v2 over the watches of `setup`, from a consumer. */
+const services = (reads: Partial<WatchReads> = {}) => {
+  const { watches, notices, publisher } = setup(reads);
+  const unused = new Proxy(Object.create(null) as object, {
+    get: () => {
+      throw new Error('Not used by a watch.');
+    },
+  });
+  const deps = {
+    service: unused,
+    notices,
+    watches,
+    lifecycle: unused,
+  } as unknown as Parameters<typeof runtimeService>[0];
+  const harness = createTestServices({
+    bundle: { id: 'consumer' },
+    provide: [runtimeService(deps)],
+  });
+  return { publisher, harness, v2: harness.services.use(RuntimeV2) };
+};
+
+void test('a runtime/v2 project watch snapshots the Project and its Threads without terminals', async () => {
+  const { harness, v2 } = services();
+  try {
+    const seen = recorder<ProjectWatchItem>();
+    const watch = v2.watchProject({ projectId }, seen.listener, harness.call());
+    await seen.until(() => seen.items.length === 1);
+    assert.deepEqual(seen.items[0], {
+      kind: 'snapshot',
+      projectId,
+      project,
+      threads: [thread],
+    });
+    assert.equal(Object.hasOwn(seen.items[0] ?? {}, 'terminals'), false);
+    watch.dispose();
+  } finally {
+    await harness.dispose();
+  }
+});
+
+void test('a runtime/v2 project watch forwards live Thread and Project updates unchanged, in order', async () => {
+  const { harness, v2, publisher } = services();
+  try {
+    const seen = recorder<ProjectWatchItem>();
+    const watch = v2.watchProject({ projectId }, seen.listener, harness.call());
+    await seen.until(() => seen.items.length === 1);
+    const renamed = { ...project, name: 'Renamed' };
+    const cancelled = { ...thread, state: 'cancelled' as const };
+    publisher.threadUpdated(cancelled);
+    publisher.projectUpdated(renamed);
+    await seen.until(() => seen.items.length === 3);
+    assert.deepEqual(seen.items.slice(1), [
+      { kind: 'thread-updated', thread: cancelled },
+      { kind: 'project-updated', project: renamed },
+    ]);
+    watch.dispose();
+  } finally {
+    await harness.dispose();
+  }
+});
+
+void test('a runtime/v2 project watch whose snapshot cannot be read ends with replay_failed', async () => {
+  const { harness, v2 } = services({
+    projectThreads: async () => {
+      throw new Error('private database error');
+    },
+  });
+  try {
+    const seen = recorder<ProjectWatchItem>();
+    v2.watchProject({ projectId }, seen.listener, harness.call());
+    await seen.until(() => seen.ended.length === 1);
+    assert.equal(seen.ended[0]?.code, 'replay_failed');
+    assert.equal(seen.ended[0]?.message, 'The snapshot could not be loaded.');
+    assert.deepEqual(seen.items, []);
+  } finally {
+    await harness.dispose();
+  }
+});
+
+void test('runtime/v2 streams a real Project and its Thread without terminals', async () => {
+  const harness = createHarness();
+  try {
+    const created = await harness.readyProject();
+    const child = await harness.createThread(created.id);
+    const seen = recorder<ProjectWatchItem>();
+    const watch = harness.consumer.services
+      .use(RuntimeV2)
+      .watchProject({ projectId: created.id }, seen.listener);
+    await seen.until(() => seen.items.length === 1);
+    const snapshot = seen.items[0];
+    assert.equal(snapshot?.kind, 'snapshot');
+    assert.deepEqual(
+      snapshot.kind === 'snapshot'
+        ? snapshot.threads.map((value) => value.id)
+        : [],
+      [child.id],
+    );
+    assert.equal(Object.hasOwn(snapshot, 'terminals'), false);
+    watch.dispose();
+  } finally {
+    await harness.dispose();
+  }
+});
+
+void test('the runtime/v2 snapshot schema refuses terminals', () => {
+  const snapshot = {
+    kind: 'snapshot',
+    projectId,
+    project,
+    threads: [thread],
+  };
+  assert.equal(projectWatchItemSchema.safeParse(snapshot).success, true);
+  assert.equal(
+    projectWatchItemSchema.safeParse({ ...snapshot, terminals: [terminal] })
+      .success,
+    false,
+  );
 });
 
 void test('the runtime contracts refuse a watch whose input is not an ID', () => {

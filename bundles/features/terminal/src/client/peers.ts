@@ -1,101 +1,55 @@
-// The client contracts this part calls, built from their IDs with the owners'
-// shapes narrowed to what it reads (as `layout` and `notifications` reach
-// their peers): `layout` and `files` sit above the runtime, which imports
-// `terminal/contracts`, so importing their contracts modules would close a
-// cycle between the projects.
+// The client contracts this part calls, re-exported from their owners'
+// contracts modules so every file of the part names them in one place. The
+// runtime no longer imports `terminal/contracts` (bundle isolation 7(c)), so
+// `runtime`, `workspace`, `layout` and `chat` sit below this bundle and their
+// contracts are imported, not copied. Two exceptions remain:
+//
+// - `chat` is optional (`chat.views/v1` is listed under `optional`), so its
+//   module is imported for types only: a window without the chat bundle loads
+//   nothing of it. `ChatViewsV1` is a ref built from its ID, and the event
+//   name a local literal checked against the chat's constant.
+// - `files.refresh/v1` stays a structural copy: `files` imports
+//   `terminal/contracts`, so importing `files/contracts` here would close a
+//   cycle between the two projects.
 
-import { type CallArg, type Disposable, ref } from 'bundle/contracts';
-import type { ReactNode } from 'react';
+import { type CallArg, ref } from 'bundle/contracts';
+import type {
+  CHAT_BLOCK_CHOSEN_EVENT as ChatBlockChosenEvent,
+  ChatViews,
+} from 'chat/contracts';
+import type { RuntimeRecords, Thread } from 'runtime/contracts';
+
+export type {
+  ChatInputView,
+  ChatToolView,
+  ChatViews,
+  InputRendererSpec,
+  ToolRendererSpec,
+} from 'chat/contracts';
+export {
+  type CurrentTab,
+  type LayoutTabs,
+  LayoutTabsV2,
+  type TabMenuItem,
+  type TabRequest,
+} from 'layout/contracts';
+export { RuntimeRecordsV1 } from 'runtime/contracts';
+export {
+  type ThreadRows,
+  type WorkspaceSelection,
+  type WorkspaceSelectionService,
+  WorkspaceSelectionV1,
+  type WorkspaceSidebar,
+  WorkspaceSidebarV1,
+} from 'workspace/contracts';
 
 /** The fields of a Thread record this part reads. */
-export interface ThreadRecord {
-  readonly id: string;
-  readonly projectId: string;
-  readonly parentThreadId?: string;
-}
+export type ThreadRecord = Pick<Thread, 'id' | 'projectId' | 'parentThreadId'>;
 
-/** `layout.workspace/v1` (1.1.0). */
-export interface LayoutWorkspace {
+/** `runtime.records/v1`, narrowed to the Thread fields this part reads. */
+export interface RecordsSource extends Pick<RuntimeRecords, 'subscribe'> {
   thread(threadId: string, call?: CallArg): ThreadRecord | undefined;
-  selectedThread(call?: CallArg): ThreadRecord | undefined;
-  subscribe(listener: () => void, call?: CallArg): Disposable;
 }
-
-export const LayoutWorkspaceV1 = ref<LayoutWorkspace>('layout.workspace/v1');
-
-/** One entry of a viewer tab's context menu (`layout.tabs/v1` 1.2.0). */
-export interface TabMenuItem {
-  readonly id: string;
-  readonly label: string;
-  readonly destructive?: boolean;
-  /** 1.2.0: the item's 16 px leading icon, a React element. */
-  readonly icon?: ReactNode;
-  readonly run: () => void;
-}
-
-/** What `layout.tabs/v1.open` takes from this part. */
-export interface TabRequest {
-  readonly id: string;
-  readonly title: string;
-  readonly tag: string;
-  readonly props?: Readonly<Record<string, unknown>>;
-  readonly icon?: 'file' | 'file-diff' | 'terminal';
-  /** 1.2.0: the entries the tab's context menu shows above "Close tab". */
-  readonly menu?: readonly TabMenuItem[];
-}
-
-/** The selected tab of the active owner (`layout.tabs/v1` 1.1.0). */
-export interface CurrentTab {
-  readonly id: string;
-  readonly props?: Readonly<Record<string, unknown>>;
-}
-
-/** `layout.tabs/v1` (1.2.0). */
-export interface LayoutTabs {
-  open(input: TabRequest, call?: CallArg): Promise<void>;
-  close(
-    input: { readonly id: string; readonly threadId?: string },
-    call?: CallArg,
-  ): Promise<void>;
-  /**
-   * 1.2.0: sets the title of the tab with that id among that Thread's tabs
-   * (the active Thread's without `threadId`); nothing without such a tab.
-   */
-  retitle(
-    input: {
-      readonly id: string;
-      readonly title: string;
-      readonly threadId?: string;
-    },
-    call?: CallArg,
-  ): Promise<void>;
-  /** 1.1.0: the selected tab of the active owner, if any (local). */
-  current(call?: CallArg): CurrentTab | undefined;
-  /** 1.1.0: called after every change of the tabs or of the owner (local). */
-  subscribe(listener: () => void, call?: CallArg): Disposable;
-}
-
-export const LayoutTabsV1 = ref<LayoutTabs>('layout.tabs/v1');
-
-/** Rows a bundle adds under each Thread of the sidebar tree. */
-export interface ThreadRows {
-  readonly id: string;
-  readonly tag: string;
-  count(threadId: string): number;
-  subscribe(listener: () => void): Disposable;
-  /**
-   * `layout.sidebar/v1` 1.1.0: whether an agent terminal directly under the
-   * Thread keeps it active. A 1.0.0 layout never calls it and ignores it.
-   */
-  busy?(threadId: string): boolean;
-}
-
-/** `layout.sidebar/v1` (1.0.0). */
-export interface LayoutSidebar {
-  addThreadRows(rows: ThreadRows, call?: CallArg): Disposable;
-}
-
-export const LayoutSidebarV1 = ref<LayoutSidebar>('layout.sidebar/v1');
 
 /** `files.refresh/v1` (1.0.0), for `request` only. */
 export interface FilesRefresh {
@@ -107,3 +61,13 @@ export interface FilesRefresh {
 }
 
 export const FilesRefreshV1 = ref<FilesRefresh>('files.refresh/v1');
+
+/** `chat.views/v1`, by its ID: the chat is optional (see above). */
+export const ChatViewsV1 = ref<ChatViews>('chat.views/v1');
+
+/**
+ * The one event a chat element dispatches when the reader opens or closes its
+ * block, `detail: { chosen }` (chat's `CHAT_BLOCK_CHOSEN_EVENT`).
+ */
+export const CHAT_BLOCK_CHOSEN_EVENT =
+  'chat-block-chosen' satisfies typeof ChatBlockChosenEvent;

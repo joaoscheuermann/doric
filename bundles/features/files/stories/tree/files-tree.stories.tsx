@@ -2,19 +2,19 @@ import { SidebarScope } from 'desktop/ui/sidebar';
 import { Toaster } from 'desktop/ui/sonner';
 import { useState } from 'react';
 
-import type { ChangesObservation } from '../../src/client/api/peers.js';
 import { rootOf } from '../../src/client/sandbox-store.js';
 import { FilesTreeView } from '../../src/client/tree/files-tree.js';
 import type {
   CreateInput,
   CreateOutcome,
+  DecorationsObservation,
   LeaseOutcome,
   ProjectTreeNode,
   TreeObservation,
 } from '../../src/contracts/index.js';
 import { seedExpansion, seedFilesClient } from '../support/files-client.js';
 import {
-  changeMarks,
+  changeMarkList,
   largeTree,
   nestedThread,
   openDirectories,
@@ -23,7 +23,7 @@ import {
   webTree,
   workspaceTree,
 } from '../support/fixtures.js';
-import { still, storyServices } from '../support/services.js';
+import { selectionApis, still, storyServices } from '../support/services.js';
 
 type Selection = {
   readonly project?: typeof project;
@@ -51,20 +51,21 @@ const ready = (entries: readonly ProjectTreeNode[]): TreeObservation => ({
 
 /**
  * The Files view of the Project panel over seeded reads: the layout's
- * selection and current tab, git's changes read (when `changes` is given),
+ * selection and current tab, git's marks through `files.decorations/v1`
+ * (when `decorations` is given),
  * and the files client's tree read. A row's context menu works: Copy relative
  * path on a file row, New file and New folder on a folder row, over
  * `storyCreate` (the tree itself does not change).
  */
 function TreeStory({
   tree,
-  changes,
+  decorations,
   selection = { project, thread },
   selectedPath,
   open = openDirectories,
 }: {
   readonly tree: TreeObservation;
-  readonly changes?: ChangesObservation;
+  readonly decorations?: DecorationsObservation;
   readonly selection?: Selection;
   readonly selectedPath?: string;
   readonly open?: ReadonlySet<string>;
@@ -76,8 +77,8 @@ function TreeStory({
     }
     return storyServices({
       apis: {
-        'layout.workspace/v1': { ...still, selection: () => selection },
-        'layout.tabs/v1': {
+        ...selectionApis(selection),
+        'layout.tabs/v2': {
           ...still,
           current: () =>
             selectedPath === undefined
@@ -85,19 +86,6 @@ function TreeStory({
               : { id: `file:${selectedPath}` },
         },
         'commands/v1': { execute: async () => undefined },
-        ...(changes === undefined
-          ? {}
-          : {
-              'git.changes/v1': {
-                observe: (
-                  _scope: unknown,
-                  listener: (state: ChangesObservation) => void,
-                ) => {
-                  listener(changes);
-                  return { dispose: () => undefined };
-                },
-              },
-            }),
       },
       scoped: {
         'files/v1': () => ({
@@ -105,6 +93,25 @@ function TreeStory({
           createDirectory: storyCreate,
         }),
       },
+      many:
+        decorations === undefined
+          ? {}
+          : {
+              'files.decorations/v1': [
+                {
+                  bundleId: 'git',
+                  api: {
+                    observe: (
+                      _scope: unknown,
+                      listener: (state: DecorationsObservation) => void,
+                    ) => {
+                      listener(decorations);
+                      return { dispose: () => undefined };
+                    },
+                  },
+                },
+              ],
+            },
     });
   });
   return (
@@ -129,7 +136,7 @@ export const WithChanges = {
   render: () => (
     <TreeStory
       tree={ready(workspaceTree)}
-      changes={{ decorations: changeMarks, fetching: false }}
+      decorations={{ marks: changeMarkList, fetching: false }}
       selectedPath="apps/web/src/checkout/payment-form.tsx"
     />
   ),
@@ -143,7 +150,7 @@ export const Collapsed = {
   render: () => (
     <TreeStory
       tree={ready(workspaceTree)}
-      changes={{ decorations: changeMarks, fetching: false }}
+      decorations={{ marks: changeMarkList, fetching: false }}
       open={new Set()}
     />
   ),
@@ -174,7 +181,7 @@ export const Refreshing = {
   render: () => (
     <TreeStory
       tree={{ ...ready(workspaceTree), fetching: true }}
-      changes={{ decorations: changeMarks, fetching: true }}
+      decorations={{ marks: changeMarkList, fetching: true }}
     />
   ),
 };

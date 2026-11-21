@@ -4,9 +4,9 @@
 // - T-38: the provider model catalog shows a compact, announced notice whose
 //   Retry replaces the Reload button and reads the catalog again; the catalog
 //   models field of a kind whose models are its catalog shows the same notice.
-//   (The execution picker's read failure is in `execution-picker.test.ts`,
-//   the Claude sign-in toast in `claude-login.test.ts`, and the dashboard's
-//   Providers group and open-site toast in `dashboard-providers.test.ts`.)
+//   (The execution picker's read failure is in the chat's
+//   `tests/client/execution-picker.test.ts`, and the dashboard's Providers
+//   group and open-site toast in `dashboard-providers.test.ts`.)
 // - T-39: a refused configuration save or credential remove followed by a
 //   successful one leaves one toast, the plain success, with no failure
 //   notice; and no success or message toast in the chat, settings and layout
@@ -394,10 +394,10 @@ const idsOf = (text: string, call: RegExp): string[] => {
   return ids;
 };
 
-test('no success or message toast in the chat, settings and layout sources uses an id a toastError call uses (T-39)', async () => {
+test('no success or message toast in the chat, settings, layout and workspace sources uses an id a toastError call uses (T-39)', async () => {
   const failureIds = new Set<string>();
   const otherIds = new Set<string>();
-  for (const bundle of ['chat', 'settings', 'layout']) {
+  for (const bundle of ['chat', 'settings', 'layout', 'workspace']) {
     for (const file of await sources(join(bundlesRoot, bundle, 'src'))) {
       const text = await readFile(file, 'utf8');
       for (const id of idsOf(text, /\btoastError\(/g)) failureIds.add(id);
@@ -407,11 +407,10 @@ test('no success or message toast in the chat, settings and layout sources uses 
     }
   }
 
-  // The three settings actions that toast both outcomes (§4).
+  // The two settings actions that toast both outcomes (§4).
   for (const [failure, success] of [
     ['config-save-failed', 'config-save'],
     ['credentials-write-failed', 'credentials-write'],
-    ['claude-login-failed', 'claude-login'],
   ]) {
     assert.ok(failureIds.has(failure), `no toastError uses ${failure}`);
     assert.ok(otherIds.has(success), `no success toast uses ${success}`);

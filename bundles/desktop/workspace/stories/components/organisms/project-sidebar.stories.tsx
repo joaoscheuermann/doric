@@ -1,0 +1,219 @@
+import { errorFrom } from 'desktop/reads';
+import { SidebarScope } from 'desktop/ui/sidebar';
+import { type CSSProperties, useEffect, useState } from 'react';
+
+import {
+  ProjectSidebar,
+  type SidebarActions,
+  type SidebarModel,
+} from '../../../src/client/components/organisms/project-sidebar.js';
+import type { Draft, Entity } from '../../../src/client/domain/workspace.js';
+import {
+  checkout,
+  empty,
+  formThread,
+  manyThreads,
+  planThread,
+  validationThread,
+} from '../../support/data.js';
+import { sidebarActions, sidebarModelOf } from '../../support/workspace.js';
+import {
+  type WorkspaceFixture,
+  WorkspaceHost,
+} from '../../support/workspace-host.js';
+
+const fill = { '--sidebar-width': '100%' } as CSSProperties;
+
+/**
+ * The sidebar at the width the workspace opens it, keeping its own
+ * selection, draft and rename so the tree can be clicked through.
+ */
+function Sidebar({
+  fixture,
+  model = sidebarModelOf(),
+  query,
+}: {
+  readonly fixture?: WorkspaceFixture;
+  readonly model?: SidebarModel;
+  /** Typed into "Search Threads" once mounted, as the reader would. */
+  readonly query?: string;
+}) {
+  // A node, not a ref: `WorkspaceHost` draws the frame only once it has bound the
+  // host, after this component's first effects ran.
+  const [frame, setFrame] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const input = frame?.querySelector<HTMLInputElement>(
+      'input[aria-label="Search Threads"]',
+    );
+    if (query === undefined || !input) return;
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set?.call(input, query);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, [frame, query]);
+  const [selectedThreadId, setSelected] = useState(model.selectedThreadId);
+  const [draft, setDraft] = useState<Draft | undefined>(model.draft);
+  const [editing, setEditing] = useState<Entity | undefined>(model.editing);
+  const actions: SidebarActions = {
+    ...sidebarActions,
+    beginThread: (projectId, parentThreadId) =>
+      setDraft({ kind: 'thread', projectId, parentThreadId }),
+    cancelDraft: () => setDraft(undefined),
+    cancelRename: () => setEditing(undefined),
+    createThread: (name) => {
+      console.info('Story action: createThread', name);
+      setDraft(undefined);
+      return Promise.resolve();
+    },
+    rename: (entity, name) => {
+      console.info('Story action: rename', entity.value.id, name);
+      setEditing(undefined);
+      return Promise.resolve();
+    },
+    selectThread: (thread) => {
+      setDraft(undefined);
+      setSelected(thread.id);
+    },
+    startRename: setEditing,
+  };
+
+  return (
+    <WorkspaceHost fixture={fixture}>
+      <SidebarScope>
+        <div ref={setFrame} className="flex h-[640px] w-60 border" style={fill}>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ProjectSidebar
+              actions={actions}
+              model={{ ...model, draft, editing, selectedThreadId }}
+            />
+          </div>
+        </div>
+      </SidebarScope>
+    </WorkspaceHost>
+  );
+}
+
+const terminals: WorkspaceFixture = {
+  terminalRows: { [planThread.id]: 1, [formThread.id]: 2 },
+};
+
+export default {
+  title: 'Workspace/Organisms/Project sidebar',
+  component: ProjectSidebar,
+};
+
+/**
+ * The Checkout Project's tree under an empty "Search Threads" field, with the
+ * collapsed Screens group below.
+ */
+export const Threads = {
+  render: () => <Sidebar />,
+};
+
+/** "pay" in Search Threads: the match and its ancestors, drawn expanded. */
+export const SearchMatches = {
+  render: () => <Sidebar query="pay" />,
+};
+
+/** A query no Thread name contains. */
+export const SearchNoMatch = {
+  render: () => <Sidebar query="zzz" />,
+};
+
+export const ChildSelected = {
+  render: () => (
+    <Sidebar
+      model={sidebarModelOf({ selectedThreadId: validationThread.id })}
+    />
+  ),
+};
+
+/** The terminal bundle's rows under two Threads. */
+export const WithTerminalRows = {
+  render: () => <Sidebar fixture={terminals} />,
+};
+
+/** The Project's Threads are still loading. */
+export const LoadingThreads = {
+  render: () => (
+    <Sidebar
+      model={sidebarModelOf({
+        loadingProjectThreads: new Set([checkout.id]),
+        selectedThreadId: undefined,
+        threadsByProject: {},
+      })}
+    />
+  ),
+};
+
+/** A failed request, reported above the tree. */
+export const RequestFailed = {
+  render: () => (
+    <Sidebar
+      model={sidebarModelOf({
+        error: {
+          error: errorFrom('internal', 'The request could not be completed.'),
+        },
+      })}
+    />
+  ),
+};
+
+/** A new root Thread being named at the end of the tree. */
+export const DraftThread = {
+  render: () => (
+    <Sidebar
+      model={sidebarModelOf({
+        draft: { kind: 'thread', projectId: checkout.id },
+      })}
+    />
+  ),
+};
+
+export const Renaming = {
+  render: () => (
+    <Sidebar
+      model={sidebarModelOf({
+        editing: { kind: 'thread', value: formThread },
+      })}
+    />
+  ),
+};
+
+/** A Project with no Threads yet. */
+export const EmptyProject = {
+  render: () => (
+    <Sidebar
+      model={sidebarModelOf({
+        projects: [empty],
+        selectedProjectId: empty.id,
+        selectedThreadId: undefined,
+        threadsByProject: { [empty.id]: [] },
+      })}
+    />
+  ),
+};
+
+/** No Project selected: the "New Thread" row is disabled. */
+export const NoProject = {
+  render: () => (
+    <Sidebar
+      model={sidebarModelOf({
+        selectedProjectId: undefined,
+        selectedThreadId: undefined,
+      })}
+    />
+  ),
+};
+
+export const ManyThreads = {
+  render: () => (
+    <Sidebar
+      model={sidebarModelOf({
+        selectedThreadId: manyThreads[3]?.id,
+        threadsByProject: { [checkout.id]: manyThreads },
+      })}
+    />
+  ),
+};

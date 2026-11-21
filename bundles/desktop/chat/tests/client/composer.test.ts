@@ -14,12 +14,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
-import {
-  type ClientContext,
-  defineMethod,
-  defineService,
-  ref,
-} from 'bundle/contracts';
+import type { ClientContext } from 'bundle/contracts';
 import {
   $createTextNode,
   $getRoot,
@@ -29,9 +24,9 @@ import {
   defineExtension,
   type LexicalEditor,
 } from 'lexical';
-import { z } from 'zod';
 
 import { ChatLexicalV1 } from '../../src/contracts/index.js';
+import { selectionProbe } from './support/selection.js';
 import {
   type ChatWindow,
   type OpenStream,
@@ -49,15 +44,14 @@ const path = `/projects/${projectId}/threads/${threadId}`;
 const url = `doric://app${path}`;
 
 /** The Thread's state as the workspace reports it; a send moves it on. */
-let threadState = 'idle';
-/** Who watches the workspace, told when the Thread's record changes. */
-const workspaceListeners = new Set<() => void>();
+let threadState = 'ready';
 
 const thread = () => ({
   id: threadId,
   name: 'Fix the parser',
   projectId,
   state: threadState,
+  lastSequence: 0,
   ...(threadState === 'running' ? { activePromptId } : {}),
   cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -88,20 +82,25 @@ let opened: ChatWindow | undefined;
 /** The prompt editors the window created, as a probe extension sees them. */
 const editors = new Set<LexicalEditor>();
 
+/** The selection and the records of the window the test opens. */
+let workspace = selectionProbe(thread);
+
 afterEach(async () => {
   await opened?.close();
   opened = undefined;
   editors.clear();
-  threadState = 'idle';
-  workspaceListeners.clear();
+  threadState = 'ready';
+  workspace = selectionProbe(thread);
 });
 
-/** A probe standing in for the layout's `layout.workspace/v1` (the selected
- * Thread), so the footer composer binds to the Thread the test opens. */
+/** A probe that provides `workspace.selection/v1` (the selected Thread) and
+ * keeps the window's editors, so the footer composer binds to the Thread the
+ * test opens, whose record `workspace.recordsApi` answers. */
 const workspaceProbe = (): Probe => ({
-  provides: ['layout.workspace/v1'],
+  provides: workspace.provides,
   requires: ['chat.lexical/v1@^1.0.0'],
-  activate: ({ services }: ClientContext) => {
+  activate: (context: ClientContext) => {
+    const { services } = context;
     services.use(ChatLexicalV1).registerExtension(
       defineExtension({
         name: 'test/composer-input',
@@ -113,33 +112,7 @@ const workspaceProbe = (): Probe => ({
         },
       }),
     );
-    const LayoutWorkspaceV1 = ref<{
-      thread(id: string): unknown;
-      selectedThread(): unknown;
-      subscribe(listener: () => void): { dispose(): void };
-    }>('layout.workspace/v1');
-    services.provide(
-      defineService(LayoutWorkspaceV1, {
-        thread: defineMethod({
-          input: z.string(),
-          output: z.unknown(),
-          execute: (id: string) => (id === threadId ? thread() : undefined),
-        }),
-        selectedThread: defineMethod({
-          input: z.tuple([]),
-          output: z.unknown(),
-          execute: () => thread(),
-        }),
-        subscribe: defineMethod({
-          input: z.custom<() => void>((value) => typeof value === 'function'),
-          output: z.custom<{ dispose(): void }>(),
-          execute: (listener: () => void) => {
-            workspaceListeners.add(listener);
-            return { dispose: () => workspaceListeners.delete(listener) };
-          },
-        }),
-      }) as never,
-    );
+    return workspace.activate(context);
   },
 });
 
@@ -181,6 +154,7 @@ const boot = async (
   opened = await openChatWindow({
     url,
     probe: workspaceProbe(),
+    recordsApi: workspace.recordsApi,
     host: {
       'runtime.threads/v1.thread': () => thread(),
       'runtime.threads/v1.queue': () => emptyQueue,
@@ -261,7 +235,7 @@ const composerWatch = (window: ChatWindow): OpenStream => {
 
 const footer = async (window: ChatWindow): Promise<Element> => {
   const region = window.document.createElement('core-region');
-  region.setAttribute('name', 'layout.footer');
+  region.setAttribute('name', 'shell.conversation.footer');
   window.document.body.append(region);
   await settle(50);
 
@@ -1071,10 +1045,10 @@ test('a sent prompt leaves the editor empty even when the Thread moves on', asyn
   assert.equal(saved, 'Carrega o componente com o papercraft');
 
   button(region, 'Send (Cmd+Enter)')?.click();
-  // The host accepted the prompt and the Thread starts running: the workspace
-  // reports a new record before the editor's next write settles.
+  // The host accepted the prompt and the Thread starts running: the records
+  // report a new record before the editor's next write settles.
   threadState = 'running';
-  for (const listener of [...workspaceListeners]) listener();
+  workspace.notify();
   await settle(500);
 
   const editor = [...editors].find(

@@ -97,17 +97,9 @@ import {
   RepliesTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/replies-turn-node.js';
 import {
-  $createTerminalResultNode,
-  TerminalResultNode,
-} from '../../src/client/components/organisms/conversation/nodes/terminal-result-node.js';
-import {
   $createThinkingTurnNode,
   ThinkingTurnNode,
 } from '../../src/client/components/organisms/conversation/nodes/thinking-turn-node.js';
-import {
-  $createThreadSpawnNode,
-  ThreadSpawnNode,
-} from '../../src/client/components/organisms/conversation/nodes/thread-spawn-node.js';
 import {
   $createToolTurnNode,
   ToolTurnNode,
@@ -152,10 +144,10 @@ import {
 } from '../../src/client/domain/conversation-nodes.js';
 import { syncPlan } from '../../src/client/domain/conversation-sync.js';
 import type { Turn } from '../../src/client/domain/projector.js';
-import { THREAD_SPAWN_TOOL } from '../../src/client/domain/thread-spawn.js';
+import { fromTerminal } from '../../src/client/domain/projector-input.js';
 import type { Thread, ThreadEvent } from '../../src/client/domain/workspace.js';
+import { ConversationThreadContext } from '../../src/client/hooks/conversation-thread.js';
 import { CommentThreadsContext } from '../../src/client/hooks/use-comment-threads.js';
-import { ConversationThreadContext } from '../../src/client/hooks/use-live-terminal.js';
 import type { QueueEdit } from '../../src/client/stores/queue-edit.js';
 import { queueEditStore } from '../../src/client/stores/queue-edit.js';
 import type { RenderBlock } from '../../src/contracts/index.js';
@@ -208,7 +200,7 @@ const noBlocks: ReadonlyMap<string, DrawnBlock> = new Map();
 export interface StoryWindowProps {
   /** The Thread the blocks stand in. */
   readonly thread?: Thread;
-  /** The fake host's answers: queues, composer drafts, live terminals. */
+  /** The fake host's answers: queues and composer drafts. */
   readonly host?: StoryHost;
   /** The Threads the opened-Thread store holds, each from its log. */
   readonly opened?: readonly {
@@ -249,7 +241,12 @@ export function StoryWindow({
     threadId: thread.id,
     projectId: thread.projectId,
   }));
-  const [blocksSource] = useState(() => ({ blocks, ui: storyUi }));
+  const [blocksSource] = useState(() => ({
+    blocks,
+    ui: storyUi,
+    projectId: null,
+    threadId: null,
+  }));
 
   return (
     <QueryClientProvider client={client}>
@@ -344,11 +341,9 @@ export const $createSectionCaptionNode = (text: string): SectionCaptionNode =>
 const conversationNodes = [
   UserTurnNode,
   DelegatedTurnNode,
-  TerminalResultNode,
   AgentTurnNode,
   ThinkingTurnNode,
   ToolTurnNode,
-  ThreadSpawnNode,
   TurnAuthorNode,
   ActivityTurnNode,
   LifecycleTurnNode,
@@ -496,12 +491,6 @@ const $createTurnBlock = (
     case 'queued':
       return new QueuedTurnNode(key, turn.promptId, turn.items);
     case 'user':
-      if (turn.terminal !== undefined)
-        return $createTerminalResultNode({
-          turnKey: key,
-          promptId: turn.promptId,
-          result: turn.terminal,
-        });
       if (turn.delegated !== undefined)
         return $createDelegatedTurnNode({
           turnKey: key,
@@ -533,8 +522,6 @@ const $createTurnBlock = (
         turn.items,
       );
     case 'tool_call':
-      if (turn.name === THREAD_SPAWN_TOOL)
-        return $createThreadSpawnNode({ turnKey: key, ...turn });
       return $createToolTurnNode(
         key,
         turn.promptId,
@@ -587,7 +574,7 @@ export const $appendTurns = (
     if (
       turn.type === 'user' &&
       turn.delegated === undefined &&
-      turn.terminal === undefined &&
+      !fromTerminal(turn) &&
       turn.comments.length > 0
     )
       root.append($createCommentLinesNode(turn.promptId, turn.comments));

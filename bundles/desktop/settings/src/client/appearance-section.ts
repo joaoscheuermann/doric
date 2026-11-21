@@ -10,6 +10,7 @@ import type {
   Ui,
 } from 'bundle/contracts';
 
+import { SETTINGS_SECTIONS } from '../contracts/index.js';
 import { AppearanceV1 } from './api/appearance.js';
 import { sectionPath } from './domain/section-route.js';
 import { sectionLink, sections } from './domain/sections.js';
@@ -42,7 +43,7 @@ export const registerAppearanceSection = ({
         parent: '/settings',
         create: () => ui.create(`settings-${appearance.id}`),
       }),
-      regions.add('settings.sections', sectionLink(appearance)),
+      regions.add(SETTINGS_SECTIONS, sectionLink(appearance)),
     ];
 
     return () => {

@@ -28,13 +28,13 @@ function Turn({
   readonly initiallyOpen?: boolean;
   readonly focused?: boolean;
 }) {
-  const [open, setOpen] = useState(initiallyOpen);
+  const [chosen, setChosen] = useState(initiallyOpen);
   return (
     <DelegatedTurn
       input={input}
-      open={open}
+      chosen={chosen}
       focused={focused}
-      onOpenChange={setOpen}
+      onChosenChange={setChosen}
       services={storyServices}
     />
   );

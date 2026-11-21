@@ -17,6 +17,7 @@
     "src/client/domain/**/*.ts",
     "src/client/changes/store.ts",
     "src/client/commands.ts",
+    "src/client/tool-refresh.ts",
     "tests/**/*.ts"
   ],
   "exclude": ["tests/client/**"],

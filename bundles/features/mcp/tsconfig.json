@@ -26,6 +26,9 @@
       "path": "../../../packages/oauth"
     },
     {
+      "path": "../../runtime/default"
+    },
+    {
       "path": "../../../packages/bundle"
     },
     {

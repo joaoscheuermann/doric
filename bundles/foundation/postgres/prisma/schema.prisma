@@ -7,23 +7,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum ProjectState {
-  QUEUED
-  READY
-  CANCELLING
-  FAILED
-  CANCELLED
-}
-
-enum ThreadState {
-  QUEUED
-  READY
-  RUNNING
-  CANCELLING
-  FAILED
-  CANCELLED
-}
-
 /**
  * One named credential. A provider key and the GitHub token are both
  * `API_TOKEN` rows whose secret is stored as a versioned ciphertext envelope.
@@ -40,81 +23,6 @@ model Credential {
 
   @@unique([kind, name])
   @@map("credential")
-}
-
-model Project {
-  id             String       @id @default(uuid()) @db.Uuid
-  name           String
-  color          String?
-  state          ProjectState @default(QUEUED)
-  configRevision Int          @map("config_revision")
-  configSnapshot Json         @map("config_snapshot") @db.JsonB
-  errorCode      String?      @map("error_code")
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
-  startedAt      DateTime?    @map("started_at") @db.Timestamptz(3)
-  finishedAt     DateTime?    @map("finished_at") @db.Timestamptz(3)
-  threads        Thread[]
-
-  @@index([createdAt, id])
-  @@map("project")
-}
-
-model Thread {
-  id             String        @id @default(uuid()) @db.Uuid
-  projectId      String        @map("project_id") @db.Uuid
-  parentThreadId String?       @map("parent_thread_id") @db.Uuid
-  name           String
-  state          ThreadState   @default(QUEUED)
-  /// The Thread's own working directory, absolute inside its Project's sandbox.
-  /// Every Thread starts at the sandbox workspace root.
-  cwd            String        @default("/workspace")
-  /// The cheap `is this a Git repository` hint of `cwd`: `git` when the
-  /// directory's own root holds a `.git` marker, `github` when its `origin`
-  /// points at github.com, and absent until a probe observes one.
-  cwdRepo        String?       @map("cwd_repo")
-  messages       Json          @default("[]") @db.JsonB
-  checkpoints    Json          @default("{}") @db.JsonB
-  /// Cumulative OpenRouter charges, independent of rewound conversation history.
-  usage          Json?         @db.JsonB
-  /// Reader-controlled dispatch gate; survives host restarts and history rewind.
-  queuePaused    Boolean       @default(false) @map("queue_paused")
-  activePromptId String?       @map("active_prompt_id") @db.Uuid
-  errorCode      String?       @map("error_code")
-  lastSequence   Int           @default(0) @map("last_sequence")
-  /// The materialized result of the most recent finished prompt, so reading a
-  /// child's state never has to reconstruct it from the event log.
-  resultText     String?       @map("result_text")
-  resultStatus   String?       @map("result_status")
-  resultPromptId String?       @map("result_prompt_id") @db.Uuid
-  resultAt       DateTime?     @map("result_at") @db.Timestamptz(3)
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-  startedAt      DateTime?     @map("started_at") @db.Timestamptz(3)
-  finishedAt     DateTime?     @map("finished_at") @db.Timestamptz(3)
-  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  parent         Thread?       @relation("ThreadTree", fields: [projectId, parentThreadId], references: [projectId, id], onDelete: Cascade, onUpdate: NoAction)
-  children       Thread[]      @relation("ThreadTree")
-  events         ThreadEvent[]
-
-  @@unique([projectId, id])
-  @@index([projectId, createdAt, id])
-  @@index([projectId, parentThreadId, createdAt, id])
-  @@map("thread")
-}
-
-model ThreadEvent {
-  projectId String   @map("project_id") @db.Uuid
-  threadId  String   @map("thread_id") @db.Uuid
-  promptId  String   @map("prompt_id") @db.Uuid
-  sequence  Int
-  type      String
-  event     Json     @db.JsonB
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  thread    Thread   @relation(fields: [projectId, threadId], references: [projectId, id], onDelete: Cascade)
-
-  @@id([threadId, sequence])
-  @@map("thread_event")
 }
 
 // Generic storage (`storage.backend/v1`). The backend reads and writes these

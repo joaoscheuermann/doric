@@ -1,7 +1,7 @@
 // Dev-only: the app contracts the fake host answers, all from memory.
 //
 // Only the members the desktop actually calls for a workspace to come up are
-// implemented (`runtime/v1`, `runtime.threads/v1`, the catalog and its
+// implemented (`runtime/v2`, `runtime.threads/v1`, the catalog and its
 // diagnostics report), plus the feature surfaces the dev host is here to show:
 // `comments/v1` and the durable event log `runtime.threads/v1.watchThread` streams. Everything else is
 // refused with a clear `unavailable` error and logged, so a boot that asks for
@@ -76,27 +76,27 @@ export const createContracts = ({
   });
   calls.set('doric.catalog/v1 resetComposition', () => undefined);
 
-  // runtime/v1 -------------------------------------------------------------
-  calls.set('runtime/v1 projects', (input) =>
+  // runtime/v2 -------------------------------------------------------------
+  calls.set('runtime/v2 projects', (input) =>
     workspace.projectPage({ limit: 100, ...(first(input) ?? {}) }),
   );
-  calls.set('runtime/v1 project', (input) =>
+  calls.set('runtime/v2 project', (input) =>
     workspace.projectById(first(input)),
   );
-  calls.set('runtime/v1 projectActivity', () => workspace.projectActivity());
-  calls.set('runtime/v1 createProject', (input) =>
+  calls.set('runtime/v2 projectActivity', () => workspace.projectActivity());
+  calls.set('runtime/v2 createProject', (input) =>
     workspace.createProject(first(input)),
   );
-  calls.set('runtime/v1 renameProject', (input) =>
+  calls.set('runtime/v2 renameProject', (input) =>
     workspace.renameProject(first(input)),
   );
-  calls.set('runtime/v1 setProjectColor', (input) =>
+  calls.set('runtime/v2 setProjectColor', (input) =>
     workspace.setProjectColor(first(input)),
   );
-  calls.set('runtime/v1 terminateProject', (input) =>
+  calls.set('runtime/v2 terminateProject', (input) =>
     workspace.terminateProject(first(input)),
   );
-  calls.set('runtime/v1 deleteProject', (input) =>
+  calls.set('runtime/v2 deleteProject', (input) =>
     workspace.deleteProject(first(input)),
   );
 
@@ -193,7 +193,7 @@ export const createContracts = ({
   );
 
   // Streams ----------------------------------------------------------------
-  streams.set('runtime/v1 watchProject', (input, sink) => {
+  streams.set('runtime/v2 watchProject', (input, sink) => {
     const { projectId } = first(input) ?? {};
     const found = workspace.projectById(projectId);
 
@@ -202,7 +202,6 @@ export const createContracts = ({
       projectId,
       project: found ?? null,
       threads: workspace.threadsOf(projectId),
-      terminals: [],
     });
   });
   streams.set('runtime.threads/v1 watchThread', (input, sink) => {

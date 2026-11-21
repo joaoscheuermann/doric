@@ -19,9 +19,11 @@
         { "projects": "bundle-chat", "target": "build" },
         { "projects": "bundle-comments", "target": "build" },
         { "projects": "bundle-settings", "target": "build" },
-        { "projects": "bundle-claude-login", "target": "build" },
         { "projects": "bundle-usage", "target": "build" },
-        { "projects": "bundle-host-config", "target": "build" }
+        { "projects": "bundle-host-config", "target": "build" },
+        { "projects": "bundle-terminal", "target": "build" },
+        { "projects": "bundle-threads", "target": "build" },
+        { "projects": "bundle-default", "target": "build" }
       ],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {

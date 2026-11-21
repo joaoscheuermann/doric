@@ -140,7 +140,6 @@ export const fileTree: readonly TreeNode[] = [
     ]),
   ]),
   file('AGENTS.md'),
-  file('GROUNDING.md'),
   file('package.json'),
   file('tsconfig.base.json'),
 ];

@@ -14,13 +14,13 @@ import {
 import { readRuntimeScope } from '../../contracts/scope.js';
 import type { Bindings } from '../domain/bindings.js';
 import type { WorkspaceService } from '../domain/types.js';
-import type { ProjectResourcesReader } from '../peers.js';
 
 /*
  * runtime.lease/v1 (design 57 §2.5): the stage-1 sandbox operations of the
- * calling prompt, as the stage-1 adapter forwarded them, plus the
- * lease-dependent reads of the current routes, which answer the lease state
- * without acquiring.
+ * calling prompt, as the stage-1 adapter forwarded them, plus `ssh` and
+ * `withLease`, which answer the lease state without acquiring. The other
+ * lease reads left with 1.3.0 (bundle isolation 7(c)) for the bundles that
+ * own them.
  */
 
 const describe = ({ id, root }: Sandbox) => ({ id, root });
@@ -35,16 +35,9 @@ const scoped = (call: Call, key: 'projectId' | 'threadId'): string => {
 export const leaseService = ({
   service,
   bindings,
-  resources = () => undefined,
 }: {
   readonly service: WorkspaceService;
   readonly bindings: Bindings;
-  /**
-   * The `resources` bundle's `resources/v1` while one is active: it reads the
-   * container since stage 10 (§3.12), so the deprecated `resources` read
-   * delegates to it on the caller's scope.
-   */
-  readonly resources?: () => ProjectResourcesReader | undefined;
 }) => {
   const runWithSandbox = async <T>(
     call: Call,
@@ -123,66 +116,6 @@ export const leaseService = ({
       ...methods.ssh,
       execute: (_input, call) =>
         service.projects.ssh(scoped(call, 'projectId')),
-    }),
-    files: defineMethod({
-      expose: 'desktop',
-      ...methods.files,
-      execute: ({ path }, call) =>
-        service.projects.files(scoped(call, 'projectId'), path),
-    }),
-    tree: defineMethod({
-      expose: 'desktop',
-      ...methods.tree,
-      execute: ({ path }, call) =>
-        service.projects.tree(scoped(call, 'projectId'), path),
-    }),
-    file: defineMethod({
-      expose: 'desktop',
-      ...methods.file,
-      execute: ({ path }, call) =>
-        service.projects.file(scoped(call, 'projectId'), path),
-    }),
-    diff: defineMethod({
-      expose: 'desktop',
-      ...methods.diff,
-      execute: ({ path }, call) =>
-        service.projects.diff(scoped(call, 'projectId'), path),
-    }),
-    changes: defineMethod({
-      expose: 'desktop',
-      ...methods.changes,
-      execute: ({ path }, call) =>
-        service.projects.changes(scoped(call, 'projectId'), path),
-    }),
-    fileDiff: defineMethod({
-      expose: 'desktop',
-      ...methods.fileDiff,
-      execute: ({ repository, path }, call) =>
-        service.projects.fileDiff(scoped(call, 'projectId'), repository, path),
-    }),
-    resources: defineMethod({
-      expose: 'desktop',
-      ...methods.resources,
-      execute: async (_input, call) => {
-        const projectId = scoped(call, 'projectId');
-        const reader = resources();
-        if (reader === undefined) return service.projects.resources(projectId);
-        const outcome = await reader.project(call);
-        return outcome.status === 'ready'
-          ? { status: 'ready' as const, container: outcome.value }
-          : { status: outcome.status };
-      },
-    }),
-    git: defineMethod({
-      expose: 'desktop',
-      ...methods.git,
-      execute: (_input, call) => service.threads.git(scoped(call, 'threadId')),
-    }),
-    branches: defineMethod({
-      expose: 'desktop',
-      ...methods.branches,
-      execute: ({ branch, cwd }, call) =>
-        service.threads.branches(scoped(call, 'threadId'), branch, cwd),
     }),
     withLease: defineMethod({
       ...methods.withLease,

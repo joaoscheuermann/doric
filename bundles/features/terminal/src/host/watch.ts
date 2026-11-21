@@ -9,9 +9,9 @@ import type { TerminalWatchItem } from '../contracts/index.js';
 import type { TerminalNotice, TerminalRegistry } from './registry.js';
 
 /*
- * A Project's terminal stream: the algorithm of the runtime's
- * `runtime.terminals/v1.watchProject` (and of the transport's `/projects`
- * namespace before it). It follows the registry's notices first, then sends
+ * A Project's terminal stream: the algorithm of the transport's `/projects`
+ * namespace, which the runtime's terminal watch followed until this bundle
+ * took it over. It follows the registry's notices first, then sends
  * the snapshot; updates and removals that arrive in between are delivered
  * after it, and output is never buffered: a reconnect reads the bounded
  * terminal snapshot instead of a second, unbounded copy of stdout.

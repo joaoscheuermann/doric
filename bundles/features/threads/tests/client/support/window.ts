@@ -1,17 +1,24 @@
 // One real workspace window in this process (after chat's own test window):
 // a happy-dom window as the globals, the window platform of `desktop/client`,
 // the core's, chat's and this bundle's client parts exactly as their builds
-// ship them, plus an optional in-memory "probe" bundle standing for the
-// layout's `layout.workspace/v1`. The boundaries faked are the preload API
-// (`window.doric.desktop`) and, behind it, the host's `runtime.threads/v1`
-// and main's shell streams: a test answers them as the host would and reads
-// what they were asked.
+// ship them, a records bundle that provides `runtime.records/v1` (a fake, or
+// the test's own records), plus an optional in-memory "probe" bundle. The
+// boundaries faked are the preload API (`window.doric.desktop`) and, behind
+// it, the host's `runtime.threads/v1` and main's shell streams: a test answers
+// them as the host would and reads what they were asked.
 
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import type { Activate } from 'bundle/contracts';
+import {
+  type Activate,
+  defineMethod,
+  defineService,
+  disposableSchema,
+  functionSchema,
+  noInput,
+} from 'bundle/contracts';
 import {
   type CatalogCandidate,
   type Descriptor,
@@ -29,6 +36,9 @@ import {
   type WindowCatalog,
 } from 'desktop/client';
 import { Window } from 'happy-dom';
+import { type RuntimeRecords, runtimeRecordsService } from 'runtime/contracts';
+import { createRecordsFake, type RecordsFakeOptions } from 'runtime/testing';
+import { z } from 'zod';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const THREADS_DIST = resolve(here, '../../../../dist');
@@ -80,7 +90,7 @@ const hostCandidate: CatalogCandidate = {
     provides: [
       'storage.backend/v1@1.0.0',
       'secrets.backend/v1@1.0.0',
-      'runtime.threads/v1@1.7.0',
+      'runtime.threads/v1@1.8.0',
       'host-config/v1@1.1.0',
       'runtime.attachments/v1@1.0.0',
       'comments/v1@1.0.0',
@@ -94,7 +104,7 @@ const hostCandidate: CatalogCandidate = {
     contracts: [
       ['storage.backend/v1', '1.0.0'],
       ['secrets.backend/v1', '1.0.0'],
-      ['runtime.threads/v1', '1.7.0'],
+      ['runtime.threads/v1', '1.8.0'],
       ['host-config/v1', '1.1.0'],
       ['runtime.attachments/v1', '1.0.0'],
       ['comments/v1', '1.0.0'],
@@ -216,6 +226,80 @@ const probeCandidate = (probe: Probe): CatalogCandidate => ({
   errors: [],
 });
 
+/**
+ * `layout.tabs/v2` as an inert fake: the Threads window opens no tab; every
+ * call answers at once and `current()` answers nothing.
+ */
+const tabsFake = () =>
+  defineService('layout.tabs/v2', {
+    ...Object.fromEntries(
+      (['open', 'close', 'focus', 'retitle', 'setOwner'] as const).map(
+        (method) => [
+          method,
+          defineMethod({
+            input: z.unknown(),
+            output: z.void(),
+            execute: () => undefined,
+          }),
+        ],
+      ),
+    ),
+    current: defineMethod({
+      input: noInput,
+      output: z.unknown(),
+      execute: () => undefined,
+    }),
+    subscribe: defineMethod({
+      input: functionSchema<() => void>(),
+      output: disposableSchema,
+      execute: () => ({ dispose: () => undefined }),
+    }),
+  });
+
+/**
+ * The records bundle: a client part that provides `runtime.records/v1` from
+ * `createRecordsFake`, which the chat requires (bundle isolation 4a, O7), and,
+ * standing in for the shell, `layout.tabs/v2`, which the chat requires from
+ * bundle isolation 4(c); without it the chat would be quarantined.
+ */
+const recordsCandidate: CatalogCandidate = {
+  id: 'records',
+  source: { kind: 'installed', dir: 'records@1.0.0' },
+  manifest: {
+    manifestVersion: 1,
+    id: 'records',
+    version: '1.0.0',
+    engines: { doric: '^1.0.0' },
+    provides: ['runtime.records/v1@1.0.0', 'layout.tabs/v2@2.0.0'],
+    requires: [],
+  },
+  descriptor: {
+    descriptorVersion: 1,
+    bundle: { id: 'records', version: '1.0.0' },
+    contracts: [
+      {
+        id: 'layout.tabs/v2',
+        version: '2.0.0',
+        kind: 'service' as const,
+        environment: 'client' as const,
+        cardinality: 'one' as const,
+        local: true,
+        schema: 'schemas/layout.tabs/v2.json',
+      },
+      {
+        id: 'runtime.records/v1',
+        version: '1.0.0',
+        kind: 'service' as const,
+        environment: 'client' as const,
+        cardinality: 'one' as const,
+        local: true,
+        schema: 'schemas/runtime.records/v1.json',
+      },
+    ],
+  },
+  errors: [],
+};
+
 const partUrl = (id: string, version: string): string =>
   `doric://app/bundles/${id}@${version}/client/index.js`;
 
@@ -274,6 +358,14 @@ export const openThreadsWindow = async (input: {
   readonly url: string;
   readonly host: Readonly<Record<string, HostAnswer>>;
   readonly probe?: Probe;
+  /** What the window's `runtime.records/v1` fake holds; empty without it. */
+  readonly records?: RecordsFakeOptions;
+  /**
+   * The window's `runtime.records/v1` itself, in place of a fake built from
+   * `records`: a test that changes what the records hold after the window
+   * opened answers the reads it needs.
+   */
+  readonly recordsApi?: RuntimeRecords;
 }): Promise<ThreadsWindow> => {
   const window = new Window({ url: input.url, width: 1280, height: 800 });
   // happy-dom runs no Web Animations and implements `getAnimations` on shadow
@@ -345,6 +437,7 @@ export const openThreadsWindow = async (input: {
       errors: [],
     },
     hostCandidate,
+    recordsCandidate,
     {
       id: 'chat',
       source: { kind: 'installed', dir: `chat@${chatManifest.version}` },
@@ -381,6 +474,7 @@ export const openThreadsWindow = async (input: {
     parts: {
       core: { entry: partUrl('core', coreManifest.version) },
       chat: { entry: partUrl('chat', chatManifest.version) },
+      records: { entry: partUrl('records', '1.0.0') },
       threads: { entry: partUrl('threads', threadsManifest.version) },
       ...(input.probe === undefined
         ? {}
@@ -502,6 +596,16 @@ export const openThreadsWindow = async (input: {
   const modules: Record<string, { activate?: Activate }> = {
     [partUrl('core', coreManifest.version)]: core,
     [partUrl('chat', chatManifest.version)]: chat,
+    [partUrl('records', '1.0.0')]: {
+      activate: ({ services }) => {
+        services.provide(
+          input.recordsApi === undefined
+            ? createRecordsFake(input.records)
+            : runtimeRecordsService(input.recordsApi),
+        );
+        services.provide(tabsFake());
+      },
+    },
     [partUrl('threads', threadsManifest.version)]: threads,
     ...(input.probe === undefined
       ? {}

@@ -1,172 +1,176 @@
-# Isolamento por processo
+# Process isolation
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes which processes run bundle code as implemented on 2026-11-20.
 
-## Resumo
+## Summary
 
-Isolamento por processo define em quais processos o código de bundles roda. O destino aprovado é a **opção B, processo por geração**: um processo kernel guarda o transporte, o storage, o catálogo e o diretório de serviços e roda a plataforma, a **fundação** (os provedores escolhidos em `providers` para contratos que o core fornece ou consome, como `postgres` para `storage.backend/v1` e `secrets.backend/v1`) e o [core](./core.md); os bundles `feature` de cada geração rodam num processo filho próprio. Uma geração nova é um processo novo, o que permite trocar código sem reiniciar o app e limita uma falha à geração em que ela aconteceu. Kernel e geração conversam por um envelope RPC único, validado pelo JSON Schema gerado do zod do contrato, que carrega o `call.caller` preenchido pelo dispatcher do kernel.
+The host runs its bundles in two kinds of process. The **kernel** is the host process itself: it reads the composition, owns the HTTP and Socket.IO listeners, and activates the bundles that must outlive any code change. Every other host bundle runs in a **generation process**, one Node process per bundle generation, forked by the kernel. A new generation is a new process, so bundle code changes without restarting the host, and a crash ends one generation process, which the kernel starts again, not the host (the host exits only when the restarts fail and a provider the composition requires is lost, as [Losing a generation process](#losing-a-generation-process) states) ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`manager.ts`](../../../packages/bundle/src/process/manager.ts)).
 
-## Decisão
+The desktop app follows the same rule for its `desktopMain` parts: the Electron main process plays the kernel, and each desktop generation runs in one Electron `utilityProcess` ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [`process.ts`](../../../app/desktop/doric/src/platform/generation/process.ts)).
 
-Em 2026-10-08 o usuário aprovou a **opção B, processo por geração**, como destino. Isso amplia o escopo da HC-003 de `GROUNDING.md` para esta arquitetura; a aprovação vale para o desenho, e a implementação continua sujeita às etapas e validações da [migração](./migration.md). As opções A e C ficam registradas como alternativas descartadas.
+The kernel and a generation call each other's services through one RPC envelope over the process's IPC channel. A bundle does not see the boundary: its part receives the same `services` in either process, and a provider in the other process is reached through a stub ([`link.ts`](../../../packages/bundle/src/runtime/envelope/link.ts), [`remote.ts`](../../../packages/bundle/src/runtime/envelope/remote.ts)).
 
-## Problema
+## The host kernel
 
-Hoje todo o código do host roda num único processo Node, e o Electron main roda num único processo. Isso limita duas coisas:
+### What runs where
 
-- um módulo ESM não pode ser descarregado, então trocar código exige reiniciar;
-- uma falha ou travamento de um bundle derruba o processo inteiro.
+A bundle of the host catalog runs in the kernel when it is in the foundation, is the core, is embedded in the host, or is listed in the composition's `resident` array; every other scheduled bundle runs in the generation process ([`partition.ts`](../../../packages/bundle/src/process/partition.ts)). The foundation is the set of providers the composition chooses under `providers` for contracts the core provides or consumes ([Hooks](hooks.md#replacing-the-provider-of-hooksv1), [Core](core.md)).
 
-## Opções avaliadas
+| Process    | What it runs                                                                                                                        | In the shipped composition                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Kernel     | The platform (catalog, diagnostics, dispatcher, generation manager), the foundation, the core, embedded bundles, `resident` bundles | `postgres` (`storage.backend/v1`, `secrets.backend/v1`), `core`, `host-config`, `transport`, `screen-relay` |
+| Generation | Every other scheduled bundle of the host catalog, with the tools and skills those bundles register                                  | `runtime`, `default`, `git`, `files`, `web`, `resources`, the model providers, the sandbox, and the rest    |
 
-| Opção                   | Desenho                                                                                                   | Troca de código sem reinício   | Isolamento de falha | Custo                                                     |
-| ----------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------- | --------------------------------------------------------- |
-| A. Processo único       | Kernel e todos os bundles no mesmo processo, como hoje                                                    | Não                            | Nenhum              | Nenhum custo novo                                         |
-| B. Processo por geração | Kernel num processo; os bundles `feature` de uma geração num processo filho; nova geração = novo processo | Sim, drenando a geração antiga | Por geração         | Um processo Node extra por geração viva; IPC nas chamadas |
-| C. Processo por bundle  | Cada parte `host` de bundle num processo próprio                                                          | Sim, por bundle                | Por bundle          | N processos; toda chamada entre bundles atravessa IPC     |
+The shipped composition is [`composition.json`](../../../app/backend/doric-host/composition.json). The catalog is resolved once, by the kernel, and split into a kernel order and a generation order; the published order lists the kernel's bundles first ([`partition.ts`](../../../packages/bundle/src/process/partition.ts)).
 
-## Kernel e processo por geração
+The kernel activates its own bundles in its own process, in their order. The generation's bundles count as already active for the kernel's dependency check, so a kernel bundle may depend on a generation bundle: its calls resolve the provider in the active generation at call time ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts)). Installed kernel bundles register their tools after each activates and their skills once the whole kernel phase has activated ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)).
 
-```mermaid
-flowchart LR
-    subgraph Kernel["Processo kernel (agents/doric)"]
-      T["Transporte REST/Socket.IO"]
-      D["Plataforma: diretório de serviços, dispatcher, catálogo e log próprio"]
-      F["Fundação: postgres (storage.backend/v1, secrets.backend/v1)"]
-      C["core (hooks/v1, log/v1, settings/v1, secrets/v1, storage/v1…)"]
-    end
-    subgraph G7["Processo da geração 7 (drenando)"]
-      B7["runtime, direct, git, threads…"]
-    end
-    subgraph G8["Processo da geração 8 (ativa)"]
-      B8["runtime, direct, git, threads…"]
-    end
-    T --> D
-    D <-->|"envelope RPC"| B7
-    D <-->|"envelope RPC"| B8
-    B8 -->|"commit declarativo"| D
-    D --> C
-    C --> F
-```
+Because the core runs in the kernel, the basic contracts it provides (`hooks/v1`, `log/v1`, `settings/v1`, `secrets/v1`, `storage/v1`, `tools/v1`, `skills/v1`, `events/v1`, `models/v1`) are kernel providers, and a generation bundle reaches them across the envelope. A tool a generation bundle registers is kept by the core's `tools/v1` in the kernel as a handle to the generation ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`values.ts`](../../../packages/bundle/src/runtime/envelope/values.ts)).
 
-### O que fica no kernel
+The core's `tools/v1` and `skills/v1` keep each registration with its generation (0 for a kernel registration) and answer a call with the kernel's registrations plus those of the call's generation, or of the active generation for a kernel call. A name must be unique within that view: a registration that collides is refused with `duplicate_tool` or `duplicate_skill`. A draining generation therefore keeps its tools and skills for the calls pinned to it until it stops ([`tools.ts`](../../../bundles/foundation/core/src/host/tools.ts), [`skills.ts`](../../../bundles/foundation/core/src/host/skills.ts), [`partition.ts`](../../../bundles/foundation/core/src/shared/partition.ts), [core README](../../../bundles/foundation/core/README.md)).
 
-Na opção B, o kernel guarda o transporte, a conexão com o storage, o catálogo, o diretório de serviços e a publicação pós-commit. Ele roda a parte da plataforma que fica no host (catálogo, diagnóstico, dispatcher e o log próprio da plataforma, que não depende do core), a fundação e o [core](./core.md). Os demais bundles de uma geração rodam num processo filho. O splash e a recuperação não rodam no kernel: são uma superfície técnica do app (`app/doric`) que lê `doric.catalog/v1` e `doric.diagnostics/v1` do kernel (ver [splash e recuperação](./splash-and-recovery.md)).
+### The host process
 
-No kernel, o loader segue a mesma ordem de ativação de qualquer ambiente:
+The host's entry point is the kernel's owner ([`index.ts`](../../../app/backend/doric-host/src/index.ts), [`boot.ts`](../../../app/backend/doric-host/src/lib/bundles/boot.ts)). In order, it:
 
-1. **Fundação.** Os bundles escolhidos em `providers` para contratos que o core fornece ou consome: por padrão `postgres`, provedor de `storage.backend/v1` e `secrets.backend/v1` (ver [storage](./storage.md)), e, quando a composição escolhe, outro provedor como `myhooks` para `hooks/v1`. Bundles da fundação só declaram `requires` de contratos `doric.*`.
-2. **Core.** O core declara `requires` apenas de contratos que a fundação fornece (`storage.backend/v1`, `secrets.backend/v1`). Quando a composição escolhe outro provedor para um contrato que o core também fornece, o loader não registra a implementação do core para esse contrato no host, e o `services.use` do próprio core devolve o provedor escolhido.
-3. **Demais bundles**, em ordem de dependência, no processo da geração.
+1. reads `DORIC_BUNDLES_PATH` and `DORIC_COMPOSITION`, or else the staged bundles and the shipped composition, and applies the composition's alternatives: without `DORIC_COMPOSITION`, each alternative takes the option its variable chooses (`DORIC_SANDBOX_PROVIDER` for `sandbox`), and an operator composition boots as written;
+2. logs `Doric starting` with the chosen alternatives, and creates the Express app, the `http.Server` and the Socket.IO server;
+3. starts the kernel (`startKernel` from `bundle`), which activates the kernel's bundles and starts generation 1, and fails at the stage `bundle_load` if the kernel is in recovery mode: the composition cannot be read or is invalid, the core is missing, disabled or quarantined, a contract the core requires has no active foundation provider at a satisfying version, or a chosen foundation provider is quarantined ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts), [Core](core.md));
+4. checks the composition's `required` block: every contract it lists has a provider among the active bundles, and every bundle it lists is active; otherwise it logs `Bundle recovery mode` and exits;
+5. logs `Bundles loaded` with the number of installed bundles, of skills (`skills/v1.list`) and of tools (`tools/v1.list`);
+6. runs `onHostStartHook` through `platform.start()`;
+7. watches `required` for the rest of its life: when a generation becomes active without a required provider, it logs `Bundle recovery mode` and exits, so its supervisor restarts it;
+8. installs the generic desktop bridge, the Socket.IO namespace `/doric/bridge` ([`socket.ts`](../../../app/backend/doric-host/src/lib/bridge/socket.ts));
+9. runs `onHostReadyHook`, then binds the port (`DORIC_HOST`, default `0.0.0.0`; `DORIC_PORT`, default `3000`) and logs `Doric listening`.
 
-O `secrets.backend/v1` padrão do `postgres` guarda cada segredo como envelope AES-256-GCM sob `DORIC_CREDENTIAL_KEY`, como o credential store atual do host. O `secrets/v1` do core é a fachada sobre `secrets.backend/v1`, e o `storage/v1` do core é a fachada sobre `storage.backend/v1`. Como a fundação e o core rodam no kernel, backends e fachadas ficam no kernel.
+On `SIGINT` or `SIGTERM` it closes the HTTP server and the sockets, runs `onHostStopHook`, then stops the generations, the kernel's bundles and the platform. The host process names no bundle contract: it reads only the basic contracts `tools/v1` and `skills/v1`, to count them, and the routes and namespaces are registered by bundles. The start and stop hooks are described in [Hooks](hooks.md#host-start-and-stop).
 
-Como o core fornece os serviços básicos do host (`hooks/v1`, `log/v1`, `settings/v1`, `secrets/v1`, `tools/v1`, `skills/v1`, `storage/v1`, `events/v1`, `models/v1`), quase toda chamada de um bundle da geração para esses contratos atravessa o envelope até o kernel. A plataforma também consome esses contratos pelo diretório, sem conhecer a implementação.
+### `doric.network/v1`
 
-Por isso o provedor de cada contrato que o core fornece ou consome roda no kernel: o próprio core, por padrão, ou o bundle da fundação escolhido em `providers`, por exemplo `postgres` para `storage.backend/v1` e `secrets.backend/v1`, ou `myhooks` para `hooks/v1`. Depois que o provedor de `hooks/v1` ativa, a plataforma do kernel chama `define(AppHooksV1)` e passa a disparar `execute` dos hooks do ciclo de vida, como `onHostReadyHook`. Se esse provedor rodasse no processo de geração, a plataforma dependeria de um processo que é drenado e trocado a cada geração, e o kernel teria de chamar a geração para disparar hooks do ciclo de vida como `onHostReadyHook`. Como os bundles estruturais, um provedor da fundação só é trocado com reinício.
+The native listeners live only in the kernel. The kernel provides `doric.network/v1`, a host-only platform contract whose one method, `register`, runs a listener at once with the host's Express app, its `http.Server` and its Socket.IO server ([`network.ts`](../../../packages/bundle/src/contracts/network.ts), [`process/network.ts`](../../../packages/bundle/src/process/network.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts); the cleanup and the refusal from a generation process are in [Services and channels](services-and-channels.md#native-handles-doricnetworkv1). A bundle never calls `listen`: the kernel owns the address, the bind and the close. The handles are local to the kernel process and never serialized, so a bundle that serves routes or sockets is listed under `resident`: `transport` ([README](../../../bundles/foundation/transport/README.md)) and `screen-relay` ([README](../../../bundles/features/screen-relay/README.md)).
 
-Qualquer bundle, não só o core, registra handlers dos hooks do app, inclusive os bundles da geração; nesse caso o `hooks/v1` do kernel invoca o handler pelo envelope. Uma falha do `activate` de um bundle leva à quarentena; uma falha de um handler de `onActivateHook` (`observe`) só vai ao diagnóstico.
+## Generations
 
-Cada contrato declara cardinalidade nas opções de `defineService`. Um contrato `one` (o padrão) tem um provedor ativo, escolhido pela composição; sem escolha em `providers`, um segundo provedor vai para quarentena com motivo, e como a fundação e o core ativam antes, é o bundle substituto que vai para quarentena. São `one`, entre outros, `storage.backend/v1`, `secrets.backend/v1`, `runtime/v1`, `executor/v1` e `sandbox/v1`. Um contrato `many` aceita vários provedores sem conflito, agregados pelo consumidor: `openai`, `openrouter` e `codex` fornecem `models.provider/v1` no processo da geração, e o `models/v1` do core, no kernel, os agrega pelo envelope. Um provedor escolhido para `skills/v1`, `events/v1` ou `models/v1`, contratos que o core fornece, também é fundação: ativa antes do core, no kernel, e só declara `requires` de contratos `doric.*`.
+### Starting a generation
 
-### Troca de geração e recuperação
+A generation is numbered: the boot starts generation 1, and each publish takes the next number. The kernel forks the compiled runner, `runner-main.js`, with V8 serialization over the IPC channel, `stdin` ignored and `stdout`/`stderr` inherited ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). The runner ignores `SIGINT` and `SIGTERM`, so only the kernel ends it, and exits as soon as its channel to the kernel disconnects, so a dead kernel leaves no orphan ([`runner-main.ts`](../../../packages/bundle/src/process/runner-main.ts)).
 
-- Chamadas novas vão para a geração ativa.
-- As chamadas que a geração antiga segura por uma retenção de trabalho (`WorkHold`) terminam ali. A geração entra em dreno e é encerrada quando essas retenções acabam; retenções de janela não contam para o dreno.
-- Se o processo de uma geração cair, as retenções perdidas chegam a cada bundle dono por `onGenerationChangedHook` (`lost`), já filtradas às retenções desse bundle. O bundle decide o que fazer com elas: o `runtime` pausa as prompts afetadas, e as Threads retomam pelo checkpoint com a mesma semântica de recuperação de hoje.
+The kernel then sends one `init` control message, the `GenerationInit` ([`runner.ts`](../../../packages/bundle/src/runtime/runner.ts)):
 
-### Criação da geração pelo kernel
+| Field              | What it carries                                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `environment`      | `host`, or `desktopMain` for a desktop generation                                                           |
+| `generation`       | The generation number                                                                                       |
+| `incarnation`      | The process's attempt number for that generation, from 1                                                    |
+| `platformVersion`  | The platform version                                                                                        |
+| `composition`      | The composition the catalog was resolved from                                                               |
+| `entries`, `order` | The catalog entries of this process, already resolved by the kernel, and their activation order             |
+| `contracts`        | The resolved contracts with their providers                                                                 |
+| `preActive`        | The bundles active in the kernel, which satisfy this process's dependency check                             |
+| `kernelProviders`  | A descriptor of every kernel provider the generation may call                                               |
+| `hooksProvider`    | `remote` on the host: `hooks/v1` is the kernel's, so the platform defines its hooks before the first bundle |
+| `catalog`          | The catalog snapshot `doric.catalog/v1.get` answers in this process                                         |
 
-O kernel cria a geração e conversa com ela por mensagens:
+The runner registers a stub for each kernel provider, provides `doric.catalog/v1`, `doric.diagnostics/v1` and `doric.bundle/v1` itself, activates its bundles in order (installed bundles' tools after each activates, their skills once all have), and sends `ready` ([`runner.ts`](../../../packages/bundle/src/runtime/runner.ts), [`runner-main.ts`](../../../packages/bundle/src/process/runner-main.ts)). Each provider a generation bundle registers is announced to the kernel with a `provide` control message, and withdrawn with `unprovide`; the kernel announces its own later providers the same way. The generation pushes its diagnostics to the kernel, and its platform log lines as `platform-log` messages, which the kernel writes to its own log ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)).
 
-```ts
-import { fork } from 'node:child_process';
+A process that exits before `ready` is started again, up to three attempts (`startAttempts`), each a new incarnation ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)).
 
-const startGeneration = (generation: GenerationCatalog) => {
-  const child = fork(generationRunnerPath, [], { serialization: 'advanced' });
-  child.send({ kind: 'activate', generation });
-  child.on('message', (message: RunnerMessage) =>
-    dispatcher.receive(generation.id, message),
-  );
-  child.on('exit', (code) => recovery.generationExited(generation.id, code));
-  return child;
-};
-```
+### The envelope
 
-### Processo filho
-
-O processo filho ativa os bundles e responde às chamadas. Cada parte `host` recebe o mesmo `HostContext` de qualquer processo, `{ services }`; os serviços do kernel chegam como stubs tipados no diretório da geração:
+The kernel and a generation each hold one end of a `ProcessLink`: request correlation, cancellation, deadlines, handles exported to the other side, and the close of the channel ([`link.ts`](../../../packages/bundle/src/runtime/envelope/link.ts)). The full shapes of the init, the wire messages, the link and the value encoding are in the bundle package README: [Generation processes and the envelope](../../../packages/bundle/README.md#generation-processes-and-the-envelope), [Wire messages](../../../packages/bundle/README.md#wire-messages), [`ProcessLink` and `Transport`](../../../packages/bundle/README.md#processlink-and-transport) and [Values, errors and calls](../../../packages/bundle/README.md#values-errors-and-calls). Every request carries the hop's call metadata ([`messages.ts`](../../../packages/bundle/src/runtime/envelope/messages.ts)):
 
 ```ts
-process.on('message', async (message: KernelMessage) => {
-  if (message.kind === 'activate') {
-    // ctx: HostContext = { services }, com os contratos do kernel resolvidos por stubs
-    await activateBundles(message.generation, { services: kernelServices });
-    return;
-  }
-  if (message.kind === 'call') {
-    const result = await services.invoke(message);
-    process.send?.(result);
-  }
-});
+interface WireCall {
+  caller: Caller; // filled by the sending dispatcher: bundleId, version, generation
+  scope?: CallScope;
+  trace: TraceContext; // { traceparent }
+  deadline: number; // epoch milliseconds; 0 means none
+  generation: number; // the operation generation the call chain is pinned to; 0 = unpinned
+}
 ```
 
-## Envelope RPC
+The messages are `call` (a service method: `contract`, `method`, encoded `input`, the resolved `provider` and `record`, and `oneway` for a fire-and-forget method such as `doric.log/v1.write`), `invoke` (a handle the other side exported: a callback, a tool's `execute` or `check`), `result`, `cancel` and `release`. The control plane, never routed to bundles, is `init`, `ready`, `provide`, `unprovide`, `diagnostics`, `catalog`, `platform-log`, `stop` and `stopped`; the kernel also sends `catalog` to every live generation each time the active generation changes, so `doric.catalog/v1.get` in each process answers the current catalog ([`messages.ts`](../../../packages/bundle/src/runtime/envelope/messages.ts), [`manager.ts`](../../../packages/bundle/src/process/manager.ts)). The type also declares `lifecycle` and `lifecycle-result`, which no process sends. How `call` propagates from hop to hop is in [Services and channels](services-and-channels.md); how a contract's schemas are declared is in [Contracts](contracts.md).
 
-O envelope é o mesmo para qualquer chamada que atravessa o processo. Ele leva o `call` (tipo `Call` de `bundle/contracts`) que todo `execute` de método, comando e tool e todo handler de hook recebem. `contract` e `method` apontam para um serviço definido com `defineService` e `defineMethod` (ver [contratos](./contracts.md)), e o dispatcher valida `input` e `output` pelo JSON Schema gerado do zod desse contrato. No mesmo processo, a validação usa o próprio schema zod; o JSON Schema gerado é o formato usado quando a chamada atravessa processos.
+A value that is local to its process crosses as a handle when the member's schema allows it: a callback, a `Disposable`, an object, a tool, a hooks contract or a definition. A local value the member does not allow is refused with `local_only` ([`values.ts`](../../../packages/bundle/src/runtime/envelope/values.ts)). A handle that comes back to the process that exported it resolves to the original value: a tool a generation bundle registered in the kernel's `tools/v1` is, when a bundle of the same generation lists it, the local tool itself. A tool registered in another process is a `RemoteTool`, whose `check` and `execute` run in the tool's own process with its own schemas ([`values.ts`](../../../packages/bundle/src/runtime/envelope/values.ts)). A prompt's tools take this path: the `default` bundle's executor, in the generation process, lists `tools/v1` with the prompt's call and receives its own generation's tools as local tools, whose `check` and `execute` do not cross the envelope; only a kernel bundle's tool is a `RemoteTool` ([`executor.ts`](../../../bundles/runtime/default/src/host/executor.ts), [default README](../../../bundles/runtime/default/README.md)).
 
-```ts
-type CallMessage = {
-  kind: 'call';
-  id: string;
-  contract: string; // 'git.commands/v1'
-  method: string; // 'switchBranch'
-  input: unknown;
-  deadline: number;
-  caller: { bundleId: string; version: string; generation: number }; // preenchido pelo dispatcher
-  // Registro opaco de chaves de string limitadas. Só `windowKey` é da
-  // plataforma (preenchido pelo dispatcher em chamadas de janela client); as
-  // demais chaves, como as de Project, Thread e prompt, são do bundle que as lê.
-  scope: Readonly<Record<string, string>>;
-  trace: { traceparent: string };
-};
-type ResultMessage =
-  | { kind: 'result'; id: string; ok: true; output: unknown }
-  | {
-      kind: 'result';
-      id: string;
-      ok: false;
-      error: { code: string; message: string };
-    };
-type CancelMessage = { kind: 'cancel'; id: string };
-```
+Where work runs follows from this. `GET /resources` is a route of `transport` ([transport README](../../../bundles/foundation/transport/README.md)), in the kernel, and calls `resources/v1.host()`, whose CPU sample runs in the `resources` bundle, in the generation process ([`routes/resources.ts`](../../../bundles/foundation/transport/src/host/routes/resources.ts), [`machine.ts`](../../../bundles/features/resources/src/host/machine.ts), [resources README](../../../bundles/features/resources/README.md)). The `web` tool's `fetch` runs in the `web` bundle, in the generation process ([`web.ts`](../../../bundles/features/web/src/host/tools/web.ts), [web README](../../../bundles/features/web/README.md)). Both run on the host machine.
 
-Todo stub aceita como último argumento opcional um `call` pai (o `call` recebido) ou `{ signal, deadline }`. Com um pai, o dispatcher herda dele `scope`, `signal` e `trace`. O `caller` não é herdado: em cada salto, o dispatcher o preenche com o bundle que faz a chamada, a partir da geração e do bundle que originou a mensagem. No `execute(input, call, services)` do `switchBranch` do git, `call.caller` é quem chamou o git; quando o git chama `events/v1` repassando esse `call`, o `caller` do novo salto é `git`. Em toda chamada que sai de uma janela client, o dispatcher preenche `scope.windowKey`.
+### Which generation a call reaches
 
-O `call.caller` serve para diagnóstico, log e para o handler saber quem disparou a chamada: é dele que o `log/v1` tira `bundleId`, `version` e `generation` de cada registro; `environment` vem do processo do provedor de `log/v1` (ver [observabilidade](./observability.md)). Do lado que recebe, `deadline` e `CancelMessage` viram o `call.signal`, e `trace` vira `call.trace`.
+The kernel keeps one directory of its own providers and, per generation, a view that layers that generation's providers over the kernel's. The active view overlays the active generation's providers, so a kernel bundle that calls a contract a generation provides reaches the active generation ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`manager.ts`](../../../packages/bundle/src/process/manager.ts)). A call that leaves a generation carries its generation, and the platform answers it from that generation's view: its catalog, its diagnostics and its `doric.generation/v1` ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)).
 
-Um método cujo schema usa `z.custom` (funções, classes, elementos) só funciona no mesmo processo; o dispatcher recusa a chamada que atravessaria o envelope. O diretório de serviços e os stubs tipados estão em [serviços e canais](./services-and-channels.md).
+While no generation is active, during a respawn, a kernel call to a contract the generation provides waits for the next activation instead of failing `unavailable`; its call signal aborts the wait ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)).
 
-## Consequências
+### Publishing a new generation
 
-Consequências que valem para B e C:
+`publish` is kernel-internal. It reads the bundles and the composition again, resolves the next generation's catalog, and compares its kernel partition — the kernel bundles' ids, versions, phases, states and sources, the providers they publish, and the catalog's recovery reason — with the one the host booted ([`partition.ts`](../../../packages/bundle/src/process/partition.ts)). If the partition changed, publish answers `kernel_restart_required` and starts nothing. Otherwise it starts the new generation's process; if all attempts fail, it reports `generation_failed` and answers `failed`, and the active generation stays. On success it switches the active view to the new generation and puts the previous one in `draining`. Concurrent calls share one run, and a publish while the host stops answers `failed` ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)).
 
-- Transações não podem receber um handle vivo de outro processo. O storage precisa do commit declarativo descrito em [contrato independente de backend](./storage.md): o bundle envia um lote com revisões esperadas, e o kernel executa o lote de forma atômica.
-- Eventos de streaming, como deltas de tokens, atravessam o IPC; o dispatcher agrupa as entregas para não pagar um envio por token.
-- Leases de sandbox e conexões Docker ficam no processo do bundle `runtime`, provedor de `runtime/v1`. O `execute` de uma tool recebe `(payload, call, services)` e usa serviços no escopo da chamada, como `services.use(RuntimeWorkspaceV1, call.scope)` e `services.use(RuntimeThreadsV1, call.scope)`, que chegam pelo stub quando o provedor está em outro processo.
-- No desktop, as partes `desktopMain` rodariam em `utilityProcess` por geração, com `DesktopContext`. APIs que só existem no main (`BrowserWindow`, `Menu`, `Notification`) são pedidas ao broker do main por `MessagePort`; o diretório de cache por bundle vem de `doric.cache/v1`, contrato da plataforma no `desktopMain`. Na parte `client`, com `ClientContext`, cada janela já é um processo de renderer.
-- Qualquer serviço fornecido no `desktopMain` ou no `host` é alcançável por partes `client` pela ponte quando a parte `client` o declara em `requires`, como `windows/v1` e `menus/v1` do core.
+The callers of `publish` are `doric.catalog/v1.disable` and `doric.catalog/v1.resetComposition`, which write or clear the composition overrides and then publish; when the answer is not `published`, they log `Composition change applies at the next host start` and fail with `unavailable` ([`composition-actions.ts`](../../../packages/bundle/src/process/composition-actions.ts)). The recovery surface that calls them is in [Splash and recovery](splash-and-recovery.md).
 
-A opção B resolve a troca de código e isola falhas por geração, com custo de um processo extra por geração viva.
+A generation's state is one of `starting`, `active`, `draining`, `stopped` and `failed` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)).
 
-## Relações
+### Work holds and draining
 
-- [Contratos e a família define\*](./contracts.md): o envelope é validado pelo JSON Schema gerado do zod dos contratos definidos com `defineService` e `defineMethod`, cujas opções declaram só a cardinalidade.
-- [Serviços entre bundles e canais de mensagens](./services-and-channels.md): o diretório de serviços, os stubs tipados e a propagação de `call` são o que o dispatcher do kernel roteia entre processos.
-- [Armazenamento genérico e histórico](./storage.md): o commit declarativo com revisões esperadas é exigido porque transações não atravessam processos; `postgres` fornece `storage.backend/v1` e `secrets.backend/v1` no kernel.
-- [Composição e distribuição pelo host](./composition-and-distribution.md): a composição define o catálogo de cada geração que o kernel ativa num processo novo e escolhe em `providers` a fundação que roda no kernel.
-- [Bundle core e quarentena](./core.md): o core roda no kernel, depois da fundação e junto da plataforma; falha do core leva ao modo de recuperação.
-- [Hooks](./hooks.md): a plataforma do kernel define `AppHooksV1` no provedor de `hooks/v1` e dispara os hooks do ciclo de vida, cujos handlers podem estar na geração.
-- [Contextos e capacidades](./contexts.md): o contexto entregue aos bundles (`HostContext`, `DesktopContext`, `ClientContext`) tem só `services`; o processo é o que isola falhas.
-- [Observabilidade e diagnóstico](./observability.md): o campo `trace.traceparent` do envelope propaga o rastreio entre kernel e geração, e `call.caller` identifica o bundle de cada registro.
-- [Migração em entregas verificáveis](./migration.md): a implementação da opção B segue as etapas e evidências da migração.
+A generation keeps running while it holds work. A **work hold** is a `{ key, label? }` taken through `doric.generation/v1.hold`; its owner is the calling bundle, taken from `call.caller.bundleId`, never from the input, and the key is opaque to the platform ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts), [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). A draining generation stops once it has no work hold and no call in flight on its link in either direction ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)). The manager's hold type also has a window variant, which does not count toward the drain; no host code takes one.
+
+To stop a generation the kernel sends `stop`; the runner deactivates its bundles in reverse order, pushes its last diagnostics and answers `stopped`. A process still alive after `stopTimeoutMs` (10 seconds) is killed with `SIGKILL`. When the host itself stops, every live generation is stopped this way and no change is announced ([`manager.ts`](../../../packages/bundle/src/process/manager.ts), [`runner.ts`](../../../packages/bundle/src/runtime/runner.ts)).
+
+### `doric.generation/v1`
+
+The kernel provides `doric.generation/v1`, a host-only platform contract that a bundle uses without declaring it ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`platform-providers.ts`](../../../packages/bundle/src/runtime/platform-providers.ts)). A host with no generation manager does not provide it.
+
+A bundle uses it to learn which generation it serves, to keep that generation alive while it drains, and to signal its own bundle in the other live generations. Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts). Its three methods behave as follows:
+
+- `describe` answers `{ generation, incarnation, state }` for the caller's generation: the generation the call is pinned to while it is not stopped, else the active one, or during a respawn the generation being started again. With no generation at all it fails `unavailable` ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)).
+- `hold` takes a work hold `{ key, label? }`, a key of 1 to 256 characters and a label of at most 256, on the generation `describe` resolves to and returns its `Disposable`; disposing of it ends the hold and may end a drain. It fails `unavailable` when there is no generation, or when the one it resolves to is stopped, as when the host is stopping.
+- `signal` takes `{ topic, payload? }`, a topic of 1 to 128 characters, and delivers `onPeerSignalHook` to every other live generation, with the sender's bundle as `from.bundleId` and, as the sender generation, the caller's generation as `describe` resolves it; while the host stops, or with no generation, it sends nothing.
+
+An input outside these bounds fails `invalid_input` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
+
+### Generation hooks
+
+The kernel announces each change of the generation set as `doric.app.hooks/v1` hooks ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`manager.ts`](../../../packages/bundle/src/process/manager.ts)). Each is executed once per live generation, with a call pinned to that generation, so a bundle's handler runs in its own process; a failed execution is reported as `hook_execute_failed` and never stops the transition.
+
+- `onGenerationChangedHook`, input `{ event, generation, incarnation, self, live, holds? }`. `event` is `activated`, `draining`, `lost` or `stopped`; `self` is the receiving generation and incarnation; `live` lists every active or draining generation with its state. `holds`, set for `lost` only, lists the lost generation's work holds as `{ bundleId, key, label? }`, and each handler receives only its own bundle's holds. A lost or stopped generation does not hear its own change. On a switch the draining generation hears `draining` first, before the drain check, so a hold it takes in that handler keeps it alive; then every live generation hears `activated`. The boot announces no change.
+- `onPeerSignalHook`, input `{ topic, payload, from, self, live }`, delivered only to the handlers of the bundle that sent it.
+- `onGenerationReadyHook`, input `{ generation }`, fired after a publish or a respawn has activated a generation.
+
+The full table of the platform's hooks is in [Hooks](hooks.md#doricapphooksv1).
+
+### Losing a generation process
+
+A generation process that exits after `ready`, without the kernel asking it to stop, is lost ([`manager.ts`](../../../packages/bundle/src/process/manager.ts), [`link.ts`](../../../packages/bundle/src/runtime/envelope/link.ts)):
+
+1. Its pending calls reject with `generation_lost`, and every later call through its link does too. Each stream registration it served ends once with `generation_lost`, unless it was disposed or had ended; a stream registration the other process refuses ends with that refusal instead ([`link.ts`](../../../packages/bundle/src/runtime/envelope/link.ts)). The desktop bridge ends each desktop stream it relays with the same error code ([`socket.ts`](../../../app/backend/doric-host/src/lib/bridge/socket.ts)).
+2. The kernel reports `generation_lost` to diagnostics with the generation, the incarnation and the exit code or signal, and announces `lost`, with the generation's work holds, to every other live generation.
+3. A lost draining generation is stopped. A lost active generation leaves no generation active, and the kernel starts the same generation again, as the next incarnation, with up to three attempts.
+4. If every attempt fails while no other generation is active, the generation becomes `failed` with an empty view: its bundles show as quarantined with `generation_failed`, and the kernel keeps serving with only its own providers. The host then exits through its `required` watch whenever a required provider was among them, as with the shipped composition ([`boot.ts`](../../../app/backend/doric-host/src/lib/bundles/boot.ts)).
+
+A tool call whose process died fails with `generation_lost` in its cause; when the run's signal is also aborted, the `default` bundle's executor records no `tool.failed` for it, saves the history with the call unanswered and pauses the run instead ([`executor.ts`](../../../bundles/runtime/default/src/host/executor.ts), [default README](../../../bundles/runtime/default/README.md)). Client parts treat `generation_lost` like a dropped connection and subscribe again, as the runtime's Project watch does ([`project-watch.ts`](../../../bundles/runtime/runtime/src/client/api/project-watch.ts)).
+
+### How the runtime hands over
+
+The `runtime` bundle runs in every generation process and builds its handover on these hooks: it records its `{ generation, incarnation }` as the owner of each Project it holds; a generation that becomes active recovers in the background and leaves the draining generations' Projects in standby; a draining generation takes the work hold `runtime.drain`, lets each Project's prompts finish, and signals `runtime.released` with the Project id; the active runtime adopts each released Project, and every Project of a lost or stopped generation, pausing an interrupted prompt with `host_restarted` before it resumes ([`handover.ts`](../../../bundles/runtime/runtime/src/host/handover.ts), [`threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts)). The detail is in the [runtime README](../../../bundles/runtime/runtime/README.md#recovery-host-stop-and-handover).
+
+## Desktop generations
+
+The Electron main process runs each desktop generation's `desktopMain` parts in one `utilityProcess`, forked with the service name `Doric desktopMain g<N>` ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). The process runs the same generation runner as the host, over Electron's `parentPort`, with every scheduled `desktopMain` part of the generation, loaded from the verified artifact cache ([`runner-entry.ts`](../../../app/desktop/doric/src/platform/generation/runner-entry.ts), [`process.ts`](../../../app/desktop/doric/src/platform/generation/process.ts)). It differs from a host generation in four ways ([`process.ts`](../../../app/desktop/doric/src/platform/generation/process.ts), [`broker.ts`](../../../app/desktop/doric/src/platform/generation/broker.ts)):
+
+- Main provides the platform contracts `doric.windows/v1`, `doric.menus/v1`, `doric.cache/v1`, `doric.migrations/v1`, `doric.tokens/v1`, `doric.notifications/v1` and `doric.log/v1`; everything else, `hooks/v1` included, is provided in the generation process (`hooksProvider: 'local'`), and main runs its app lifecycle hooks through that process's `hooks/v1`. With no provider there, a `decide` hook allows and the others do nothing.
+- A process lost after `ready` is respawned once.
+- An older generation stops once no window is pinned to it; its stop kills the process after 10 seconds ([`app.ts`](../../../app/desktop/doric/src/platform/app.ts)).
+- It has no `doric.generation/v1` and no work holds.
+
+How the desktop resolves and downloads a generation is in [Composition and distribution](composition-and-distribution.md); its windows are in [Windows](windows.md).
+
+## Related documents
+
+- [Boundaries](boundaries.md): what a bundle may import and depend on, in either process.
+- [Contracts](contracts.md): the schemas the envelope validates.
+- [Manifest](manifest.md): `provides`, `requires` and `optional`.
+- [Services and channels](services-and-channels.md): the service directory, stubs and the propagation of `call`.
+- [Hooks](hooks.md): the platform's hooks and the provider of `hooks/v1` in the kernel.
+- [Core](core.md): the core and quarantine.
+- [Composition and distribution](composition-and-distribution.md): the composition, `resident`, `required` and alternatives.
+- [Splash and recovery](splash-and-recovery.md): the surface that disables a bundle and publishes.
+- [Observability](observability.md): diagnostics and the trace context the envelope carries.

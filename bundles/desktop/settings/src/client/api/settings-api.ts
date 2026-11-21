@@ -13,7 +13,6 @@
 //   'Doric returned an invalid response.' for a shape they refuse.
 
 import {
-  type CallArg,
   type CredentialDescription,
   credentialFieldsSatisfied,
   type Disposable,
@@ -29,15 +28,10 @@ import {
   type Services,
   ToolsV1,
 } from 'bundle/contracts';
-import { ClaudeLoginV1 } from 'claude-login/contracts';
 import { ClientError } from 'desktop/reads';
-import { LayoutDashboardV1, LayoutWorkspaceV1 } from 'layout/contracts';
 import type {
   ConfigReplaceResult,
   Configuration as HostConfiguration,
-  RuntimeThreads,
-  Thread,
-  ThreadExecutionResult,
 } from 'runtime/contracts';
 
 import {
@@ -68,15 +62,13 @@ import {
   type ToolConfigFieldKind,
 } from '../domain/config.js';
 import type { IconRequest } from '../domain/model-icons.js';
+import { WorkspaceDashboardV1 } from './navigation-refs.js';
 
 /**
  * `host-config/v1` (the `/config` pipeline), referenced by id with the
  * runtime's `HostConfiguration` type.
  */
 export const HostConfigurationV1 = ref<HostConfiguration>('host-config/v1');
-
-/** `runtime.threads/v1`, referenced by id with the runtime's type, as the layout does. */
-export const RuntimeThreadsV1 = ref<RuntimeThreads>('runtime.threads/v1');
 
 /**
  * The rejection of every settings adapter call: a `ClientError` whose
@@ -648,15 +640,6 @@ const credentialWriteFailure = (error: unknown): never => {
   return unexpected(error);
 };
 
-/**
- * The failures `claude.login/v1` answers: the contract's own message, or the
- * generic one.
- */
-const claudeLoginFailure = (error: unknown): never =>
-  isContractError(error)
-    ? hostFailure(error, error.message)
-    : unexpected(error);
-
 /** Whether one declared value is one the field's kind accepts. */
 const fieldAccepts = (field: ModelField, value: string): boolean => {
   switch (field.kind) {
@@ -950,6 +933,25 @@ const providerFieldFrom = (value: unknown): ProviderField => {
   };
 };
 
+/**
+ * A kind's site when its URL parses with the `https:` scheme and its label is a
+ * non-empty string; none otherwise. A malformed site never fails the kind.
+ */
+const siteFrom = (value: unknown): ProviderKind['site'] => {
+  if (
+    !isRecord(value) ||
+    typeof value.url !== 'string' ||
+    typeof value.label !== 'string' ||
+    value.label === '' ||
+    !URL.canParse(value.url) ||
+    new URL(value.url).protocol !== 'https:'
+  ) {
+    return undefined;
+  }
+
+  return { url: value.url, label: value.label };
+};
+
 const providerKindFrom = (value: unknown): ProviderKind => {
   if (
     !isRecord(value) ||
@@ -963,6 +965,8 @@ const providerKindFrom = (value: unknown): ProviderKind => {
     return invalidResponse();
   }
 
+  const site = siteFrom(value.site);
+
   return {
     id: value.id,
     label: value.label,
@@ -970,6 +974,7 @@ const providerKindFrom = (value: unknown): ProviderKind => {
     fields: value.fields.map(providerFieldFrom),
     lists: value.lists as readonly ProviderListId[],
     ...(value.modelsFromCatalog === true ? { modelsFromCatalog: true } : {}),
+    ...(site === undefined ? {} : { site }),
   };
 };
 
@@ -1207,14 +1212,8 @@ export interface SettingsApi {
     update(id: string, input: CredentialUpdate): Promise<Credential>;
     remove(id: string): Promise<void>;
   };
-  readonly claude: {
-    /** Prepares a browser sign-in and answers the authorization URL. */
-    start(options?: CallArg): Promise<string>;
-    /** Waits for the browser's answer and answers the stored credential. */
-    finish(options?: CallArg): Promise<Credential>;
-  };
   /**
-   * The /projects dashboard's shown page (`layout.dashboard/v1`, optional).
+   * The /projects dashboard's shown page (`workspace.dashboard/v1`, optional).
    * Without a provider no page is shown: `active` is `undefined`, `show` does
    * nothing, and a subscription never hears a change.
    */
@@ -1222,31 +1221,6 @@ export interface SettingsApi {
     active(): string | undefined;
     show(id: string): void;
     subscribe(listener: () => void): Disposable;
-  };
-  /**
-   * The workspace window's selected Thread (`layout.workspace/v1`, optional).
-   * Without a provider, `selectedThread` answers `undefined`.
-   */
-  readonly workspace: {
-    selectedThread(): Thread | undefined;
-    /**
-     * Called on every selection or record change the provider reports, and
-     * once more whenever the provider appears or goes. Disposing stops every
-     * call; it never throws, even after the provider went.
-     */
-    subscribe(listener: () => void): Disposable;
-  };
-  readonly threads: {
-    /**
-     * `runtime.threads/v1.setThreadExecution`. Answers every outcome as a
-     * value; rejects only when the call itself fails.
-     */
-    setExecution(input: {
-      readonly id: string;
-      readonly providerId: string;
-      readonly model: string;
-      readonly effort?: ReasoningEffort;
-    }): Promise<ThreadExecutionResult>;
   };
   /** Opens an https page in the system browser, outside the app. */
   openBrowser(url: string): Promise<void>;
@@ -1369,83 +1343,18 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
       if (result === 'referenced') return fail('conflict', credentialConflict);
     },
   },
-  claude: {
-    start: async (options) => {
-      // A tuple method takes the call as its only argument, so an absent call
-      // is no argument at all: `undefined` would be read as an input item.
-      const login = services.use(ClaudeLoginV1);
-      try {
-        const started = await (options === undefined
-          ? login.start()
-          : login.start(options));
-        return started.url;
-      } catch (error) {
-        return claudeLoginFailure(error);
-      }
-    },
-    finish: async (options) => {
-      const login = services.use(ClaudeLoginV1);
-      let answered: CredentialDescription;
-      try {
-        answered = await (options === undefined
-          ? login.finish()
-          : login.finish(options));
-      } catch (error) {
-        return claudeLoginFailure(error);
-      }
-      return credentialFrom(answered);
-    },
-  },
   dashboard: {
     active: () =>
-      dashboardAvailable ? services.use(LayoutDashboardV1).active() : undefined,
+      dashboardAvailable
+        ? services.use(WorkspaceDashboardV1).active()
+        : undefined,
     show: (id) => {
-      if (dashboardAvailable) services.use(LayoutDashboardV1).show(id);
+      if (dashboardAvailable) services.use(WorkspaceDashboardV1).show(id);
     },
     subscribe: (listener) =>
       dashboardAvailable
-        ? services.use(LayoutDashboardV1).subscribe(listener)
+        ? services.use(WorkspaceDashboardV1).subscribe(listener)
         : { dispose: () => undefined },
-  },
-  workspace: {
-    selectedThread: () =>
-      workspaceAvailable
-        ? services.use(LayoutWorkspaceV1).selectedThread()
-        : undefined,
-    subscribe: (listener) => {
-      let inner: Disposable | undefined;
-      const detach = (): void => {
-        const current = inner;
-        inner = undefined;
-        try {
-          current?.dispose();
-        } catch {
-          // The provider may already be gone; its subscription went with it.
-        }
-      };
-      const attach = (): void => {
-        if (workspaceAvailable) {
-          inner = services.use(LayoutWorkspaceV1).subscribe(listener);
-        }
-      };
-      const refresh = (): void => {
-        detach();
-        attach();
-        listener();
-      };
-      attach();
-      workspaceRefreshes.add(refresh);
-      return {
-        dispose: () => {
-          workspaceRefreshes.delete(refresh);
-          detach();
-        },
-      };
-    },
-  },
-  threads: {
-    setExecution: (input) =>
-      services.use(RuntimeThreadsV1).setThreadExecution(input),
   },
   openBrowser: async (url) => {
     await services.use(DoricBrowserV1).open(url);
@@ -1453,40 +1362,40 @@ export const createSettingsApi = (services: Services): SettingsApi => ({
 });
 
 /**
- * Whether a `layout.dashboard/v1` provider answers: the contract is optional,
- * so a composition without the layout keeps working settings and simply has
+ * Whether a `workspace.dashboard/v1` provider answers: the contract is optional,
+ * so a composition without `workspace` keeps working settings and simply has
  * no dashboard to draw into. The client part's activation sets it through
  * `whenAvailable`.
  */
 let dashboardAvailable = false;
 
-/** Records whether a `layout.dashboard/v1` provider is active. */
+/** Records whether a `workspace.dashboard/v1` provider is active. */
 export const setDashboardAvailable = (available: boolean): void => {
   dashboardAvailable = available;
 };
 
-/**
- * Whether a `layout.workspace/v1` provider answers; optional like the
- * dashboard. Unlike it, a change also refreshes every workspace subscription.
- */
-let workspaceAvailable = false;
-const workspaceRefreshes = new Set<() => void>();
-
-/**
- * Records whether a `layout.workspace/v1` provider is active, then refreshes
- * every `workspace.subscribe` subscription, so each re-attaches to the
- * provider and hears once that it appeared or went.
- */
-export const setWorkspaceAvailable = (available: boolean): void => {
-  workspaceAvailable = available;
-  for (const refresh of [...workspaceRefreshes]) refresh();
-};
-
 let active: SettingsApi | undefined;
+let activeServices: Services | undefined;
 
 /** Binds the module adapter to the bundle's activation services (D9-17). */
 export const initSettingsApi = (services: Services | undefined): void => {
+  activeServices = services;
   active = services === undefined ? undefined : createSettingsApi(services);
+};
+
+/**
+ * The activation services `initSettingsApi` bound (D9-17). The provider page
+ * creates another bundle's element through these, not an element's services,
+ * which hand back a scoped view of an element that carries calls of its own
+ * rather than the element itself.
+ */
+export const settingsServices = (): Services => {
+  if (activeServices === undefined) {
+    throw new SettingsApiError('internal', 'Doric backend is unavailable.', {
+      retryable: false,
+    });
+  }
+  return activeServices;
 };
 
 /** The adapter the hooks call; the bundle is active while its UI exists. */

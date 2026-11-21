@@ -26,10 +26,12 @@
   border-radius: 9999px;
 }
 /*
- * WP-10N: and the stage-9 window bundles' classes, so a later sheet never
- * re-emits a shared class (`inline-flex`) after their responsive variants
- * (`md:hidden` in the settings window's bar).
+ * WP-10N: and the stage-9 window bundles' classes, and those of `account`,
+ * so a later sheet never re-emits a shared class (`inline-flex`) after their
+ * responsive variants (`md:hidden` in the settings window's bar).
  */
 @source '../../../../desktop/layout/src/client';
 @source '../../../../desktop/chat/src/client';
 @source '../../../../desktop/settings/src/client';
+@source '../../../../desktop/account/src/client';
+@source '../../../../desktop/workspace/src/client';

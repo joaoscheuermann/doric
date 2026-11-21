@@ -3,22 +3,14 @@ import type { Disposable, StreamListener } from 'bundle/contracts';
 import type { ThreadExecution } from '../../contracts/execution.js';
 import type { LeaseOutcome, LeaseTask } from '../../contracts/lease.js';
 import type {
-  BranchResult,
   CompactResult,
   CwdResult,
   DeleteResult,
   EditQueueResult,
   Page,
   Project,
-  ProjectChanges,
   ProjectColor,
-  ProjectDiff,
-  ProjectFile,
-  ProjectFileDiff,
-  ProjectFiles,
-  ProjectResources,
   ProjectSsh,
-  ProjectTree,
   PromptAcceptResult,
   QueuedPrompt,
   RemoveQueuedResult,
@@ -30,7 +22,6 @@ import type {
   Thread,
   ThreadCreateResult,
   ThreadEvent,
-  ThreadGitResult,
   ThreadQueue,
   ThreadUsage,
 } from '../../contracts/model.js';
@@ -88,18 +79,6 @@ export interface WorkspaceService {
     terminate(id: string): Promise<Project | undefined>;
     delete(id: string): Promise<DeleteResult>;
     ssh(id: string): Promise<ProjectSsh>;
-    files(id: string, path?: string): Promise<ProjectFiles>;
-    file(id: string, path: string): Promise<ProjectFile>;
-    /** The whole sandbox tree in one read; `/files` stays the single level. */
-    tree(id: string, path?: string): Promise<ProjectTree>;
-    diff(id: string, path?: string): Promise<ProjectDiff>;
-    changes(id: string, path?: string): Promise<ProjectChanges>;
-    fileDiff(
-      id: string,
-      repository: string,
-      path: string,
-    ): Promise<ProjectFileDiff>;
-    resources(id: string): Promise<ProjectResources>;
     /** Runs a task on the Project's current lease, never acquiring one. */
     withLease<Value>(
       id: string,
@@ -160,9 +139,6 @@ export interface WorkspaceService {
       id: string,
       execution: ThreadExecution,
     ): Promise<ThreadExecutionResult>;
-    /** The Git summary of the Thread's working directory, probed on demand. */
-    git(id: string): Promise<ThreadGitResult>;
-    branches(id: string, branch?: string, cwd?: string): Promise<BranchResult>;
     prompt(id: string, prompt: string): Promise<PromptAcceptResult>;
     /**
      * Sends the Thread's last prompt again, from the log and never from the

@@ -2,11 +2,12 @@
 // (`io.modelcontextprotocol/skills`): the host declares the extension, lists
 // the skills of a server that declares it, and publishes them on the server's
 // view. A skill's text is read only on demand, through the host-only
-// `mcp/v1.readSkill`, and only for a uri the connected server lists now.
+// `mcp/v1.readSkill` or the skill source `mcp` provides to `default`, and
+// only for a uri the connected server lists now.
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import {
   type McpServerView,
@@ -22,7 +23,15 @@ import {
 } from './support/mcp-server.js';
 import { opened, served } from './support/setup.js';
 import { codeOf, eventually, sleep } from './support/wait.js';
-import { httpServer, inState, P1, P2, serverOf } from './support/world.js';
+import {
+  httpServer,
+  inState,
+  P1,
+  P2,
+  type SkillSourceProvider,
+  serverOf,
+  type World,
+} from './support/world.js';
 
 /** Whether the server is connected and lists that many skills. */
 const connectedWith =
@@ -400,4 +409,138 @@ void test('SK12 readSkill is a host-only method of mcp/v1 taking a server id and
     output.safeParse({ text: 'x', uri: REFUNDS_URI }).success,
     false,
   );
+});
+
+/*
+ * `mcp` as a provider of `default.skill-sources/v1` (bundle isolation T8.2):
+ * the skills of the Project's connected servers, each in the group of its
+ * server's slug and read by a reference that carries the server id and the
+ * skill's uri, with the origin line that names the server.
+ */
+
+/** The only provider of `default.skill-sources/v1` the world offers: `mcp`'s. */
+const skillSource = (world: World, projectId?: string): SkillSourceProvider => {
+  const providers = world.skillSources(projectId);
+
+  assert.deepEqual(
+    providers.map(({ bundleId }) => bundleId),
+    ['mcp'],
+  );
+
+  return providers[0] as SkillSourceProvider;
+};
+
+/** The origin line `mcp` gives the `refunds` skill of a server named `name`. */
+const refundsOrigin = (name: string): string =>
+  `From the MCP server "${name}" (\`${REFUNDS_URI}\`). Its other files are not available.`;
+
+/** A connected "Acme Billing" server of P1 serving `refunds`, and its id. */
+const acmeBilling = async (t: TestContext) => {
+  const world = await opened(t);
+  const server = await served(t, {
+    tools: [textTool('alpha')],
+    skills: [[refunds()]],
+  });
+  const created = await world
+    .mcp(P1)
+    .create(httpServer('Acme Billing', server.url));
+  await world.watchUntil(
+    P1,
+    connectedWith(created.id, 1),
+    'connected with one skill',
+  );
+
+  return { world, server, id: created.id };
+};
+
+void test('SK13 the skill source of mcp lists the skills of the connected servers of the Project only, by group, name, description and reference, without reading them', async (t) => {
+  const world = await opened(t);
+  const server = await served(t, {
+    tools: [textTool('alpha')],
+    skills: [[refunds()]],
+  });
+  const connected = await world
+    .mcp(P1)
+    .create(httpServer('Acme Billing', server.url));
+  const disabled = await world
+    .mcp(P1)
+    .create(httpServer('Docs', server.url, [], false));
+  const failing = await world
+    .mcp(P1)
+    .create(httpServer('Gone', await unreachableUrl()));
+  const other = await world.mcp(P2).create(httpServer('Other', server.url));
+  await world.watchUntil(
+    P1,
+    (servers) =>
+      connectedWith(connected.id, 1)(servers) &&
+      inState(disabled.id, 'disabled')(servers) &&
+      inState(failing.id, 'error')(servers),
+    'one connected, one disabled, one in error',
+  );
+  await world.watchUntil(
+    P2,
+    connectedWith(other.id, 1),
+    'connected with one skill',
+  );
+
+  const listed = await skillSource(world, P1).list({ cwd: '/workspace' });
+
+  assert.deepEqual(listed, {
+    skills: [
+      {
+        group: 'acme_billing',
+        name: 'refunds',
+        description: 'Issue a refund.',
+        reference: `${connected.id}\n${REFUNDS_URI}`,
+      },
+    ],
+  });
+
+  assert.deepEqual(server.tools.resourceReads, []);
+});
+
+void test('SK14 the skill source of mcp reads a listed skill by its reference, once per call, with the origin line naming the server', async (t) => {
+  const { world, server } = await acmeBilling(t);
+  const source = skillSource(world, P1);
+  const [entry] = (await source.list({ cwd: '/workspace' })).skills;
+  assert.ok(entry !== undefined, 'the skill is listed');
+
+  const read = await source.read({ reference: entry.reference });
+
+  assert.deepEqual(read, {
+    origin: refundsOrigin('Acme Billing'),
+    text: REFUNDS_TEXT,
+  });
+
+  assert.deepEqual(server.tools.resourceReads, [REFUNDS_URI]);
+});
+
+void test('SK15 the skill source of mcp refuses a read as readSkill does, and an unparsable reference as invalid input, without reading', async (t) => {
+  const { world, server, id } = await acmeBilling(t);
+  const source = skillSource(world, P1);
+
+  await rejectsWith(
+    source.read({ reference: `${randomUUID()}\n${REFUNDS_URI}` }),
+    'mcp_server_missing',
+  );
+
+  await rejectsWith(
+    source.read({ reference: `${id}\nskill://triage/SKILL.md` }),
+    'mcp_skill_unavailable',
+  );
+
+  await rejectsWith(source.read({ reference: REFUNDS_URI }), 'invalid_input');
+
+  assert.deepEqual(server.tools.resourceReads, []);
+});
+
+void test('SK16 the skill source of mcp refuses a read without a Project scope as invalid input', async (t) => {
+  const { world, server, id } = await acmeBilling(t);
+
+  await rejectsWith(
+    skillSource(world).read({ reference: `${id}\n${REFUNDS_URI}` }),
+    'invalid_input',
+  );
+
+  assert.deepEqual(server.tools.resourceReads, []);
 });

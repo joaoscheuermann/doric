@@ -14,13 +14,16 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../../foundation/host-config"
-    },
-    {
       "path": "../../runtime/runtime"
     },
     {
+      "path": "../../foundation/host-config"
+    },
+    {
       "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../desktop/layout"
     },
     {
       "path": "../../../packages/desktop"

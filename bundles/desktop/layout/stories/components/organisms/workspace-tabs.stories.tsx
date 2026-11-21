@@ -6,10 +6,10 @@ import {
 } from '../../../src/client/components/organisms/workspace-tabs.js';
 import { useWorkspaceTabs } from '../../../src/client/hooks/use-workspace-tabs.js';
 import { workspaceTabsStore } from '../../../src/client/stores/workspace-tabs.js';
-import { checkoutTabs, planThread } from '../../support/data.js';
 import { type LayoutFixture, LayoutHost } from '../../support/layout-host.js';
+import { checkoutTabs, owner as tabsOwner } from '../../support/tabs.js';
 
-const owner = planThread.id;
+const owner = tabsOwner;
 
 /** The tab bar over the tab panel, as the viewer division draws them. */
 function Viewer() {
@@ -43,13 +43,11 @@ const terminals: LayoutFixture = {
         id: 'terminal:dev',
         title: 'npm run dev',
         tag: 'terminal-tab',
-        icon: 'terminal',
       },
       {
         id: 'terminal:test',
         title: 'npm test -- --watch',
         tag: 'terminal-tab',
-        icon: 'terminal',
       },
     ],
   },
@@ -68,7 +66,7 @@ const many: LayoutFixture = {
       id: `file:src/${name}`,
       title: name,
       tag: 'files-viewer',
-      icon: 'file' as const,
+      iconTag: 'files-file-icon',
       props: { path: `src/${name}` },
     })),
   },

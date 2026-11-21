@@ -1,171 +1,507 @@
-# Layout bundle
+# layout
 
-`layout` is the Doric workspace window you work in: a dashboard of your
-Projects, a tab per open Project, a sidebar with each Project's tree of
-Threads, the conversation in the middle, a Project panel and tabs beside it,
-and footers for status. It draws no feature of its own. Files, Git, terminals,
-usage and resources are other bundles that fill the slots it offers.
+`layout` draws the frame of the Doric workspace window and declares its slots:
+the sidebar column, the title bar, the conversation in the middle, the viewer
+of tabs beside it, the Project panel on the right, and the footers. It draws no
+navigation and no feature of its own: other bundles fill every slot with their
+elements, open tabs in the viewer, add views to the Project panel and register
+panes under the sidebar.
 
-It is a desktop bundle with one client part (the frame and its contracts),
-loaded by the `bundle` platform. See the [main README](../../../README.md) for
-Doric as a whole and [`packages/bundle`](../../../packages/bundle/README.md)
-for how bundles work.
+It is a desktop bundle with one client part, which runs in each workspace
+window. The [main README](../../../README.md) describes Doric as a whole, and
+[`packages/bundle`](../../../packages/bundle/README.md) how a bundle is built,
+loaded and activated. How the window looks and behaves across bundles is
+described in the feature doc [UI redesign](../../../docs/features/ui-redesign.md),
+and how bundles fill the shell in the architecture document
+[The layout bundle](../../../docs/architecture/bundles/layout.md). The feature
+docs [Conversation](../../../docs/features/conversation.md),
+[Files](../../../docs/features/files.md) and
+[Terminal](../../../docs/features/terminal.md) describe what those features
+draw in the frame. This README is the bundle's complete description.
 
-## What it provides
+## Manifest
 
-- **UI:** `<layout-workspace>`, registered at `/`, `/projects` and
-  `/projects/:projectId`. The [`chat`](../chat/README.md) bundle mounts the
-  conversation inside it as the child route
-  `/projects/:projectId/threads/:threadId`.
-- **Contracts:** `layout.tabs/v1`, `layout.workspace/v1`, `layout.panel/v2`,
-  `layout.dashboard/v1`, `layout.sidebar/v1` and `layout.stack/v2`, all client
-  contracts in the workspace window.
-- **Regions:** named slots where other bundles add elements.
+[`manifest.json`](manifest.json):
 
-The bundle requires `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`,
-`commands/v1`, `runtime/v1` and `runtime.threads/v1`, and has no settings.
+| Field         | Value                                                                                                    |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `id`          | `layout`, version `5.0.1`, engine `doric ^1.8.0`                                                         |
+| `description` | "The workspace window's frame and its slots."                                                            |
+| `provides`    | `layout.tabs/v2@2.0.0`, `layout.panel/v3@3.0.0`, `layout.conversation/v1@1.0.0`, `layout.stack/v2@2.0.0` |
+| `requires`    | `hooks/v1@^1.0.0`, `ui/v1@^1.0.0`, `navigation/v1@^1.1.0`, `regions/v1@^1.0.0`, `commands/v1@^1.0.0`     |
+| `optional`    | none                                                                                                     |
 
-## What you see
+The bundle has no host or desktop part, no settings, no tools, no storage types
+and no `desktopScope`. Every contract it provides is a client contract of the
+workspace window, and each window has its own state.
 
-- **Dashboard.** Every Project as a grid or a list, with search, activity,
-  creation time and state, and a "New project" action; a Project's context
-  menu opens it, colors it or deletes it. Its sidebar holds the
-  search, "All projects", a Projects group, the groups other bundles add, and
-  "All settings".
-- **Project tabs.** One tab per open Project, which you can reorder, rename
-  and close; each remembers its last path, saved in the window's local
-  storage. A tab's context menu starts a new Thread in the Project, renames
-  it, colors it and closes tabs; a close entry that would close nothing is
-  hidden. The sidebar header's Dashboard
-  button opens the Dashboard and shows as current while it is open.
-- **Sidebar.** The selected Project's recursive Thread tree. Rows can be
-  renamed, and a context menu opens a Thread in a new tab (a sub-thread or an
-  agent Thread "in viewer"), adds, copies and deletes. Other bundles add
-  panes only under the Thread region, pinned to the column's bottom; each
-  pane collapses but does not resize (`project-sidebar.tsx`). Two icon-only
-  tabs, Chat and Archived, sit above the tree (`sidebar-tabs.tsx`). Rows
-  archive (hover or menu, with an Undo toast), pin and unpin; the Archived tab
-  (`archived-threads.tsx`) groups archived Threads by date (Today, Last 7 days,
-  Older) with Restore and Delete. Open Threads report presence through
-  `runtime.threads/v1.viewThread`
-  ([thread archive](../../../docs/features/thread-archive.md)).
-- **Errors.** A failed workspace request is shown once, by the workspace error
-  notice (`workspace-error-notice.tsx`): in the sidebar on the workspace frame,
-  in the dashboard body on the dashboard frame. A failed Projects or Threads
-  load offers Retry, which loads it again (the dashboard keeps the last list
-  failure on screen while it reloads); a failed create, rename, color change
-  or delete offers none. The name field shows no toast; its validation reason
-  is a line under the name.
-- **Quarantined bundles.** When the window's bundle catalog
-  (`doric.catalog/v1`) lists quarantined bundles, one warning notice at the
-  bottom of the left sidebar (on the workspace frame at its bottom edge after
-  the stack panes; on the dashboard frame directly above the "All settings"
-  footer) names them all ("N
-  extension(s) couldn't start"), its details one bundle per line with its
-  reasons; the regions they would fill stay empty. An element whose creation
-  throws shows a compact notice in its place.
-- **Conversation.** The selected Thread fills the main area; a child Thread
-  opens as a tab beside its root Thread instead of replacing it. Each of these
-  viewer tabs has a context menu: the entries the bundle that opened it
-  stated, each with its icon, then "Close tab", then its destructive entries
-  last.
-- **Project panel.** An icon tab strip of views beside the conversation, always
-  shown; it resizes but cannot be hidden or collapsed.
-- **Footers.** Two footers. The conversation footer (`layout.footer`) floats
-  over the conversation's bottom 44 px, to the card's bottom edge (the card
-  draws no bottom padding); its height, fill and blur are this bundle's sheet
-  rule, and the conversation frame sets `--chat-footer-height: 2.75rem` for
-  `<chat-view>` (see [chat's README](../chat/README.md)). The viewer card draws
-  no bottom padding while its selected tab's element is `<chat-thread-panel>`,
-  whose footer band stands on the card's bottom edge; any other tab keeps the
-  card's 8 px, whatever its icon
-  ([SR12](../../../docs/designs/conversation-footer.md#risks)). The Files column
-  footer (`layout.panel.footer`) is one 28 px row under the Project panel.
-  Settings open from the account avatar, which runs `core`'s
-  `core.open-settings/v1`. Layout 3.0.3 needs
-  chat 1.6.2 or later in the same bundle set.
+## Parts
 
-The selection is the window path (`/`, `/projects/<projectId>` or
-`/projects/<projectId>/threads/<threadId>`); a saved selection is validated
-against the host on startup.
+- **Contracts** ([`src/contracts/index.ts`](src/contracts/index.ts), exported as
+  `layout/contracts` through [`package.json`](package.json)): the slot names,
+  the four contracts, their schemas and their types, listed under
+  [Exports of `layout/contracts`](#exports-of-layoutcontracts).
+- **Client** ([`src/client/index.ts`](src/client/index.ts)): on activation it
+  keeps the activation services for the frame
+  ([`services/layout-services.ts`](src/client/services/layout-services.ts)),
+  defines the element `<layout-workspace>` through `ui/v1`
+  ([`elements/workspace-element.tsx`](src/client/elements/workspace-element.tsx)),
+  registers the route `/` with `navigation/v1`, whose `create` makes a
+  `<layout-workspace>`, and provides the four contracts. Its cleanup clears the
+  Project panel's selection, the bottom split's requests and the sidebar
+  stack, and forgets the activation services; it does not clear the tabs.
 
-## Thread kinds
+The client's folders: `elements/` (the custom element), `views/` (the frame,
+[`workspace-view.tsx`](src/client/views/workspace-view.tsx)), `components/`
+(molecules, organisms and templates the frame composes), `hooks/`, `stores/`
+(Zustand vanilla stores, one per contract), `domain/` and `utility/` (pure
+rules), and `services/` (the contract providers).
 
-A Thread is one of three kinds, decided by where it came from
-(`domain/thread-kind.ts`):
+## Contracts provided
 
-| Kind         | How it is opened                                  | What the reader may do                                                  |
-| ------------ | ------------------------------------------------- | ----------------------------------------------------------------------- |
-| `main`       | The reader, at the Project root                   | Everything: prompts, stop, rename, delete, and open sub-threads         |
-| `sub-thread` | The reader, inside a main Thread                  | The same, except opening further sub-threads                            |
-| `sub-agent`  | The agent, with its `thread-spawn` tool, anywhere | Watch it, and pause, continue or retry the run — never prompt or delete |
+Each method's input is validated against its schema in
+[`src/contracts/index.ts`](src/contracts/index.ts) before the method runs
+([`packages/bundle/src/runtime/dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)); an
+input that fails it fails with `ContractError('invalid_input')`. Every object
+schema is strict: an unknown key fails. Every method also takes an optional
+last argument `call?: CallArg` of `bundle/contracts`, left out of the blocks
+below.
 
-The host records who opened a Thread (`Thread.origin` in `runtime/contracts`,
-written by the runner's `spawn`); a Thread without it reads as the reader's, so
-an older workspace keeps every Thread it had. The sidebar draws the kind as the
-row's leading mark — a bubble for a main Thread, a bubble with a plus for the
-sub-thread that opened it, the bot that owns an agent Thread (`threadKindIcon`) —
-and offers `+` only where the reader may open a sub-thread. The trailing slot
-shows only the elapsed badge and that `+`, which hover or keyboard focus
-reveals. An Untitled Thread wears `message-circle-dashed` on its row, the
-breadcrumb and its tab. A row is active while its Thread or any descendant runs,
-or while a `busy` registration (`layout.sidebar/v1` 1.1.0) answers true; the
-badge times from the Thread's own last start. Rename/delete stay hidden where the kind forbids
-them, and the row's tooltip names the kind. The breadcrumb and a conversation tab
-wear the same mark. The reader's three levers on an agent Thread live in `chat`'s
-footer, where the composer would be.
+### `layout.tabs/v2` (2.0.0)
 
-## Contracts
+The viewer's tabs. Tabs belong to an **owner**, a string the caller names
+(a Thread id, or `project:<projectId>` for a Project); the
+frame shows the tabs of the current owner only. Provider:
+[`services/layout-tabs.ts`](src/client/services/layout-tabs.ts), over the store
+[`stores/workspace-tabs.ts`](src/client/stores/workspace-tabs.ts) and the rules
+of [`domain/workspace-tabs.ts`](src/client/domain/workspace-tabs.ts).
 
-| Contract              | What another bundle can do                                                                                                                                                                                                                              | Used by                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `layout.tabs/v1`      | open, focus or close a tab drawn by its own element (with icon, aria label, tooltip and, from 1.2.0, its context-menu entries, each with an optional React-element icon) in the active Thread's or Project's tabs; retitle it (1.2.0); read the current | `files`, `git`, `terminal`                                                    |
-| `layout.workspace/v1` | read the tree, the selection, a Project's Threads and the connection; subscribe; show or hide the `layout.main.bottom` split                                                                                                                            | `chat`, `files`, `git`, `resources`, `screen`, `terminal`, `threads`, `usage` |
-| `layout.panel/v2`     | select the Project panel's view                                                                                                                                                                                                                         | `files`                                                                       |
-| `layout.dashboard/v1` | read, show or close the `layout.dashboard.page` item the `/projects` dashboard draws instead of its project list; subscribe                                                                                                                             | `settings`                                                                    |
-| `layout.sidebar/v1`   | add rows under each Thread of the sidebar tree (`addThreadRows`); since 1.1.0 a registration may answer `busy(threadId)`, which keeps the Thread and its ancestors active                                                                               | `terminal`                                                                    |
-| `layout.stack/v2`     | register a sidebar pane with title, order, header action and collapse state; panes are pinned to the column's bottom, with no sizes                                                                                                                     | `screen`, `mcp`                                                               |
+```ts
+interface TabMenuItem {
+  id: string;
+  label: string;
+  icon?: ReactElement; // any value that is not a valid React element fails invalid_input
+  destructive?: boolean;
+  run: () => void;
+}
 
-A duplicate pane or row id fails with `registration_conflict`, and opening a
-tab with no Thread or Project selected fails with `unavailable`.
+interface TabRequest {
+  id: string; // min 1, unique among one owner's tabs
+  title: string;
+  tag: string; // min 1: the element ui/v1 creates for the tab's content
+  props?: Record<string, unknown>;
+  iconTag?: string; // min 1: the trigger's 16 px icon, created with the tab's props
+  openBottom?: boolean; // the viewer card drops its bottom padding while the tab is selected
+  ariaLabel?: string; // defaults to title
+  tooltip?: string; // the trigger's title attribute; defaults to title
+  menu?: TabMenuItem[];
+}
 
-## Regions
+interface CurrentTab {
+  id: string;
+  props?: Record<string, unknown>;
+}
 
-| Region                  | Where                                                                                  | Items today                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `layout.header`         | the right end of the Project tab bar                                                   | `terminal`'s "New terminal" button                             |
-| `layout.panel`          | the Project panel's views                                                              | `files`, `git`                                                 |
-| `layout.footer`         | the conversation footer, a 44 px band floating over the conversation's bottom          | `settings`' execution picker, `chat`'s composer, `usage`       |
-| `layout.panel.footer`   | the Files column footer, in one 28 px row                                              | `git` (the working directory and branch)                       |
-| `layout.account.status` | a 14×14 slot over the account avatar's bottom-right corner, in the Files column header | `resources` (the connection badge)                             |
-| `layout.main.bottom`    | a split under the conversation                                                         | shown while an item asks through `layout.workspace/v1`         |
-| `layout.overlay`        | a floating layer over the conversation                                                 | items place themselves; the layer never intercepts a pointer   |
-| `layout.dashboard.nav`  | groups of the `/projects` dashboard sidebar, after Projects                            | `settings`' Providers group                                    |
-| `layout.dashboard.page` | a page the dashboard draws instead of its project list                                 | `settings`' provider page, shown through `layout.dashboard/v1` |
-
-A `layout.panel` item carries `{ label, icon, badgeTag? }`; its element mounts
-only while the item is selected. A `layout.dashboard.nav`
-item draws its own `SidebarGroup`; a `layout.dashboard.page` item mounts only
-while `layout.dashboard/v1` shows it.
-
-## Development
-
-```console
-npx nx build bundle-layout
-npx nx typecheck bundle-layout
-npx nx test bundle-layout
+interface LayoutTabs {
+  open(input: TabRequest): Promise<void>;
+  close(input: {
+    id: string; // min 1
+    threadId?: string; // min 1
+    everyOwner?: boolean;
+  }): Promise<void>;
+  focus(input: { id: string /* min 1 */ }): Promise<void>;
+  retitle(input: {
+    id: string; // min 1
+    title: string;
+    threadId?: string; // may be empty
+    everyOwner?: boolean;
+  }): Promise<void>;
+  current(): CurrentTab | undefined;
+  subscribe(listener: () => void): Disposable;
+  setOwner(input: { owner?: string /* min 1 */ }): void;
+}
 ```
 
-Most tests are DOM-free; `tests/client/shell.test.ts` renders the shell in a
-DOM, and `tests/client/footer-styles.test.ts` reads the bundle's stylesheet
-from disk. They cover the tree, the selection route, tabs, the
-sidebar stack, Thread navigation and the contract services. Stories under
-`stories/` are CSF3, and `.storybook/preview.tsx` is the harness that wraps
-them. The build writes `bundles/desktop/layout/dist`, which
-`doric-host:build-bundles` stages into
-`app/backend/doric-host/dist/bundles/layout`. To rebuild and stage every bundle
-used by the Doric host:
+- `open` refuses with `ContractError('unavailable', 'No thread or project is
+selected.')` while no owner is set. When the owner already has a tab with
+  that id it only selects it: title, props and menu stay as they were. Else it
+  creates the element with `ui.create(tag, props)`, appends the tab at the end
+  of the owner's tabs and selects it.
+- `close` removes the tab from the owner `threadId` names, or from the current
+  owner when `threadId` is absent, and disposes its element with `ui.dispose`.
+  When the current owner is needed and none is set, it refuses with
+  `unavailable`. An id the owner does not hold changes nothing. With
+  `everyOwner: true` it removes the tab with that id from every owner and
+  disposes each, and `threadId` is ignored. When the selected tab closes, the
+  last remaining tab is selected.
+- `focus` selects the tab in the current owner (`unavailable` with no owner);
+  an unknown id changes nothing.
+- `retitle` sets the title of the tab in the owners `close` would reach, with
+  the same `unavailable` rule; an unknown id changes nothing, but with
+  `everyOwner: true` subscribers are notified even when no tab matches
+  (`retitleEverywhere` in
+  [`stores/workspace-tabs.ts`](src/client/stores/workspace-tabs.ts)).
+- `current` answers the selected tab of the current owner, with the props it
+  was opened with, or `undefined` with no owner or no selection.
+- `subscribe` calls the listener after every change of any owner's tabs and of
+  the owner; disposing it is idempotent
+  ([`services/subscription.ts`](src/client/services/subscription.ts)).
+- `setOwner` names the owner; naming the current owner again notifies no one,
+  and an absent `owner` leaves no owner.
+- The asynchronous methods answer a refusal of the layout (`unavailable`) as a
+  rejected promise; an input that fails its schema throws `invalid_input` from
+  the call itself, before any promise exists
+  ([`packages/bundle/src/runtime/dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
+  No other process can call these contracts: the window keeps its own
+  providers local
+  ([`packages/desktop/src/client/activate.ts`](../../../packages/desktop/src/client/activate.ts)),
+  and no method declares `expose`.
+  Selecting the selected tab notifies no one.
+- Tabs are kept per owner for the life of the window and are not persisted.
+
+### `layout.panel/v3` (3.0.0)
+
+```ts
+interface LayoutPanel {
+  select(id: string): void; // id min 1
+}
+interface PanelItemProps {
+  label: string;
+  iconTag?: string;
+  badgeTag?: string;
+}
+```
+
+`select` names the Project panel's view by the id of its `shell.panel` item
+([`services/layout-panel.ts`](src/client/services/layout-panel.ts),
+[`stores/panel.ts`](src/client/stores/panel.ts)). The panel starts with no
+view selected. An id no item has yet is kept, and the panel draws no view until
+an item with that id registers. Selecting the selected view notifies no one.
+The panel has no open state and nothing about it is persisted.
+
+### `layout.conversation/v1` (1.0.0)
+
+```ts
+interface LayoutConversation {
+  setBottomVisible(itemId: string, visible: boolean): void; // input [string min 1, boolean]
+}
+```
+
+The split `shell.conversation.bottom` is shown while at least one item id has
+asked for it with `true` and not withdrawn with `false`; repeating a request
+changes nothing
+([`services/layout-conversation.ts`](src/client/services/layout-conversation.ts),
+[`stores/bottom.ts`](src/client/stores/bottom.ts)).
+
+### `layout.stack/v2` (2.0.0)
+
+The panes other bundles register under the sidebar's content
+([`services/layout-stack.ts`](src/client/services/layout-stack.ts),
+[`stores/stack.ts`](src/client/stores/stack.ts),
+[`domain/sidebar-stack.ts`](src/client/domain/sidebar-stack.ts)).
+
+```ts
+interface StackPane {
+  id: string; // min 1, unique in the stack
+  order?: number;
+  title: string;
+  tag?: string; // min 1: the pane's content element
+  props?: Record<string, unknown>;
+  headerTag?: string; // min 1: an element drawn in the header, the pane's action
+  collapsible?: boolean; // default true
+  initiallyOpen?: boolean; // default true
+}
+
+interface LayoutStack {
+  register(pane: StackPane): Disposable;
+  panes(): readonly StackPane[];
+  isOpen(paneId: string): boolean; // paneId min 1
+  setOpen(paneId: string, open: boolean): void; // paneId min 1
+  toggle(paneId: string): void; // paneId min 1
+  subscribe(listener: () => void): Disposable;
+}
+```
+
+- `register` fails with `ContractError('registration_conflict',
+'The sidebar pane "<id>" is already registered.', { id })` for an id already
+  registered ([`stores/stack.ts`](src/client/stores/stack.ts)); a pane with a size key (`defaultSize`,
+  `minSize`, `maxSize`) or any other unknown key fails `invalid_input`. A pane
+  starts open unless `initiallyOpen` is `false`. Disposing removes the pane and
+  its open state, once.
+- `panes` answers the panes in ascending `order`, panes without `order` last,
+  registration order within a tie (the order `regions/v1` gives region items).
+  It answers the same array until the stack changes.
+- `isOpen` is `false` for an unknown id; an empty id fails `invalid_input`.
+  It is always `true` for a pane with `collapsible: false`. `setOpen` and `toggle` change nothing for an unknown id
+  or a pane that cannot collapse.
+- `subscribe` calls the listener after every change of the panes or of one
+  pane's open state.
+
+### Exports of `layout/contracts`
+
+- Slot names, as string constants: `SHELL_SIDEBAR` (`shell.sidebar`),
+  `SHELL_SIDEBAR_FOOTER` (`shell.sidebar.footer`), `SHELL_TITLEBAR_TABS`
+  (`shell.titlebar.tabs`), `SHELL_PAGE` (`shell.page`), `SHELL_WINDOW_ACTIONS`
+  (`shell.window.actions`), `SHELL_HEADER_ACTIONS` (`shell.header.actions`),
+  `SHELL_CONVERSATION_FOOTER` (`shell.conversation.footer`),
+  `SHELL_CONVERSATION_BOTTOM` (`shell.conversation.bottom`),
+  `SHELL_CONVERSATION_OVERLAY` (`shell.conversation.overlay`), `SHELL_PANEL`
+  (`shell.panel`) and `SHELL_PANEL_FOOTER` (`shell.panel.footer`).
+- Contract references: `LayoutTabsV2`, `LayoutPanelV3`, `LayoutConversationV1`
+  and `LayoutStackV2`.
+- Method tables: `layoutTabsMethods`, `layoutPanelMethods`,
+  `layoutConversationMethods` and `layoutStackMethods`; schemas:
+  `tabRequestSchema` and `stackPaneSchema`.
+- Types: `TabMenuItem`, `CurrentTab`, `TabRequest`, `LayoutTabs`,
+  `LayoutPanel`, `PanelItemProps`, `LayoutConversation`, `StackPane` and
+  `LayoutStack`.
+
+The module imports `bundle/contracts`, `react` (for `isValidElement`) and
+`zod`.
+
+## Contracts used
+
+- `ui/v1` (core): defines `<layout-workspace>`, creates and disposes tab
+  elements, and hosts the elements of panel views, tab icons and stack panes
+  through `ElementHost` of `desktop/ui/element-host`.
+- `navigation/v1` (core): registers the route `/`.
+- `regions/v1` (core): reads the items of `shell.page`,
+  `shell.sidebar.footer` and `shell.panel` with `useRegionItems` of
+  `desktop/ui/element-host`. Every slot is drawn as a `<core-region name>`,
+  core's element, which draws the slot's items in order.
+- `doric.catalog/v1` (platform): reads the bundle catalog for the quarantine
+  notice ([`hooks/use-quarantine-notice.ts`](src/client/hooks/use-quarantine-notice.ts)).
+- `hooks/v1` and `commands/v1` are listed under `requires`; the client calls
+  neither.
+
+## The frame
+
+`<layout-workspace>` renders the frame in a React `StrictMode` root, under a
+`TooltipProvider`, with the window's only `Toaster` of `desktop/ui/sonner`, and
+sets `document.title` to `Doric`
+([`views/workspace-view.tsx`](src/client/views/workspace-view.tsx)). The frame
+has two forms: the **page form** while `shell.page` holds at least one item,
+the **conversation form** otherwise. One `<core-region name="shell.sidebar">`
+element is created once and moved between the forms, so the items of
+`shell.sidebar` keep their elements when the form changes. Without items the
+frame draws its slots empty.
+
+### Page form
+
+The sidebar column, 280 px wide and not resizable, in an
+`aside aria-label="Dashboard navigation"`: `shell.sidebar`, then the quarantine
+notice, then `shell.sidebar.footer` (drawn only while it has items). Beside it,
+`div[data-slot="dashboard-content"]` holds `shell.titlebar.tabs` over
+`shell.page` ([`views/workspace-view.tsx`](src/client/views/workspace-view.tsx)).
+
+### Conversation form
+
+Four columns in a horizontal resizable group
+([`components/templates/workspace-layout.tsx`](src/client/components/templates/workspace-layout.tsx)).
+No size is persisted.
+
+| Column        | Size                                  | Content                                                                                                             |
+| ------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Sidebar       | 280 px by default, 11rem to 24rem     | `shell.sidebar`, the stack panes, the quarantine notice, `shell.sidebar.footer`                                     |
+| Conversation  | at least 16rem, the rest of the width | `shell.titlebar.tabs` over the conversation card                                                                    |
+| Viewer        | 448 px by default, 18rem to 60rem     | the tab triggers over the viewer card; present only while an owner is set and has at least one tab                  |
+| Project panel | 328 px by default, 14rem to 30rem     | a 40 px header (the view tabs, then `shell.window.actions`), the selected view, the footer row `shell.panel.footer` |
+
+- **Sidebar column**
+  ([`components/organisms/project-sidebar.tsx`](src/client/components/organisms/project-sidebar.tsx)):
+  each stack pane is a group (`data-slot="sidebar-pane"`, `data-pane-id`) with
+  a 28 px header and, while open, the pane's `tag` element with its props. A
+  collapsible pane's header is a button with `aria-expanded` and the label
+  `Collapse <title>` or `Expand <title>`; a pane that cannot collapse shows
+  its title only. The `headerTag` element is shown only while the header is
+  hovered or holds focus. A group is as tall as its content, at most 40% of
+  the column, never shorter than its header; past the cap its content scrolls.
+- **Conversation card**: an inset card
+  ([`components/templates/inset-card.ts`](src/client/components/templates/inset-card.ts):
+  10 px radius, 8 px padding, `shadow-sm`, the background fill) with no bottom
+  padding. It holds `<section aria-label="Thread conversation">` around a
+  `<core-outlet>`, core's element
+  ([Core](../../../docs/architecture/bundles/core.md)), where the child routes
+  of `/` render
+  ([`components/templates/thread-pane.tsx`](src/client/components/templates/thread-pane.tsx)).
+  Over its bottom floats the conversation footer,
+  `footer[data-slot="workspace-footer"]`, 44 px with 8 px over and under its
+  row, holding `shell.conversation.footer`, whose items align to the end with
+  a 4 px gap, in 11 px text of normal weight; the frame sets
+  `--shell-conversation-footer-height: 2.75rem` on the conversation frame
+  ([`components/templates/conversation-frame.tsx`](src/client/components/templates/conversation-frame.tsx)).
+  While the bottom split is shown, the card is split vertically: the
+  conversation keeps at least 20%, and `shell.conversation.bottom` opens at
+  35% with at least 6rem; its items mount only while it is shown
+  ([`components/templates/conversation-terminals.tsx`](src/client/components/templates/conversation-terminals.tsx)).
+  Over the whole card lies `div[data-slot="workspace-overlay"]` with
+  `shell.conversation.overlay`; the layer takes no pointer events, and its
+  items place themselves.
+- **Viewer**
+  ([`components/organisms/workspace-tabs.tsx`](src/client/components/organisms/workspace-tabs.tsx)):
+  the triggers are a tab strip labelled "Files, changes, terminals and
+  threads"; each shows its title, `ariaLabel` and `tooltip`, and the `iconTag`
+  element with the tab's props. The reader reorders triggers by dragging, which
+  changes the owner's tab order, and closes a tab with its close button through
+  `layout.tabs/v2.close`; a failed close is logged with
+  `console.error('Doric: the tab could not close:', reason)`. A trigger's
+  context menu shows the opener's non-destructive entries, a separator,
+  "Close tab", then the destructive entries behind a separator; an entry
+  without an icon is inset. The tab contents sit in a `section` with the same
+  label, and every tab's element stays mounted while another is selected. The viewer card is an inset card with no bottom padding while
+  the selected tab has `openBottom: true`.
+- **Project panel**
+  ([`components/organisms/project-panel.tsx`](src/client/components/organisms/project-panel.tsx)):
+  always shown, never collapsed. The header's "Project views" strip draws one
+  icon-only toggle per `shell.panel` item, with its `label` (a non-string
+  `label` gives the toggle an empty name), its `iconTag` element and its
+  `badgeTag` element (an empty `iconTag` or `badgeTag` draws nothing). The
+  reader reorders the toggles by dragging; the order is kept while the
+  conversation form stays mounted, a new view is appended in region order, and
+  a view that leaves `shell.panel` leaves the order
+  ([`domain/panel-order.ts`](src/client/domain/panel-order.ts)). Choosing a
+  toggle selects that view, as `layout.panel/v3.select` does. Only the
+  selected item's element is mounted. The footer row is 28 px with 8 px above
+  and below.
+- An inset card gets an 8 px bottom margin, and an 8 px right margin when it is
+  the last column of the row.
+
+### Hooks other code reads
+
+Other bundles and the end-to-end suite rely on these names
+([`workspace-layout.tsx`](src/client/components/templates/workspace-layout.tsx),
+[`workspace-tabs.tsx`](src/client/components/organisms/workspace-tabs.tsx),
+[`conversation-frame.tsx`](src/client/components/templates/conversation-frame.tsx)):
+
+- `--shell-conversation-footer-height` (`2.75rem`), set on
+  `div[data-slot="conversation-frame"]`; chat's
+  [`chat-view.tsx`](../chat/src/client/views/chat-view.tsx) and
+  [`styles.css`](../chat/src/client/styles.css) read it.
+- The `data-slot` values `workspace-layout`, `workspace-viewer-header`,
+  `workspace-files-header` and `workspace-files-footer`, and
+  `section[aria-label="Viewer"]`; the end-to-end suite selects them
+  ([`shell-page.ts`](../../../app/desktop/doric-e2e/tests/support/shell-page.ts),
+  [`prototype-states.ts`](../../../app/desktop/doric-e2e/tests/support/prototype-states.ts)).
+- The viewer header and the Project panel header are 40 px high and drag the
+  window (`[-webkit-app-region:drag]`); the controls inside them do not.
+- Both tab strips are `TabStrip` of `desktop/ui/panels`
+  ([`tab-strip.tsx`](../../../packages/desktop/src/panels/tab-strip.tsx)),
+  which gives each trigger `data-tab-id` and each close button
+  `data-slot="tab-close"`, and provides drag reordering and the context menu.
+
+### Slots
+
+| Slot                         | Where it is drawn                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `shell.sidebar`              | the sidebar column, in both forms                                                                             |
+| `shell.sidebar.footer`       | the sidebar column's foot, under the quarantine notice; only while it has items                               |
+| `shell.titlebar.tabs`        | the title bar: over the page in the page form, over the conversation card in the conversation form            |
+| `shell.page`                 | the page form's body; an item here switches the frame to the page form                                        |
+| `shell.window.actions`       | the end of the Project panel's header, in the conversation form; the layout does not draw it in the page form |
+| `shell.header.actions`       | not drawn by the layout: the name is declared for the item of `shell.titlebar.tabs` to draw at its end        |
+| `shell.panel`                | the Project panel's views; an item's props are a `PanelItemProps`                                             |
+| `shell.conversation.footer`  | the conversation footer                                                                                       |
+| `shell.panel.footer`         | the Project panel's footer row                                                                                |
+| `shell.conversation.bottom`  | the split under the conversation, while `layout.conversation/v1` has a request                                |
+| `shell.conversation.overlay` | the layer over the conversation card                                                                          |
+
+A slot item is a `regions/v1` item `{ id, tag, order?, props? }`; an item under
+any other name is not drawn. Another bundle writes a slot name as a literal
+checked against the constant: `'shell.panel' satisfies typeof SHELL_PANEL`,
+with `import type { SHELL_PANEL } from 'layout/contracts'`.
+
+### Quarantine notice
+
+When `doric.catalog/v1.get()` lists bundles with the state `quarantined`, the
+sidebar column shows one notice (`ErrorNotice` of `desktop/ui/error-notice`,
+block variant, `PackageXIcon`) after `shell.sidebar` and the stack panes and
+before `shell.sidebar.footer`
+([`components/molecules/bundle-health-notice.tsx`](src/client/components/molecules/bundle-health-notice.tsx)).
+Its data ([`domain/bundle-health.ts`](src/client/domain/bundle-health.ts)):
+
+- error code `bundle_quarantined`, message `Turned off: <ids>.` with the ids
+  joined by `, ` in the catalog's order, no causes and no `at`;
+- title `1 extension couldn't start` or `<n> extensions couldn't start`,
+  warning tone, not retryable;
+- one context line per bundle, keyed `<id>@<version>`, valued with its reasons
+  joined by `; `, each reason `<message>` or `<message> (<contract>)`, or
+  `no reason given`.
+
+Bundles in any other state, `disabled` included, are not listed. The catalog
+is read once per mount of the notice, so a later change shows on the next
+mount. When the catalog cannot be read, no notice is drawn.
+
+## Data, side effects and configuration
+
+- All state is in memory, per window, in four Zustand vanilla stores: the tabs
+  and the owner, the panel's selected view, the bottom split's requests, and
+  the stack's panes with their open state
+  ([`stores/`](src/client/stores)). Nothing is persisted.
+- The client's stylesheet, [`src/client/styles.css`](src/client/styles.css),
+  holds one unlayered rule: `[data-slot='workspace-footer']` takes its height
+  from `--shell-conversation-footer-height`, the background at 70% and a 2 px
+  backdrop blur. It emits no utility classes.
+- Side effects: `document.title` is set to `Doric`; elements are created and
+  disposed through `ui/v1`.
+- The bundle has no settings.
+
+## Limits
+
+- One owner's tabs are shown at a time; tabs of other owners stay in memory
+  until closed ([`views/workspace-view.tsx`](src/client/views/workspace-view.tsx)).
+- A stack pane takes at most 40% of the sidebar column.
+- The panel's view order is lost when the conversation form unmounts, as on a
+  switch to the page form.
+- The layout needs platform 1.8.0 (`engines.doric ^1.8.0`), for
+  `desktop/ui/element-host`
+  ([`packages/bundle/src/runtime/version.ts`](../../../packages/bundle/src/runtime/version.ts)).
+
+## Errors and failure behavior
+
+- `invalid_input`: any input that fails a schema, including an unknown key,
+  thrown by the call before the method runs
+  ([`packages/bundle/src/runtime/dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
+- `unavailable` (`No thread or project is selected.`): a tabs operation that
+  needs the current owner while none is set
+  ([`services/layout-tabs.ts`](src/client/services/layout-tabs.ts)).
+- `registration_conflict` (`The sidebar pane "<id>" is already registered.`):
+  a stack pane id registered twice ([`stores/stack.ts`](src/client/stores/stack.ts)).
+- An element that `ElementHost` cannot create (a panel view, a tab icon, a
+  stack pane or its action) is replaced by a compact notice naming it
+  ([`packages/desktop/src/element-host.tsx`](../../../packages/desktop/src/element-host.tsx)).
+- A failed tab close from the frame is logged, not shown.
+
+## Build and test
 
 ```console
-npx nx run doric-host:build-bundles
+npx nx run bundle-layout:build
+npx nx run bundle-layout:typecheck
+npx nx run bundle-layout:test
 ```
+
+The build compiles the contracts and the client and writes
+`bundles/desktop/layout/dist` ([`project.json`](project.json));
+`doric-host:build-bundles` stages it into
+`app/backend/doric-host/dist/bundles`
+([`app/backend/doric-host/project.json`](../../../app/backend/doric-host/project.json)).
+The `test` target builds the bundle, compiles the tests to `dist-tests` and
+runs them with `node --test`.
+
+- [`tests/*.test.ts`](tests) are DOM-free, compiled with
+  [`tsconfig.spec.json`](tsconfig.spec.json) together with `src/contracts/` and
+  the client's `domain/`, `services/`, `stores/` and `utility/`: they cover the
+  contract services, the stores, the tab, panel-order and stack rules, and the
+  quarantine notice's data.
+- [`tests/client/*.test.ts`](tests/client), compiled with
+  [`tsconfig.client-spec.json`](tsconfig.client-spec.json), render the frame
+  in `happy-dom` through
+  [`tests/client/support/render-shell.ts`](tests/client/support/render-shell.ts),
+  which activates the layout on the stories' fake host
+  ([`stories/support/fake-host.ts`](stories/support/fake-host.ts)) with
+  stand-in items in the slots: both forms, the notices, the tab menu and the
+  footer rule read from the stylesheet on disk.
+- [`stories/`](stories) holds CSF3 stories of the frame and its components,
+  which the papercraft previews and Storybook render;
+  [`.storybook/preview.tsx`](.storybook/preview.tsx) wraps them. `typecheck`
+  and `build` type-check both, through
+  [`tsconfig.client.json`](tsconfig.client.json).

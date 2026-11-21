@@ -15,7 +15,7 @@ import { StrictMode } from 'react';
 
 import { noticeThreadUpdate } from './answer-changes.js';
 import { answersProjector } from './answers-projector.js';
-import { ChatHooksV1, ChatViewsV1 } from './chat-contract.js';
+import { ChatHooksV2, ChatViewsV1 } from './chat-contract.js';
 import { createFenceShell, FENCE_ELEMENT_TAG } from './fence-element.js';
 import { chunkLoader } from './folds.js';
 
@@ -57,7 +57,7 @@ export function activate({ services }: ClientContext): Cleanup {
     };
   });
 
-  const changes = services.use(HooksV1).whenAvailable(ChatHooksV1, (chat) => {
+  const changes = services.use(HooksV1).whenAvailable(ChatHooksV2, (chat) => {
     const registration = chat.onThreadUpdateHook(noticeThreadUpdate);
     return () => registration.dispose();
   });

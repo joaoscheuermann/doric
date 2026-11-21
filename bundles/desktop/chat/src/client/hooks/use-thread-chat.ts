@@ -1,14 +1,16 @@
 import type { ErrorInfo } from 'desktop/reads';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useStore } from 'zustand/react';
 
 import type { CommentThreads } from '../domain/comment-threads.js';
+import { drawnTurns } from '../domain/drawn-turns.js';
 import type { PendingSend, SentComment } from '../domain/pending-turns.js';
 import { emptyProjection, type Turn } from '../domain/projector.js';
 import { queueItems } from '../domain/queue.js';
 import { routeSend, type SendRoutePorts } from '../domain/send-route.js';
 import type { Thread, ThreadEvent } from '../domain/workspace.js';
 import { threadChatsStore } from '../stores/thread-chats.js';
+import { useInputRenderers, useToolRenderers } from './use-drawings.js';
 import { useThreadQueue } from './use-thread-queue.js';
 
 /** No sent comment waiting for the log: one frozen array, stable across renders. */
@@ -20,7 +22,10 @@ export type ThreadChat = {
   readonly thread: Thread;
   /** Every event the Thread has, in durable order, deduplicated. */
   readonly events: readonly ThreadEvent[];
-  /** The same log, projected into turns. */
+  /**
+   * The same log, projected into the turns the surface draws: grouped with the
+   * window's tool renderers and stamped with its input renderers' elements.
+   */
   readonly turns: readonly Turn[];
   /** The log's comment threads, by root comment id, with their state. */
   readonly threads: CommentThreads;
@@ -92,6 +97,12 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
   );
 
   const projection = chat?.projection ?? emptyProjection;
+  const tools = useToolRenderers();
+  const inputs = useInputRenderers();
+  const turns = useMemo(
+    () => drawnTurns(projection, tools, inputs),
+    [projection, tools, inputs],
+  );
 
   // The composer's ports of `routeSend` (D20), for one message.
   const ports = useCallback(
@@ -141,7 +152,7 @@ export const useThreadChat = (thread: Thread): ThreadChat => {
   return {
     thread: chat?.thread ?? thread,
     events: projection.events,
-    turns: projection.turns,
+    turns,
     threads: projection.threads,
     // A Thread the surface no longer holds is one a `deleted` update dropped.
     error:

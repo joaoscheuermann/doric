@@ -37,6 +37,7 @@ let createRoot: typeof import('react-dom/client').createRoot;
 let act: (callback: () => void | Promise<void>) => Promise<void>;
 let createElement: typeof import('react').createElement;
 let useEffect: typeof import('react').useEffect;
+let useLayoutEffect: typeof import('react').useLayoutEffect;
 
 before(async () => {
   for (const name of installed) {
@@ -51,6 +52,7 @@ before(async () => {
   act = react.act as typeof act;
   createElement = react.createElement;
   useEffect = react.useEffect;
+  useLayoutEffect = react.useLayoutEffect;
   ({ defineReactElement, portalHosts } = await import(
     'desktop/ui/react-element'
   ));
@@ -257,6 +259,90 @@ describe('defineReactElement', () => {
       'Hi from core',
     );
     await act(() => element.dispose());
+  });
+});
+
+describe('defineReactElement, one root per class', () => {
+  test('the elements connected in one task render and commit together', async () => {
+    const seen: number[] = [];
+    tags += 1;
+    const tag = `test-together-${tags}`;
+    const Row = () => {
+      useLayoutEffect(() => {
+        seen.push(window.document.querySelectorAll(`${tag} > p`).length);
+      }, []);
+      return createElement('p', null, 'row');
+    };
+    window.customElements.define(
+      tag,
+      defineReactElement<Record<string, never>>({
+        props: [],
+        render: Row,
+      }) as never,
+    );
+    const elements = [1, 2, 3].map(() => {
+      const element = window.document.createElement(
+        tag,
+      ) as unknown as ReactElementInstance;
+      element.services = services('core');
+      return element;
+    });
+    await act(() => {
+      for (const element of elements) attach(element);
+    });
+    // One commit: each layout effect already sees all three rows.
+    assert.deepEqual(seen, [3, 3, 3]);
+    await act(() => {
+      for (const element of elements) element.dispose();
+    });
+  });
+
+  test('a content that throws empties its own element only', async () => {
+    tags += 1;
+    const tag = `test-throws-${tags}`;
+    const Maybe = ({ greeting }: Greeting) => {
+      if (greeting === 'throw') throw new Error('drawing failed');
+      return createElement('p', null, greeting ?? 'ok');
+    };
+    window.customElements.define(
+      tag,
+      defineReactElement<Greeting>({
+        props: ['greeting'],
+        render: Maybe,
+      }) as never,
+    );
+    const create = () => {
+      const element = window.document.createElement(
+        tag,
+      ) as unknown as ReactElementInstance & Greeting & { greeting?: string };
+      element.services = services('core');
+      return element;
+    };
+    const good = create();
+    const bad = create();
+    const errors = console.error;
+    console.error = () => undefined;
+    try {
+      await act(() => {
+        attach(good);
+        attach(bad);
+      });
+      await act(() => {
+        bad.greeting = 'throw';
+      });
+    } finally {
+      console.error = errors;
+    }
+    assert.equal(bad.textContent, '');
+    assert.equal(good.textContent, 'ok');
+    await act(() => {
+      good.greeting = 'still here';
+    });
+    assert.equal(good.textContent, 'still here');
+    await act(() => {
+      good.dispose();
+      bad.dispose();
+    });
   });
 });
 

@@ -1,6 +1,8 @@
-// The git bundle's client part (stage 10, §3.8): `git.changes/v1`, the
-// `git.open-comparison/v1` command and the five elements — the Changes panel
-// view and its trigger badge, the comparison tab, the footer's working
+// The git bundle's client part (stage 10, §3.8): `git.changes/v1`, the Files
+// tree's marks through `files.decorations/v1` (bundle isolation 9), the
+// `git.open-comparison/v1` command and the six elements — the Changes panel
+// view and its trigger badge, the comparison tab, the diff icon
+// (`git-file-diff-icon`) the layout draws for both, the footer's working
 // directory and branch, and the Versioning settings section. All of it is
 // bound to the activation services, never to an element's (D9-17).
 //
@@ -14,6 +16,7 @@ import {
   type ClientContext,
   CommandsV1,
   type Disposable,
+  HooksV1,
   type Navigation,
   NavigationV1,
   type RegionItem,
@@ -22,13 +25,24 @@ import {
   type Ui,
   UiV1,
 } from 'bundle/contracts';
+import type { SHELL_PANEL, SHELL_PANEL_FOOTER } from 'layout/contracts';
+import type { SETTINGS_SECTIONS } from 'settings/contracts';
 
 import { gitApiOf } from './api/git-api.js';
-import { type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
-import { createGitChanges, createGitStore } from './changes/store.js';
-import { FILE_DIFF_TAG, openComparisonCommand } from './commands.js';
+import { ChatHooksV2, type FilesRefresh, FilesRefreshV1 } from './api/peers.js';
+import {
+  createFilesDecorations,
+  createGitChanges,
+  createGitStore,
+} from './changes/store.js';
+import {
+  FILE_DIFF_ICON_TAG,
+  FILE_DIFF_TAG,
+  openComparisonCommand,
+} from './commands.js';
 import { defineGitElements } from './elements.js';
-import { setGitClient } from './state.js';
+import { requestProjectRefresh, setGitClient } from './state.js';
+import { refreshAfterGit } from './tool-refresh.js';
 
 /** The tag of the Versioning section's element. */
 export const VERSIONING_TAG = 'git-settings-versioning';
@@ -42,25 +56,25 @@ export const gitRegions: readonly {
   readonly item: RegionItem;
 }[] = [
   {
-    region: 'layout.panel',
+    region: 'shell.panel' satisfies typeof SHELL_PANEL,
     item: {
       id: 'changes',
       tag: 'git-changes',
       order: 200,
       props: {
         label: 'Changes',
-        icon: 'file-diff',
+        iconTag: FILE_DIFF_ICON_TAG,
         badgeTag: 'git-changes-badge',
       },
     },
   },
   {
     // The working directory and branch, in the Files column footer (§2.6, S9).
-    region: 'layout.panel.footer',
+    region: 'shell.panel.footer' satisfies typeof SHELL_PANEL_FOOTER,
     item: { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10 },
   },
   {
-    region: 'settings.sections',
+    region: 'settings.sections' satisfies typeof SETTINGS_SECTIONS,
     item: {
       id: 'versioning',
       tag: 'settings-link',
@@ -107,7 +121,18 @@ export function activate({ services }: ClientContext): Cleanup {
     };
   });
   setGitClient({ store, refresh: () => refresh });
+  // A finished `git` call in a held conversation refreshes its Project
+  // (`chat.hooks/v2`, bundle isolation 5(c)).
+  const toolRefresh = services
+    .use(HooksV1)
+    .whenAvailable(ChatHooksV2, (chat) => {
+      const registration = chat.onThreadUpdateHook(
+        refreshAfterGit(requestProjectRefresh),
+      );
+      return () => registration.dispose();
+    });
   services.provide(createGitChanges(store));
+  services.provide(createFilesDecorations(store));
 
   const ui = services.use(UiV1);
   const elements = defineGitElements(store);
@@ -115,6 +140,7 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define('git-changes', elements.changes),
     ui.define('git-changes-badge', elements.badge),
     ui.define(FILE_DIFF_TAG, elements.fileDiff),
+    ui.define(FILE_DIFF_ICON_TAG, elements.fileDiffIcon),
     ui.define('git-workspace-cwd', elements.cwd),
     ui.define(VERSIONING_TAG, elements.versioning),
   ];
@@ -129,6 +155,7 @@ export function activate({ services }: ClientContext): Cleanup {
     surfaces.dispose();
     command.dispose();
     for (const element of defined.reverse()) element.dispose();
+    toolRefresh.dispose();
     coordinator.dispose();
     store.dispose();
     setGitClient(undefined);

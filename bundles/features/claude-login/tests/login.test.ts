@@ -10,6 +10,7 @@
 // requesting the redirect URI the authorization URL names.
 
 import assert from 'node:assert/strict';
+import dns from 'node:dns';
 import { describe, test } from 'node:test';
 
 import { isContractError } from 'bundle/contracts';
@@ -62,6 +63,17 @@ const freePort =
     return createLocalCallbackServer({ ...options, port: 0 });
   };
 
+/**
+ * Resolves `localhost` as the callback server's `listen` did, so a host
+ * without a global IPv6 address still reaches it.
+ */
+const browse = async (target: string): Promise<Response> => {
+  const url = new URL(target);
+  const { address, family } = await dns.promises.lookup(url.hostname);
+  url.hostname = family === 6 ? `[${address}]` : address;
+  return fetch(url);
+};
+
 /** What the browser does once the user approves: request the redirect URI. */
 const approve = async (
   authorizeUrl: string,
@@ -73,14 +85,14 @@ const approve = async (
   for (const [key, value] of Object.entries(answer)) {
     callback.searchParams.set(key, value);
   }
-  return (await fetch(callback)).status;
+  return (await browse(callback.href)).status;
 };
 
 /** Whether the redirect URI an authorization URL names still answers. */
 const callbackListening = async (authorizeUrl: string): Promise<boolean> => {
   const redirect = new URL(authorizeUrl).searchParams.get('redirect_uri');
   try {
-    await fetch(redirect ?? '');
+    await browse(redirect ?? '');
     return true;
   } catch {
     return false;

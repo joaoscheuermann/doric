@@ -90,7 +90,7 @@ export const FailedResult = {
   ),
 };
 
-/** A sender the sidebar tree no longer holds: named by its short id. */
+/** A sender the records no longer hold: named by its short id. */
 export const UnknownSender = {
   render: () => (
     <TurnsEditor

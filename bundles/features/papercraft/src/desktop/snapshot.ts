@@ -1,5 +1,5 @@
 // `papercraft.snapshot/v1` in desktopMain: a window asks for a rectangle of its
-// own viewport and gets a PNG back (isolamento.md, "O snapshot").
+// own viewport and gets a PNG back (isolamento.md, "The snapshot").
 //
 // The window is never an input. It is the `windowKey` of the call, which the
 // desktop dispatcher fills for every call leaving a window and which a window

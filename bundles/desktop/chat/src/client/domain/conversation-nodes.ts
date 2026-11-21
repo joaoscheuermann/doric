@@ -12,19 +12,14 @@
 export const AGENT_TURN_BLOCK = 'agent-turn-node';
 export const THINKING_TURN_BLOCK = 'thinking-turn-node';
 export const TOOL_TURN_BLOCK = 'tool-turn-node';
-/**
- * A `thread-spawn` call, drawn as the delegation it is rather than as the
- * generic row every other tool call draws.
- */
-export const THREAD_SPAWN_TURN_BLOCK = 'thread-spawn-node';
 export const USER_TURN_BLOCK = 'user-turn-node';
 export const DELEGATED_TURN_BLOCK = 'delegated-turn-node';
 
 /**
- * A background terminal's answer, which the host writes into the Thread as a
- * prompt of its own once the command settles.
+ * An input whose source a bundle draws (`chat.views/v1` 1.2.0): the block hosts
+ * that bundle's element in place of the chat's own drawing.
  */
-export const TERMINAL_RESULT_TURN_BLOCK = 'terminal-result-node';
+export const INPUT_TURN_BLOCK = 'input-turn-node';
 
 /**
  * The time a turn was last written, drawn under its block. It is the footer's
@@ -88,10 +83,9 @@ const UNDELETABLE = new Set([
   AGENT_TURN_BLOCK,
   THINKING_TURN_BLOCK,
   TOOL_TURN_BLOCK,
-  THREAD_SPAWN_TURN_BLOCK,
   USER_TURN_BLOCK,
   DELEGATED_TURN_BLOCK,
-  TERMINAL_RESULT_TURN_BLOCK,
+  INPUT_TURN_BLOCK,
   USER_PROMPT_BLOCK,
   ACTIVITY_TURN_BLOCK,
   LIFECYCLE_TURN_BLOCK,
@@ -101,7 +95,7 @@ const UNDELETABLE = new Set([
 ]);
 
 /**
- * Agent answers, delegated inputs and terminal results need this rule: the
+ * Agent answers, delegated inputs and drawn inputs need this rule: the
  * thinking, tool, lifecycle and failure turns render as decorators, which the
  * editor already refuses to let anyone type into, and so does the compaction row
  * — named here as well, since nothing in it reads as text a reader could change.
@@ -109,7 +103,7 @@ const UNDELETABLE = new Set([
 const READ_ONLY = new Set([
   AGENT_TURN_BLOCK,
   DELEGATED_TURN_BLOCK,
-  TERMINAL_RESULT_TURN_BLOCK,
+  INPUT_TURN_BLOCK,
   COMPACTION_TURN_BLOCK,
 ]);
 

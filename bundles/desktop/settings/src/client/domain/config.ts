@@ -13,6 +13,16 @@
 
 import { modelEfforts, modelStartEffort } from 'runtime/contracts';
 
+import type {
+  AutoArchive,
+  Configuration,
+  ContextCompactionConfig,
+  ModelExecution,
+  Profile,
+  ProviderConfiguration,
+  ProviderKindId,
+  ProviderModel,
+} from '../../contracts/index.js';
 import { type IconLookup, noIcons } from './model-icons.js';
 
 /**
@@ -39,8 +49,20 @@ export const reasoningEfforts = [
 
 export type ReasoningEffort = (typeof reasoningEfforts)[number];
 
-/** The identifier a provider kind is known by. The host owns the set. */
-export type ProviderKindId = string;
+/**
+ * The eight types a draft is made of are declared in the contracts module
+ * (`settings/contracts`), so another bundle reads the same shapes.
+ */
+export type {
+  AutoArchive,
+  Configuration,
+  ContextCompactionConfig,
+  ModelExecution,
+  Profile,
+  ProviderConfiguration,
+  ProviderKindId,
+  ProviderModel,
+} from '../../contracts/index.js';
 
 /**
  * One model a provider's own catalog describes, as the host read it: what the
@@ -110,6 +132,11 @@ export type ProviderKind = {
    * for one by hand.
    */
   readonly modelsFromCatalog?: boolean;
+  /**
+   * The site the provider page links to, with the control's label. Only an
+   * `https:` site with a label reaches here: the adapter drops any other.
+   */
+  readonly site?: { readonly url: string; readonly label: string };
 };
 
 /** The value kinds a tool configuration field can carry. */
@@ -145,42 +172,6 @@ export type ToolCatalogEntry = {
   readonly name: string;
   readonly description?: string;
   readonly settings: readonly ToolConfigField[];
-};
-
-/**
- * One model a provider offers, with the reasoning efforts that model accepts.
- * The efforts are present exactly when the kind keeps `reasonings`; a kind that
- * keeps only `models` — a server that translates the effort itself — carries a
- * name alone.
- */
-export type ProviderModel = {
-  readonly name: string;
-  readonly reasonings?: readonly string[];
-  /**
-   * The effort the catalog names as this model's own, absent when it names none.
-   * It is what a model starts at when the execution profile switches to it.
-   */
-  readonly defaultEffort?: string;
-  /**
-   * Whether the catalog says this model's reasoning cannot be turned off. The
-   * execution toggle is then pinned on rather than offering a choice it cannot
-   * make.
-   */
-  readonly mandatory?: boolean;
-};
-
-/**
- * One provider the host may call. The kind decides which fields carry a value
- * and which lists it keeps; a `secret` field names an `API_TOKEN` credential
- * rather than carrying a secret, and a `number` field still arrives as a string.
- */
-export type ProviderConfiguration = {
-  readonly id: string;
-  readonly kind: ProviderKindId;
-  /** The values of the fields the kind declares, keyed by `ProviderField.key`. */
-  readonly configuration: { readonly [key: string]: string };
-  /** The models it offers; present exactly when the kind declares `models`. */
-  readonly models?: readonly ProviderModel[];
 };
 
 /** The closed set of credential kinds. A kind fixes which fields it carries. */
@@ -239,87 +230,11 @@ export type CredentialUpdate = {
 };
 
 /**
- * The context-compaction policy, mirrored: the host owns the ranges and reads a
- * stored one back unchanged. A draft that names none is the host's own default —
- * `enabled: true`, `pressurePercent: 80`, `tailMinMessages: 6`,
- * `summaryMaxChars: 6000`, `charBudget: 200000`.
- */
-export type ContextCompactionConfig = {
-  readonly enabled: boolean;
-  readonly pressurePercent: number;
-  readonly tailMinMessages: number;
-  readonly summaryMaxChars: number;
-  readonly charBudget: number;
-};
-
-/**
- * The person the agent's prompts speak for, as the host keeps it. Both fields
- * are optional, and a draft carries no `profile` at all rather than `{}`. An
- * absent `timezone` means the host's own time zone applies.
- */
-export type Profile = {
-  readonly name?: string;
-  readonly timezone?: string;
-};
-
-/**
- * How the runtime archives Threads on its own, as `host-config/v1` 1.2.0 keeps
- * it. Each key is optional and an absent one means the host's default:
- * `agentThreads: true` (an agent thread moves to Archived about 30 s after its
- * work finishes) and `mainThreadsAfter: '7d'` (an inactive main thread moves
- * after seven days; `'never'` turns that off).
- */
-export type AutoArchive = {
-  readonly agentThreads?: boolean;
-  readonly mainThreadsAfter?: '1d' | '7d' | '30d' | 'never';
-};
-
-export type Configuration = {
-  readonly providers: readonly ProviderConfiguration[];
-  readonly models: {
-    readonly execution: ModelExecution;
-  };
-  readonly execution: {
-    readonly maxTurns: number;
-    /** The most one tool result may carry into the model, in characters. */
-    readonly maxToolResultChars?: number;
-    /**
-     * The context-compaction policy the host carries; absent is the host's own
-     * default, so a draft need not name one.
-     */
-    readonly contextCompaction?: ContextCompactionConfig;
-  };
-  /**
-   * Per-tool values, keyed by tool name and then by the tool's own field keys.
-   * The host always populates it; it is optional so a hand-built draft need not.
-   */
-  readonly tools?: Readonly<Record<string, Readonly<Record<string, string>>>>;
-  /** The `GIT` credential the agent's git commands commit as; absent for none. */
-  readonly gitCredentialId?: string;
-  /** The `API_TOKEN` credential GitHub authenticates with; absent for none. */
-  readonly githubCredentialId?: string;
-  /** Name and time zone for the agent's prompts; absent for neither. */
-  readonly profile?: Profile;
-  /** How Threads are archived on their own; absent means the defaults. */
-  readonly threads?: { readonly autoArchive?: AutoArchive };
-};
-
-/**
  * The configuration as a save sends it. The body is a plain replacement, so it
  * is exactly the shape the host answers with: no field is write-only any more,
  * because no secret travels with the configuration.
  */
 export type ConfigurationInput = Configuration;
-
-export type ModelExecution = {
-  readonly providerId: string;
-  readonly model: string;
-  /**
-   * The effort the model accepts; absent when it accepts none. A model whose
-   * catalog names no efforts cannot be told one, so no reasoning block is sent.
-   */
-  readonly effort?: ReasoningEffort;
-};
 
 /** One model a provider offers, as the execution picker draws its choices. */
 export type ModelChoice = {
@@ -1523,28 +1438,6 @@ export const modelGroups = (
       ? { label: group.label, choices: [choice, ...group.choices] }
       : group,
   );
-};
-
-/**
- * The groups narrowed to the models whose name contains `query`, headings kept
- * and emptied groups dropped. An empty query — or one with nothing but
- * whitespace — keeps every group, so clearing the field restores the list.
- */
-export const searchModelGroups = (
-  groups: readonly ModelGroup[],
-  query: string,
-): readonly ModelGroup[] => {
-  const needle = query.trim().toLowerCase();
-  if (needle === '') return groups;
-
-  return groups
-    .map((group) => ({
-      label: group.label,
-      choices: group.choices.filter((choice) =>
-        choice.label.toLowerCase().includes(needle),
-      ),
-    }))
-    .filter((group) => group.choices.length > 0);
 };
 
 /** The UI never leaves a thinking-capable model at a stored off effort. */

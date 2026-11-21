@@ -7,7 +7,6 @@ import {
   type Storage,
   StorageV1,
 } from 'bundle/contracts';
-import { type TerminalService, TerminalServiceV1 } from 'terminal/contracts';
 
 import { promptFinishedEvent, threadEventSink } from '../contracts/events.js';
 import type { ThreadEvent } from '../contracts/model.js';
@@ -23,16 +22,11 @@ import {
   installStartStop,
   type RuntimeLifecycle,
 } from './lifecycle.js';
-import {
-  CoreEventHooksV1,
-  type ProjectResourcesReader,
-  ResourcesV1,
-} from './peers.js';
+import { CoreEventHooksV1 } from './peers.js';
 import { createPorts, type RuntimePorts } from './ports.js';
 import { attachmentsService } from './services/attachments.js';
 import { leaseService } from './services/lease.js';
 import { runtimeService } from './services/runtime.js';
-import { terminalSessionsService } from './services/terminal-sessions.js';
 import { threadsService } from './services/threads.js';
 import { usageService } from './services/usage.js';
 import { createWatches } from './services/watches.js';
@@ -67,8 +61,6 @@ export const provideRuntime = (
     ports,
     bindings = createBindings(),
     notices: injectedNotices,
-    terminal = () => undefined,
-    resources = () => undefined,
     attachments,
     archiveSchedule,
   }: {
@@ -80,17 +72,6 @@ export const provideRuntime = (
     readonly notices?: Notices;
     /** The prompt bindings; a test passes its own to observe them. */
     readonly bindings?: Bindings;
-    /**
-     * The `terminal` bundle's `terminal/v1` while one is active: it owns the
-     * terminal sessions since the stage-10 host switch, so the runtime's
-     * terminal reads delegate to it; without one, a Project has none.
-     */
-    readonly terminal?: () => TerminalService | undefined;
-    /**
-     * The `resources` bundle's `resources/v1` while one is active: the
-     * deprecated `runtime.lease/v1.resources` read delegates to it.
-     */
-    readonly resources?: () => ProjectResourcesReader | undefined;
     /**
      * Arms each archive sweep; the host's unref'd timer without it. A test
      * passes one that never fires and sweeps through the service itself.
@@ -107,7 +88,6 @@ export const provideRuntime = (
     publisher: notices.publisher,
     redactor,
     bindings,
-    terminals: async (projectId) => (await terminal()?.list(projectId)) ?? [],
     ...(attachments === undefined ? {} : { attachments }),
     ...(archiveSchedule === undefined ? {} : { archiveSchedule }),
   });
@@ -121,7 +101,6 @@ export const provideRuntime = (
         threads.eventsAfter(threadId, afterSequence),
       project: (projectId) => service.projects.find(projectId),
       projectThreads: (projectId) => threads.listByProject(projectId),
-      terminals: async (projectId) => (await terminal()?.list(projectId)) ?? [],
     },
   });
 
@@ -136,8 +115,7 @@ export const provideRuntime = (
   services.provide(threadsService({ service, threads, bindings, watches }));
   services.provide(workspaceService(bindings, service));
   services.provide(usageService(service));
-  services.provide(leaseService({ service, bindings, resources }));
-  services.provide(terminalSessionsService(watches, terminal));
+  services.provide(leaseService({ service, bindings }));
   if (attachments !== undefined)
     services.provide(attachmentsService({ attachments, threads }));
 
@@ -175,33 +153,11 @@ export const activate = ({ services }: HostContext): Cleanup => {
 
   const ports = createPorts(services);
   const notices = createNotices(ports.log);
-  // terminal/v1 is the `terminal` bundle's (stage 10 host switch); it
-  // activates after the runtime, whose contracts it requires.
-  let terminal: TerminalService | undefined;
-  services.whenAvailable(TerminalServiceV1, (api) => {
-    terminal = api;
-    return () => {
-      if (terminal === api) terminal = undefined;
-    };
-  });
-
-  // resources/v1 is the `resources` bundle's (stage 10 §3.12), which also
-  // activates after the runtime.
-  let resources: ProjectResourcesReader | undefined;
-  services.whenAvailable(ResourcesV1, (api) => {
-    resources = api;
-    return () => {
-      if (resources === api) resources = undefined;
-    };
-  });
-
   const stores = runtimeStores(storage, ports, notices.publisher.event);
   const { cleanup, lifecycle } = provideRuntime(services, {
     ...stores,
     notices,
     ports,
-    terminal: () => terminal,
-    resources: () => resources,
   });
   // What other bundles append to a Thread's log through `events/v1` is
   // folded into the Thread and published the moment it is committed, not at

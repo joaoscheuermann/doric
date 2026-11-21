@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "bundle": "0.0.1",
+    "chat": "0.0.1",
     "runtime": "0.0.1",
     "sandbox": "0.0.1",
     "terminal": "0.0.1",
@@ -25,12 +26,14 @@
     "@tanstack/query-core": "^5.104.1",
     "@tanstack/react-query": "^5.104.1",
     "desktop": "1.0.0",
+    "happy-dom": "20.8.9",
     "layout": "0.0.1",
     "lucide-react": "^0.544.0",
     "pino": "^10.3.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sandpool": "0.0.1",
+    "workspace": "0.0.1",
     "zustand": "^5.0.15"
   }
 }

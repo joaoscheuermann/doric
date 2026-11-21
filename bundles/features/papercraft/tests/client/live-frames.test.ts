@@ -1,5 +1,5 @@
 // The window's live frames, as the conversation mounts its previews
-// (isolamento.md, "Virtualização"): a window keeps at most three live frames,
+// (isolamento.md, "Virtualization"): a window keeps at most three live frames,
 // the previews used most recently; the others draw their snapshot, or a
 // placeholder, with the pins of the last scene their frame reported. The
 // frames are fakes speaking the frame protocol (`support/fake-frame.ts`), the

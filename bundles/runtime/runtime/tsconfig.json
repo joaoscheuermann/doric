@@ -11,10 +11,8 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
+  "exclude": ["src/client/**"],
   "references": [
-    {
-      "path": "../../features/terminal"
-    },
     {
       "path": "../../../packages/sandpool"
     },
@@ -32,6 +30,9 @@
     },
     {
       "path": "../../foundation/postgres"
+    },
+    {
+      "path": "../../../packages/desktop"
     }
   ]
 }

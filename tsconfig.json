@@ -167,6 +167,12 @@
     },
     {
       "path": "./bundles/features/mcp"
+    },
+    {
+      "path": "./bundles/desktop/account"
+    },
+    {
+      "path": "./bundles/desktop/workspace"
     }
   ]
 }

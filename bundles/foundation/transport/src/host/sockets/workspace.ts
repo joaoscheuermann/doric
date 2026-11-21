@@ -41,7 +41,7 @@ export interface WorkspaceReads {
     threadId: string,
     afterSequence: number,
   ): Promise<readonly ThreadEvent[]>;
-  /** `runtime/v1.project`. */
+  /** `runtime/v2.project`. */
   project(projectId: string): Promise<Project | undefined>;
   /** `runtime.threads/v1.projectThreads`. */
   projectThreads(projectId: string): Promise<readonly Thread[]>;
@@ -229,7 +229,7 @@ export const createWorkspaceSocket = (
       notify(projectSubscriptions, projectId, 'project:deleted', { projectId });
     },
   };
-  // One runtime/v1 notice is one WorkspacePublisher callback of before;
+  // One runtime/v2 notice is one WorkspacePublisher callback of before;
   // since the stage-10 host switch the terminal ones come from terminal/v1.
   return (notice) => {
     switch (notice.kind) {

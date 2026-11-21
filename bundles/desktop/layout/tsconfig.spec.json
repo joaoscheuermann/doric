@@ -13,9 +13,7 @@
   },
   "include": [
     "src/contracts/**/*.ts",
-    "src/client/api/**/*.ts",
     "src/client/domain/**/*.ts",
-    "src/client/queries/**/*.ts",
     "src/client/services/**/*.ts",
     "src/client/stores/**/*.ts",
     "src/client/utility/**/*.ts",
@@ -24,9 +22,6 @@
   "references": [
     {
       "path": "../../../packages/bundle/tsconfig.lib.json"
-    },
-    {
-      "path": "../../runtime/runtime"
     }
   ]
 }

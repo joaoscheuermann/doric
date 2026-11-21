@@ -12,7 +12,6 @@
     "desktop": "1.0.0",
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
     "runtime": "0.0.1",
     "tool": "0.0.1",
     "tslib": "^2.3.0",

@@ -2,7 +2,8 @@
 // answers, no host), set as the window's git client before its children
 // render, under the providers the bundle's elements wrap every surface in
 // (`elements.tsx`): its query client, a tooltip provider and the sidebar
-// scope. The workspace selection, tabs, panel and commands are fakes too.
+// scope. The workspace selection (`workspace.selection/v1`), the records
+// (`runtime.records/v1`), tabs, panel and commands are fakes too.
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
@@ -10,6 +11,7 @@ import { SidebarScope } from 'desktop/ui/sidebar';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import { type ReactNode, useState } from 'react';
 import type { Project, Thread } from 'runtime/contracts';
+import { createRecordsApi } from 'runtime/testing';
 
 import type { GitApi } from '../../src/client/api/git-api.js';
 import type {
@@ -94,6 +96,8 @@ export interface WindowFixture {
   readonly comparing?: { readonly repository: string; readonly path: string };
   /** The files tree read the Changes view is gated by; absent: no files bundle. */
   readonly tree?: TreeObservation;
+  /** Serves no `workspace.selection/v1`: a window without `workspace`. */
+  readonly withoutSelection?: boolean;
   /** The settings window's draft and the stored credentials. */
   readonly settings?: {
     readonly draft: Readonly<Record<string, unknown>>;
@@ -109,22 +113,34 @@ export const readyTree: TreeObservation = {
 
 /** The window peers the git surfaces read, over fixtures. */
 export const windowServices = (fixture: WindowFixture = {}): Services => {
-  const { comparing, tree, settings } = fixture;
+  const { comparing, tree, settings, withoutSelection = false } = fixture;
   // An explicit `undefined` is a window with nothing selected.
   const selectedProject = 'project' in fixture ? fixture.project : project;
   const selectedThread = 'thread' in fixture ? fixture.thread : thread;
-  const selection = {
-    ...(selectedProject === undefined ? {} : { project: selectedProject }),
-    ...(selectedThread === undefined ? {} : { thread: selectedThread }),
+  // The selected ids, the same object on every read.
+  const ids = {
+    ...(selectedProject === undefined ? {} : { projectId: selectedProject.id }),
+    ...(selectedThread === undefined ? {} : { threadId: selectedThread.id }),
   };
+  const records = createRecordsApi({
+    projects: selectedProject === undefined ? [] : [selectedProject],
+    threads: selectedThread === undefined ? [] : [selectedThread],
+  });
+  // The records answer a Thread of a described Project only.
+  if (selectedThread !== undefined) records.threads(selectedThread.projectId);
   let draft = settings?.draft;
   const listeners = new Set<() => void>();
   return fakeServices({
-    'layout.workspace/v1': {
-      selection: () => selection,
-      subscribe: still,
-    },
-    'layout.tabs/v1': {
+    ...(withoutSelection
+      ? {}
+      : {
+          'workspace.selection/v1': {
+            current: () => ids,
+            subscribe: still,
+          },
+        }),
+    'runtime.records/v1': records,
+    'layout.tabs/v2': {
       current: () =>
         comparing === undefined || selectedProject === undefined
           ? undefined

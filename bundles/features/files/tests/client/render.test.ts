@@ -1,11 +1,12 @@
 // The Files view of the Project panel rendered in happy-dom over the stories'
-// fakes: the layout's selection, the files client's tree read and the
-// expansion store. Smoke test of the client test setup (Part 4.4b).
+// fakes: the selection (`workspace.selection/v1` and `runtime.records/v1`),
+// the files client's tree read and the expansion store. Smoke test of the client test setup (Part 4.4b).
 
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
 import { type Rendered, render, settle } from './support/render.js';
+import { selectionApis } from './support/selection.js';
 
 let rendered: Rendered | undefined;
 
@@ -45,11 +46,8 @@ const renderTree = async (): Promise<{
     seedExpansion(project.id, rootOf(thread.cwd), openDirectories);
     const services = storyServices({
       apis: {
-        'layout.workspace/v1': {
-          ...still,
-          selection: () => ({ project, thread }),
-        },
-        'layout.tabs/v1': { ...still, current: () => undefined },
+        ...selectionApis(project, thread),
+        'layout.tabs/v2': { ...still, current: () => undefined },
         'commands/v1': {
           execute: async (id: string, input: unknown) => {
             executed.push({ id, input });
@@ -118,4 +116,93 @@ test('T-4.5: the Files tree scrolls sideways: no clipped viewport and a list as 
       `the viewport clips sideways: ${element.className}`,
     );
   }
+});
+
+/** What the files client part's activation asked of its fake services. */
+type Activation = {
+  readonly selected: readonly string[];
+  readonly defined: readonly string[];
+  readonly added: readonly {
+    readonly region: string;
+    readonly item: unknown;
+  }[];
+  readonly cleanup: () => void;
+};
+
+/** Activates the files client part over fakes, `layout.panel/v3` among them. */
+const activateClient = async (): Promise<Activation> => {
+  const { installWindow } = await import('./support/render.js');
+  installWindow();
+  const { still, storyServices } = await import(
+    '../../stories/support/services.js'
+  );
+  const { activate } = await import('../../src/client/index.js');
+  const disposed = { dispose: () => undefined };
+  const selected: string[] = [];
+  const defined: string[] = [];
+  const added: { region: string; item: unknown }[] = [];
+  const services = storyServices({
+    apis: {
+      'ui/v1': {
+        define: (tag: string) => {
+          defined.push(tag);
+          return disposed;
+        },
+      },
+      'commands/v1': { register: () => disposed },
+      'regions/v1': {
+        add: (region: string, item: unknown) => {
+          added.push({ region, item });
+          return disposed;
+        },
+      },
+      'hooks/v1': { whenAvailable: () => disposed },
+      'layout.panel/v3': {
+        ...still,
+        select: (id: string) => {
+          selected.push(id);
+        },
+      },
+    },
+  });
+  const cleanup = activate({ services } as unknown as Parameters<
+    typeof activate
+  >[0]);
+  return {
+    selected,
+    defined,
+    added,
+    cleanup: () => {
+      if (typeof cleanup === 'function') cleanup();
+    },
+  };
+};
+
+// Bundle isolation 4(a) change 3 (T4.5, the files part): layout.panel/v3
+// starts with no view, so the files client part selects its own when it
+// activates.
+test('T4.5: the files client part selects the Files view once, through layout.panel/v3, when it activates', async (t) => {
+  const activation = await activateClient();
+  t.after(activation.cleanup);
+
+  assert.deepEqual(activation.selected, ['files']);
+});
+
+// Bundle isolation 4(a) change 3: the Files view's icon in the panel is the
+// element `files-file-icon`, which the files client part defines; the panel
+// item names no `icon` kind.
+test('the Files panel item is drawn with the files-file-icon element the client part defines', async (t) => {
+  const activation = await activateClient();
+  t.after(activation.cleanup);
+
+  assert.ok(
+    activation.defined.includes('files-file-icon'),
+    `defined: ${activation.defined.join(', ')}`,
+  );
+  assert.deepEqual(
+    activation.added
+      .filter(({ region }) => region === 'shell.panel')
+      .map(({ item }) => (item as { readonly props?: unknown }).props),
+    [{ label: 'Files', iconTag: 'files-file-icon' }],
+  );
 });

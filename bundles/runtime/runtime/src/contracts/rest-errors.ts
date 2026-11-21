@@ -2,7 +2,6 @@ import { ContractError } from 'bundle/contracts';
 
 import type { ThreadExecutionIssue } from './execution.js';
 import {
-  type BranchResult,
   type CwdResult,
   type DeleteResult,
   type EditQueueResult,
@@ -26,6 +25,15 @@ import type { InterruptResult, ThreadExecutionResult } from './threads.js';
  * `bundles/foundation/transport/tests/rest-errors.test.ts` drives every route with every
  * outcome and compares the answer with this table.
  */
+
+/**
+ * What a branch switch answers (`git.commands/v1.switchBranch`), as far as its
+ * REST error reads it.
+ */
+export type SwitchBranchOutcome =
+  | { readonly status: 'ready' }
+  | { readonly status: 'missing' | 'inactive' | 'pending' }
+  | { readonly status: 'refused'; readonly message: string };
 
 /** One REST error envelope with the status the route answers it with. */
 export interface RestError {
@@ -115,7 +123,7 @@ const deleted =
  * it; `undefined` is the route's success answer.
  */
 export const restErrors = {
-  // runtime/v1 ---------------------------------------------------------------
+  // runtime/v2 ---------------------------------------------------------------
   /** `GET /projects/:id`, `PATCH /projects/:id[/color]`, `POST …/terminate`. */
   project: found('project'),
   /** `DELETE /projects/:id`. */
@@ -252,9 +260,9 @@ export const restErrors = {
             queuedEditMessages[result.status] ??
             'This prompt is no longer available for editing. Your changes have not been saved.',
         },
-  // runtime.lease/v1 ---------------------------------------------------------
+  // git.commands/v1 ----------------------------------------------------------
   /** `POST /threads/:id/branches` (switch); the reads stay data (R-DATA). */
-  switchBranch: (result: BranchResult): RestError | undefined =>
+  switchBranch: (result: SwitchBranchOutcome): RestError | undefined =>
     result.status === 'ready'
       ? undefined
       : result.status === 'missing'
@@ -262,7 +270,7 @@ export const restErrors = {
         : result.status === 'refused'
           ? { status: 409, code: 'branch_refused', message: result.message }
           : conflictError('thread', 'inactive'),
-  // runtime.terminals/v1 -----------------------------------------------------
+  // terminal/v1 --------------------------------------------------------------
   /** `POST /threads/:id/terminals`. */
   createTerminal: (value: unknown): RestError | undefined =>
     value === undefined

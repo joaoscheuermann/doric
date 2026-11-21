@@ -1,104 +1,111 @@
-# Validação da integração de bundles — 2026-10-12
+# Validation of the bundle integration — 2026-10-12
 
-## Resultado
+## Result
 
-A migração e a revisão da fronteira foram integradas, incluindo credenciais
-extensíveis, configuração e transporte como bundles instalados, exposição
-declarada na ponte, agrupamento dos diretórios e recuperação do sandbox Docker.
-Os defeitos encontrados no E2E foram corrigidos e os cenários afetados repetidos.
+The migration and the boundary review were integrated, including extensible
+credentials, configuration and transport as installed bundles, declared
+exposure in the bridge, grouping of the directories and recovery of the Docker
+sandbox. The defects found in the E2E were fixed and the affected scenarios
+repeated.
 
-| Verificação                                                  | Resultado                                                                                         |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| Typecheck do workspace                                       | 47 projetos aprovados                                                                             |
-| Build do workspace                                           | 48 projetos aprovados                                                                             |
-| Testes do workspace com PostgreSQL e Docker                  | 48 projetos verificados; três falhas iniciais corrigidas e os três projetos repetidos com sucesso |
-| PostgreSQL real, incluindo migração das credenciais          | 110/110                                                                                           |
-| Sandbox Docker, incluindo reanexação e troca de configuração | 60 testes aprovados                                                                               |
-| Aplicação Electron, testes unitários após as correções       | 108/108                                                                                           |
-| Integração com Electron real                                 | 42/42                                                                                             |
-| E2E de API                                                   | 21/21                                                                                             |
-| E2E da interface por CDP                                     | 18/18, consolidando a execução completa e as correções pontuais                                   |
-| Navegação, janelas, recuperação e composição                 | 8/8                                                                                               |
-| Reinício do host com SSH, normal e abrupto                   | Mesmo contêiner, um sandbox por Project, arquivo preservado e terminal operacional                |
-| Nx sync, formatação, lint e whitespace do diff               | Aprovados                                                                                         |
+| Check                                                           | Result                                                                                         |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Workspace typecheck                                             | 47 projects passed                                                                             |
+| Workspace build                                                 | 48 projects passed                                                                             |
+| Workspace tests with PostgreSQL and Docker                      | 48 projects checked; three initial failures fixed and the three projects repeated successfully |
+| Real PostgreSQL, including the credentials migration            | 110/110                                                                                        |
+| Docker sandbox, including reattachment and configuration change | 60 tests passed                                                                                |
+| Electron application, unit tests after the fixes                | 108/108                                                                                        |
+| Integration with real Electron                                  | 42/42                                                                                          |
+| API E2E                                                         | 21/21                                                                                          |
+| Interface E2E over CDP                                          | 18/18, consolidating the full run and the targeted fixes                                       |
+| Navigation, windows, recovery and composition                   | 8/8                                                                                            |
+| Host restart with SSH, normal and abrupt                        | Same container, one sandbox per Project, file preserved and terminal operational               |
+| Nx sync, formatting, lint and diff whitespace                   | Passed                                                                                         |
 
-A gravação opcional de uma nova fixture do adaptador antigo não foi habilitada
-na suíte do workspace. Os testes de banco e sandbox foram executados com suas
-flags habilitadas.
+The optional recording of a new fixture of the old adapter was not enabled in
+the workspace suite. The database and sandbox tests were run with their flags
+enabled.
 
-## Imagem Docker
+## Docker image
 
 Tag: `doric-host:boundary-final`.
 
 Image ID:
 `sha256:2799f4c6dfbc543300dbaf81d5b4be12ad5c866a7c83353f986e4388c9094072`.
 
-Build final:
+Final build:
 
 ```sh
 DOCKER_BUILDKIT=0 docker build --network host -f agents/doric/.Dockerfile --target docker-runtime -t doric-host:boundary-final .
 ```
 
-A imagem compila e distribui as partes host, desktop e client dos bundles.
-A rede do host foi usada após timeouts do registry npm no ambiente Docker.
-A imagem final foi iniciada na stack isolada e forneceu os bundles dos
-cenários de interface repetidos. A stack de uso normal não foi substituída.
+The image compiles and ships the host, desktop and client parts of the
+bundles. The host network was used after npm registry timeouts in the Docker
+environment. The final image was started in the isolated stack and served the
+bundles of the repeated interface scenarios. The stack for normal use was not
+replaced.
 
-## Defeitos corrigidos durante a validação
+## Defects fixed during validation
 
-- Catálogo distribuído descartava `optional` e `desktopScope`.
-- Serviços desktop de notificações e histórico não declaravam exposição.
-- Chat não declarava o histórico como dependência opcional.
-- Serviço genérico de migração de armazenamento não era anunciado ao processo
-  da geração desktop. O teste de regressão falhou antes da correção.
-- Saída do app não aguardava a gravação da última rota. A rota anterior podia
-  reaparecer ao abrir o app novamente.
-- Caminhos de fixtures e provedores de teste ainda refletiam a disposição
-  anterior dos pacotes.
+- The distributed catalog dropped `optional` and `desktopScope`.
+- The desktop notification and history services did not declare exposure.
+- Chat did not declare history as an optional dependency.
+- The generic storage migration service was not announced to the process of
+  the desktop generation. The regression test failed before the fix.
+- App exit did not wait for the last route to be written. The previous route
+  could reappear when the app was opened again.
+- Fixture paths and test providers still reflected the previous layout of the
+  packages.
 
-O cache de histórico foi observado no disco durante o CDP. Notificações foram
-verificadas para Thread observada, Thread não selecionada e janela sem foco.
-A seleção e a conversa foram verificadas depois de fechar e reabrir o app.
+The history cache was observed on disk during the CDP run. Notifications were
+checked for an observed Thread, an unselected Thread and an unfocused window.
+The selection and the conversation were checked after closing and reopening
+the app.
 
-## Comparação com o baseline
+## Comparison with the baseline
 
-Baseline: `eda9171`, com o ajuste do endereço do host usado pelo harness.
+Baseline: `eda9171`, with the adjustment of the host address used by the
+harness.
 
-- API: 20 snapshots normalizados idênticos. O restante difere somente pela
-  porta do modelo falso, `3310` versus `3313`, dentro de um fragmento de
-  argumentos de streaming.
-- Interface: os 16 cenários aprovados na execução completa tiveram snapshots
-  estruturais idênticos; o de notificações também ficou idêntico após a correção.
-- O cenário de persistência passou após a correção. Seu snapshot contém um
-  prompt adicional porque o cenário de notificações foi repetido sobre o mesmo
-  estado. A diferença está na conversa e na entrada correspondente da trilha;
-  os demais campos do snapshot coincidem. O snapshot original foi preservado.
-- A comparação de pixels foi inspecionada. Nas capturas comuns, os desvios
-  ficaram entre 0% e 0,257%, envolvendo cor aleatória do Project, medições de
-  recursos e tooltip. Ela é evidência complementar às verificações de
-  conteúdo, papéis acessíveis e interação.
-- O probe de terminal passou a observar um sandbox após reinício, contra dois
-  no baseline. Esta é a correção de duplicação aprovada pelo usuário.
+- API: 20 identical normalized snapshots. The rest differ only by the port of
+  the fake model, `3310` versus `3313`, inside a fragment of streaming
+  arguments.
+- Interface: the 16 scenarios that passed in the full run had identical
+  structural snapshots; the notifications one was also identical after the fix.
+- The persistence scenario passed after the fix. Its snapshot contains an
+  additional prompt because the notifications scenario was repeated over the
+  same state. The difference is in the conversation and in the corresponding
+  entry of the trail; the other fields of the snapshot match. The original
+  snapshot was preserved.
+- The pixel comparison was inspected. In the common captures, the deviations
+  were between 0% and 0.257%, involving the random color of the Project,
+  resource measurements and a tooltip. It is evidence complementary to the
+  checks of content, accessible roles and interaction.
+- The terminal probe now observed one sandbox after restart, against two in
+  the baseline. This is the duplication fix approved by the user.
 
-Foi feita uma execução completa ao final da integração. Depois dela, foram
-repetidos apenas os cenários afetados e verificações direcionadas; não foram
-enfraquecidas as asserções nem substituído o baseline.
+A full run was made at the end of the integration. After it, only the affected
+scenarios and targeted checks were repeated; neither were the assertions
+weakened nor was the baseline replaced.
 
-## Evidências locais
+## Local evidence
 
-O harness e os snapshots estão no scratchpad da sessão:
+The harness and the snapshots are in the session scratchpad:
 `d9356596-617b-42da-9431-4460753976c9/scratchpad/e2e-boundary-final`.
 
-- `final-evidence.json`: resultado consolidado, com as fontes dos cenários.
-- `snapshots/boundary-final`: execução completa de API, interface e etapa 9.
-- `snapshots/boundary-corrections`: notificações e persistência após correção.
-- `snapshots/boundary-terminal/probe-term.json`: recuperação com SSH.
-- `/tmp/doric-final-docker6.log`: build da imagem final.
-- `/tmp/doric-final-tests2.log` e `/tmp/doric-final-tests-fixed.log`: execução
-  ampla e repetição dos projetos corrigidos.
-- `/tmp/doric-final-electron2.log`: integração Electron.
-- `/tmp/doric-final-ui-corrections3.log`: cenários corrigidos.
+- `final-evidence.json`: consolidated result, with the sources of the
+  scenarios.
+- `snapshots/boundary-final`: full run of API, interface and step 9.
+- `snapshots/boundary-corrections`: notifications and persistence after the
+  fix.
+- `snapshots/boundary-terminal/probe-term.json`: recovery with SSH.
+- `/tmp/doric-final-docker6.log`: build of the final image.
+- `/tmp/doric-final-tests2.log` and `/tmp/doric-final-tests-fixed.log`: broad
+  run and repetition of the fixed projects.
+- `/tmp/doric-final-electron2.log`: Electron integration.
+- `/tmp/doric-final-ui-corrections3.log`: fixed scenarios.
 
-Instalação externa de bundles e verificação contra versões publicadas continuam
-adiadas, conforme decisão anterior do usuário; não faziam parte das
-funcionalidades existentes usadas como referência.
+External installation of bundles and verification against published versions
+remain deferred, per an earlier decision of the user; they were not part of
+the existing functionality used as reference.

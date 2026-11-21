@@ -1,64 +1,70 @@
-// The optional and client peers of the git client, as structural copies of
-// their contracts by ID: a composition without files would not map
-// `files/contracts`, and the settings bundle publishes no contracts module.
-// Each is reached through `whenAvailable`, or used only by the element that
-// a peer's own window shows.
+// The optional and client peers of the git client. The chat's hook is a
+// structural copy by ID: a composition without chat would not map
+// `chat/contracts`. The `files.*` contracts git lists under `optional` take
+// their types from `files/contracts` with `import type`, and their refs and
+// command id are declared here by id (D32). Each is reached through
+// `whenAvailable`, or used only by the element that a peer's own window shows.
+// `settings.config/v1` is not here: git requires it, and takes it from
+// `settings/contracts`.
 
-import { type CallArg, type Disposable, ref } from 'bundle/contracts';
-import type { ProjectTreeNode, ReadState } from 'files/contracts';
+import { defineHook, defineHooks, ref } from 'bundle/contracts';
+import type {
+  OPEN_FILE_COMMAND as FilesOpenFileCommand,
+  FilesRefresh,
+  FilesSandbox,
+} from 'files/contracts';
+import { z } from 'zod';
+
+export type {
+  FilesRefresh,
+  FilesSandbox,
+  ProjectReads,
+  TreeObservation,
+} from 'files/contracts';
+
+/** What chat's `onThreadUpdateHook` hands git: a live event, or an updated record. */
+export type ChatThreadUpdate =
+  | { readonly kind: 'event'; readonly event: { readonly event: unknown } }
+  | { readonly kind: 'updated'; readonly thread: unknown };
+
+/**
+ * chat.hooks/v2 (D12): the one hook git observes, matched by contract ID only
+ * and reached through `HooksV1.whenAvailable`; git has no chat package line.
+ */
+export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
+  onThreadUpdateHook: defineHook({
+    kind: 'observe',
+    input: z.object({
+      projectId: z.string(),
+      threadId: z.string(),
+      threadName: z.string(),
+      update: z.custom<ChatThreadUpdate>(
+        (value) =>
+          typeof value === 'object' &&
+          value !== null &&
+          'kind' in value &&
+          (value.kind === 'event' || value.kind === 'updated'),
+      ),
+    }),
+  }),
+});
+
+export type ThreadUpdateInput = z.output<
+  (typeof ChatHooksV2)['hooks']['onThreadUpdateHook']['input']
+>;
 
 /** files.sandbox/v1 (client, local): the tree read the Changes view is gated by. */
-export interface TreeObservation {
-  readonly read: ReadState<readonly ProjectTreeNode[]>;
-  readonly error?: string;
-  readonly fetching: boolean;
-}
-
-export interface FilesSandbox {
-  observeTree(
-    scope: { readonly projectId: string; readonly cwd?: string },
-    listener: (state: TreeObservation) => void,
-    call?: CallArg,
-  ): Disposable;
-}
-
 export const FilesSandboxV1 = ref<FilesSandbox>('files.sandbox/v1');
 
 /** files.refresh/v1 (client, local): the Project refresh coordinator. */
-export interface ProjectReads {
-  readonly projectId: string;
-  active(): boolean;
-  refresh(options: { readonly periodic: boolean }): Promise<void>;
-}
-
-export interface FilesRefresh {
-  register(reads: ProjectReads, call?: CallArg): Disposable;
-  request(
-    projectId: string,
-    options?: { readonly periodic?: boolean },
-    call?: CallArg,
-  ): void;
-}
-
 export const FilesRefreshV1 = ref<FilesRefresh>('files.refresh/v1');
 
 /** files.open-file/v1 (client command): opens one sandbox file as a tab. */
-export const OPEN_FILE_COMMAND = 'files.open-file/v1';
+export const OPEN_FILE_COMMAND =
+  'files.open-file/v1' satisfies typeof FilesOpenFileCommand;
 
 /** The configuration fields the Versioning section edits. */
 export interface VersioningDraft {
   readonly gitCredentialId?: string;
   readonly githubCredentialId?: string;
 }
-
-/** settings.config/v1 (client, local, R-9.8): the settings window's one autosave draft. */
-export interface SettingsConfig {
-  draft(call?: CallArg): VersioningDraft | undefined;
-  setDraft(
-    update: <D extends VersioningDraft>(draft: D) => D,
-    call?: CallArg,
-  ): void;
-  subscribe(listener: () => void, call?: CallArg): Disposable;
-}
-
-export const SettingsConfigV1 = ref<SettingsConfig>('settings.config/v1');

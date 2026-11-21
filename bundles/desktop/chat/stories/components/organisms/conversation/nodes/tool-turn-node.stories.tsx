@@ -5,9 +5,7 @@ import {
   editArgs,
   editResult,
   failingTests,
-  nodesThread,
   passingTests,
-  projectId,
   promptIdOf,
   type StoryLog,
   terminalArgs,
@@ -151,52 +149,6 @@ export const TerminalFailed = {
               durationMs: 8_420,
             }),
           },
-        ),
-      )}
-    />
-  ),
-};
-
-const liveCommand = 'npm run dev -- --port 5173';
-
-/** A terminal still running, streaming the live session's output. */
-export const TerminalLive = {
-  render: () => (
-    <TurnsEditor
-      host={{
-        terminals: [
-          {
-            terminal: {
-              id: 'terminal-dev',
-              projectId,
-              threadId: nodesThread.id,
-              origin: 'agent',
-              command: liveCommand,
-              cwd: '/workspace/storefront',
-              startedAt: '2026-10-16T08:58:10.000Z',
-              timeoutMs: null,
-              state: 'running',
-              pty: false,
-            },
-            output: [
-              '> storefront@2.4.0 dev',
-              '> vite --port 5173',
-              '',
-              '  VITE v5.4.8  ready in 412 ms',
-              '',
-              '  ➜  Local:   http://localhost:5173/',
-              '  ➜  press h + enter to show help',
-              '',
-            ].join('\n'),
-          },
-        ],
-      }}
-      turns={calls((log) =>
-        log.tool(
-          prompt,
-          'call-1',
-          'terminal',
-          JSON.parse(terminalArgs(liveCommand)),
         ),
       )}
     />

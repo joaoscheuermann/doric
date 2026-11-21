@@ -21,9 +21,6 @@
     },
     {
       "path": "../../../packages/desktop"
-    },
-    {
-      "path": "../../desktop/chat"
     }
   ],
   "exclude": ["src/client/**"]

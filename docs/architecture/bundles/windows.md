@@ -1,366 +1,235 @@
-# Janelas abertas pelo core
+# Windows
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e `GROUNDING.md` continua sendo o contrato da implementação atual.
+- Status: living document. It describes the windows of the desktop app as implemented on 2026-11-20.
 
-## Resumo
+## Summary
 
-No desktop, nenhuma janela de produto é fixa no main nem declarada em manifesto: o core abre janelas por código, com `open` do contrato nativo `doric.windows/v1`, normalmente dentro de hooks do ciclo de vida do app. Uma janela é uma chave estável mais um path: ela carrega a mesma shell em `doric://app/<path>`, e o path escolhe a [rota](./navigation.md) que o `<core-outlet>` mostra. O core usa `doric.windows/v1`; os outros bundles abrem janelas pelo serviço público `windows/v1`, que o core fornece por padrão com suas políticas. `windows/v1` vive no `desktopMain`, e partes `client` que o declaram em `requires` o alcançam pela ponte. Cada janela tem dois hooks de fechamento, `onCloseHook` e `onFlushHook`, de `WindowHooksV1`, que a plataforma define no `hooks/v1` do client pelo bootstrap de cada janela e executa quando o main pede o fechamento; qualquer bundle client registra handlers neles. As assinaturas atuais de Project e Thread ainda precisam ser indexadas por janela e recurso antes de suportar várias instâncias independentes.
+The Electron main process creates every window, keeps the preload and the IPC boundary, and decides nothing about which windows exist: no window is fixed in the main process and no manifest declares one. Bundle code opens windows through the platform contract `doric.windows/v1`, which only the desktop main process provides, in the `desktopMain` environment ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts), [`broker.ts`](../../../app/desktop/doric/src/platform/generation/broker.ts)).
 
-## Quem abre janelas
+A window is a stable **key** plus its content. The content is one of two kinds:
 
-O Electron continua criando e focalizando `BrowserWindow` e fornecendo um preload mínimo, mas **nenhuma janela de produto é fixa no main** e não existe tipo de janela declarado em manifesto. Uma janela é aberta por uma chamada de função, normalmente dentro de um hook do app: o app dispara seus [hooks de ciclo de vida](./hooks.md), e o core abre as janelas por código dentro deles. A API nativa da plataforma é o contrato `doric.windows/v1`, usado pelo [core](./core.md); a parte `desktopMain` do core recebe o mesmo `DesktopContext` de qualquer parte `desktopMain`, só com `services`, e a parte `client` recebe o `ClientContext`, descritos em [contextos e capacidades](./contexts.md).
+- an **app window** shows a path of the app: it loads the one shell page at `doric://app<path>`, and the path chooses the [route](navigation.md) the window's `<core-outlet>` shows;
+- a **view window** shows a page of the host: it loads a host-relative path, resolved against the origin the app reaches the host on, in a session partition of its own, with no preload and no bundle contracts.
 
-Pseudocódigo da API proposta:
+The core opens the primary `workspace` window when the app is ready and the `settings` window through its command `core.open-settings/v1`. Other bundles open windows through the core's service `windows/v1`, which prefixes the key with the calling bundle's id, or through `doric.windows/v1` itself. A window cannot open windows itself: every `window.open` is denied. Its client parts open one only through `windows/v1`, which the bridge carries to the core's `desktopMain` part. The window's only way out of the app is `doric.browser/v1`, which opens an `https:` page in the operating system's browser.
+
+## Who opens windows
+
+| Caller       | Contract                                         | Windows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `core`       | `doric.windows/v1`                               | `workspace`, the primary app window, in `onAppReadyHook`, and `settings` in `core.open-settings/v1` ([`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`core/src/desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts))                                                                                                                                                                                                                                               |
+| `papercraft` | `windows/v1`                                     | One app window per canvas, opened by the command `papercraft.open-canvas/v2`: key `papercraft:program:<threadId>/<identity>` after the core's prefix, path `/papercraft/<projectId>/<threadId>/<identity>` with each segment URI-encoded ([`papercraft/src/desktop/commands.ts`](../../../bundles/features/papercraft/src/desktop/commands.ts), [`contracts/index.ts`](../../../bundles/features/papercraft/src/contracts/index.ts), [`canvas-source.ts`](../../../bundles/features/papercraft/src/client/surface/canvas-source.ts)) |
+| `papercraft` | `doric.windows/v1`, its `capture` method only    | A PNG of a rectangle of the calling window, for `papercraft.snapshot/v1` ([`papercraft/src/desktop/snapshot.ts`](../../../bundles/features/papercraft/src/desktop/snapshot.ts))                                                                                                                                                                                                                                                                                                                                                      |
+| `screen`     | `doric.windows/v1` (`open`, `focus`, `navigate`) | One view window per screen view, key `screen:<viewId>`, partition `screen:<viewId>`, the view's label as title and a native title bar ([`screen/src/desktop/index.ts`](../../../bundles/features/screen/src/desktop/index.ts), [`screen/src/desktop/windows.ts`](../../../bundles/features/screen/src/desktop/windows.ts))                                                                                                                                                                                                           |
+
+A bundle calls a `doric.*` contract with `services.use` and lists no manifest line for it: platform contracts always exist in their environments ([Contracts](contracts.md), [Manifest](manifest.md)). Calling `doric.windows/v1` directly skips what `windows/v1` adds, the key prefix and `core.hooks/v1.onBeforeOpenWindowHook`: the core's own windows and `screen`'s windows use their keys as given.
+
+The core's `desktopMain` part, like every `desktopMain` part, runs in the desktop generation's utility process, and main answers its `doric.windows/v1` calls ([Process isolation](process-isolation.md#desktop-generations), [`process.ts`](../../../app/desktop/doric/src/platform/generation/process.ts)). Each call forwards the `call` it received as its last argument, so the hop to main inherits `scope`, `signal` and `trace` ([Services and channels](services-and-channels.md)).
+
+## The open request
+
+`open` takes one of two strict shapes, so a request names exactly one content ([`basic/windows.ts`](../../../packages/bundle/src/contracts/basic/windows.ts)):
 
 ```ts
-// core, parte desktopMain
-import {
-  AppHooksV1,
-  CommandsV1,
-  DoricWindowsV1,
-  HooksV1,
-  type DesktopContext,
-} from 'bundle/contracts';
-import { openSettings } from './commands.js';
-
-export const activate = ({ services }: DesktopContext) => {
-  const nativeWindows = services.use(DoricWindowsV1);
-  const appHooks = services.use(HooksV1).use(AppHooksV1);
-
-  appHooks.onAppReadyHook(async (input, call) => {
-    // O esqueleto do menu também é montado aqui, não direto no activate.
-    await buildMenuSkeleton(services, call);
-    await nativeWindows.open(
-      {
-        key: 'workspace',
-        path: '/',
-      },
-      call,
-    );
-  });
-  appHooks.onAppActivateHook(() => nativeWindows.focusOrOpen('workspace'));
-
-  // O item "Settings" do esqueleto de menu abre a janela de settings do core.
-  services.use(CommandsV1).register(openSettings);
+// An app window: the shell renders doric://app<path>.
+type PathWindowRequest = {
+  key: string;
+  path: string; // must start with '/'
+  appearance?: WindowAppearance;
+  primary?: boolean;
 };
 
-// core, desktopMain/commands.ts
-import { defineCommand, DoricWindowsV1 } from 'bundle/contracts';
-import { z } from 'zod';
+// A view window: a page on the host, in its own session.
+type ViewWindowRequest = {
+  key: string;
+  view: {
+    path: string; // host-relative, starts with '/'
+    partition: string; // Electron session partition of the view
+    title?: string; // absent: the page's own title
+  };
+  appearance?: WindowAppearance;
+  primary?: boolean;
+};
 
-export const openSettings = defineCommand({
-  id: 'core.open-settings/v1',
-  // Path de settings a abrir, como '/settings/providers'; omitido, '/settings'.
-  input: z.object({ path: z.string().optional() }).strict(),
-  execute: async ({ path }, call, services) => {
-    await services.use(DoricWindowsV1).open(
-      {
-        key: 'settings',
-        path: path ?? '/settings',
-      },
-      call,
-    );
-  },
-});
+type OpenWindowRequest = PathWindowRequest | ViewWindowRequest;
+
+// Visual intent; see Window appearance.
+type WindowAppearance = {
+  size?: {
+    width: number;
+    height: number;
+    minWidth?: number;
+    minHeight?: number;
+  };
+  titleBar?: 'native' | 'integrated' | 'none'; // default 'integrated'
+  background?: string; // a token name, default 'window'
+};
 ```
 
-Não há atalho `ctx.hooks.onAppReadyHook`: o core registra `onAppReadyHook` e `onAppActivateHook` com `services.use(HooksV1).use(AppHooksV1)`, descrito em [hooks](./hooks.md). Depois que o provedor de `hooks/v1` do `desktopMain` ativa (o core, por padrão, ou o bundle escolhido em `providers` da composição), a plataforma desse ambiente chama `define(AppHooksV1)` nele e passa a disparar `execute` nos pontos do ciclo de vida. Qualquer bundle, não só o core, pode registrar handlers dos hooks do app; uma falha do `activate` de um bundle o leva à quarentena, e uma falha de um handler de `onActivateHook`, que é `observe`, só vai ao diagnóstico. `WindowHooksV1` não é definido aqui, e sim no client, pelo bootstrap de cada janela (veja [hooks de fechamento](#hooks-de-fechamento)). O esqueleto do menu é montado pelo core dentro do `onAppReadyHook`, não direto no `activate`.
+| Field        | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`        | The window's identity. An empty key is `invalid_input`. Opening an open key focuses that window; different keys are different windows. Two windows with the same content use different keys, such as one per canvas or per screen view                                                                                                                                                                                                                                                                                                                   |
+| `path`       | The app path the window shows. The data a window needs goes in its path; there is no other input                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `view`       | The host page the window shows. A bundle names a path, never an address: main alone knows the host's origin (`hostUrl`), so a deployment can put the host behind a remote server or a reverse proxy ([`view.ts`](../../../app/desktop/doric/src/platform/windows/view.ts))                                                                                                                                                                                                                                                                               |
+| `appearance` | The window's size, title bar and background token, never native options. Absent, the window is 800 × 600; no window is created smaller than 320 × 240 or larger than the primary display's work area. A `background` that names no window color token makes the creation throw `Unknown window color token "<name>".`, and `open` rejects with it ([`tokens.ts`](../../../app/desktop/doric/src/platform/tokens.ts), [`appearance.ts`](../../../app/desktop/doric/src/platform/windows/appearance.ts), [Native window appearance](window-appearance.md)) |
+| `primary`    | Marks the primary window ([below](#the-primary-window))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-`HooksV1`, `CommandsV1` e as constantes `AppHooksV1` e `DoricWindowsV1` vêm de `bundle/contracts`: `bundle/contracts` exporta as referências e os tipos dos contratos básicos, porque qualquer bundle pode fornecê-los, e o core fornece as definições com `execute`. `core/contracts` publica só o que é do core, como `CoreHooksV1` e a referência `OpenSettingsCommandV1` ao comando `core.open-settings/v1`; o próprio core importa seus contratos por caminho relativo (`../contracts/index.js`). A referência é criada com `ref`, de [contratos](./contracts.md), e guarda só o ID, para que outros bundles despachem o comando com a entrada tipada sem importar o código do core:
+## `doric.windows/v1`
+
+`doric.windows/v1` exists only in `desktopMain`, and the main process is its only provider ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`broker.ts`](../../../app/desktop/doric/src/platform/generation/broker.ts)). Its shape; each method takes a last optional `call?: CallArg`, the parent call or `{ signal?, deadline? }`:
 
 ```ts
-// core, contracts/index.ts
-import { ref } from 'bundle/contracts';
-import type { openSettings } from '../desktopMain/commands.js';
+interface DoricWindows {
+  open(request: OpenWindowRequest, call?: CallArg): Promise<void>;
+  focusOrOpen(key: string, call?: CallArg): Promise<void>;
+  lastPath(key: string, call?: CallArg): Promise<string | null>;
+  focus(key: string, call?: CallArg): Promise<boolean>;
+  navigate(input: { key: string; path: string }, call?: CallArg): Promise<void>; // path starts with '/'
+  capture(input: WindowCaptureRequest, call?: CallArg): Promise<WindowCapture>;
+}
 
-export const OpenSettingsCommandV1 = ref<typeof openSettings>(
-  'core.open-settings/v1',
-);
+interface WindowCaptureRequest {
+  key: string; // not empty
+  rect: { x: number; y: number; width: number; height: number }; // CSS px of the viewport
+}
+
+interface WindowCapture {
+  png: string; // the PNG bytes, base64
+  width: number; // device pixels
+  height: number; // device pixels
+  scale: number; // device pixels per CSS px
+}
+
+const WINDOW_CAPTURE_MAX_SIDE = 4096; // CSS px
 ```
 
-O comando `openSettings` é definido com `defineCommand` no código da parte `desktopMain` do core, com `id`, `input` e `execute`, e registrado com `register(openSettings)` no `commands/v1` do `desktopMain`, como em [core](./core.md) e [contratos](./contracts.md). O `execute(input, call, services)` recebe os serviços do core, ligados em `register`, e usa `doric.windows/v1` por eles. O `import type` de `core/contracts` some no build, então importar a referência não traz o código do core. Outro bundle despacha com `services.use(CommandsV1).execute(OpenSettingsCommandV1, { path: '/settings/providers' })`; menus e atalhos despacham pelo ID. `commands/v1` existe no `desktopMain` e no `client`, não no `host`. O handler de `onAppReadyHook` e o `execute` do comando repassam o `call` recebido como último argumento de `open`, para que o salto até `doric.windows/v1` herde `scope`, `signal` e `trace`; o `call.caller` desse salto é o core, preenchido pelo dispatcher. Menus e despacho de comandos estão em [menus nativos e atalhos](./menus-and-keybindings.md).
+The inputs are checked against the contract's schemas before main runs a method: `navigate`'s `path` must start with `/`; a capture's `x` and `y` are not negative, and its `width` and `height` are positive and at most `WINDOW_CAPTURE_MAX_SIDE` ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). What each method does ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts), [`view.ts`](../../../app/desktop/doric/src/platform/windows/view.ts)):
 
-O core usa os próprios serviços básicos (`hooks/v1`, `commands/v1`) e os contratos `doric.*` sem declará-los em `requires`: contratos `doric.*` são da plataforma e sempre existem, e o core só pode declarar `requires` de contratos que a fundação fornece, como `storage.backend/v1` e `secrets.backend/v1`. Em cada ambiente o loader ativa primeiro a fundação, depois o core e por último os demais bundles, em ordem de dependência; veja [bundle core e quarentena](./core.md).
+- **`open`** refuses an empty key with `invalid_input`, applies the [primary rule](#the-primary-window), and refuses an app request whose path does not start with `/` with `invalid_input`, whether or not the key is open. Then:
+  - When the key is open, it restores the window if minimized and focuses it. An open app window asked for another path loads `doric://app<path>`; an open view window asked for another host path loads it. A request whose content kind differs from the open window's only focuses it. The appearance of an open window does not change.
+  - Otherwise it creates the window: an app window loads `doric://app<path>`; a view window loads `new URL(view.path, hostUrl)`.
+  - It resolves once the load has finished. A load that fails rejects with `unavailable` (`The window could not load: …`). A path with no route is not an error: the window opens and its outlet shows `<core-not-found>`.
+- **`focusOrOpen(key)`** focuses the open window of `key`, restoring it if minimized. When none is open, it reopens the key with the last request opened under it in this run: an app window at the key's last path, or the request's path when there is none; a view window at the host path main last loaded in it through `open` or `navigate`. A key never opened in this run is `not_found`.
+- **`lastPath(key)`** answers the last app path main stored for the key, kept across runs, or `null`; a view window's key answers `null`.
+- **`focus(key)`** focuses the open window of `key` without navigating it, restoring it if minimized, and answers `true`; it answers `false` when no such window is open.
+- **`navigate({ key, path })`** loads another host path in an open **view** window, resolved against `hostUrl`, and remembers it for `focusOrOpen`. It refuses an app window with `invalid_input` (`… is an app window; it cannot be navigated to a host path.`) and a key that is not open with `not_found`; a load that fails is `unavailable`. An open app window takes a new path only through `open`.
+- **`capture({ key, rect })`** takes a PNG of `rect` of an open **app** window. The rectangle is scaled by the page's zoom into the window's units, outward to whole units, and captured from the window's contents with `webContents.capturePage`, which includes out-of-process frames such as a preview frame, at the display's pixel ratio. A key that is not open is `not_found`; a view window, or a rectangle outside the window's content area, is `invalid_input`; a capture that fails or comes back empty is `unavailable`. Errors carry `windowKey` in their details.
 
-Não há regra de produto em `createWindow` ou `createSettingsWindow`, nem lista de janelas iniciais na [composição](./composition-and-distribution.md): quem decide é o core.
+## `windows/v1`: windows other bundles ask for
 
-## Campos de `open`
-
-| Campo de `open` | Obrigatório | Regra                                                                                                                                                            |
-| --------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `key`           | Sim         | Identidade estável da janela. Abrir uma chave já aberta foca a janela existente e, se o path for outro, navega nela; chaves diferentes criam janelas diferentes. |
-| `path`          | Sim         | Path da [rota](./navigation.md) que a janela mostra, como `/` ou `/settings/providers`                                                                           |
-| `appearance`    | Não         | Intenção visual, descrita em [aparência nativa da janela](./window-appearance.md); omitida, usa os padrões da plataforma                                         |
-
-Os dados da janela vão no path, como os parâmetros `:threadId` e `:repository` de `/git/diff/:threadId/:repository`.
-
-## Janela primária
-
-Uma descrição de janela pode marcar `primary: true`. O processo principal aceita uma só janela primária por catálogo, e uma falha do cliente dela é falha do core, não "pronto". Pedir `primary` para uma chave já aberta sem a marca é recusado com `registration_conflict`, antes da regra de uma primária. A marca é fixada na criação, e uma chamada sem a marca não rebaixa uma janela primária aberta. O core marca `workspace` como primária. A plataforma não tem `openSettings()`: o comando `core.open-settings/v1` é um comando comum do core.
-
-## Chaves e paths
-
-A chave também identifica a janela para restaurar posição, tamanho, monitor e estado maximizado, e para reabrir as janelas que estavam abertas. Duas janelas do mesmo tipo de conteúdo usam chaves diferentes, como `diff:<threadId>:<repository>`. O main guarda o último path de cada chave e reabre a janela nele; dentro da janela, a navegação muda o path com a History API, como em [navegação e rotas](./navigation.md).
-
-## `windows/v1`: janelas pedidas por outros bundles
-
-O core decide o que os outros bundles podem fazer com janelas. No core padrão, ele fornece `windows/v1` no `desktopMain`, que prefixa a chave com `call.caller.bundleId` e aplica as políticas do core sobre `doric.windows/v1`. `call.caller` (`{ bundleId: string; version: string; generation: number }`) é sempre o bundle que faz aquela chamada, preenchido pelo dispatcher; numa chamada que sai de uma janela client, o dispatcher também preenche `call.scope.windowKey`. Como `windows/v1` não tem prefixo `doric.`, outro bundle pode fornecê-lo, com o provedor escolhido em `providers` na [composição](./composition-and-distribution.md); `doric.windows/v1` continua da plataforma e não aceita outro provedor. `windows/v1` é um contrato de cardinalidade `one`: quando a composição escolhe outro provedor, o loader não registra a definição `coreWindows` do core no `desktopMain`, e o `services.use(WindowsV1)` do próprio core devolve o provedor escolhido; sem escolha em `providers`, o segundo provedor vai para quarentena com motivo, porque o core ativa antes dele.
-
-A referência `WindowsV1` e o tipo do contrato ficam em `bundle/contracts`, como os dos demais contratos básicos; o core fornece a definição com `execute`, `coreWindows`, escrita com `defineService` e `defineMethod`, como em [serviços e canais](./services-and-channels.md). Passar a referência no lugar do ID faz o compilador conferir os métodos contra o tipo. Como é fornecida no `desktopMain`, partes `client` que declaram `windows/v1` em `requires` a alcançam pela ponte. O mesmo vale para `menus/v1`.
-
-Pseudocódigo da API proposta:
+`windows/v1` is a basic contract of the `desktopMain` environment with cardinality `one`; its reference `WindowsV1` and its type are exported by `bundle/contracts`, and its one method is exposed to desktop windows, so a client part that lists it under `requires` reaches it through the bridge ([`basic/windows.ts`](../../../packages/bundle/src/contracts/basic/windows.ts), [`basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts), [Contexts](contexts.md)):
 
 ```ts
-// core, contracts/windows.ts: schemas do pedido e do resultado de open.
-import { z } from 'zod';
-
-// Intenção visual descrita em window-appearance.md.
-export const windowAppearanceSchema = z
-  .object({
-    size: z
-      .object({
-        width: z.number(),
-        height: z.number(),
-        minWidth: z.number().optional(),
-        minHeight: z.number().optional(),
-      })
-      .strict()
-      .optional(),
-    titleBar: z.enum(['native', 'integrated', 'none']).default('integrated'),
-    background: z.string().default('window'), // nome de token, não cor
-  })
-  .strict();
-
-export const openWindowRequestSchema = z
-  .object({
-    key: z.string(),
-    path: z.string(),
-    appearance: windowAppearanceSchema.optional(),
-  })
-  .strict();
-
-export const openWindowResultSchema = z.void();
-
-// core, desktopMain/windows.ts: a definição de windows/v1 com execute.
-import {
-  defineMethod,
-  defineService,
-  DoricWindowsV1, // doric.windows/v1, nativo
-  HooksV1,
-  WindowsV1,
-} from 'bundle/contracts';
-import { CoreHooksV1 } from '../contracts/index.js';
-import {
-  openWindowRequestSchema,
-  openWindowResultSchema,
-} from '../contracts/windows.js';
-
-export const coreWindows = defineService(WindowsV1, {
-  open: defineMethod({
-    input: openWindowRequestSchema,
-    output: openWindowResultSchema,
-    execute: async (request, call, services) => {
-      // Outros bundles ajustam o pedido pelo hook do core; veja hooks.md.
-      const coreHooks = services.use(HooksV1).define(CoreHooksV1);
-      const adjusted = await coreHooks.onBeforeOpenWindowHook.execute(
-        request,
-        call,
-      );
-      return services.use(DoricWindowsV1).open(
-        {
-          ...applyCorePolicy(adjusted), // políticas do core, função interna
-          // call.caller é quem chamou windows/v1, por exemplo o git.
-          key: `${call.caller.bundleId}:${request.key}`,
-        },
-        call, // herda scope, signal e trace; o caller do novo salto é o core
-      );
-    },
-  }),
-});
-
-// core, parte desktopMain, dentro de activate({ services }: DesktopContext)
-services.provide(coreWindows);
-
-// git, parte client, dentro de activate({ services }: ClientContext)
-import { WindowsV1 } from 'bundle/contracts';
-
-// Por exemplo, no execute de um comando client que recebeu call.
-await services.use(WindowsV1).open(
-  {
-    key: `diff:${threadId}:${repository}`,
-    path: `/git/diff/${threadId}/${encodeURIComponent(repository)}`,
-  },
-  call,
-);
-```
-
-Como o git usa `WindowsV1` com `use`, seu manifesto declara `windows/v1` em `requires`, ao lado dos outros contratos básicos que o código usa (por exemplo `ui/v1` e `commands/v1` no client):
-
-```json
-{
-  "requires": ["windows/v1@^1.0.0", "ui/v1@^1.0.0", "commands/v1@^1.0.0"]
+interface Windows {
+  open(request: OpenWindowRequest, call?: CallArg): Promise<void>;
 }
 ```
 
-Cada stub aceita como último argumento opcional o `call` recebido ou `{ signal, deadline }`. A chamada do git sai de uma janela client, então o dispatcher preenche `call.scope.windowKey`, atravessa a ponte até o `desktopMain` e entrega ao `windows/v1` um `call` cujo `caller` é o git.
+The core provides it by default, at version 1.1.0, as `coreWindows` ([`core/src/desktop/windows.ts`](../../../bundles/foundation/core/src/desktop/windows.ts)). Its `open`:
 
-`windowAppearanceSchema` representa a intenção visual de [aparência nativa da janela](./window-appearance.md). `open` resolve quando a janela está aberta ou focada, já no path pedido. Um path sem rota não é erro de `open`: a janela abre e o outlet mostra `<core-not-found>`.
+1. refuses an empty key with `invalid_input`;
+2. runs `core.hooks/v1.onBeforeOpenWindowHook`, a `transform` hook whose input is the request, so other bundles can adjust it ([Hooks](hooks.md));
+3. opens the adjusted request through `doric.windows/v1.open` under the key `<call.caller.bundleId>:<key>`, built from the key of the original request, so a handler cannot change it.
 
-A janela de settings também é do core padrão: ele a abre em `/settings` pelo item “Settings” do menu. A página é o `<settings-page>` do bundle `settings`, e os bundles de domínio montam suas seções na região `settings.sections`.
+The prefix keeps two bundles from sharing a key. A bundle that needs a window lists `windows/v1` under `requires`, as `papercraft` does with `windows/v1@^1.0.0` ([`papercraft/manifest.json`](../../../bundles/features/papercraft/manifest.json)). The composition may choose another provider of `windows/v1` under `providers`; the core then uses the chosen one ([The core bundle](core.md#replacing-a-contract-the-core-provides)). The full contract of the core's provider is in the [README of `core`](../../../bundles/foundation/core/README.md#windowsv1).
 
-## O que a janela mostra
+## The windows of the shipped bundles
 
-Na parte `client`, o core fornece `ui/v1`, `navigation/v1` e `regions/v1` e define só `<core-outlet>`, `<core-region>`, `<core-not-found>` e `<core-unavailable>`, descritos em [UI no client](./core.md#ui-no-client). O conteúdo de cada janela é a rota que casa com o seu path:
+| Key                                  | Kind | Content                                                          | Opened by                            |
+| ------------------------------------ | ---- | ---------------------------------------------------------------- | ------------------------------------ |
+| `workspace`                          | App  | `/` and its child routes, drawn by [`layout`](layout.md)'s frame | `core`, when the app is ready        |
+| `settings`                           | App  | `/settings` and its sections, drawn by `settings`'s page         | `core.open-settings/v1`              |
+| `papercraft:program:<threadId>/<id>` | App  | A Papercraft canvas                                              | `papercraft`, through `windows/v1`   |
+| `screen:<viewId>`                    | View | A screen view's page on the host                                 | `screen`, through `doric.windows/v1` |
 
-| Chave        | Path inicial                      | Rota de                 | Elemento             |
-| ------------ | --------------------------------- | ----------------------- | -------------------- |
-| `workspace`  | `/`                               | [`layout`](./layout.md) | `<layout-workspace>` |
-| `settings`   | `/settings`                       | `settings`              | `<settings-page>`    |
-| `git:diff:…` | `/git/diff/:threadId/:repository` | `git`                   | `<git-diff>`         |
+The workspace window opens at 1280 × 800, at least 960 × 640, and the settings window at 960 × 720, at least 720 × 520, both with the integrated title bar ([`core/src/desktop/appearance.ts`](../../../bundles/foundation/core/src/desktop/appearance.ts)). How the elements of each app window are composed is in [UI composition](ui-composition.md); the workspace window's frame and slots are in [The layout bundle](layout.md).
 
-A chave do diff tem o prefixo `git:` porque `windows/v1` prefixa a chave com o bundle que chamou.
+## The settings window: `core.open-settings/v1`
 
-A página de settings mostra os links das seções na região `settings.sections` e a seção ativa no seu `<core-outlet>`. Uma seção é uma rota filha de `/settings` mais um link na região:
+`core.open-settings/v1` (version 1.1.0) is a command of the core's `desktopMain` part, registered in `commands/v1`. Its input is `{ path?: string; defaultPath?: string }`, strict ([`core/src/contracts/commands.ts`](../../../bundles/foundation/core/src/contracts/commands.ts), [`core/src/desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts)):
 
-```ts
-// settings, parte client (requires: ui/v1, regions/v1 e navigation/v1)
-import {
-  NavigationV1,
-  RegionsV1,
-  UiV1,
-  type ClientContext,
-} from 'bundle/contracts';
+- with `path`, the settings window opens at `path` through `doric.windows/v1.open`, key `settings`, which focuses an open settings window and loads `path` when it shows another one;
+- without `path`, an open settings window is only focused and keeps its section, and `defaultPath` is ignored;
+- without `path` and with no settings window open, a new one opens at `defaultPath`;
+- with neither, and no settings window open, the command fails with `invalid_input` and nothing opens.
 
-export const activate = ({ services }: ClientContext) => {
-  const ui = services.use(UiV1);
-  const navigation = services.use(NavigationV1);
-  ui.define('settings-page', SettingsPage); // <core-region name="settings.sections"> e <core-outlet>
-  ui.define('settings-link', SettingsLink);
-  ui.define('settings-providers', ProvidersSection);
+The core knows no settings route of its own. The `settings` bundle registers `/settings` and dispatches the command, with `{ defaultPath: '/settings' }`, from its "Settings" item in the account menu and its "All settings" item in the Dashboard's footer ([`settings/src/client/index.ts`](../../../bundles/desktop/settings/src/client/index.ts)). Another bundle dispatches it by id, or with the typed reference `OpenSettingsCommandV1` from `core/contracts` through `services.use(CommandsV1).execute(OpenSettingsCommandV1, input)`. The command's full contract is in the [README of `core`](../../../bundles/foundation/core/README.md#coreopen-settingsv1).
 
-  navigation.register({
-    path: '/settings',
-    create: () => ui.create('settings-page'),
-  });
-  navigation.register({
-    path: '/settings/providers',
-    parent: '/settings',
-    create: () => ui.create('settings-providers'),
-  });
-  services.use(RegionsV1).add('settings.sections', {
-    id: 'providers',
-    tag: 'settings-link',
-    props: { label: 'Providers', path: '/settings/providers' },
-    order: 10,
-  });
-};
-```
+## The primary window
 
-Itens de região têm IDs sem versão e referenciam elementos pelo nome da tag; o `ui/v1` recusa uma tag que não comece com `<id do bundle chamador>-`. Como `<core-region>` e o outlet criam os elementos com [`ui.create`](./core.md#uicreate-passo-a-passo), cada elemento recebe os serviços do bundle que o definiu. O catálogo client de contribuições está em [UI composta por bundles](./ui-composition.md).
+A request may set `primary: true`. The mark is fixed when the window is created ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)):
 
-## Shell única e path da janela
+- a `primary` request for a key that is open without the mark is refused with `registration_conflict`;
+- a `primary` request while another open window is primary is refused with `registration_conflict`, so at most one open window is primary;
+- a request without the mark never demotes an open primary window.
 
-Todas as janelas carregam a mesma **shell HTML técnica** e o mesmo bootstrap client, em `doric://app/<path>`. O handler do [protocolo `doric://`](./doric-protocol.md) responde a shell para qualquer path que não seja arquivo de `/platform/` ou `/bundles/`, então recarregar a janela mantém a rota.
+In the primary window, a quarantined core is a core failure: the window reports it to main instead of `ready`, and main shows the recovery surface ([`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts), [Splash and recovery](splash-and-recovery.md)). The core marks `workspace` primary.
 
-A abertura recebe só os campos de `open`, sem arquivo HTML ou preload; o Electron mantém o que já faz hoje. O main vincula a chave ao `webContents` da janela e carrega o path pedido; o renderer lê a rota de `location.pathname`. O preload expõe `describeWindow()` só para a aparência: devolve o `chrome` com a área segura e a altura da barra de título.
+### Start, activation and quit
 
-## Bootstrap de cada janela no renderer
+- **Start.** In `onAppReadyHook` the core sets the menu skeleton, calls `doric.migrations/v1.storage({ key: 'doric.selection', marker: 'selectionOrigin' })` to copy the saved selection once, logging a failure as the warning `Selection migration did not run` without keeping the window closed, then opens `workspace` as the primary window at `doric.windows/v1.lastPath('workspace')`, or `/` when there is none ([`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`core/src/desktop/migrations.ts`](../../../bundles/foundation/core/src/desktop/migrations.ts), [Hooks](hooks.md#doricapphooksv1)).
+- **Activation.** In `onAppActivateHook`, as when the dock icon is clicked, the core calls `doric.windows/v1.focusOrOpen('workspace')`.
+- **Last paths.** Main records the pathname of every main-frame navigation of an app window, in-page navigations included, as its key's last path. It writes them to `userData/doric/windows.json` as `{ "lastPaths": { "<key>": "<path>" } }`, atomically, 250 ms after the last change, and at once when a window closes or the app quits. Bounds are neither stored nor restored, and a view window's path is not stored ([`state.ts`](../../../app/desktop/doric/src/platform/state.ts), [`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)).
+- **Quit.** When `onBeforeQuitHook` allows the quit, main writes `windows.json` and then waits for the pending writes of `userData/doric/state.json` before it exits. The two are one step: when the `windows.json` write fails, `state.json` is not awaited; the failure is logged as `Desktop state could not be saved before quit` and the quit goes on. A second quit request while `onBeforeQuitHook` decides, or while the writes are pending, quits at once without waiting for them ([`lifecycle.ts`](../../../app/desktop/doric/src/platform/lifecycle.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [`paths.ts`](../../../app/desktop/doric/src/platform/paths.ts)).
 
-```ts
-// app/doric-renderer, com o runtime client de packages/desktop
-import { AppHooksV1, WindowHooksV1 } from 'bundle/contracts';
+## What an app window loads
 
-const { chrome } = await window.doric.desktop.describeWindow();
-applyChrome(chrome); // --doric-safe-* e --doric-titlebar-height
-let windowHooks;
+Every app window is a `BrowserWindow` that loads the same shell page and bootstrap: the [`doric://` protocol](doric-protocol.md) answers a navigation to any path outside its asset prefixes with the shell, so a reload keeps the route. The window is created hidden and shown on `ready-to-show` ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)). Main binds the key to the window's `webContents`, which is how its dispatcher knows which window a request comes from ([`registry.ts`](../../../app/desktop/doric/src/platform/windows/registry.ts)).
 
-await activateClientBundles({
-  // Chamado logo depois que o provedor de hooks/v1 do client ativa (o core,
-  // por padrão, ou o escolhido em providers) e antes dos bundles seguintes.
-  onHooksProviderReady: (hooks) => {
-    // A plataforma define AppHooksV1 e dispara ali os hooks marcados como
-    // "Todos"; os bundles que ativam depois observam onActivateHook.
-    hooks.define(AppHooksV1);
+The shell's script runs `bootstrapWindow` from `packages/desktop` ([`doric-renderer/src/bootstrap.ts`](../../../app/desktop/doric-renderer/src/bootstrap.ts), [`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts)):
 
-    // A plataforma define os hooks da janela no hooks/v1 ativo do client
-    // e os executa quando o main pede o fechamento desta janela.
-    windowHooks = hooks.define(WindowHooksV1);
-  },
-});
+1. It reads the window's description through the preload's `describeWindow()` and applies its chrome, the title bar height and the safe area, as CSS variables; main pushes a new chrome when the window enters or leaves full screen. The description is `{ key, kind: 'window', primary, path, generation, chrome, mode, tokens, app: { version } }` ([`protocol.ts`](../../../packages/desktop/src/client/protocol.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [Native window appearance](window-appearance.md)).
+2. It reads the window's catalog and activates the client parts: the foundation, then the core, then the others. Once the provider of `hooks/v1` has activated, the platform defines `doric.app.hooks/v1` and `doric.window.hooks/v1` in it ([`activate.ts`](../../../packages/desktop/src/client/activate.ts), [The core bundle](core.md#activation-order-foundation-core-others), [Hooks](hooks.md#when-the-platform-defines-them)).
+3. It wires the [close protocol](#closing-a-window), the keybindings and the commands main sends to the window.
+4. It replaces the `body`'s children with `<{core}-outlet>`, where `{core}` is the composition's core bundle, so `<core-outlet>` in the shipped composition. The outlet shows the route that matches `location.pathname` ([Navigation](navigation.md#the-outlet-core-outlet)).
+5. It calls `ready()`. An exception during these steps is reported as a `bootstrap` failure; a core that did not define its outlet, or a quarantined core in the primary window, is reported as a `core` failure, and the window does not call `ready()` ([Splash and recovery](splash-and-recovery.md)).
 
-onCloseRequested(windowHooks);
+The steps and each element they create are in [UI composition](ui-composition.md); the options of `bootstrapWindow` are in the [README of `packages/desktop`](../../../packages/desktop/README.md).
 
-// A ativação registra serviços, rotas, tags e nodes Lexical antes da UI.
-// O outlet de topo mostra a rota que casa com location.pathname.
-document.body.replaceChildren(document.createElement('core-outlet'));
-await window.doric.desktop.ready();
-```
+## Closing a window
 
-O bootstrap e `activateClientBundles` pertencem a `packages/desktop`, o runtime client do loader usado por `app/doric-renderer`; bundles não importam esse pacote, e componentes, tokens e Tailwind continuam em `desktop/ui`. `applyChrome` aplica os tokens da área segura e da barra de título, de [aparência nativa da janela](./window-appearance.md) e [pacotes compartilhados e tokens do tema](./platform-packages.md).
+An app window answers each close through `doric.window.hooks/v1` ([`windows/close.ts`](../../../app/desktop/doric/src/platform/windows/close.ts), [`client/close.ts`](../../../packages/desktop/src/client/close.ts)):
 
-### `activateClientBundles`
+1. Main holds the close and asks the window for the **close** phase. Unless the close is forced, the window runs `onCloseHook`, a `decide` hook without a deadline. A refusal keeps the window open, and main logs `Window close denied` with its reason.
+2. Once allowed, main asks for the **flush** phase with a deadline 1,500 ms ahead (`WINDOW_FLUSH_DEADLINE_MS`). The window runs `onFlushHook`, an `observe` hook, within that deadline and answers whatever its handlers do.
+3. Main closes the window when the window answers the flush or the 1,500 ms pass, whichever comes first.
 
-- Importa de `doric://app/bundles/<id>@<versão>/` os artefatos que o main baixou do host e guardou no cache; ver [composição e distribuição](./composition-and-distribution.md).
-- Valida dependências, `engines.doric` e conflitos de tag **antes de importar código com efeitos colaterais**.
-- Ativa primeiro a fundação do client (os bundles escolhidos em `providers` para contratos que o core fornece ou consome nesse ambiente, como um substituto de `hooks/v1`), depois o core e por último os demais bundles, em ordem de dependência. Logo depois que o provedor de `hooks/v1` ativa (um bundle da fundação ou o core), chama `onHooksProviderReady`, em que o bootstrap faz `define(AppHooksV1)` e `define(WindowHooksV1)`; só então ativa os bundles seguintes, na mesma ordem. Os bundles ativados antes do provedor de `hooks/v1` não observam `onActivateHook`. A escolha em `providers` vale em cada ambiente em que o bundle escolhido fornece o contrato; nos outros, o provedor padrão continua.
-- Não cria UI própria da plataforma: depois da ativação, o bootstrap só põe o `<core-outlet>` do core no `body` (ver [UI composta por bundles](./ui-composition.md)).
-- Uma parte que falha entra em [quarentena](./core.md) sem impedir as outras.
-- Uma ativação falha desfaz registros reversíveis; depois de `customElements.define`, a tag não pode ser removida da janela e uma nova tentativa exige recarga.
-- Se o core falhar na ativação da janela principal, a janela informa a falha ao main em vez de `ready()`, e a superfície técnica entra no estado de recuperação, descrito em [splash e recuperação](./splash-and-recovery.md).
+A close is forced while the app quits, and a second close while the first waits for the veto forces it too. A window that never answers the close phase stays open until it is closed again. When a window closes, main drops its key and writes the last paths. A view window has no close protocol and closes at once. The hooks and how a bundle registers on them are in [Hooks](hooks.md#doricwindowhooksv1).
 
-### O outlet de topo
+## Isolation of a window
 
-O `<core-outlet>` que o bootstrap põe no `body` mostra a rota que casa com `location.pathname` e, seguindo `parent`, a rota filha dentro do outlet do pai, como em [o outlet](./navigation.md#o-outlet-core-outlet). Ele é criado depois da ativação, então todas as rotas já estão registradas. O roteador é o `navigation/v1` do core, e a janela não precisa iniciá-lo: ele lê o path da URL. Um path sem rota mostra `<core-not-found>`, e a URL fica como está.
+**An app window.** Its `webContents` runs sandboxed, with context isolation, without Node integration, and with the app's preload ([`appearance.ts`](../../../app/desktop/doric/src/platform/windows/appearance.ts)). Main installs a navigation guard on it ([`navigation-guard.ts`](../../../app/desktop/doric/src/platform/windows/navigation-guard.ts)):
 
-Uma rota de Thread é validada pelo próprio `<chat-view>` contra o host quando ele estiver disponível; se estiver offline, a janela preserva o path e mostra estado desconectado, sem apagar a seleção.
+- the main frame may not navigate to any URL other than the one it shows (`will-navigate`); main's own loads are not renderer-initiated and pass;
+- every subframe stays at the preview frame document, `doric://app/frame/index.html` with any query, whoever starts the navigation (`will-frame-navigate`);
+- the window may not open windows of its own: every `window.open` is denied.
 
-O elemento de uma rota pode ser React, Web Components puros ou outra tecnologia; ver [React dentro de Web Components](./react-web-components.md).
+The packaged shell's policy allows scripts only from `'self'` and the hash of the shell's inline import map, workers only from `'self'`, and frames only under `doric://app/frame/`. The development shell's policy allows scripts from `'self'`, with `'unsafe-eval'`, and the same hash, and frames only under `doric://app/frame/`. The splash's policy has no `frame-src` and falls back to `default-src 'none'`. So no window frames a foreign origin, the only frame a shell embeds is the preview frame, and the splash frames nothing ([`csp.ts`](../../../app/desktop/doric/src/platform/protocol/csp.ts), [The `doric://app` protocol](doric-protocol.md#content-security-policies)). Main's dispatcher refuses every request that does not come from the main frame of a registered window or of the splash, or whose frame URL is not a `doric://app` URL, with `The request source is not allowed.`; the preload does not run in subframes, since a window's preferences do not enable it there ([`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`sender.ts`](../../../app/desktop/doric/src/platform/bridge/sender.ts), [`appearance.ts`](../../../app/desktop/doric/src/platform/windows/appearance.ts)).
 
-## Hooks de fechamento
+A preview frame is an `<iframe sandbox="allow-scripts">` with an opaque origin. In Electron 44.4.3, the version the app ships ([`package.json`](../../../package.json)), Chromium runs sandboxed iframes in a renderer process of their own by default (`IsolateSandboxedIframes`); the app sets no switch for it, and the end-to-end test asserts that the preview frame's process differs from the shell's ([`preview-frame.test.ts`](../../../app/desktop/doric-e2e/tests/preview-frame.test.ts)). The frame's realm and origin isolation do not depend on it.
 
-Uma janela tem dois hooks de fechamento, em `WindowHooksV1`, contrato da plataforma. Quem os define é a plataforma no ambiente `client`: o bootstrap de cada janela chama `define(WindowHooksV1)` no `hooks/v1` ativo do client e executa os hooks quando o main pede o fechamento da janela. Qualquer bundle client da janela, não só o dono da rota ativa, registra handlers neles:
+**A view window.** It is a `BaseWindow` whose whole content is one `WebContentsView`, resized with the window. The view runs sandboxed, with context isolation, without Node integration, with no preload and no bundle contracts, in the session partition the request names, which keeps the page's cookies, storage and cache apart from the app's. It may navigate within the origin of its host path only, and may not open windows. With a `title` the window shows it; without one it follows the page's title. The window is shown at once, and closing it closes the view's contents ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts), [`navigation-guard.ts`](../../../app/desktop/doric/src/platform/windows/navigation-guard.ts), [`view.ts`](../../../app/desktop/doric/src/platform/windows/view.ts)). It does not use the `doric://` protocol, and its page gets none of the app's policies ([The `doric://app` protocol](doric-protocol.md#windows-and-senders)).
 
-| Hook          | Tipo      | Pode vetar | Prazo                                   | Uso                                                             |
-| ------------- | --------- | ---------- | --------------------------------------- | --------------------------------------------------------------- |
-| `onCloseHook` | `decide`  | Sim        | Sem prazo; espera a resposta do usuário | Confirmar alterações não salvas com um diálogo dentro da janela |
-| `onFlushHook` | `observe` | Não        | Fixo, definido pela plataforma          | Gravar o que está pendente, como o autosave de settings         |
+## `doric.browser/v1`: the system browser
 
-O main chama `onCloseHook` primeiro; se ele vetar, a janela continua aberta. Um segundo pedido de fechamento enquanto o primeiro espera, ou o encerramento forçado do app, pula o veto. Depois o main chama `onFlushHook` com prazo, que hoje é `settingsCloseFlushMs = 1_500` em `app/doric/src/main.ts`, e destrói a janela mesmo se o hook falhar ou travar. O flush atual de settings vira o `onFlushHook` dessa janela, com handshake indexado pela chave da janela.
+A window may not open windows; `doric.browser/v1` is its one way out of the app. It exists only in the `client` environment, and its one method, `open`, takes a URL and resolves with no value once main has handed it to the operating system's browser ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts)). Its shape is in [Contexts](contexts.md#shapes-of-the-platform-contracts).
 
-O pedido de fechamento chega do main ao bootstrap da janela, que dispara `execute` no handle de `WindowHooksV1` do seu `hooks/v1`. No client, `hooks.use(WindowHooksV1).onCloseHook(handler)` e `hooks.use(WindowHooksV1).onFlushHook(handler)` registram para a janela do client que chamou, identificada por `call.scope.windowKey`. Como `onCloseHook` é `decide`, o handler devolve `Decision`:
+The URL must be an absolute `https:` URL of at most 8,192 characters; anything else is `invalid_input`, and a URL that is not `https:` fails with the message `Expected an https URL.`. The window's platform forwards it to main as the platform-internal call `doric.shell/v1.openExternal`; main checks the URL again against the same schema and hands it to Electron's `shell.openExternal`, logging only its origin, since the query may carry a sign-in's state ([`browser.ts`](../../../packages/desktop/src/client/browser.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). `settings`, `mcp` and `claude-login` use it to open a provider's or a server's authorization page ([`settings-api.ts`](../../../bundles/desktop/settings/src/client/api/settings-api.ts), [`mcp/src/client/api.ts`](../../../bundles/features/mcp/src/client/api.ts), [`claude-login/src/client/api.ts`](../../../bundles/features/claude-login/src/client/api.ts)).
 
-```ts
-// parte client de um bundle (requires: hooks/v1)
-import { HooksV1, WindowHooksV1 } from 'bundle/contracts';
+The other platform contracts that exist only in `client`, `doric.elements/v1`, `doric.connection/v1`, `doric.about/v1` and `doric.appearance/v1`, and those a window shares with other environments, are in [Contexts](contexts.md#shapes-of-the-platform-contracts); what `doric.appearance/v1` does is in [Native window appearance](window-appearance.md#doricappearancev1).
 
-const windowHooks = services.use(HooksV1).use(WindowHooksV1);
+## Related documents
 
-windowHooks.onCloseHook(async (input, call) =>
-  !draft.dirty || (await confirmDiscard())
-    ? { allow: true }
-    : { allow: false, reason: 'unsaved-changes' },
-);
-windowHooks.onFlushHook(() => settingsStore.flush());
-```
-
-## Assinaturas por janela
-
-As assinaturas atuais de Project e Thread também precisam ser indexadas por janela **e** recurso antes de suportar várias instâncias independentes: hoje `app/doric/src/workspace/events.ts` guarda as watches num `Map` indexado só por `threadId`, e um novo watch substitui o de outra janela.
-
-## Relações
-
-- [Bundle core e quarentena](./core.md): o core usa `doric.windows/v1` e fornece `windows/v1`; a fundação ativa antes do core, e partes que falham na ativação entram em quarentena.
-- [Hooks e ciclo de vida](./hooks.md): as janelas são abertas dentro de `AppHooksV1`, que a plataforma define no `hooks/v1` do `desktopMain`; `onCloseHook` e `onFlushHook` vêm de `WindowHooksV1`, que a plataforma define no `hooks/v1` do client pelo bootstrap de cada janela.
-- [Contratos e a família define\*](./contracts.md): `windows/v1` e o comando `core.open-settings/v1` usam `defineService`, `defineMethod` e `defineCommand`, e suas referências são criadas com `ref`.
-- [Serviços entre bundles e canais de mensagens](./services-and-channels.md): outros bundles abrem janelas pelo serviço versionado `windows/v1`, alcançável do client pela ponte; `call.caller` identifica quem pediu, e o `call` repassado propaga `scope`, `signal` e `trace`.
-- [Contextos e capacidades](./contexts.md): define o `DesktopContext` e o `ClientContext`, só com `services`, que o core e os outros bundles recebem nos exemplos.
-- [Aparência nativa da janela](./window-appearance.md): descreve o campo `appearance` e o `chrome` aplicado no bootstrap.
-- [Protocolo doric://](./doric-protocol.md): serve a shell única para qualquer path de rota em `doric://app/<path>` e os bundles, com a CSP.
-- [Splash e recuperação](./splash-and-recovery.md): recebe a falha quando o core não ativa na janela principal.
-- [Navegação e rotas](./navigation.md): a rota é o path da janela, mostrada pelo `<core-outlet>` que o bootstrap põe no `body`.
-- [O bundle layout](./layout.md): a rota `/`, mostrada na janela `workspace`.
-- [Composição e distribuição pelo host](./composition-and-distribution.md): fornece os artefatos que `activateClientBundles` importa e a escolha de `providers` por ambiente.
-- [Pacotes compartilhados e tokens do tema](./platform-packages.md): `packages/desktop` é o runtime client do loader que executa o bootstrap da janela.
-- [UI composta por bundles](./ui-composition.md): elementos de rota e de região são custom elements definidos com `define` de `ui/v1`.
-- [React dentro de Web Components](./react-web-components.md): mostra como um elemento React é publicado como custom element.
-- [Menus nativos e atalhos](./menus-and-keybindings.md): o item “Settings” do menu dispara o comando que abre a janela de settings.
+- [The core bundle](core.md): the core's desktop part, which opens `workspace` and `settings` and provides `windows/v1`.
+- [Navigation](navigation.md): the route a window's path selects and the outlet that shows it.
+- [UI composition](ui-composition.md): how the elements of each window are composed.
+- [The layout bundle](layout.md): the frame of the workspace window at `/`.
+- [Native window appearance](window-appearance.md): the `appearance` intent and the window's chrome.
+- [Hooks](hooks.md): `doric.app.hooks/v1`, `doric.window.hooks/v1` and the hook kinds.
+- [The `doric://app` protocol](doric-protocol.md): the shell, the content security policies and the preview frame.
+- [Splash and recovery](splash-and-recovery.md): what a core failure in the primary window leads to.
+- [Process isolation](process-isolation.md): the desktop generation process whose calls main answers.
+- [Services and channels](services-and-channels.md): `call`, `caller` and the bridge from a window.
+- [Contexts](contexts.md): the platform contracts of each environment.
+- [Menus and keybindings](menus-and-keybindings.md): the menu skeleton the core sets beside the first window.
+- [Boundaries](boundaries.md): what a bundle may import and call.

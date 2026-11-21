@@ -1,5 +1,6 @@
-import type { ContainerResources } from 'runtime/contracts';
 import type { Sandbox, SandboxStats } from 'sandbox';
+
+import type { ContainerResources } from '../contracts/index.js';
 
 /*
  * The sandbox half of agents/doric's workspace/resources.ts (design 57

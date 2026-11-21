@@ -1,38 +1,18 @@
 import { ContractError } from 'bundle/contracts';
-import {
-  listSandboxDirectory,
-  listSandboxTree,
-  type Sandbox,
-  workspacePathKind,
-} from 'sandbox';
+import type { Sandbox } from 'sandbox';
 
 import {
   type CompactResult,
   isTerminal,
   type Project,
-  type ProjectChanges,
-  type ProjectDiff,
-  type ProjectFile,
-  type ProjectFileDiff,
-  type ProjectFiles,
-  type ProjectResources,
   type ProjectSsh,
-  type ProjectTree,
   type PromptAcceptResult,
   type RewindResult,
   type SteerResult,
-  type Terminal,
   type Thread,
 } from '../../contracts/model.js';
 import type { RuntimeOwner } from '../../contracts/runtime.js';
 import type { RuntimePorts } from '../ports.js';
-import { readBranches, switchBranch } from '../provisional/branches.js';
-import {
-  readProjectChanges,
-  readProjectFileDiff,
-} from '../provisional/file-changes.js';
-import { projectChanges, readProjectFile } from '../provisional/files.js';
-import { threadGit } from '../provisional/git-status.js';
 import type { AttachmentStore } from '../store/attachments.js';
 import { queuedPrompt, storageQueueError } from '../store/queue.js';
 import type {
@@ -84,7 +64,7 @@ import { withContextCapacity } from './usage-context.js';
  * Moved from agents/doric (workspace/service.ts, design 57 §4): the options
  * are the runtime's ports (§4.3). The stage-4 generation-loss recovery is
  * gone: the service now lives in its generation and a lost generation is
- * recovered by `runtime/v1.recover()` on the respawned one (X-12).
+ * recovered by `runtime/v2.recover()` on the respawned one (X-12).
  */
 
 /** The lease-dependent answer a Project subresource can give before its value. */
@@ -99,11 +79,6 @@ export interface WorkspaceServiceOptions {
   readonly publisher: WorkspacePublisher;
   readonly redactor: Redactor;
   readonly bindings: Bindings;
-  /**
-   * The Project's terminal sessions, which the `terminal` bundle owns since
-   * the stage-10 host switch; none without one.
-   */
-  readonly terminals?: (projectId: string) => Promise<readonly Terminal[]>;
   /** The images the Threads attached; without it, prompts read none. */
   readonly attachments?: AttachmentStore;
   /**
@@ -132,7 +107,6 @@ export const createWorkspaceService = ({
   publisher,
   redactor,
   bindings,
-  terminals: sessions = async () => [],
   attachments,
   archiveSchedule = hostArchiveSchedule,
 }: WorkspaceServiceOptions): WorkspaceService => {
@@ -613,142 +587,6 @@ export const createWorkspaceService = ({
       ? { status: 'unavailable' }
       : { status: 'ready', vmId: outcome.value.vmId, ssh: outcome.value.ssh };
   };
-  const files = async (id: string, path?: string): Promise<ProjectFiles> => {
-    const outcome = await withLease(id, (sandbox) =>
-      listSandboxDirectory(sandbox, { path: path ?? '' }),
-    );
-    if (outcome.status !== 'ready') return { status: outcome.status };
-    if (outcome.value.status === 'listed')
-      return {
-        status: 'ready',
-        path: outcome.value.path,
-        entries: outcome.value.entries,
-      };
-    if (outcome.value.status === 'missing') return { status: 'not_found' };
-    // `invalid_exclude` and `excluded_root` are unreachable: no excludes are sent.
-    return {
-      status:
-        outcome.value.status === 'not_directory'
-          ? 'not_directory'
-          : 'invalid_path',
-    };
-  };
-  const tree = async (id: string, path?: string): Promise<ProjectTree> => {
-    const outcome = await withLease(id, (sandbox) =>
-      listSandboxTree(sandbox, { path: path ?? '' }),
-    );
-    if (outcome.status !== 'ready') return { status: outcome.status };
-    if (outcome.value.status === 'listed')
-      return {
-        status: 'ready',
-        path: outcome.value.path,
-        entries: outcome.value.entries,
-      };
-    if (outcome.value.status === 'missing') return { status: 'not_found' };
-    // `invalid_exclude` and `excluded_root` are unreachable: no excludes are sent.
-    return {
-      status:
-        outcome.value.status === 'not_directory'
-          ? 'not_directory'
-          : 'invalid_path',
-    };
-  };
-  const file = async (id: string, path: string): Promise<ProjectFile> => {
-    const outcome = await withLease(id, (sandbox) =>
-      readProjectFile(sandbox, path),
-    );
-    if (outcome.status !== 'ready') return { status: outcome.status };
-    if (outcome.value.status === 'read')
-      return {
-        status: 'ready',
-        path,
-        content: outcome.value.content,
-        truncated: outcome.value.truncated,
-        binary: outcome.value.binary,
-      };
-    if (outcome.value.status === 'missing') return { status: 'not_found' };
-    return {
-      status: outcome.value.status === 'not_file' ? 'not_file' : 'invalid_path',
-    };
-  };
-  const diff = async (id: string, path?: string): Promise<ProjectDiff> => {
-    const outcome = await withLease(id, async (sandbox) => {
-      if (path !== undefined) {
-        const kind = await workspacePathKind(sandbox, path);
-        if (kind === 'escaped') return { status: 'invalid_path' as const };
-        if (kind === 'missing') return { status: 'not_found' as const };
-      }
-      // Discovery is scoped to the requested path, so the renderer reads the
-      // changes of one Thread's working directory rather than the whole sandbox.
-      const repositories = await projectChanges(sandbox, path ?? '');
-      return {
-        status: 'ready' as const,
-        ...(path === undefined ? {} : { path }),
-        repositories,
-      };
-    });
-    if (outcome.status !== 'ready') return { status: outcome.status };
-    return outcome.value;
-  };
-  const changes = async (
-    id: string,
-    path?: string,
-  ): Promise<ProjectChanges> => {
-    const outcome = await withLease(id, async (sandbox) => {
-      if (path !== undefined) {
-        const kind = await workspacePathKind(sandbox, path);
-        if (kind === 'escaped') return { status: 'invalid_path' as const };
-        if (kind === 'missing') return { status: 'not_found' as const };
-      }
-      return {
-        status: 'ready' as const,
-        ...(path === undefined ? {} : { path }),
-        repositories: await readProjectChanges(sandbox, path),
-      };
-    });
-    return outcome.status === 'ready'
-      ? outcome.value
-      : { status: outcome.status };
-  };
-  const fileDiff = async (
-    id: string,
-    repository: string,
-    path: string,
-  ): Promise<ProjectFileDiff> => {
-    if (
-      [repository, path].some(
-        (value) =>
-          value.includes('\0') ||
-          value.startsWith('/') ||
-          value.split('/').includes('..'),
-      ) ||
-      path === ''
-    )
-      return { status: 'invalid_path' };
-    const outcome = await withLease(id, async (sandbox) => {
-      const diff = await readProjectFileDiff(sandbox, repository, path);
-      return diff === undefined
-        ? { status: 'not_found' as const }
-        : { status: 'ready' as const, diff };
-    });
-    return outcome.status === 'ready'
-      ? outcome.value
-      : { status: outcome.status };
-  };
-  /*
-   * The container reading is the `resources` bundle's (stage 10 §3.12);
-   * without one the Project still answers its lease state, with a container
-   * that offers no reading, as a provider without stats does.
-   */
-  const resources = async (id: string): Promise<ProjectResources> => {
-    const outcome = await withLease(id, async () => ({
-      status: 'unavailable' as const,
-      at: new Date().toISOString(),
-    }));
-    return outcome.status === 'ready'
-      ? { status: 'ready', container: outcome.value }
-      : { status: outcome.status };
-  };
   /**
    * A deletion is one atomic commit; one larger than the storage batch limit
    * is refused before anything is written (design 57 R12), and that refusal
@@ -947,13 +785,6 @@ export const createWorkspaceService = ({
           return outcome;
         }),
       ssh,
-      files,
-      file,
-      tree,
-      diff,
-      changes,
-      fileDiff,
-      resources,
       withLease,
     },
     threads: {
@@ -1175,82 +1006,6 @@ export const createWorkspaceService = ({
           publisher.threadUpdated(value);
           return { status: 'updated' as const, thread: value };
         });
-      },
-      branches: async (id, branch, cwd) => {
-        const record = await threads.record(id);
-        if (!record) return { status: 'missing' };
-        return exclusive(record.projectId, async () => {
-          const project = runtimes.get(record.projectId);
-          const thread = project?.threads.get(id);
-          const sandbox = project?.lease?.sandbox;
-          if (!project || project.closing || !thread || thread.closing)
-            return { status: 'inactive' as const };
-          if (!sandbox) return { status: 'pending' as const };
-          // Holding the project mutation queue prevents a new prompt from racing the switch.
-          if (
-            branch !== undefined &&
-            cwd !== undefined &&
-            cwd !== thread.thread.cwd
-          )
-            return {
-              status: 'refused' as const,
-              message:
-                'The working directory changed. Reopen the branch picker and try again.',
-            };
-          const git = await threadGit(sandbox, thread.thread.cwd);
-          const paths = [
-            ...[...project.threads.values()]
-              .filter(
-                (item) => item.active !== undefined || item.jobs.length > 0,
-              )
-              .map((item) => item.thread.cwd),
-            ...(await sessions(record.projectId))
-              .filter(
-                (item) =>
-                  item.state !== 'exited' &&
-                  (item.origin === 'agent' || item.command !== 'bash'),
-              )
-              .map((item) => item.cwd),
-          ];
-          const active = await Promise.all(
-            [...new Set(paths)].map((cwd) => threadGit(sandbox, cwd)),
-          );
-          const busy =
-            git.repo &&
-            active.some((item) => item.repo && item.root === git.root);
-          const blocked = busy
-            ? 'Wait for active prompts and terminal commands in this worktree to finish before switching branches.'
-            : undefined;
-          if (branch !== undefined) {
-            if (blocked)
-              return { status: 'refused' as const, message: blocked };
-            return switchBranch(sandbox, thread.thread.cwd, branch);
-          }
-          const value = await readBranches(sandbox, thread.thread.cwd);
-          return {
-            status: 'ready' as const,
-            value: { ...value, blocked: blocked ?? value.blocked },
-          };
-        });
-      },
-      git: async (id) => {
-        const record = await threads.record(id);
-        if (record === undefined) return { status: 'missing' };
-        const project = runtimes.get(record.projectId);
-        const thread = project?.threads.get(id);
-        const sandbox = project?.lease?.sandbox;
-        if (
-          project === undefined ||
-          project.closing ||
-          thread === undefined ||
-          thread.closing
-        )
-          return { status: 'inactive' };
-        if (sandbox === undefined) return { status: 'pending' };
-        return {
-          status: 'ready',
-          git: await runner.git(project, thread, sandbox),
-        };
       },
       prompt: async (id, prompt) => {
         const record = await threads.record(id);

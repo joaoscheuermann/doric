@@ -1,93 +1,39 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import type { Descriptor, EmbeddedBundle, ManifestV1 } from 'bundle';
-import { type Models, ModelsV1, SecretsV1 } from 'bundle/contracts';
-import { createActivate as createClaude } from 'claude/host';
-import { createActivate as createCodex } from 'codex/host';
+import type { EmbeddedBundle } from 'bundle';
 import {
-  type HttpRequest,
-  type HttpResponse,
-  type HttpTransport,
-  type LlmProvider,
-  modelIconSvg,
-  providerKind,
-  providerKinds,
-} from 'llms';
-import { createActivate as createOpenAi } from 'openai/host';
-import { createActivate as createOpenRouter } from 'openrouter/host';
+  type CatalogResult,
+  type ModelField,
+  type ModelKindDescriptor,
+  type Models,
+  ModelsV1,
+  SecretsV1,
+} from 'bundle/contracts';
+import { modelIconSvg } from 'llms';
 
 import { readModelProperties } from '../src/contracts/index.js';
 import { type Booted, boot, core } from './support/host.js';
+import { fakeKind } from './support/providers.js';
 
-// D-M: models/v1 over the provider bundles `openai`, `openrouter`, `codex` and
-// `claude` (design 57 §6, stage 10 §3.1-3.3), with the
-// cases of the host's provider generation and model catalog tests.
-
-const readJson = async (path: string): Promise<unknown> =>
-  JSON.parse(await readFile(path, 'utf8')) as unknown;
-
-/** Every request the providers sent, and the answer the test chose. */
-const fakeTransport = (
-  answer: (request: HttpRequest) => HttpResponse = () => ({
-    status: 200,
-    headers: {},
-    body: JSON.stringify({ data: [] }),
-  }),
-) => {
-  const requests: HttpRequest[] = [];
-  const transport: HttpTransport = {
-    request: (request) => {
-      requests.push(request);
-
-      return Promise.resolve(answer(request));
-    },
-    stream: () => {
-      throw new Error('No stream in these tests.');
-    },
-  };
-
-  return { requests, transport };
-};
-
-/** The four provider-kind bundles, over one transport. */
-const providers = async (transport: HttpTransport): Promise<EmbeddedBundle[]> =>
-  Promise.all(
-    (
-      [
-        ['claude', createClaude],
-        ['codex', createCodex],
-        ['openai', createOpenAi],
-        ['openrouter', createOpenRouter],
-      ] as const
-    ).map(async ([id, create]) => ({
-      manifest: (await readJson(
-        `bundles/providers/${id}/dist/manifest.json`,
-      )) as ManifestV1,
-      descriptor: (await readJson(
-        `bundles/providers/${id}/dist/contracts.json`,
-      )) as Descriptor,
-      host: { activate: create({ transport: () => transport }) },
-    })),
-  );
+// D-M: models/v1 over `models.provider/v1` records (design 57 §6, stage 10
+// §3.1-3.3). The records are fakes (bundle isolation 6(b)): what a real kind
+// answers is each provider bundle's own test.
 
 interface World {
   readonly host: Booted;
   readonly models: Models;
-  readonly requests: HttpRequest[];
   /** Stores an API token and returns its id. */
   token(name: string, secret: string): Promise<string>;
   rotate(id: string, secret: string): Promise<void>;
 }
 
 const withModels = async (
+  bundles: readonly EmbeddedBundle[],
   run: (world: World) => Promise<void>,
-  answer?: (request: HttpRequest) => HttpResponse,
 ) => {
-  const { requests, transport } = fakeTransport(answer);
-  const host = await boot([await core(), ...(await providers(transport))], {
-    enabled: ['codex', 'openai', 'openrouter', 'claude'],
+  const host = await boot([await core(), ...bundles], {
+    enabled: bundles.map(({ manifest }) => manifest.id),
   });
   const secrets = host.platform.services.use(SecretsV1);
 
@@ -95,7 +41,6 @@ const withModels = async (
     await run({
       host,
       models: host.platform.services.use(ModelsV1),
-      requests,
       token: async (name, secret) =>
         (await secrets.create({ kind: 'API_TOKEN', name, secret })).id,
       rotate: async (id, secret) => {
@@ -107,12 +52,68 @@ const withModels = async (
   }
 };
 
+const token: ModelField = {
+  key: 'token',
+  label: 'Token',
+  kind: 'secret',
+  required: false,
+};
+
+const descriptor = (id: string): ModelKindDescriptor => ({
+  id,
+  label: id,
+  description: `The ${id} kind.`,
+  fields: [token],
+  lists: ['models', 'reasonings'],
+});
+
+/** One model as a built provider's catalog lists it (llms `Model`). */
+interface ListedModel {
+  readonly id: string;
+  readonly contextWindow?: number;
+  readonly inputModalities?: readonly string[];
+}
+
+/** What a fake record builds: a model whose catalog lists `listed`. */
+class FakeModel {
+  constructor(private readonly listed: readonly ListedModel[] | 'fails') {}
+
+  models(): Promise<readonly ListedModel[]> {
+    return this.listed === 'fails'
+      ? Promise.reject(new Error('Catalog unavailable.'))
+      : Promise.resolve(this.listed);
+  }
+}
+
+/** A record of the kind `id` that builds a `FakeModel`, keeping each one it built. */
+const building = (
+  id: string,
+  options: {
+    readonly catalogCapacity?: boolean;
+    readonly listed?: readonly ListedModel[] | 'fails';
+  } = {},
+) => {
+  const built: FakeModel[] = [];
+  const fake = fakeKind(`${id}-bundle`, {
+    kind: descriptor(id),
+    catalogCapacity: options.catalogCapacity ?? false,
+    create: () => {
+      const model = new FakeModel(options.listed ?? []);
+
+      built.push(model);
+
+      return model;
+    },
+  });
+
+  return { ...fake, built };
+};
+
 const snapshot = (
   revision: number,
   providers: readonly {
-    id: string;
-    kind: string;
-    configuration: Record<string, string>;
+    readonly id: string;
+    readonly [key: string]: unknown;
   }[],
 ) => ({
   configuration: {
@@ -124,124 +125,115 @@ const snapshot = (
   updatedAt: '2026-10-09T00:00:00.000Z',
 });
 
-const openai = (id: string, token?: string) => ({
+/** A provider of the kind `kind`, naming a credential when given one. */
+const provider = (
+  id: string,
+  options: {
+    readonly kind?: string;
+    readonly credential?: string;
+    readonly listed?: readonly string[];
+  } = {},
+) => ({
   id,
-  kind: 'openai',
+  kind: options.kind ?? 'direct',
   configuration: {
     endpoint: `https://${id}.example.test/v1`,
-    ...(token === undefined ? {} : { token }),
+    ...(options.credential === undefined ? {} : { token: options.credential }),
   },
+  ...(options.listed === undefined
+    ? {}
+    : { models: options.listed.map((name) => ({ name })) }),
 });
 
-const initialized = (host: Booted) =>
-  host.records.filter(({ message }) => message === 'llm provider initialized')
-    .length;
-
-const authorizationOf = (request: HttpRequest | undefined) =>
-  request?.headers?.authorization;
-
-/** The lexical order of two provider kinds by id, to compare them as a set. */
-const byId = (one: { id: string }, other: { id: string }) =>
-  one.id < other.id ? -1 : one.id > other.id ? 1 : 0;
-
-void test('the advertised kinds are the llms provider kinds, and codex is a kind but not advertised', async () => {
-  await withModels(async ({ models }) => {
-    // A set, not an order: the kernel activates the provider bundles in its
-    // own alphabetical order, so the kinds register in a different order than
-    // the one llms lists them in.
-    assert.deepEqual(
-      [...(await models.kinds())].sort(byId),
-      [...providerKinds].sort(byId),
-    );
-    // The registration order follows the kernel activation order above:
-    // alphabetical by bundle id, with the unadvertised codex left out.
-    assert.deepEqual(
-      (await models.kinds()).map(({ id }) => id),
-      ['claude', 'openai', 'openrouter'],
-    );
-    assert.deepEqual(await models.kind('codex'), providerKind('codex'));
-    assert.deepEqual(await models.kind('openai'), providerKind('openai'));
-    assert.deepEqual(await models.kind('claude'), providerKind('claude'));
-    assert.equal(await models.kind('anthropic'), undefined);
-  });
-});
-
-void test('a catalog read sends the stored credential the draft names as a bearer token', async () => {
-  await withModels(
-    async ({ models, requests, token }) => {
-      const id = await token('openrouter', 'sk-or');
-      const read = await models.catalog({
-        kind: 'openrouter',
-        configuration: { token: id },
-      });
-
-      assert.equal(read.status, 'read');
-      assert.deepEqual(
-        read.status === 'read' ? read.models.map(({ id }) => id) : [],
-        ['openai/gpt-5'],
-      );
-      assert.deepEqual(requests.at(-1), {
-        method: 'GET',
-        url: 'https://openrouter.ai/api/v1/models',
-        headers: { accept: 'application/json', authorization: 'Bearer sk-or' },
-      });
-
-      // A configured endpoint moves the catalog beside it; a configured URL wins.
-      await models.catalog({
-        kind: 'openrouter',
-        configuration: { endpoint: 'https://proxy.test/api' },
-      });
-      assert.equal(requests.at(-1)?.url, 'https://proxy.test/api/models');
-      assert.equal(authorizationOf(requests.at(-1)), undefined);
-      await models.catalog({
-        kind: 'openrouter',
-        configuration: {
-          endpoint: 'https://proxy.test/api',
-          modelsUrl: 'https://catalog.test/list',
-        },
-      });
-      assert.equal(requests.at(-1)?.url, 'https://catalog.test/list');
-
-      // A credential id that is not stored sends no authorization.
-      await models.catalog({
-        kind: 'openrouter',
-        configuration: { token: '00000000-0000-4000-8000-00000000dead' },
-      });
-      assert.equal(authorizationOf(requests.at(-1)), undefined);
+const catalogRead: CatalogResult = {
+  status: 'read',
+  models: [
+    {
+      id: 'vendor/model-1',
+      reasonings: ['low', 'high'],
+      parameters: ['reasoning'],
+      mandatory: false,
     },
-    () => ({
-      status: 200,
-      headers: {},
-      body: JSON.stringify({
-        data: [
-          {
-            id: 'openai/gpt-5',
-            supported_parameters: ['reasoning'],
-          },
-        ],
-      }),
-    }),
+  ],
+};
+
+void test('the advertised kinds are the records that advertise theirs, in activation order, each as its record declares it', async () => {
+  const bKind = descriptor('b-kind');
+  // The site is what models.provider/v1 1.3.0 adds to the descriptor.
+  const aKind = {
+    ...descriptor('a-kind'),
+    site: { url: 'https://a-kind.example.test/console', label: 'Open A' },
+  };
+  const hidden = descriptor('hidden');
+
+  await withModels(
+    [
+      fakeKind('provider-1', { kind: bKind }).bundle,
+      fakeKind('provider-2', { kind: aKind }).bundle,
+      fakeKind('provider-3', { kind: hidden, advertised: false }).bundle,
+    ],
+    async ({ models }) => {
+      assert.deepEqual(await models.kinds(), [bKind, aKind]);
+      assert.deepEqual(await models.kind('a-kind'), aKind);
+      assert.deepEqual(await models.kind('hidden'), hidden);
+      assert.equal(await models.kind('nope'), undefined);
+    },
   );
 });
 
-void test('a kind without a models URL keeps no catalog, and a failed read is logged without its details', async () => {
+void test('a catalog read passes the record the stored secret the draft names, and its configuration unchanged', async () => {
+  const router = fakeKind('router-bundle', {
+    kind: descriptor('router'),
+    catalog: () => Promise.resolve(catalogRead),
+  });
+
+  await withModels([router.bundle], async ({ models, token }) => {
+    const id = await token('router', 'sk-or');
+
+    assert.deepEqual(
+      await models.catalog({ kind: 'router', configuration: { token: id } }),
+      catalogRead,
+    );
+    assert.deepEqual(router.calls.catalog.at(-1), {
+      configuration: { token: id },
+      secret: 'sk-or',
+    });
+
+    // A credential id that is not stored passes no secret.
+    const missing = '00000000-0000-4000-8000-00000000dead';
+
+    await models.catalog({ kind: 'router', configuration: { token: missing } });
+    assert.deepEqual(router.calls.catalog.at(-1), {
+      configuration: { token: missing },
+    });
+  });
+});
+
+void test('a kind without a catalog or without a record keeps none, and a failed read is logged without its details', async () => {
+  const absent = fakeKind('absent-bundle', { kind: descriptor('absent') });
+  const failing = fakeKind('failing-bundle', {
+    kind: descriptor('failing'),
+    catalog: () => Promise.resolve({ status: 'failed' }),
+  });
+
   await withModels(
-    async ({ host, models, requests, token }) => {
+    [absent.bundle, failing.bundle],
+    async ({ host, models, token }) => {
       assert.deepEqual(
-        await models.catalog({ kind: 'openai', configuration: {} }),
+        await models.catalog({ kind: 'absent', configuration: {} }),
         { status: 'absent' },
       );
       assert.deepEqual(
         await models.catalog({ kind: 'anthropic', configuration: {} }),
         { status: 'absent' },
       );
-      assert.equal(requests.length, 0);
+      assert.equal(failing.calls.catalog.length, 0);
 
-      const id = await token('openrouter', 'sk-or-secret');
+      const id = await token('failing', 'sk-or-secret');
 
       assert.deepEqual(
         await models.catalog({
-          kind: 'openrouter',
+          kind: 'failing',
           configuration: { token: id },
         }),
         { status: 'failed' },
@@ -252,23 +244,35 @@ void test('a kind without a models URL keeps no catalog, and a failed read is lo
       );
 
       assert.equal(warning?.level, 'warn');
-      assert.deepEqual(warning?.fields, { kind: 'openrouter' });
+      assert.deepEqual(warning?.fields, { kind: 'failing' });
       assert.equal(JSON.stringify(warning).includes('sk-or-secret'), false);
     },
-    () => ({ status: 503, headers: {}, body: 'unavailable' }),
   );
 });
 
 void test('resolve answers the provider of the active configuration, and an unknown one is unavailable', async () => {
-  await withModels(async ({ host, models, requests, token }) => {
+  const direct = building('direct');
+
+  await withModels([direct.bundle], async ({ models, token }) => {
     await assert.rejects(models.resolve({ providerId: 'a', model: 'm' }), {
       message: 'Configured provider is unavailable.',
     });
 
     const id = await token('a', 'sk-a');
 
-    await models.prepare(snapshot(1, [openai('a', id), openai('b')]));
-    assert.equal(initialized(host), 2);
+    await models.prepare(
+      snapshot(1, [provider('a', { credential: id }), provider('b')]),
+    );
+    assert.deepEqual(
+      direct.calls.create.map(({ providerId, values }) => ({
+        providerId,
+        values,
+      })),
+      [
+        { providerId: 'a', values: { endpoint: 'https://a.example.test/v1' } },
+        { providerId: 'b', values: { endpoint: 'https://b.example.test/v1' } },
+      ],
+    );
 
     const resolved = await models.resolve({
       providerId: 'a',
@@ -279,23 +283,10 @@ void test('resolve answers the provider of the active configuration, and an unkn
     assert.equal(resolved.providerId, 'a');
     assert.equal(resolved.model, 'gpt-5');
     assert.equal(resolved.effort, 'low');
-
-    const provider = resolved.languageModel as unknown as LlmProvider;
-
-    assert.deepEqual(provider.metadata, {
-      id: 'a',
-      name: 'a',
-      baseUrl: 'https://a.example.test/v1',
-    });
-    await provider.models();
-    assert.equal(authorizationOf(requests.at(-1)), 'Bearer sk-a');
-
-    // The provider that names no credential sends no authorization.
-    await (
-      (await models.resolve({ providerId: 'b', model: 'm' }))
-        .languageModel as unknown as LlmProvider
-    ).models();
-    assert.equal(authorizationOf(requests.at(-1)), undefined);
+    assert.equal(resolved.languageModel, direct.built[0]);
+    assert.equal(await direct.calls.create[0]?.secret?.(), 'sk-a');
+    // The provider that names no credential is given no secret.
+    assert.equal(direct.calls.create[1]?.secret, undefined);
 
     await assert.rejects(models.resolve({ providerId: 'c', model: 'm' }), {
       message: 'Configured provider is unavailable.',
@@ -303,61 +294,69 @@ void test('resolve answers the provider of the active configuration, and an unkn
   });
 });
 
-void test('a credential rotation reaches the next request of a provider already built', async () => {
-  await withModels(async ({ models, requests, token, rotate }) => {
+void test('a credential rotation reaches a provider already built', async () => {
+  const direct = building('direct');
+
+  await withModels([direct.bundle], async ({ models, token, rotate }) => {
     const id = await token('a', 'first');
 
-    await models.prepare(snapshot(1, [openai('a', id)]));
+    await models.prepare(snapshot(1, [provider('a', { credential: id })]));
 
-    const provider = (await models.resolve({ providerId: 'a', model: 'm' }))
-      .languageModel as unknown as LlmProvider;
+    const secret = direct.calls.create[0]?.secret;
 
-    await provider.models();
-    assert.equal(authorizationOf(requests.at(-1)), 'Bearer first');
+    assert.equal(await secret?.(), 'first');
     await rotate(id, 'rotated');
-    await provider.models();
-    assert.equal(authorizationOf(requests.at(-1)), 'Bearer rotated');
+    assert.equal(await secret?.(), 'rotated');
   });
 });
 
-void test('each revision has its own providers, and a provider resolved before keeps working', async () => {
-  await withModels(async ({ host, models, requests }) => {
-    await models.prepare(snapshot(1, [openai('a')]));
+void test('each revision has its own providers, and a provider resolved before stays the one it was', async () => {
+  const direct = building('direct');
+
+  await withModels([direct.bundle], async ({ models }) => {
+    await models.prepare(snapshot(1, [provider('a')]));
 
     const first = (await models.resolve({ providerId: 'a', model: 'm' }))
       .languageModel;
 
     // The same stored snapshot again builds nothing.
-    await models.prepare(snapshot(1, [openai('a')]));
+    await models.prepare(snapshot(1, [provider('a')]));
     assert.equal(
       (await models.resolve({ providerId: 'a', model: 'm' })).languageModel,
       first,
     );
-    assert.equal(initialized(host), 1);
+    assert.equal(direct.calls.create.length, 1);
 
-    await models.prepare(snapshot(2, [openai('a')]));
+    await models.prepare(snapshot(2, [provider('a')]));
 
     const second = (await models.resolve({ providerId: 'a', model: 'm' }))
       .languageModel;
 
     assert.notEqual(second, first);
-    assert.equal(initialized(host), 2);
-    await (first as unknown as LlmProvider).models();
-    assert.equal(requests.at(-1)?.url, 'https://a.example.test/v1/models');
+    assert.equal(direct.calls.create.length, 2);
+    assert.equal(first, direct.built[0]);
   });
 });
 
 void test('a replacement activates the providers it built before storing, and a rejected one changes nothing', async () => {
-  await withModels(async ({ host, models }) => {
-    await models.prepare(snapshot(1, [openai('a')]));
+  const direct = building('direct');
+  const strict = fakeKind('strict-bundle', {
+    kind: descriptor('strict'),
+    create: () => {
+      throw new Error('Provider kind strict requires a token value.');
+    },
+  });
+
+  await withModels([direct.bundle, strict.bundle], async ({ models }) => {
+    await models.prepare(snapshot(1, [provider('a')]));
 
     const before = (await models.resolve({ providerId: 'a', model: 'm' }))
       .languageModel;
-    const next = snapshot(2, [openai('a'), openai('b')]);
+    const next = snapshot(2, [provider('a'), provider('b')]);
 
     // Built before the store: the active set is unchanged until it is stored.
     await models.prepare(next.configuration);
-    assert.equal(initialized(host), 3);
+    assert.equal(direct.calls.create.length, 3);
     assert.equal(
       (await models.resolve({ providerId: 'a', model: 'm' })).languageModel,
       before,
@@ -368,7 +367,7 @@ void test('a replacement activates the providers it built before storing, and a 
 
     // Stored: the providers built for it become active, none built again.
     await models.prepare(next);
-    assert.equal(initialized(host), 3);
+    assert.equal(direct.calls.create.length, 3);
     assert.notEqual(
       (await models.resolve({ providerId: 'a', model: 'm' })).languageModel,
       before,
@@ -380,9 +379,9 @@ void test('a replacement activates the providers it built before storing, and a 
     await assert.rejects(
       models.prepare({
         ...next.configuration,
-        providers: [{ id: 'r', kind: 'openrouter', configuration: {} }],
+        providers: [{ id: 'r', kind: 'strict', configuration: {} }],
       }),
-      { message: 'Provider kind openrouter requires a token value.' },
+      { message: 'Provider kind strict requires a token value.' },
     );
     await assert.rejects(
       models.prepare(
@@ -559,199 +558,172 @@ void test('a provider whose model list is its catalog takes every listed model, 
   });
 });
 
-// R-6.3: models/v1.contextWindow, the context capacity fill moved from the
-// runtime's usage-context.ts onto the live, cached providers.
+// R-6.3: models/v1.contextWindow and (1.2.0) models/v1.inputModalities read
+// the live, cached provider of a kind that reports catalog capacity.
 
-const router = (id: string, token: string, listed: readonly string[]) => ({
-  id,
-  kind: 'openrouter',
-  configuration: { endpoint: `https://${id}.example.test/api/v1`, token },
-  models: listed.map((name) => ({ name })),
-});
+/**
+ * A `router` kind that reports catalog capacity and a `direct` kind that does
+ * not, whose built models both list `listed`.
+ */
+const capacityKinds = (listed: readonly ListedModel[] | 'fails') => {
+  const router = building('router', { catalogCapacity: true, listed });
+  const direct = building('direct', { listed });
 
-const listedSnapshot = (
-  revision: number,
-  providers: readonly Record<string, unknown>[],
-) => ({
-  configuration: {
-    providers,
-    models: { execution: { providerId: 'router', model: 'measured' } },
-    execution: { maxTurns: 10 },
-  },
-  revision,
-  updatedAt: '2026-10-09T00:00:00.000Z',
-});
+  return { router, direct, bundles: [router.bundle, direct.bundle] };
+};
 
-const catalogAnswer =
-  (models: readonly Record<string, unknown>[], status = 200) =>
-  (): HttpResponse => ({
-    status,
-    headers: {},
-    body: JSON.stringify({ data: models }),
+const routed = (id: string, listed: readonly string[]) =>
+  provider(id, { kind: 'router', listed });
+
+void test('contextWindow reads the one capacity provider that lists the model, from the provider already built', async () => {
+  const { router, direct, bundles } = capacityKinds([
+    { id: 'measured', contextWindow: 200000 },
+  ]);
+
+  await withModels(bundles, async ({ models }) => {
+    await models.prepare(
+      snapshot(1, [
+        provider('direct', { listed: ['measured'] }),
+        routed('router', ['measured']),
+      ]),
+    );
+
+    assert.equal(await models.contextWindow({ model: 'measured' }), 200000);
+    assert.equal(
+      await models.contextWindow({ providerId: 'router', model: 'measured' }),
+      200000,
+    );
+    // The usage footer polls: a poll builds no provider.
+    assert.equal(router.calls.create.length + direct.calls.create.length, 2);
+    // A kind without catalog capacity is never a candidate.
+    assert.equal(
+      await models.contextWindow({ providerId: 'direct', model: 'measured' }),
+      undefined,
+    );
+    // Unlisted model without a provider id: no candidate.
+    assert.equal(await models.contextWindow({ model: 'other' }), undefined);
   });
-
-void test('contextWindow reads the one capacity provider that lists the model, from its cached catalog', async () => {
-  await withModels(
-    async ({ models, token, requests }) => {
-      const id = await token('openrouter', 'sk-or');
-
-      await models.prepare(
-        listedSnapshot(1, [
-          { ...openai('direct', id), models: [{ name: 'measured' }] },
-          router('router', id, ['measured']),
-        ]),
-      );
-
-      assert.equal(await models.contextWindow({ model: 'measured' }), 200000);
-      assert.equal(
-        await models.contextWindow({ providerId: 'router', model: 'measured' }),
-        200000,
-      );
-      // The usage footer polls: the live provider's catalog is read once.
-      assert.equal(requests.length, 1);
-      // A kind without catalog capacity is never a candidate.
-      assert.equal(
-        await models.contextWindow({ providerId: 'direct', model: 'measured' }),
-        undefined,
-      );
-      // Unlisted model without a provider id: no candidate.
-      assert.equal(await models.contextWindow({ model: 'other' }), undefined);
-    },
-    catalogAnswer([{ id: 'measured', context_length: 200000 }]),
-  );
 });
 
 void test('contextWindow is unknown when the candidates are ambiguous', async () => {
-  await withModels(
-    async ({ models, token }) => {
-      const id = await token('openrouter', 'sk-or');
+  const { bundles } = capacityKinds([
+    { id: 'measured', contextWindow: 200000 },
+  ]);
 
-      await models.prepare(
-        listedSnapshot(1, [
-          router('one', id, ['measured']),
-          router('two', id, ['measured']),
-        ]),
-      );
+  await withModels(bundles, async ({ models }) => {
+    await models.prepare(
+      snapshot(1, [routed('one', ['measured']), routed('two', ['measured'])]),
+    );
 
-      assert.equal(
-        await models.contextWindow({ model: 'measured' }),
-        undefined,
-      );
-      // Naming the provider resolves the ambiguity.
-      assert.equal(
-        await models.contextWindow({ providerId: 'two', model: 'measured' }),
-        200000,
-      );
-    },
-    catalogAnswer([{ id: 'measured', context_length: 200000 }]),
-  );
+    assert.equal(await models.contextWindow({ model: 'measured' }), undefined);
+    // Naming the provider resolves the ambiguity.
+    assert.equal(
+      await models.contextWindow({ providerId: 'two', model: 'measured' }),
+      200000,
+    );
+  });
 });
 
 void test('contextWindow never throws: a failed catalog, a missing or invalid capacity, or no configuration leave it unknown', async () => {
-  await withModels(async ({ models }) => {
+  await withModels(capacityKinds([]).bundles, async ({ models }) => {
     assert.equal(await models.contextWindow({ model: 'measured' }), undefined);
   });
-  await withModels(
-    async ({ models, token }) => {
-      const id = await token('openrouter', 'sk-or');
-
-      await models.prepare(listedSnapshot(1, [router('router', id, ['m'])]));
-      assert.equal(await models.contextWindow({ model: 'm' }), undefined);
-    },
-    catalogAnswer([], 500),
-  );
-  for (const answer of [
-    [{ id: 'other', context_length: 200000 }],
-    [{ id: 'm', context_length: 0 }],
+  for (const listed of [
+    'fails' as const,
+    [{ id: 'other', contextWindow: 200000 }],
+    [{ id: 'm', contextWindow: 0 }],
     [{ id: 'm' }],
   ]) {
-    await withModels(async ({ models, token }) => {
-      const id = await token('openrouter', 'sk-or');
-
-      await models.prepare(listedSnapshot(1, [router('router', id, ['m'])]));
-      assert.equal(await models.contextWindow({ model: 'm' }), undefined);
-    }, catalogAnswer(answer));
+    await withModels(capacityKinds(listed).bundles, async ({ models }) => {
+      await models.prepare(snapshot(1, [routed('router', ['m'])]));
+      assert.equal(
+        await models.contextWindow({ model: 'm' }),
+        undefined,
+        JSON.stringify(listed),
+      );
+    });
   }
 });
 
-// models/v1.inputModalities (1.2.0): what a model reads, from the same live,
-// cached catalog contextWindow reads.
-
 void test('inputModalities answers what the one catalog provider lists the model as reading', async () => {
-  await withModels(
-    async ({ models, token }) => {
-      const id = await token('openrouter', 'sk-or');
+  const { bundles } = capacityKinds([
+    { id: 'text-only', inputModalities: ['text'] },
+    { id: 'vision', inputModalities: ['text', 'image'] },
+  ]);
 
-      await models.prepare(
-        listedSnapshot(1, [
-          { ...openai('direct', id), models: [{ name: 'text-only' }] },
-          router('router', id, ['text-only', 'vision']),
-        ]),
-      );
+  await withModels(bundles, async ({ models }) => {
+    await models.prepare(
+      snapshot(1, [
+        provider('direct', { listed: ['text-only'] }),
+        routed('router', ['text-only', 'vision']),
+      ]),
+    );
 
-      assert.deepEqual(
-        await models.inputModalities({
-          providerId: 'router',
-          model: 'text-only',
-        }),
-        ['text'],
-      );
-      assert.deepEqual(await models.inputModalities({ model: 'vision' }), [
-        'text',
-        'image',
-      ]);
-      // A kind without a live catalog says nothing about its models.
-      assert.equal(
-        await models.inputModalities({
-          providerId: 'direct',
-          model: 'text-only',
-        }),
-        undefined,
-      );
-    },
-    catalogAnswer([
-      { id: 'text-only', architecture: { input_modalities: ['text'] } },
-      { id: 'vision', architecture: { input_modalities: ['text', 'image'] } },
-    ]),
-  );
+    assert.deepEqual(
+      await models.inputModalities({
+        providerId: 'router',
+        model: 'text-only',
+      }),
+      ['text'],
+    );
+    assert.deepEqual(await models.inputModalities({ model: 'vision' }), [
+      'text',
+      'image',
+    ]);
+    // A kind without a live catalog says nothing about its models.
+    assert.equal(
+      await models.inputModalities({
+        providerId: 'direct',
+        model: 'text-only',
+      }),
+      undefined,
+    );
+  });
 });
 
 void test('inputModalities never throws: a failed catalog or a model it does not describe leave it unknown', async () => {
-  await withModels(async ({ models }) => {
+  await withModels(capacityKinds([]).bundles, async ({ models }) => {
     assert.equal(await models.inputModalities({ model: 'm' }), undefined);
   });
-  await withModels(
-    async ({ models, token }) => {
-      const id = await token('openrouter', 'sk-or');
-
-      await models.prepare(listedSnapshot(1, [router('router', id, ['m'])]));
-      assert.equal(await models.inputModalities({ model: 'm' }), undefined);
-    },
-    catalogAnswer([], 500),
-  );
-  for (const answer of [
-    [{ id: 'other', architecture: { input_modalities: ['text'] } }],
-    [{ id: 'm', architecture: { modality: 'text->text' } }],
+  for (const listed of [
+    'fails' as const,
+    [{ id: 'other', inputModalities: ['text'] }],
+    [{ id: 'm' }],
   ]) {
-    await withModels(async ({ models, token }) => {
-      const id = await token('openrouter', 'sk-or');
-
-      await models.prepare(listedSnapshot(1, [router('router', id, ['m'])]));
-      assert.equal(await models.inputModalities({ model: 'm' }), undefined);
-    }, catalogAnswer(answer));
+    await withModels(capacityKinds(listed).bundles, async ({ models }) => {
+      await models.prepare(snapshot(1, [routed('router', ['m'])]));
+      assert.equal(
+        await models.inputModalities({ model: 'm' }),
+        undefined,
+        JSON.stringify(listed),
+      );
+    });
   }
 });
 
-void test("icons answers a draft openrouter provider each model's lab, else its own icon, with each SVG once", async () => {
-  await withModels(async ({ models }) => {
+// models/v1.icons (1.3.0): the names a record chooses, each answered as its SVG.
+
+void test("icons answers a draft each model's own icon, else its provider's own, with each SVG once", async () => {
+  const lab = fakeKind('lab-bundle', {
+    kind: descriptor('lab'),
+    icons: ({ models }) => ({
+      provider: 'openrouter',
+      models: models.map((model) =>
+        model.startsWith('anthropic/') ? 'claude' : null,
+      ),
+    }),
+  });
+
+  await withModels([lab.bundle], async ({ models }) => {
     assert.deepEqual(
       await models.icons({
         requests: [
           {
-            kind: 'openrouter',
+            kind: 'lab',
             configuration: {},
             models: ['anthropic/claude-sonnet-4', 'acme/coder-7b'],
           },
+          { kind: 'lab', configuration: {}, models: ['anthropic/claude-4'] },
         ],
       }),
       {
@@ -759,32 +731,44 @@ void test("icons answers a draft openrouter provider each model's lab, else its 
           claude: modelIconSvg('claude'),
           openrouter: modelIconSvg('openrouter'),
         },
-        answers: [{ provider: 'openrouter', models: ['claude', 'openrouter'] }],
+        answers: [
+          { provider: 'openrouter', models: ['claude', 'openrouter'] },
+          { provider: 'openrouter', models: ['claude'] },
+        ],
       },
     );
   });
 });
 
-void test('icons answers a draft openai provider on a local endpoint no own icon and none for a model of no family', async () => {
-  await withModels(async ({ models }) => {
+void test('icons answers a draft whose record chooses no icon none, for the provider and its model', async () => {
+  const plain = fakeKind('plain-bundle', { kind: descriptor('plain') });
+
+  await withModels([plain.bundle], async ({ models }) => {
     assert.deepEqual(
       await models.icons({
-        requests: [
-          {
-            kind: 'openai',
-            configuration: { endpoint: 'http://localhost:11434/v1' },
-            models: ['phi4'],
-          },
-        ],
+        requests: [{ kind: 'plain', configuration: {}, models: ['phi4'] }],
       }),
       { svgs: {}, answers: [{ models: [null] }] },
     );
   });
 });
 
-void test('icons resolves a configured provider by id, and an unknown kind answers no icon', async () => {
-  await withModels(async ({ models }) => {
-    await models.prepare(snapshot(1, [openai('a')]));
+void test('icons resolves a configured provider by id with its values, and an unknown kind answers no icon', async () => {
+  const direct = fakeKind('direct-bundle', {
+    kind: descriptor('direct'),
+    // Only the configured provider's values name this endpoint.
+    icons: ({ configuration, models }) => ({
+      models: models.map((model) =>
+        configuration.endpoint === 'https://a.example.test/v1' &&
+        model.startsWith('gpt-')
+          ? 'openai'
+          : null,
+      ),
+    }),
+  });
+
+  await withModels([direct.bundle], async ({ models }) => {
+    await models.prepare(snapshot(1, [provider('a')]));
 
     assert.deepEqual(
       await models.icons({

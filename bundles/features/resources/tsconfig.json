@@ -23,6 +23,9 @@
       "path": "../../../packages/bundle"
     },
     {
+      "path": "../../desktop/account"
+    },
+    {
       "path": "../../../packages/desktop"
     }
   ],

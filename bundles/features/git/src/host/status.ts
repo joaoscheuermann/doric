@@ -2,8 +2,9 @@
 // provisional `git-status.ts` (`PROBE_SCRIPT`, `threadGit`, `statusOf`). The
 // repository hint and its origin parsing stay with the runtime.
 
-import type { GitOperation, ThreadGit } from 'runtime/contracts';
 import type { Sandbox } from 'sandbox';
+
+import type { GitOperation, ThreadGit } from '../contracts/index.js';
 
 /**
  * The whole Git summary in one sandbox round trip: the labeled facts below, then

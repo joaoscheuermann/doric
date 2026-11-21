@@ -2,8 +2,8 @@
 // tests: the chat bundle's built desktop part, a test core providing
 // `hooks/v1`, and a test shell standing for the bundles that provide the rest
 // of what the chat manifest declares in `requires` (`ui/v1`, `navigation/v1`,
-// `regions/v1`, `commands/v1`, `menus/v1`, `runtime.threads/v1` and
-// `comments/v1`). The parts of that shell are never called — the composer
+// `regions/v1`, `commands/v1`, `menus/v1`, `runtime.threads/v1`,
+// `comments/v1` and `layout.tabs/v2`). The parts of that shell are never called — the composer
 // service reaches nothing but its own state and the flushes registered with it.
 
 import { readFile } from 'node:fs/promises';
@@ -85,7 +85,9 @@ const shell: DesktopBundle = {
       'menus/v1@1.0.0',
       'runtime.threads/v1@1.8.0',
       'runtime.attachments/v1@1.0.0',
+      'runtime.records/v1@1.0.0',
       'comments/v1@1.0.0',
+      'layout.tabs/v2@2.0.0',
     ],
     requires: [],
   },
@@ -127,6 +129,24 @@ const shell: DesktopBundle = {
           cardinality: 'one' as const,
           local: true,
           schema: 'schemas/runtime.attachments/v1.json',
+        },
+        {
+          id: 'runtime.records/v1',
+          version: '1.0.0',
+          kind: 'service' as const,
+          environment: 'desktopMain' as const,
+          cardinality: 'one' as const,
+          local: true,
+          schema: 'schemas/runtime.records/v1.json',
+        },
+        {
+          id: 'layout.tabs/v2',
+          version: '2.0.0',
+          kind: 'service' as const,
+          environment: 'desktopMain' as const,
+          cardinality: 'one' as const,
+          local: true,
+          schema: 'schemas/layout.tabs/v2.json',
         },
       ]),
   },

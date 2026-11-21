@@ -11,6 +11,7 @@
       "options": {
         "commands": [
           "tsc --build bundles/features/claude-login/tsconfig.json",
+          "tsc -p bundles/features/claude-login/tsconfig.client.json",
           "node packages/bundle/dist/build/cli.js build bundles/features/claude-login"
         ],
         "parallel": false
@@ -21,7 +22,8 @@
       "dependsOn": ["^build"],
       "options": {
         "commands": [
-          "tsc --build bundles/features/claude-login/tsconfig.json --emitDeclarationOnly"
+          "tsc --build bundles/features/claude-login/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/features/claude-login/tsconfig.client.json"
         ],
         "parallel": false
       }
@@ -34,7 +36,9 @@
         "commands": [
           "rm -rf bundles/features/claude-login/dist-tests",
           "tsc -p bundles/features/claude-login/tsconfig.spec.json",
-          "node --test bundles/features/claude-login/dist-tests/tests/*.test.js"
+          "tsc -p bundles/features/claude-login/tsconfig.client-spec.json",
+          "node --test bundles/features/claude-login/dist-tests/tests/*.test.js",
+          "node --test --test-force-exit bundles/features/claude-login/dist-tests/tests/client/*.test.js"
         ],
         "parallel": false
       }

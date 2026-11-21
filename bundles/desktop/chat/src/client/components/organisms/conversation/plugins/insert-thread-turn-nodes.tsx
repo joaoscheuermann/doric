@@ -21,8 +21,6 @@ import {
   syncPlan,
 } from '../../../../domain/conversation-sync.js';
 import type { Turn } from '../../../../domain/projector.js';
-import { terminalResultEquals } from '../../../../domain/terminal-result.js';
-import { THREAD_SPAWN_TOOL } from '../../../../domain/thread-spawn.js';
 import {
   $createActivityTurnNode,
   $isActivityTurnNode,
@@ -62,6 +60,11 @@ import {
   type FailureTurnNode,
 } from '../nodes/failure-turn-node.js';
 import {
+  $createInputTurnNode,
+  $isInputTurnNode,
+  type InputTurnNode,
+} from '../nodes/input-turn-node.js';
+import {
   $createLifecycleTurnNode,
   $isLifecycleTurnNode,
   type LifecycleTurnNode,
@@ -82,20 +85,10 @@ import {
   type RepliesTurnNode,
 } from '../nodes/replies-turn-node.js';
 import {
-  $createTerminalResultNode,
-  $isTerminalResultNode,
-  type TerminalResultNode,
-} from '../nodes/terminal-result-node.js';
-import {
   $createThinkingTurnNode,
   $isThinkingTurnNode,
   type ThinkingTurnNode,
 } from '../nodes/thinking-turn-node.js';
-import {
-  $createThreadSpawnNode,
-  $isThreadSpawnNode,
-  type ThreadSpawnNode,
-} from '../nodes/thread-spawn-node.js';
 import {
   $createToolTurnNode,
   $isToolTurnNode,
@@ -131,11 +124,10 @@ type TurnBlock =
   | QueuedTurnNode
   | UserTurnNode
   | DelegatedTurnNode
-  | TerminalResultNode
+  | InputTurnNode
   | AgentTurnNode
   | ThinkingTurnNode
   | ToolTurnNode
-  | ThreadSpawnNode
   | ActivityTurnNode
   | LifecycleTurnNode
   | CompactionTurnNode
@@ -158,11 +150,10 @@ const isTurnBlock = (node: LexicalNode): node is TurnBlock =>
   $isQueuedTurnNode(node) ||
   $isUserTurnNode(node) ||
   $isDelegatedTurnNode(node) ||
-  $isTerminalResultNode(node) ||
+  $isInputTurnNode(node) ||
   $isAgentTurnNode(node) ||
   $isThinkingTurnNode(node) ||
   $isToolTurnNode(node) ||
-  $isThreadSpawnNode(node) ||
   $isActivityTurnNode(node) ||
   $isLifecycleTurnNode(node) ||
   $isCompactionTurnNode(node) ||
@@ -179,11 +170,14 @@ const $createBlock = (
     case 'queued':
       return new QueuedTurnNode(key, turn.promptId, turn.items);
     case 'user':
-      if (turn.terminal !== undefined)
-        return $createTerminalResultNode({
+      // A bundle that draws the input's source draws it, before the chat's own
+      // drawing of another Thread's input (O8).
+      if (turn.element !== undefined && turn.input !== undefined)
+        return $createInputTurnNode({
           turnKey: key,
           promptId: turn.promptId,
-          result: turn.terminal,
+          input: turn.input,
+          element: turn.element,
         });
       if (turn.delegated !== undefined)
         return $createDelegatedTurnNode({
@@ -218,8 +212,6 @@ const $createBlock = (
         turn.items,
       );
     case 'tool_call':
-      if (turn.name === THREAD_SPAWN_TOOL)
-        return $createThreadSpawnNode({ turnKey: key, ...turn });
       return $createToolTurnNode(
         key,
         turn.promptId,
@@ -370,12 +362,9 @@ const turnEquals = (left: Turn, right: Turn): boolean => {
         left.delegated?.kind === other.delegated?.kind &&
         left.delegated?.threadId === other.delegated?.threadId &&
         left.delegated?.text === other.delegated?.text &&
-        // A terminal's answer is read from the prompt's own fields, so the
-        // block repaints only when one of them changed.
-        (left.terminal === undefined) === (other.terminal === undefined) &&
-        (left.terminal === undefined ||
-          other.terminal === undefined ||
-          terminalResultEquals(left.terminal, other.terminal))
+        // An input a bundle draws repaints when its element or its text does.
+        left.element === other.element &&
+        left.input?.text === other.input?.text
       );
     }
     case 'activity': {
@@ -459,17 +448,14 @@ const $applyTurn = (block: TurnBlock, turn: Turn): void => {
     turn.type === 'user' &&
     ($isUserTurnNode(block) ||
       $isDelegatedTurnNode(block) ||
-      $isTerminalResultNode(block))
+      $isInputTurnNode(block))
   )
     block.setTurn(turn);
   else if (turn.type === 'agent' && $isAgentTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'thinking' && $isThinkingTurnNode(block))
     block.setTurn(turn);
-  else if (
-    turn.type === 'tool_call' &&
-    ($isToolTurnNode(block) || $isThreadSpawnNode(block))
-  )
+  else if (turn.type === 'tool_call' && $isToolTurnNode(block))
     block.setTurn(turn);
   else if (turn.type === 'activity' && $isActivityTurnNode(block))
     block.setTurn(turn);

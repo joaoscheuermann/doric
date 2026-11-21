@@ -53,8 +53,8 @@ import {
 } from '../../../contracts/index.js';
 import { commentKeyAction, hasWords } from '../../domain/comment-entry.js';
 import { READER_NAME } from '../../domain/conversation-authors.js';
+import { ConversationThreadContext } from '../../hooks/conversation-thread.js';
 import { useCommentThreads } from '../../hooks/use-comment-threads.js';
-import { ConversationThreadContext } from '../../hooks/use-live-terminal.js';
 import { composerStackStore } from '../../stores/composer-stack.js';
 import { isolate } from '../../utility/isolate.js';
 import { placeCaret } from '../../utility/note-caret.js';

@@ -21,9 +21,6 @@ import {
   type ClientContext,
   CommandsV1,
   defineCommand,
-  defineMethod,
-  defineService,
-  ref,
 } from 'bundle/contracts';
 import {
   $createTextNode,
@@ -44,6 +41,7 @@ import {
   retryOf,
   titleOf,
 } from './support/notices.js';
+import { selectionProbe } from './support/selection.js';
 import {
   type ChatWindow,
   type HostAnswer,
@@ -58,13 +56,14 @@ const threadId = '22222222-2222-4222-8222-222222222222';
 const activePromptId = '55555555-5555-4555-8555-555555555555';
 const url = `doric://app/projects/${projectId}/threads/${threadId}`;
 
-let threadState = 'idle';
+let threadState = 'ready';
 
 const thread = () => ({
   id: threadId,
   name: 'Fix the parser',
   projectId,
   state: threadState,
+  lastSequence: 0,
   ...(threadState === 'running' ? { activePromptId } : {}),
   cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -100,17 +99,21 @@ afterEach(async () => {
   await opened?.close();
   opened = undefined;
   editors.clear();
-  threadState = 'idle';
+  threadState = 'ready';
 });
 
+const workspace = selectionProbe(thread);
+
 /**
- * The probe: keeps the window's editors, stands for the layout's selected
- * Thread, and registers `probe.fail/v1`, a command that always fails.
+ * The probe: keeps the window's editors, provides `workspace.selection/v1`
+ * (the selected Thread, whose record `workspace.recordsApi` answers), and
+ * registers `probe.fail/v1`, a command that always fails.
  */
 const probe = (): Probe => ({
-  provides: ['layout.workspace/v1'],
+  provides: workspace.provides,
   requires: ['chat.lexical/v1@^1.0.0', 'commands/v1@^1.0.0'],
-  activate: ({ services }: ClientContext) => {
+  activate: (context: ClientContext) => {
+    const { services } = context;
     services.use(ChatLexicalV1).registerExtension(
       defineExtension({
         name: 'test/failure-surfaces',
@@ -131,30 +134,7 @@ const probe = (): Probe => ({
         },
       }),
     );
-    const LayoutWorkspaceV1 = ref<{
-      thread(id: string): unknown;
-      selectedThread(): unknown;
-      subscribe(listener: () => void): { dispose(): void };
-    }>('layout.workspace/v1');
-    services.provide(
-      defineService(LayoutWorkspaceV1, {
-        thread: defineMethod({
-          input: z.string(),
-          output: z.unknown(),
-          execute: (id: string) => (id === threadId ? thread() : undefined),
-        }),
-        selectedThread: defineMethod({
-          input: z.tuple([]),
-          output: z.unknown(),
-          execute: () => thread(),
-        }),
-        subscribe: defineMethod({
-          input: z.custom<() => void>((value) => typeof value === 'function'),
-          output: z.custom<{ dispose(): void }>(),
-          execute: () => ({ dispose: () => undefined }),
-        }),
-      }) as never,
-    );
+    return workspace.activate(context);
   },
 });
 
@@ -197,6 +177,7 @@ const open = async (
   opened = await openChatWindow({
     url,
     probe: probe(),
+    recordsApi: workspace.recordsApi,
     host: {
       'runtime.threads/v1.thread': () => thread(),
       'runtime.threads/v1.queue': () => emptyQueue,

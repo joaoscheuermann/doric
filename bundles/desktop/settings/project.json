@@ -10,7 +10,8 @@
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "commands": [
-          "tsc -p bundles/desktop/settings/tsconfig.json",
+          "tsc --build bundles/desktop/settings/tsconfig.json",
+          "tsc -p bundles/desktop/settings/tsconfig.client.json",
           "node packages/bundle/dist/build/cli.js build bundles/desktop/settings"
         ],
         "parallel": false
@@ -20,7 +21,11 @@
       "executor": "nx:run-commands",
       "dependsOn": ["^build"],
       "options": {
-        "command": "tsc -p bundles/desktop/settings/tsconfig.json"
+        "commands": [
+          "tsc --build bundles/desktop/settings/tsconfig.json --emitDeclarationOnly",
+          "tsc -p bundles/desktop/settings/tsconfig.client.json"
+        ],
+        "parallel": false
       }
     },
     "test": {

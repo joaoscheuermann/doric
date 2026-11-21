@@ -1,19 +1,22 @@
-// `<layout-workspace>` (stage 9 §5.4): the old renderer's `views/app.tsx`
-// with the same hooks and props. The conversation is the child route in the
-// inner `<core-outlet>`; the content footer is the `layout.footer` region,
-// which `ConversationFrame` floats over the conversation's bottom; the
-// header's actions are the `layout.header` region. The `layout.overlay`
-// region is the floating layer over the conversation area.
+// `<layout-workspace>` (stage 9 §5.4; bundle isolation 4(a) change 7): the
+// window's frame, in one of two forms (section 5, D5). The page form, while
+// `shell.page` holds an item, draws the sidebar column (`shell.sidebar`, the
+// quarantine notice, `shell.sidebar.footer`) beside the title bar
+// (`shell.titlebar.tabs`) over `shell.page`. The conversation form draws the
+// sidebar column with the stack panes, the title bar, the conversation (the
+// child route in `<core-outlet>`, the `shell.conversation.footer` region floating over its
+// bottom, the `shell.conversation.overlay` layer over it) and the side panel, whose
+// header ends with `shell.window.actions`. The navigation fills the slots
+// with elements of its own (`elements/navigation-elements.tsx`).
 
-import { QueryClientProvider } from '@tanstack/react-query';
-import { CommandsV1 } from 'bundle/contracts';
+import { RegionsV1 } from 'bundle/contracts';
+import { useRegionItems } from 'desktop/ui/element-host';
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from 'desktop/ui/empty';
-import { SidebarInset, SidebarProvider } from 'desktop/ui/sidebar';
+  Sidebar,
+  SidebarInset,
+  SidebarProvider,
+  SidebarScope,
+} from 'desktop/ui/sidebar';
 import { Toaster } from 'desktop/ui/sonner';
 import { Tabs } from 'desktop/ui/tabs';
 import { TooltipProvider } from 'desktop/ui/tooltip';
@@ -21,29 +24,30 @@ import { cn } from 'desktop/ui/utils';
 import {
   type CSSProperties,
   createElement,
-  type ReactNode,
   StrictMode,
   useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
+  useMemo,
   useSyncExternalStore,
 } from 'react';
 
-import { DeleteDialog } from '../components/molecules/delete-dialog.js';
-import { AccountStatus } from '../components/organisms/account-status.js';
-import { Dashboard } from '../components/organisms/dashboard.js';
+import {
+  SHELL_CONVERSATION_BOTTOM,
+  SHELL_CONVERSATION_FOOTER,
+  SHELL_CONVERSATION_OVERLAY,
+  SHELL_PAGE,
+  SHELL_PANEL,
+  SHELL_PANEL_FOOTER,
+  SHELL_SIDEBAR,
+  SHELL_SIDEBAR_FOOTER,
+  SHELL_TITLEBAR_TABS,
+  SHELL_WINDOW_ACTIONS,
+} from '../../contracts/index.js';
+import { BundleHealthNotice } from '../components/molecules/bundle-health-notice.js';
 import {
   ProjectPanel,
   ProjectPanelTabs,
 } from '../components/organisms/project-panel.js';
-import {
-  ProjectSidebar,
-  type SidebarActions,
-  type SidebarModel,
-} from '../components/organisms/project-sidebar.js';
-import { ProjectTabBar } from '../components/organisms/project-tabs.js';
-import { SidebarHeader } from '../components/organisms/sidebar-header.js';
+import { ProjectSidebarColumn } from '../components/organisms/project-sidebar.js';
 import {
   WorkspaceTabBar,
   WorkspaceTabs,
@@ -53,16 +57,9 @@ import { ConversationTerminals } from '../components/templates/conversation-term
 import { INSET_CARD } from '../components/templates/inset-card.js';
 import { ThreadPane } from '../components/templates/thread-pane.js';
 import { WorkspaceLayout } from '../components/templates/workspace-layout.js';
-import { descendantsInChat, isArchived } from '../domain/thread-archive.js';
-import { isThreadPanelTab } from '../domain/workspace-tabs.js';
-import { useProjectTabs } from '../hooks/use-project-tabs.js';
-import { useRegionItems } from '../hooks/use-region-items.js';
-import { useWorkspace } from '../hooks/use-workspace.js';
 import { useWorkspaceTabs } from '../hooks/use-workspace-tabs.js';
-import { layoutQueryClient } from '../queries/client.js';
 import { layoutServices } from '../services/layout-services.js';
 import { bottomStore } from '../stores/bottom.js';
-import { newTabStore } from '../stores/new-tab.js';
 import { panelStore } from '../stores/panel.js';
 import { workspaceTabsStore } from '../stores/workspace-tabs.js';
 
@@ -71,193 +68,88 @@ const panelWidth = {
   '--sidebar-width': '100%',
 } as CSSProperties;
 
-/** The core's open-settings command (forwarded to desktopMain, D9-8). */
-const OPEN_SETTINGS = 'core.open-settings/v1';
-
 /** A `<core-region name>`: `display: contents`, no role of its own. */
 const Region = ({ name }: { readonly name: string }) =>
   createElement('core-region', { name });
 
-/** Marks `/` as opened through "New project", or clears that mark. */
-const setNewTab = (open: boolean) => newTabStore.getState().set(open);
+/**
+ * Draws `region`, a `<core-region>` the frame keeps across its forms, in
+ * place: each form hosts the same element, moved within one commit, so the
+ * region keeps its items' elements when the form changes (the core's region
+ * and the elements it creates outlive a move in the same task).
+ */
+const KeptRegion = ({ region }: { readonly region: HTMLElement }) => (
+  <div
+    className="contents"
+    ref={(host) => {
+      if (host !== null && region.parentNode !== host) host.append(region);
+    }}
+  />
+);
 
 function Workspace() {
-  const workspace = useWorkspace();
-  // U16: deleting an archived Thread names its descendants still in Chat.
-  const { deleting } = workspace;
-  const inChat =
-    deleting?.kind === 'thread' && isArchived(deleting.value)
-      ? descendantsInChat(
-          workspace.threadsByProject[deleting.value.projectId] ?? [],
-          deleting.value.id,
-        )
-      : 0;
-  const newTab = useSyncExternalStore(
-    newTabStore.subscribe,
-    () => newTabStore.getState().open,
+  const regions = layoutServices().use(RegionsV1);
+  // `shell.sidebar` holds `workspace-sidebar`, which runs the navigation's
+  // once-per-window effects: both forms draw this one region element.
+  const sidebarRegion = useMemo(() => {
+    const element = document.createElement('core-region');
+    element.setAttribute('name', SHELL_SIDEBAR);
+    return element;
+  }, []);
+  const pageForm = useRegionItems(regions, SHELL_PAGE).length > 0;
+  const footerItems = useRegionItems(regions, SHELL_SIDEBAR_FOOTER);
+  const footer =
+    footerItems.length > 0 ? <Region name={SHELL_SIDEBAR_FOOTER} /> : null;
+  // The owner the layout's watcher names in the tabs store (bundle isolation
+  // 4a, O9): `layout.tabs/v2` `setOwner` switches what the frame shows.
+  const tabOwner = useSyncExternalStore(
+    workspaceTabsStore.subscribe,
+    () => workspaceTabsStore.getState().owner,
   );
-  const frame = useRef<HTMLDivElement>(null);
-  const [focusRequest, setFocusRequest] = useState(0);
-  useLayoutEffect(() => {
-    if (focusRequest === 0) return;
-    const content = frame.current?.querySelector<HTMLElement>(
-      '[aria-label="Thread conversation"], main',
-    );
-    if (content) {
-      content.tabIndex = -1;
-      content.focus({ preventScroll: true });
-    }
-  }, [focusRequest]);
-  const projectTabs = useProjectTabs(
-    workspace.projects,
-    !workspace.loadingProjects && workspace.error === undefined,
-  );
-  useEffect(() => {
-    if (projectTabs.path !== '/') setNewTab(false);
-  }, [projectTabs.path]);
-  const tabOwner =
-    workspace.selectedThreadId ??
-    (workspace.selectedProjectId
-      ? `project:${workspace.selectedProjectId}`
-      : undefined);
   const tabs = useWorkspaceTabs(tabOwner);
-  const { actions } = workspace;
   const panelView = useSyncExternalStore(
     panelStore.subscribe,
     () => panelStore.getState().active,
   );
   const panel = panelStore.getState();
-  const panelItems = useRegionItems('layout.panel');
+  const panelItems = useRegionItems(regions, SHELL_PANEL);
   const bottomVisible = useSyncExternalStore(
     bottomStore.subscribe,
     () => bottomStore.getState().visible.size > 0,
   );
-  const model: SidebarModel = {
-    draft: workspace.draft,
-    editing: workspace.editing,
-    error: workspace.error,
-    loadingProjects: workspace.loadingProjects,
-    loadingProjectThreads: workspace.loadingProjectThreads,
-    projects: workspace.projects,
-    selectedProjectId: workspace.selectedProjectId,
-    selectedThreadId: workspace.selectedThreadId,
-    threadsByProject: workspace.threadsByProject,
-  };
-  const sidebarActions: SidebarActions = {
-    archiveThread: actions.archiveThread,
-    beginProject: actions.beginProject,
-    beginThread: actions.beginThread,
-    cancelDraft: actions.cancelDraft,
-    cancelRename: actions.cancelRename,
-    copyThreadId: actions.copyThreadId,
-    createProject: actions.createProject,
-    createThread: actions.createThread,
-    deleteEntity: actions.requestDelete,
-    rename: actions.rename,
-    restoreThread: actions.restoreThread,
-    retryError: actions.retryError,
-    selectProject: actions.selectProject,
-    selectThread: actions.selectThread,
-    setProjectColor: actions.setProjectColor,
-    setThreadPinned: actions.setThreadPinned,
-    startRename: actions.startRename,
-  };
-  const { selectedThread } = workspace;
-  const selectedProject = workspace.projects.find(
-    (project) => project.id === workspace.selectedProjectId,
-  );
-  const openSettings = () => {
-    void layoutServices()
-      .use(CommandsV1)
-      .execute(OPEN_SETTINGS, {})
-      .catch((error: unknown) => {
-        console.error('Doric: the settings window could not open:', error);
-      });
-  };
-
-  const openPath = (path: string) => {
-    setNewTab(false);
-    projectTabs.navigate(path);
-    setFocusRequest((count) => count + 1);
-  };
-  const tabBar = ({ end }: { readonly end?: ReactNode }) => (
-    <ProjectTabBar
-      actions={end}
-      state={projectTabs.state}
-      path={projectTabs.path}
-      projects={workspace.projects}
-      navigate={openPath}
-      close={projectTabs.close}
-      closeMany={projectTabs.closeMany}
-      move={projectTabs.move}
-      rename={(project, name) =>
-        actions.rename({ kind: 'project', value: project }, name)
-      }
-      onNewThread={(project) => {
-        setNewTab(false);
-        actions.beginThread(project.id);
-      }}
-      setColor={actions.setProjectColor}
-      onNewProject={() => {
-        projectTabs.navigate('/');
-        setNewTab(true);
-      }}
-    />
-  );
-  if (projectTabs.path === '/' || projectTabs.path === '/projects') {
-    // Every Dashboard form, the home body included (`85:7726`, UR1), has the
-    // Dashboard sidebar before the tab bar, so none keeps the macOS inset.
-    const home = newTab && projectTabs.path === '/';
+  if (pageForm) {
+    // The page form (section 5, D5): the sidebar column, then the title bar
+    // over the page. The sidebar comes first, so the tab bar keeps no macOS
+    // inset (`85:7726`, UR1).
     return (
-      <div
-        ref={frame}
-        className="flex h-svh min-h-0 flex-col bg-background text-foreground"
-      >
-        <Dashboard
-          workspace={workspace}
-          onOpenSettings={openSettings}
-          all={!home}
-          navigate={(path) => {
-            setNewTab(false);
-            projectTabs.navigate(path);
-          }}
-          header={tabBar({
-            end: <AccountStatus onOpenSettings={openSettings} />,
-          })}
-          sidebarHeader={
-            <SidebarHeader
-              active
-              onDashboard={() => openPath('/projects')}
-              onSearch={() => {
-                // As the Dashboard's ⌘F does on the list (plan-4 G3): the
-                // sidebar's "Search projects", the first in the frame.
-                const input = frame.current?.querySelector<HTMLInputElement>(
-                  'input[aria-label="Search projects"]',
-                );
-                input?.focus();
-                input?.select();
-              }}
-            />
-          }
-        />
-        <DeleteDialog
-          entity={workspace.deleting}
-          inChat={inChat}
-          pending={workspace.deletingPending}
-          onDelete={actions.confirmDelete}
-          onOpenChange={(open) => {
-            if (!open) actions.dismissDelete();
-          }}
-        />
+      <div className="flex h-svh min-h-0 flex-col bg-background text-foreground">
+        <div className="flex min-h-0 flex-1 bg-sidebar">
+          <aside className="flex shrink-0" aria-label="Dashboard navigation">
+            <SidebarScope>
+              <Sidebar
+                collapsible="none"
+                className="h-full w-[280px] shrink-0 font-normal"
+              >
+                <KeptRegion region={sidebarRegion} />
+                <BundleHealthNotice className="mx-2 shrink-0" />
+                {footer}
+              </Sidebar>
+            </SidebarScope>
+          </aside>
+          <div
+            data-slot="dashboard-content"
+            className="flex min-w-0 flex-1 flex-col bg-sidebar"
+          >
+            <Region name={SHELL_TITLEBAR_TABS} />
+            <Region name={SHELL_PAGE} />
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      ref={frame}
-      className="flex h-svh min-h-0 flex-col bg-sidebar text-foreground"
-    >
+    <div className="flex h-svh min-h-0 flex-col bg-sidebar text-foreground">
       <SidebarProvider
         style={panelWidth}
         className="min-h-0 flex-1 flex-col overflow-hidden"
@@ -270,9 +162,7 @@ function Workspace() {
           className="min-h-0 flex-1 gap-0"
         >
           <WorkspaceLayout
-            header={tabBar({
-              end: <Region name="layout.header" />,
-            })}
+            header={<Region name={SHELL_TITLEBAR_TABS} />}
             viewerTabs={
               tabs.items.length > 0 && tabOwner ? (
                 <WorkspaceTabBar state={tabs} threadId={tabOwner} />
@@ -287,13 +177,13 @@ function Workspace() {
                   items={panelItems}
                 />
                 <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-                  <AccountStatus onOpenSettings={openSettings} />
+                  <Region name={SHELL_WINDOW_ACTIONS} />
                 </div>
               </>
             }
             filesFooter={
               <div className="flex h-7 min-w-0 flex-1 items-center gap-1">
-                <Region name="layout.panel.footer" />
+                <Region name={SHELL_PANEL_FOOTER} />
               </div>
             }
             fileViewer={
@@ -302,54 +192,31 @@ function Workspace() {
               )
             }
             viewerOpenBottom={tabs.items.some(
-              (tab) => tab.id === tabs.selected && isThreadPanelTab(tab),
+              (tab) =>
+                tab.id === tabs.selected &&
+                tab.kind === 'element' &&
+                tab.openBottom === true,
             )}
             sidebar={
-              <ProjectSidebar
-                header={
-                  <SidebarHeader onDashboard={() => openPath('/projects')} />
-                }
-                actions={sidebarActions}
-                model={model}
-              />
+              <ProjectSidebarColumn footer={footer}>
+                <KeptRegion region={sidebarRegion} />
+              </ProjectSidebarColumn>
             }
           >
             <SidebarInset className={cn(INSET_CARD, 'pb-0')}>
               <ConversationTerminals
-                bottom={bottomVisible && <Region name="layout.main.bottom" />}
+                bottom={
+                  bottomVisible && <Region name={SHELL_CONVERSATION_BOTTOM} />
+                }
               >
-                <ConversationFrame footer={<Region name="layout.footer" />}>
-                  <ThreadPane>
-                    {selectedThread ? (
-                      createElement('core-outlet')
-                    ) : (
-                      <Empty>
-                        <EmptyHeader>
-                          <EmptyTitle>
-                            {selectedProject?.name ?? 'No project selected'}
-                          </EmptyTitle>
-                          <EmptyDescription>
-                            Start a thread or select one from the sidebar.
-                          </EmptyDescription>
-                        </EmptyHeader>
-                        {selectedProject && (
-                          <button
-                            type="button"
-                            className="dashboard-new"
-                            onClick={() =>
-                              actions.beginThread(selectedProject.id)
-                            }
-                          >
-                            New thread
-                          </button>
-                        )}
-                      </Empty>
-                    )}
-                  </ThreadPane>
+                <ConversationFrame
+                  footer={<Region name={SHELL_CONVERSATION_FOOTER} />}
+                >
+                  <ThreadPane>{createElement('core-outlet')}</ThreadPane>
                 </ConversationFrame>
               </ConversationTerminals>
               {/*
-                The floating layer over the conversation area: `layout.overlay`
+                The floating layer over the conversation area: `shell.conversation.overlay`
                 items place themselves, and the layer itself never intercepts
                 a pointer.
               */}
@@ -357,20 +224,11 @@ function Workspace() {
                 data-slot="workspace-overlay"
                 className="pointer-events-none absolute inset-0 z-20"
               >
-                <Region name="layout.overlay" />
+                <Region name={SHELL_CONVERSATION_OVERLAY} />
               </div>
             </SidebarInset>
           </WorkspaceLayout>
         </Tabs>
-        <DeleteDialog
-          entity={workspace.deleting}
-          inChat={inChat}
-          pending={workspace.deletingPending}
-          onDelete={actions.confirmDelete}
-          onOpenChange={(open) => {
-            if (!open) actions.dismissDelete();
-          }}
-        />
       </SidebarProvider>
     </div>
   );
@@ -383,12 +241,10 @@ export function WorkspaceView() {
   }, []);
   return (
     <StrictMode>
-      <QueryClientProvider client={layoutQueryClient()}>
-        <TooltipProvider>
-          <Workspace />
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
+      <TooltipProvider>
+        <Workspace />
+        <Toaster />
+      </TooltipProvider>
     </StrictMode>
   );
 }

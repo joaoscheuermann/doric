@@ -6,15 +6,16 @@
 import { Buffer } from 'node:buffer';
 import { posix } from 'node:path';
 
+import { listSandboxRepos, type Sandbox, workspacePathKind } from 'sandbox';
+
 import type {
-  ChangeStatus,
+  ChangeSetEntry,
   FileChange,
   FileDiff,
-  ProjectChange,
   ProjectChangeSet,
+  ProjectChangeStatus,
   RepositoryChanges,
-} from 'runtime/contracts';
-import { listSandboxRepos, type Sandbox, workspacePathKind } from 'sandbox';
+} from '../contracts/index.js';
 
 /** The largest text payload the content route returns. */
 export const CONTENT_LIMIT_BYTES = 262_144;
@@ -121,7 +122,7 @@ export const under = (base: string, value: string): boolean =>
   base === '' || value === base || value.startsWith(`${base}/`);
 
 /** One porcelain line: two status characters, a space, then the path. */
-const parseChange = (line: string): ProjectChange | undefined => {
+const parseChange = (line: string): ChangeSetEntry | undefined => {
   if (line.length < 4) return undefined;
 
   const code = line.slice(0, 2);
@@ -155,7 +156,7 @@ const parseChanges = (text: string): readonly FileChange[] => {
     const originalPath = renamed ? records[++index] : undefined;
     const untracked = code === '??';
     const conflicted = code.includes('U') || code === 'AA' || code === 'DD';
-    const status: ChangeStatus = conflicted
+    const status: ProjectChangeStatus = conflicted
       ? 'conflicted'
       : untracked
         ? 'untracked'

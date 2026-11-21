@@ -45,26 +45,6 @@
     "papercraft.programs/v1": ["export", "library", "read"],
     "resources/v1": ["host", "project"],
     "runtime.attachments/v1": ["attach", "read"],
-    "runtime.lease/v1": [
-      "branches",
-      "changes",
-      "diff",
-      "file",
-      "fileDiff",
-      "files",
-      "git",
-      "resources",
-      "tree"
-    ],
-    "runtime.terminals/v1": [
-      "create",
-      "input",
-      "list",
-      "resize",
-      "snapshot",
-      "stop",
-      "watchProject"
-    ],
     "runtime.threads/v1": [
       "archiveThread",
       "compact",
@@ -93,7 +73,7 @@
       "viewThread",
       "watchThread"
     ],
-    "runtime/v1": [
+    "runtime/v2": [
       "createProject",
       "deleteProject",
       "projectActivity",
@@ -121,9 +101,12 @@
   "scopeKeys": ["projectId", "threadId", "promptId"],
   "$scopeKeysByContractComment": "Exposed bundle contracts whose provider declares other window scope keys than scopeKeys; an empty list means no desktopScope entry (a global space).",
   "scopeKeysByContract": {
+    "models/v1": [],
     "openui.programs/v1": ["projectId", "threadId"],
     "openui.questions/v1": ["projectId", "threadId"],
     "papercraft.cache/v1": ["projectId", "threadId"],
-    "papercraft.programs/v1": ["projectId", "threadId"]
+    "papercraft.programs/v1": ["projectId", "threadId"],
+    "secrets/v1": [],
+    "tools/v1": []
   }
 }

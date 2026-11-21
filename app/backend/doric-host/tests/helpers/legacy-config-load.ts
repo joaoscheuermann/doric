@@ -4,7 +4,7 @@ import {
   type DoricConfig,
 } from 'host-config/testing';
 import { type ProviderField, providerKind } from 'llms';
-import type { Database } from 'postgres/prisma';
+import type { Database } from 'postgres/testing';
 
 // A frozen copy of the configuration store as it was before the configuration
 // moved into a `settings/v1` space, over raw SQL because the generated client

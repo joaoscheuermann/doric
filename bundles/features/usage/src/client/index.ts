@@ -2,7 +2,7 @@
 // footer's context and cost of the selected Thread, read from `usage/v1`.
 //
 // The footer region item (`usageRegion`, id `usage`, order 30 in
-// `layout.footer`) is registered by the activation since WP-10N removed the
+// `shell.conversation.footer`) is registered by the activation since WP-10N removed the
 // layout's provisional `layout-thread-usage` item from the same slot.
 
 import { QueryClient } from '@tanstack/react-query';
@@ -15,6 +15,7 @@ import {
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
+import type { SHELL_CONVERSATION_FOOTER } from 'layout/contracts';
 
 import { defineUsageElements } from './elements.js';
 
@@ -25,7 +26,8 @@ export const usageRegion: {
   readonly region: string;
   readonly item: RegionItem;
 } = {
-  region: 'layout.footer',
+  region:
+    'shell.conversation.footer' satisfies typeof SHELL_CONVERSATION_FOOTER,
   item: { id: 'usage', tag: USAGE_SUMMARY_TAG, order: 30 },
 };
 

@@ -191,6 +191,36 @@ describe('the host catalogs', () => {
     );
   });
 
+  test('T6.2: a kind keeps only an https site with a label, and a malformed site never fails the read', async () => {
+    const kind = (id: string, site?: unknown) => ({
+      ...openrouter,
+      id,
+      ...(site === undefined ? {} : { site }),
+    });
+    const secure = { url: 'https://secure.test/console', label: 'Open Secure' };
+
+    await settingsOver(
+      {
+        foreignKinds: () => [
+          kind('secure', secure),
+          kind('insecure', { url: 'http://insecure.test', label: 'Open' }),
+          kind('unlabelled', { url: 'https://unlabelled.test', label: '' }),
+          kind('word', 'x'),
+          kind('none'),
+        ],
+      },
+      async (api) => {
+        assert.deepEqual(await api.providers.kinds(), [
+          kind('secure', secure),
+          kind('insecure'),
+          kind('unlabelled'),
+          kind('word'),
+          kind('none'),
+        ]);
+      },
+    );
+  });
+
   test('the tool catalog carries each tool and the fields it declares', async () => {
     await settingsOver(
       {

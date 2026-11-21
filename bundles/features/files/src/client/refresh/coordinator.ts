@@ -24,7 +24,11 @@ import {
   type ProjectReads,
 } from '../../contracts/index.js';
 
-/** The workspace fields the coordinator reads (`layout.workspace/v1`). */
+/**
+ * The workspace fields the coordinator reads: the selection and the records
+ * (`workspace.selection/v1` and `runtime.records/v1`, through
+ * `api/selection.ts`).
+ */
 export interface RefreshWorkspace {
   selection(): {
     readonly project?: { readonly id: string; readonly state: string };

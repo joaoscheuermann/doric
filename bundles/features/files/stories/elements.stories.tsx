@@ -3,21 +3,23 @@ import { useState } from 'react';
 import { defineFilesElements } from '../src/client/elements.js';
 import { filesKeys } from '../src/client/sandbox-store.js';
 import { setFilesClient } from '../src/client/state.js';
+import type { DecorationsObservation } from '../src/contracts/index.js';
 import { ElementHost } from './support/element-host.js';
 import { fixedSandboxStore, seedExpansion } from './support/files-client.js';
 import {
-  changeMarks,
+  changeMarkList,
   openDirectories,
   paymentForm,
   project,
   thread,
 } from './support/fixtures.js';
-import { still, storyServices } from './support/services.js';
+import { selectionApis, still, storyServices } from './support/services.js';
 
 /**
  * The three elements the files client defines, over one seeded activation:
  * its sandbox store (the tree read and the file tab's query client), the
- * layout's selection, panel and tabs, and git's changes read.
+ * workspace's selection, the records, the layout's panel and tabs, and git's
+ * marks through `files.decorations/v1`.
  */
 const useElements = () =>
   useState(() => {
@@ -84,28 +86,13 @@ const useElements = () =>
     seedExpansion(project.id, '', openDirectories);
     const services = storyServices({
       apis: {
-        'layout.workspace/v1': {
-          ...still,
-          selection: () => ({ project, thread }),
-        },
-        'layout.tabs/v1': {
+        ...selectionApis({ project, thread }),
+        'layout.tabs/v2': {
           ...still,
           current: () => ({ id: `file:${paymentForm.path}` }),
         },
-        'layout.panel/v2': { ...still, select: () => undefined },
+        'layout.panel/v3': { ...still, select: () => undefined },
         'commands/v1': { execute: async () => undefined },
-        'git.changes/v1': {
-          observe: (
-            _scope: unknown,
-            listener: (state: {
-              readonly decorations: typeof changeMarks;
-              readonly fetching: boolean;
-            }) => void,
-          ) => {
-            listener({ decorations: changeMarks, fetching: false });
-            return { dispose: () => undefined };
-          },
-        },
       },
       scoped: {
         'files/v1': () => ({
@@ -114,6 +101,22 @@ const useElements = () =>
             value: { status: 'read', ...paymentForm },
           }),
         }),
+      },
+      many: {
+        'files.decorations/v1': [
+          {
+            bundleId: 'git',
+            api: {
+              observe: (
+                _scope: unknown,
+                listener: (state: DecorationsObservation) => void,
+              ) => {
+                listener({ marks: changeMarkList, fetching: false });
+                return { dispose: () => undefined };
+              },
+            },
+          },
+        ],
       },
     });
     return { elements: defineFilesElements(store), services };

@@ -58,6 +58,8 @@ export interface ProviderKind {
    * is named by hand. Only a kind that keeps `models` sets it.
    */
   readonly modelsFromCatalog?: boolean;
+  /** The site a provider page links to, with the control's label. */
+  readonly site?: { readonly url: string; readonly label: string };
 }
 
 /**
@@ -155,6 +157,7 @@ const supportedKinds: readonly ProviderKind[] = [
       modelsUrl(`${openRouterMetadata.baseUrl}/models`),
     ],
     lists: openAiLists,
+    site: { url: 'https://openrouter.ai', label: 'Open OpenRouter' },
   },
   {
     id: 'codex',

@@ -1,8 +1,8 @@
 import { createStore } from 'zustand/vanilla';
 
 /**
- * The items that asked for the `layout.main.bottom` split
- * (`layout.workspace/v1.setBottomVisible`). The split is shown while this set
+ * The items that asked for the `shell.conversation.bottom` split
+ * (`layout.conversation/v1.setBottomVisible`). The split is shown while this set
  * is not empty.
  */
 export type BottomState = {

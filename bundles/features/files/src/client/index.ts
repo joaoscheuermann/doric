@@ -1,6 +1,7 @@
 // The files bundle's client part (stage 10, §3.6): `files.sandbox/v1`,
-// `files.refresh/v1`, the `files.open-file/v1` command and the two
-// elements — the Files panel view and the file tab. All of
+// `files.refresh/v1`, the `files.open-file/v1` command and the three
+// elements — the Files panel view, the file tab and the file icon
+// (`files-file-icon`) the layout draws for both. All of
 // it is bound to the activation services, never to an element's (D9-17).
 //
 // The panel region item (`filesRegions`) is registered by the activation.
@@ -17,17 +18,24 @@ import {
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
-import { LayoutWorkspaceV1 } from 'layout/contracts';
+import type { SHELL_PANEL } from 'layout/contracts';
+import { LayoutPanelV3 } from 'layout/contracts';
+import { RuntimeRecordsV1 } from 'runtime/contracts';
+import { WorkspaceSelectionV1 } from 'workspace/contracts';
 
-import { ChatHooksV1 } from './api/peers.js';
+import { ChatHooksV2 } from './api/peers.js';
 import { filesReadsOf } from './api/reads.js';
-import { FILE_VIEW_TAG, openFileCommand } from './commands.js';
+import { refreshWorkspaceOf } from './api/selection.js';
+import { defineEditCallElement, EDIT_CALL_TAG } from './chat/edit-call.js';
+import { ChatViewsV1, filesToolRenderers } from './chat/views.js';
+import { FILE_ICON_TAG, FILE_VIEW_TAG, openFileCommand } from './commands.js';
 import { defineFilesElements } from './elements.js';
 import {
   createFilesRefresh,
   createRefreshCoordinator,
   type RefreshEnvironment,
 } from './refresh/coordinator.js';
+import { refreshAfterWrites } from './refresh/tool-refresh.js';
 import { createFilesSandbox, createSandboxStore } from './sandbox-store.js';
 import { setFilesClient } from './state.js';
 import { resetExpansion } from './stores/expansion.js';
@@ -54,12 +62,12 @@ export const filesRegions: readonly {
   readonly item: RegionItem;
 }[] = [
   {
-    region: 'layout.panel',
+    region: 'shell.panel' satisfies typeof SHELL_PANEL,
     item: {
       id: 'files',
       tag: 'files-tree',
       order: 100,
-      props: { label: 'Files', icon: 'file' },
+      props: { label: 'Files', iconTag: FILE_ICON_TAG },
     },
   },
 ];
@@ -90,23 +98,57 @@ export function activate({ services }: ClientContext): Cleanup {
   const defined = [
     ui.define('files-tree', elements.tree),
     ui.define(FILE_VIEW_TAG, elements.fileView),
+    ui.define(FILE_ICON_TAG, elements.fileIcon),
+    ui.define(EDIT_CALL_TAG, defineEditCallElement()),
   ];
   const command = services.use(CommandsV1).register(openFileCommand);
   const regions = registerFilesRegions(services.use(RegionsV1));
+  // `layout.panel/v3` starts with no view, so the Files view selects itself.
+  try {
+    services.use(LayoutPanelV3).select('files');
+  } catch {
+    // The panel is the layout's; without it there is nothing to show.
+  }
 
-  // The coordinator's workspace triggers, while the layout serves them.
-  const workspace = services.whenAvailable(LayoutWorkspaceV1, (api) => {
-    coordinator.setWorkspace(api);
-    return () => coordinator.setWorkspace(undefined);
+  // The coordinator's workspace triggers, while `workspace` serves the
+  // selection; the records are required, so they are there too.
+  const workspace = services.whenAvailable(
+    WorkspaceSelectionV1,
+    (selection) => {
+      coordinator.setWorkspace(
+        refreshWorkspaceOf(selection, services.use(RuntimeRecordsV1)),
+      );
+      return () => coordinator.setWorkspace(undefined);
+    },
+  );
+  // D12: a held Thread the chat starts to hold, moves or finishes refreshes
+  // its Project (`onSandboxActivityHook`), and so does a finished `edit` or
+  // `write` call in any held conversation (`onThreadUpdateHook`).
+  const activity = services.use(HooksV1).whenAvailable(ChatHooksV2, (chat) => {
+    const lifecycle = chat.onSandboxActivityHook(({ projectId }) =>
+      coordinator.request(projectId),
+    );
+    const writes = chat.onThreadUpdateHook(
+      refreshAfterWrites((projectId) => coordinator.request(projectId)),
+    );
+    return () => {
+      writes.dispose();
+      lifecycle.dispose();
+    };
   });
-  // D9-10: a sandbox-writing tool in any held conversation refreshes its Project.
-  const activity = services.use(HooksV1).whenAvailable(ChatHooksV1, (chat) => {
-    chat.onSandboxActivityHook(({ projectId }) => {
-      coordinator.request(projectId);
-    });
-  });
+
+  // Bundle isolation 5(b): the calls of `edit`, `write` and `view-image` are
+  // drawn by `files` while the chat serves its views, each registration in a
+  // callback of its own, so one refused leaves the others (`:1033`).
+  const drawings = filesToolRenderers.map((spec) =>
+    services.whenAvailable(ChatViewsV1, (views) => {
+      const registration = views.registerToolRenderer(spec);
+      return () => registration.dispose();
+    }),
+  );
 
   return () => {
+    for (const drawing of drawings.reverse()) drawing.dispose();
     activity.dispose();
     workspace.dispose();
     regions.dispose();

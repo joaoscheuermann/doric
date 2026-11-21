@@ -282,3 +282,223 @@ describe('fileDiff comparisons', () => {
     );
   });
 });
+
+// Bundle isolation 7(c), P2: the cases of the runtime's provisional
+// `file-changes` and `workspace-files` tests that no test of this bundle
+// stated yet, before the step deletes them.
+describe('changes, diffs and comparisons the runtime used to read', () => {
+  /** What `fileDiff` cuts a side at: 256 KiB. */
+  const limit = 256 * 1024;
+
+  const read = async (project: Project) => {
+    const outcome = await project.changes({});
+    if (outcome.status !== 'ready' || outcome.value.status !== 'read')
+      throw new Error('expected a read');
+    return outcome.value.repositories;
+  };
+
+  test('keeps special names through a rename, and reads a file staged and changed again as both, without patches', async (t) => {
+    const repo = await repository(t);
+    await writeFile(join(repo.root, 'old -> name\n.ts'), 'original\n');
+    await writeFile(join(repo.root, 'edited.ts'), 'original\n');
+    await repo.git('add', '.');
+    await repo.git('commit', '-qm', 'initial');
+    await rename(
+      join(repo.root, 'old -> name\n.ts'),
+      join(repo.root, 'new "name".ts'),
+    );
+    await writeFile(join(repo.root, 'edited.ts'), 'staged\n');
+    await repo.git('add', '.');
+    await writeFile(join(repo.root, 'edited.ts'), 'unstaged\n');
+    await writeFile(join(repo.root, 'untracked\nfile.ts'), 'new\n');
+    const project = projectOver(t, repo.sandbox);
+
+    const [workspace] = await read(project);
+    // edited.ts: +1 -1 against HEAD; the untracked file: +1; the rename: 0.
+    assert.deepEqual([workspace?.added, workspace?.removed], [2, 1]);
+    assert.equal('diff' in (workspace ?? {}), false);
+    const renamed = workspace?.changes.find(
+      (change) => change.status === 'renamed',
+    );
+    assert.deepEqual(renamed && [renamed.path, renamed.originalPath], [
+      'new "name".ts',
+      'old -> name\n.ts',
+    ]);
+    const edited = workspace?.changes.find(
+      (change) => change.path === 'edited.ts',
+    );
+    assert.deepEqual(edited && [edited.staged, edited.unstaged], [true, true]);
+    assert.equal(
+      workspace?.changes.find((change) => change.path === 'untracked\nfile.ts')
+        ?.status,
+      'untracked',
+    );
+    const moved = await comparison(project, '', 'new "name".ts');
+    assert.deepEqual(moved && [moved.original, moved.modified], [
+      'original\n',
+      'original\n',
+    ]);
+  });
+
+  test('compares additions, deletions, binaries and files beyond the limit, each side on its own', async (t) => {
+    const repo = await repository(t);
+    await writeFile(join(repo.root, 'gone.ts'), 'old\n');
+    await writeFile(join(repo.root, 'old-binary.dat'), 'old\0bytes');
+    await writeFile(join(repo.root, 'old-large.txt'), 'x'.repeat(limit + 10));
+    await repo.git('add', '.');
+    await repo.git('commit', '-qm', 'initial');
+    await rm(join(repo.root, 'gone.ts'));
+    await writeFile(join(repo.root, 'new.ts'), 'new\n');
+    await writeFile(join(repo.root, 'binary.dat'), 'a\0b');
+    await writeFile(join(repo.root, 'large.txt'), 'x'.repeat(limit + 10));
+    await writeFile(join(repo.root, 'old-binary.dat'), 'now text');
+    await writeFile(join(repo.root, 'old-large.txt'), 'now short');
+    const project = projectOver(t, repo.sandbox);
+
+    assert.deepEqual(await totals(project), [
+      { path: '', added: 3, removed: 2 },
+    ]);
+    const added = await comparison(project, '', 'new.ts');
+    assert.deepEqual(added && [added.original, added.modified], ['', 'new\n']);
+    const deleted = await comparison(project, '', 'gone.ts');
+    assert.deepEqual(deleted && [deleted.original, deleted.modified], [
+      'old\n',
+      '',
+    ]);
+    const binary = await comparison(project, '', 'binary.dat');
+    assert.deepEqual(binary && [binary.binary, binary.modified], [true, '']);
+    const large = await comparison(project, '', 'large.txt');
+    assert.deepEqual(large && [large.truncated, large.modified.length], [
+      true,
+      limit,
+    ]);
+    const wasBinary = await comparison(project, '', 'old-binary.dat');
+    assert.deepEqual(wasBinary && [wasBinary.binary, wasBinary.original], [
+      true,
+      '',
+    ]);
+    const wasLarge = await comparison(project, '', 'old-large.txt');
+    assert.deepEqual(
+      wasLarge && [wasLarge.truncated, wasLarge.original.length],
+      [true, limit],
+    );
+  });
+
+  test('does not count a staged edit that the working tree reverses', async (t) => {
+    const repo = await repository(t);
+    await writeFile(join(repo.root, 'file\tname.txt'), 'one\ntwo\n');
+    await repo.git('add', '.');
+    await repo.git('commit', '-qm', 'initial');
+    await writeFile(join(repo.root, 'file\tname.txt'), 'three\n');
+    await repo.git('add', '.');
+    await writeFile(join(repo.root, 'file\tname.txt'), 'one\ntwo\n');
+
+    const [workspace] = await read(projectOver(t, repo.sandbox));
+    assert.equal(workspace?.changes.length, 1);
+    assert.deepEqual([workspace?.added, workspace?.removed], [0, 0]);
+  });
+
+  test('reads an unresolved merge as conflicted, comparing HEAD with the marked file', async (t) => {
+    const repo = await repository(t);
+    await writeFile(join(repo.root, 'conflict.ts'), 'base\n');
+    await repo.git('add', '.');
+    await repo.git('commit', '-qm', 'initial');
+    await repo.git('switch', '-qc', 'other');
+    await writeFile(join(repo.root, 'conflict.ts'), 'other\n');
+    await repo.git('commit', '-qam', 'other');
+    await repo.git('switch', '-q', 'main');
+    await writeFile(join(repo.root, 'conflict.ts'), 'current\n');
+    await repo.git('commit', '-qam', 'current');
+    await assert.rejects(repo.git('merge', 'other'));
+    const project = projectOver(t, repo.sandbox);
+
+    const [workspace] = await read(project);
+    assert.equal(workspace?.changes[0]?.status, 'conflicted');
+    const conflict = await comparison(project, '', 'conflict.ts');
+    assert.equal(conflict?.original, 'current\n');
+    assert.match(conflict?.modified ?? '', /<<<<<<< HEAD/u);
+  });
+
+  test('reads one tracked diff per repository, each with its own changes', async (t) => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'doric-git-')));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const alpha = await committed(join(root, 'alpha'), {
+      'old.ts': 'old\n',
+    });
+    await mkdir(join(root, 'alpha', 'src'));
+    for (const name of ['a.ts', 'gone.ts'])
+      await writeFile(join(root, 'alpha', 'src', name), `${name}\n`);
+    await alpha('add', '.');
+    await alpha('commit', '-qm', 'sources');
+    await writeFile(join(root, 'alpha', 'src', 'a.ts'), 'changed\n');
+    await writeFile(join(root, 'alpha', 'src', 'b.ts'), 'b\n');
+    await alpha('add', 'src/b.ts');
+    await alpha('rm', '-q', 'src/gone.ts');
+    await alpha('mv', 'old.ts', 'new.ts');
+    await writeFile(join(root, 'alpha', 'src', 'new.ts'), 'new\n');
+    await committed(join(root, 'beta'), { 'b.ts': 'b\n' });
+    await writeFile(join(root, 'beta', 'b.ts'), 'changed\n');
+    const project = projectOver(t, localSandbox(root));
+
+    const outcome = await project.diff({});
+    if (outcome.status !== 'ready' || outcome.value.status !== 'read')
+      throw new Error('expected a read');
+    const byPath = new Map(
+      outcome.value.repositories.map((repository) => [
+        repository.path,
+        repository,
+      ]),
+    );
+    assert.deepEqual([...byPath.keys()].sort(), ['alpha', 'beta']);
+    assert.deepEqual(
+      byPath
+        .get('alpha')
+        ?.changes.map(({ path, status }) => `${status} ${path}`)
+        .sort(),
+      [
+        'added src/b.ts',
+        'deleted src/gone.ts',
+        'modified src/a.ts',
+        'renamed new.ts',
+        'untracked src/new.ts',
+      ],
+    );
+    assert.match(byPath.get('alpha')?.diff ?? '', /src\/a\.ts/u);
+    assert.deepEqual(
+      byPath
+        .get('beta')
+        ?.changes.map(({ path, status }) => `${status} ${path}`),
+      ['modified b.ts'],
+    );
+    assert.match(byPath.get('beta')?.diff ?? '', /b\.ts/u);
+  });
+
+  test('reads no repository in a workspace that holds none, and echoes a path a diff asks for', async (t) => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'doric-git-')));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    await writeFile(join(root, 'a.ts'), 'x\n');
+    const plain = await projectOver(t, localSandbox(root)).diff({});
+    assert.deepEqual(
+      plain.status === 'ready' && plain.value.status === 'read'
+        ? plain.value.repositories
+        : plain.status,
+      [],
+    );
+
+    await committed(join(root, 'alpha'), { 'a.ts': 'a\n' });
+    await writeFile(join(root, 'alpha', 'a.ts'), 'b\n');
+    const project = projectOver(t, localSandbox(root));
+    const scoped = await project.diff({ path: 'alpha' });
+    if (scoped.status !== 'ready' || scoped.value.status !== 'read')
+      throw new Error('expected a read');
+    assert.equal(scoped.value.path, 'alpha');
+    assert.deepEqual(
+      scoped.value.repositories.map((repository) => repository.path),
+      ['alpha'],
+    );
+    assert.deepEqual(await project.diff({ path: '../outside' }), {
+      status: 'ready',
+      value: { status: 'invalid_path' },
+    });
+  });
+});

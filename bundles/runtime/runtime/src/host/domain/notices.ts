@@ -7,7 +7,7 @@ import type {
 import type { WorkspacePublisher } from './types.js';
 
 /*
- * The live notices of `runtime/v1.watch` (design 57 §4.8). The publisher the
+ * The live notices of `runtime/v2.watch` (design 57 §4.8). The publisher the
  * domain notifies after each commit emits one notice synchronously to every
  * listener, in registration order; a listener that throws is logged and
  * never reaches back into the domain.

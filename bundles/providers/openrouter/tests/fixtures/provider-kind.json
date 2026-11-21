@@ -41,5 +41,9 @@
   "lists": [
     "models",
     "reasonings"
-  ]
+  ],
+  "site": {
+    "url": "https://openrouter.ai",
+    "label": "Open OpenRouter"
+  }
 }

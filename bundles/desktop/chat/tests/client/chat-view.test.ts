@@ -12,11 +12,8 @@ import {
   type ClientContext,
   CommandsV1,
   defineCommand,
-  defineMethod,
-  defineService,
   HooksV1,
   isContractError,
-  ref,
   UiV1,
 } from 'bundle/contracts';
 import {
@@ -33,7 +30,7 @@ import { z } from 'zod';
 
 import {
   CHAT_INTENT_EVENT,
-  ChatHooksV1,
+  ChatHooksV2,
   ChatLexicalV1,
   ChatViewsV1,
   READER_NAME,
@@ -45,6 +42,13 @@ import {
   noticesTitled,
   retryOf,
 } from './support/notices.js';
+import {
+  assertReady,
+  probeElements,
+  rendererProbe,
+  TOOL_ELEMENT,
+} from './support/renderers.js';
+import { selectionProbe } from './support/selection.js';
 import {
   type ChatWindow,
   openChatWindow,
@@ -62,7 +66,8 @@ const thread = (overrides: Record<string, unknown> = {}) => ({
   id: threadId,
   name: 'Fix the parser',
   projectId,
-  state: 'idle',
+  state: 'ready',
+  lastSequence: 0,
   cwd: '/workspace',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -578,6 +583,73 @@ test('a Thread the host does not know draws no conversation', async () => {
   assert.equal(opened.watches().length, 0);
 });
 
+// T4.11 (bundle isolation 4(c), R13, plan S10): for the moment between a
+// restored route and the mirror describing its Thread, the conversation
+// column shows the chat's element, which draws its own state for a Thread it
+// cannot describe yet: no failure notice, and the element stays mounted.
+// Characterization: no code changes for it.
+test('T4.11: mounted for a Thread the records mirror does not describe yet, chat-view stands and reports no failure', async () => {
+  opened = await openChatWindow({
+    url,
+    host: host(thread()),
+    records: { pending: ['threads'] },
+  });
+  await settle(50);
+
+  const view = opened.document.querySelector('chat-view');
+  assert.ok(view, 'The conversation column holds no chat-view.');
+  assert.equal(view.isConnected, true);
+  assert.equal(
+    view.querySelectorAll('[data-slot="error-notice"]').length,
+    0,
+    'chat-view draws a failure notice for an undescribed Thread.',
+  );
+});
+
+// Bundle isolation 4(d), O3: the conversation's Thread comes from
+// `runtime.records/v1` while a `workspace.selection/v1` provider answers (the
+// navigation that describes the Projects is there); without one the host is
+// asked once.
+test('without a workspace.selection/v1 provider, chat-view asks the host once for its Thread', async () => {
+  opened = await openChatWindow({ url, host: host(thread()) });
+  await settle(50);
+
+  assert.deepEqual(
+    opened
+      .received('runtime.threads/v1.thread')
+      .map((envelope) => envelope.input),
+    [[threadId]],
+  );
+  assert.equal(opened.watches().length, 1);
+});
+
+test("with a workspace.selection/v1 provider, chat-view opens on the records' Thread once they hold it, without asking the host", async () => {
+  let held = false;
+  const workspace = selectionProbe(
+    () => thread(),
+    (id) => (held && id === threadId ? thread() : undefined),
+  );
+  opened = await openChatWindow({
+    url,
+    host: host(thread()),
+    probe: workspace,
+    recordsApi: workspace.recordsApi,
+  });
+  await settle(50);
+  assert.equal(
+    opened.watches().length,
+    0,
+    'the conversation opened before the records held its Thread',
+  );
+
+  held = true;
+  workspace.notify();
+  await settle(50);
+
+  assert.equal(opened.watches().length, 1);
+  assert.deepEqual(opened.received('runtime.threads/v1.thread'), []);
+});
+
 test('a versioned event nobody projects is drawn as a generic block', async () => {
   opened = await openChatWindow({ url, host: host(thread()) });
   await deliver(opened, [
@@ -659,7 +731,7 @@ const notesProjector = {
 const notesProbe = (opened: unknown[]): Probe => ({
   requires: [
     'chat.views/v1@^1.0.0',
-    'chat.hooks/v1@^1.0.0',
+    'chat.hooks/v2@^2.0.0',
     'ui/v1@^1.0.0',
     'hooks/v1@^1.0.0',
     'commands/v1@^1.0.0',
@@ -672,7 +744,7 @@ const notesProbe = (opened: unknown[]): Probe => ({
       blockType: 'probe.note',
       elementTag: 'probe-card',
     });
-    services.use(HooksV1).whenAvailable(ChatHooksV1, (hooks) => {
+    services.use(HooksV1).whenAvailable(ChatHooksV2, (hooks) => {
       hooks.onBeforeRenderBlockHook((block) => ({
         ...block,
         actions: [{ id: 'open', label: 'Open note' }],
@@ -769,9 +841,9 @@ test('opening and leaving a conversation runs the mount hooks with its Thread', 
     url,
     host: host(thread()),
     probe: {
-      requires: ['chat.hooks/v1@^1.0.0', 'hooks/v1@^1.0.0'],
+      requires: ['chat.hooks/v2@^2.0.0', 'hooks/v1@^1.0.0'],
       activate: ({ services }: ClientContext) => {
-        services.use(HooksV1).whenAvailable(ChatHooksV1, (hooks) => {
+        services.use(HooksV1).whenAvailable(ChatHooksV2, (hooks) => {
           hooks.onMountHook((input) => {
             seen.push(`mount ${input.projectId} ${input.threadId}`);
           });
@@ -819,49 +891,12 @@ test('editor nodes are accepted until the first conversation editor exists, then
   );
 });
 
-// The footer composer, with a probe standing in for the layout's
-// `layout.workspace/v1` (the selected Thread).
-
-const workspaceProbe = (
-  selected: () => unknown,
-  record?: (id: string) => unknown,
-): Probe => ({
-  provides: ['layout.workspace/v1'],
-  activate: ({ services }: ClientContext) => {
-    const LayoutWorkspaceV1 = ref<{
-      thread(id: string): unknown;
-      selectedThread(): unknown;
-      subscribe(listener: () => void): { dispose(): void };
-    }>('layout.workspace/v1');
-    services.provide(
-      defineService(LayoutWorkspaceV1, {
-        thread: defineMethod({
-          input: z.string(),
-          output: z.unknown(),
-          execute: (id: string) => {
-            if (record) return record(id);
-            const current = selected() as { id?: string } | undefined;
-            return current?.id === id ? current : undefined;
-          },
-        }),
-        selectedThread: defineMethod({
-          input: z.tuple([]),
-          output: z.unknown(),
-          execute: () => selected(),
-        }),
-        subscribe: defineMethod({
-          input: z.custom<() => void>((value) => typeof value === 'function'),
-          output: z.custom<{ dispose(): void }>(),
-          execute: () => ({ dispose: () => undefined }),
-        }),
-      }) as never,
-    );
-  },
-});
+// The footer composer, with a probe that provides `workspace.selection/v1`
+// (the selected Thread) and the window's `runtime.records/v1` (its record).
 
 const footer = async (window: ChatWindow): Promise<Element> => {
   const region = window.document.createElement('core-region');
-  region.setAttribute('name', 'layout.footer');
+  region.setAttribute('name', 'shell.conversation.footer');
   window.document.body.append(region);
   await settle(50);
   return region as unknown as Element;
@@ -883,14 +918,16 @@ test('without a selected Thread the composer offers a disabled send', async () =
 });
 
 test('while the selected Thread runs, the composer stops its active prompt', async () => {
+  const running = selectionProbe(() =>
+    thread({ state: 'running', activePromptId: promptId }),
+  );
   opened = await openChatWindow({
     url: 'doric://app/elsewhere',
     host: host(thread(), {
       'runtime.threads/v1.pause': () => 'interrupted',
     }),
-    probe: workspaceProbe(() =>
-      thread({ state: 'running', activePromptId: promptId }),
-    ),
+    probe: running,
+    recordsApi: running.recordsApi,
   });
   const region = await footer(opened);
 
@@ -912,7 +949,7 @@ test('two conversations keep their drafts and footer sends scoped to their own T
   let create:
     | ((tag: string, props: Record<string, string>) => HTMLElement)
     | undefined;
-  const workspace = workspaceProbe(
+  const workspace = selectionProbe(
     () => records[0],
     (id) => records.find((entry) => entry.id === id),
   );
@@ -921,6 +958,7 @@ test('two conversations keep their drafts and footer sends scoped to their own T
     host: host(thread(), {
       'runtime.threads/v1.prompt': () => ({ status: 'accepted', promptId }),
     }),
+    recordsApi: workspace.recordsApi,
     probe: {
       provides: workspace.provides,
       requires: ['chat.lexical/v1@^1.0.0', 'ui/v1@^1.0.0'],
@@ -1009,7 +1047,7 @@ test('Cmd+Enter sends the Thread of the conversation holding the focus', async (
   let create:
     | ((tag: string, props: Record<string, string>) => HTMLElement)
     | undefined;
-  const workspace = workspaceProbe(
+  const workspace = selectionProbe(
     () => records[0],
     (id) => records.find((entry) => entry.id === id),
   );
@@ -1019,6 +1057,7 @@ test('Cmd+Enter sends the Thread of the conversation holding the focus', async (
     host: host(thread(), {
       'runtime.threads/v1.prompt': () => ({ status: 'accepted', promptId }),
     }),
+    recordsApi: workspace.recordsApi,
     probe: {
       provides: workspace.provides,
       requires: ['chat.lexical/v1@^1.0.0', 'ui/v1@^1.0.0'],
@@ -1111,13 +1150,14 @@ test('a child conversation footer stops its Thread while the main Thread stays s
     thread({ state: 'running', activePromptId: promptId }),
     thread({ id: childId, state: 'running', activePromptId: childPrompt }),
   ];
-  const workspace = workspaceProbe(
+  const workspace = selectionProbe(
     () => records[0],
     (id) => records.find((entry) => entry.id === id),
   );
   opened = await openChatWindow({
     url,
     host: host(thread(), { 'runtime.threads/v1.pause': () => 'interrupted' }),
+    recordsApi: workspace.recordsApi,
     probe: {
       provides: workspace.provides,
       requires: ['ui/v1@^1.0.0'],
@@ -1165,19 +1205,21 @@ const FOOTER_BAND =
   'absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 py-2 pl-2 text-[11px] font-normal';
 
 /**
- * The band's height as `<chat-view>` reads it (`--chat-footer-height`), set
+ * The band's height as `<chat-view>` reads it (`--shell-conversation-footer-height`), set
  * inline by the band's owner: the band's 44 px, which the sheet rule reads
  * as the band's height (D13).
  */
 const FOOTER_HEIGHT = '2.75rem';
 
-/** The `--chat-footer-height` an element sets in its own inline style. */
+/** The `--shell-conversation-footer-height` an element sets in its own inline style. */
 const ownFooterHeight = (element: Element | null | undefined): string => {
   const style = (element as HTMLElement | null | undefined)?.style;
-  const value = style?.getPropertyValue('--chat-footer-height').trim();
+  const value = style
+    ?.getPropertyValue('--shell-conversation-footer-height')
+    .trim();
   if (value) return value;
   return (
-    /(?:^|;)\s*--chat-footer-height\s*:\s*([^;]+)/
+    /(?:^|;)\s*--shell-conversation-footer-height\s*:\s*([^;]+)/
       .exec(element?.getAttribute('style') ?? '')?.[1]
       ?.trim() ?? ''
   );
@@ -1212,13 +1254,14 @@ test('a sub-thread viewer draws its composer in its floating footer band', async
     | ((tag: string, props: Record<string, string>) => HTMLElement)
     | undefined;
   const records = [thread(), thread({ id: childId })];
-  const workspace = workspaceProbe(
+  const workspace = selectionProbe(
     () => records[0],
     (id) => records.find((entry) => entry.id === id),
   );
   opened = await openChatWindow({
     url: 'doric://app/elsewhere',
     host: host(thread()),
+    recordsApi: workspace.recordsApi,
     probe: {
       provides: workspace.provides,
       requires: ['ui/v1@^1.0.0'],
@@ -1410,11 +1453,22 @@ test('a registered renderer draws the delegated input with the read-only Markdow
   });
 });
 
-test('edit tool calls stand outside the activity summary with their diff while terminal calls fold into the summary with their shell view', async () => {
+// Bundle isolation 5(b), OD-9: the standalone block is a probe registered in
+// the test, where it was the chat's built-in `edit` drawing (now `files`').
+// Change 4: the chat no longer draws `terminal` of its own, so the call is
+// the generic row inside the summary (`terminal` registers its element).
+test('a call registered standalone stands outside the activity summary while an unregistered terminal call folds into the summary as a generic row', async () => {
+  const { probe, state } = rendererProbe({
+    tools: [
+      { toolName: 'probe_edit', elementTag: TOOL_ELEMENT, standalone: true },
+    ],
+  });
   opened = await openChatWindow({
     url,
     host: host(thread()),
+    probe,
   });
+  await settle();
   await deliver(opened, [
     event(1, {
       type: 'prompt.accepted',
@@ -1478,40 +1532,18 @@ test('edit tool calls stand outside the activity summary with their diff while t
       type: 'tool.started',
       call: {
         id: 'call-edit-1',
-        name: 'edit',
-        payload: {
-          path: 'src/parser.ts',
-          edits: [
-            {
-              oldText: 'const old = 1;',
-              newText: 'const next = 2;\nexport { next };',
-            },
-          ],
-        },
+        name: 'probe_edit',
+        payload: { path: 'src/parser.ts' },
       },
     }),
     event(6, {
       type: 'tool.finished',
       call: {
         id: 'call-edit-1',
-        name: 'edit',
-        payload: {
-          path: 'src/parser.ts',
-          edits: [
-            {
-              oldText: 'const old = 1;',
-              newText: 'const next = 2;\nexport { next };',
-            },
-          ],
-        },
+        name: 'probe_edit',
+        payload: { path: 'src/parser.ts' },
       },
-      record: {
-        output: JSON.stringify({
-          success: true,
-          diff: ' 1 -const old = 1;\n 1 +const next = 2;\n 2 +export { next };',
-          first_changed_line: 1,
-        }),
-      },
+      record: { output: 'Updated src/parser.ts.' },
     }),
     event(7, {
       type: 'prompt.finished',
@@ -1521,49 +1553,56 @@ test('edit tool calls stand outside the activity summary with their diff while t
     }),
   ]);
 
+  assertReady(state);
   const view = opened.document.querySelector('chat-view');
   assert.ok(view);
 
-  // The edit block stands outside the activity summary with its diff open.
-  const editTool = view.querySelector('[data-slot="edit-tool"]');
-  assert.notEqual(editTool, null);
+  // The registered call is drawn without opening anything, with its view.
+  const [element] = probeElements(opened.document, TOOL_ELEMENT);
+  assert.ok(element, 'the standalone call is drawn');
   assert.equal(
-    editTool?.querySelector('[data-slot="edit-file-name"]')?.textContent,
-    'parser.ts',
-  );
-  assert.equal(editTool?.querySelector('[data-slot="edit-file-dir"]'), null);
-  assert.match(
-    editTool?.querySelector('[data-slot="edit-counts"]')?.textContent ?? '',
-    /\+2.*−1/,
-  );
-  assert.equal(
-    editTool?.querySelectorAll('[data-slot="edit-diff-line"]').length,
-    3,
+    (element.view as { readonly name?: string } | undefined)?.name,
+    'probe_edit',
   );
 
   // The terminal call is folded inside the activity summary ("Thought once, called 1 tool").
   assert.match(view.textContent ?? '', /Thought once, called 1 tool/);
-  assert.equal(view.querySelector('[data-slot="terminal-tool"]'), null);
+  assert.doesNotMatch(view.textContent ?? '', /Called\s*terminal/);
 
-  // Opening the activity summary reveals the terminal tool card inside it.
+  // Opening the activity summary reveals the terminal call's generic row.
   const triggers = [...view.querySelectorAll<HTMLElement>('button')];
   const summaryButton = triggers.find((button) =>
     button.textContent?.includes('Thought once, called 1 tool'),
   );
   assert.ok(summaryButton);
+  // The standalone call is not inside the summary.
+  assert.ok(
+    ![...view.querySelectorAll('[data-lexical-editor] > *')].some(
+      (block) => block.contains(summaryButton) && block.contains(element),
+    ),
+    'the standalone call stands outside the summary',
+  );
   summaryButton.click();
   await settle(50);
 
-  const terminalTool = view.querySelector('[data-slot="terminal-tool"]');
-  assert.notEqual(terminalTool, null);
+  assert.match(view.textContent ?? '', /Called\s*terminal/);
+  // Not the shell card the chat drew of its own until change 4.
   assert.equal(
-    terminalTool?.querySelector('[data-slot="terminal-command-preview"]')
-      ?.textContent,
-    'npm test',
+    view.querySelector('[data-slot="terminal-tool"]') === null,
+    true,
+    'the chat draws its own terminal card',
   );
 });
 
-test('a load_skill call stands as a block of its own between tool calls, never inside an activity summary', async () => {
+// Bundle isolation 5(b) change 2, OD-9: the standalone block is a probe
+// registered in the test, where it was the chat's built-in `load_skill`
+// drawing (now `default`'s).
+test('a call registered standalone stands as a block of its own between tool calls, never inside an activity summary', async () => {
+  const { probe, state } = rendererProbe({
+    tools: [
+      { toolName: 'probe_skill', elementTag: TOOL_ELEMENT, standalone: true },
+    ],
+  });
   const ran = (
     sequence: number,
     id: string,
@@ -1581,7 +1620,8 @@ test('a load_skill call stands as a block of its own between tool calls, never i
       record: { output },
     }),
   ];
-  opened = await openChatWindow({ url, host: host(thread()) });
+  opened = await openChatWindow({ url, host: host(thread()), probe });
+  await settle();
   await deliver(opened, [
     event(1, {
       type: 'prompt.accepted',
@@ -1592,7 +1632,7 @@ test('a load_skill call stands as a block of its own between tool calls, never i
     ...ran(
       4,
       'call-2',
-      'load_skill',
+      'probe_skill',
       { name: 'cwd/behavioral-testing' },
       '# Behavioral Testing',
     ),
@@ -1611,15 +1651,23 @@ test('a load_skill call stands as a block of its own between tool calls, never i
   const rowOf = (pattern: RegExp): Element | undefined =>
     rows.find((row) => pattern.test(row.textContent ?? ''));
 
-  // The skill draws its own row, which is no summary of other calls.
-  const skill = rowOf(/Loaded skill/);
-  assert.ok(skill, 'the load_skill call draws a row of its own');
+  // The registered call is drawn by its element in a row of its own, which is
+  // no summary of other calls.
+  assertReady(state);
+  const [element] = probeElements(opened.document, TOOL_ELEMENT);
+  assert.ok(element, 'the standalone call is drawn');
+  assert.equal(
+    (element.view as { readonly name?: string } | undefined)?.name,
+    'probe_skill',
+  );
+  const skill = rows.find((row) => row.contains(element));
+  assert.ok(skill, 'the standalone call draws a row of its own');
   assert.doesNotMatch(skill.textContent ?? '', /Called \d+ tools?/);
 
-  // Only the two calls after it fold into a summary; the skill is not one of
-  // the calls it counts.
+  // Only the two calls after it fold into a summary; the standalone call is
+  // not one of the calls it counts.
   const summary = rowOf(/Called 2 tools/);
-  assert.ok(summary, 'the calls after the skill fold into a summary');
+  assert.ok(summary, 'the calls after it fold into a summary');
   assert.notEqual(summary, skill);
   assert.doesNotMatch(
     opened.document.body.textContent ?? '',

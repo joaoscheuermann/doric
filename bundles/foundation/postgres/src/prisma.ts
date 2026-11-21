@@ -1,6 +1,6 @@
-// `postgres/prisma` (Node, provisional): the generated Prisma client and the
-// one way to build the process's client. Only the kernel stores import it,
-// until their data moves to `storage/v1` (decision S-12).
+// Internal (Node): the generated Prisma client and the one way to build the
+// process's client. The package does not export it; `postgres/testing`
+// re-exports `PrismaClient` and `Database` from here for tests.
 import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaClient } from './generated/prisma/client.js';

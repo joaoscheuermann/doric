@@ -1,34 +1,41 @@
-// Delegated inputs and the layout's sidebar tree the threads stories read:
-// a parent Thread that hands work to a child, and the child results it gets
-// back, as the host records them once the envelope is removed.
+// Delegated inputs and the records the threads stories read: a parent
+// Thread that hands work to a child, and the child results it gets back, as
+// the host records them once the envelope is removed.
 
-import {
-  type LayoutWorkspace,
-  setWorkspace,
-  type WorkspaceThread,
-} from '../../src/client/source.js';
+import type { Thread } from 'runtime/contracts';
+
+import { type RecordsSource, setRecords } from '../../src/client/source.js';
 
 export const projectId = '6f1c2a9e-3b7d-4c55-9a0e-2d8b41f7c310';
 
-export const parentThread: WorkspaceThread = {
-  id: '0b6d7f42-91e3-4a8c-b2d5-7c1e9f03a6b4',
+/** A ready Thread record of the Project. */
+const thread = (id: string, name: string): Thread => ({
+  id,
   projectId,
-  name: 'Ship the checkout redesign',
-};
+  name,
+  state: 'ready',
+  lastSequence: 0,
+  cwd: '/workspace',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+});
 
-export const childThread: WorkspaceThread = {
-  id: 'c3a85e10-4f27-4d6b-8e19-5b0f2a7d9c61',
-  projectId,
-  name: 'Audit the payment form for accessibility',
-};
+export const parentThread = thread(
+  '0b6d7f42-91e3-4a8c-b2d5-7c1e9f03a6b4',
+  'Ship the checkout redesign',
+);
 
-export const longNamedThread: WorkspaceThread = {
-  id: '9e4b2c71-d8a0-4f3e-a615-03c7b9e2f854',
-  projectId,
-  name: 'Migrate every settings screen from the legacy form library to the shared field components and remove the old validation helpers',
-};
+export const childThread = thread(
+  'c3a85e10-4f27-4d6b-8e19-5b0f2a7d9c61',
+  'Audit the payment form for accessibility',
+);
 
-/** A Thread the sidebar tree does not know (deleted, or not loaded yet). */
+export const longNamedThread = thread(
+  '9e4b2c71-d8a0-4f3e-a615-03c7b9e2f854',
+  'Migrate every settings screen from the legacy form library to the shared field components and remove the old validation helpers',
+);
+
+/** A Thread the records do not hold (deleted, or not loaded yet). */
 export const unknownThreadId = 'f81d4fae-7dec-41d0-a765-00a0c91e6bf6';
 
 const threads = new Map(
@@ -38,14 +45,14 @@ const threads = new Map(
   ]),
 );
 
-const workspace: LayoutWorkspace = {
+const records: RecordsSource = {
   thread: (threadId) => threads.get(threadId),
   subscribe: () => ({ dispose: () => undefined }),
 };
 
-/** Seeds the layout's tree the sender's label and link are read from. */
+/** Seeds the records the sender's label and link are read from. */
 export const seedWorkspace = (): void => {
-  setWorkspace(workspace);
+  setRecords(records);
 };
 
 export const instructionText = [

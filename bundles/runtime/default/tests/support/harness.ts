@@ -20,7 +20,6 @@ import {
 import { createTestServices } from 'bundle/testing';
 import { ConfigurationV1, configurationMethods } from 'host-config/contracts';
 import type { ProviderMessage } from 'llms';
-import { type McpServerView, McpV1, mcpMethods } from 'mcp/contracts';
 import {
   type AttachmentContent,
   type ConfigurationValue,
@@ -40,7 +39,13 @@ import {
   runtimeWorkspaceMethods,
   type SteerInput,
 } from 'runtime/contracts';
+import { z } from 'zod';
 
+import {
+  type SkillSourceEntry,
+  SkillSourcesV1,
+  skillSourcesMethods,
+} from '../../src/contracts/index.js';
 import type { AgentFile } from '../../src/host/agents/built-in.js';
 import { activate } from '../../src/host/index.js';
 import type { PromptVariables } from '../../src/host/prompts/variables.js';
@@ -162,17 +167,20 @@ export const osLease = (
       : { exitCode: 0, stdout: '', stderr: '' },
 });
 
-/** The Project's MCP servers, as `mcp/v1` answers. */
-export interface FakeMcp {
-  /** Default: no server. */
-  readonly list?: () =>
-    | readonly McpServerView[]
-    | Promise<readonly McpServerView[]>;
+/**
+ * One bundle's skills, as its `default.skill-sources/v1` provider answers.
+ * `list` answers whatever the test gives, valid or not, so a test can check
+ * what `default` does with an answer that fails the contract's schema.
+ */
+export interface FakeSkillSource {
+  /** Default: no skill. */
+  readonly list?: (input: { readonly cwd: string }) => unknown;
   /** Default: the skill cannot be read. */
-  readonly readSkill?: (input: {
-    readonly id: string;
-    readonly uri: string;
-  }) => { readonly text: string } | Promise<{ readonly text: string }>;
+  readonly read?: (input: {
+    readonly reference: string;
+  }) =>
+    | { readonly origin?: string; readonly text: string }
+    | Promise<{ readonly origin?: string; readonly text: string }>;
 }
 
 /** The Thread's live working directory, as `runtime.workspace/v1` answers. */
@@ -285,48 +293,57 @@ export const leaseService = (lease: FakeLease, calls: RecordedCall[]) =>
     }),
   });
 
-/** A fake `mcp/v1` (list, readSkill) recording every call. */
-export const mcpService = (mcp: FakeMcp, calls: RecordedCall[]) =>
-  defineService(McpV1.id, {
-    list: defineMethod({
-      ...mcpMethods.list,
-      execute: async (input, call) => {
-        recorder(calls, 'list')(input, call);
-        return [...((await mcp.list?.()) ?? [])];
-      },
-    }),
-    readSkill: defineMethod({
-      ...mcpMethods.readSkill,
-      execute: async (input, call) => {
-        recorder(calls, 'readSkill')(input, call);
-        if (mcp.readSkill === undefined)
-          throw new Error(`The skill ${input.uri} cannot be read.`);
-        return mcp.readSkill(input);
-      },
-    }),
-  });
+/**
+ * A fake provider of the many-contract `default.skill-sources/v1` (list,
+ * read) recording every call. Its `list` output schema is loose: the fake
+ * answers what `source.list` gives, and `default` checks it.
+ */
+export const skillSourceService = (
+  source: FakeSkillSource,
+  calls: RecordedCall[],
+) =>
+  defineService(
+    SkillSourcesV1.id,
+    {
+      list: defineMethod({
+        input: skillSourcesMethods.list.input,
+        output: z.unknown(),
+        execute: async (input, call) => {
+          recorder(calls, 'list')(input, call);
+          return (await source.list?.(input)) ?? { skills: [] };
+        },
+      }),
+      read: defineMethod({
+        ...skillSourcesMethods.read,
+        execute: async (input, call) => {
+          recorder(calls, 'read')(input, call);
+          if (source.read === undefined)
+            throw new Error(`The skill ${input.reference} cannot be read.`);
+          return source.read(input);
+        },
+      }),
+    },
+    { cardinality: 'many' },
+  );
 
-/** A stored server of the Project with its live state, as `mcp/v1` lists it. */
-export const mcpServer = ({
-  id,
+/**
+ * One skill a source lists: `description` defaults to `<name> description.`
+ * and `reference` to `<group>/<name>` (or `<name>` without a group).
+ */
+export const sourceEntry = (
+  name: string,
+  options: {
+    readonly group?: string;
+    readonly description?: string;
+    readonly reference?: string;
+  } = {},
+): SkillSourceEntry => ({
+  ...(options.group === undefined ? {} : { group: options.group }),
   name,
-  state = 'connected',
-  skills = [],
-}: {
-  readonly id: string;
-  readonly name: string;
-  readonly state?: McpServerView['status']['state'];
-  readonly skills?: McpServerView['skills'];
-}): McpServerView => ({
-  id,
-  projectId,
-  name,
-  enabled: true,
-  transport: { kind: 'http', url: 'https://mcp.example.com/', headers: [] },
-  status: { state },
-  signedIn: false,
-  tools: [],
-  skills,
+  description: options.description ?? `${name} description.`,
+  reference:
+    options.reference ??
+    (options.group === undefined ? name : `${options.group}/${name}`),
 });
 
 /** What the runtime's session throws when a write fails: it keeps the retry. */
@@ -445,8 +462,11 @@ export interface HarnessOptions {
   readonly skills?: readonly HarnessSkill[];
   /** A `runtime.lease/v1` provider; without it the contract is unprovided. */
   readonly lease?: FakeLease;
-  /** An `mcp/v1` provider; without it the contract is unprovided. */
-  readonly mcp?: FakeMcp;
+  /**
+   * The `default.skill-sources/v1` providers, by the bundle id each provides
+   * from, in order; without it the contract is unprovided.
+   */
+  readonly sources?: Readonly<Record<string, FakeSkillSource>>;
   /** The bundle's clock. Default: always `harnessNow`. */
   readonly now?: () => Date;
   /** The built-in agent files `activate` loads. Default: none (`[]`), so tests see only the agents they inject; pass `builtInAgentFiles` for the shipped ones. */
@@ -504,7 +524,7 @@ const transformHooks = () => {
 /**
  * The `default` bundle activated over fake `host-config/v1`, `models/v1`,
  * `tools/v1` and `skills/v1` providers (and, when given, `runtime.lease/v1`,
- * `mcp/v1` and `runtime.workspace/v1`), run through `executor/v1` the way the runtime calls it:
+ * `default.skill-sources/v1` and `runtime.workspace/v1`), run through `executor/v1` the way the runtime calls it:
  * scoped to the prompt, with the prompt's abort signal.
  */
 export const bundleServices = (options: HarnessOptions) => {
@@ -516,16 +536,22 @@ export const bundleServices = (options: HarnessOptions) => {
   const logs: LoggedEntry[] = [];
   const languageModel = toLanguageModel(options.provider);
   /**
-   * Every call the fake `runtime.lease/v1`, `mcp/v1` and
-   * `runtime.workspace/v1` received.
+   * Every call the fake `runtime.lease/v1`, `default.skill-sources/v1`
+   * (every source together) and `runtime.workspace/v1` received.
    */
   const calls = {
     lease: [] as RecordedCall[],
-    mcp: [] as RecordedCall[],
+    sources: [] as RecordedCall[],
     workspace: [] as RecordedCall[],
   };
   const harness = createTestServices({
     bundle: { id: 'default' },
+    providers: Object.entries(options.sources ?? {}).map(
+      ([bundleId, source]) => ({
+        bundleId,
+        provide: [skillSourceService(source, calls.sources)],
+      }),
+    ),
     provide: [
       transformHooks(),
       logService(logs),
@@ -626,9 +652,6 @@ export const bundleServices = (options: HarnessOptions) => {
       ...(options.lease === undefined
         ? []
         : [leaseService(options.lease, calls.lease)]),
-      ...(options.mcp === undefined
-        ? []
-        : [mcpService(options.mcp, calls.mcp)]),
       ...(options.workspace === undefined
         ? []
         : [workspaceService(options.workspace, calls.workspace)]),

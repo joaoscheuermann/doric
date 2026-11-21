@@ -13,36 +13,37 @@ import {
 } from '../../domain/config.js';
 import { settingsErrorCatalog } from '../../domain/error-catalog.js';
 import { providerIconRequest } from '../../domain/model-icons.js';
-import { providerSite } from '../../domain/provider-icon.js';
-import type { ClaudeLogin } from '../../hooks/use-claude-login.js';
 import { useModelIcons } from '../../hooks/use-model-icons.js';
 import { ProviderIcon } from '../molecules/provider-icon.js';
-import { SettingsProviderScreen } from './settings-provider.js';
+import {
+  type ProviderFieldItems,
+  SettingsProviderScreen,
+} from './settings-provider.js';
 
 /**
  * A provider's page in the dashboard's main area: a title bar with the
  * provider's mark and name ("Add provider" for one not yet saved) and, for a
- * kind with a site of its own, a control that opens it in the system browser;
- * then the same provider form the settings window draws. A blur on any field
- * sends the change waiting on the debounce.
+ * kind whose descriptor names an `https:` site, a control that opens it in the
+ * system browser; then the same provider form the settings window draws. A blur
+ * on any field sends the change waiting on the debounce.
  */
 export function DashboardProviderPage({
-  claudeLogin,
   credentials,
   draft,
+  fieldItems,
   kinds,
   onChange,
   onFlush,
 }: {
-  /** The Claude sign-in the `claude` kind's row offers, while a provider answers it. */
-  readonly claudeLogin?: ClaudeLogin;
   readonly credentials: readonly Credential[];
   readonly draft: ProviderDraft;
+  /** The items of `settings.provider.field` the form draws in its fields' place. */
+  readonly fieldItems?: ProviderFieldItems;
   readonly kinds: readonly ProviderKind[];
   readonly onChange: (next: ProviderDraft) => void;
   readonly onFlush: () => void;
 }) {
-  const site = providerSite(draft.kind);
+  const site = kinds.find(({ id }) => id === draft.kind)?.site;
   // The page's one request, kept while the provider's id, kind and values are.
   const { id, kind, configuration } = draft;
   const requests = useMemo(
@@ -95,9 +96,9 @@ export function DashboardProviderPage({
         onBlur={onFlush}
       >
         <SettingsProviderScreen
-          {...(claudeLogin === undefined ? {} : { claudeLogin })}
           credentials={credentials}
           draft={draft}
+          {...(fieldItems === undefined ? {} : { fieldItems })}
           kinds={kinds}
           onChange={onChange}
         />

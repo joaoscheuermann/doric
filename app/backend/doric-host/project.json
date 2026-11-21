@@ -20,46 +20,14 @@
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
         "commands": [
-          "node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles bundles/foundation/postgres bundles/foundation/core bundles/features/files bundles/features/git bundles/features/threads bundles/runtime/runtime bundles/runtime/default bundles/providers/openai bundles/providers/openrouter bundles/providers/codex bundles/providers/claude bundles/sandboxes/docker bundles/sandboxes/firecracker bundles/features/web bundles/features/terminal bundles/features/claude-login bundles/features/usage bundles/features/resources bundles/features/screen bundles/features/screen-relay bundles/desktop/notifications bundles/desktop/layout bundles/desktop/settings bundles/desktop/chat bundles/desktop/history bundles/features/comments bundles/features/openui bundles/features/papercraft bundles/features/mcp bundles/foundation/transport bundles/foundation/host-config"
+          "node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles --all bundles"
         ],
         "parallel": false
       },
       "dependsOn": [
         {
           "target": "build",
-          "projects": [
-            "bundle-postgres",
-            "bundle-core",
-            "bundle-files",
-            "bundle-git",
-            "bundle-threads",
-            "bundle-runtime",
-            "bundle-default",
-            "bundle-openai",
-            "bundle-openrouter",
-            "bundle-codex",
-            "bundle-claude",
-            "bundle-docker",
-            "bundle-firecracker",
-            "bundle-web",
-            "bundle-terminal",
-            "bundle-usage",
-            "bundle-claude-login",
-            "bundle-resources",
-            "bundle-screen",
-            "bundle-screen-relay",
-            "bundle-notifications",
-            "bundle-layout",
-            "bundle-settings",
-            "bundle-chat",
-            "bundle-history",
-            "bundle-comments",
-            "bundle-openui",
-            "bundle-papercraft",
-            "bundle-mcp",
-            "bundle-transport",
-            "bundle-host-config"
-          ]
+          "projects": ["tag:type:bundle"]
         }
       ],
       "cache": false

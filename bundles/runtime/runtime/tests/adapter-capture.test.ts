@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { terminalMethods } from 'terminal/contracts';
 import type { z } from 'zod';
 
 import {
@@ -15,7 +14,9 @@ import { readTranscript, recordTranscript } from './support/capture-adapter.js';
  * The golden transcripts of the stage-1 host-adapter (57-WP-0) are the
  * oracle 57-WP-R2 replays against the runtime providers. These cases check
  * that the recording covers what the design names and that the extended
- * contracts still accept every answer the adapter gave.
+ * contracts still accept every answer the adapter gave. The `terminal/v1`
+ * steps are the `terminal` bundle's since the stage-10 host switch, as in
+ * the adapter parity cases: they are skipped here.
  */
 
 const stageOne: Record<
@@ -41,13 +42,18 @@ const stageOne: Record<
     readFile: runtimeLeaseMethods.readFile,
     writeFile: runtimeLeaseMethods.writeFile,
   },
-  'terminal/v1': terminalMethods,
 };
+
+/** The recorded steps of the runtime's own contracts. */
+const runtimeSteps = async () =>
+  (await readTranscript()).steps.filter(
+    ({ contract }) => contract !== 'terminal/v1',
+  );
 
 const inactive = 'Thread control is no longer active.';
 
-void test('the transcript calls every stage-1 method of the four contracts', async () => {
-  const { steps } = await readTranscript();
+void test('the transcript calls every stage-1 method of the three runtime contracts', async () => {
+  const steps = await runtimeSteps();
 
   for (const [contract, methods] of Object.entries(stageOne))
     for (const method of Object.keys(methods))
@@ -60,7 +66,7 @@ void test('the transcript calls every stage-1 method of the four contracts', asy
 });
 
 void test('after the prompt ended every contract refuses with the inactive error', async () => {
-  const { steps } = await readTranscript();
+  const steps = await runtimeSteps();
   const ended = steps.filter(({ phase }) => phase === 'ended');
 
   assert.deepEqual(
@@ -74,32 +80,8 @@ void test('after the prompt ended every contract refuses with the inactive error
     });
 });
 
-void test('a facade without terminals answers the unavailable refusal', async () => {
-  const { steps } = await readTranscript();
-
-  assert.deepEqual(
-    steps.filter(({ phase }) => phase === 'no-terminals'),
-    [
-      {
-        label: 'terminal run on a facade without terminals',
-        phase: 'no-terminals',
-        contract: 'terminal/v1',
-        method: 'run',
-        args: [{ command: 'ls', cwd: '/workspace', timeoutMs: 1000 }],
-        outcome: {
-          error: {
-            name: 'ContractError',
-            message: 'This prompt has no live terminals.',
-            code: 'unavailable',
-          },
-        },
-      },
-    ],
-  );
-});
-
 void test('every recorded answer satisfies the extended contract schemas', async () => {
-  const { steps } = await readTranscript();
+  const steps = await runtimeSteps();
 
   for (const step of steps) {
     if (!('value' in step.outcome)) continue;

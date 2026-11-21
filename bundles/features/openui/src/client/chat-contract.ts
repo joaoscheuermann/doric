@@ -108,12 +108,12 @@ export interface ChatSend {
 export const ChatSendV1 = ref<ChatSend>('chat.send/v1');
 
 /**
- * A structural copy of the one `chat.hooks/v1` hook the client registers
- * (`onThreadUpdateHook`, 1.1.0), matched by contract ID only and reached with
+ * A structural copy of the one `chat.hooks/v2` hook the client registers
+ * (`onThreadUpdateHook`, 2.0.0), matched by contract ID only and reached with
  * `HooksV1.whenAvailable`. Chat calls it with every live event of a held
  * Thread as it arrives and with every `updated` record, and never awaits it.
  */
-export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
+export const ChatHooksV2 = defineHooks('chat.hooks/v2', {
   onThreadUpdateHook: defineHook({
     kind: 'observe',
     input: z.object({
@@ -136,5 +136,5 @@ export const ChatHooksV1 = defineHooks('chat.hooks/v1', {
 
 /** What `onThreadUpdateHook` hands its handler. */
 export type ThreadUpdateInput = z.output<
-  (typeof ChatHooksV1)['hooks']['onThreadUpdateHook']['input']
+  (typeof ChatHooksV2)['hooks']['onThreadUpdateHook']['input']
 >;

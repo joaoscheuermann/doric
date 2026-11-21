@@ -1,35 +1,30 @@
 {
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": false,
-    "declaration": false,
-    "declarationMap": false,
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
     "emitDeclarationOnly": false,
-    "noEmit": true,
-    "rootDir": ".",
-    "jsx": "react-jsx",
-    "lib": ["es2022", "dom", "dom.iterable"],
-    "types": []
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "types": [],
+    "jsx": "react-jsx"
   },
-  "include": [
-    "src/client/**/*.ts",
-    "src/client/**/*.tsx",
-    "stories/**/*.ts",
-    "stories/**/*.tsx",
-    ".storybook/**/*.tsx"
-  ],
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/client/**"],
   "references": [
     {
-      "path": "../layout"
+      "path": "../workspace"
     },
     {
-      "path": "../../features/claude-login"
+      "path": "../../runtime/runtime"
     },
     {
       "path": "../../../packages/bundle"
     },
     {
-      "path": "../../runtime/runtime"
+      "path": "../account"
     },
     {
       "path": "../../foundation/host-config"

@@ -1,5 +1,5 @@
 // `<chat-view>`'s content over the story host: the Thread's record comes from
-// the sidebar tree, its log is replayed by `runtime.threads/v1.watchThread`
+// the records, its log is replayed by `runtime.threads/v1.watchThread`
 // into the Thread chat store, its queue is in the window's query client and
 // its composer stack in `chat.composer/v1`, so each story is the conversation
 // a window draws for that Thread. Sending works: the host accepts the prompt

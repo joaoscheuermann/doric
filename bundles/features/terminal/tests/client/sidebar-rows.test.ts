@@ -1,10 +1,10 @@
 // The terminal bundle's sidebar registration answers `busy` (spec
 // docs/designs/sidebar-alignment.md §3; T-2.10, T-2.10b): a Thread with an
 // agent terminal that has not exited is busy, the answer follows the store,
-// and resolving each Thread's Project costs at most one `workspace().thread`
+// and resolving each Thread's Project costs at most one `records().thread`
 // call per Thread for the registration's life. The store is the real one over
 // a fake `watchProject` stream (the host boundary); the regions, the sidebar
-// and `layout.workspace/v1` are fakes that record what they were asked.
+// and `runtime.records/v1` are fakes that record what they were asked.
 
 import assert from 'node:assert/strict';
 import * as nodeModule from 'node:module';
@@ -69,7 +69,7 @@ const unreachable = async (): Promise<never> => {
 
 /**
  * The registration over fakes. `answer` decides what the fake
- * `workspace().thread` returns for each call, by Thread id and call number
+ * `records().thread` returns for each call, by Thread id and call number
  * (1-based); by default every Thread belongs to `PROJECT`.
  */
 const setup = (
@@ -129,7 +129,7 @@ const setup = (
       return rows.busy(threadId);
     },
     followed,
-    /** The `workspace().thread` calls so far, by Thread id. */
+    /** The `records().thread` calls so far, by Thread id. */
     lookups,
     /** Delivers an update on the Project's stream; fails unless followed. */
     report: (update: TerminalUpdate, projectId = PROJECT): void => {

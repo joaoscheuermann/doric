@@ -1,31 +1,27 @@
-// A fake host for the layout stories: the services `activate` binds the
-// layout to, answered in memory from story data. Projects and Threads can be
-// created, renamed, colored and deleted; an operation can be held pending or
-// made to fail, which is how the loading and error states are drawn. The
-// services the layout itself provides (`layout.tabs/v1` and the rest) are
-// kept and answered in process, so a child Thread still opens its tab.
+// A fake host for the layout stories and tests: the services `activate`
+// binds the shell to, answered in memory. The services the layout itself
+// provides (`layout.tabs/v2` and the rest) are kept and answered in process.
+// Since bundle isolation 4(c) the shell reads no Project or Thread: the host
+// holds no records mirror, no terminal rows and no `doric.about/v1`, and an
+// element another bundle draws (the chat's tab icon among them) is a
+// placeholder.
 
-import {
-  type CatalogSnapshot,
-  ContractError,
-  type DoricAbout,
-  type Navigation,
-  type ProviderInfo,
+import type {
+  CatalogSnapshot,
+  Disposable,
+  Navigation,
+  ProviderInfo,
 } from 'bundle/contracts';
+import { FileDiffIcon, FileIcon, type LucideIcon } from 'lucide-react';
 import { type ComponentProps, createElement } from 'react';
-import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
-import type { RuntimeHost, ThreadsHost } from '../../src/client/api/host.js';
 import type { ProjectPanel } from '../../src/client/components/organisms/project-panel.js';
-import type { ConnectionStatus } from '../../src/client/domain/connection.js';
-import type { Project, Thread } from '../../src/client/domain/workspace.js';
 import type { activate } from '../../src/client/index.js';
-import type { StackPane, ThreadRows } from '../../src/contracts/index.js';
+import type { StackPane } from '../../src/contracts/index.js';
 import { placeholderElement } from './placeholder.js';
-import { type FixtureTerminal, TerminalRowsFixture } from './terminal-rows.js';
 
-export type { StackPane, ThreadRows };
+export type { StackPane };
 
 export type Services = Parameters<typeof activate>[0]['services'];
 
@@ -36,33 +32,12 @@ export type RegionItem = Omit<RegionEntry, 'owner'> & {
   readonly owner?: string;
 };
 
-type ProjectActivity = Awaited<
-  ReturnType<RuntimeHost['projectActivity']>
->[number];
-
-/** The host reads a story can hold pending or make fail. */
-export type HostOperation = 'projects' | 'activity' | 'threads' | 'thread';
-
 export interface HostOptions {
-  readonly projects?: readonly Project[];
-  readonly threads?: readonly Thread[];
   /** The window path the story opens at. */
   readonly path?: string;
-  readonly connection?: ConnectionStatus;
+  readonly connection?: 'connected' | 'disconnected';
   /** The items other bundles added to each region. */
   readonly regions?: Readonly<Record<string, readonly RegionItem[]>>;
-  /** Reads that never answer, for loading states. */
-  readonly pending?: readonly HostOperation[];
-  /** Reads that fail as an unreachable host does. */
-  readonly failing?: readonly HostOperation[];
-  /** How many terminal rows each Thread has in the sidebar tree. */
-  readonly terminalRows?: Readonly<Record<string, number>>;
-  /**
-   * Thread ids with a busy agent terminal: the stories' `layout.sidebar/v1`
-   * registration answers `busy` true for them, so each one and its ancestors
-   * are active. Absent: no Thread is busy.
-   */
-  readonly terminalBusy?: readonly string[];
   /**
    * Contract ids the host does not provide, as an older app lacks a platform
    * contract. For an id listed here:
@@ -77,70 +52,49 @@ export interface HostOptions {
    * object on every call). Absent: the host does not provide the contract,
    * so `use` throws for it, as it does for any id the host does not know.
    * `LayoutFixture` extends `HostOptions`, so `bindLayout` and
-   * `renderWorkspace` pass it through unchanged.
+   * `renderShell` pass it through unchanged.
    */
   readonly catalog?: CatalogSnapshot;
 }
 
-const terminalCommands = ['npm run dev', 'npm test -- --watch', 'tsc --watch'];
-
-/** One fixture terminal per row: the reader's first, then the agent's runs. */
-const fixtureTerminals = (count: number): readonly FixtureTerminal[] =>
-  Array.from({ length: count }, (_, index) => {
-    const command = terminalCommands[index % terminalCommands.length] ?? '';
-    const agent = index % 2 === 1;
-    return {
-      id: `terminal-${index}`,
-      label: agent ? `${command} · 00:12 (10:00)` : command,
-      origin: agent ? 'agent' : 'user',
-    };
-  });
-
 /**
- * How deep a Thread's terminal rows sit: one level under a main Thread, one
- * more for each ancestor it was opened inside.
+ * The `account` bundle's `<account-status>` (step 4(b), decision O1): a
+ * button named "Account", where the running app draws the avatar that opens
+ * the account menu.
  */
-const rowsDepth = (threadId: string, threads: readonly Thread[]): number => {
-  const byId = new Map(threads.map((thread) => [thread.id, thread]));
-  let depth = 1;
-  let thread = byId.get(threadId);
-  while (thread?.parentThreadId !== undefined) {
-    depth += 1;
-    thread = byId.get(thread.parentThreadId);
-  }
-  return depth;
+const accountStandIn = (): HTMLElement => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.setAttribute('aria-label', 'Account');
+  button.dataset.storyPlaceholder = 'account-status';
+  return button;
 };
 
 /**
- * The terminal bundle's rows under one Thread, as `<terminal-rows thread-id>`
- * draws them: one row per terminal, none when the Thread has no terminal, with
- * the app's row styling (its icon, its command, and the stop or discard button
- * that appears on hover).
+ * The icon elements `files` and `git` define (`files-file-icon`,
+ * `git-file-diff-icon`), as the running app draws them: a 16 px glyph.
  */
-const terminalRowsElement = (count: number, depth: number): HTMLElement => {
-  const element = document.createElement('div');
+const glyphIcons: Readonly<Record<string, LucideIcon>> = {
+  'files-file-icon': FileIcon,
+  'git-file-diff-icon': FileDiffIcon,
+};
+
+const glyphElement = (icon: LucideIcon): HTMLElement => {
+  const element = document.createElement('span');
   element.style.display = 'contents';
-  const root = createRoot(element);
-  flushSync(() =>
-    root.render(
-      createElement(TerminalRowsFixture, {
-        depth,
-        terminals: fixtureTerminals(count),
-      }),
-    ),
-  );
+  createRoot(element).render(createElement(icon));
   return element;
 };
 
 /** The region items the running app adds, by the bundles that add them. */
 export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
-  'layout.panel': [
+  'shell.panel': [
     {
       id: 'files',
       tag: 'files-tree',
       order: 100,
       owner: 'files',
-      props: { label: 'Files', icon: 'files' },
+      props: { label: 'Files', iconTag: 'files-file-icon' },
     },
     {
       id: 'changes',
@@ -149,12 +103,12 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
       owner: 'git',
       props: {
         label: 'Changes',
-        icon: 'file-diff',
+        iconTag: 'git-file-diff-icon',
         badgeTag: 'git-changes-badge',
       },
     },
   ],
-  'layout.header': [
+  'shell.header.actions': [
     {
       id: 'terminal-new',
       tag: 'terminal-new-button',
@@ -162,21 +116,13 @@ export const appRegions: Readonly<Record<string, readonly RegionItem[]>> = {
       owner: 'terminal',
     },
   ],
-  'layout.footer': [
+  'shell.conversation.footer': [
     { id: 'usage', tag: 'usage-summary', order: 30, owner: 'usage' },
   ],
-  'layout.panel.footer': [
+  'shell.panel.footer': [
     { id: 'git-cwd', tag: 'git-workspace-cwd', order: 10, owner: 'git' },
   ],
-  'layout.account.status': [
-    {
-      id: 'resources',
-      tag: 'resources-monitor',
-      order: 10,
-      owner: 'resources',
-    },
-  ],
-  'layout.main.bottom': [
+  'shell.conversation.bottom': [
     { id: 'terminals', tag: 'terminal-panel', owner: 'terminal' },
   ],
 };
@@ -227,15 +173,6 @@ const matchPath = (path: string): RouteMatch | undefined => {
 
 const disposable = { dispose: () => undefined };
 
-/** The states in which `archiveThread` answers `busy`. */
-const busyStates: ReadonlySet<Thread['state']> = new Set([
-  'queued',
-  'running',
-  'cancelling',
-]);
-
-const never = <Value>(): Promise<Value> => new Promise<Value>(() => undefined);
-
 type Method = {
   readonly input?: { readonly def?: { readonly type?: string } };
   readonly execute: (
@@ -255,10 +192,10 @@ export interface FakeHost {
    * The services `activate` binds the layout to.
    *
    * `use(ref)` answers an id the layout provided, then the host's own
-   * answers: `runtime/v1`, `runtime.threads/v1`, `doric.connection/v1`,
-   * `doric.about/v1` (`get()` resolves `{ version: '0.0.1' }`), `ui/v1`,
-   * `navigation/v1`, `regions/v1` and `commands/v1`. It throws for an id in
-   * `absent` or unknown.
+   * answers: `doric.connection/v1`, `doric.catalog/v1` (with `catalog`),
+   * `ui/v1`, `navigation/v1`, `regions/v1` and `commands/v1`. It throws for an id in
+   * `absent` or unknown. `ui/v1` creates each element defined through it
+   * under its own tag, with these services; any other tag is a stand-in.
    *
    * `whenAvailable(ref, callback)` behaves as follows:
    * - for an id `use` would answer, it calls `callback(api, provider)` once,
@@ -269,7 +206,11 @@ export interface FakeHost {
    *   callback returned one, at most once.
    */
   readonly services: Services;
-  /** The items of a region, the same array until the story ends. */
+  /**
+   * The items of a region: the fixture's, then those added through
+   * `regions/v1`, whose `subscribe` hears every change. The same array until
+   * the region changes.
+   */
   regionItems(region: string): readonly RegionEntry[];
   /**
    * The ids of the commands executed through `commands/v1` so far, in order.
@@ -289,273 +230,8 @@ const commandId = (command: unknown): string =>
     : String((command as { readonly id?: unknown } | undefined)?.id);
 
 export const createFakeHost = (options: HostOptions = {}): FakeHost => {
-  let projects = [...(options.projects ?? [])];
-  let threads = [...(options.threads ?? [])];
-  const pending = new Set(options.pending ?? []);
-  const failing = new Set(options.failing ?? []);
   const absent = new Set(options.absent ?? []);
   const commandsExecuted: string[] = [];
-
-  /** Answers a read, holds it, or fails it as the story asked. */
-  const read = <Value>(
-    operation: HostOperation,
-    answer: () => Value,
-  ): Promise<Value> => {
-    if (pending.has(operation)) return never();
-    if (failing.has(operation)) {
-      return Promise.reject(new Error('The host is unreachable.'));
-    }
-    return Promise.resolve(answer());
-  };
-
-  const now = () => new Date().toISOString();
-  /**
-   * Each archived Thread's batch, as the stored `archive` holds it. A seeded
-   * archived Thread shares the batch of its archived ancestors with the same
-   * `archivedAt`, as one archive of that ancestor would have written.
-   */
-  const batches = new Map<string, string>();
-  {
-    const byId = new Map(threads.map((thread) => [thread.id, thread]));
-    for (const thread of threads) {
-      if (thread.archivedAt === undefined) continue;
-      let root = thread;
-      const seen = new Set([thread.id]);
-      for (
-        let parent = byId.get(root.parentThreadId ?? '');
-        parent !== undefined &&
-        parent.archivedAt === thread.archivedAt &&
-        !seen.has(parent.id);
-        parent = byId.get(root.parentThreadId ?? '')
-      ) {
-        seen.add(parent.id);
-        root = parent;
-      }
-      batches.set(thread.id, `seeded:${root.id}`);
-    }
-  }
-  /** `id` and every Thread under it. */
-  const subtreeOf = (id: string): ReadonlySet<string> => {
-    const ids = new Set([id]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const thread of threads) {
-        if (
-          thread.parentThreadId !== undefined &&
-          ids.has(thread.parentThreadId) &&
-          !ids.has(thread.id)
-        ) {
-          ids.add(thread.id);
-          grew = true;
-        }
-      }
-    }
-    return ids;
-  };
-  const updateProject = (
-    id: string,
-    change: (project: Project) => Project,
-  ): Project | undefined => {
-    const current = projects.find((candidate) => candidate.id === id);
-    if (current === undefined) return undefined;
-    const next = { ...change(current), updatedAt: now() };
-    projects = projects.map((candidate) =>
-      candidate.id === id ? next : candidate,
-    );
-    return next;
-  };
-  const updateThread = (
-    id: string,
-    change: (thread: Thread) => Thread,
-  ): Thread | undefined => {
-    const current = threads.find((candidate) => candidate.id === id);
-    if (current === undefined) return undefined;
-    const next = { ...change(current), updatedAt: now() };
-    threads = threads.map((candidate) =>
-      candidate.id === id ? next : candidate,
-    );
-    return next;
-  };
-  const activity = (): readonly ProjectActivity[] =>
-    projects
-      .map((project) => {
-        const latest = threads
-          .filter((thread) => thread.projectId === project.id)
-          .map((thread) => thread.updatedAt)
-          .concat(project.updatedAt)
-          .sort()
-          .at(-1);
-        return { project, activityAt: latest ?? project.updatedAt };
-      })
-      .sort((left, right) => right.activityAt.localeCompare(left.activityAt));
-
-  const runtime: RuntimeHost = {
-    projects: () => read('projects', () => ({ items: projects })),
-    projectActivity: () => read('activity', activity),
-    createProject: ({ name }) => {
-      const project: Project = {
-        id: crypto.randomUUID(),
-        name,
-        state: 'ready',
-        configRevision: 1,
-        createdAt: now(),
-        updatedAt: now(),
-      };
-      projects = [project, ...projects];
-      return Promise.resolve(project);
-    },
-    renameProject: ({ id, name }) =>
-      Promise.resolve(updateProject(id, (project) => ({ ...project, name }))),
-    setProjectColor: ({ id, color }) =>
-      Promise.resolve(
-        updateProject(id, ({ color: _previous, ...project }) =>
-          color === null ? project : { ...project, color },
-        ),
-      ),
-    terminateProject: (id) =>
-      Promise.resolve(updateProject(id, (project) => project)),
-    deleteProject: (id) => {
-      projects = projects.filter((project) => project.id !== id);
-      threads = threads.filter((thread) => thread.projectId !== id);
-      return Promise.resolve('deleted');
-    },
-    watchProject: () => disposable,
-  };
-
-  const threadsHost: ThreadsHost = {
-    threads: ({ projectId }) =>
-      read('threads', () =>
-        projects.some((project) => project.id === projectId)
-          ? {
-              items: threads.filter((thread) => thread.projectId === projectId),
-            }
-          : undefined,
-      ),
-    thread: (id) =>
-      read('thread', () => threads.find((thread) => thread.id === id)),
-    createThread: ({ projectId, name, parentThreadId }) => {
-      const thread: Thread = {
-        id: crypto.randomUUID(),
-        projectId,
-        ...(parentThreadId === undefined ? {} : { parentThreadId }),
-        name,
-        state: 'ready',
-        lastSequence: 0,
-        cwd: '/workspace',
-        createdAt: now(),
-        updatedAt: now(),
-      };
-      threads = [...threads, thread];
-      return Promise.resolve({ status: 'created', thread });
-    },
-    renameThread: ({ id, name }) =>
-      Promise.resolve(updateThread(id, (thread) => ({ ...thread, name }))),
-    terminateThread: (id) =>
-      Promise.resolve(updateThread(id, (thread) => thread)),
-    deleteThread: (id) => {
-      const removed = new Set([id]);
-      for (const thread of threads) {
-        if (thread.parentThreadId && removed.has(thread.parentThreadId))
-          removed.add(thread.id);
-      }
-      threads = threads.filter((thread) => !removed.has(thread.id));
-      return Promise.resolve('deleted');
-    },
-    // runtime.threads/v1 1.8.0 (thread-archive §10.6, §10.8), answered in
-    // memory. None of these writes changes `updatedAt` (D2).
-    archiveThread: ({ id }) => {
-      const target = threads.find((thread) => thread.id === id);
-      if (target === undefined) return Promise.resolve({ status: 'missing' });
-      if (target.archivedAt !== undefined)
-        return Promise.resolve({ status: 'already_archived' });
-      if (busyStates.has(target.state))
-        return Promise.resolve({ status: 'busy' });
-      const batch = crypto.randomUUID();
-      const archivedAt = now();
-      const subtree = subtreeOf(id);
-      const marked = new Set(
-        threads
-          .filter(
-            (thread) =>
-              thread.id === id ||
-              (subtree.has(thread.id) &&
-                thread.archivedAt === undefined &&
-                !busyStates.has(thread.state) &&
-                thread.pinned !== true),
-          )
-          .map((thread) => thread.id),
-      );
-      threads = threads.map((thread) =>
-        marked.has(thread.id) ? { ...thread, archivedAt } : thread,
-      );
-      for (const markedId of marked) batches.set(markedId, batch);
-      return Promise.resolve({
-        status: 'archived',
-        batch,
-        // The target first, as the contract answers.
-        threads: [
-          ...threads.filter((thread) => thread.id === id),
-          ...threads.filter(
-            (thread) => thread.id !== id && marked.has(thread.id),
-          ),
-        ],
-      });
-    },
-    restoreThread: ({ id, batch }) => {
-      if (!threads.some((thread) => thread.id === id))
-        return Promise.resolve({ status: 'missing' });
-      const restoring = batch ?? batches.get(id);
-      const subtree = subtreeOf(id);
-      const restored = threads.filter(
-        (thread) =>
-          subtree.has(thread.id) &&
-          thread.archivedAt !== undefined &&
-          restoring !== undefined &&
-          batches.get(thread.id) === restoring,
-      );
-      if (restored.length === 0)
-        return Promise.resolve({ status: 'not_archived' });
-      const ids = new Set(restored.map((thread) => thread.id));
-      threads = threads.map((thread) => {
-        if (!ids.has(thread.id)) return thread;
-        const { archivedAt: _archivedAt, ...rest } = thread;
-        return rest;
-      });
-      for (const restoredId of ids) batches.delete(restoredId);
-      return Promise.resolve({
-        status: 'restored',
-        threads: threads.filter((thread) => ids.has(thread.id)),
-      });
-    },
-    setThreadPinned: ({ id, pinned }) => {
-      const current = threads.find((thread) => thread.id === id);
-      if (current === undefined) return Promise.resolve(undefined);
-      const { pinned: _pinned, ...rest } = current;
-      const next: Thread = pinned ? { ...rest, pinned: true } : rest;
-      threads = threads.map((thread) => (thread.id === id ? next : thread));
-      return Promise.resolve(next);
-    },
-    viewThread: ({ threadId }, listener) => {
-      const observer =
-        typeof listener === 'function' ? { next: listener } : listener;
-      let open = true;
-      queueMicrotask(() => {
-        if (!open) return;
-        if (threads.some((thread) => thread.id === threadId)) {
-          observer.next({ kind: 'viewing', threadId });
-          return;
-        }
-        open = false;
-        observer.end?.(new ContractError('not_found', 'Thread not found.'));
-      });
-      return {
-        dispose: () => {
-          open = false;
-        },
-      };
-    },
-  };
 
   let path = options.path ?? '/';
   const routeListeners = new Set<(match: RouteMatch | undefined) => void>();
@@ -577,54 +253,100 @@ export const createFakeHost = (options: HostOptions = {}): FakeHost => {
     },
   } satisfies Navigation;
 
+  // The fixture's items in their order, then the items added through
+  // `regions/v1`, in add order.
+  const added = new Map<string, readonly RegionEntry[]>();
+  const seeds = new Map<string, readonly RegionEntry[]>();
   const regions = new Map<string, readonly RegionEntry[]>();
+  const regionListeners = new Map<string, Set<() => void>>();
   const regionItems = (region: string): readonly RegionEntry[] => {
     const known = regions.get(region);
     if (known !== undefined) return known;
-    const items = Object.freeze(
+    const seeded =
+      seeds.get(region) ??
       (options.regions?.[region] ?? []).map(
         ({ owner, ...item }): RegionEntry => ({
           ...item,
           owner: owner ?? 'story',
         }),
-      ),
-    );
+      );
+    seeds.set(region, seeded);
+    const items = Object.freeze([...seeded, ...(added.get(region) ?? [])]);
     regions.set(region, items);
     return items;
   };
+  const regionChanged = (region: string): void => {
+    regions.delete(region);
+    for (const listener of [...(regionListeners.get(region) ?? [])]) listener();
+  };
+  const addRegionItem = (region: string, item: RegionItem): Disposable => {
+    const entry: RegionEntry = { ...item, owner: item.owner ?? 'layout' };
+    added.set(region, [...(added.get(region) ?? []), entry]);
+    regionChanged(region);
+    let disposed = false;
+    return {
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        added.set(
+          region,
+          (added.get(region) ?? []).filter((other) => other !== entry),
+        );
+        regionChanged(region);
+      },
+    };
+  };
+  const subscribeRegion = (region: string, listener: () => void) => {
+    const listeners = regionListeners.get(region) ?? new Set<() => void>();
+    regionListeners.set(region, listeners);
+    listeners.add(listener);
+    return { dispose: () => listeners.delete(listener) };
+  };
+
+  // The elements the layout defined through `ui/v1`: `create` makes them as
+  // the host does, with the services and the props set on the element.
+  const defined = new Set<string>();
 
   const status = options.connection ?? 'connected';
   const apis: Record<string, unknown> = {
-    'runtime/v1': runtime,
-    'runtime.threads/v1': threadsHost,
     'doric.connection/v1': {
       status: () => status,
       subscribe: () => disposable,
     },
-    'doric.about/v1': {
-      get: () => Promise.resolve({ version: '0.0.1' }),
-    } satisfies DoricAbout,
     'ui/v1': {
-      define: () => disposable,
-      create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
-        const threadId = props?.['thread-id'];
-        return tag === 'terminal-rows' && typeof threadId === 'string'
-          ? terminalRowsElement(
-              options.terminalRows?.[threadId] ?? 0,
-              rowsDepth(threadId, options.threads ?? []),
-            )
-          : placeholderElement(tag, props);
+      define: (tag: string, element: CustomElementConstructor) => {
+        if (customElements.get(tag) === undefined)
+          customElements.define(tag, element);
+        defined.add(tag);
+        return disposable;
       },
-      dispose: () => undefined,
+      create: (tag: string, props?: Readonly<Record<string, unknown>>) => {
+        if (defined.has(tag)) {
+          const element = document.createElement(tag);
+          Object.assign(element, { services }, props ?? {});
+          return element;
+        }
+        if (tag === 'account-status') return accountStandIn();
+        const glyph = glyphIcons[tag];
+        if (glyph !== undefined) return glyphElement(glyph);
+        return placeholderElement(tag, props);
+      },
+      // As the host's: the element leaves the document, and one the layout
+      // defined unmounts its root at once.
+      dispose: (element: object) => {
+        const target = element as { remove?: () => void; dispose?: () => void };
+        target.remove?.();
+        target.dispose?.();
+      },
     },
     ...(options.catalog === undefined
       ? {}
       : { 'doric.catalog/v1': { get: () => options.catalog } }),
     'navigation/v1': navigation,
     'regions/v1': {
-      add: () => disposable,
+      add: addRegionItem,
       items: regionItems,
-      subscribe: () => disposable,
+      subscribe: subscribeRegion,
     },
     'commands/v1': {
       register: () => disposable,

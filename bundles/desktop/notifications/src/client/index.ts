@@ -9,7 +9,7 @@ import {
 } from 'bundle/contracts';
 
 import { NotificationObservationsV1 } from '../contracts/index.js';
-import { ChatHooksV1, createObserver } from './observer.js';
+import { ChatHooksV2, createObserver } from './observer.js';
 
 export function activate({ services }: ClientContext): Disposable {
   const observe = createObserver({
@@ -19,7 +19,7 @@ export function activate({ services }: ClientContext): Disposable {
       services.use(NotificationObservationsV1).report(observation),
   });
 
-  return services.use(HooksV1).whenAvailable(ChatHooksV1, (chat) => {
+  return services.use(HooksV1).whenAvailable(ChatHooksV2, (chat) => {
     const registration = chat.onThreadUpdateHook(observe);
     return () => registration.dispose();
   });

@@ -8,6 +8,7 @@ import {
   descriptorSchema,
   type ManifestV1,
   manifestV1Schema,
+  PLATFORM_VERSION,
   resolveEnvironment,
 } from 'bundle/runtime';
 
@@ -17,7 +18,7 @@ import { activate } from '../src/host/index.js';
  * The runtime's activation (design 57 §13.1, stage 5 "Activation"): the
  * manifest and built descriptor are valid, activation provides and defines
  * exactly what the manifest declares, the host activation order of §1.2 has
- * no cycle, and a second `runtime/v1` provider is quarantined.
+ * no cycle, and a second `runtime/v2` provider is quarantined.
  */
 
 const manifestOf = async (dir: string): Promise<ManifestV1> =>
@@ -72,14 +73,23 @@ void test('activation provides and defines exactly what the manifest declares', 
     activate,
   });
 
-  assert.deepEqual(checkRecording(manifest, recorded), []);
+  // runtime.records/v1 is the client part's (bundle isolation phase 3): the
+  // host part records every other provided contract.
+  const hostProvides = manifest.provides.filter(
+    (entry) => idOf(entry) !== 'runtime.records/v1',
+  );
+
+  assert.deepEqual(
+    checkRecording({ ...manifest, provides: hostProvides }, recorded),
+    [],
+  );
   assert.deepEqual(
     [...new Set(recorded.map(({ id }) => id))].sort(),
-    manifest.provides.map(idOf).sort(),
+    hostProvides.map(idOf).sort(),
   );
 });
 
-void test('the built descriptor lists every provided contract on the host', async () => {
+void test('the built descriptor lists runtime.records/v1 on the client and every other provided contract on the host', async () => {
   const manifest = await manifestOf('runtime');
   const descriptor = descriptorSchema.parse(
     JSON.parse(
@@ -95,8 +105,17 @@ void test('the built descriptor lists every provided contract on the host', asyn
     descriptor.contracts.map(({ id }) => id).sort(),
     manifest.provides.map(idOf).sort(),
   );
+  // The records mirror is the client part's; every other contract is the host's.
+  assert.deepEqual(
+    descriptor.contracts
+      .filter(({ environment }) => environment === 'client')
+      .map(({ id }) => id),
+    ['runtime.records/v1'],
+  );
   assert.ok(
-    descriptor.contracts.every(({ environment }) => environment === 'host'),
+    descriptor.contracts
+      .filter(({ id }) => id !== 'runtime.records/v1')
+      .every(({ environment }) => environment === 'host'),
   );
 });
 
@@ -111,12 +130,15 @@ void test('the runtime activates after its providers and before the bundles that
     candidate(await manifestOf('threads')),
     candidate(provider('default', ['executor/v1@1.4.0'])),
     candidate(provider('docker', ['sandbox/v1@1.0.0'])),
-    // The window surfaces the stage-10 client parts of files and git require.
+    // The window surfaces the stage-10 client parts of files and git require:
+    // the ids they use since bundle isolation 4(a), which removed the old ones,
+    // and since 4(d) the selection of `workspace` (`runtime.records/v1` is the
+    // runtime's own).
     candidate(
       provider('desktop-surfaces', [
-        'layout.workspace/v1@1.1.0',
-        'layout.panel/v2@2.0.0',
-        'layout.tabs/v1@1.2.0',
+        'workspace.selection/v1@1.0.0',
+        'layout.panel/v3@3.0.0',
+        'layout.tabs/v2@2.0.0',
         'settings.config/v1@1.0.0',
       ]),
     ),
@@ -139,7 +161,7 @@ void test('the runtime activates after its providers and before the bundles that
           'secrets.backend/v1': 'storage-backend',
         },
       },
-      platformVersion: '1.0.0',
+      platformVersion: PLATFORM_VERSION,
       generation: 1,
     },
     'host',
@@ -160,10 +182,10 @@ void test('the runtime activates after its providers and before the bundles that
   );
 });
 
-void test('a second provider of runtime/v1 is quarantined without a choice', async () => {
+void test('a second provider of runtime/v2 is quarantined without a choice', async () => {
   const core = await manifestOf('core');
   const runtime = await manifestOf('runtime');
-  const other = provider('runtime-copy', ['runtime/v1@1.0.0']);
+  const other = provider('runtime-copy', ['runtime/v2@2.0.0']);
   const candidates = [
     candidate(core),
     candidate(runtime),
@@ -203,7 +225,7 @@ void test('a second provider of runtime/v1 is quarantined without a choice', asy
   assert.deepEqual(codes('runtime'), []);
   assert.deepEqual(
     resolved.contracts
-      .find(({ id }) => id === 'runtime/v1')
+      .find(({ id }) => id === 'runtime/v2')
       ?.providers.map(({ bundleId }) => bundleId),
     ['runtime'],
   );

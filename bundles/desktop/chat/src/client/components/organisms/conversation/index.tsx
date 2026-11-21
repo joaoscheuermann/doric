@@ -53,10 +53,10 @@ import {
 import type { AgentTurn, Turn } from '../../../domain/projector.js';
 import { composerAction } from '../../../domain/queue.js';
 import type { Thread } from '../../../domain/workspace.js';
+import { ConversationThreadContext } from '../../../hooks/conversation-thread.js';
 import { useAgentIcons } from '../../../hooks/use-agent-icons.js';
 import { CommentThreadsContext } from '../../../hooks/use-comment-threads.js';
 import { useExternalBlocks } from '../../../hooks/use-external-blocks.js';
-import { ConversationThreadContext } from '../../../hooks/use-live-terminal.js';
 import { useThreadChat } from '../../../hooks/use-thread-chat.js';
 import { useThreadQueue } from '../../../hooks/use-thread-queue.js';
 import { useThreadStop } from '../../../hooks/use-thread-stop.js';
@@ -65,7 +65,6 @@ import {
   chatLexicalRegistry,
 } from '../../../services/lexical.js';
 import { chatViewsRegistry } from '../../../services/views.js';
-import { retainProjectTerminals } from '../../../stores/live-terminals.js';
 import type { PromptSignal } from '../../../utility/prompt-signal.js';
 import { ThreadNavRail } from '../../molecules/thread-nav-rail.js';
 import { ActivityTurnNode } from './nodes/activity-turn-node.js';
@@ -92,14 +91,13 @@ import {
   FenceNode,
   fenceElementKey,
 } from './nodes/fence-node.js';
+import { InputTurnNode } from './nodes/input-turn-node.js';
 import { LifecycleTurnNode } from './nodes/lifecycle-turn-node.js';
 import { PromptEditNode } from './nodes/prompt-edit-node.js';
 import { QueueNode } from './nodes/queue-node.js';
 import { QueuedTurnNode } from './nodes/queued-turn-node.js';
 import { RepliesTurnNode } from './nodes/replies-turn-node.js';
-import { TerminalResultNode } from './nodes/terminal-result-node.js';
 import { ThinkingTurnNode } from './nodes/thinking-turn-node.js';
-import { ThreadSpawnNode } from './nodes/thread-spawn-node.js';
 import { ToolTurnNode } from './nodes/tool-turn-node.js';
 import { TurnAuthorNode } from './nodes/turn-author-node.js';
 import {
@@ -258,11 +256,10 @@ const defineConversationExtension = (
     nodes: [
       UserTurnNode,
       DelegatedTurnNode,
-      TerminalResultNode,
+      InputTurnNode,
       AgentTurnNode,
       ThinkingTurnNode,
       ToolTurnNode,
-      ThreadSpawnNode,
       TurnAuthorNode,
       ActivityTurnNode,
       LifecycleTurnNode,
@@ -466,8 +463,13 @@ export const Conversation = memo(function Conversation({
   const stop = useThreadStop(chat.thread);
   const ui = useContext(ChatUiContext);
   const blocksSource = useMemo(
-    () => ({ blocks: external.drawn, ui }),
-    [external.drawn, ui],
+    () => ({
+      blocks: external.drawn,
+      ui,
+      projectId: chat.thread.projectId,
+      threadId: chat.thread.id,
+    }),
+    [external.drawn, ui, chat.thread.projectId, chat.thread.id],
   );
   // Retry on the failed-prompt block: only the last failure's, and only while
   // the agent controls offer the same retry (§5.1, §6.1).
@@ -497,7 +499,6 @@ export const Conversation = memo(function Conversation({
     () => ({ id: thread.id, projectId: thread.projectId }),
     [thread.id, thread.projectId],
   );
-  useEffect(() => retainProjectTerminals(thread.projectId), [thread.projectId]);
   // The Thread's fences of every registered tag (D1, D2), and the view each
   // fence element receives.
   const tags = useFenceTags();

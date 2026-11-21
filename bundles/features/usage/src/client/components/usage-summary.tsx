@@ -2,7 +2,10 @@ import type { Services } from 'bundle/contracts';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { type Usage, UsageV1 } from '../../contracts/index.js';
-import { type SelectedThreadSource, WorkspaceV1 } from '../api/workspace.js';
+import {
+  type SelectionSource,
+  WorkspaceSelectionV1,
+} from '../api/workspace.js';
 import { ThreadUsage } from './thread-usage.js';
 
 /** A contract's API while a provider serves it, else undefined. */
@@ -29,29 +32,29 @@ const bindUsage = (services: Services, set: (api: Usage | undefined) => void) =>
     return () => set(undefined);
   });
 
-const bindWorkspace = (
+const bindSelection = (
   services: Services,
-  set: (api: SelectedThreadSource | undefined) => void,
+  set: (api: SelectionSource | undefined) => void,
 ) =>
-  services.whenAvailable(WorkspaceV1, (api) => {
+  services.whenAvailable(WorkspaceSelectionV1, (api) => {
     set(api);
     return () => set(undefined);
   });
 
-/** The id of the Thread the window selects, while the layout serves it. */
+/** The id of the Thread the window selects, while the workspace serves it. */
 const useSelectedThreadId = (
-  workspace: SelectedThreadSource | undefined,
+  selection: SelectionSource | undefined,
 ): string | undefined =>
   useSyncExternalStore(
     (notify) => {
-      if (workspace === undefined) return () => undefined;
-      const subscription = workspace.subscribe(notify);
+      if (selection === undefined) return () => undefined;
+      const subscription = selection.subscribe(notify);
       return () => subscription.dispose();
     },
     () => {
-      if (workspace === undefined) return undefined;
+      if (selection === undefined) return undefined;
       try {
-        return workspace.selectedThread()?.id;
+        return selection.current().threadId;
       } catch {
         return undefined;
       }
@@ -61,8 +64,8 @@ const useSelectedThreadId = (
 /** The footer's usage of the selected Thread; nothing without one. */
 export function UsageSummary({ services }: { readonly services: Services }) {
   const usage = useService(services, bindUsage);
-  const workspace = useService(services, bindWorkspace);
-  const threadId = useSelectedThreadId(workspace);
+  const selection = useService(services, bindSelection);
+  const threadId = useSelectedThreadId(selection);
   // Keyed by Thread, as the provisional footer remounted with its Thread.
   return <ThreadUsage key={threadId} threadId={threadId} usage={usage} />;
 }

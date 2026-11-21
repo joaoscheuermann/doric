@@ -2,7 +2,8 @@
 // T-4.4.7 client part), as the reader meets them:
 // - a terminal record keeps its name (terminal/v1@1.2.0) and is named by it on
 //   its row and tab, else by its command;
-// - the terminal tab's menu holds Kill terminal (A7, destructive); the tab's
+// - the terminal tab is drawn with the icon element `terminal-tab-icon`
+//   (layout.tabs/v2); its menu holds Kill terminal (A7, destructive); the tab's
 //   Close tab (layout) leaves the process running, Kill terminal ends it;
 // - each session update retitles the terminal's tab with its name, or its
 //   command once the name is cleared;
@@ -169,9 +170,18 @@ void describe('the terminal tab (A7, T-4.4.6, T-4.4.7)', () => {
     );
   });
 
-  test('its menu holds Kill terminal, destructive', () => {
+  // Bundle isolation 4(a) change 5: the tab is a layout.tabs/v2 request, whose
+  // icon is the element `terminal-tab-icon` the terminal defines; it names no
+  // v1 `icon` kind.
+  test('its menu holds Kill terminal, destructive, and its icon is terminal-tab-icon', () => {
     const tab = terminalTab(terminalFrom(session()), () => undefined);
-    assert.equal(tab.id, 'terminal:terminal-1');
+    const { menu: _menu, props: _props, ...request } = tab;
+    assert.deepEqual(request, {
+      id: 'terminal:terminal-1',
+      title: 'bash',
+      tag: 'terminal-view',
+      iconTag: 'terminal-tab-icon',
+    });
     assert.deepEqual(
       tab.menu?.map(({ label, destructive }) => ({ label, destructive })),
       [{ label: 'Kill terminal', destructive: true }],

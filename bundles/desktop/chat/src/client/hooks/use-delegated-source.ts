@@ -6,7 +6,7 @@ import { chatServices } from '../services/chat-services.js';
 import { useWorkspaceThread } from './use-workspace.js';
 
 /**
- * Resolve a sender from the already loaded tree without opening a
+ * Resolve a sender from the already loaded records without opening a
  * subscription. Opening it navigates to its conversation, which selects it
  * (the layout follows the route).
  */

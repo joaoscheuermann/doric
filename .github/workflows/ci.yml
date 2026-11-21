@@ -44,7 +44,10 @@ jobs:
 
       - run: npm ci
 
-      - name: Test Biome configuration
+      - name: Check Nx sync
+        run: npx nx sync:check
+
+      - name: Test Biome configuration and bundle boundaries
         run: npm run lint:test
 
       - name: Check formatting
@@ -62,6 +65,23 @@ jobs:
         env:
           DORIC_TEST_DATABASE_URL: postgresql://doric:doric@127.0.0.1:5432/doric
         run: npx nx test doric-host
+
+      # Gate variables left unset, so their tests skip:
+      # DORIC_TEST_SANDBOX: needs the sandbox image, which CI does not build.
+      # DORIC_TEST_COALESCE_SIZE: a size measurement, not a correctness test.
+      # DORIC_TEST_ADAPTER_CAPTURE: records a live provider and needs a key.
+      - name: Run bundle tests
+        env:
+          DORIC_TEST_DATABASE_URL: postgresql://doric:doric@127.0.0.1:5432/doric
+        run: npx nx run-many -t test --projects=tag:type:bundle
+
+      # The platform the bundles build on: the bundle package, the desktop
+      # platform package, the platform's import map and the desktop app.
+      - name: Run platform tests
+        run: npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app
+
+      - name: Test the fake host's bundle staging
+        run: npm run test:fake-host
 
       - name: Run Agent tests
         run: npx nx test agent

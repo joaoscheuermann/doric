@@ -5,7 +5,7 @@ import {
   type IconLookup,
   type IconRequest,
   iconLookupFrom,
-  noIcons,
+  iconsFrom,
 } from '../domain/model-icons.js';
 import { queryKeys } from '../queries/keys.js';
 
@@ -29,6 +29,5 @@ export const useModelIcons = (
     placeholderData: keepPreviousData,
   });
 
-  if (!asked || icons.isError) return noIcons;
-  return icons.data;
+  return iconsFrom(asked, icons);
 };

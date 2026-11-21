@@ -28,11 +28,13 @@
     "comments": "0.0.1",
     "desktop": "1.0.0",
     "history": "0.0.1",
+    "layout": "0.0.1",
     "lexical": "^0.51.0",
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "runtime": "0.0.1",
+    "settings": "0.0.1",
     "tslib": "^2.3.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.15"

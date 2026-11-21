@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { LlmProvider } from 'llms';
+import { type LlmProvider, providerKind } from 'llms';
 
 import {
   frozenKind,
@@ -9,11 +9,13 @@ import {
   recordingTransport,
 } from './support/world.js';
 
-void test('the codex record answers the frozen llms kind and is not advertised', async () => {
+void test('the codex record answers the frozen llms kind without a site and is not advertised', async () => {
   const { world, provider } = await providerWorld('codex');
 
   try {
     assert.deepEqual(await provider.kind(), frozenKind());
+    assert.deepEqual(await provider.kind(), providerKind('codex'));
+    assert.equal('site' in (await provider.kind()), false);
     assert.equal(await provider.advertised(), false);
     assert.equal(await provider.catalogCapacity(), false);
   } finally {

@@ -14,6 +14,7 @@ import { join, resolve } from 'node:path';
 
 import {
   buildCatalog,
+  bundleDirectories,
   discoverBundles,
   distributionFor,
   PLATFORM_VERSION,
@@ -37,9 +38,9 @@ export class DevHostError extends Error {
  * The staged bundles the catalog is built from.
  *
  * `override` (or an existing default) wins. Otherwise the fake host stages the
- * bundles the host build stages — the list is the one
- * `app/backend/doric-host/project.json` hands `bundle`'s `stage` command — into
- * a git-ignored directory, so a worktree whose `dist/bundles` is absent still
+ * bundles the host build stages — every `<root>/bundles/<group>/<id>` that
+ * holds a `manifest.json`, as `stage <dest> --all bundles` finds them — into
+ * the git-ignored `tmp/fake-host/bundles`, so a worktree whose `dist/bundles` is absent still
  * serves the local bundle code.
  */
 export const resolveBundlesRoot = async ({ root, override, log }) => {
@@ -57,29 +58,13 @@ export const resolveBundlesRoot = async ({ root, override, log }) => {
 
   if (existsSync(staged)) return staged;
 
-  const project = JSON.parse(
-    await readFile(join(root, 'app/backend/doric-host/project.json'), 'utf8'),
-  );
-  const command = project.targets?.['build-bundles']?.options?.commands?.[0];
-  const words = typeof command === 'string' ? command.split(/\s+/) : [];
-  const at = words.indexOf('stage');
-
-  if (at === -1 || words.length < at + 3) {
-    throw new Error(
-      `No staged bundles at ${staged}, and ${join(root, 'app/backend/doric-host/project.json')} has no stage command to rebuild them from.`,
-    );
-  }
-
+  const directories = await bundleDirectories(join(root, 'bundles'));
   const destination = join(root, 'tmp/fake-host/bundles');
 
   log.note(
-    `no staged bundles at ${staged}: staging ${words.length - at - 2} bundles into ${destination}`,
+    `no staged bundles at ${staged}: staging ${directories.length} bundles into ${destination}`,
   );
-  // `stage` reads `<dir>/dist`: the command's directories are workspace-relative.
-  await stageBundles(
-    destination,
-    words.slice(at + 2).map((dir) => resolve(root, dir)),
-  );
+  await stageBundles(destination, directories);
 
   return destination;
 };

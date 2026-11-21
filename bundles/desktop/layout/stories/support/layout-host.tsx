@@ -3,27 +3,16 @@
 // children render once all of it is in place. Leaving the story runs the
 // activation's cleanup, so the next story starts from nothing.
 
+import { RegionsV1 } from 'bundle/contracts';
 import { type ReactNode, useLayoutEffect, useState } from 'react';
 
-import { projectIdFromPath } from '../../src/client/domain/project-tabs.js';
-import {
-  emptyTree,
-  type ProjectTree,
-  withProjects,
-  withSelection,
-  withThreads,
-} from '../../src/client/domain/project-tree.js';
-import { emptySidebar } from '../../src/client/domain/sidebar.js';
-import { mainThreadFor } from '../../src/client/domain/thread-navigation.js';
-import type { Project } from '../../src/client/domain/workspace.js';
 import type { WorkspaceTab } from '../../src/client/domain/workspace-tabs.js';
 import { activate } from '../../src/client/index.js';
 import { bottomStore } from '../../src/client/stores/bottom.js';
 import { panelStore } from '../../src/client/stores/panel.js';
 import { registerPane } from '../../src/client/stores/stack.js';
-import { addThreadRows } from '../../src/client/stores/thread-rows.js';
-import { workspaceStore } from '../../src/client/stores/workspace.js';
 import { workspaceTabsStore } from '../../src/client/stores/workspace-tabs.js';
+import { LayoutTabsV2 } from '../../src/contracts/index.js';
 import {
   appRegions,
   createFakeHost,
@@ -40,45 +29,28 @@ export interface TabSeed {
   readonly id: string;
   readonly title: string;
   readonly tag: string;
-  readonly icon?: 'file' | 'file-diff' | 'terminal' | 'thread';
+  /** `layout.tabs/v2`: the element drawn as the trigger's icon. */
+  readonly iconTag?: string;
+  /** `layout.tabs/v2`: the viewer card draws no bottom padding under it. */
+  readonly openBottom?: boolean;
   readonly props?: Readonly<Record<string, unknown>>;
 }
 
 export interface LayoutFixture extends HostOptions {
   /** Open tabs by owner (a Thread id or `project:<id>`); the last is selected. */
   readonly tabs?: Readonly<Record<string, readonly TabSeed[]>>;
-  /** The Project panel's selected view: Files unless a story says otherwise. */
+  /** The Project panel's selected view; absent, none, as `layout.panel/v3` starts. */
   readonly panel?: { readonly active?: string };
-  /** Whether an item asked for the `layout.main.bottom` split. */
+  /** Whether an item asked for the `shell.conversation.bottom` split. */
   readonly bottom?: boolean;
   /** Sidebar groups other bundles add below the Threads list. */
   readonly panes?: readonly StackPane[];
-  /** The Project tabs a reader left open, in order. */
-  readonly projectTabs?: readonly Project[];
+  /**
+   * The tab owner the frame shows, as `workspace` names it through
+   * `layout.tabs/v2.setOwner` (a Thread id or `project:<id>`); absent, none.
+   */
+  readonly owner?: string;
 }
-
-const projectTabsKey = 'doric.project-tabs';
-
-const seedProjectTabs = (open: readonly Project[] | undefined): void => {
-  try {
-    if (open === undefined) {
-      localStorage.removeItem(projectTabsKey);
-      return;
-    }
-    localStorage.setItem(
-      projectTabsKey,
-      JSON.stringify({
-        homePath: '/',
-        order: open.map((project) => project.id),
-        paths: Object.fromEntries(
-          open.map((project) => [project.id, `/projects/${project.id}`]),
-        ),
-      }),
-    );
-  } catch {
-    // Without storage the tab strip starts from the route alone.
-  }
-};
 
 const tabsOf = (
   seeds: Readonly<Record<string, readonly TabSeed[]>> | undefined,
@@ -93,7 +65,10 @@ const tabsOf = (
           title: seed.title,
           element: placeholderElement(seed.tag, seed.props, seed.title),
           ...(seed.props === undefined ? {} : { props: seed.props }),
-          ...(seed.icon === undefined ? {} : { icon: seed.icon }),
+          ...(seed.iconTag === undefined ? {} : { iconTag: seed.iconTag }),
+          ...(seed.openBottom === undefined
+            ? {}
+            : { openBottom: seed.openBottom }),
           ariaLabel: seed.title,
           tooltip: seed.title,
         }),
@@ -101,37 +76,6 @@ const tabsOf = (
       return [owner, { items, selected: items.at(-1)?.id }];
     }),
   );
-
-/**
- * The tree the workspace already holds when the story opens: every Project
- * with its Threads described, and the path's selection (a child Thread's root,
- * as the workspace selects it). A story whose Projects are still loading or
- * fail starts from the empty tree instead.
- */
-const treeOf = (fixture: LayoutFixture): ProjectTree | undefined => {
-  const unready = [...(fixture.pending ?? []), ...(fixture.failing ?? [])];
-  if (fixture.projects === undefined || unready.includes('projects'))
-    return undefined;
-  const threads = fixture.threads ?? [];
-  let tree = withProjects(emptyTree, fixture.projects);
-  for (const project of fixture.projects) {
-    tree = withThreads(
-      tree,
-      project.id,
-      threads.filter((thread) => thread.projectId === project.id),
-    );
-  }
-  const path = fixture.path ?? '/';
-  const projectId = projectIdFromPath(path);
-  if (projectId === undefined) return tree;
-  const threadId = /\/threads\/([^/]+)$/.exec(path)?.[1];
-  const target = threads.find((thread) => thread.id === threadId);
-  const main = target === undefined ? undefined : mainThreadFor(tree, target);
-  return withSelection(
-    tree,
-    main === undefined ? { projectId } : { projectId, threadId: main.id },
-  );
-};
 
 let unbindCurrent: (() => void) | undefined;
 
@@ -147,35 +91,30 @@ export const bindLayout = (
 } => {
   unbindCurrent?.();
   const created = createFakeHost({ regions: appRegions, ...fixture });
-  const tree = treeOf(fixture);
-  workspaceStore.setState({
-    tree: tree ?? emptyTree,
-    sidebar: emptySidebar,
-    loadingProjects: tree === undefined,
-    loadingProjectThreads: new Set(),
-  });
   workspaceTabsStore.setState({ threads: tabsOf(fixture.tabs) });
-  seedProjectTabs(fixture.projectTabs);
   defineStoryElements(created);
 
   const deactivate = activate({ services: created.services });
-  const panes = (fixture.panes ?? [screenPane]).map(registerPane);
-  const counts = fixture.terminalRows ?? {};
-  const busySet = new Set(fixture.terminalBusy);
-  const rows = addThreadRows({
-    id: 'terminals',
-    tag: 'terminal-rows',
-    count: (threadId) => counts[threadId] ?? 0,
-    busy: (threadId) => busySet.has(threadId),
-    subscribe: () => ({ dispose: () => undefined }),
+  // The owner `workspace` would name for the route (step 4(c)): the shell
+  // follows no route for it any more.
+  created.services
+    .use(LayoutTabsV2)
+    .setOwner(fixture.owner === undefined ? {} : { owner: fixture.owner });
+  // The `account` bundle's item in `shell.window.actions` (step 4(b),
+  // decision O1): the fake `ui/v1` draws `account-status` as a stand-in
+  // button named "Account", so the frame's two places for the slot show it.
+  const account = created.services.use(RegionsV1).add('shell.window.actions', {
+    id: 'account',
+    tag: 'account-status',
   });
-  panelStore.setState({ active: fixture.panel?.active ?? 'files' });
+  const panes = (fixture.panes ?? [screenPane]).map(registerPane);
+  panelStore.setState({ active: fixture.panel?.active });
   if (fixture.bottom) bottomStore.getState().set('terminals', true);
 
   const unbind = () => {
     if (unbindCurrent !== unbind) return;
     unbindCurrent = undefined;
-    rows.dispose();
+    account.dispose();
     for (const pane of panes) pane.dispose();
     void deactivate();
     workspaceTabsStore.setState({ threads: {} });

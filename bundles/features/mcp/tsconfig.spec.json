@@ -23,6 +23,7 @@
     { "path": "../../../packages/sandbox/tsconfig.lib.json" },
     { "path": "../../../packages/tool/tsconfig.lib.json" },
     { "path": "../../../packages/storage" },
-    { "path": "../../runtime/runtime" }
+    { "path": "../../runtime/runtime" },
+    { "path": "../../runtime/default" }
   ]
 }

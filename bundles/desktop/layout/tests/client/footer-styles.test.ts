@@ -1,7 +1,8 @@
 // The layout's own stylesheet, read from disk: the conversation footer band
-// gets its height (`--chat-footer-height`), fill and blur from an unlayered
+// gets its height (`--shell-conversation-footer-height`), fill and blur from an unlayered
 // rule keyed on its `data-slot` (conversation-footer spec, D2, D13 and §3),
-// not from utilities the layout's sheet does not emit.
+// not from utilities the layout's sheet does not emit; and that rule is the
+// sheet's only one (bundle isolation AC4.3).
 //
 // happy-dom lays nothing out, so this reads `src/client/styles.css` as the
 // file the build ships and asserts the rules' own text. The helpers are local
@@ -57,7 +58,7 @@ const declared = (text: string, selector: string): Map<string, string> =>
   );
 
 // conversation-footer T-3
-test('the conversation footer band is as tall as --chat-footer-height, the background at 70 % under a 2 px blur, in an unlayered rule', async () => {
+test('the conversation footer band is as tall as --shell-conversation-footer-height, the background at 70 % under a 2 px blur, in an unlayered rule', async () => {
   const sheet = await readFile(stylesheet, 'utf8');
 
   assert.ok(
@@ -67,12 +68,29 @@ test('the conversation footer band is as tall as --chat-footer-height, the backg
   assert.deepEqual(
     declared(sheet, "[data-slot='workspace-footer']"),
     new Map([
-      ['height', 'var(--chat-footer-height)'],
+      ['height', 'var(--shell-conversation-footer-height)'],
       [
         'background-color',
         'color-mix(in oklab, var(--background) 70%, transparent)',
       ],
       ['backdrop-filter', 'blur(2px)'],
     ]),
+  );
+});
+
+// bundle isolation AC4.3 (step 4(a) change 6): the shell's sheet forgets its
+// consumers. The Monaco rule moved to `files` and `git`, the xterm rule is
+// `terminal`'s own, and not even a comment names either editor.
+test('the layout sheet names neither Monaco nor xterm, and the footer band is its only rule', async () => {
+  const sheet = await readFile(stylesheet, 'utf8');
+
+  assert.deepEqual(
+    sheet.match(/monaco|xterm/gi) ?? [],
+    [],
+    'The layout sheet still names Monaco or xterm.',
+  );
+  assert.deepEqual(
+    rulesIn(sheet).map((rule) => rule.selectors.join(', ')),
+    ["[data-slot='workspace-footer']"],
   );
 });

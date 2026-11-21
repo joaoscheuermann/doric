@@ -13,7 +13,7 @@ import { PanelState, ReadFeedback, TreeSkeleton } from 'desktop/ui/panels';
 import { ScrollArea } from 'desktop/ui/scroll-area';
 import { SidebarMenu } from 'desktop/ui/sidebar';
 import { sandboxNotice } from 'files/contracts';
-import { LayoutTabsV1 } from 'layout/contracts';
+import { LayoutTabsV2 } from 'layout/contracts';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import type { Thread } from 'runtime/contracts';
 import { useStore } from 'zustand/react';
@@ -54,7 +54,7 @@ const idleTree: TreeObservation = {
 
 export function GitChangesView({ services }: { readonly services: Services }) {
   const selection = useSelection(services);
-  const tabs = useService(services, LayoutTabsV1);
+  const tabs = useService(services, LayoutTabsV2);
   const commands = useService(services, CommandsV1);
   const files = useService(services, FilesSandboxV1);
   const selectedPath = useSubscribed(

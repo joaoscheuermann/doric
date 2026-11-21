@@ -12,6 +12,7 @@ import type { Services } from 'bundle/contracts';
 import type { Thread } from 'runtime/contracts';
 
 import { installWindow, type Rendered, render } from './support/render.js';
+import { selectionApis } from './support/selection.js';
 
 let rendered: Rendered | undefined;
 
@@ -38,17 +39,14 @@ const fakes = async (thread: Thread): Promise<Fakes> => {
   let current: string | undefined;
   const services = storyServices({
     apis: {
-      'layout.panel/v2': {
+      'layout.panel/v3': {
         ...still,
         select: (id: string) => {
           selected.push(id);
         },
       },
-      'layout.workspace/v1': {
-        ...still,
-        selection: () => ({ project: fixtures.project, thread }),
-      },
-      'layout.tabs/v1': {
+      ...selectionApis(fixtures.project, thread),
+      'layout.tabs/v2': {
         ...still,
         focus: async ({ id }: { readonly id: string }) => {
           focused.push(id);

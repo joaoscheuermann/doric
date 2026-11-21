@@ -1,10 +1,15 @@
 // The terminal bundle's client part (stage 10, §3.10): the window's terminal
 // store over `terminal/v1`, and the header's "New terminal" button,
-// sidebar terminal rows and shared workspace terminal view. All are bound to the
+// sidebar terminal rows, shared workspace terminal view and the terminal tab's
+// icon (`terminal-tab-icon`). All are bound to the
 // activation services, never to an element's (D9-17).
 //
+// Bundle isolation 5(b): the chat's drawings of a `terminal` call
+// (`terminal-tool-call`) and of a background terminal's answer, the source
+// `terminal` (`terminal-result`), registered while `chat.views/v1` is served.
+//
 // The header region item and the sidebar rows are registered by
-// `registerTerminalSurfaces` while the layout serves `layout.sidebar/v1`,
+// `registerTerminalSurfaces` while `workspace` serves `workspace.sidebar/v1`,
 // since WP-10N removed the layout's provisional terminals.
 
 import {
@@ -20,22 +25,38 @@ import {
   UiV1,
 } from 'bundle/contracts';
 import { toast } from 'desktop/ui/sonner';
+import type { SHELL_HEADER_ACTIONS } from 'layout/contracts';
 
 import { TerminalServiceV1 } from '../contracts/index.js';
 import { createTerminalApi } from './api.js';
+import {
+  defineTerminalCallElement,
+  TERMINAL_CALL_TAG,
+  TERMINAL_TOOL,
+} from './chat/terminal-call.js';
+import {
+  defineTerminalResultElement,
+  TERMINAL_RESULT_TAG,
+  TERMINAL_SOURCE,
+} from './chat/terminal-result.js';
 import { isAgentBusy, type Terminal } from './domain/terminals.js';
 import { defineTerminalElements, type TerminalClient } from './elements.js';
 import { createTerminalWatches } from './output-watch.js';
 import {
+  ChatViewsV1,
   FilesRefreshV1,
-  type LayoutSidebar,
-  LayoutSidebarV1,
-  LayoutTabsV1,
-  type LayoutWorkspace,
-  LayoutWorkspaceV1,
+  LayoutTabsV2,
+  type RecordsSource,
+  RuntimeRecordsV1,
+  type WorkspaceSidebar,
+  WorkspaceSidebarV1,
 } from './peers.js';
 import { createTerminalStore, type TerminalStore } from './store.js';
-import { TERMINAL_VIEW_TAG, terminalTab } from './tab.js';
+import {
+  TERMINAL_TAB_ICON_TAG,
+  TERMINAL_VIEW_TAG,
+  terminalTab,
+} from './tab.js';
 
 /** The region item of the header's new-terminal button. */
 export const terminalRegions: readonly {
@@ -43,7 +64,7 @@ export const terminalRegions: readonly {
   readonly item: RegionItem;
 }[] = [
   {
-    region: 'layout.header',
+    region: 'shell.header.actions' satisfies typeof SHELL_HEADER_ACTIONS,
     item: { id: 'terminal-new', tag: 'terminal-new-button', order: 10 },
   },
 ];
@@ -55,22 +76,22 @@ export const terminalRegions: readonly {
  */
 export const registerTerminalSurfaces = (
   regions: Pick<Regions, 'add'>,
-  sidebar: LayoutSidebar,
+  sidebar: WorkspaceSidebar,
   store: TerminalStore,
-  workspace: () => Pick<LayoutWorkspace, 'thread'> | undefined,
+  records: () => Pick<RecordsSource, 'thread'> | undefined,
 ): Disposable => {
   const added = terminalRegions.map(({ region, item }) =>
     regions.add(region, item),
   );
   // `busy` runs for every Thread on every render of the tree, so it answers
   // from memory: each Thread's Project is resolved once (again only while the
-  // workspace does not know the Thread yet), and the busy Thread ids are
+  // records do not hold the Thread yet), and the busy Thread ids are
   // rebuilt only after the store changed.
   const projects = new Map<string, string>();
   const projectOf = (threadId: string): string | undefined => {
     const known = projects.get(threadId);
     if (known !== undefined) return known;
-    const projectId = workspace()?.thread(threadId)?.projectId;
+    const projectId = records()?.thread(threadId)?.projectId;
     if (projectId !== undefined) projects.set(threadId, projectId);
     return projectId;
   };
@@ -85,7 +106,7 @@ export const registerTerminalSurfaces = (
       id: 'terminals',
       tag: 'terminal-rows',
       count: (threadId) => {
-        const projectId = workspace()?.thread(threadId)?.projectId;
+        const projectId = records()?.thread(threadId)?.projectId;
         if (projectId !== undefined) store.follow(projectId);
         return store.threadTerminals(threadId).length;
       },
@@ -120,18 +141,18 @@ const threadRoute = (projectId: string, threadId: string): string =>
 const opener =
   (services: Services, kill: (terminalId: string) => void) =>
   async (terminal: Terminal) => {
-    let workspace: LayoutWorkspace | undefined;
+    let records: RecordsSource | undefined;
     try {
-      workspace = services.use(LayoutWorkspaceV1);
+      records = services.use(RuntimeRecordsV1);
     } catch {
-      workspace = undefined;
+      records = undefined;
     }
-    const thread = workspace?.thread(terminal.threadId);
+    const thread = records?.thread(terminal.threadId);
     if (thread !== undefined)
       services
         .use(NavigationV1)
         .navigate(threadRoute(thread.projectId, thread.id));
-    await services.use(LayoutTabsV1).open(terminalTab(terminal, kill));
+    await services.use(LayoutTabsV2).open(terminalTab(terminal, kill));
   };
 
 export function activate({ services }: ClientContext): Cleanup {
@@ -153,14 +174,14 @@ export function activate({ services }: ClientContext): Cleanup {
     toastError: (message) => toast.error(message),
     closeTab: (input) => {
       void services
-        .use(LayoutTabsV1)
+        .use(LayoutTabsV2)
         .close(input)
         .catch(() => undefined);
     },
     retitleTab: (input) => {
       try {
         void services
-          .use(LayoutTabsV1)
+          .use(LayoutTabsV2)
           .retitle(input)
           .catch(() => undefined);
       } catch {
@@ -194,16 +215,39 @@ export function activate({ services }: ClientContext): Cleanup {
     ui.define('terminal-new-button', elements.newButton),
     ui.define('terminal-rows', elements.rows),
     ui.define(TERMINAL_VIEW_TAG, elements.view),
+    ui.define(TERMINAL_TAB_ICON_TAG, elements.tabIcon),
+    ui.define(TERMINAL_CALL_TAG, defineTerminalCallElement(client)),
+    ui.define(TERMINAL_RESULT_TAG, defineTerminalResultElement(client)),
   ];
 
-  const surfaces = services.whenAvailable(LayoutSidebarV1, (sidebar) => {
+  // The chat's drawings of the `terminal` tool and of the source `terminal`
+  // (chat.views/v1 1.2.0), each in a callback of its own: a refused
+  // registration leaves the other.
+  const chatViews = [
+    services.whenAvailable(ChatViewsV1, (views) => {
+      const registered = views.registerToolRenderer({
+        toolName: TERMINAL_TOOL,
+        elementTag: TERMINAL_CALL_TAG,
+      });
+      return () => registered.dispose();
+    }),
+    services.whenAvailable(ChatViewsV1, (views) => {
+      const registered = views.registerInputRenderer({
+        source: TERMINAL_SOURCE,
+        elementTag: TERMINAL_RESULT_TAG,
+      });
+      return () => registered.dispose();
+    }),
+  ];
+
+  const surfaces = services.whenAvailable(WorkspaceSidebarV1, (sidebar) => {
     const registered = registerTerminalSurfaces(
       services.use(RegionsV1),
       sidebar,
       store,
       () => {
         try {
-          return services.use(LayoutWorkspaceV1);
+          return services.use(RuntimeRecordsV1);
         } catch {
           return undefined;
         }
@@ -213,6 +257,7 @@ export function activate({ services }: ClientContext): Cleanup {
   });
 
   return () => {
+    for (const registration of chatViews.reverse()) registration.dispose();
     surfaces.dispose();
     for (const element of defined.reverse()) element.dispose();
     store.dispose();

@@ -1,12 +1,14 @@
 // The files client's elements (stage 10, §3.6), built inside a factory the
 // activation calls, so importing this module touches no DOM global [D10-7].
 // Each renders in light DOM with `display: contents`; the file tab shares the
-// files bundle's one query client.
+// files bundle's one query client. The file icon (bundle isolation 4a) is the
+// mark the layout draws on a file tab and on the Files view's selector.
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { Services } from 'bundle/contracts';
 import { defineReactElement } from 'desktop/ui/react-element';
 import { SidebarScope } from 'desktop/ui/sidebar';
+import { FileIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { FileView } from './file/file-view.js';
@@ -42,6 +44,10 @@ export const defineFilesElements = (store: SandboxStore) => {
       render: ({ services, projectId, path }) => (
         <FileView services={services} projectId={projectId} path={path} />
       ),
+    }),
+    fileIcon: defineReactElement<object>({
+      props: [],
+      render: () => <FileIcon />,
     }),
   };
 };

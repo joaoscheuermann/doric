@@ -29,7 +29,6 @@ import {
   reasoningEfforts,
   type SteerResult,
   type Thread,
-  type ThreadGit,
   type ThreadOrigin,
 } from '../../contracts/model.js';
 import type {
@@ -42,11 +41,6 @@ import type {
   ThreadControl,
   WorkspaceControl,
 } from '../../contracts/tool-host/index.js';
-import {
-  cwdRepoHint,
-  HintProbeIncompleteError,
-  threadGit,
-} from '../provisional/git-status.js';
 import type { AttachmentStore } from '../store/attachments.js';
 import {
   queuedPrompt,
@@ -59,6 +53,7 @@ import { physicallyInside } from './cwd.js';
 import type { ExecutionChoice, ExecutionRefusal } from './execution.js';
 import { delegatedResult } from './prompts.js';
 import type { Redactor } from './redactor.js';
+import { cwdRepoHint, HintProbeIncompleteError } from './repository-hint.js';
 import {
   type ProjectRuntime,
   type PromptJob,
@@ -1556,23 +1551,7 @@ export const createThreadRunner = (context: RunnerContext) => {
     });
     await cwdChanged(change);
   };
-  /**
-   * The Git summary of one Thread's working directory. The read probes the
-   * sandbox every time: a working directory changes under the agent while one of
-   * its prompts runs, and a summary served from a cache would be the state of
-   * the last settle rather than the state the reader is watching. Reading it
-   * also refreshes the record's hint, so opening a changes view is what catches
-   * the Thread record up with the sandbox.
-   */
-  const git = async (
-    project: ProjectRuntime,
-    thread: ThreadRuntime,
-    sandbox: Sandbox,
-  ): Promise<ThreadGit> => {
-    const summary = await threadGit(sandbox, thread.thread.cwd);
-    await hint(project, thread);
-    return summary;
-  };
+
   /**
    * The prompt's own working directory, bound to the Thread that owns the prompt
    * rather than to a snapshot of it: a move is the very next `cwd()` reads, in
@@ -1803,7 +1782,6 @@ export const createThreadRunner = (context: RunnerContext) => {
     state,
     setCwd,
     resetCwd,
-    git,
     hint,
     terminalResult,
     failTerminalResult,

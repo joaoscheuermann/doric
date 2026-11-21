@@ -26,7 +26,13 @@
       "path": "../../runtime/runtime"
     },
     {
+      "path": "../../desktop/chat"
+    },
+    {
       "path": "../../../packages/bundle"
+    },
+    {
+      "path": "../../desktop/workspace"
     },
     {
       "path": "../../../packages/sandpool"

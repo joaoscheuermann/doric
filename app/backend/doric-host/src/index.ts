@@ -6,7 +6,6 @@ import { SkillsV1, ToolsV1 } from 'bundle/contracts';
 import express from 'express';
 import pino from 'pino';
 import pretty from 'pino-pretty';
-import { ATTACHMENT_MAX_BYTES } from 'runtime/contracts';
 import { Server as SocketServer } from 'socket.io';
 
 import { installBridge } from './lib/bridge/socket.js';
@@ -17,6 +16,7 @@ import {
   startBundles,
   watchStructural,
 } from './lib/bundles/boot.js';
+import { SOCKET_MAX_HTTP_BUFFER_BYTES } from './lib/socket-buffer.js';
 
 const logger = pino(
   { level: 'debug' },
@@ -82,12 +82,13 @@ async function main() {
   // own token tree; Socket.IO still handles `/socket.io/` alone.
   //
   // A desktop call carries an image attachment whole, base64 in its envelope,
-  // so one message must hold the largest attachment the runtime keeps: its
-  // base64 (4 characters per 3 bytes) plus room for the envelope. Socket.IO's
-  // own default, 1 MB, would drop the connection on the first photo.
+  // so one message must hold the largest attachment the runtime keeps.
+  // `SOCKET_MAX_HTTP_BUFFER_BYTES` is that base64 size plus room for the
+  // envelope. Socket.IO's own default, 1 MB, would drop the connection on the
+  // first photo.
   const io = new SocketServer(server, {
     destroyUpgrade: false,
-    maxHttpBufferSize: Math.ceil(ATTACHMENT_MAX_BYTES / 3) * 4 + 1024 * 1024,
+    maxHttpBufferSize: SOCKET_MAX_HTTP_BUFFER_BYTES,
   });
 
   // The enabled bundles build their own pools in the generation process, from

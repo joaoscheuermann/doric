@@ -1,17 +1,13 @@
 import type { ErrorInfo } from 'desktop/reads';
+import { type Chosen, CollapsibleBlock } from 'desktop/ui/collapsible-block';
 import { ErrorNotice } from 'desktop/ui/error-notice';
 import { attachmentLine } from 'runtime/contracts';
 
-import { type Chosen, toolOpenness } from '../../domain/collapsible.js';
+import { toolOpenness } from '../../domain/collapsible.js';
 import { chatErrorCatalog } from '../../domain/error-catalog.js';
 import type { ToolStatus } from '../../domain/projector.js';
-import { LOAD_SKILL_TOOL } from '../../domain/skill-load.js';
 import { humanize } from '../../utility/humanize.js';
 import { AttachmentImage } from './attachment-image.js';
-import { CollapsibleBlock } from './collapsible-block.js';
-import { EditToolItem } from './edit-tool-item.js';
-import { SkillToolItem } from './skill-tool-item.js';
-import { TerminalToolItem } from './terminal-tool-item.js';
 
 type ToolItemProps = {
   readonly args: string;
@@ -24,6 +20,8 @@ type ToolItemProps = {
   readonly onChosenChange: (chosen: boolean) => void;
   /** Whether the block is the caret's stop; it then wears the hover style. */
   readonly focused?: boolean;
+  /** Whether the settled block stays open until the reader closes it; `toolDrawing`'s answer. */
+  readonly openByDefault?: boolean;
 };
 
 /**
@@ -38,50 +36,10 @@ export function ToolItem({
   focused,
   name,
   onChosenChange,
+  openByDefault = false,
   result,
   status,
 }: ToolItemProps) {
-  if (name === 'terminal') {
-    return (
-      <TerminalToolItem
-        args={args}
-        chosen={chosen}
-        error={error}
-        focused={focused}
-        onChosenChange={onChosenChange}
-        result={result}
-        status={status}
-      />
-    );
-  }
-  if (name === 'edit' || name === 'write') {
-    return (
-      <EditToolItem
-        args={args}
-        name={name}
-        chosen={chosen}
-        error={error}
-        focused={focused}
-        onChosenChange={onChosenChange}
-        result={result}
-        status={status}
-      />
-    );
-  }
-  if (name === LOAD_SKILL_TOOL) {
-    return (
-      <SkillToolItem
-        args={args}
-        chosen={chosen}
-        error={error}
-        focused={focused}
-        onChosenChange={onChosenChange}
-        result={result}
-        status={status}
-      />
-    );
-  }
-
   const running = status === 'running';
 
   return (
@@ -95,7 +53,7 @@ export function ToolItem({
         </>
       }
       onChosenChange={onChosenChange}
-      openness={toolOpenness(status, args, result, error, name)}
+      openness={toolOpenness(status, args, result, error, openByDefault)}
     >
       <div className="flex flex-col gap-1.5">
         {args.length > 0 ? (

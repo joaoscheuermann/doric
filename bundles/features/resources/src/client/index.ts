@@ -2,10 +2,11 @@
 // element, bound to the activation services (D9-17). It draws the connection
 // badge (UR24) and the resources popover it opens.
 //
-// The activation registers its `layout.account.status` item (`resourcesRegion`,
-// S8), the 14×14 slot over the account avatar.
+// The activation registers its `account.status` item (`resourcesRegion`, S8),
+// the 14×14 slot over the account avatar.
 
 import { QueryClient } from '@tanstack/react-query';
+import type { ACCOUNT_STATUS } from 'account/contracts';
 import {
   type Cleanup,
   type ClientContext,
@@ -21,8 +22,8 @@ import { defineResourcesElements } from './elements.js';
 export const RESOURCES_MONITOR_TAG = 'resources-monitor';
 
 /**
- * Where the connection badge sits: the layout's account status slot
- * (`layout.account.status`, S8), first among its items (`order: 10`). The id
+ * Where the connection badge sits: the account status slot
+ * (`account.status`, S8), first among its items (`order: 10`). The id
  * stays `resources` and the tag stays `RESOURCES_MONITOR_TAG`. Nothing is
  * registered into `layout.global-footer`, which phase 2 removes (S10).
  */
@@ -30,7 +31,7 @@ export const resourcesRegion: {
   readonly region: string;
   readonly item: RegionItem;
 } = {
-  region: 'layout.account.status',
+  region: 'account.status' satisfies typeof ACCOUNT_STATUS,
   item: { id: 'resources', tag: RESOURCES_MONITOR_TAG, order: 10 },
 };
 

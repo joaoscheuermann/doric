@@ -16,7 +16,7 @@ import {
 } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import {
-  LayoutTabsV1,
+  LayoutTabsV2,
   layoutTabsMethods,
   type TabRequest,
 } from 'layout/contracts';
@@ -31,7 +31,7 @@ const setup = () => {
   const harness = createTestServices({
     bundle: { id: 'git-client' },
     provide: [
-      defineService(LayoutTabsV1.id, {
+      defineService(LayoutTabsV2.id, {
         open: defineMethod({
           ...layoutTabsMethods.open,
           execute: async (request: TabRequest) => {

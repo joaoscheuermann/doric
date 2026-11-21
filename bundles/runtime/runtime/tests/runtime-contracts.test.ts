@@ -32,19 +32,20 @@ import {
   RuntimeHooksV1,
   RuntimeLeaseV1,
   type RuntimeNotice,
-  RuntimeTerminalsV1,
+  RuntimeRecordsV1,
   RuntimeThreadsV1,
   RuntimeUsageV1,
-  RuntimeV1,
+  RuntimeV2,
   RuntimeWorkspaceV1,
   runtimeAttachmentsMethods,
   runtimeLeaseMethods,
   runtimeMethods,
-  runtimeTerminalsMethods,
   runtimeThreadsMethods,
   runtimeWorkspaceMethods,
   SandboxV1,
   sandboxMethods,
+  type Thread,
+  threadSubtreeIds,
   threadType,
 } from '../src/contracts/index.js';
 import { readTranscript } from './support/capture-adapter.js';
@@ -77,16 +78,15 @@ const serializable: Record<string, Specs> = {
   'runtime.workspace/v1': runtimeWorkspaceMethods,
   'runtime.lease/v1': runtimeLeaseMethods,
   'runtime.attachments/v1': runtimeAttachmentsMethods,
-  'runtime.terminals/v1': runtimeTerminalsMethods,
   'host-config/v1': configurationMethods,
 };
 
 /** The stage-9 remote watches (R-STREAM): a stream listener, then a Disposable. */
 const streams: Record<string, readonly string[]> = {
-  'runtime/v1': ['watchProject'],
+  // Bundle isolation step 7(a): watchProject without the terminals.
+  'runtime/v2': ['watchProject'],
   // 1.8.0: viewThread holds a view while its stream is open.
   'runtime.threads/v1': ['watchThread', 'viewThread'],
-  'runtime.terminals/v1': ['watchProject'],
 };
 
 /** The stage-10 local-only members (R-5.1, R-5.2): a task in, a value out. */
@@ -113,14 +113,13 @@ void test('the transport-facing contracts carry no process-local member', () => 
   for (const [name, spec] of Object.entries(runtimeMethods))
     if (name !== 'watch' && name !== 'drain' && name !== 'watchProject')
       for (const io of ['input', 'output'] as const)
-        assert.deepEqual(markers(spec[io], io), [], `runtime/v1.${name}.${io}`);
+        assert.deepEqual(markers(spec[io], io), [], `runtime/v2.${name}.${io}`);
 });
 
 void test('the remote watches cross as streams: only a listener and a Disposable are local', () => {
   const specs: Record<string, Specs> = {
-    'runtime/v1': runtimeMethods,
+    'runtime/v2': runtimeMethods,
     'runtime.threads/v1': runtimeThreadsMethods,
-    'runtime.terminals/v1': runtimeTerminalsMethods,
   };
   for (const [contract, names] of Object.entries(streams))
     for (const name of names) {
@@ -175,9 +174,15 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     JSON.parse(await readFile('bundles/runtime/runtime/manifest.json', 'utf8')),
   );
 
+  // Bundle isolation step 7(c): the first runtime contract and the runtime's
+  // terminal contract leave with the nine lease reads, so the bundle is the
+  // major 3.0.0 and no longer watches terminal/v1 or resources/v1.
+  assert.equal(manifest.version, '3.0.0');
+  assert.deepEqual(manifest.optional ?? [], []);
   assert.deepEqual(manifest.provides, [
-    // 1.3.0: Project activity summaries for the desktop dashboard.
-    `${RuntimeV1.id}@1.3.0`,
+    // Bundle isolation step 7(a): watchProject's snapshot without the
+    // terminals, which terminal/v1 streams.
+    `${RuntimeV2.id}@2.0.0`,
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
     // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0:
     // retry; 1.5.0: a bundle's instruction and restarting a failed child;
@@ -188,20 +193,23 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     // 1.1.0: withThread (stage 10 R-5.2).
     // 1.2.0: location
     `${RuntimeWorkspaceV1.id}@1.2.0`,
-    // 1.1.0: withLease (stage 10 R-5.1); 1.2.0: readFileBytes.
-    `${RuntimeLeaseV1.id}@1.2.0`,
+    // 1.1.0: withLease (stage 10 R-5.1); 1.2.0: readFileBytes; 1.3.0
+    // (bundle isolation 7(c)): the nine reads moved to the bundles that own
+    // them.
+    `${RuntimeLeaseV1.id}@1.3.0`,
     // The images a Project holds, for prompts and tool results.
     `${RuntimeAttachmentsV1.id}@1.0.0`,
-    // 1.1.0: watchProject (stage 9 R-STREAM).
-    `${RuntimeTerminalsV1.id}@1.1.0`,
     // 1.1.0: onThreadsClosingHook (stage 10 R-5.4).
     // 1.2.0: onPromptStartedHook and onThreadCwdChangedHook.
     `${RuntimeHooksV1.id}@1.2.0`,
     // Stage 10 R-5.5: the unfilled usage projection.
     `${RuntimeUsageV1.id}@1.0.0`,
+    // Bundle isolation phase 3: the window's records mirror, a client
+    // contract the runtime's client part provides.
+    `${RuntimeRecordsV1.id}@1.0.0`,
     `${promptFinishedEvent.type}@1.0.0`,
     // terminal/v1 left with the stage-10 host switch: the `terminal` bundle
-    // provides it, and runtime.terminals/v1 delegates to it.
+    // provides it.
     // The storage types the host part defines are provided contracts too.
     // 1.1.0: the internal `owner` field (57-WP-H).
     `${projectType.type}@1.1.0`,
@@ -230,7 +238,34 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
   assert.ok(isHooksContract(RuntimeHooksV1));
 });
 
-void test('a watch listener reaches the provider and its registration is released', async () => {
+void test('runtime/contracts exports threadSubtreeIds, which names a Thread and its descendants without its siblings', () => {
+  const thread = (id: string, parentThreadId?: string): Thread => ({
+    id,
+    projectId: 'project-a',
+    ...(parentThreadId === undefined ? {} : { parentThreadId }),
+    name: id,
+    state: 'ready',
+    lastSequence: 0,
+    cwd: '/workspace/doric',
+    createdAt: '',
+    updatedAt: '',
+  });
+  const values = [
+    thread('root'),
+    thread('child', 'root'),
+    thread('grandchild', 'child'),
+    thread('sibling'),
+  ];
+
+  assert.deepEqual([...threadSubtreeIds(values, 'root')].sort(), [
+    'child',
+    'grandchild',
+    'root',
+  ]);
+  assert.deepEqual([...threadSubtreeIds(values, 'absent')], ['absent']);
+});
+
+void test('a runtime/v2 watch listener reaches the provider and its registration is released', async () => {
   const listeners = new Set<(notice: RuntimeNotice) => void>();
   const refuse = () => Promise.reject(new Error('not used'));
   const methods = Object.fromEntries(
@@ -242,7 +277,7 @@ void test('a watch listener reaches the provider and its registration is release
   const harness = createTestServices({
     bundle: { id: 'consumer' },
     provide: [
-      defineService(RuntimeV1, {
+      defineService(RuntimeV2, {
         ...methods,
         watch: defineMethod({
           ...runtimeMethods.watch,
@@ -257,7 +292,7 @@ void test('a watch listener reaches the provider and its registration is release
   });
   const seen: RuntimeNotice[] = [];
   const registration = harness.services
-    .use(RuntimeV1)
+    .use(RuntimeV2)
     .watch((notice) => seen.push(notice), harness.call());
 
   for (const listener of listeners)
@@ -291,7 +326,7 @@ void test('a stored Project record with keys outside the contract travels unchan
   const harness = createTestServices({
     bundle: { id: 'consumer' },
     provide: [
-      defineService(RuntimeV1, {
+      defineService(RuntimeV2, {
         ...methods,
         project: defineMethod({
           ...runtimeMethods.project,
@@ -300,7 +335,7 @@ void test('a stored Project record with keys outside the contract travels unchan
       } as never),
     ],
   });
-  const runtime = harness.services.use(RuntimeV1);
+  const runtime = harness.services.use(RuntimeV2);
 
   assert.equal(
     JSON.stringify(await runtime.project('p-1', harness.call())),

@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "papercraft",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "engines": {
     "doric": "^1.0.0"
   },
@@ -41,7 +41,12 @@
     "skills/v1@^1.1.0",
     "events/v1@^1.0.0"
   ],
-  "optional": ["chat.composer/v1", "chat.send/v1"],
+  "optional": [
+    "chat.composer/v1",
+    "chat.send/v1",
+    "comments.added/v1",
+    "comments.resolved/v1"
+  ],
   "desktopScope": {
     "papercraft.programs/v1": ["projectId", "threadId"],
     "papercraft.cache/v1": ["projectId", "threadId"]

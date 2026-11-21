@@ -15,22 +15,28 @@
   "include": ["src/contracts/**/*.ts"],
   "references": [
     {
-      "path": "../../features/comments"
+      "path": "../settings"
     },
     {
       "path": "../../runtime/runtime"
     },
     {
+      "path": "../layout"
+    },
+    {
       "path": "../history"
     },
     {
-      "path": "../../../packages/desktop"
+      "path": "../../features/comments"
     },
     {
       "path": "../../../packages/bundle"
     },
     {
       "path": "../../foundation/core"
+    },
+    {
+      "path": "../../../packages/desktop"
     }
   ]
 }

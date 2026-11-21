@@ -5,12 +5,9 @@ import {
   clearSettingsQueryClient,
   settingsQueryClient,
 } from '../../src/client/queries/client.js';
-import {
-  ExecutionPickerElement,
-  SettingsPageElement,
-} from '../../src/client/views/settings-page.js';
+import { SettingsPageElement } from '../../src/client/views/settings-page.js';
 import { defineSettingsElements } from '../support/core.js';
-import { footerFrame, windowFrame } from '../support/frames.js';
+import { windowFrame } from '../support/frames.js';
 import {
   bindStoryServices,
   createStoryServices,
@@ -31,17 +28,12 @@ function PageElement({
   tag,
 }: {
   readonly host?: StoryHost;
-  readonly tag: 'settings-page' | 'settings-execution-picker';
+  readonly tag: 'settings-page';
 }) {
   const [services] = useState<StoryServices>(() => {
     defineSettingsElements();
     if (customElements.get('settings-page') === undefined)
       customElements.define('settings-page', SettingsPageElement);
-    if (customElements.get('settings-execution-picker') === undefined)
-      customElements.define(
-        'settings-execution-picker',
-        ExecutionPickerElement,
-      );
     clearSettingsQueryClient();
     seedQueries(settingsQueryClient(), host);
     return createStoryServices(host);
@@ -73,9 +65,4 @@ export const SettingsPageExecution = {
       host={{ path: sectionPath('execution') }}
     />
   ),
-};
-
-export const ExecutionPicker = {
-  decorators: [footerFrame],
-  render: () => <PageElement tag="settings-execution-picker" />,
 };

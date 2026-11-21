@@ -4,19 +4,26 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./contracts": {
+      "@org/source": "./src/contracts/index.ts",
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js",
+      "default": "./dist/contracts/index.js"
+    }
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.1",
     "@tanstack/react-table": "^9.2.4",
+    "account": "0.0.1",
     "bundle": "0.0.1",
-    "claude-login": "0.0.1",
     "desktop": "1.0.0",
-    "layout": "0.0.1",
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "runtime": "0.0.1",
+    "tslib": "^2.3.0",
+    "workspace": "0.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

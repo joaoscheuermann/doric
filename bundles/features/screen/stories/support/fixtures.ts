@@ -2,7 +2,8 @@
 // views in every status a row draws, and a view of another Project the pane
 // must not list.
 
-import type { WorkspaceSelection } from '../../src/client/peers.js';
+import type { Project } from 'runtime/contracts';
+
 import type { ScreenView } from '../../src/contracts/index.js';
 
 export const checkoutProject = {
@@ -15,12 +16,21 @@ export const docsProject = {
   name: 'Docs site',
 };
 
-export const checkoutSelection: WorkspaceSelection = {
-  project: checkoutProject,
-  thread: {
-    id: '0b6d7f42-91e3-4a8c-b2d5-7c1e9f03a6b4',
-    projectId: checkoutProject.id,
-  },
+/** The Projects `runtime.records/v1` holds, whose names label a view. */
+export const projects: readonly Project[] = [checkoutProject, docsProject].map(
+  (project) => ({
+    ...project,
+    state: 'ready',
+    configRevision: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }),
+);
+
+/** `workspace.selection/v1`'s ids: the checkout Project and one of its Threads. */
+export const checkoutSelection = {
+  projectId: checkoutProject.id,
+  threadId: '0b6d7f42-91e3-4a8c-b2d5-7c1e9f03a6b4',
 };
 
 const view = (

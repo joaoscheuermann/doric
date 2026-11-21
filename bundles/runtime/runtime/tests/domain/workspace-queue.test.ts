@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { SandboxExecResult } from 'sandbox';
-
 import type { ThreadEvent } from '../../src/contracts/model.js';
 import { fakeSandbox } from '../support/sandbox.js';
-import { createHarness, deferred, type Harness } from './support/harness.js';
+import {
+  createHarness,
+  deferred,
+  type Harness,
+  type ToolHost,
+} from './support/harness.js';
 
 /*
  * Ported from agents/doric tests/workspace-queue.test.ts (design 57 §13.1,
@@ -213,38 +216,26 @@ void test('removing queued inputs preserves history and the remaining FIFO, but 
 void test('Stop closes dispatch before abort, stays idempotent, and ends the interrupted turn', {
   timeout: 5000,
 }, async () => {
-  const started = deferred();
-  const terminalFinished = deferred<SandboxExecResult>();
+  const started = deferred<{
+    readonly tools: ToolHost;
+    readonly promptId: string;
+  }>();
   const terminalQueued = deferred();
   const aborted = deferred();
   const settle = deferred();
   const drained = deferred();
   const ran: string[] = [];
   const harness = createHarness({
-    sandbox: {
-      sandbox: {
-        ...fakeSandbox(),
-        start: async () => ({
-          result: terminalFinished.promise,
-          write: async () => undefined,
-          resize: async () => undefined,
-          terminate: async () => undefined,
-        }),
-      } as never,
-    },
+    sandbox: { sandbox: fakeSandbox() as never },
     execute: async ({ tools, job, signal }) => {
       ran.push(job.source.kind === 'terminal' ? 'late result' : job.prompt);
       if (ran.length === 1) {
         signal?.addEventListener('abort', () => aborted.resolve(), {
           once: true,
         });
-        await tools.terminal.run({
-          command: 'echo late',
-          cwd: '/workspace',
-          timeoutMs: 0,
-          background: true,
-        });
-        started.resolve();
+        // A background terminal started here delivers its result later,
+        // the way the terminal bundle does: through runtime.threads/v1.
+        started.resolve({ tools, promptId: job.id });
         await settle.promise;
       }
       if (job.source.kind === 'terminal') drained.resolve();
@@ -269,7 +260,7 @@ void test('Stop closes dispatch before abort, stays idempotent, and ends the int
     const id = created.thread.id;
     const active = await service.threads.prompt(id, 'active');
     assert.equal(active.status, 'accepted');
-    await started.promise;
+    const background = await started.promise;
     await service.threads.prompt(id, 'first');
     await service.threads.prompt(id, 'second');
     const before = await service.threads.queue(id);
@@ -319,12 +310,20 @@ void test('Stop closes dispatch before abort, stays idempotent, and ends the int
       (await service.threads.queue(id))?.revision,
       stopping?.revision,
     );
-    terminalFinished.resolve({
-      stdout: 'late',
-      stderr: '',
-      exitCode: 0,
-      stdoutBytes: new Uint8Array(),
-      stderrBytes: new Uint8Array(),
+    await background.tools.threads.enqueueTerminalResult({
+      threadId: id,
+      promptId: background.promptId,
+      terminalId: 'terminal-late',
+      text: [
+        '# Background terminal result',
+        '',
+        'Terminal: terminal-late',
+        `Originating prompt: ${background.promptId}`,
+        'Command: echo late',
+        'Exit code: 0',
+        '',
+        'late',
+      ].join('\n'),
     });
     await terminalQueued.promise;
     settle.resolve();

@@ -1,10 +1,12 @@
 // `chat.views/v1` (§7.7): projectors of other bundles' event types and the
 // elements that draw their block types; from 1.1.0 (openui.md D1), the
 // elements that draw the fences of a tag, and each Thread's fences of a tag
-// for a surface outside the conversation. The built-in projection owns every
-// type `builtInClaims` names, so a projector claiming one of them conflicts
-// with it. The surface reads the registry through `projectors()`,
-// `rendererFor()` and `subscribe()`.
+// for a surface outside the conversation; from 1.2.0, the elements and flags
+// that draw the calls of a tool and the prompts of an input source. The
+// built-in projection owns every type `builtInClaims` names, so a projector
+// claiming one of them conflicts with it. The surface reads the registry
+// through `projectors()`, `rendererFor()`, `toolRenderers()`,
+// `inputRenderers()` and `subscribe()`.
 
 import {
   type Call,
@@ -22,12 +24,17 @@ import {
   ChatViewsV1,
   type FenceRendererSpec,
   fenceRendererSpecSchema,
+  type InputRendererSpec,
+  inputRendererSpecSchema,
   type ProjectorSpec,
   type RendererSpec,
   rendererSpecSchema,
+  type ToolRendererSpec,
+  toolRendererSpecSchema,
   watchFencesInputSchema,
 } from '../../contracts/index.js';
 import { builtInClaims } from '../domain/external-blocks.js';
+import { createDrawingRegistry } from './drawing-registry.js';
 import { createFenceRegistry } from './fence-registry.js';
 import { createFenceWatches, type FenceWatches } from './fence-watches.js';
 
@@ -92,6 +99,10 @@ export interface ChatViewsRegistry {
   fenceTags(): ReadonlySet<string>;
   /** The element that draws the fences of `tag`, else `undefined`. */
   fenceRendererFor(tag: string): string | undefined;
+  /** The tool renderers by tool name (1.2.0), as one map per change. */
+  toolRenderers(): ReadonlyMap<string, ToolRendererSpec>;
+  /** The input renderers' element tags by source key (1.2.0), as one map per change. */
+  inputRenderers(): ReadonlyMap<string, string>;
   /** Called after every registration or its removal. */
   subscribe(listener: () => void): () => void;
 }
@@ -117,6 +128,19 @@ export const createChatViews = (options: ChatViewsOptions = {}) => {
   let snapshot: readonly ProjectorSpec[] = Object.freeze([]);
   const fences = createFenceRegistry();
   const fenceWatches = options.fenceWatches ?? createFenceWatches(fences);
+  const tools = createDrawingRegistry<ToolRendererSpec>();
+  const inputs = createDrawingRegistry<string>();
+
+  /** Throws `invalid_input` unless `ui/v1` has defined `tag`. */
+  const assertDefined = (tag: string): void => {
+    if (!isDefined(tag)) {
+      throw new ContractError(
+        'invalid_input',
+        `The element <${tag}> is not defined.`,
+        { elementTag: tag },
+      );
+    }
+  };
 
   const changed = (): void => {
     snapshot = Object.freeze(projectors.map(({ spec }) => spec));
@@ -135,12 +159,16 @@ export const createChatViews = (options: ChatViewsOptions = {}) => {
       renderers.get(blockType)?.spec.elementTag ?? GENERIC_BLOCK_TAG,
     fenceTags: () => fences.tags(),
     fenceRendererFor: (tag) => fences.rendererFor(tag)?.elementTag,
+    toolRenderers: () => tools.entries(),
+    inputRenderers: () => inputs.entries(),
     subscribe: (listener) => {
       listeners.add(listener);
-      const stopFences = fences.subscribe(listener);
+      const stops = [fences, tools, inputs].map((source) =>
+        source.subscribe(listener),
+      );
       return () => {
         listeners.delete(listener);
-        stopFences();
+        for (const stop of stops) stop();
       };
     },
   };
@@ -235,6 +263,48 @@ export const createChatViews = (options: ChatViewsOptions = {}) => {
         return once(
           fences.add(spec.tag, {
             elementTag: spec.elementTag,
+            owner: call.caller.bundleId,
+          }),
+        );
+      },
+    }),
+    registerToolRenderer: defineMethod({
+      input: toolRendererSpecSchema,
+      output: disposable,
+      execute: (spec: ToolRendererSpec, call: Call) => {
+        const holder = tools.holder(spec.toolName);
+        if (holder !== undefined) {
+          throw new ContractError(
+            'registration_conflict',
+            `The tool "${spec.toolName}" is already drawn by "${holder.owner}".`,
+            { toolName: spec.toolName, owner: holder.owner },
+          );
+        }
+        if (spec.elementTag !== undefined) assertDefined(spec.elementTag);
+        return once(
+          tools.add(spec.toolName, {
+            value: Object.freeze({ ...spec }),
+            owner: call.caller.bundleId,
+          }),
+        );
+      },
+    }),
+    registerInputRenderer: defineMethod({
+      input: inputRendererSpecSchema,
+      output: disposable,
+      execute: (spec: InputRendererSpec, call: Call) => {
+        const holder = inputs.holder(spec.source);
+        if (holder !== undefined) {
+          throw new ContractError(
+            'registration_conflict',
+            `The input source "${spec.source}" is already drawn by "${holder.owner}".`,
+            { source: spec.source, owner: holder.owner },
+          );
+        }
+        assertDefined(spec.elementTag);
+        return once(
+          inputs.add(spec.source, {
+            value: spec.elementTag,
             owner: call.caller.bundleId,
           }),
         );

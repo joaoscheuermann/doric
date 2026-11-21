@@ -9,20 +9,32 @@ import {
   type WorkspaceTab,
 } from '../src/client/domain/workspace-tabs.js';
 
+// Every tab is an element tab another bundle opened (bundle isolation 4a,
+// change 6): the file, terminal and comparison tabs are drawn by their bundles.
 const file: WorkspaceTab = {
-  kind: 'file',
+  kind: 'element',
   id: 'file:a',
-  path: 'a.ts',
-  projectId: 'project',
+  tag: 'files-file-view',
+  title: 'a.ts',
+  element: {},
+  props: { projectId: 'project', path: 'a.ts' },
 };
 const terminal: WorkspaceTab = {
-  kind: 'terminal',
+  kind: 'element',
   id: 'terminal:one',
-  terminalId: 'one',
+  tag: 'terminal-view',
+  title: 'one',
+  element: {},
+  props: { terminalId: 'one' },
 };
 
 test('reorders tabs in either direction without changing selection or their content', () => {
-  const third: WorkspaceTab = { ...file, id: 'file:b', path: 'b.ts' };
+  const third: WorkspaceTab = {
+    ...file,
+    id: 'file:b',
+    title: 'b.ts',
+    props: { projectId: 'project', path: 'b.ts' },
+  };
   const state = openTab(openTab(openTab(emptyTabs, file), terminal), third);
   const moved = moveTab(state, file.id, third.id);
   assert.deepEqual(moved.items, [terminal, third, file]);
@@ -36,11 +48,12 @@ test('reorders tabs in either direction without changing selection or their cont
 
 test('opens a comparison alongside its file and reselects it without duplication', () => {
   const diff: WorkspaceTab = {
-    kind: 'diff',
+    kind: 'element',
     id: 'diff:a',
-    projectId: 'project',
-    repository: '',
-    path: 'a.ts',
+    tag: 'git-file-diff',
+    title: 'a.ts',
+    element: {},
+    props: { projectId: 'project', repository: '', path: 'a.ts' },
   };
   const state = openTab(openTab(openTab(emptyTabs, file), diff), terminal);
   const selected = openTab(state, diff);

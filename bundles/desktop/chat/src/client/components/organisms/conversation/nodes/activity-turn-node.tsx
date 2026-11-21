@@ -1,5 +1,11 @@
 import { sameErrorInfo } from 'desktop/reads';
 import {
+  blockOpen,
+  blockToggled,
+  type Chosen,
+  CollapsibleBlock,
+} from 'desktop/ui/collapsible-block';
+import {
   $getNodeByKey,
   DecoratorNode,
   type LexicalEditor,
@@ -13,9 +19,6 @@ import type { JSX } from 'react/jsx-runtime';
 
 import type { ItemCursor } from '../../../../domain/caret-navigation.js';
 import {
-  blockOpen,
-  blockToggled,
-  type Chosen,
   settledOpenness,
   thinkingOpenness,
   toolOpenness,
@@ -25,11 +28,13 @@ import type {
   ActivityItem,
   ActivityTurn,
 } from '../../../../domain/projector.js';
+import { toolDrawing } from '../../../../domain/tool-drawing.js';
+import { chatViewsRegistry } from '../../../../services/views.js';
 import { activitySummary } from '../../../../utility/activity-summary.js';
 import { reasoningText } from '../../../../utility/reasoning-text.js';
-import { CollapsibleBlock } from '../../../molecules/collapsible-block.js';
 import { ThinkingItem } from '../../../molecules/thinking-item.js';
-import { ToolItem } from '../../../molecules/tool-item.js';
+import { ToolSurface } from '../../../molecules/tool-surface.js';
+import { toggleHostedView } from '../../../molecules/view-element.js';
 import { WidgetFocus } from '../../../molecules/widget-focus.js';
 import { CONVERSATION_FONT_CLASS } from './conversation-font.js';
 
@@ -62,6 +67,7 @@ const sameItems = (
       return item.text === other.text;
     if (item.kind === 'tool' && other.kind === 'tool')
       return (
+        item.callId === other.callId &&
         item.name === other.name &&
         item.args === other.args &&
         item.status === other.status &&
@@ -210,8 +216,9 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
                           text={item.text}
                         />
                       ) : (
-                        <ToolItem
+                        <ToolSurface
                           args={item.args}
+                          callId={item.callId}
                           chosen={this.__itemChosen[index] ?? null}
                           error={item.error}
                           focused={focused && this.__itemFocus === index}
@@ -219,8 +226,10 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
                           onChosenChange={(chosen) =>
                             this.takeStepChosen(editor, index, chosen)
                           }
+                          promptId={this.__promptId}
                           result={item.result}
                           status={item.status}
+                          toggleKey={`${this.__key}/${item.callId}`}
                         />
                       )}
                     </div>
@@ -273,12 +282,18 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
   }
 
   /**
-   * The reader opens or closes one step: its next choice is its opposite, over
-   * the step's own answer — the same one its block computes.
+   * The reader opens or closes one step: a registered element that defines
+   * `toggle()` answers for itself (O2); otherwise its next choice is its
+   * opposite, over the step's own answer — the same one its block computes.
    */
   toggleItem(index: number): void {
     const item = this.__items[index];
     if (item === undefined) return;
+    if (
+      item.kind === 'tool' &&
+      toggleHostedView(`${this.__key}/${item.callId}`)
+    )
+      return;
     const openness =
       item.kind === 'thinking'
         ? thinkingOpenness(reasoningText(item.text), false)
@@ -287,7 +302,10 @@ export class ActivityTurnNode extends DecoratorNode<JSX.Element> {
             item.args,
             item.result,
             item.error,
-            item.name,
+            toolDrawing(
+              item.name,
+              chatViewsRegistry()?.toolRenderers() ?? new Map(),
+            ).openByDefault,
           );
     this.setStepChosen(
       index,

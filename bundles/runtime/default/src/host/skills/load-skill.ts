@@ -2,13 +2,13 @@ import { posix } from 'node:path';
 
 import type { Call, Services } from 'bundle/contracts';
 import type { ProviderMessage } from 'llms';
-import { McpV1 } from 'mcp/contracts';
 import { RuntimeLeaseV1 } from 'runtime/contracts';
 import { defineTool, excerpt, type Tool } from 'tool';
 import { z } from 'zod';
 
+import { skillSourcesMethods } from '../../contracts/index.js';
 import { loadedSkills } from './loaded.js';
-import { type CatalogSkill, skillBody } from './sources.js';
+import { type CatalogSkill, skillBody, skillSources } from './sources.js';
 
 /** The longest result `load_skill` returns, before the `excerpt` marker. */
 const LOADED_SKILL_MAX_CHARS = 64_000;
@@ -29,14 +29,24 @@ const read = async (
           await services.use(RuntimeLeaseV1).readFile(origin.path, call),
         ),
       ];
-    case 'mcp': {
-      const { text } = await services
-        .use(McpV1)
-        .readSkill({ id: origin.serverId, uri: origin.uri }, call);
-      return [
-        `From the MCP server "${origin.serverName}" (\`${origin.uri}\`). Its other files are not available.`,
-        skillBody(text),
-      ];
+    case 'source': {
+      // The source bounds the read; the prompt's signal ends it.
+      const source = skillSources(services).find(
+        ({ bundleId }) => bundleId === origin.bundleId,
+      );
+      if (source === undefined)
+        throw new Error(
+          `The skill source ${origin.bundleId} is not available.`,
+        );
+      const parsed = skillSourcesMethods.read.output.safeParse(
+        await source.api.read({ reference: origin.reference }, call),
+      );
+      if (!parsed.success)
+        throw new Error(
+          `The skill source ${origin.bundleId} answered an invalid skill: ${parsed.error.message}`,
+        );
+      const { origin: line, text } = parsed.data;
+      return [...(line === undefined ? [] : [line]), skillBody(text)];
     }
   }
 };
@@ -70,7 +80,7 @@ const unknownSkill = (
  * Always built; input schema never changes during a run: `{ name: string }`,
  * strict; output a string. listed() and history() read on every call.
  * Name in listed(): reads again from its source (bundle body /
- * RuntimeLeaseV1.readFile / McpV1.readSkill); fresh output =
+ * RuntimeLeaseV1.readFile / the source's `read`); fresh output =
  * `# Skill: <name>`, the source line when there is one, the body, joined by
  * '\n\n', cut to 64 000 with `...`. If the most recent entry of <name> in
  * loadedSkills(history()) is not cut and its text equals the fresh output
