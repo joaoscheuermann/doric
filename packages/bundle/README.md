@@ -15,35 +15,62 @@ versioned service contracts. This package holds what makes that work:
 - the import-map specifiers a client part leaves to its window
   (`bundle/externals`) and the generated JSON Schemas (`bundle/schemas/*`).
 
-Part of [Doric](../../README.md). The cross-unit mechanisms this package
-implements are described in the architecture documents linked from each
-section; this README is the home of the package's exports and of its build
-tooling.
+Part of [Doric](../../README.md). This README is the home of every fact of the
+package: its exports and their signatures, their behavior, the data they read
+and write, their side effects, configuration, limits and errors, and how the
+package and a bundle are built and tested. The cross-unit mechanisms the
+package implements are described in the architecture documents linked from
+each section.
 
 ## Who uses it
 
-| Kind     | Users                                                                                                                                                                                                                                                                                   | Entries                                             |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Bundles  | Every bundle under [`/bundles`](../../bundles): its parts, its contracts module, its tests, and its `build` target                                                                                                                                                                      | `bundle/contracts`, `bundle/testing`, the build CLI |
-| Bundles  | The embedded foundation host parts [`host-config`](../../bundles/foundation/host-config/README.md), [`postgres`](../../bundles/foundation/postgres/README.md) and [`transport`](../../bundles/foundation/transport/README.md) (`EmbeddedBundle`; `host-config` also `contractDocument`) | `bundle` (types), `bundle/runtime`                  |
-| Apps     | [`doric-host`](../../app/backend/doric-host/README.md) boots the kernel with `startKernel` and serves the bridge (`PLATFORM_VERSION`, exposure)                                                                                                                                         | `bundle`, `bundle/runtime`, `bundle/contracts`      |
-| Apps     | The desktop app [`doric`](../../app/desktop/doric/README.md) runs `desktopMain` generations and the window bridge                                                                                                                                                                       | `bundle/runtime`, `bundle/contracts`                |
-| Packages | [`tool`](../tool/README.md) (`defineTool` over `tools/v1`), [`storage`](../storage/README.md) (in-memory foundation), [`desktop`](../desktop/README.md) (window bootstrap, elements)                                                                                                    | `bundle/contracts`, `bundle/runtime`, `bundle`      |
-| Packages | The package's own build ([`parts.ts`](src/build/parts.ts))                                                                                                                                                                                                                              | `bundle/externals`                                  |
+| Kind     | Users                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Entries                                                          |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Bundles  | Every bundle under [`/bundles`](../../bundles): its parts and its contracts module                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `bundle/contracts`                                               |
+| Bundles  | Every bundle's tests, for example [`activation.test.ts`](../../bundles/runtime/runtime/tests/activation.test.ts) (`checkRecording`, `recordActivation`) and [`chat/tests/support/desktop.ts`](../../bundles/desktop/chat/tests/support/desktop.ts)                                                                                                                                                                                                                                                                                                                                                                   | `bundle/testing`, `bundle/runtime`, `bundle`, `bundle/contracts` |
+| Bundles  | Every bundle's Nx `build` target (see [Writing a bundle](#writing-a-bundle))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The build CLI                                                    |
+| Bundles  | The embedded foundation host parts [`host-config`](../../bundles/foundation/host-config/README.md), [`postgres`](../../bundles/foundation/postgres/README.md) and [`transport`](../../bundles/foundation/transport/README.md): all three import the type `EmbeddedBundle` from `bundle` and `bundle/contracts`; only `host-config` imports `bundle/runtime`, for `contractDocument` ([`configuration.ts`](../../bundles/foundation/host-config/src/host/configuration.ts), [`postgres.ts`](../../bundles/foundation/postgres/src/host/postgres.ts), [`kernel.ts`](../../bundles/foundation/transport/src/kernel.ts)) | `bundle` (types), `bundle/contracts`, `bundle/runtime`           |
+| Apps     | [`doric-host`](../../app/backend/doric-host/README.md) boots the kernel with `startKernel` and serves the bridge (`PLATFORM_VERSION`, exposure)                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `bundle`, `bundle/runtime`, `bundle/contracts`                   |
+| Apps     | The desktop app [`doric`](../../app/desktop/doric/README.md) runs `desktopMain` generations and the window bridge, and serves `/schemas/` from the copy of `dist/schemas` the platform build makes ([`handler.ts`](../../app/desktop/doric/src/platform/protocol/handler.ts))                                                                                                                                                                                                                                                                                                                                        | `bundle/runtime`, `bundle/contracts`                             |
+| Apps     | The desktop platform build `app/desktop/doric-platform` imports `PLATFORM_ASSETS_VERSION`, bundles `src/contracts/index.ts` as the window's `bundle/contracts` module, and copies `packages/bundle/dist/schemas` by path into the desktop assets as `<out>/schemas/` ([`build.mjs`](../../app/desktop/doric-platform/build.mjs), [`packages.config.mjs`](../../app/desktop/doric-platform/packages.config.mjs)). Moving or renaming `dist/schemas` or `src/contracts/index.ts` breaks that build                                                                                                                     | `bundle/runtime`, `src/contracts/index.ts`, `dist/schemas`       |
+| Apps     | The renderer shell [`doric-renderer`](../../app/desktop/doric-renderer/README.md) imports `desktop/client`, which imports `bundle/contracts` and `bundle/runtime`; its webpack resolves with the `@org/source` condition, so the shell compiles this package's `src/`, not `dist/` ([`webpack.config.js`](../../app/desktop/doric-renderer/webpack.config.js), [`bootstrap.ts`](../../app/desktop/doric-renderer/src/bootstrap.ts))                                                                                                                                                                                  | `bundle/contracts`, `bundle/runtime` (through `desktop/client`)  |
+| Apps     | The desktop end-to-end tests `app/desktop/doric-e2e` ([`bridge.test.ts`](../../app/desktop/doric-e2e/tests/bridge.test.ts), [`harness.ts`](../../app/desktop/doric-e2e/tests/support/harness.ts))                                                                                                                                                                                                                                                                                                                                                                                                                    | `bundle/contracts`, `bundle/runtime`                             |
+| Apps     | The host end-to-end tests `app/backend/doric-host-e2e` declare `bundle` as a dependency and a TypeScript project reference, and import none of its entries ([`package.json`](../../app/backend/doric-host-e2e/package.json), [`tsconfig.json`](../../app/backend/doric-host-e2e/tsconfig.json))                                                                                                                                                                                                                                                                                                                      | None                                                             |
+| Packages | [`tool`](../tool/README.md) (`defineTool` over `tools/v1`), [`storage`](../storage/README.md) (in-memory foundation), [`desktop`](../desktop/README.md) (window bootstrap, elements)                                                                                                                                                                                                                                                                                                                                                                                                                                 | `bundle/contracts`, `bundle/runtime`, `bundle`                   |
+| Scripts  | [`fake-host`](../../scripts/fake-host/README.md) stands in for the Doric host and serves the repository's staged bundles ([`bundles.mjs`](../../scripts/fake-host/bundles.mjs))                                                                                                                                                                                                                                                                                                                                                                                                                                      | `bundle`, `bundle/runtime`                                       |
+| Tests    | The repository's boundary test [`boundaries.test.mjs`](../../tests/boundaries.test.mjs) reads the symbols of `packages/bundle/src/contracts/` by path and reports a bundle other than `core` that uses a `bundle/contracts` symbol without declaring its contract ([`boundaries.mjs`](../../tests/support/boundaries.mjs))                                                                                                                                                                                                                                                                                           | `src/contracts/` (by path)                                       |
+
+No code imports the `bundle/externals` specifier: the package's own build reads
+[`externals.ts`](src/build/externals.ts) through a relative import
+([`parts.ts`](src/build/parts.ts)).
 
 ## Entry points
 
-`package.json` `exports` ([`package.json`](package.json)); each entry resolves
-to `src/` under the `@org/source` condition and to `dist/` otherwise.
+`package.json` `exports` ([`package.json`](package.json)). Each code entry
+resolves to `src/` under the `@org/source` condition and to `dist/` otherwise.
+Two consumers set the condition: TypeScript, as `customConditions` in
+[`tsconfig.base.json`](../../tsconfig.base.json), so type-checking reads the
+sources, and the renderer shell's webpack, as `conditionNames`, so the shell
+bundles the sources
+([`webpack.config.js`](../../app/desktop/doric-renderer/webpack.config.js)).
+Node, which runs the host and the compiled tests, loads the build output. The
+desktop main process does not load it at run time: at build time nx-electron's
+webpack bundles the `dist/` ESM entries into the main process script, and
+`build-runner.mjs` imports `PLATFORM_ASSETS_VERSION` from `bundle/runtime` and
+bundles the resolved `bundle/contracts` entry as `generation-contracts.mjs`,
+the one `bundle/contracts` instance of a `desktopMain` generation
+([`webpack.config.js`](../../app/desktop/doric/webpack.config.js),
+[`build-runner.mjs`](../../app/desktop/doric/build-runner.mjs)).
+`./package.json` is exported as itself.
 
-| Entry              | Source                                             | Runs in          | Audience                                                                      |
-| ------------------ | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------- |
-| `bundle/contracts` | [`src/contracts/index.ts`](src/contracts/index.ts) | Node and browser | Bundle authors                                                                |
-| `bundle/runtime`   | [`src/runtime/index.ts`](src/runtime/index.ts)     | Node and browser | Apps, `desktop`, embedded foundation host parts, bundle tests                 |
-| `bundle`           | [`src/index.ts`](src/index.ts)                     | Node             | The host, build tooling, embedded foundation host parts (types), bundle tests |
-| `bundle/testing`   | [`src/testing/index.ts`](src/testing/index.ts)     | Node and browser | Bundle unit tests                                                             |
-| `bundle/externals` | [`src/build/externals.ts`](src/build/externals.ts) | Node and browser | Build tooling                                                                 |
-| `bundle/schemas/*` | `dist/schemas/*`, written by the build             | Data             | Anyone                                                                        |
+| Entry              | Source                                             | Runs in          | Audience                                                                                      |
+| ------------------ | -------------------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------- |
+| `bundle/contracts` | [`src/contracts/index.ts`](src/contracts/index.ts) | Node and browser | Bundle authors                                                                                |
+| `bundle/runtime`   | [`src/runtime/index.ts`](src/runtime/index.ts)     | Node and browser | Apps, `desktop`, embedded foundation host parts, bundle tests                                 |
+| `bundle`           | [`src/index.ts`](src/index.ts)                     | Node             | The host, build tooling, embedded foundation host parts (types), bundle tests                 |
+| `bundle/testing`   | [`src/testing/index.ts`](src/testing/index.ts)     | Node and browser | Bundle unit tests                                                                             |
+| `bundle/externals` | [`src/build/externals.ts`](src/build/externals.ts) | Node and browser | Build tooling                                                                                 |
+| `bundle/schemas/*` | `dist/schemas/*`, written by the build             | Data             | The desktop platform build, which copies the folder by path (see [Who uses it](#who-uses-it)) |
 
 `bundle/contracts` and `bundle/runtime` import only relative modules and
 `zod`: `tsconfig.browser.json` typechecks them with the DOM library and no Node
@@ -52,10 +79,15 @@ types, and a test walks their import graph
 [`browser-safe.test.ts`](tests/browser-safe.test.ts)). `bundle/externals`
 imports nothing, so a consumer reads it without loading esbuild.
 
-Dependencies: `zod` (schemas), `ajv` (JSON Schema validation in the host
-processes), `yaml` (skill frontmatter); the build loads `esbuild` and Tailwind
-only when it builds parts ([`package.json`](package.json),
-[`cli.ts`](src/build/cli.ts)).
+Dependencies ([`package.json`](package.json)): `zod` (schemas), `ajv` (JSON
+Schema validation in the host processes), `yaml` (skill frontmatter) and
+`tslib` (the TypeScript helpers of the compiled output). The build CLI also
+uses `esbuild`, `@tailwindcss/node` and `@tailwindcss/oxide`, which this
+package does not declare: they come from the repository's root
+[`package.json`](../../package.json). `cli.ts` imports
+[`parts.ts`](src/build/parts.ts), and with it those three, on every `build`
+command, a host-only bundle included, and never for `stage` or `copy-md`
+([`cli.ts`](src/build/cli.ts)).
 
 ## Writing a bundle
 
@@ -103,27 +135,120 @@ receives in [Contexts and capabilities](../../docs/architecture/bundles/contexts
 the `define*` family as a whole in [Contracts and the `define*`
 family](../../docs/architecture/bundles/contracts.md).
 
-A bundle directory has these sources, each built only when it exists
-([`cli.ts`](src/build/cli.ts), [`parts.ts`](src/build/parts.ts)):
+### The rules the build checks
 
-| Source                         | Output (below `dist/`)               | Notes                                                                                             |
-| ------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `src/host/index.ts`            | `host/index.js`                      | Compiled by `tsc`; the host imports it                                                            |
-| `src/host/**/*.md`             | `host/**/*.md`                       | Templates the host part reads at import time                                                      |
-| `src/desktop/index.ts`         | `desktop/index.js`                   | esbuild, Node 22, ESM                                                                             |
-| `src/client/index.ts`          | `client/index.js`                    | esbuild, browser ES2022, ESM; window import-map specifiers stay external                          |
-| `src/client/styles.css`        | `client/styles.css`                  | Tailwind over the platform theme, followed by the CSS esbuild extracted from the client's imports |
-| `src/client/workers/<name>.ts` | `client/workers/<name>.js`           | Nothing external                                                                                  |
-| `src/client/chunks/<name>.ts`  | `client/chunks/<name>.js` (+ `.css`) | Window modules the client entry imports on demand; built only with a client entry                 |
-| `src/client/frames/<name>.ts`  | `client/frames/<name>.js`            | Modules for a document outside the window, with the frame import map                              |
-| `src/contracts/index.ts`       | `contracts/index.js`                 | Compiled by `tsc`; other bundles import it as `<id>/contracts`                                    |
-| `src/skills/<name>/SKILL.md`   | `skills/<name>/SKILL.md`             | Validated and copied                                                                              |
+The build CLI imports each built part, calls its `activate` with a recording
+context, and compares what the part did with the manifest. A broken rule below
+fails the build with a `BuildError` whose message is quoted with the rule; the
+complete list of checks and outputs is in [Build tooling](#build-tooling).
+
+- A bundle has up to three parts, each in one environment: `dist/host/index.js`
+  runs in `host` and receives a `HostContext`, `dist/desktop/index.js` runs in
+  `desktopMain` and receives a `DesktopContext`, and `dist/client/index.js`
+  runs in `client` and receives a `ClientContext`; each context carries
+  `services` ([`cli.ts`](src/build/cli.ts),
+  [`context.ts`](src/contracts/context.ts)). A missing part is skipped, which
+  is not an error.
+- Each part loads in Node. The client part is imported with a DOM shim: it may
+  touch the DOM at import time only through `class … extends HTMLElement`. A
+  part that throws while loading fails the build with
+  `Loading <part> failed: <error>`; for the client part the message goes on to
+  say that a client module may touch the DOM at import time only through
+  `class … extends HTMLElement` and that heavier modules load with a dynamic
+  `import()` inside a component ([`cli.ts`](src/build/cli.ts)).
+- Each part exports a function named `activate`; otherwise the build fails with
+  `<part> does not export an activate function.` ([`cli.ts`](src/build/cli.ts)).
+- Every contract a part provides, defines or registers during `activate` is
+  listed in `provides` (`… but not declared in provides.`), and every
+  `provides` entry is provided, defined or registered by some part:
+  `provides declares <contract>, but no part provides, defines or registers it during activate.`
+  ([`record.ts`](src/build/record.ts)).
+- Every contract a part reaches with `services.use` or with `use` of the
+  `hooks/v1` facade is listed in `requires` or `optional`, unless the bundle
+  provides it or it is a platform `doric.*` contract, which is never declared.
+  `services.whenAvailable` is not checked: during the dry activation it does
+  nothing. A checked use of any other contract throws
+  `Bundle "<id>" uses "<contract>" without listing it in requires.`, reported
+  as `Dry activation of <part> failed: …` ([`record.ts`](src/build/record.ts),
+  [`ids.ts`](src/contracts/ids.ts)).
+- A `provides` entry is `<contract>/v<major>@<version>` with an exact version
+  whose major equals the contract id's major (`greeter.api/v1@1.0.0`); a
+  `requires` entry carries a range that admits only that major; an `optional`
+  entry is a bare contract id with no version (`greeter.api/v1`); otherwise the
+  build fails with `Invalid manifest "<path>": …` before any part is built
+  ([`cli.ts`](src/build/cli.ts), [`manifest.ts`](src/runtime/manifest.ts),
+  [`provides`, `requires` and
+  `optional`](../../docs/architecture/bundles/manifest.md#provides-requires-and-optional)).
+
+### Package and project files
+
+Besides `manifest.json` and `src/`, a bundle directory holds the files that
+make it a package and an Nx project, as in
+[`core`](../../bundles/foundation/core) (the full layout is in [Package layout
+and build
+output](../../docs/architecture/bundles/manifest.md#package-layout-and-build-output)):
+
+- `package.json`: `name` equal to the manifest `id`, `type: module`, and, when
+  the bundle has a contracts module, an `exports` entry `./contracts` (with the
+  `@org/source` condition on `src/contracts/index.ts`); that entry is what makes
+  `<id>/contracts` resolve for other bundles
+  ([`core/package.json`](../../bundles/foundation/core/package.json)).
+- `project.json`: the Nx project `bundle-<id>`, with the targets `build`,
+  `typecheck` and `test`. The `build` target runs
+  `tsc --build bundles/<group>/<id>/tsconfig.json`, then, in most bundles with
+  a client part, `tsc -p bundles/<group>/<id>/tsconfig.client.json` (a type
+  check that writes nothing), and last
+  `node packages/bundle/dist/build/cli.js build bundles/<group>/<id>`
+  ([`core/project.json`](../../bundles/foundation/core/project.json),
+  [`terminal/project.json`](../../bundles/features/terminal/project.json)).
+- `tsconfig.json`: the `tsc` project that writes the host part and the
+  contracts module to `dist/`. Most bundles include `src/**/*.ts` and exclude
+  the folders the CLI bundles with esbuild, and the set varies: `core` excludes
+  `src/desktop/**` and `src/client/**`, `terminal` only `src/client/**`,
+  `history` only `src/desktop/**`, host-only bundles such as `postgres` and
+  `web` nothing, and `chat` includes only `src/contracts/**/*.ts`
+  ([`core/tsconfig.json`](../../bundles/foundation/core/tsconfig.json),
+  [`chat/tsconfig.json`](../../bundles/desktop/chat/tsconfig.json),
+  [`postgres/tsconfig.json`](../../bundles/foundation/postgres/tsconfig.json)).
+  Output `tsc` writes into those folders is removed when the CLI clears them:
+  it clears `dist/desktop/` when `src/desktop/index.ts` exists, `dist/client/` when
+  `src/client/index.ts` or `src/client/styles.css` exists, and
+  `dist/client/chunks/` and `dist/client/frames/` on every build, with or
+  without a source ([`parts.ts`](src/build/parts.ts)).
+
+### Sources and outputs
+
+`tsc` writes the host part and the contracts module; the CLI then builds the
+desktop and client parts and copies the rest ([`cli.ts`](src/build/cli.ts),
+[`parts.ts`](src/build/parts.ts)). Workers, chunks and frames are the `.ts`
+files directly in their folder, each an entry; subfolders hold their modules.
+The CLI also writes `dist/manifest.json`, `dist/contracts.json`,
+`dist/schemas/<contract>.json` and `dist/package.json`, and the browser builds
+emit the fonts they import under `assets/` beside each part; those outputs are
+described in [Build tooling](#build-tooling).
+
+| Source                         | Output (below `dist/`)               | Built when                                             | Notes                                                                                                                                                                                              |
+| ------------------------------ | ------------------------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/host/index.ts`            | `host/index.js`                      | `tsconfig.json` includes it                            | Compiled by `tsc` in the `build` target; the host imports it                                                                                                                                       |
+| `src/host/**/*.md`             | `host/**/*.md`                       | The file exists                                        | Copied; templates the host part reads at import time                                                                                                                                               |
+| `src/desktop/index.ts`         | `desktop/index.js`                   | The file exists                                        | esbuild, Node 22, ESM                                                                                                                                                                              |
+| `src/client/index.ts`          | `client/index.js`                    | The file exists                                        | esbuild, browser ES2022, ESM; window import-map specifiers stay external                                                                                                                           |
+| `src/client/styles.css`        | `client/styles.css`                  | The source exists, or the client entry imports CSS     | Tailwind over the platform theme when the source exists, followed by the CSS esbuild extracted from the client's imports (Monaco, xterm); without the source the file holds only the extracted CSS |
+| `src/client/workers/<name>.ts` | `client/workers/<name>.js`           | `src/client/index.ts` exists                           | No import-map specifier is external; a relative import that resolves into `src/contracts/` becomes the external `<id>/contracts`, as in the client entry                                           |
+| `src/client/chunks/<name>.ts`  | `client/chunks/<name>.js` (+ `.css`) | `src/client/index.ts` exists                           | Window modules the client entry imports on demand, with the client's externals                                                                                                                     |
+| `src/client/frames/<name>.ts`  | `client/frames/<name>.js`            | The file exists, with or without a client entry        | Modules for a document outside the window, with the frame import map; a frame bundles the contracts' sources it imports                                                                            |
+| `src/contracts/index.ts`       | `contracts/index.js`                 | `tsconfig.json` includes it                            | Compiled by `tsc` in the `build` target; other bundles import it as `<id>/contracts` through the bundle's `package.json` `exports`                                                                 |
+| `src/skills/<name>/SKILL.md`   | `skills/<name>/SKILL.md`             | A direct subdirectory of `src/skills` holds `SKILL.md` | Validated and copied; the other files of the folder are not copied ([`skills.ts`](src/loader/skills.ts))                                                                                           |
 
 ## `bundle/contracts`
 
 The browser-safe API a bundle part, a contracts module or a test imports
 ([`src/contracts/index.ts`](src/contracts/index.ts)). Every export below is
-listed with its signature.
+listed with its signature, except the interfaces of the basic contracts
+(`Storage`, `Secrets`, `Models`, …), which [Exports per source
+file](#exports-per-source-file) lists by method name; the full signature of
+each method is in the README of the bundle that provides it. A type a
+signature uses but `index.ts` does not export is marked `// not exported`.
 
 ### Ids and environments
 
@@ -136,8 +261,13 @@ const environments: readonly Environment[]; // ['host', 'desktopMain', 'client']
 const contractIdPattern: RegExp; // /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*\/v[1-9][0-9]*$/
 function isContractId(value: unknown): value is ContractId;
 function isPlatformContract(id: string): boolean; // id starts with "doric."
-function majorOf(id: string): number; // "git.commands/v2" → 2; TypeError when malformed
+function majorOf(id: string): number; // "git.commands/v2" → 2
 ```
+
+`majorOf` checks only the `/v<major>` suffix (`/\/v([1-9][0-9]*)$/`), so it
+also answers for a string that fails `contractIdPattern`; without the suffix
+it throws `TypeError` `Invalid contract ID "<id>".`
+([`ids.ts`](src/contracts/ids.ts)).
 
 A contract whose id starts with `doric.` belongs to the platform: it always
 exists, no manifest lists it, and only the platform defines it. A bundle id
@@ -154,14 +284,18 @@ check failure is a `TypeError` thrown at definition time
 `defineEvent`, `defineCommand`, `defineSettings` and `defineStorageType` refuse
 an id that does not match `contractIdPattern` (`Invalid <what> contract ID
 "<id>".`) and an id that starts with `doric.` (`The <what> contract ID "<id>"
-is reserved for the platform.`).
+is reserved for the platform.`). `<what>` is `hooks`, `service`, `event`,
+`command`, `settings` or `storage type`; the id of an event or a storage type
+is its `type`. `ref` makes only the first check, with `<what>` = `ref`
+(`Invalid ref contract ID "<id>".`). The id check runs first; the checks of
+the members and options follow.
 
 #### `defineHook` and `defineHooks`
 
 ```ts
 type HookKind = 'observe' | 'transform' | 'decide' | 'sequence';
-type HookOrder = 'activation' | 'reverse';
-type HookOwnerView<T> = (input: T, bundleId: string) => T | undefined;
+type HookOrder = 'activation' | 'reverse'; // not exported
+type HookOwnerView<T> = (input: T, bundleId: string) => T | undefined; // not exported
 type Decision =
   | { readonly allow: true }
   | { readonly allow: false; readonly reason: string };
@@ -194,12 +328,14 @@ interface HooksContract<Id, H> {
 function isHooksContract(value: unknown): value is HooksContract;
 ```
 
-`defineHook` throws on an unknown kind, on `order` for a kind other than
-`sequence` and on `forOwner` for a kind other than `observe`. `defineHooks`
-throws when a member was not made with `defineHook` (`Hook "<name>" of "<id>"
-must be created with defineHook.`). A hook has no output schema: the kind
-fixes what a handler returns — nothing for `observe` and `sequence`, a value of
-the input schema for `transform`, a `Decision` for `decide`. `forOwner` gives
+`defineHook` throws on an unknown kind (`Invalid hook kind "<kind>".`), on
+`order` for a kind other than `sequence` (`Only a sequence hook takes an
+order.`) and on `forOwner` for a kind other than `observe` (`Only an observe
+hook takes forOwner.`). `defineHooks` throws when a member was not made with
+`defineHook` (`Hook "<name>" of "<id>" must be created with defineHook.`). A
+hook has no output schema: the kind fixes what a handler returns — nothing for
+`observe` and `sequence`, a value of the input schema for `transform`, a
+`Decision` for `decide`. `forOwner` gives
 each handler's bundle its own view of an `observe` input, or skips that
 handler when it returns `undefined`. How hooks are owned, registered and fired
 is described in [Hooks](../../docs/architecture/bundles/hooks.md).
@@ -210,6 +346,15 @@ is described in [Hooks](../../docs/architecture/bundles/hooks.md).
 type MethodExposure = 'desktop';
 const methodExposures: readonly ['desktop'];
 function isMethodExposure(value: unknown): value is MethodExposure;
+
+// not exported: accepts the readonly variant of a schema type
+type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly (infer U)[]
+    ? readonly DeepReadonly<U>[]
+    : T extends object
+      ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+      : T;
 
 function defineMethod<
   I extends z.ZodType,
@@ -262,15 +407,32 @@ function isServiceDefinition(value: unknown): value is AnyServiceDefinition;
 ```
 
 `defineMethod` throws when `execute` is not a function (`A method needs an
-execute function.`) and when `expose` is not one of `methodExposures`.
-`defineService` throws when a member was not made with `defineMethod` and when
-`options` is anything but `{ cardinality: 'many' }`. Passing a `ref` in place
-of the id makes the compiler check the methods against the interface the ref
-carries ([`types.ts`](src/contracts/types.ts)). The `services` argument of
-`execute` is the providing bundle's own `Services`, bound when it calls
-`services.provide`. An output schema must be descriptive (no default,
-transform or pipe): the runtime validates a result and returns the original
-value, never the parsed copy ([`dispatch.ts`](src/runtime/dispatch.ts)).
+execute function.`) and when `expose` is not one of `methodExposures`
+(`Invalid expose "<expose>": expected one of desktop.`). `defineService`
+throws when a member was not made with `defineMethod` (`Method "<name>" of
+"<id>" must be created with defineMethod.`) and when `options` is given and
+its `cardinality` is not `'many'` (`The only service option is {
+cardinality: "many" }.`). Passing a `ref` in place of the id makes the
+compiler check the methods against the interface the ref carries
+([`types.ts`](src/contracts/types.ts)). The `services` argument of `execute`
+is the providing bundle's own `Services`, bound when it calls
+`services.provide`. The two schemas are treated differently
+([`dispatch.ts`](src/runtime/dispatch.ts)):
+
+- `execute` receives the parsed input (`safeParse(input).data`), so the input
+  schema's defaults, transforms and codecs apply: the `skills/v1.register`
+  provider receives the skill decoded by `SkillSchema` (`indexText` set,
+  duplicate tools removed), and the `windows/v1.open` provider receives an
+  `appearance` without `titleBar` or `background` with `'integrated'` and
+  `'window'` filled in ([`skill.ts`](src/contracts/skill.ts),
+  [`windows.ts`](src/contracts/basic/windows.ts)). The runtime passes that
+  parsed value to the provider, not the caller's raw argument.
+- An output schema must be descriptive (no default, transform or pipe): the
+  runtime validates a result and returns the original value, never the
+  parsed copy.
+
+The order of a stub call is in [`Services` and the part
+contexts](#services-and-the-part-contexts).
 
 #### `defineEvent`, `defineCommand`, `defineSettings`, `defineStorageType`
 
@@ -362,7 +524,7 @@ nodes](../../docs/architecture/bundles/events-and-nodes.md) and
 function ref<T, Impl = ImplFrom<T>>(
   id: ContractId,
 ): ServiceRef<ApiFrom<T>, Impl>;
-function isServiceRef(value: unknown): value is AnyServiceRef; // { kind: 'ref', id: string }
+function isServiceRef(value: unknown): value is AnyServiceRef; // structural: any object { kind: 'ref', id: string }, no brand check
 
 interface ServiceRef<
   Api = unknown,
@@ -390,11 +552,24 @@ From [`types.ts`](src/contracts/types.ts):
 | `AnyServiceRef`           | `ServiceRef<unknown, unknown, ContractId>`                                                                                               |
 | `ApiOf<R>`                | The API a ref exposes: the type `services.use(R)` returns                                                                                |
 | `ApiFrom<T>`              | The API derived from a definition (`StubsOf` its methods), a `CommandApi` for a command, or `T` itself for an interface                  |
-| `ImplementationOf<R>`     | What `defineService(ref, methods)` must provide: one `MethodDefinition` per interface method, whose input drops the trailing `CallArg`   |
+| `ImplementationOf<R>`     | What `defineService(ref, methods)` must provide: one `MethodDefinition` per method (rules below the table)                               |
 | `RefId<R>`                | The id of a ref                                                                                                                          |
 | `StubOf<D>`, `StubsOf<M>` | A method's consumer stub: `(input, call?) => output` — `(...items, call?)` for a tuple input — returning a `Promise` when `execute` does |
 | `CommandApi<Id, I>`       | The dispatch handle `commands/v1.execute` takes for a command ref: `{ id?, input? }`                                                     |
 | `JsonValue`, `JsonObject` | Readonly JSON values                                                                                                                     |
+
+`ImplementationOf<R>` derives each method's `execute` input from the
+interface method's parameters ([`types.ts`](src/contracts/types.ts),
+`MethodInputOf`):
+
+- a trailing optional `CallArg` parameter is dropped;
+- one remaining parameter becomes the input type itself, several become a
+  tuple of them, and none becomes `[]` — the input a `noInput` method has;
+- a `Registrable<B>` parameter arrives as `B`, the value the runtime bound
+  for the provider.
+
+For a ref made from a service definition (`ref<typeof Service>(id)`) it
+demands only the definition's keys, each with any `MethodDefinition`.
 
 ### `Services` and the part contexts
 
@@ -437,17 +612,25 @@ A part's module exports `activate: Activate<…>`. The runtime implements
 `Services` per bundle ([`services.ts`](src/runtime/services.ts)):
 
 - `provide(definition)` registers a provider record in the environment's
-  directory and tracks it in the current disposal scope. It throws
-  `invalid_input` for a value not made with `defineService`,
-  `undeclared_provide` when the bundle's descriptor does not list the contract
-  in this environment, `cardinality_mismatch` when the definition's
-  cardinality differs from the one the catalog publishes, `contract_mismatch`
-  when a basic contract's provider does not implement exactly the platform's
-  method table with the same JSON Schemas (only the table's `optional`
-  methods may be omitted) or declares an exposure the platform does not give,
-  and `provider_conflict` when a `one` contract already has a provider. When
-  the composition chose another bundle as the provider of a `one` contract,
-  `provide` registers nothing and returns an inert `Disposable`.
+  directory and tracks it in the current disposal scope. It checks, in this
+  order, and throws:
+  - `invalid_input` for a value not made with `defineService`;
+  - `undeclared_provide` when the bundle's descriptor does not list the
+    contract in this environment;
+  - `cardinality_mismatch` when the definition's cardinality differs from the
+    one the catalog publishes;
+  - `contract_mismatch` when a basic contract's provider does not implement
+    exactly the platform's method table (only the table's `optional` methods
+    may be omitted), when a method's input or output JSON Schema differs from
+    the platform's, or when it declares an exposure the platform does not
+    give.
+
+  When the composition chose another bundle as the provider of a `one`
+  contract, `provide` then registers nothing and returns an inert
+  `Disposable`. Otherwise the directory refuses a second provider of a `one`
+  contract with `provider_conflict`
+  ([`directory.ts`](src/runtime/directory.ts)).
+
 - `use(contract, scope?)` returns a late-binding stub: each method call
   resolves the active provider at call time. It throws `invalid_input` for a
   value that is not a ref, `many_contract_use` for a contract of cardinality
@@ -455,22 +638,117 @@ A part's module exports `activate: Activate<…>`. The runtime implements
   neither `requires`, `optional` nor `provides` (a `doric.*` contract always
   passes; the composition's core may use every basic contract). `scope` binds
   scope keys to every call the stub makes. `use(HooksV1)` returns the hooks
-  facade, whose `use(contract)` applies the same `requires` rule.
+  facade, described below.
 - `whenAvailable(contract, callback)` subscribes to the contract's providers:
-  the callback runs for each provider now and for each one that registers
-  later, with a stub pinned to it, inside a child disposal scope. The cleanup
-  it returns (directly or as a promise's value) and everything it registered
-  are disposed when that provider goes away or when the returned `Disposable`
-  is disposed. A throw or a rejection is reported as `when_available_failed`.
+  the callback runs synchronously, in registration order, for each provider
+  registered now, and for each one that registers later, with a stub pinned
+  to it, inside a child disposal scope
+  ([`directory.ts`](src/runtime/directory.ts)). The cleanup it returns
+  (directly or as a promise's value) and everything it registered are
+  disposed when that provider goes away or when the returned `Disposable` is
+  disposed. A throw or a rejection is reported as `when_available_failed`.
+  It checks less than `use`: it throws `invalid_input` for a value that is not
+  a ref, but it accepts a contract of cardinality `many` (it is how a
+  consumer aggregates one) and makes no `requires` check.
 
-A stub method takes its input and, last and optional, the parent `call` or
-`CallOptions`. It validates the input with the provider's schema
-(`invalid_input`), creates the hop's `Call`, invokes the provider, validates
-the result (`invalid_output`), tracks a returned `Disposable` in the caller's
-current scope, and returns the original value. A missing provider or method
-is `unavailable`; a stub of a deactivated bundle refuses with `unavailable`
-([`dispatch.ts`](src/runtime/dispatch.ts)). The rules are described with
-examples in [Contexts and capabilities](../../docs/architecture/bundles/contexts.md).
+The hooks facade `services.use(HooksV1)` returns has three methods; each
+throws `invalid_input` (`Expected a hooks contract created with
+defineHooks.`) for a value not made with `defineHooks`
+([`facades.ts`](src/runtime/facades.ts)):
+
+- `define(C)` declares the bundle as the owner of `C` through
+  `hooks/v1.define` and returns a `HookHandle`: per hook,
+  `execute(input, call?)`. The handle is cached per contract id for the
+  bundle, so a second `define(C)` returns the same handle without a hop.
+- `use(C)` applies the same `requires` rule as `services.use` and returns a
+  `HookRegistrar`: per hook, `(handler) => Disposable`, which calls
+  `hooks/v1.register`.
+- `whenAvailable(C, callback)` calls `hooks/v1.whenDefined` and passes the
+  callback a `HookRegistrar` once `C` is defined; it makes no `requires`
+  check. When the provider calls it back is described in the [core
+  README](../../bundles/foundation/core/README.md#hooksv1).
+
+A stub method call runs these steps ([`dispatch.ts`](src/runtime/dispatch.ts);
+the runtime side is in [Directory and principals](#directory-and-principals)):
+
+1. **Resolve.** A stub of a deactivated bundle refuses with `unavailable`.
+   The provider is the pinned one (from `whenAvailable`) or the contract's
+   active provider. When there is none and the stub is not pinned, the call
+   waits on the runtime's `awaitProvider` when it returns a promise — the
+   host kernel's does while the host is not stopping, no generation is
+   active and the starting one provides the contract — aborted by the call
+   argument's signal, and then starts again
+   ([`kernel.ts`](src/process/kernel.ts),
+   [`manager.ts`](src/process/manager.ts)); otherwise it fails with
+   `unavailable`, as does a method the provider's record does not have.
+2. **Split the arguments.** For a method whose input is not a tuple, the
+   first argument is the input, and the second is the call argument only
+   when it is a `Call` or a `CallOptions`; otherwise it is dropped, and so is
+   every further argument. For a tuple input the arguments are the tuple's
+   items; a trailing `Call` is always the call argument, while trailing
+   `CallOptions` are the call argument only past the tuple's length or where
+   the tuple item at that position rejects them.
+3. **Bind.** Each `Registrable` argument (the input, or each tuple item)
+   becomes `value[bindRegistrant](callerServices)`.
+4. **Validate.** The bound input is parsed with the provider's input schema;
+   a failure is `invalid_input`.
+5. **Invoke.** The runtime creates the hop's `Call` and calls the provider
+   with the parsed value (`parsed.data`), not the argument. A provider's throw
+   or rejection reaches the caller as thrown (across a process, rebuilt as
+   described in [Values, errors and calls](#values-errors-and-calls)).
+6. **Settle.** The result (awaited when it is a promise) is validated with
+   the output schema (`invalid_output`); a returned `Disposable` is tracked in
+   the caller's current scope; the original value is returned.
+
+A stub answers `undefined` for the property names `then`, `toJSON`,
+`constructor`, `valueOf` and `toString` and for every symbol key, so a stub
+is not thenable (it can be returned from an `async` function) and a contract
+method with one of those names cannot be called through a stub. Any other
+name is a method; a stub caches one function per name
+([`dispatch.ts`](src/runtime/dispatch.ts)).
+
+The errors of `Services` and of a stub carry these messages and `details`
+([`services.ts`](src/runtime/services.ts),
+[`dispatch.ts`](src/runtime/dispatch.ts),
+[`directory.ts`](src/runtime/directory.ts)):
+
+| Code                     | Message                                                                                                                                                             | `details`                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `invalid_input`          | `provide expects a definition created with defineService.`; `Expected a contract ref created with ref().` (`use`, `whenAvailable`)                                  | none                           |
+| `invalid_input`          | `Invalid input for <id> <method>: <issues>` (stub)                                                                                                                  | `{ contract, method, issues }` |
+| `invalid_output`         | `Invalid output from <id> <method> (bundle "<bundle>"): <issues>` (stub)                                                                                            | `{ contract, method, issues }` |
+| `unavailable`            | `Bundle "<bundle>" is no longer active.`                                                                                                                            | none                           |
+| `unavailable`            | `No active provider of "<id>".`                                                                                                                                     | `{ contract }`                 |
+| `unavailable`            | `Contract "<id>" has no method "<method>".`                                                                                                                         | `{ contract, method }`         |
+| `undeclared_requirement` | `Bundle "<bundle>" uses "<id>" without listing it in requires.`                                                                                                     | `{ contract, bundleId }`       |
+| `many_contract_use`      | `"<id>" has many providers; aggregate them with whenAvailable.`                                                                                                     | `{ contract }`                 |
+| `undeclared_provide`     | `Bundle "<bundle>" provides "<id>" in <environment> without declaring it.`                                                                                          | `{ contract, bundleId }`       |
+| `cardinality_mismatch`   | `Provider "<bundle>" declares "<id>" as <cardinality>; the catalog publishes <cardinality>.`                                                                        | `{ contract, bundleId }`       |
+| `contract_mismatch`      | `Provider of "<id>" must implement: <methods>; may implement: <methods or none>; got: <methods>.`                                                                   | `{ contract }`                 |
+| `contract_mismatch`      | `Method "<name>" of "<id>" does not match the platform schema.`; `Method "<name>" of "<id>" may not be exposed to the desktop: the platform specification decides.` | `{ contract, method }`         |
+| `provider_conflict`      | `Contract "<id>" already has an active provider: bundle "<bundle>".`                                                                                                | none                           |
+
+`<issues>` is each zod issue as `<path>: <message>` (the path joined with
+`.`, left out when empty), joined with `; `; `details.issues` holds
+`{ code, path, message }` per issue, a symbol path segment as its string.
+Method lists are sorted and joined with `, `.
+
+A refused registration that escapes `activate` quarantines the bundle.
+`provide` marks every
+`ContractError` it throws except `invalid_input`; a stub call marks an error
+whose code is one of `duplicate_tool`, `duplicate_skill`,
+`registration_conflict`, `not_owner`, `unavailable_tool`,
+`provider_conflict`, `undeclared_provide`, `cardinality_mismatch` or
+`contract_mismatch`, which providers raise when they refuse a registration
+(`isRegistrationConflict`). When a marked error escapes `activate`, the
+bundle is quarantined as `cardinality_mismatch` for that code and as
+`registration_failed` for the others, not as `activate_failed`
+([`services.ts`](src/runtime/services.ts),
+[`dispatch.ts`](src/runtime/dispatch.ts),
+[`activation.ts`](src/runtime/activation.ts); see [Catalog resolution and
+activation](#catalog-resolution-and-activation)). The rules are described
+with examples in [Contexts and
+capabilities](../../docs/architecture/bundles/contexts.md).
 
 ### `Call`
 
@@ -502,7 +780,7 @@ const windowScopeKey = 'windowKey';
 const scopeKeyPattern: RegExp; // /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/
 const SCOPE_MAX_KEYS = 16;
 const SCOPE_MAX_VALUE = 512;
-const callScopeSchema: z.ZodType<CallScope>;
+const callScopeSchema: z.ZodType<CallScope>; // keys match scopeKeyPattern, values ≤ SCOPE_MAX_VALUE characters, ≤ SCOPE_MAX_KEYS keys
 const callGeneration: unique symbol; // Symbol.for('doric.call.generation')
 
 function isCall(value: unknown): value is Call; // branded by the runtime
@@ -512,7 +790,11 @@ function generationOf(call: Call): number; // 0 = kernel-originated, unpinned
 ```
 
 Only the runtime creates a `Call`: it carries the non-enumerable brand
-`Symbol.for('doric.call')`, its deadline and the generation it is pinned to.
+`Symbol.for('doric.call')`, its deadline under the non-enumerable
+`Symbol.for('doric.call.deadline')` (epoch ms, 0 = none; neither symbol is
+exported) and the generation it is pinned to under `callGeneration`.
+`callScopeSchema` refuses more than 16 keys with `A call scope holds at most
+16 keys.` ([`call.ts`](src/contracts/call.ts)).
 `isCallOptions` accepts only a plain object whose own keys are a non-empty
 subset of `signal` (an `AbortSignal`) and `deadline` (a finite number). How a
 hop builds its call is in [`createHopCall`](#calls-traces-and-scopes); the
@@ -536,33 +818,48 @@ function isContractError(value: unknown): value is ContractError; // by name, co
 function toContractError(value: unknown): ContractError;          // anything else becomes 'internal'
 ```
 
+`ContractError` sets `details` only when one is given. `toContractError`
+returns a `ContractError` unchanged; anything else becomes code `internal`
+with the message of an `Error`, a string as the message, or `Internal
+error.` for any other value, and no `details`
+([`error.ts`](src/contracts/error.ts)).
+
 Every contract boundary throws a `ContractError`. The codes the platform
-raises are an open set; callers match on `code`:
+raises are an open set; callers match on `code`. The table lists the codes
+of `contractErrorCodes` by who raises them:
 
-| Group                              | Codes                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime                            | `internal`, `invalid_input`, `invalid_output`, `unavailable`, `undeclared_requirement`, `undeclared_provide`, `many_contract_use`, `cardinality_mismatch`, `provider_conflict`, `contract_mismatch`, `local_only`, `not_owner`, `registration_conflict`, `duplicate_tool`, `duplicate_skill`, `unavailable_tool` |
-| Process envelope                   | `generation_lost`, `protocol_error`                                                                                                                                                                                                                                                                              |
-| `storage/v1`, `storage.backend/v1` | `revision_conflict`, `sequence_conflict`, `unique_conflict`, `limit_exceeded`, `unknown_type`, `invalid_index_value`, `invalid_stream`                                                                                                                                                                           |
-| `settings/v1`                      | `unknown_settings`, `settings_missing`, `settings_conflict`                                                                                                                                                                                                                                                      |
-| `events/v1`                        | `unknown_event`, `invalid_scope`                                                                                                                                                                                                                                                                                 |
-| `secrets/v1`, `secrets.backend/v1` | `credential_missing`, `credential_invalid`, `credential_name_taken`, `credential_kind_immutable`, `credential_ambiguous`, `credential_storage_unavailable`, `credential_key_required`, `credential_unreadable`, `unknown_kind`, `duplicate_credential_kind`                                                      |
-| Desktop platform                   | `not_found`, `disconnected`, `unknown_command`, `route_conflict`                                                                                                                                                                                                                                                 |
+| Codes                                                                                                                                                                                                                                                       | Raised by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | When, and what next                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_input`, `invalid_output`, `unavailable`, `undeclared_requirement`, `undeclared_provide`, `many_contract_use`, `cardinality_mismatch`, `provider_conflict`, `contract_mismatch`                                                                     | `Services` and the stubs of this package ([`services.ts`](src/runtime/services.ts), [`dispatch.ts`](src/runtime/dispatch.ts), [`directory.ts`](src/runtime/directory.ts)); providers also raise `invalid_input` and `unavailable` for their own refusals                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Each case, its message and `details` are in [`Services` and the part contexts](#services-and-the-part-contexts). An `invalid_*`, `undeclared_*`, `*_mismatch` or `many_contract_use` code is a defect of the caller, its schema or its manifest; `unavailable` lasts until a provider registers, which `whenAvailable` waits for                                                                                        |
+| `internal`                                                                                                                                                                                                                                                  | `toContractError`, and the envelope for a thrown value that is not a `ContractError` ([`error.ts`](src/contracts/error.ts), [`errors.ts`](src/runtime/envelope/errors.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | An unexpected failure; the message is the thrown value's                                                                                                                                                                                                                                                                                                                                                                |
+| `local_only`                                                                                                                                                                                                                                                | The envelope ([`values.ts`](src/runtime/envelope/values.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | A process-local value would cross a process, or a handle is used outside the process that made it; see [Basic contracts](#basic-contracts) and [Values, errors and calls](#values-errors-and-calls)                                                                                                                                                                                                                     |
+| `generation_lost`, `protocol_error`                                                                                                                                                                                                                         | The envelope link ([`link.ts`](src/runtime/envelope/link.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The generation process that served the call is gone, or a wire message is malformed; see [Generation processes and the envelope](#generation-processes-and-the-envelope)                                                                                                                                                                                                                                                |
+| `not_owner`, `registration_conflict`, `duplicate_tool`, `duplicate_skill`, `unavailable_tool`                                                                                                                                                               | The `core` providers: `hooks/v1`, `storage/v1` and `events/v1` (`not_owner`); `hooks/v1`, `storage/v1`, `events/v1`, `settings/v1`, `commands/v1` and `regions/v1` (`registration_conflict`, which other bundles such as `layout`, `chat` and `workspace` also raise for their own registries); `tools/v1` (`duplicate_tool`); `skills/v1` (`duplicate_skill`, `unavailable_tool`) ([`tools.ts`](../../bundles/foundation/core/src/host/tools.ts), [`skills.ts`](../../bundles/foundation/core/src/host/skills.ts), [`storage/facade.ts`](../../bundles/foundation/core/src/host/storage/facade.ts), [`events/facade.ts`](../../bundles/foundation/core/src/host/events/facade.ts), [`hooks.ts`](../../bundles/foundation/core/src/shared/hooks.ts), [`client/commands.ts`](../../bundles/foundation/core/src/client/commands.ts), [`desktop/commands.ts`](../../bundles/foundation/core/src/desktop/commands.ts), [`regions.ts`](../../bundles/foundation/core/src/client/regions.ts)) | A registration or an owner-only operation is refused: another bundle owns the contract or type, the name is taken, or a skill allows a tool that `tools/v1.list` does not return for the call. When it escapes `activate`, it quarantines the bundle (see [`Services` and the part contexts](#services-and-the-part-contexts)). Each contract's rules are in the [core README](../../bundles/foundation/core/README.md) |
+| `revision_conflict`, `sequence_conflict`, `unique_conflict`, `limit_exceeded`, `unknown_type`, `invalid_index_value`, `invalid_stream`                                                                                                                      | `storage/v1` in `core` (`unknown_type`) and the `storage.backend/v1` providers, through the helpers of the `storage` package                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | [Core README](../../bundles/foundation/core/README.md#storagev1), [`storage` README](../storage/README.md#conflict-and-limit-errors), [`postgres` README](../../bundles/foundation/postgres/README.md#errors-and-failure-behavior)                                                                                                                                                                                      |
+| `unknown_settings`, `settings_missing`, `settings_conflict`                                                                                                                                                                                                 | `settings/v1` in `core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | [Core README](../../bundles/foundation/core/README.md#settingsv1)                                                                                                                                                                                                                                                                                                                                                       |
+| `unknown_event`, `invalid_scope`                                                                                                                                                                                                                            | `events/v1` in `core`; other bundles raise `invalid_scope` for their own scope checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | [Core README](../../bundles/foundation/core/README.md#eventsv1)                                                                                                                                                                                                                                                                                                                                                         |
+| `credential_missing`, `credential_invalid`, `credential_name_taken`, `credential_kind_immutable`, `credential_ambiguous`, `credential_storage_unavailable`, `credential_key_required`, `credential_unreadable`, `unknown_kind`, `duplicate_credential_kind` | `secrets/v1` in `core` and the `secrets.backend/v1` providers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | [Core README](../../bundles/foundation/core/README.md#secretsv1), [`postgres` README](../../bundles/foundation/postgres/README.md#secretsbackendv1-version-100)                                                                                                                                                                                                                                                         |
+| `not_found`                                                                                                                                                                                                                                                 | The host's `doric.catalog/v1.disable` for a bundle outside the composition ([`composition-actions.ts`](src/process/composition-actions.ts)); the desktop main process for a window that is not open, or before any core activated ([desktop README](../../app/desktop/doric/README.md)); other bundles for their own records                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The named thing does not exist                                                                                                                                                                                                                                                                                                                                                                                          |
+| `disconnected`                                                                                                                                                                                                                                              | The desktop main process, when the host bridge closes ([desktop README](../../app/desktop/doric/README.md#the-host-bridge-and-the-connection-status))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The host is unreachable from the desktop                                                                                                                                                                                                                                                                                                                                                                                |
+| `unknown_command`, `route_conflict`                                                                                                                                                                                                                         | `commands/v1` and `navigation/v1` in `core` ([`desktop/commands.ts`](../../bundles/foundation/core/src/desktop/commands.ts), [`navigation.ts`](../../bundles/foundation/core/src/client/navigation.ts)); the desktop's window dispatcher also answers `unknown_command` ([`dispatcher.ts`](../../app/desktop/doric/src/platform/bridge/dispatcher.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | [Core README: `commands/v1`](../../bundles/foundation/core/README.md#commandsv1), [`navigation/v1`](../../bundles/foundation/core/README.md#navigationv1)                                                                                                                                                                                                                                                               |
 
-### Registration and exposure helpers
+### Registration helpers
 
 ```ts
 const bindRegistrant: unique symbol; // Symbol.for('doric.bind-registrant')
 interface Registrable<B> {
   [bindRegistrant](services: Services): B;
 }
-function isRegistrable(value: unknown): value is Registrable<unknown>;
+function isRegistrable(value: unknown): value is Registrable<unknown>; // an object or a function with a [bindRegistrant] function
 ```
 
 A registration that needs its registrant's services (a command, a tool of the
-`tool` package) implements `[bindRegistrant]`; the runtime calls it with the
-caller's services before the provider receives the argument
-([`registrable.ts`](src/contracts/registrable.ts)).
+`tool` package) implements `[bindRegistrant]`
+([`registrable.ts`](src/contracts/registrable.ts)). A stub call replaces each
+`Registrable` argument by the value `[bindRegistrant]` returns for the
+caller's services, before the input is validated, so the provider receives the
+bound value ([`dispatch.ts`](src/runtime/dispatch.ts), step 3 of a stub call
+in [`Services` and the part contexts](#services-and-the-part-contexts)).
 
 ### Skills
 
@@ -647,8 +944,8 @@ type MethodSpecs = Readonly<Record<string, MethodSpec>>;
 const disposableSchema: z.ZodType<Disposable>; // meta { 'x-doric-local': 'disposable' }
 function isDisposable(value: unknown): value is Disposable;
 function isDisposableSchema(schema: z.ZodType): boolean; // also true for another copy of zod's registry entry
-function functionSchema<T>(): z.ZodType<T>; // any function; process-local
-const callSchema: z.ZodType; // a runtime Call inside a payload
+function functionSchema<T>(): z.ZodType<T>; // any function ('Expected a function.'); process-local without a codec: never crosses
+const callSchema: z.ZodType; // a runtime Call inside a payload; process-local without a codec: never crosses
 // each accepts only values made by the matching define*
 const hooksContractSchema: z.ZodType<HooksContract>;
 const eventDefinitionSchema: z.ZodType<EventDefinition>;
@@ -672,7 +969,7 @@ function isBoundCommand(value: unknown): value is BoundCommand; // { id: string,
 
 // tools.ts
 const orderKeySchema: z.ZodNumber; // integer 1 … Number.MAX_SAFE_INTEGER, the global order of tools and skills
-function isContractTool(value: unknown): value is ContractTool;
+function isContractTool(value: unknown): value is ContractTool; // an object with a non-empty trimmed name, an execute function, a definition object and a settings array
 
 // secrets.ts
 const credentialFieldNames: readonly ['username', 'email', 'secret'];
@@ -701,15 +998,27 @@ A stream method's input has a `streamListener(item)` among its tuple items;
 its JSON Schema records the item schema under `x-doric-stream`, so a boundary
 recognizes the method and validates each item
 ([`common.ts`](src/contracts/basic/common.ts),
-[`json-schema.ts`](src/runtime/json-schema.ts)). A schema marked with
-`x-doric-local` holds a value local to its process; it crosses the envelope
-only as a handle ([Process isolation](../../docs/architecture/bundles/process-isolation.md#the-envelope)).
+[`json-schema.ts`](src/runtime/json-schema.ts)).
+
+A value local to its process (a function, a `Call`, an object with methods)
+crosses the envelope only when its schema names a codec with
+`.meta({ 'x-doric-local': 'callback' | 'disposable' | 'object' })`, as
+`disposableSchema`, `streamListener` and `languageModelSchema` do; it then
+crosses as a handle. Every other local schema — `functionSchema()`,
+`callSchema`, any `z.custom` without that metadata — makes its member
+`{ "x-doric-local": true }` in the JSON Schema, and a method of a bundle-defined
+contract with such a member cannot cross a process: a call across one is
+refused with `local_only`. A contract meant to cross processes marks each
+function it carries with a codec ([`json-schema.ts`](src/runtime/json-schema.ts),
+[`values.ts`](src/runtime/envelope/values.ts), [Process
+isolation](../../docs/architecture/bundles/process-isolation.md#the-envelope)).
 
 #### The `models.provider/v1` contract
 
 `models.provider/v1` is how a model provider bundle offers one provider kind
 to `models/v1`. It runs in `host` only, has cardinality `many` and no optional
-methods, so a record implements all six methods below
+methods (its `optional` list is `[]`), so a record implements all six methods
+below
 ([`basic/index.ts`](src/contracts/basic/index.ts),
 [`models.ts`](src/contracts/basic/models.ts)). Each provider bundle registers
 its record with `{ cardinality: 'many' }`; the providers are
@@ -736,14 +1045,14 @@ interface ModelsProvider {
     input: ModelsProviderCreateInput,
     call?: CallArg,
   ): LanguageModel | Promise<LanguageModel>;
-  catalogCapacity(call?: CallArg): Promise<boolean>; // minor 1.1.0
+  catalogCapacity(call?: CallArg): Promise<boolean>;
   icons(
     input: {
       readonly configuration: Readonly<Record<string, string>>;
       readonly models: readonly string[];
     },
     call?: CallArg,
-  ): Promise<ModelIconChoice>; // minor 1.2.0
+  ): Promise<ModelIconChoice>;
 }
 interface ModelsProviderCreateInput {
   readonly providerId: string;
@@ -770,7 +1079,7 @@ Data shapes ([`models.ts`](src/contracts/basic/models.ts)):
   an array of `'models'` and `'reasonings'`, the lists a provider keeps;
   optional `modelsFromCatalog` (boolean), set when the kind's model list is its
   live catalog, so the configuration fill writes every model the catalog
-  lists; optional `site: { url, label }` (strict, minor 1.3.0), the site a
+  lists; optional `site: { url, label }` (strict), the site a
   provider page links to: `url` must parse with the `https:` scheme, `label`
   is non-empty.
 - `ModelField` (strict): `key`, `label` (strings), `kind` (`text`, `url`,
@@ -784,9 +1093,10 @@ Data shapes ([`models.ts`](src/contracts/basic/models.ts)):
 - `LanguageModel`: an opaque object, marked `x-doric-local: 'object'`. It
   crosses the envelope as a handle: back in the process that built it, it is
   the object `create` answered; anywhere else any use is refused as
-  `local_only`. `toLanguageModel` gives a plain object a prototype of its own,
-  keeping its own properties (getters stay getters), so it crosses as a handle
-  and not by copy; an object whose prototype is not `Object.prototype` or
+  `local_only` ([`values.ts`](src/runtime/envelope/values.ts)).
+  `toLanguageModel` gives a plain object a prototype of its own, keeping its
+  own properties (getters stay getters), so it crosses as a handle and not by
+  copy; an object whose prototype is not `Object.prototype` or
   `null` is returned unchanged.
 - `ModelsProviderCreateInput.secret` reads the provider's secret as stored
   now; a provider awaits it before each request, so a rotated credential
@@ -820,40 +1130,40 @@ semantics are in the provider's README (see above).
 
 [`events.ts`](src/contracts/basic/events.ts):
 
-| Export                | Meaning                                                                                                                                                 |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Events`              | `register(definition)`, `sink(spec)`, `append(definition, payload, call?)`                                                                              |
-| `EventSinkSpec`       | `{ scopeKeys: readonly string[]; stream: string; scopeDescription?: string }`: where the rows of appended events go; `{key}` in `stream` is a scope key |
-| `eventSinkSpecSchema` | 1–`SCOPE_MAX_KEYS` unique keys matching `scopeKeyPattern`, `stream` 1–256 characters, every `{placeholder}` among the keys                              |
+| Export                | Meaning                                                                                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Events`              | `register(definition)`, `sink(spec)`, `append(definition, payload, call?)`                                                                                                                   |
+| `EventSinkSpec`       | `{ scopeKeys: readonly string[]; stream: string; scopeDescription?: string }`: where the rows of appended events go; `{key}` in `stream` is a scope key; `scopeDescription` 1–256 characters |
+| `eventSinkSpecSchema` | 1–`SCOPE_MAX_KEYS` unique keys matching `scopeKeyPattern`, `stream` 1–256 characters, every `{placeholder}` among the keys                                                                   |
 
 [`hooks.ts`](src/contracts/basic/hooks.ts):
 
-| Export             | Meaning                                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `Hooks`            | What `services.use(HooksV1)` returns: `define(C)`, `use(C)`, `whenAvailable(C, callback)`                                       |
-| `HooksProvider`    | What a `hooks/v1` provider implements: `define`, `register`, `whenDefined`, `execute`; `HooksV1` is `ref<Hooks, HooksProvider>` |
-| `HookOutput<H>`    | What a handler returns: nothing for `observe`/`sequence`, the input's output type for `transform`, `Decision` for `decide`      |
-| `HookHandler<H>`   | `(input, call: Call) => HookOutput<H> \| Promise<HookOutput<H>>`                                                                |
-| `AnyHookHandler`   | `(input: unknown, call: Call) => unknown`: a handler as the provider stores it                                                  |
-| `HookHandle<C>`    | What `define(C)` returns to the owner: per hook, `execute(input, call?): Promise<HookOutput>`                                   |
-| `HookRegistrar<C>` | What `use(C)` returns to a consumer: per hook, `(handler) => Disposable`                                                        |
+| Export             | Meaning                                                                                                                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Hooks`            | What `services.use(HooksV1)` returns: `define(C)`, `use(C)`, `whenAvailable(C, callback: (registrar: HookRegistrar<C>) => void \| Cleanup)`; see [`Services` and the part contexts](#services-and-the-part-contexts) |
+| `HooksProvider`    | What a `hooks/v1` provider implements: `define`, `register`, `whenDefined`, `execute`; `HooksV1` is `ref<Hooks, HooksProvider>`                                                                                      |
+| `HookOutput<H>`    | What a handler returns: nothing for `observe`/`sequence`, the input's output type for `transform`, `Decision` for `decide`                                                                                           |
+| `HookHandler<H>`   | `(input, call: Call) => HookOutput<H> \| Promise<HookOutput<H>>`                                                                                                                                                     |
+| `AnyHookHandler`   | `(input: unknown, call: Call) => unknown`: a handler as the provider stores it                                                                                                                                       |
+| `HookHandle<C>`    | What `define(C)` returns to the owner: per hook, `execute(input, call?): Promise<HookOutput>`                                                                                                                        |
+| `HookRegistrar<C>` | What `use(C)` returns to a consumer: per hook, `(handler) => Disposable`                                                                                                                                             |
 
 [`log.ts`](src/contracts/basic/log.ts):
 
-| Export      | Meaning                                                                                                    |
-| ----------- | ---------------------------------------------------------------------------------------------------------- |
-| `Log`       | `debug`, `info`, `warn`, `error(message, fields?, call?): void`; a level never throws and is never awaited |
-| `LogFields` | `Readonly<Record<string, unknown>>`                                                                        |
+| Export      | Meaning                                                                                                                                                                                                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Log`       | `debug`, `info`, `warn`, `error(message, fields?, call?): void`; a provider's level never throws and is never awaited, but the stub throws `invalid_input` synchronously when `message` is not a string or `fields` is not a record ([`dispatch.ts`](src/runtime/dispatch.ts)) |
+| `LogFields` | `Readonly<Record<string, unknown>>`                                                                                                                                                                                                                                            |
 
 [`menus.ts`](src/contracts/basic/menus.ts):
 
-| Export                           | Meaning                                                                                      |
-| -------------------------------- | -------------------------------------------------------------------------------------------- |
-| `Menus`                          | `addItem(item)`, `addKeybinding(binding)`, `setContext({ key: 'path' \| 'focus', value })`   |
-| `MenuWhen`, `menuWhenSchema`     | `{ path?: string; focus?: string }`: the active route pattern and focus that enable an entry |
-| `MenuItem`, `menuItemSchema`     | `{ id, location ('app/<menu>' or 'dock'), command, label, when?, order? }`                   |
-| `Keybinding`, `keybindingSchema` | `{ command, key, when? }`                                                                    |
-| `menuContextSchema`              | The input of `setContext`                                                                    |
+| Export                           | Meaning                                                                                                    |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `Menus`                          | `addItem(item)`, `addKeybinding(binding)`, `setContext({ key: 'path' \| 'focus', value: string \| null })` |
+| `MenuWhen`, `menuWhenSchema`     | `{ path?: string; focus?: string }`: the active route pattern and focus that enable an entry               |
+| `MenuItem`, `menuItemSchema`     | `{ id, location ('app/<menu>' or 'dock'), command, label, when?, order? }`                                 |
+| `Keybinding`, `keybindingSchema` | `{ command, key, when? }`                                                                                  |
+| `menuContextSchema`              | The input of `setContext`                                                                                  |
 
 [`models.ts`](src/contracts/basic/models.ts):
 
@@ -927,33 +1237,33 @@ semantics are in the provider's README (see above).
 
 [`skills.ts`](src/contracts/basic/skills.ts):
 
-| Export                                     | Meaning                                                                  |
-| ------------------------------------------ | ------------------------------------------------------------------------ |
-| `Skills`                                   | `register(skill: SkillSchemaInput, options?): Disposable`, `list(call?)` |
-| `RegisteredSkill`, `registeredSkillSchema` | `{ bundleId, alwaysAvailable, order?: orderKey, skill: SkillRecord }`    |
-| `SkillRegistrationOptions`                 | `{ alwaysAvailable?: boolean; order?: number }`                          |
+| Export                                     | Meaning                                                                                      |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `Skills`                                   | `register(skill: SkillSchemaInput, options?): Disposable`, `list(call?)`                     |
+| `RegisteredSkill`, `registeredSkillSchema` | `{ bundleId, alwaysAvailable, order?: orderKey, skill: SkillRecord }`                        |
+| `SkillRegistrationOptions`                 | `{ alwaysAvailable?: boolean; order?: number }`, strict; `order` checked by `orderKeySchema` |
 
 [`storage.ts`](src/contracts/basic/storage.ts):
 
-| Export                                                       | Meaning                                                                                                                    |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `Storage`, `StorageBackend`                                  | The `storage/v1` and `storage.backend/v1` interfaces                                                                       |
-| `StoredDocument`, `storedDocumentSchema`                     | `{ type, id, revision: int, value }`                                                                                       |
-| `StorageQuery`, `storageQuerySchema`                         | `{ type, index, equals: IndexValue[], range?: { gt?, gte?, lt?, lte? }, order?: 'asc' \| 'desc', limit: 1–1000, cursor? }` |
-| `StoragePage`, `storagePageSchema`                           | `{ items: StoredDocument[]; cursor? }`                                                                                     |
-| `StreamRead`, `streamReadSchema`                             | `{ stream, afterSequence: int ≥ 0, limit: int > 0 }`                                                                       |
-| `StreamEntry`, `streamEntrySchema`                           | `{ sequence: int > 0, value, createdAt }` (`createdAt` set by the backend at commit)                                       |
-| `TruncationMark`, `truncationMarkSchema`                     | `{ afterSequence, atSequence }`: entries above `afterSequence` were removed when the stream stood at `atSequence`          |
-| `StreamPage`, `streamPageSchema`                             | `{ entries, lastSequence, truncations }`; `truncations` are the marks that removed entries the reader may hold             |
-| `expectedRevisionSchema`                                     | `{ type, id, revision: int ≥ 0 }`; revision 0 means "must not exist"                                                       |
-| `CommitBatch`, `commitBatchSchema`                           | One atomic batch, applied in the order expect → delete → put → dropStreams → truncate → append, or not at all              |
-| `commitResultSchema`                                         | `{ position: int }`                                                                                                        |
-| `StorageHealth`, `storageHealthSchema`                       | `{ status: 'ok' \| 'unavailable', writable, reason?, disk?: { blocks, availableBlocks } }`                                 |
-| `StorageIdentity`, `storageIdentitySchema`                   | `{ hostId: uuid, storageGeneration: int > 0 }`                                                                             |
-| `StorageCapabilities`, `storageCapabilitiesSchema`           | `{ maxBatch, maxDocumentBytes, maxAppendBytes }`, positive integers                                                        |
-| `feedRequestSchema`                                          | `{ after: int, limit: int > 0 }`                                                                                           |
-| `FeedPage`, `feedPageSchema`                                 | `{ commits: { position, documents: { type, id }[], streams, truncated, dropped }[] }`                                      |
-| `StorageDeclaration` (`z.input`), `storageDeclarationSchema` | `{ type, indexes: { name, fields, unique? }[] }`                                                                           |
+| Export                                                       | Meaning                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Storage`, `StorageBackend`                                  | The `storage/v1` and `storage.backend/v1` interfaces                                                                                                                                                                                                                                                |
+| `StoredDocument`, `storedDocumentSchema`                     | `{ type, id, revision: int, value }`                                                                                                                                                                                                                                                                |
+| `StorageQuery`, `storageQuerySchema`                         | `{ type, index, equals: IndexValue[], range?: { gt?, gte?, lt?, lte? }, order?: 'asc' \| 'desc', limit: 1–1000, cursor? }`                                                                                                                                                                          |
+| `StoragePage`, `storagePageSchema`                           | `{ items: StoredDocument[]; cursor? }`                                                                                                                                                                                                                                                              |
+| `StreamRead`, `streamReadSchema`                             | `{ stream, afterSequence: int ≥ 0, limit: int > 0 }`                                                                                                                                                                                                                                                |
+| `StreamEntry`, `streamEntrySchema`                           | `{ sequence: int > 0, value, createdAt }` (`createdAt` set by the backend at commit)                                                                                                                                                                                                                |
+| `TruncationMark`, `truncationMarkSchema`                     | `{ afterSequence, atSequence }`: entries above `afterSequence` were removed when the stream stood at `atSequence`                                                                                                                                                                                   |
+| `StreamPage`, `streamPageSchema`                             | `{ entries, lastSequence, truncations }`; `truncations` are the marks that removed entries the reader may hold                                                                                                                                                                                      |
+| `expectedRevisionSchema`                                     | `{ type, id, revision: int ≥ 0 }`; revision 0 means "must not exist"                                                                                                                                                                                                                                |
+| `CommitBatch`, `commitBatchSchema`                           | One atomic batch, applied in the order expect → delete → put → dropStreams → truncate → append, or not at all; the backend applies it (for `postgres`, [`commit.ts`](../../bundles/foundation/postgres/src/host/storage/commit.ts), [Commits](../../bundles/foundation/postgres/README.md#commits)) |
+| `commitResultSchema`                                         | `{ position: int }`                                                                                                                                                                                                                                                                                 |
+| `StorageHealth`, `storageHealthSchema`                       | `{ status: 'ok' \| 'unavailable', writable, reason?, disk?: { blocks, availableBlocks } }`                                                                                                                                                                                                          |
+| `StorageIdentity`, `storageIdentitySchema`                   | `{ hostId: uuid, storageGeneration: int > 0 }`                                                                                                                                                                                                                                                      |
+| `StorageCapabilities`, `storageCapabilitiesSchema`           | `{ maxBatch, maxDocumentBytes, maxAppendBytes }`, positive integers                                                                                                                                                                                                                                 |
+| `feedRequestSchema`                                          | `{ after: int, limit: int > 0 }`                                                                                                                                                                                                                                                                    |
+| `FeedPage`, `feedPageSchema`                                 | `{ commits: { position, documents: { type, id }[], streams, truncated, dropped }[] }`                                                                                                                                                                                                               |
+| `StorageDeclaration` (`z.input`), `storageDeclarationSchema` | `{ type, indexes: { name, fields, unique? }[] }`                                                                                                                                                                                                                                                    |
 
 [`tools.ts`](src/contracts/basic/tools.ts):
 
@@ -966,7 +1276,7 @@ semantics are in the provider's README (see above).
 | `ContractTool`                               | `{ name, description?, input: ZodObject, output, definition, settings: object[], resultModalities?, check?(payload), execute(payload, call) }` |
 | `RegisteredTool`                             | `{ bundleId, alwaysAvailable, order?, projectId?, tool: ContractTool }`                                                                        |
 | `ToolCatalogEntry`, `toolCatalogEntrySchema` | `{ name, description?, settings: object[] }`: plain data, as `GET /tools` lists it                                                             |
-| `ToolRegistrationOptions`                    | `{ alwaysAvailable: boolean; order?: number; projectId?: string }`                                                                             |
+| `ToolRegistrationOptions`                    | `{ alwaysAvailable: boolean; order?: number; projectId?: string }`, strict; `order` checked by `orderKeySchema`, `projectId` non-empty         |
 | `orderKeySchema`, `isContractTool`           | See the helpers above                                                                                                                          |
 
 [`ui.ts`](src/contracts/basic/ui.ts):
@@ -1021,22 +1331,22 @@ capabilities](../../docs/architecture/bundles/contexts.md#shapes-of-the-platform
 It also exports two platform hooks contracts, which the platform defines
 with `definePlatformHooks` ([`platform.ts`](src/contracts/platform.ts)):
 
-| Contract                                  | Hook                      | Kind                    | Input                                                                |
-| ----------------------------------------- | ------------------------- | ----------------------- | -------------------------------------------------------------------- |
-| `AppHooksV1` (`doric.app.hooks/v1`)       | `onActivateHook`          | observe                 | `{ bundleId, version, generation, environment }`                     |
-|                                           | `onDeactivateHook`        | observe                 | the same                                                             |
-|                                           | `onHostStartHook`         | sequence                | `{}`                                                                 |
-|                                           | `onHostStopHook`          | sequence, reverse order | `{}`                                                                 |
-|                                           | `onHostReadyHook`         | observe                 | `{}`                                                                 |
-|                                           | `onGenerationReadyHook`   | observe                 | `{ generation }`                                                     |
-|                                           | `onGenerationChangedHook` | observe, per owner      | a generation change; each handler sees only its own bundle's `holds` |
-|                                           | `onPeerSignalHook`        | observe, per owner      | a peer signal; only handlers of the sending bundle receive it        |
-|                                           | `onAppReadyHook`          | observe                 | `{}`                                                                 |
-|                                           | `onAppActivateHook`       | observe                 | `{}`                                                                 |
-|                                           | `onBeforeQuitHook`        | decide                  | `{}`                                                                 |
-|                                           | `onConnectionChangedHook` | observe                 | `{ connected }`                                                      |
-| `WindowHooksV1` (`doric.window.hooks/v1`) | `onCloseHook`             | decide                  | `{}`                                                                 |
-|                                           | `onFlushHook`             | observe                 | `{}`                                                                 |
+| Contract                                  | Hook                      | Kind                    | Input                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AppHooksV1` (`doric.app.hooks/v1`)       | `onActivateHook`          | observe                 | `{ bundleId, version, generation, environment }`                                                                                                                                                                                                                                                                                |
+|                                           | `onDeactivateHook`        | observe                 | the same                                                                                                                                                                                                                                                                                                                        |
+|                                           | `onHostStartHook`         | sequence                | `{}`                                                                                                                                                                                                                                                                                                                            |
+|                                           | `onHostStopHook`          | sequence, reverse order | `{}`                                                                                                                                                                                                                                                                                                                            |
+|                                           | `onHostReadyHook`         | observe                 | `{}`                                                                                                                                                                                                                                                                                                                            |
+|                                           | `onGenerationReadyHook`   | observe                 | `{ generation }`                                                                                                                                                                                                                                                                                                                |
+|                                           | `onGenerationChangedHook` | observe, per owner      | `{ event: 'activated' \| 'draining' \| 'lost' \| 'stopped', generation, incarnation, self: { generation, incarnation }, live: { generation, incarnation, state }[], holds?: { bundleId, key, label? }[] }`; each handler sees only its own bundle's `holds` ([Hooks](../../docs/architecture/bundles/hooks.md#doricapphooksv1)) |
+|                                           | `onPeerSignalHook`        | observe, per owner      | `{ topic (1–128), payload, from: { generation, incarnation, bundleId }, self, live }`; only handlers of the sending bundle receive it ([Hooks](../../docs/architecture/bundles/hooks.md#doricapphooksv1))                                                                                                                       |
+|                                           | `onAppReadyHook`          | observe                 | `{}`                                                                                                                                                                                                                                                                                                                            |
+|                                           | `onAppActivateHook`       | observe                 | `{}`                                                                                                                                                                                                                                                                                                                            |
+|                                           | `onBeforeQuitHook`        | decide                  | `{}`                                                                                                                                                                                                                                                                                                                            |
+|                                           | `onConnectionChangedHook` | observe                 | `{ connected }`                                                                                                                                                                                                                                                                                                                 |
+| `WindowHooksV1` (`doric.window.hooks/v1`) | `onCloseHook`             | decide                  | `{}`                                                                                                                                                                                                                                                                                                                            |
+|                                           | `onFlushHook`             | observe                 | `{}`                                                                                                                                                                                                                                                                                                                            |
 
 When each fires is in [Hooks](../../docs/architecture/bundles/hooks.md).
 

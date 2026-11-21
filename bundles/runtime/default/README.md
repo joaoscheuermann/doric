@@ -39,16 +39,30 @@ and `./package.json`. It declares no slot.
 
 ## Parts
 
-| Part      | Folder                                               | What it does                                                                                                                                                                        |
-| --------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| contracts | [`src/contracts/`](src/contracts/index.ts)           | Declares `default.hooks/v1`, `default.agents/v1` and `default.skill-sources/v1`, with their types and schemas.                                                                      |
-| host      | [`src/host/`](src/host/index.ts)                     | Provides `executor/v1` and `default.agents/v1`, and defines `default.hooks/v1`. Runs in the host's generation process, next to `runtime`, which calls the executor for each prompt. |
-| client    | [`src/client/`](src/client/index.ts)                 | Defines the element `default-skill-call` and registers it as the drawing of `load_skill` calls in the conversation.                                                                 |
-| skills    | [`src/skills/`](src/skills/coding-workflow/SKILL.md) | Ships the `coding-workflow` skill, which the loader registers through `skills/v1` for the bundle.                                                                                   |
+| Part      | Folder                                               | What it does                                                                                                                                                                                                                                                                                                                       |
+| --------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| contracts | [`src/contracts/`](src/contracts/index.ts)           | Declares `default.hooks/v1`, `default.agents/v1` and `default.skill-sources/v1`, with their types and schemas.                                                                                                                                                                                                                     |
+| host      | [`src/host/`](src/host/index.ts)                     | Provides `executor/v1` and `default.agents/v1`, and defines `default.hooks/v1`. Runs in the host's generation process (the Node process of a bundle generation, apart from the kernel; [Process isolation](../../../docs/architecture/bundles/process-isolation.md)), next to `runtime`, which calls the executor for each prompt. |
+| client    | [`src/client/`](src/client/index.ts)                 | Defines the element `default-skill-call` and registers it as the drawing of `load_skill` calls in the conversation.                                                                                                                                                                                                                |
+| skills    | [`src/skills/`](src/skills/coding-workflow/SKILL.md) | Ships the `coding-workflow` skill, which the loader registers through `skills/v1` for the bundle (see below).                                                                                                                                                                                                                      |
 
 The bundle has no desktop part. The build copies every `.md` file below
 `src/host` into `dist/host`, since the host part reads its templates and agent
 files at import ([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts)).
+
+A skill is a direct subdirectory of `src/skills` that holds a `SKILL.md`;
+`coding-workflow` is the only one. The build reads its YAML frontmatter,
+strict: `name` and `description` (non-empty), and the optional
+`allowed-tools`, `indexText`, `alwaysAvailable` and `order` (`coding-workflow` sets
+`order: 50` and no `alwaysAvailable`); the text after the frontmatter is the
+body, which must not be empty. A skill that fails the check fails the build
+with `Invalid skill "<path>": <cause>`; a valid one is copied to
+`dist/skills/<dir>/SKILL.md`, without the other files of its folder. The
+loader finds the copies in lexical directory order and registers each
+through `skills/v1` for the bundle
+([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts),
+[`packages/bundle/src/loader/skills.ts`](../../../packages/bundle/src/loader/skills.ts),
+[`packages/bundle` README](../../../packages/bundle/README.md)).
 
 ### Activation
 
@@ -61,6 +75,19 @@ files at import ([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/s
 3. defines `default.hooks/v1` through `hooks/v1` and provides the executor,
    which receives the hook handle, the clock (`() => new Date()`) and the
    built-in agents.
+
+The built-in agent files are read with `readFileSync` when the host part is
+imported, before `activate`: a file that is missing fails the import of the
+part, and the loader quarantines the bundle with the code `invalid_part`
+([`src/host/agents/built-in.ts`](src/host/agents/built-in.ts)). When
+`activate` throws, the loader quarantines the bundle with the code
+`activate_failed`. Either way it logs `Bundle quarantined` with the reasons
+([`packages/bundle/src/runtime/activation.ts`](../../../packages/bundle/src/runtime/activation.ts)),
+and `executor/v1` is without a provider. The shipped host composition lists
+`executor/v1` under `required.contracts`, so the host logs
+`Bundle recovery mode` and its start ends with exit code 1
+([`composition.json`](../../../app/backend/doric-host/composition.json),
+[Composition and distribution](../../../docs/architecture/bundles/composition-and-distribution.md#required)).
 
 `activate` of the client part defines `default-skill-call` through `ui/v1`
 and, while a provider of `chat.views/v1` is available, registers it for
@@ -75,7 +102,12 @@ The contract is declared in `runtime/contracts`
 `default` is its provider, with cardinality one. The `runtime` bundle
 requires it (`^1.4.0`) and calls it for every prompt. The service is defined
 by the id `ExecutorV1.id` with the method schemas `executorMethods`
-([`src/host/index.ts`](src/host/index.ts)). Its shape:
+([`src/host/index.ts`](src/host/index.ts)). Host-only: no method declares
+`expose`, so no window reaches it
+([`packages/bundle/src/contracts/define.ts`](../../../packages/bundle/src/contracts/define.ts),
+[Services and channels](../../../docs/architecture/bundles/services-and-channels.md)).
+The full contract, with the runtime's side of each method, is in the
+[runtime README](../../runtime/runtime/README.md#executorv1). Its shape:
 
 ```ts
 interface Executor {
@@ -152,21 +184,99 @@ type ExecutorCompactionResult =
   | { status: 'failed'; code: 'summarizer_failed' | 'unsafe_boundary' };
 ```
 
-`thread` is the public `Thread` of `runtime/contracts`; its `agent`, when
-present, also carries the agent's `instructions`. The `session` is local: it
-is passed as an object, and every history and event write of the executor
-goes through `session.record`, which redacts, sanitizes, persists and
-publishes, and keeps the runtime's persistence retry. What each method does
+The types from `runtime/contracts`, at the grain the executor uses them (their
+full shapes are in the runtime README:
+[`Thread` and `InputSource`](../../runtime/runtime/README.md#thread),
+[`AttachmentContent`](../../runtime/runtime/README.md#runtimeattachmentsv1)):
+
+```ts
+// The fields of Thread the executor reads; the record has more.
+interface Thread {
+  id: string;
+  projectId: string;
+  cwd: string; // the working directory at the start of the run
+  agent?: { name: string; source: 'built-in' | 'workspace' };
+  providerId?: string;
+  model?: string;
+  effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+}
+type InputSource =
+  | { kind: 'user' }
+  | { kind: 'terminal'; terminalId: string; promptId: string }
+  | { kind: 'parent'; threadId: string; promptId: string }
+  | {
+      kind: 'result';
+      threadId: string;
+      promptId: string;
+      requestPromptId: string;
+    }
+  | { kind: 'bundle'; bundleId: string; reason: string; retain?: true };
+interface AttachmentContent {
+  id: string; // sha256-<64 hex>
+  name: string;
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  size: number;
+  bytes: string; // base64
+}
+```
+
+`thread` is the public `Thread`, whose `agent`, when present, also carries
+the agent's `instructions`. The run reads `id`, `projectId` and `cwd`, the
+`agent`, and the provider, model and effort through `resolveThreadExecution`
+of `runtime/contracts`
+([`src/host/executor.ts`](src/host/executor.ts),
+[`model.ts`](../../runtime/runtime/src/contracts/model.ts)).
+
+`session` and `history` are local: live objects of the runtime, never
+serialized. Their schemas carry `x-doric-local: 'object'`: within one process
+the executor receives the object itself, and across processes a handle whose
+calls run in the runtime's process
+([`values.ts`](../../../packages/bundle/src/runtime/envelope/values.ts),
+[Process isolation](../../../docs/architecture/bundles/process-isolation.md#the-envelope)).
+Every history and event write of the executor goes through
+`session.record`, which saves `history` first, then appends `event` to the
+Thread's log and publishes it; the runtime redacts both and sanitizes the
+history, and on a failure `record` throws the runtime's persistence error and
+keeps the retry, as the
+[runtime README](../../runtime/runtime/README.md#executorv1) describes. `session.steers()`, when present, answers the
+inputs that arrived for the running prompt since the last call, oldest
+first: the reader's steering and the results of child Threads and background
+terminals. The executor stores each in its history before the next model
+turn, in the envelope its source names ([Input envelope](#input-envelope)),
+and records one `{ type: 'agent.steered' }` event per input, in the order it
+took them; an input it never records returns to the Thread's queue when the
+run ends. `session.attachment(id)`, when present, answers one attachment of
+the Thread's Project, or `undefined` for an id that Project does not hold
+([Attachments](#attachments)).
+
+`checkpoint` runs before `prompt.started`. `compact` receives the
+compaction's own `promptId` in `call.scope`, and `call.signal` aborts its
+summarization; its `tokensFreed` is an estimate. What each method does
 is described below: `run` in [One prompt run](#one-prompt-run),
 `checkpoint`, `rewind` and `formats` in [Provider history](#provider-history),
 `compact` in [Compaction](#compaction).
 
-The inputs of `run`, `checkpoint`, `rewind` and `compact` (and `compact`'s
-`policy`) are strict schemas, and `formats` takes no argument: an input with
-another key or a value of the wrong type fails with a `ContractError`
-`invalid_input` before the method runs; a `thread` whose `agent` lacks a
-string `instructions` fails the same way (`executorMethods` in
-[`executor.ts`](../../runtime/runtime/src/contracts/executor.ts)).
+Every input is checked before the method runs, and a failure is a
+`ContractError` `invalid_input` (`executorMethods` in
+[`executor.ts`](../../runtime/runtime/src/contracts/executor.ts)):
+
+- The top level of `run`, `checkpoint`, `rewind` and `compact`, and
+  `compact`'s `policy`, are strict: another key fails. `formats` takes no
+  argument.
+- `thread` is loose: it must match the `Thread` schema, and its `agent`, when
+  present, must carry a string `name`, a `source` of `built-in` or
+  `workspace` and a string `instructions`; other keys pass. `job` is loose
+  too: a string `id` and `prompt` and a valid `source`.
+- `session` must be an object with a `record` function, and `history` an
+  object with a `read` function; nothing else of them is checked.
+
+Every answer is checked too, and one that fails its schema rejects the call
+with a `ContractError` `invalid_output`
+([`packages/bundle/src/runtime/dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)):
+`run` must answer a string `text`, `checkpoint` and `rewind` a `format` string
+and a `parts` record (`rewind` may answer `undefined`), `formats` an array of
+strings, and `compact` a known `status` with its optional fields of the right
+types.
 
 ### `default.hooks/v1` 1.0.0
 
@@ -174,21 +284,44 @@ Declared in [`src/contracts/index.ts`](src/contracts/index.ts) as
 `DefaultHooksV1` and defined by the host part through `hooks/v1`
 ([`src/host/index.ts`](src/host/index.ts)). One hook:
 
-| Hook                       | Kind        | Input                        | When                                                                                                 |
-| -------------------------- | ----------- | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `onBeforeModelRequestHook` | `transform` | `{ system: string }`, strict | Before every model request of a prompt, under the prompt's call; the model receives what it answers. |
+| Hook                       | Kind        | Input                        | When                                                                                                       |
+| -------------------------- | ----------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `onBeforeModelRequestHook` | `transform` | `{ system: string }`, strict | Before every model request of the agent loop, under the prompt's call; the model receives what it answers. |
 
 `call.scope` names the prompt (`projectId`, `threadId`, `promptId`) and
 `call.signal` aborts with it ([`src/host/executor.ts`](src/host/executor.ts)).
-Handlers run one after another, each receiving the output of the one before;
-a handler that throws, runs past its deadline (`DEFAULT_HOOK_DEADLINE_MS`,
-10,000 ms) or answers a value outside the input schema is reported and
-skipped, and the next one receives the value it received
-([`bundles/foundation/core/src/shared/hooks.ts`](../../foundation/core/src/shared/hooks.ts)).
+The hook runs for the requests of the agent loop only: the summarizer
+requests of a compaction, during a run or through `compact`, go to the model
+without it ([`src/host/executor.ts`](src/host/executor.ts),
+[`src/host/compact.ts`](src/host/compact.ts)). When the answered `system` is
+empty, the request carries no system message
+([`packages/agent/src/lib/agent.ts`](../../../packages/agent/src/lib/agent.ts)).
+
+`hooks/v1`, provided by `core`, runs the chain
+([`bundles/foundation/core/src/shared/hooks.ts`](../../foundation/core/src/shared/hooks.ts),
+[Hooks](../../../docs/architecture/bundles/hooks.md#firing-a-hook),
+[core README](../../foundation/core/README.md#hooksv1)). The handlers run one
+after another, the platform's own first, then by the activation order of
+their bundles in the catalog, and by registration order within one bundle;
+each receives the output of the one before. A handler that throws, runs past
+its deadline (`DEFAULT_HOOK_DEADLINE_MS`, 10,000 ms) or answers a value
+outside the input schema is skipped, and the next one receives the value it
+received; the failure is reported to `doric.diagnostics/v1` as
+`hook_handler_failed` or `hook_handler_timeout`. When `call.signal` aborts
+before the chain settles, `execute` rejects with the abort reason, and so
+does the model request; the chain keeps running, and the handlers see the
+abort only through `call.signal`. A signal that is already aborted rejects
+`execute` at once, and the chain still starts.
+
 `default` registers no handler of its own. A bundle registers one through
-`hooks/v1`, with `default.hooks/v1` under its `requires` or `optional`:
+`hooks/v1`: it lists `default.hooks/v1@^1.0.0` under `requires` (or the bare
+id under `optional`), adds `default` to its package dependencies, and
+registers the handler:
 
 ```ts
+import { HooksV1 } from 'bundle/contracts';
+import { DefaultHooksV1 } from 'default/contracts';
+
 services
   .use(HooksV1)
   .use(DefaultHooksV1)
@@ -199,11 +332,17 @@ services
 
 ### `default.agents/v1` 1.0.0
 
-The agents a Thread can be spawned as. Declared in
+The agents a Thread can be spawned as. A Thread is spawned when an agent asks
+for a child Thread through the `thread-spawn` tool of the `threads` bundle,
+which lists `default.agents/v1` under `optional` and calls `resolve` with the
+`agent` the call names
+([`thread-spawn.ts`](../../features/threads/src/host/tools/thread-spawn.ts),
+[`manifest.json`](../../features/threads/manifest.json),
+[threads README](../../features/threads/README.md)). Declared in
 [`src/contracts/index.ts`](src/contracts/index.ts) as `DefaultAgentsV1`, with
 the method schemas `defaultAgentsMethods`; provided by `agentsService`
 ([`src/host/agents/definitions.ts`](src/host/agents/definitions.ts)).
-Host-only: no method is exposed to a window.
+Host-only: no method declares `expose`, so no window reaches it.
 
 ```ts
 // /^[a-z0-9][a-z0-9_-]{0,63}$/u — exported as agentNamePattern
@@ -231,21 +370,27 @@ The schemas `agentSummarySchema`, `agentDefinitionSchema` and
   built-ins not hidden by a workspace file, in shipped order, then the valid
   workspace agents in sorted file-name order. With no known working directory
   it answers the built-ins only. It never rejects because of the workspace.
+- Every `list` and every `resolve` reads the working directory again and,
+  when it is known, scans `.agents/agents` afresh with one `runtime.lease/v1`
+  `exec` of at most 5,000 ms; nothing is cached between calls.
 - `resolve({ name })` answers one agent with its raw instructions, chosen by
   the same rule. A workspace agent is read whole and checked again. It fails
   with a `ContractError`:
 
-  | Code                 | When                                                            | Message and details                                                                                                 |
-  | -------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-  | `invalid_input`      | `name` does not match the pattern, or the input has another key | The schema check, before any read.                                                                                  |
-  | `not_found`          | No agent of that name                                           | `Agent "<name>" is not defined. Defined agents: <a>, <b>.` or `… No agent is defined.`; details `{ name, agents }`. |
-  | `invalid_definition` | The workspace file of that name is invalid or cannot be read    | `Agent "<name>" is invalid: <reason>.`; details `{ name, path, reason }`.                                           |
+  | Code                 | When                                                            | Message and details                                                                                                                               |
+  | -------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `invalid_input`      | `name` does not match the pattern, or the input has another key | The schema check, before any read.                                                                                                                |
+  | `not_found`          | No agent of that name                                           | `Agent "<name>" is not defined. Defined agents: <a>, <b>.` or `… No agent is defined.`; details `{ name, agents }`, `agents` the names in effect. |
+  | `invalid_definition` | The workspace file of that name is invalid or cannot be read    | `Agent "<name>" is invalid: <reason>.`; details `{ name, path, reason }`.                                                                         |
 
   A workspace file of that name is resolved even when a built-in of the same
   name exists, and fails as `invalid_definition` when it is invalid. For an
   unchanged workspace, `resolve` succeeds for exactly the names `list`
-  answers, except a file longer than 4,096 bytes whose instructions cite a
-  name that is not a prompt variable: `list` shows it, `resolve` fails on it.
+  answers, except a file longer than 4,096 bytes whose instructions are not a
+  valid template (they cite a name that is not a prompt variable, hold a
+  partial or do not parse): `list` checks no template for such a file, so it
+  shows it, and `resolve`, which reads it whole, fails on it with
+  `invalid_definition`.
 
 How agents are defined and read is in [Agents](#agents).
 
@@ -284,7 +429,10 @@ All schemas are strict. A source is named by the bundle id that provides it
 (`whenAvailable` gives it); a provider whose bundle id is `cwd` is ignored,
 since `cwd/` names the workspace skills
 ([`src/host/skills/sources.ts`](src/host/skills/sources.ts)). A `list` must
-answer within 5,000 ms; the source bounds the time a `read` may take. A
+answer within 5,000 ms. `default` sets no time limit on a `read`: the source
+bounds it, and otherwise only the prompt's `call.signal` ends a `read` that
+does not settle ([`src/host/skills/load-skill.ts`](src/host/skills/load-skill.ts)).
+The contract is host-only: no method declares `expose`. A
 bundle becomes a source by listing `default.skill-sources/v1@1.0.0` under
 `provides`, adding `default` to its package dependencies, and providing the
 contract with `{ cardinality: 'many' }`:
@@ -315,26 +463,59 @@ How the executor reads the sources is in [Skills](#skills).
 
 ## Contracts it uses
 
-| Contract                              | Used for                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tools/v1`                            | `list(call)`: the tools of the prompt, offered to the model ([`src/host/executor.ts`](src/host/executor.ts)).                                                                                                                                                                                                                                                                                                               |
-| `skills/v1`                           | `list(call)`: the bundle skills, split by `alwaysAvailable` ([`src/host/skills/sources.ts`](src/host/skills/sources.ts)).                                                                                                                                                                                                                                                                                                   |
-| `models/v1`                           | `resolve({ providerId, model, effort? })` for the language model, `inputModalities({ providerId, model })` for what it reads ([`src/host/executor.ts`](src/host/executor.ts), [`src/host/compact.ts`](src/host/compact.ts)).                                                                                                                                                                                                |
-| `host-config/v1`                      | `current(call)`: the configuration of a run and of a compaction ([Configuration](#configuration)).                                                                                                                                                                                                                                                                                                                          |
-| `hooks/v1`                            | Defines `default.hooks/v1` ([`src/host/index.ts`](src/host/index.ts)).                                                                                                                                                                                                                                                                                                                                                      |
-| `log/v1`                              | The warnings `Thread execution unavailable` and `Skill source left out` ([`src/host/executor.ts`](src/host/executor.ts), [`src/host/skills/sources.ts`](src/host/skills/sources.ts)).                                                                                                                                                                                                                                       |
-| `ui/v1`                               | Defines the element `default-skill-call` ([`src/client/index.ts`](src/client/index.ts)).                                                                                                                                                                                                                                                                                                                                    |
-| `runtime.lease/v1` (optional)         | `describe` and `exec` for the OS probe and the scans of `.agents/skills` and `.agents/agents`; `readFile` for a workspace skill and a workspace agent ([`src/host/prompts/variables.ts`](src/host/prompts/variables.ts), [`src/host/skills/sources.ts`](src/host/skills/sources.ts), [`src/host/agents/definitions.ts`](src/host/agents/definitions.ts), [`src/host/skills/load-skill.ts`](src/host/skills/load-skill.ts)). |
-| `runtime.workspace/v1` (optional)     | `cwd(call)`: the Thread's working directory now ([`src/host/skills/sources.ts`](src/host/skills/sources.ts)).                                                                                                                                                                                                                                                                                                               |
-| `chat.views/v1` (optional)            | `registerToolRenderer` for `load_skill` ([`src/client/index.ts`](src/client/index.ts)).                                                                                                                                                                                                                                                                                                                                     |
-| `default.skill-sources/v1` (optional) | `list` and `read` of every source ([`src/host/skills/sources.ts`](src/host/skills/sources.ts), [`src/host/skills/load-skill.ts`](src/host/skills/load-skill.ts)).                                                                                                                                                                                                                                                           |
+Each contract's full shape is in the README of its provider:
+[`core`](../../foundation/core/README.md),
+[`host-config`](../../foundation/host-config/README.md),
+[`runtime`](../../runtime/runtime/README.md) and
+[`chat`](../../desktop/chat/README.md); the sources of
+`default.skill-sources/v1` are any bundles, `mcp` among them
+([mcp README](../../features/mcp/README.md)).
 
-Without a provider of an optional contract, what depends on it is left out:
-no `os` line, no workspace skills or agents, no mid-run change, no drawing of
-`load_skill`, no source's skills. The code imports `runtime/contracts`,
-`host-config/contracts` and, as types only, `chat/contracts`; it also uses
-the packages `agent`, `llms`, `messages`, `tool`, `bundle` and `mustache`
-([`package.json`](package.json)).
+| Contract                              | Provider      | Used for                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools/v1`                            | `core`        | `list(call)` answers `RegisteredTool[]`; the run offers each entry's `tool` to the model ([`src/host/executor.ts`](src/host/executor.ts); [shape](../../foundation/core/README.md#toolsv1)).                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `skills/v1`                           | `core`        | `list(call)` answers `{ bundleId, alwaysAvailable, order?, skill }[]`, split by `alwaysAvailable` ([`src/host/skills/sources.ts`](src/host/skills/sources.ts); [shape](../../foundation/core/README.md#skillsv1)).                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `models/v1`                           | `core`        | `resolve({ providerId, model, effort? })` answers `{ languageModel }` among its fields, the model the run and a compaction call; `inputModalities({ providerId, model })` answers `string[] \| undefined`, what the model reads ([`src/host/executor.ts`](src/host/executor.ts), [`src/host/compact.ts`](src/host/compact.ts); [shape](../../foundation/core/README.md#modelsv1)).                                                                                                                                                                                                                                           |
+| `host-config/v1`                      | `host-config` | `current(call)` answers `{ configuration, revision, updatedAt }`; a run and a compaction read `configuration` ([Configuration](#configuration); [shape](../../foundation/host-config/README.md#host-configv1-version-120)).                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `hooks/v1`                            | `core`        | Defines `default.hooks/v1` and runs its handlers ([`src/host/index.ts`](src/host/index.ts); [shape](../../foundation/core/README.md#hooksv1)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `log/v1`                              | `core`        | The warnings `Thread execution unavailable` and `Skill source left out` ([`src/host/executor.ts`](src/host/executor.ts), [`src/host/skills/sources.ts`](src/host/skills/sources.ts); [shape](../../foundation/core/README.md#logv1)).                                                                                                                                                                                                                                                                                                                                                                                        |
+| `ui/v1`                               | `core`        | `define(tag, element)` defines the element `default-skill-call` and answers a disposable ([`src/client/index.ts`](src/client/index.ts); [shape](../../foundation/core/README.md#uiv1)).                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `runtime.lease/v1` (optional)         | `runtime`     | `describe` answers `{ id, root }`, for the OS probe's cache; `exec({ cmd, timeoutMs })` answers `{ exitCode, stdout }` among its fields, for the OS probe and the scans of `.agents/skills` and `.agents/agents`; `readFile(path)` answers the text of a workspace skill or a workspace agent ([`src/host/prompts/variables.ts`](src/host/prompts/variables.ts), [`src/host/skills/sources.ts`](src/host/skills/sources.ts), [`src/host/agents/definitions.ts`](src/host/agents/definitions.ts), [`src/host/skills/load-skill.ts`](src/host/skills/load-skill.ts); [shape](../../runtime/runtime/README.md#runtimeleasev1)). |
+| `runtime.workspace/v1` (optional)     | `runtime`     | `cwd(call)` answers the Thread's working directory now ([`src/host/skills/sources.ts`](src/host/skills/sources.ts); [shape](../../runtime/runtime/README.md#runtimeworkspacev1)).                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `chat.views/v1` (optional)            | `chat`        | `registerToolRenderer({ toolName, elementTag, standalone: true })` for `load_skill`, answering a disposable ([`src/client/index.ts`](src/client/index.ts); [shape](../../desktop/chat/README.md#chatviewsv1-client-120)).                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `default.skill-sources/v1` (optional) | any bundle    | `list` and `read` of every source ([Contract it declares and does not provide](#defaultskill-sourcesv1-100); [`src/host/skills/sources.ts`](src/host/skills/sources.ts), [`src/host/skills/load-skill.ts`](src/host/skills/load-skill.ts)).                                                                                                                                                                                                                                                                                                                                                                                  |
+
+Without a provider of an optional contract, exactly this is left out
+([`src/host/skills/sources.ts`](src/host/skills/sources.ts),
+[`src/host/skills/live.ts`](src/host/skills/live.ts),
+[`src/host/agents/definitions.ts`](src/host/agents/definitions.ts),
+[`src/host/prompts/variables.ts`](src/host/prompts/variables.ts)):
+
+- **`runtime.lease/v1`**: the `os` prompt variable, and every workspace skill
+  and workspace agent, in a run (which scans the `cwd` of the Thread) and in
+  `default.agents/v1`, which then answers the built-ins.
+- **`runtime.workspace/v1`**: a run does not see its working directory move,
+  so its workspace skills and agents stay those of `thread.cwd`; every source
+  is still read again before each request after the first, with that
+  directory, and its changes are announced. `default.agents/v1` knows no
+  working directory and answers the built-ins only.
+- **`chat.views/v1`**: `default-skill-call` is defined but not registered, so
+  the chat does not draw `load_skill` calls with it.
+- **`default.skill-sources/v1`**: the source skills.
+
+The code imports `runtime/contracts`, `host-config/contracts` and, as types
+only, `chat/contracts`, and the packages `agent`, `llms`, `messages`, `tool`,
+`bundle`, `mustache` and `zod`. The client part also imports `react` and, from
+`desktop`, `desktop/ui/collapsible-block`, `desktop/ui/error-notice`,
+`desktop/ui/react-element` and, as types only, `desktop/reads`. `desktop` and
+`react` are development dependencies: the client build leaves `react` and
+`desktop/ui/*` external, and the window resolves them through its import map
+([`packages/bundle/src/build/externals.ts`](../../../packages/bundle/src/build/externals.ts),
+[`packages/bundle` README](../../../packages/bundle/README.md),
+[`package.json`](package.json),
+[`src/contracts/index.ts`](src/contracts/index.ts),
+[`src/client/skill-call.tsx`](src/client/skill-call.tsx),
+[`src/client/skill-load.ts`](src/client/skill-load.ts)).
 
 ## One prompt run
 
@@ -350,35 +531,53 @@ afresh for each prompt:
 3. It reads the configuration through `host-config/v1` and resolves the
    Thread's execution ([Model](#model)); an unavailable execution fails the
    run here.
-4. It starts reading the prompt variables, lists the tools of `tools/v1`, and
-   reads the skills ([Skills](#skills)) and the workspace agents
+4. It starts reading the prompt variables and lists the tools of `tools/v1`;
+   a tool not made with `defineTool` fails the run here ([Tools](#tools)).
+   It then reads the skills ([Skills](#skills)) and the workspace agents
    ([Agents](#agents)) of `thread.cwd` in parallel. A Thread running as an
-   agent is not offered the `coding-workflow` skill.
+   agent is not offered the built-in `coding-workflow` skill; an
+   always-available or workspace skill of that name stays.
 5. It resolves the language model and its input modalities through
    `models/v1`, and wraps the provider to read attachments
    ([Attachments](#attachments)).
-6. It answers every tool call of the history's last assistant turn that has
-   no result with the tool result `The host was restarted while this tool call
+6. It answers every tool call of the history's trailing assistant turn (the
+   last assistant message, followed only by tool messages) that has no
+   result with the tool result `The host was restarted while this tool call
 was running, so its result was lost. Call it again if you still need it.`,
    marked `incomplete`: a call is answered rather than run again.
 7. It builds the system prompt ([The system prompt](#the-system-prompt)) and
-   creates an agent of `packages/agent` with the provider, model, effort, the
-   tools ([Tools](#tools)), a fresh tool-call store and the message store.
+   creates an agent of [`packages/agent`](../../../packages/agent/README.md)
+   with the provider, model, effort, the tools ([Tools](#tools)), a fresh
+   tool-call store and the message store.
    The agent's system prompt is a function that passes the built text
    through `onBeforeModelRequestHook` before every request.
 8. It measures context pressure once with the length of the enveloped input
    ([Compaction](#compaction)), then streams the agent over the input in its
-   envelope ([Input envelope](#input-envelope)), with `resume`, the signal,
-   `maxTurns: execution.maxTurns` and the tool result cap.
+   envelope ([Input envelope](#input-envelope)), with `resume`
+   ([Resuming](../../../packages/agent/README.md#resuming)), the signal,
+   `maxTurns` set to the configuration's `execution.maxTurns` and the tool
+   result cap ([`AgentRunOptions`](../../../packages/agent/README.md#agentrunoptions)).
+   Past `maxTurns` the run fails with the agent's `turn_limit_exceeded` error
+   `Agent exceeded its <n>-turn limit.`
+   ([Turn limit](../../../packages/agent/README.md#turn-limit)).
 9. Before every model request after the first, it reads the agents and the
    skills again and gives the model at most one "Agents changed" and one
-   "Skills changed" message, in that order ([Mid-run changes](#mid-run-changes)).
+   "Skills changed" message, in that order ([Mid-run changes](#mid-run-changes)),
+   through the agent's `beforeRequest`, which stores them as user messages at
+   the end of the history
+   ([Messages before a request](../../../packages/agent/README.md#messages-before-a-request)).
 10. When the session has `steers`, each input that arrives while the run
-    works reaches the model in its source's envelope. A steer from a bundle
-    with `retain: true` is recorded in `meta.retained` under
-    `<bundleId>:<reason>` at the index where the run stores it.
+    works reaches the model in its source's envelope, through the agent's
+    `steering` ([Steering](../../../packages/agent/README.md#steering)). A
+    steer from a bundle with `retain: true` is recorded in `meta.retained`
+    under `<bundleId>:<reason>` at the index where the run stores it. Only
+    such a steer is recorded: the run's own input never is, even a retained
+    bundle instruction the runtime queued because no prompt was running to
+    take it in, or because the Thread was stopping or paused
+    ([`runner.ts`](../../runtime/runtime/src/host/domain/runner.ts)).
 
-For each streamed event the run:
+For each streamed event
+([`AgentEvent`](../../../packages/agent/README.md#agentevent)) the run:
 
 - records it; a `response.started` event gains the run's `providerId`;
 - saves the history with the event when the event is `response.finished`,
@@ -387,9 +586,11 @@ For each streamed event the run:
   `usage`, and measures pressure again after `response.finished`;
 - runs one forced condensation when an `error` event reads as a context
   overflow, and the run still fails with the provider's error;
-- checks the signal, and keeps the answer text of `agent.finished`.
+- then rejects with the signal's reason once the signal is aborted, and keeps
+  the answer text of `agent.finished`.
 
-`run` resolves with `{ text }`, the agent's final answer. When it ends —
+`run` resolves with `{ text }`, the answer text of `agent.finished`, or `''`
+when none arrived. When it ends —
 completed, aborted or failed — it saves the history once more, after the
 deltas it still held. A thrown context-overflow error first triggers one
 forced condensation, whose own failure is ignored.
@@ -411,7 +612,10 @@ empty, separated by blank lines ([`src/host/executor.ts`](src/host/executor.ts))
    agent's name and its instructions, themselves rendered with the run's
    prompt variables. Instructions that cite a name other than a prompt
    variable, hold a partial or do not parse make the run reject before its
-   first model request, with the template error named `agent <name>`.
+   first model request with an `Error` `Template "agent <name>" cites
+undeclared name "<x>".`, `Template "agent <name>" includes partial "<x>";
+partials are not supported.` or `Template "agent <name>": <parse error>`
+   ([`templates.ts`](src/host/prompts/templates.ts)).
 2. `# Agents` ([Agents](#agents)).
 3. `# Skills` ([Skills](#skills)).
 
@@ -437,7 +641,10 @@ initialize a repository for a deliverable meant to be kept and to ask first
 for an experiment; how inputs arrive (the five envelopes, `<message>` and
 `<ui-action>` inside a `<user-request>`); how review comments arrive
 (`<comments>`, `<target>`, `<comment>`) and that each is answered with the
-`comment_reply` tool; and to keep the final response concise.
+`comment_reply` tool; and to keep the final response concise. `# Environment`
+lists `Operating system of the sandbox: <os>` only when `os` is set,
+`Today's date: <date> (<timezone>)`, and `User's name: <user.name>` only when
+`user` is set.
 
 ### Prompt variables
 
@@ -472,8 +679,10 @@ labels in [`summarize.ts`](src/host/compaction/summarize.ts), and the
 [`markers.ts`](src/host/compaction/markers.ts) ([Compaction](#compaction)).
 Short tool results and notes are also built in TypeScript: the interrupted
 call's result in [`executor.ts`](src/host/executor.ts), the image notes in
-[`attachments.ts`](src/host/attachments.ts), and the answers and errors of
-`load_skill` in [`load-skill.ts`](src/host/skills/load-skill.ts).
+[`attachments.ts`](src/host/attachments.ts), the answers and errors of
+`load_skill` in [`load-skill.ts`](src/host/skills/load-skill.ts), and the
+envelope that wraps every input and the bundle's own instructions in
+[`envelope.ts`](src/host/envelope.ts) ([Input envelope](#input-envelope)).
 [`src/host/prompts/templates.ts`](src/host/prompts/templates.ts):
 
 - `loadTemplate(url, names)` reads a template synchronously when its module
@@ -506,23 +715,31 @@ The names each template may cite: `system.md` the prompt variables;
 
 - The run offers every tool `tools/v1` lists for the prompt, in the order it
   lists them, each bound to the prompt's call. A listed tool not made with
-  `defineTool` fails the run with `Tool "<name>" was not defined with
-defineTool.`
-- Before the model is called, every tool's settings are resolved from the
-  configuration's `tools.<tool name>`: each declared field takes its stored
-  value, or its default when no value is stored. A value that is empty or
-  only whitespace, stored or default, is dropped; for a required field it
-  refuses the prompt with `Tool <name> requires a <key> value.` Keys no
-  declared field names are dropped.
-  ([`src/host/tool-config.ts`](src/host/tool-config.ts)).
+  `defineTool` fails the run with a `TypeError` `Tool "<name>" was not
+defined with defineTool.`, before any skill is read.
+- Every listed tool's declared settings are checked against the
+  configuration's `tools.<tool name>`, tools the modality filter leaves out
+  included: each field takes its stored value, even a blank one, or its
+  default when none is stored. A required field whose value is absent, empty
+  or only whitespace makes `run` reject with an `Error` `Tool <name> requires
+a <key> value.` while it builds the agent: after the system prompt and the
+  language model are resolved, before any model request. The resolved values
+  are passed to no tool ([`src/host/tool-config.ts`](src/host/tool-config.ts)).
 - A tool whose declared `resultModalities` the model does not all read is
   left out; a model whose catalog does not say keeps every tool.
 - `load_skill` comes last. It is never registered with `tools/v1`, and it is
   left out of the definitions sent to the model until the run first lists a
-  skill to load, and offered from then on.
+  skill to load, and offered from then on. `tools/v1` keeps names unique only
+  among the tools registered with it, so a `tools/v1` tool named
+  `load_skill` that the modality filter keeps makes every run reject, while
+  it builds the agent, with the `ToolErrorObject` `duplicate_tool` `Tool names must be unique: load_skill`
+  ([`tools.ts`](../../../packages/tool/src/lib/tools.ts)).
 - Each tool result is capped at the configuration's
   `execution.maxToolResultChars`, or `defaultMaxToolResultChars` (50,000)
-  when it is absent; `load_skill` is exempt.
+  when it is absent; `load_skill` is exempt. How the cap cuts a result, and
+  how a failing tool's error reaches the model, are the agent's
+  ([Tool results and the ledger](../../../packages/agent/README.md#tool-results-and-the-ledger),
+  [Tool failures](../../../packages/agent/README.md#tool-failures)).
 
 ## Model
 
@@ -533,6 +750,13 @@ defineTool.`
   `providerId` runs on its own provider, model and effort; a Thread without
   one runs on the workspace default's provider, with its own model and effort
   over the default's when set ([`src/host/executor.ts`](src/host/executor.ts)).
+- A Thread without `providerId` is never unavailable. A Thread with one is
+  unavailable when it has no `model` (`issue: 'model'`, `model: ''`), when no
+  configured provider has that id (`issue: 'provider'`), or when that
+  provider lists models and none has that name (`issue: 'model'`); an effort
+  the model does not list leaves it available
+  ([`execution.ts`](../../runtime/runtime/src/contracts/execution.ts),
+  [Execution](../../runtime/runtime/README.md#execution-provider-model-and-effort)).
 - When that execution is unavailable, the run logs one warning `Thread
 execution unavailable` with `{ threadId, providerId, model, issue }` and
   rejects before any model request with an `Error` whose `code` is
@@ -545,8 +769,14 @@ model in the conversation footer.`
 
 ## Attachments
 
-When the session has `attachment`, the provider is wrapped
-([`src/host/attachments.ts`](src/host/attachments.ts)). The history stays
+The flow across bundles is in
+[Attachments](../../../docs/features/attachments.md). When the session has
+`attachment`, the provider is wrapped
+([`src/host/attachments.ts`](src/host/attachments.ts)). Only the agent loop's
+requests go through the wrapper: automatic compaction
+([Compaction](#compaction)) gets the unwrapped provider, so its summarizer
+reads the reference lines as text and never image bytes
+([`src/host/executor.ts`](src/host/executor.ts)). The history stays
 text: an image is a Markdown image line in a user message or a tool result,
 whose alt text is the image's name and whose target is
 `doric-attachment:sha256-<64 hex>`. In each request, a user or tool message with string content that
@@ -554,12 +784,16 @@ holds such lines is rewritten:
 
 - for a model that reads images (its input modalities include `image`, or
   the catalog does not say), each line whose attachment the Project holds
-  becomes a text part ending in `[Image: <name>]` followed by an image part
+  becomes a text part ending in `[Image: <name>]`, with the name the
+  attachment read answers, followed by an image part
   `data:<mediaType>;base64,<bytes>`; a line the Project does not hold stays
   text;
 - for a model that reads no images, each line becomes
-  `[Image: <name> (not shown: this model does not read images)]`, and nothing
-  is read.
+  `[Image: <alt text> (not shown: this model does not read images)]`, and
+  nothing is read.
+
+The messages of one request are rewritten concurrently; the lines of one
+message are read in order.
 
 Each attachment is read once per run through `session.attachment`, however
 many requests carry it: the read's promise is cached for the run. A read that
@@ -590,12 +824,17 @@ four lists in parallel:
   `list({ cwd })`. A source whose `list` takes more than 5,000 ms, rejects, or
   answers what fails the contract's schema offers nothing this time and is
   logged once per prompt through `log/v1` as `Skill source left out` with
-  `{ bundleId, reason }`.
+  `{ bundleId, reason }`; `reason` is `No answer within 5000 ms.`, the
+  rejection's message, or the schema error's message.
 
-The frontmatter reader takes the top-level `<key>:` of a block opened by
-`---` and closed by the next `---` line (or the end): plain values with
-indented continuation lines joined by one space, single- or double-quoted
-values, folded `>` and literal `|` blocks; an empty value counts as absent
+The frontmatter reader takes the first line starting at column 0 with
+`<key>:` in a block whose first line is `---` and which the next `---` line
+(or the end) closes. A value is plain, with indented continuation lines
+joined by one space; single-quoted, `''` read as `'`; double-quoted, only
+`\"` and `\\` unescaped; a folded `>` block, its non-blank lines trimmed and
+joined by one space; or a literal `|` block, its lines joined by newlines
+without their common indent. Chomping indicators and a comment after `>` or
+`|` are ignored, and an empty value counts as absent
 ([`src/host/skills/sources.ts`](src/host/skills/sources.ts)).
 
 ### The `# Skills` section
@@ -608,8 +847,10 @@ values, folded `>` and literal `|` blocks; an empty value counts as absent
   16,000 characters; the first one past that, and every one after it, become
   rows at the front of the built-in list.
 - `## Skills to load` holds up to three tables, `### Built-in skills`,
-  `### Workspace skills` and `### MCP server skills` (the source skills, with
-  the text "Served by the Project's MCP servers." for every source), each
+  `### Workspace skills` (with the line "From `.agents/skills` in the working
+  directory this prompt started in." once under its heading) and
+  `### MCP server skills` (the source skills, with the line "Served by the
+  Project's MCP servers." once under its heading), each
   only when its list is not empty. Each row is `| <locator> | <description> |`.
 - A locator is the bundle skill's name, `cwd/<directory>` for a workspace
   skill, and `<bundle id>/<group>/<name>`, or `<bundle id>/<name>` without a
@@ -638,13 +879,20 @@ starting work that a listed skill's description matches."
 - A name the run does not list now fails with `Unknown skill id "<name>".
 Call load_skill with one of: \`a\`, \`b\`.`, or `Unknown skill id
   "<name>". No skill can be loaded now.` when none is listed; nothing is read.
-- A listed skill is read again on every call: a bundle skill's body; a
-  workspace skill through `runtime.lease/v1.readFile`, preceded by the line
+- A listed skill is read on every call: a bundle skill answers the body
+  `skills/v1` gave at run start, verbatim; a workspace skill is read again
+  through `runtime.lease/v1.readFile`, preceded by the line
   ``From the workspace: `<path>`. Paths in it are relative to `<dir>`.``; a
-  source skill through that source's `read`, preceded by its `origin` when it
-  gives one. The body is the text after the frontmatter, trimmed. A read that
-  fails, a source that is gone or an answer that fails the schema fails the
-  call with `The skill <name> could not be loaded: <cause>`.
+  source skill is read again through that source's `read`, preceded by its
+  `origin` when it gives one. For these two the body is the text after the
+  frontmatter, trimmed. A source's `read` has no timeout of its own: the
+  source bounds it and the prompt's signal ends it. A read that fails fails
+  the call with `The skill <name> could not be loaded: <cause>`, where the
+  cause of a source that is gone is `The skill source <bundleId> is not
+available.` and that of an answer failing the schema is `The skill source
+<bundleId> answered an invalid skill: <schema message>`.
+- The `name` field is described as "The skill's id, as listed in the Skill
+  column.", and the tool is defined with `strict: true`.
 - The answer is `# Skill: <name>`, the origin line when there is one, and the
   body, joined by blank lines and cut at 64,000 characters with `...`. When
   the history's most recent load of that locator is not cut and has the same
@@ -656,8 +904,13 @@ Before every model request after the first, [`liveCatalog`](src/host/skills/live
 reads the working directory through `runtime.workspace/v1` (unknown or
 failed: unchanged), scans `.agents/skills` again only when the directory
 moved, and reads every source again with that directory; a source left out
-keeps its last list and a source that is gone takes its skills with it.
-Built-in and always-available skills are not compared.
+keeps its last list and a source that is gone takes its skills with it. A
+scan of a moved directory that fails gives no workspace skills, so every
+workspace skill goes away. Built-in and always-available skills are not
+compared. A skill is identified as `bundle:<name>`, `workspace:<SKILL.md
+path>` or `source:<bundleId>` and its `reference`: only identities that
+appear or go away are told, and a changed name or description under the same
+identity is not ([`catalog.ts`](src/host/skills/catalog.ts)).
 [`skillCatalogChange`](src/host/skills/catalog.ts) then compares with the
 last announced state:
 
@@ -680,12 +933,13 @@ replaced is told again.
 [`src/host/agents/definitions.ts`](src/host/agents/definitions.ts):
 
 - **Format.** An agent is one Markdown file `<name>.md`, its name matching
-  `agentNamePattern`, with a YAML frontmatter: `description` (required),
-  `model` and `effort` (optional, `effort` one of `none`, `minimal`, `low`,
-  `medium`, `high`, `xhigh`, `max`; blank counts as absent). `name:` and other
-  keys are ignored. The text after the frontmatter, trimmed, is the
-  instructions: a mustache template that may cite only the prompt variables
-  (`os`, `date`, `timezone`, `user`, `user.name`); literal tags need a
+  `agentNamePattern`, with a frontmatter read by the same reader as skills
+  ([What a run reads](#what-a-run-reads)): `description` (required), `model`
+  and `effort` (optional, `effort` one of `none`, `minimal`, `low`, `medium`,
+  `high`, `xhigh`, `max`; blank counts as absent). `model` is taken as
+  written, unchecked. `name:` and other keys are ignored. The text after the
+  frontmatter, trimmed, is the instructions: a mustache template that may
+  cite only the prompt variables (`os`, `date`, `timezone`, `user`, `user.name`); literal tags need a
   delimiter switch such as `{{=<% %>=}}`.
 - **Invalid.** A file larger than 64,000 bytes, without a description, with
   an unknown effort, or whose instructions cite another name, hold a partial
@@ -700,26 +954,47 @@ instructions are not a valid template: <cause>`, and, for a workspace file
   in order in [`built-in.ts`](src/host/agents/built-in.ts) and read at
   import: `triage`, `search`, `spec`, `review`, `plan`, `contracts`,
   `tests`, `implementation`, `cleanup` and `docs`, the steps of the coding
-  workflow. An invalid file, a file name outside the pattern or two files of
+  workflow. Each file's instructions open with the same block,
+  `## Workflow step` then `## Tools` (the step's input and limits, and the
+  tools it may use, naming the ten steps by title), followed by `## <Name>`,
+  the agent's name capitalized, which holds its step; `triage`, `spec`,
+  `review` and `docs` put a one-line `{{! … }}` attribution before the block,
+  which renders to nothing. No file names a `model` or an `effort`.
+  [`tests/agents.test.ts`](tests/agents.test.ts) checks the shared block, the
+  heading and the listed names and descriptions
+  ([`triage.md`](src/host/agents/triage.md)). The `coding-workflow` skill
+  names the same ten agents in its description, its steps, its routes and its
+  effort table ([`SKILL.md`](src/skills/coding-workflow/SKILL.md),
+  [The coding workflow](#the-coding-workflow)); no code checks the two lists
+  against each other. An invalid file, a file name outside the pattern or two files of
   one name make activation throw.
 - **Workspace agents** are the `.agents/agents/*.md` files of the Thread's
   working directory, scanned with one `runtime.lease/v1` exec of `sh -c` with
   a 5,000 ms timeout: at most 64 regular files in sorted glob order, each with
   its size and its first 4,096 bytes. File names outside the pattern are
-  ignored; an unreadable size counts as too large; the template is checked
-  only when the head is the whole file. A missing provider, a rejection, a
-  non-zero or null exit code gives none. A workspace file, valid or not,
-  hides the built-in of its name; an invalid one is left out.
+  ignored; an unreadable size counts as too large; every frontmatter field is
+  read from the head, so a `description`, `model` or `effort` line past its
+  4,096 bytes counts as absent and a value is cut where the head ends; the
+  template is checked only when the head is the whole file.
+  `default.agents/v1.resolve` ([`default.agents/v1`](#defaultagentsv1-100))
+  reads the whole file again and checks it whole, so what it answers can
+  differ from the listed row, down to an `invalid_definition` for an agent the
+  scan listed as valid. A missing provider, a rejection, a non-zero or null
+  exit code gives none. A workspace file, valid or not, hides the built-in of
+  its name; an invalid one is left out.
 - **The `# Agents` section** ([`src/host/agents/catalog.ts`](src/host/agents/catalog.ts),
   [`agents.md`](src/host/prompts/agents.md)) holds one
-  `| <name> | <description> |` row per agent in effect, descriptions cut at
-  500 characters; trailing rows are dropped, and counted, while the rows pass
-  8,000 characters, and at least one row always stays. No agent, no section.
+  `| <name> | <description> |` row per agent in effect, each description put
+  on one line, pipe-escaped and cut at 500 characters with `...`; trailing
+  rows are dropped, and counted, while the rows pass 8,000 characters, and at
+  least one row always stays. No agent, no section.
 - **Mid-run changes** ([`src/host/agents/live.ts`](src/host/agents/live.ts)):
   before every request after the first, the run reads the working directory
-  and scans `.agents/agents` again only when it moved. When the agents changed
-  by name, description or source, the model reads one
-  `<bundle-instruction bundle="default" reason="agents-changed">` message
+  and scans `.agents/agents` again only when it moved; a scan that fails gives
+  no workspace agents, so they go away and only the built-ins stay in effect.
+  When the agents changed by name, description or source, the model reads one
+  `<bundle-instruction bundle="default" reason="agents-changed">` message,
+  stored in the history where it was read,
   from [`agents-changed.md`](src/host/prompts/agents-changed.md), before any
   "Skills changed" one: the added or changed agents as a table fitted like
   the section, and the names that went away. A change of `model` or `effort`

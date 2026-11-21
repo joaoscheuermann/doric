@@ -3,21 +3,52 @@
 `core` is the default provider of the basic Doric services: hooks, logging, the
 tool and skill registries, storage, stored credentials, events, settings and
 models on the host; commands, windows, menus and local settings in the
-desktop's main process; and the UI, navigation, regions and commands of each
-app window. Most of what a bundle does in Doric, it does through a contract the
-core provides. See the [main README](../../../README.md) for Doric as a whole
+desktop's `desktopMain` process; and the UI, navigation, regions and commands
+of each app window. Most of what a bundle does in Doric, it does through a
+contract the core provides. See the [main README](../../../README.md) for Doric as a whole
 and [`packages/bundle`](../../../packages/bundle/README.md) for how bundles,
 parts and contracts work.
 
 The features that run through the core's contracts are described in these
 feature docs, which state each contract at the level the feature needs:
-[credentials](../../../docs/features/credentials.md) (`secrets/v1`, and the
-redaction of `log/v1` and `events/v1`),
-[settings](../../../docs/features/settings.md) (`settings/v1` and
-`core.open-settings/v1`), [default agent](../../../docs/features/default-agent.md)
-(handlers of a `transform` hook through `hooks/v1`) and
-[UI redesign](../../../docs/features/ui-redesign.md) (the Back and Forward of
-`navigation/v1`).
+
+- [Credentials](../../../docs/features/credentials.md): `secrets/v1`, the
+  start step, and the redaction of `log/v1` and `events/v1`.
+- [Settings](../../../docs/features/settings.md): `settings/v1` and
+  `core.open-settings/v1`.
+- [Models and providers](../../../docs/features/models-and-providers.md):
+  `models/v1` and the `models.provider/v1` kinds it aggregates.
+- [Provider sign-in](../../../docs/features/provider-sign-in.md): the secret
+  `models/v1` passes to a kind's catalog read.
+- [Per-thread model](../../../docs/features/per-thread-model.md):
+  `models/v1.resolve`.
+- [Usage](../../../docs/features/usage.md): `models/v1.contextWindow`.
+- [Attachments](../../../docs/features/attachments.md): the blobs of
+  `storage/v1` and `models/v1.inputModalities`.
+- [Projects and Threads](../../../docs/features/projects-and-threads.md):
+  `storage/v1`, `events/v1` and `core.event-hooks/v1`.
+- [Skills](../../../docs/features/skills.md),
+  [coding workflow](../../../docs/features/coding-workflow.md) and
+  [web research](../../../docs/features/web-research.md): `skills/v1` and
+  `tools/v1`.
+- [MCP](../../../docs/features/mcp.md): `tools/v1` and `secrets/v1`.
+- [Terminal](../../../docs/features/terminal.md): `tools/v1`, `secrets/v1`,
+  `hooks/v1` and `log/v1` on the host, and `ui/v1`, `regions/v1` and
+  `navigation/v1` in the window.
+- [Files](../../../docs/features/files.md): `tools/v1`, `hooks/v1`,
+  `commands/v1`, `ui/v1` and `regions/v1`.
+- [Conversation](../../../docs/features/conversation.md): `hooks/v1`, `ui/v1`,
+  `navigation/v1`, `regions/v1`, `commands/v1`, `menus/v1` and `models/v1`.
+- [Default agent](../../../docs/features/default-agent.md): handlers of a
+  `transform` hook through `hooks/v1`, and `tools/v1` and `models/v1`.
+- [Local history](../../../docs/features/local-history.md): `hooks/v1` in
+  `desktopMain`.
+- [Host API](../../../docs/features/host-api.md): `secrets/v1`, `models/v1` and
+  `tools/v1`, which the host's routes call.
+- [UI redesign](../../../docs/features/ui-redesign.md): the workspace window,
+  whose Back and Forward follow `navigation/v1`.
+- [Bundle isolation](../../../docs/features/bundle-isolation.md): the basic
+  contracts the core provides, and where each part runs.
 
 ## Manifest
 
@@ -36,7 +67,7 @@ redaction of `log/v1` and `events/v1`),
 
 `provides`, with the part that provides each entry:
 
-| Contract                            | Kind    | Host | Desktop main | Window client |
+| Contract                            | Kind    | Host | desktopMain  | Window client |
 | ----------------------------------- | ------- | :--: | :----------: | :-----------: |
 | `hooks/v1@1.0.0`                    | service |  ✓   |      ✓       |       ✓       |
 | `log/v1@1.0.0`                      | service |  ✓   |      ✓       |       ✓       |
@@ -71,6 +102,23 @@ the core implements that specification.
 
 ## Loading
 
+- Each part runs in one process
+  ([`process-isolation.md`](../../../docs/architecture/bundles/process-isolation.md)).
+  On the host, the **kernel** is the host process itself, and a
+  **generation** is one Node process, forked by the kernel, that runs every
+  other scheduled host bundle; a call made in the kernel has generation 0, and
+  a call made in generation `n` carries `n` across the envelope. The core is
+  kernel-resident, so its host part always runs in the kernel
+  ([`partition.ts`](../../../packages/bundle/src/process/partition.ts)), and a
+  bundle in a generation process reaches its contracts through a stub over
+  the envelope. On the desktop, the Electron main process plays the kernel and
+  provides only platform contracts (`doric.windows/v1`, `doric.menus/v1`,
+  `doric.cache/v1`, `doric.migrations/v1`, `doric.log/v1` and others); the
+  core's `desktopMain` part runs, with every other `desktopMain` part of the
+  desktop generation, in one Electron `utilityProcess`, the `desktopMain`
+  process
+  ([`process.ts`](../../../app/desktop/doric/src/platform/generation/process.ts)).
+  The client part runs in each app window.
 - The composition names this bundle as its core (`"core": "core"` in
   [`composition.json`](../../../app/backend/doric-host/composition.json)). Each
   environment activates its bundles in three phases: the foundation, then the
@@ -109,33 +157,52 @@ the core implements that specification.
   [`src/host/storage/facade.ts`](src/host/storage/facade.ts),
   [`src/host/secrets/facade.ts`](src/host/secrets/facade.ts)).
 - The host part registers a start step on `doric.app.hooks/v1`
-  `onHostStartHook`: it calls `storage.backend/v1.connect`, enters the startup
-  stage `credential_activation` of `doric.startup/v1`, logs
-  `Activating stored credentials`, and calls `secrets/v1.list`. A storage that
-  cannot connect, or a credential key that is missing or unusable, fails the
-  host's start there ([`src/host/secrets/activation.ts`](src/host/secrets/activation.ts)).
-- On the host, the core defines `core.event-hooks/v1` during activation; a
-  host with no catalog (a unit test) cannot define it, and appends then fire no
-  hook ([`src/host/index.ts`](src/host/index.ts)).
+  `onHostStartHook`: it calls `connect` on the active `storage.backend/v1`
+  provider, enters the startup stage `credential_activation` of
+  `doric.startup/v1`, logs `Activating stored credentials` through
+  `doric.startup/v1.log`, and calls `list` on the active `secrets/v1`
+  provider, which reads the stored credentials
+  ([`src/host/secrets/activation.ts`](src/host/secrets/activation.ts)). A
+  storage that cannot connect, or a credential key that is missing or
+  unusable, rejects the step, and the host's start fails: the host logs
+  `Doric failed to start` at level `fatal` with `{ stage }` naming the last
+  stage set, without the error, and exits with code 1
+  ([host README](../../../app/backend/doric-host/README.md#startup-and-failures)).
+- On the host, the core defines `core.event-hooks/v1` during activation. If
+  that `define` fails for any reason (a host with no catalog, such as a unit
+  test, is one), the failure is ignored and appends fire no hook
+  ([`src/host/index.ts`](src/host/index.ts)).
 
 ## Contracts it uses
 
-| Contract                                                                              | Where                | What for                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `storage.backend/v1`                                                                  | host                 | Every `storage/v1` operation, the backend's limits (`capabilities`) and the connection at start                                                                                         |
-| `secrets.backend/v1`                                                                  | host                 | Loading, writing and deleting stored credentials                                                                                                                                        |
-| `models.provider/v1` (many)                                                           | host                 | The model kinds `models/v1` lists and builds, aggregated with `services.whenAvailable`                                                                                                  |
-| `storage/v1`, `secrets/v1`, `hooks/v1`, `log/v1`, `tools/v1`                          | host                 | The active providers of these contracts, through `services.use`: settings are stored through `storage/v1`, events are redacted with `secrets/v1`, skills check tools through `tools/v1` |
-| `commands/v1`, `core.commands/v1`, `menus/v1`, `ui/v1`, `navigation/v1`, `regions/v1` | desktop main, client | The active providers, as above: the client sends a command it does not hold to `core.commands/v1`, and the structural elements draw through `ui/v1`                                     |
-| `doric.catalog/v1`                                                                    | every part           | The manifests (`provides`) for ownership checks, the activation order of hook handlers, the active generation and the active host providers                                             |
-| `doric.diagnostics/v1`                                                                | every part           | Reporting a failing hook handler, log write or settings listener                                                                                                                        |
-| `doric.log/v1`, `doric.bundle/v1`                                                     | every part           | Writing log records, and the environment a record names                                                                                                                                 |
-| `doric.app.hooks/v1`                                                                  | host, desktop main   | The host start step; the desktop's app-ready and app-activate steps                                                                                                                     |
-| `doric.startup/v1`                                                                    | host                 | The `credential_activation` stage and its log line                                                                                                                                      |
-| `doric.windows/v1`, `doric.menus/v1`                                                  | desktop main         | Opening, focusing and remembering windows; the menu skeleton, items, keybindings and contexts                                                                                           |
-| `doric.migrations/v1`, `doric.cache/v1`                                               | desktop main         | Copying the saved selection into the app origin; the directory of the local settings file                                                                                               |
-| `doric.elements/v1`                                                                   | client               | Owning custom element tags and giving each created element its owner's services                                                                                                         |
+| Contract | Where | What for |
+| --- | --- | --- |
+| `storage.backend/v1` | host | Every `storage/v1` operation, the backend's limits (`capabilities`) and the connection at start ([`src/host/storage/facade.ts`](src/host/storage/facade.ts), [`src/host/secrets/activation.ts`](src/host/secrets/activation.ts)) |
+| `secrets.backend/v1` | host | Loading, writing and deleting stored credentials ([`src/host/secrets/facade.ts`](src/host/secrets/facade.ts)) |
+| `models.provider/v1` (many) | host | The model kinds `models/v1` lists and builds, aggregated with `services.whenAvailable` ([`src/host/models/index.ts`](src/host/models/index.ts)) |
+| `storage/v1` | host | Storing settings and appending events, and declaring the core's two storage types, through the active provider ([`src/host/settings/facade.ts`](src/host/settings/facade.ts), [`src/host/events/facade.ts`](src/host/events/facade.ts), [`src/host/index.ts`](src/host/index.ts)) |
+| `secrets/v1` | host | The redaction list of events, the secret a model kind reads, the start step's `list` ([`src/host/events/facade.ts`](src/host/events/facade.ts), [`src/host/models/index.ts`](src/host/models/index.ts), [`src/host/secrets/activation.ts`](src/host/secrets/activation.ts)); the redaction list of `log/v1` ([`src/shared/log.ts`](src/shared/log.ts)) |
+| `secrets/v1` | `desktopMain` | The redaction list of `log/v1`, which has no provider there, so records are not redacted ([`src/shared/log.ts`](src/shared/log.ts)) |
+| `hooks/v1` | host | Defining `core.event-hooks/v1` and registering the start step ([`src/host/index.ts`](src/host/index.ts), [`src/host/secrets/activation.ts`](src/host/secrets/activation.ts)) |
+| `hooks/v1` | `desktopMain` | Defining `core.hooks/v1` and registering the app-ready and app-activate steps ([`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/windows.ts`](src/desktop/windows.ts)) |
+| `log/v1` | host | `Model catalog could not be read` ([`src/host/models/index.ts`](src/host/models/index.ts)) |
+| `log/v1` | `desktopMain` | `Selection migration did not run` ([`src/desktop/migrations.ts`](src/desktop/migrations.ts)) |
+| `log/v1` | client | `Could not set the menu context of the window path.` ([`src/client/menu-context.ts`](src/client/menu-context.ts)) |
+| `tools/v1` | host | Skills check the tools they allow ([`src/host/skills.ts`](src/host/skills.ts)) |
+| `commands/v1` | `desktopMain` | Registering `core.open-settings/v1` and running the commands a window sends ([`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/commands-bridge.ts`](src/desktop/commands-bridge.ts)) |
+| `core.commands/v1`, `menus/v1` | client | Sending a command the window does not hold to `desktopMain`; reporting the menu context of the window path ([`src/client/commands.ts`](src/client/commands.ts), [`src/client/menu-context.ts`](src/client/menu-context.ts)) |
+| `ui/v1`, `navigation/v1`, `regions/v1` | client | The structural elements, which draw through `ui/v1`, follow the route and show a region's items ([`src/client/index.ts`](src/client/index.ts), [`src/client/elements/outlet.ts`](src/client/elements/outlet.ts), [`src/client/elements/region.ts`](src/client/elements/region.ts)) |
+| `doric.catalog/v1` | every part | The manifests (`provides`) for ownership checks, the activation order of hook handlers, the active generation and the active host providers ([`src/shared/state.ts`](src/shared/state.ts), [`src/shared/hooks.ts`](src/shared/hooks.ts), [`src/shared/partition.ts`](src/shared/partition.ts)) |
+| `doric.diagnostics/v1` | every part | Reporting a failing hook handler, log write or settings listener ([`src/shared/hooks.ts`](src/shared/hooks.ts), [`src/shared/log.ts`](src/shared/log.ts), [`src/shared/state.ts`](src/shared/state.ts)) |
+| `doric.log/v1`, `doric.bundle/v1` | every part | Writing log records, and the environment a record names ([`src/shared/log.ts`](src/shared/log.ts)) |
+| `doric.app.hooks/v1` | host, `desktopMain` | The host start step; the desktop's app-ready and app-activate steps ([`src/host/secrets/activation.ts`](src/host/secrets/activation.ts), [`src/desktop/index.ts`](src/desktop/index.ts)) |
+| `doric.startup/v1` | host | The `credential_activation` stage and its log line ([`src/host/secrets/activation.ts`](src/host/secrets/activation.ts)) |
+| `doric.windows/v1`, `doric.menus/v1` | `desktopMain` | Opening, focusing and remembering windows; the menu skeleton, items, keybindings and contexts ([`src/desktop/windows.ts`](src/desktop/windows.ts), [`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/menus.ts`](src/desktop/menus.ts)) |
+| `doric.migrations/v1`, `doric.cache/v1` | `desktopMain` | Copying the saved selection into the app origin; the directory of the local settings file ([`src/desktop/migrations.ts`](src/desktop/migrations.ts), [`src/desktop/settings.ts`](src/desktop/settings.ts)) |
+| `doric.elements/v1` | client | Owning custom element tags and giving each created element its owner's services ([`src/client/ui.ts`](src/client/ui.ts)) |
 
+Every contract above that the core also provides is reached through
+`services.use`, so the core uses whichever provider the composition chose.
 The runtime lets the core use any basic contract without listing it under
 `requires`, which is why `models.provider/v1` and the core's own contracts are
 not listed ([`services.ts`](../../../packages/bundle/src/runtime/services.ts)).
@@ -145,8 +212,11 @@ declared in [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts).
 ## Rules every provider of the core follows
 
 - **Caller.** Every method acts for `call.caller.bundleId`, the bundle that
-  called it. The platform principal `doric` passes every ownership check
-  ([`src/shared/state.ts`](src/shared/state.ts)).
+  called it. For the platform principal `doric`, the definition-ownership
+  check below is skipped, and the version it records is the caller's version
+  ([`src/shared/state.ts`](src/shared/state.ts)). `doric` has no manifest, so
+  `hooks/v1.define` of a bundle hooks contract refuses it with `not_owner`
+  ([`src/shared/hooks.ts`](src/shared/hooks.ts)).
 - **Generations.** On the host, registries of tools, skills, credential
   kinds, storage types, settings spaces, event types, event sinks and hook
   handlers are partitioned by generation. A registration made by a call of
@@ -163,27 +233,63 @@ declared in [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts).
   namespace (its first segment before `.` or `/`), else `not_owner`, and only
   when that bundle lists the id under `provides`, else `undeclared_provide`.
   The version written with a settings space is the version of that `provides`
-  entry ([`src/shared/state.ts`](src/shared/state.ts)).
-- **Errors.** A refusal is a `ContractError` with a code; an `invalid_input`
-  that comes from a schema lists each issue as `path: message` (only `message`
-  when the path is empty), joined with `; `
-  ([`src/shared/issues.ts`](src/shared/issues.ts)). Two providers differ:
-  `hooks/v1.execute` puts zod's own error message in its `invalid_input` and
-  the issues in `details.issues` ([`src/shared/hooks.ts`](src/shared/hooks.ts)),
-  and `models/v1` throws a plain `Error`, with no code, for a configuration
-  that lists no providers, an invalid configured provider, an unknown provider
-  kind and an unavailable provider
+  entry. The manifests come from `doric.catalog/v1`, read once per caller
+  generation (`call.caller.generation`) on the first check and kept for the
+  life of the activated part ([`src/shared/state.ts`](src/shared/state.ts)).
+- **Errors.** A refusal is a
+  [`ContractError`](../../../packages/bundle/src/contracts/error.ts) with a
+  `code`, a message and optional `details`
+  ([`packages/bundle` README](../../../packages/bundle/README.md#errors)). A
+  message built from schema issues lists each issue as `path: message`, with
+  the path's segments joined with `.` (only `message` when the path is empty),
+  and the issues joined with `; `; each method puts its own prefix before
+  that text, such as `Stored settings <id> do not match their schema: `. The
+  same text serves an `invalid_input` and the `invalid_output` of stored
+  settings that fail their schema
+  ([`src/shared/issues.ts`](src/shared/issues.ts),
+  [`src/host/settings/facade.ts`](src/host/settings/facade.ts)). Two
+  providers differ. `hooks/v1.execute` puts zod's own error message in its
+  `invalid_input` and the issues in `details.issues`
+  ([`src/shared/hooks.ts`](src/shared/hooks.ts)). `models/v1` throws a plain
+  `Error`, with no code, with one of four messages:
+  `The configuration lists no providers.` (the configuration has no
+  `providers` array), `A configured provider is invalid.` (an entry lacks a
+  string `id` or `kind`, or a record `configuration`),
+  `Unknown provider kind: <kind>` (no `models.provider/v1` provider has the
+  kind) and `Configured provider is unavailable.` (no configuration is active,
+  it has no provider with the id, or the provider cannot be built)
   ([`src/host/models/index.ts`](src/host/models/index.ts),
-  [`src/host/models/providers.ts`](src/host/models/providers.ts)).
+  [`src/host/models/providers.ts`](src/host/models/providers.ts)). In the
+  caller's process the `Error` arrives as it is; across a process boundary the
+  envelope turns it into a `ContractError` with code `internal` and the same
+  message
+  ([`errors.ts`](../../../packages/bundle/src/runtime/envelope/errors.ts),
+  [`packages/bundle` README](../../../packages/bundle/README.md#errors)).
 - **Diagnostics.** A failure that must not fail the caller (a hook handler, a
   log write, a settings listener) is reported to `doric.diagnostics/v1`; a
-  failing report is ignored ([`src/shared/state.ts`](src/shared/state.ts),
-  [`src/shared/hooks.ts`](src/shared/hooks.ts)).
-- **Write queue.** In each process, `settings/v1.set` and the
-  `secrets/v1` writes (`create`, `update`, `delete`) run one at a time in
-  arrival order, and a failed task frees the queue. A configuration therefore
-  never names a credential that a concurrent delete removes
-  ([`src/shared/writes.ts`](src/shared/writes.ts)).
+  failing report is ignored. A hook handler's failure is reported as
+  `{ bundleId, kind, message, details: { contract, hook } }`, with the
+  handler's bundle; a failed log write as `{ bundleId, kind:
+  'log_write_failed', message }` with the caller's bundle; a settings
+  listener that throws as `{ bundleId, kind: 'settings_listener_failed',
+  message }` with the listener's bundle, in the host and `desktopMain` parts
+  alike. For a thrown error, the message is its message; the messages of a
+  hook timeout or invalid result are under `hooks/v1`
+  ([`src/shared/state.ts`](src/shared/state.ts),
+  [`src/shared/hooks.ts`](src/shared/hooks.ts),
+  [`src/shared/log.ts`](src/shared/log.ts),
+  [`src/host/settings/facade.ts`](src/host/settings/facade.ts),
+  [`src/desktop/settings.ts`](src/desktop/settings.ts)).
+- **Write queue.** Each activated part (host and `desktopMain`) has one write
+  queue: `settings/v1.set` and, on the host, the `secrets/v1` writes
+  (`create`, `update`, `delete`) run one at a time in arrival order, and a
+  failed task frees the queue. A configuration therefore never names a
+  credential that a concurrent delete removes. The queue has no timeout: a
+  task that never settles blocks every later write of that part
+  ([`src/shared/writes.ts`](src/shared/writes.ts),
+  [`src/shared/state.ts`](src/shared/state.ts),
+  [`src/host/secrets/facade.ts`](src/host/secrets/facade.ts),
+  [`src/desktop/settings.ts`](src/desktop/settings.ts)).
 
 ## Contracts provided in every part
 
@@ -198,11 +304,22 @@ cardinality `one`, in `host`, `desktopMain` and `client`. A bundle calls
 `services.use(HooksV1)` and gets `Hooks`, which the runtime builds over the
 provider's `HooksProvider`:
 
-| `Hooks` member                      | Result             | Meaning                                                                                                        |
-| ----------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `define(contract)`                  | `HookHandle<C>`    | For the owner: defines the contract and returns, per hook, `execute(input, call?) → Promise<HookOutput>`       |
-| `use(contract)`                     | `HookRegistrar<C>` | For an observer: per hook, a function that takes a handler `(input, call) → output` and returns a `Disposable` |
-| `whenAvailable(contract, callback)` | `Disposable`       | Runs `callback(registrar)` each time the owner defines the contract; the callback may return a cleanup         |
+| `Hooks` member                      | Result             | Meaning |
+| ----------------------------------- | ------------------ | ------- |
+| `define(contract)`                  | `HookHandle<C>`    | For the owner: defines the contract through `HooksProvider.define` and returns, per hook, `execute(input, call?) → Promise<HookOutput>`. The handle is cached per contract id for the bundle, so a second `define` returns it without a hop |
+| `use(contract)`                     | `HookRegistrar<C>` | For an observer: per hook of the contract, a function that takes a handler `(input, call) → output`, calls `HooksProvider.register` and returns a `Disposable`. It follows the `requires` rule of `services.use`: a bundle contract the bundle neither lists under `requires` or `optional` nor provides is `undeclared_requirement`; a `doric.*` contract passes |
+| `whenAvailable(contract, callback)` | `Disposable`       | Calls `HooksProvider.whenDefined`: runs `callback(registrar)` each time the contract is defined in the caller's partition (see `whenDefined` below); the callback may return a cleanup. No `requires` check |
+
+Each member throws `invalid_input` (`Expected a hooks contract created with
+defineHooks.`) for a value not made with `defineHooks`. Every `Disposable` a
+provider method returns is tracked in the caller's disposal scope, so a
+definition and the registrations made through the facade end, at the latest,
+when the bundle deactivates; the facade's `define` does not hand the
+definition's `Disposable` to the bundle
+([`facades.ts`](../../../packages/bundle/src/runtime/facades.ts),
+[`services.ts`](../../../packages/bundle/src/runtime/services.ts),
+[`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts),
+[`packages/bundle` README](../../../packages/bundle/README.md#services-and-the-part-contexts)).
 
 `HookOutput` is nothing for `observe` and `sequence`, a value of the input
 schema for `transform`, and a `Decision` for `decide`.
@@ -232,67 +349,148 @@ A hooks contract and its hooks ([`define.ts`](../../../packages/bundle/src/contr
 
 Behavior of the core's provider ([`src/shared/hooks.ts`](src/shared/hooks.ts)):
 
-- `define` refuses a `doric.*` contract to anyone but `doric`, and a bundle
-  contract to a bundle whose manifest in `doric.catalog/v1` has no `provides`
-  entry starting with `<id>@`, both with `not_owner`. A bundle contract has one
-  definition per generation, and a definition made by a kernel call is apart
-  from every generation's, so a kernel definition and a generation definition
-  of the same id do not collide; a `doric.*` contract has one definition. A
-  definition by another bundle in the same partition is
-  `registration_conflict`, and a second `define` by the same owner returns a
-  no-op `Disposable`. `define` runs every waiting `whenDefined` callback
-  before it returns: a callback that throws makes `define` throw, with the
-  contract already defined. Disposing the definition undefines the contract.
-- `register` records the handler with its bundle, its generation and the
-  call's `scope.windowKey`, and keeps it until disposed, whether or not the
-  contract is defined.
-- `whenDefined` runs the callback at once when the contract is defined, and
-  again at each later definition. When the definition goes away, the handlers
-  the callback registered while it ran synchronously are removed and its
-  cleanup runs in a microtask; a throwing cleanup is ignored. Disposing the
-  watcher does the same.
-- `execute` refuses an unknown hook name and an input that fails the hook's
-  schema, both with `invalid_input` (the second with `details.issues`). It
-  runs the handlers the call's generation sees, ordered by the activation
-  order of `doric.catalog/v1` (`doric` first), then by registration order. For
-  `doric.window.hooks/v1`, only the handlers registered with the call's
-  `windowKey` run.
-- Each `observe`, `transform` and `decide` handler is awaited within a
-  deadline: 10 000 ms (`DEFAULT_HOOK_DEADLINE_MS`) for a bundle's hooks; for
+- **Partitions.** The provider keeps one definition state per contract and
+  partition. A `doric.*` contract has one partition. A bundle contract has
+  one for kernel calls (generation 0) and one per generation `n`, so a kernel
+  definition and a generation definition of the same id do not collide.
+  Handlers are kept per contract id across partitions and filtered when
+  `execute` runs.
+- **`define`** refuses a `doric.*` contract to anyone but `doric`, and a
+  bundle contract to a bundle whose manifest in `doric.catalog/v1` has no
+  `provides` entry starting with `<id>@`, both with `not_owner`. A definition
+  by another bundle in the same partition is `registration_conflict`, and a
+  second `define` by the same owner in the same partition returns a no-op
+  `Disposable`. Only `define` checks the owner. `define` then runs the
+  callbacks waiting in that partition, in the order they were passed, before
+  it returns. The first that throws stops the loop: later callbacks do not
+  run, and `define` throws its error with the contract already defined; the
+  caller gets no `Disposable` for that definition. Disposing the definition
+  undefines the contract in its partition while the same owner holds it.
+- **`register`** records the handler with its bundle, the call's generation
+  and the call's `scope.windowKey`, and keeps it until disposed, whether or
+  not the contract is defined. It accepts any hook name; a handler for a name
+  the contract lacks never runs.
+- **`whenDefined`** waits in the partition of the call that passed the
+  callback: a callback passed by a call of generation `n` runs only when a
+  call of generation `n` defines the contract, and a kernel callback
+  (generation 0) only for a kernel definition. A `doric.*` contract has one
+  partition, so its callbacks always run. On the host, a bundle in a
+  generation process therefore never sees through `whenAvailable` a contract
+  the kernel defines, such as `core.event-hooks/v1`; it registers with `use`,
+  and a kernel `execute` sees those handlers while their generation is
+  active. The callback runs at once, synchronously, when the contract is
+  defined in that partition, and again at each later definition. When the
+  definition goes away, the handlers the callback registered while it ran
+  synchronously are removed, and its cleanup runs in a microtask; a throwing
+  cleanup is ignored. A handler registered after an `await` in the callback is
+  not tracked and stays registered. Disposing the watcher stops the waiting,
+  removes the tracked handlers and, when the callback ran for the current
+  definition, runs its cleanup the same way.
+- **A `whenDefined` callback that throws.** When the contract is already
+  defined and the callback throws inside `whenDefined`, `whenDefined` throws
+  and returns no `Disposable`: the callback stays registered, cannot be
+  disposed, and runs again at each later definition. A callback that threw is
+  not marked as run, so the handlers it registered before throwing are not
+  removed when the definition goes away. When the callback runs in another
+  process than the provider, it runs asynchronously, its failure is reported
+  as `when_available_failed`, and it does not reach `define`
+  ([`link.ts`](../../../packages/bundle/src/runtime/envelope/link.ts)).
+- **`execute`** refuses a hook name the contract lacks
+  (`<id> has no hook "<hook>".`) and an input that fails the hook's schema
+  (`Invalid input for <id> <hook>: <zod message>`, with `details.issues`),
+  both with `invalid_input`. It runs for whatever contract object it is
+  given, defined or not: it validates against that object's schema, applies
+  that object's `forOwner`, and matches handlers by contract id and hook name
+  only. It runs the handlers the call's generation sees (the kernel's, plus
+  those of the call's generation, or of the active generation for a kernel
+  call), ordered by the activation order of `doric.catalog/v1` with `doric`
+  first, then by registration order; a bundle missing from that order ranks
+  with `doric`. For `doric.window.hooks/v1`, only the handlers registered with
+  the call's `windowKey` run. For every kind, the handlers run one at a time,
+  each awaited before the next, and each receives the parsed input and the
+  call.
+- **Deadlines.** Each `observe`, `transform` and `decide` handler is awaited
+  within a deadline: 10 000 ms (`DEFAULT_HOOK_DEADLINE_MS`; the
+  `hooks.deadlineMs` option of the host and `desktopMain` parts'
+  `createActivate`, which tests use, replaces it) for a bundle's hooks; for
   `doric.window.hooks/v1`, the time left to the call's deadline, and none for
-  `onCloseHook`. A deadline of 0, which a window hook gets when the call's
-  deadline has already passed, means no deadline. A handler that throws, returns an invalid value or decision,
-  or misses its deadline is reported to `doric.diagnostics/v1`
-  (`hook_handler_failed` or `hook_handler_timeout`, with
-  `{ contract, hook }`) and skipped. `transform` passes each valid result to
-  the next handler and resolves to the last; `decide` resolves to the first
-  refusal, else `{ allow: true }`. An `observe` hook with `forOwner` gives each
-  handler the input that function returns for the handler's bundle, and skips
-  the handler when it returns `undefined`.
-- A `sequence` hook awaits each handler with no deadline, in order or, with
-  `order: 'reverse'`, in reverse; the first failure rejects `execute`.
-- `execute` rejects with the call's abort reason when `call.signal` aborts
-  first.
+  `onCloseHook`. A deadline of 0 means none: a window
+  hook gets it when the call has no deadline or its deadline has passed. A
+  handler past its deadline is not stopped: it runs to the end, and its
+  result is ignored.
+- **Failures.** A handler that throws, returns an invalid value or decision,
+  or misses its deadline is reported to `doric.diagnostics/v1` and skipped:
+  `hook_handler_timeout` with `<hook> handler did not settle within <ms> ms.`,
+  or `hook_handler_failed` with the thrown error's message,
+  `<hook> handler returned an invalid value: <zod message>` or
+  `<hook> handler returned an invalid decision: <zod message>`; the report
+  names the handler's bundle and `details: { contract, hook }`.
+- **Results.** `transform` passes each valid result, parsed by the input
+  schema, to the next handler, and resolves to the last (the parsed input when
+  no handler returns a valid one); `decide` resolves to the first refusal,
+  else `{ allow: true }`; `observe` resolves to nothing. An `observe` hook
+  with `forOwner` gives each handler the input that function returns for the
+  handler's bundle, and skips the handler when it returns `undefined`. A
+  `forOwner` that throws rejects `execute` with its error, unreported, and
+  the later handlers do not run.
+- **`sequence`.** A `sequence` hook awaits each handler with no deadline, in
+  order or, with `order: 'reverse'`, in reverse; the first failure rejects
+  `execute`, unreported, and the later handlers do not run.
+- **Abort.** When `call.signal` aborts first, `execute` rejects with its
+  reason, but the chain goes on running the remaining handlers. With a signal
+  already aborted, `execute` rejects at once and the chain still runs.
 
 ### `log/v1`
 
 Shape ([`log.ts`](../../../packages/bundle/src/contracts/basic/log.ts)):
 `debug`, `info`, `warn` and `error`, each `(message: string, fields?:
 Record<string, unknown>, call?) → void`; cardinality `one`, in every
-environment.
+environment. The dispatcher validates the arguments before the core runs: a
+message that is not a string, or fields that are not a record, are refused
+with `invalid_input`
+([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
 
 Behavior ([`src/shared/log.ts`](src/shared/log.ts)): each level writes one
-record through `doric.log/v1` with `level`, `message`, `fields`, the caller's
-`bundleId`, `version` and `generation`, the `environment` that
-`doric.bundle/v1` names, the call's `scope` and the trace id of its
-`traceparent`. The host and main process parts first replace every secret of
-`secrets/v1.view().redactions()` by `[REDACTED]` in the message and in every
-string leaf of the fields, including the name, message, stack and cause of an
-`Error` ([`src/shared/redact.ts`](src/shared/redact.ts)); when that view
-cannot be read (the credentials are not loaded yet, or the `secrets/v1`
-provider runs in another process, where `view` is `local_only`, as it always does for the main process part), the record is written as it is. The client part does not
-redact. A level never throws: a failed
-write is reported as `log_write_failed`.
+[`LogRecord`](../../../packages/bundle/src/contracts/platform.ts) through
+`doric.log/v1.write(record, call)`:
+
+| Field         | Value                                                                                   |
+| ------------- | --------------------------------------------------------------------------------------- |
+| `level`       | The level called                                                                        |
+| `message`     | The message, redacted                                                                   |
+| `fields`      | A redacted copy of the fields; present only when fields were passed                     |
+| `bundleId`, `version`, `generation` | The caller's (`call.caller`)                                      |
+| `environment` | The environment `doric.bundle/v1.describe(call)` names                                  |
+| `scope`       | The call's scope; present only when the call has one                                    |
+| `traceId`     | The second `-` segment of the call's `traceparent`; omitted when that segment is absent |
+
+Redaction ([`src/shared/redact.ts`](src/shared/redact.ts)):
+
+- The host and `desktopMain` parts read `secrets/v1.view().redactions()` on
+  every write. When that read fails for any reason, the list is empty and the
+  record is written unredacted: the credentials are not loaded yet (`view`
+  fails with `unavailable`); the process has no `secrets/v1` provider, which
+  is always so in `desktopMain`, since `secrets/v1` is a host contract (the
+  call fails with `unavailable`); or the provider runs in another process,
+  and its view does not cross a process boundary. The client part always uses
+  an empty list.
+- Each secret becomes `[REDACTED]`, matched as a literal substring, in list
+  order, so a later secret may match text an earlier substitution left; empty
+  secrets are skipped. This applies to the message and to the string leaves
+  of the fields.
+- In the fields, only string leaves are redacted: in arrays, plain records,
+  `Error`s (their name, message, stack and cause, with their enumerable
+  properties) and class instances with enumerable properties. Those become
+  plain copies; property names are not redacted. An instance with no
+  enumerable property (a `Date`, a `Map`) and every non-string leaf are kept
+  as they are. Cycles are kept in the copy, and a property whose getter
+  throws becomes `'[Unserializable property]'`.
+- The fields are copied this way even when the list is empty, in every part.
+
+Once the core runs, a level never throws: any failure while the record is
+built or written is reported as `log_write_failed` (see Diagnostics under
+[Rules every provider of the core follows](#rules-every-provider-of-the-core-follows)),
+and a failing report is ignored.
 
 ## Host contracts
 

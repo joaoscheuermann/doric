@@ -94,6 +94,24 @@ the decisions behind the boundary rules before changing one of them.
   always provides it, and a use of it needs no declaration.
 - Never list an id twice in one of `provides` and `requires`, and never list
   under `requires` or `optional` an id that no manifest provides.
+- Raise `engines.doric` to the platform version that first has a shared module
+  the bundle imports statically or a platform contract it cannot work without:
+  the catalog quarantines a bundle whose range the platform does not meet
+  ([`catalog.ts`](../packages/bundle/src/runtime/catalog.ts)). Reach a platform
+  contract the bundle can do without through `services.whenAvailable`, and load
+  a `desktop/ui` module it can do without with a dynamic `import()`
+  ([Versioning](../docs/architecture/bundles/versioning.md)).
+- List in `package.json` every package a file of the bundle imports, another
+  bundle and every workspace package at its version (`0.0.1` for a bundle):
+  under `devDependencies` when only its tests or stories import it, and
+  otherwise under `dependencies`, or under `devDependencies` when only the
+  client part of a bundle with a host part imports it, as
+  [`terminal/package.json`](features/terminal/package.json) does; the boundary
+  check does not check which key a package is under
+  ([`tests/support/boundaries.mjs`](../tests/support/boundaries.mjs)).
+  `npm run lint` fails on an undeclared import
+  (`noUndeclaredDependencies` in [`biome.json`](../biome.json)), and each line
+  is the edge along which `^build` builds that package first.
 - Remove every package from `dependencies` and `devDependencies` that no file
   of the bundle imports, but keep `tslib`, keep `react` in a bundle with a
   `.tsx` or `.jsx` file, and keep `@types/<m>` when `<m>` is `node` or a
@@ -108,15 +126,34 @@ the decisions behind the boundary rules before changing one of them.
   `bundle/contracts`.
 - Never import `src/host`, `src/desktop` or `src/client` from `src/contracts/`,
   and never import a Node built-in there: the window loads the module as
-  `<id>/contracts` through its import map.
+  `<id>/contracts` through its import map
+  ([`import-map.ts`](../app/desktop/doric/src/platform/protocol/import-map.ts)).
 - In the bundle's own parts, import its contracts by relative path
-  (`../contracts/index.js`); the build turns that import into `<id>/contracts`.
+  (`../contracts/index.js`); in a desktop or client part the build turns that
+  import into `<id>/contracts`
+  ([`parts.ts`](../packages/bundle/src/build/parts.ts)).
 
 ## Parts
 
 - Export `activate` from the entry of every part the bundle has
   (`src/host/index.ts`, `src/desktop/index.ts` and `src/client/index.ts`), or
-  the build fails.
+  the build fails ([`cli.ts`](../packages/bundle/src/build/cli.ts)).
+- When a feature gives a bundle a part it does not have, add the part's
+  configuration as
+  [How a bundle's parts are built](../docs/architecture/bundles/boundaries.md#how-a-bundles-parts-are-built)
+  states: for a client part, exclude `src/client/**` from `tsconfig.json`, add
+  `tsconfig.client.json` and run `tsc -p tsconfig.client.json` in the `build`
+  and `typecheck` targets of `project.json`, as
+  [`account/project.json`](desktop/account/project.json) does, and set
+  `"jsx": "react-jsx"` in `tsconfig.json` when the part has a `.tsx` file.
+- Put each skill the bundle ships in `src/skills/<name>/SKILL.md`, with only the
+  frontmatter keys [`skills.ts`](../packages/bundle/src/loader/skills.ts)
+  accepts, and an `order` no other skill in the repository holds
+  (`grep -rn '^order:' bundles/*/*/src`): skills are sorted across bundles by
+  `order`, and a tie falls back to registration order
+  ([`core/src/host/skills.ts`](foundation/core/src/host/skills.ts)). The build
+  rejects a `SKILL.md` whose frontmatter is invalid
+  ([`cli.ts`](../packages/bundle/src/build/cli.ts)).
 
 ### Host part
 
@@ -130,18 +167,27 @@ the decisions behind the boundary rules before changing one of them.
 - Never import `bundle`, `desktop` or any `desktop/*` subpath, `react`,
   `react-dom` or any of their subpaths, `@base-ui/react` or any of its
   subpaths, `lexical` or `@lexical/*` from a desktop part: its build fails on
-  them.
+  them ([`parts.ts`](../packages/bundle/src/build/parts.ts)).
 
 ### Client part
 
 - Put the client part in `src/client/`, with its stylesheet in
-  `src/client/styles.css`.
+  `src/client/styles.css`, and never write `@theme` in that stylesheet: the
+  build fails on it ([`parts.ts`](../packages/bundle/src/build/parts.ts)).
 - Never import `bundle`, `bundle/runtime`, `desktop`, `desktop/client` or any
-  `desktop/client/*` subpath from a client part: its build fails on them.
+  `desktop/client/*` subpath from a client part: its build fails on them
+  ([`parts.ts`](../packages/bundle/src/build/parts.ts)).
 - Import React, `react-dom`, `@base-ui/react`, Lexical, `desktop/ui/*`, `zod`,
   `bundle/contracts` and every `<id>/contracts` only by their package
-  specifiers, so that the window keeps one instance of each; never copy them
-  into a bundle.
+  specifiers, so that the window keeps one instance of each through its import
+  map ([`import-map.ts`](../app/desktop/doric/src/platform/protocol/import-map.ts));
+  never copy them into a bundle.
+- Put a web worker in `src/client/workers/<name>.ts`: the build bundles
+  everything it imports into it, with nothing external, since a worker runs
+  outside the window's import map. Put a module the client part imports on
+  demand in `src/client/chunks/<name>.ts`. The build builds workers and chunks
+  only when the bundle has `src/client/index.ts`
+  ([`parts.ts`](../packages/bundle/src/build/parts.ts)).
 - Touch the DOM at module load only through `class … extends HTMLElement`, and
   load a heavy DOM library (Monaco, xterm) with a dynamic `import()` inside a
   component.
@@ -152,7 +198,8 @@ the decisions behind the boundary rules before changing one of them.
   bundles them into the frame, as it bundles `zod`. Never import from a frame
   `bundle`, `desktop` or any of their subpaths, any other package of the
   window's import map (another subpath of `react` or `react-dom`, `lexical`,
-  `@lexical/*`), or any `<id>/contracts`: the build fails on them.
+  `@lexical/*`), or any `<id>/contracts`: the build fails on them
+  ([`parts.ts`](../packages/bundle/src/build/parts.ts)).
 - Keep a bundle's story harness at `.storybook/preview.tsx` and import
   `desktop/ui/theme.css` there, as
   [`account/.storybook/preview.tsx`](desktop/account/.storybook/preview.tsx)
@@ -173,7 +220,8 @@ the decisions behind the boundary rules before changing one of them.
   `desktop/ui/sonner`, so that a window has one toast store.
 - Bind persistent work to the services the part's `activate` receives, never
   to the services an element receives: an element's services are disposed
-  with the element.
+  with the element
+  ([`elements.ts`](../packages/desktop/src/client/elements.ts)).
 - Keep all footer text, nested controls included, at `font-weight: 400` through
   the footer rule of `app/desktop/doric-renderer/src/styles.css`: mark a
   footer with a semantic `footer` element or a `data-slot` ending in
@@ -192,7 +240,8 @@ the decisions behind the boundary rules before changing one of them.
 - For a `cycles` entry, set `bundle` and `target` to the two ends of the edge
   that breaks the cycle.
 - Remove an entry in the change that removes its violation: an entry that
-  matches no finding fails the check.
+  matches no finding fails the check (`diffViolations` in
+  [`tests/support/boundaries.mjs`](../tests/support/boundaries.mjs)).
 
 ## Tests
 
@@ -209,7 +258,11 @@ the decisions behind the boundary rules before changing one of them.
 ## Features and README
 
 - Add a feature to a bundle in these steps, in one change:
-  1. Declare each contract and slot name the feature adds in `src/contracts/`,
+  1. Read the `README.md` in the bundle's directory for what it does, and the
+     README of each bundle whose contract or slot the feature uses, for that
+     contract's full shape; the `define*` family and the platform's basic
+     contracts are in [Contracts](../docs/architecture/bundles/contracts.md).
+  2. Declare each contract and slot name the feature adds in `src/contracts/`,
      as [Contracts module](#contracts-module) requires, and list under
      `provides` of `manifest.json` each contract that a part of the bundle
      provides, defines or registers, as
@@ -219,29 +272,52 @@ the decisions behind the boundary rules before changing one of them.
      of that contract's `provides` entry and of the manifest's `version`, and
      raise to that minor the `requires` range of each bundle that uses the new
      member; when it removes or renames a member, adds a required field or
-     changes a meaning, declare a new contract with the next `/v<major>` id
-     instead, as [Versioning](../docs/architecture/bundles/versioning.md)
-     requires.
-  2. List under `requires` or `optional` of `manifest.json` each contract the
-     feature uses that the bundle does not provide and that
-     [Manifest and package](#manifest-and-package) requires a declaration for.
-  3. Put the feature's code in the part that runs it: `src/host/` for work in
+     changes a meaning, declare a new contract with the next `/v<major>` id,
+     keep providing the earlier major while any manifest still requires it,
+     and raise the major of the manifest's `version`. When the feature adds a
+     new contract or a contribution to another bundle's contract or slot,
+     raise the minor of the manifest's `version`; a fix with no change of
+     schema raises its patch
+     ([Versioning](../docs/architecture/bundles/versioning.md)).
+  3. List under `requires`, or under `optional` when the feature works without
+     it, each contract the feature reaches with `services.use`,
+     `services.whenAvailable` or `hooks.use` that the bundle does not provide,
+     as [Manifest and package](#manifest-and-package) requires; `services.use`
+     or `hooks.use` of an unlisted one throws `undeclared_requirement`
+     ([`services.ts`](../packages/bundle/src/runtime/services.ts)).
+  4. Give each method a window calls `expose: 'desktop'` in its
+     `defineMethod`, and no other method: a window reaches only exposed
+     methods and gets `unavailable` for the rest
+     ([`exposure.ts`](../packages/bundle/src/runtime/exposure.ts),
+     [`dispatcher.ts`](../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
+     List under `desktopScope` of `manifest.json`, for that contract, each
+     scope key (such as `projectId`, `threadId` or `promptId`) the window
+     sends: the desktop refuses a call whose scope holds an unlisted key with
+     `invalid_input`
+     ([`dispatcher.ts`](../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
+     Never list `windowKey`: the platform sets it and the manifest schema
+     refuses it ([`manifest.ts`](../packages/bundle/src/runtime/manifest.ts)).
+  5. Put the feature's code in the part that runs it: `src/host/` for work in
      the host, `src/desktop/` for work in the desktop's `desktopMain` process,
      and `src/client/` for what a window draws
      ([`activate.ts`](../packages/bundle/src/loader/activate.ts),
      [`parts.ts`](../packages/bundle/src/build/parts.ts),
      [manifest](../docs/architecture/bundles/manifest.md)), as
      [Parts](#parts) requires.
-  4. Add the feature's tests under `tests/`, as [Tests](#tests) requires.
-  5. Update the bundle's `README.md`, and each feature doc in `docs/features/`
+  6. Add, as [Tests](#tests) requires, a test for each contract method, hook,
+     tool, command and element the feature adds, through its public
+     interface: a part's services through `createTestServices`, an element in
+     `tests/client/` under `happy-dom`; follow the root
+     [Testing](../AGENTS.md#testing) rule.
+  7. Update the bundle's `README.md`, and each feature doc in `docs/features/`
      that describes the feature when one exists.
 - In a bundle's own `AGENTS.md`, state only the steps of adding a feature that
   are specific to that bundle.
 - Keep a bundle's `README.md` its complete overview: its public interface
   (contracts, manifest, exports, routes, tools, events), its behavior and
   logic, its data shapes and persistence, its side effects, its configuration,
-  its limits, and its errors and failure behavior. Update it in every change to
-  the bundle's interface, behavior or data.
+  its limits, its errors and failure behavior, and how it is built and tested.
+  Update it in every change to the bundle's interface, behavior or data.
 
 ## Verify
 
@@ -262,5 +338,7 @@ Run each command from the repository root.
 - The `references` of each bundle's `tsconfig.json`, and the root
   `tsconfig.json` entry of each bundle: do not edit them by hand; run
   `npx nx sync`.
-- `package-lock.json`: do not edit it by hand; run `npm install` after a change
-  to a bundle's `package.json` dependencies.
+- `package-lock.json`: do not edit it by hand; run `npm install` with npm
+  11.13.0, the version CI installs
+  ([`ci.yml`](../.github/workflows/ci.yml)), after a change to a bundle's
+  `package.json` dependencies.

@@ -27,8 +27,10 @@ belongs to the bundle that shows the Thread.
   to its 20 most recently viewed) reports that Thread's live events, whether or
   not it shows the Thread, and nothing merges the reports of two windows.
 - Never await a report in the observer, and never let a failing report or a
-  throwing source reach chat: chat does not await `onThreadUpdateHook` and
-  calls it for every live event.
+  throwing source escape it: chat does not await `onThreadUpdateHook` and calls
+  it for every live event, and the `hooks/v1` provider runs the observers of
+  one event in turn, so an awaited report delays the next bundle's observer and
+  a throw is recorded as `hook_handler_failed`.
 - Never let `report` reject because a notice could not be shown: the Thread's
   own log still records the completion.
 - Never import `chat/contracts`: register on chat only through the structural
@@ -43,19 +45,31 @@ belongs to the bundle that shows the Thread.
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
   and search it for `"bundle": "notifications"`.
 - Read [`README.md`](README.md) for what the bundle does before adding to it.
-- Sample a new window value as a new member of `ObserverSources`, read it in
-  `src/client/index.ts`, and keep `src/client/observer.ts` free of `document`
-  and services. Add each new field of a report to `promptObservationSchema` in
-  `src/contracts/index.ts` as an optional field: the schema is strict, and the
-  platform refuses a report with an unknown field before `report` runs, which
-  the observer swallows.
-- Add the test of each change in the same change: a decision test in
-  [`tests/decide.test.ts`](tests/decide.test.ts), through the built desktop
-  part, and an observer test in
-  [`tests/observer.test.ts`](tests/observer.test.ts).
-- Update the feature doc
-  [notifications](../../../docs/features/notifications.md) with any change to
-  when a notice is shown or what it says.
+- Add a feature to this bundle only as one of these two kinds of change, each
+  in the files named here and with its test in the same change:
+  1. A change to when a notice is shown or what it says: change
+     `src/desktop/decide.ts`, and add a test to
+     [`tests/decide.test.ts`](tests/decide.test.ts) that reports observations
+     through `bootDesktop` of
+     [`tests/support/desktop.ts`](tests/support/desktop.ts), which boots the
+     built desktop part with a fake `doric.notifications/v1`, and asserts what
+     `show` received.
+  2. A change to what a window observes: sample a new window value as a new
+     member of `ObserverSources` in `src/client/observer.ts`, read it in
+     `src/client/index.ts`, and keep `src/client/observer.ts` free of
+     `document` and services, so that its test runs under `node --test`
+     without a DOM; add a test to
+     [`tests/observer.test.ts`](tests/observer.test.ts) that drives
+     `createObserver` with fake sources.
+- Add each new field of a report to `promptObservationSchema` in
+  `src/contracts/index.ts` as an optional field, in the same change as the
+  observer that sends it and the decision that reads it: the schema is strict,
+  so the platform refuses a report with an unknown field before `report` runs
+  and the observer swallows the refusal, and a required field would make
+  `notifications.observations/v1` a new major.
+- Update the feature doc [notifications](../../../docs/features/notifications.md)
+  and [`README.md`](README.md) with any change to when a notice is shown, what
+  it says, or what a report carries.
 
 ## Verify
 
@@ -69,4 +83,4 @@ belongs to the bundle that shows the Thread.
 
 ## Generated files
 
-None beyond those [`bundles/AGENTS.md`](../../AGENTS.md) lists.
+None.

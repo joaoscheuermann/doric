@@ -10,8 +10,14 @@ and logs are handled, and tests pass a fake transport. The package also
 describes each provider kind's settings fields, reads model catalogs and holds
 the model icon set.
 
-It is a library with no state of its own: it persists nothing, starts no
-process and opens no connection except through the transport it is given.
+It is a library whose only state is in-memory model catalog caches: the
+Claude provider keeps the catalog it read for the provider's lifetime
+([`claude.ts`](./src/lib/providers/claude.ts)) and the OpenRouter provider
+keeps its catalog for 15 minutes
+([`openrouter/catalog.ts`](./src/lib/providers/openrouter/catalog.ts); see
+[OpenRouter](#openrouter)). It
+persists nothing, starts no process and opens no connection except through the
+transport it is given.
 
 Users:
 
@@ -72,6 +78,11 @@ for await (const event of provider.stream({
 }
 ```
 
+A model id ending in `-fast` asks the OpenAI provider for the `priority`
+service tier and is sent without the suffix, so `gpt-5-fast` runs `gpt-5`
+([`openai/body.ts`](./src/lib/providers/openai/body.ts); see
+[OpenAI Responses-compatible endpoints](#openai-responses-compatible-endpoints)).
+
 ## The provider contract
 
 Defined in [`src/lib/types/provider.ts`](./src/lib/types/provider.ts).
@@ -79,27 +90,42 @@ Defined in [`src/lib/types/provider.ts`](./src/lib/types/provider.ts).
 ```ts
 type ProviderId = string;
 interface ProviderMetadata {
-  id: ProviderId;
-  name: string;
-  baseUrl: string;
+  readonly id: ProviderId;
+  readonly name: string;
+  readonly baseUrl: string;
 }
 interface ProviderCapabilities {
-  streaming: boolean;
-  embeddings: boolean;
-  reranking: boolean;
-  tools: boolean;
-  reasoning: boolean;
-  modelListing: boolean;
-  oauth: boolean;
-  serviceTier: boolean;
-  structuredOutputs: boolean;
+  readonly streaming: boolean;
+  readonly embeddings: boolean;
+  readonly reranking: boolean;
+  readonly tools: boolean;
+  readonly reasoning: boolean;
+  readonly modelListing: boolean;
+  readonly oauth: boolean;
+  readonly serviceTier: boolean;
+  readonly structuredOutputs: boolean;
 }
 
 interface LlmProvider {
   readonly metadata: ProviderMetadata;
   readonly capabilities: ProviderCapabilities;
-  complete(request): Promise<ProviderFinished<Output>>; // see Structured output
-  stream(request): AsyncIterable<ProviderStreamEvent<Output>>;
+
+  complete<Schema extends StructuredOutputSchema>(
+    request: ProviderRequest<z.output<Schema>, Schema> & {
+      readonly schema: Schema;
+    },
+  ): Promise<ProviderStructuredFinished<z.output<Schema>>>;
+  complete<Output = JsonValue>(
+    request: ProviderRequest<Output>,
+  ): Promise<ProviderFinished<Output>>;
+
+  stream<Schema extends StructuredOutputSchema, Output = z.output<Schema>>(
+    request: ProviderRequest<Output, Schema> & { readonly schema: Schema },
+  ): AsyncIterable<ProviderStreamEvent<Output>>;
+  stream<Output = JsonValue>(
+    request: ProviderRequest<Output>,
+  ): AsyncIterable<ProviderStreamEvent<Output>>;
+
   embedding(
     request: ProviderEmbeddingRequest,
   ): Promise<ProviderEmbeddingFinished>;
@@ -111,8 +137,11 @@ interface LlmProvider {
 
 `complete` and `stream` are overloaded: with a `schema`, `complete` resolves to
 `ProviderStructuredFinished<z.output<Schema>>`, whose `structured` field is
-always present; without one it resolves to `ProviderFinished<Output>`
-(`Output` defaults to `JsonValue`).
+always present, and `stream` yields events typed with `z.output<Schema>`;
+without one, `complete` resolves to `ProviderFinished<Output>` and `stream`
+yields `ProviderStreamEvent<Output>` (`Output` defaults to `JsonValue`). The
+type parameter only types the result: nothing checks it at run time except the
+schema (see [Structured output](#structured-output)).
 
 ```ts
 type StructuredOutputSchema = z.ZodType;
@@ -121,7 +150,7 @@ type StructuredOutputValue<Schema extends StructuredOutputSchema> =
 type ProviderStructuredFinished<Output> = Omit<
   ProviderFinished<Output>,
   'structured'
-> & { structured: Output };
+> & { readonly structured: Output };
 // Re-exported from `tool`:
 type JsonPrimitive = string | number | boolean | null;
 type JsonArray = readonly JsonValue[];
@@ -135,54 +164,120 @@ type JsonValue = JsonPrimitive | JsonArray | JsonObject;
 
 ```ts
 interface ProviderRequest<
-  Output = JsonValue,
-  Schema extends z.ZodType = z.ZodType,
+  _Output = JsonValue, // unused by the type; the overloads pass it
+  Schema extends StructuredOutputSchema = StructuredOutputSchema,
 > {
-  model: string; // must not be blank
-  messages: readonly ProviderMessage[]; // at least one
-  tools?: readonly ToolDefinition[]; // from `tool`: name, description, inputSchema, strict
-  toolChoice?: ProviderToolChoice;
-  parallelToolCalls?: boolean;
-  schema?: Schema; // a Zod schema; see Structured output
-  effort?: ReasoningEffort;
-  temperature?: number;
-  maxOutputTokens?: number;
-  flags?: ProviderCallFlags;
-  signal?: AbortSignal;
+  readonly model: string; // must not be blank
+  readonly messages: readonly ProviderMessage[]; // at least one
+  readonly tools?: readonly ToolDefinition[]; // from `tool`
+  readonly toolChoice?: ProviderToolChoice;
+  readonly parallelToolCalls?: boolean;
+  readonly schema?: Schema; // a Zod schema; see Structured output
+  readonly effort?: ReasoningEffort;
+  readonly temperature?: number;
+  readonly maxOutputTokens?: number;
+  readonly flags?: ProviderCallFlags;
+  readonly signal?: AbortSignal;
 }
 
 interface ProviderMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | readonly ProviderContentPart[];
-  name?: string;
-  toolCallId?: string; // on a tool message
-  toolResultStatus?: ProviderToolResultStatus;
-  toolCalls?: readonly ProviderToolCall[];
-  replay?: readonly ProviderReplayItem[]; // see Replay
+  readonly role: 'system' | 'user' | 'assistant' | 'tool';
+  readonly content?: string | readonly ProviderContentPart[];
+  readonly name?: string;
+  readonly toolCallId?: string; // on a tool message
+  readonly toolResultStatus?: ProviderToolResultStatus;
+  readonly toolCalls?: readonly ProviderToolCall[];
+  readonly replay?: readonly ProviderReplayItem[]; // see Replay
 }
 
-type ProviderToolChoice = 'auto' | 'required' | 'none' | { name: string };
+type ProviderToolChoice =
+  | 'auto'
+  | 'required'
+  | 'none'
+  | { readonly name: string };
 type ProviderToolResultStatus = 'completed' | 'incomplete';
 type ProviderToolCall = ToolCallRequest; // from `tool`: { id, name, arguments: string, index? }
 type ProviderReplayItem = JsonObject; // opaque, kept only for replay
 
 type ProviderContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image'; imageUrl: string }; // a data: URL or an https: URL
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'image'; readonly imageUrl: string }; // a data: URL or an https: URL
 type ProviderImagePart = Extract<ProviderContentPart, { type: 'image' }>;
 
 interface ReasoningRequest {
-  effort?: ReasoningEffort;
-  summary?: 'auto' | 'concise' | 'detailed';
+  readonly effort?: ReasoningEffort;
+  readonly summary?: 'auto' | 'concise' | 'detailed';
 }
 
 interface ProviderCallFlags {
-  reasoning?: boolean | ReasoningRequest;
-  serviceTier?: 'auto' | 'default' | 'priority';
-  includeUsage?: boolean;
-  includeStructuredSchemaOnSystemPrompt?: boolean;
+  readonly reasoning?: boolean | ReasoningRequest;
+  readonly serviceTier?: 'auto' | 'default' | 'priority';
+  readonly includeUsage?: boolean;
+  readonly includeStructuredSchemaOnSystemPrompt?: boolean;
 }
 ```
+
+A `ToolDefinition` (from [tool](../tool/README.md)) has `name`, an optional
+`description`, `inputSchema` and `outputSchema` (JSON objects, both required)
+and an optional `strict`. Adapters send `name`, `description` and
+`inputSchema`; OpenAI, Codex and OpenRouter also send `strict`, which is
+`true` only when the definition's `strict` is `true` and its schema is
+strict-compatible, and Claude never sends it. No adapter sends `outputSchema`
+([`openai/body.ts`](./src/lib/providers/openai/body.ts),
+[`openrouter/body.ts`](./src/lib/providers/openrouter/body.ts),
+[`claude/body.ts`](./src/lib/providers/claude/body.ts)).
+
+What each field asks for, at the contract level. A field a provider has no
+wire field for is dropped without an error; the provider sections give the
+wire mapping ([OpenAI](#openai-responses-compatible-endpoints),
+[OpenRouter](#openrouter), [Claude](#claude), [Codex](#codex)).
+
+- `toolChoice`: `auto` lets the model choose, `required` makes it call a
+  tool, `none` forbids tool calls, `{ name }` forces that tool (Claude sends
+  a forced choice as `auto` to a model that refuses one; see [Claude](#claude)).
+- `parallelToolCalls`: `false` asks for at most one tool call per turn;
+  absent leaves the provider's default.
+- `effort`: the reasoning effort; see below for how it combines with
+  `flags.reasoning`.
+- `temperature`: the sampling temperature. Sent by OpenAI and OpenRouter;
+  dropped by Codex ([`codex.ts`](./src/lib/providers/codex.ts)) and Claude
+  ([`claude/body.ts`](./src/lib/providers/claude/body.ts)).
+- `maxOutputTokens`: the output token limit (Claude sets its own default when
+  it is absent; see [Claude](#claude)).
+- `signal`: aborts the request; the abort is thrown from the call (see
+  [Errors](#errors)).
+- `ProviderMessage.name`: a participant name for the message. Only OpenRouter
+  sends it ([`openrouter/body.ts`](./src/lib/providers/openrouter/body.ts));
+  the others drop it.
+- `ProviderMessage.toolCallId`: on a `tool` message, the `id` of the call it
+  answers.
+- `ProviderMessage.toolResultStatus`: on a `tool` message, whether the tool
+  finished (`completed`) or stopped short (`incomplete`). OpenAI and Codex send
+  it as the result's `status`
+  ([`openai/body.ts`](./src/lib/providers/openai/body.ts)); Claude marks an
+  `incomplete` result as an error result
+  ([`claude/body.ts`](./src/lib/providers/claude/body.ts)); OpenRouter drops
+  it.
+- `ProviderMessage.toolCalls`: on an `assistant` message, the calls that turn
+  made, sent back so the following `tool` messages can answer them.
+- `flags.reasoning`: `true` asks for reasoning even without an effort; `false`
+  or absent sends reasoning settings only when an effort is given; a
+  `ReasoningRequest` also gives the effort and the summary detail. OpenAI,
+  Codex and OpenRouter read it
+  ([`openai/body.ts`](./src/lib/providers/openai/body.ts),
+  [`openrouter/body.ts`](./src/lib/providers/openrouter/body.ts),
+  [`openrouter/prepare.ts`](./src/lib/providers/openrouter/prepare.ts));
+  Claude reads only the effort.
+- `flags.serviceTier`: the processing tier. OpenAI and Codex send it, and it
+  overrides the `-fast` alias
+  ([`openai/body.ts`](./src/lib/providers/openai/body.ts)); the others drop
+  it.
+- `flags.includeUsage`: `false` stops OpenRouter asking for usage in its
+  stream; absent or `true` asks for it
+  ([`openrouter/body.ts`](./src/lib/providers/openrouter/body.ts)). The
+  others ignore it.
+- `flags.includeStructuredSchemaOnSystemPrompt`: adds the schema to the system
+  prompt (see [Structured output](#structured-output)).
 
 `reasoningEfforts` is the ordered list `none`, `minimal`, `low`, `medium`,
 `high`, `xhigh`, `max`; `ReasoningEffort` is its member type and
@@ -194,7 +289,8 @@ its wire field.
 Every adapter checks its input before any request is sent
 ([`common.ts`](./src/lib/providers/common.ts)) and fails with a
 `ProviderErrorObject`: a blank `model` is `missing_model` ("Provider request
-requires a model."); an empty `messages` list is `missing_input`.
+requires a model."); an empty `messages` list is `missing_input` ("Provider
+request requires at least one message.").
 
 ### Results
 
@@ -209,33 +305,55 @@ type FinishReason =
   | 'unknown';
 
 interface ReasoningMetadata {
-  text?: string;
-  effort?: ReasoningEffort;
-  summary?: string;
+  readonly text?: string;
+  readonly effort?: ReasoningEffort; // never set by an adapter
+  readonly summary?: string; // never set by an adapter
 }
 
 interface ProviderFinished<Output = JsonValue> {
-  text: string;
-  finishReason: FinishReason;
-  usage?: UsageMetadata;
-  reasoning?: ReasoningMetadata;
-  refusal?: string;
-  toolCalls: readonly ProviderToolCall[];
-  replay?: readonly ProviderReplayItem[];
-  structured?: Output;
+  readonly text: string;
+  readonly finishReason: FinishReason;
+  readonly usage?: UsageMetadata;
+  readonly reasoning?: ReasoningMetadata;
+  readonly refusal?: string;
+  readonly toolCalls: readonly ProviderToolCall[];
+  readonly replay?: readonly ProviderReplayItem[];
+  readonly structured?: Output;
 }
 
 interface UsageMetadata {
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-  reasoningTokens?: number;
-  cachedInputTokens?: number;
-  cacheWriteTokens?: number;
-  searchUnits?: number;
-  cost?: { amount: number; unit?: string; upstreamAmount?: number };
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly totalTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly cachedInputTokens?: number;
+  readonly cacheWriteTokens?: number;
+  readonly searchUnits?: number;
+  readonly cost?: {
+    readonly amount: number;
+    readonly unit?: string;
+    readonly upstreamAmount?: number;
+  };
 }
 ```
+
+An adapter sets only `reasoning.text`. Whether `reasoning` is absent or
+`{ text: '' }` when the model gave no reasoning depends on the path; both mean
+no reasoning:
+
+- **OpenAI and Codex**: absent when the text is empty, except a stream that
+  ends without `response.completed`, whose finish always carries
+  `{ text }`, empty or not ([`openai.ts`](./src/lib/providers/openai.ts),
+  [`openai/parse.ts`](./src/lib/providers/openai/parse.ts)). A streamed finish
+  takes its reasoning from the `reasoning.delta` events alone. Codex's
+  `complete` reads the stream, so the stream rules apply to it.
+- **OpenRouter**: `complete` sets it when the response message has a
+  `reasoning` or `reasoning_content` string, even an empty one; a stream
+  without a schema always carries `{ text }` in its finish, empty or not, and
+  a stream with one follows `complete`
+  ([`openrouter/parse.ts`](./src/lib/providers/openrouter/parse.ts)).
+- **Claude**: absent when the text is empty
+  ([`claude/parse.ts`](./src/lib/providers/claude/parse.ts)).
 
 OpenAI-shaped usage is read by one parser
 ([`common.ts`](./src/lib/providers/common.ts)): `input_tokens` or
@@ -251,70 +369,172 @@ shape (see [Claude](#claude)).
 ### Stream events
 
 ```ts
-type ProviderStreamEvent<Output> =
+type ProviderStreamEvent<Output = JsonValue> =
   | {
-      type: 'response.started';
-      provider: string;
-      model: string;
-      contextWindow?: number;
+      readonly type: 'response.started';
+      readonly provider: ProviderId;
+      readonly model: string;
+      readonly contextWindow?: number; // from the provider's catalog, when known
     }
-  | { type: 'text.delta'; delta: string }
-  | { type: 'reasoning.delta'; delta: string }
-  | { type: 'refusal.delta'; delta: string }
+  | { readonly type: 'text.delta'; readonly delta: string }
+  | { readonly type: 'reasoning.delta'; readonly delta: string }
+  | { readonly type: 'refusal.delta'; readonly delta: string }
   | {
-      type: 'tool_call.delta';
-      index: number;
-      id?: string;
-      name?: string;
-      argumentsDelta?: string;
+      readonly type: 'tool_call.delta';
+      readonly index: number;
+      readonly id?: string;
+      readonly name?: string;
+      readonly argumentsDelta?: string;
     }
-  | { type: 'tool_call.done'; call: ProviderToolCall }
-  | { type: 'usage'; usage: UsageMetadata }
-  | { type: 'response.finished'; finish: ProviderFinished<Output> }
-  | { type: 'error'; error: ProviderError };
+  | { readonly type: 'tool_call.done'; readonly call: ProviderToolCall }
+  | { readonly type: 'usage'; readonly usage: UsageMetadata }
+  | {
+      readonly type: 'response.finished';
+      readonly finish: ProviderFinished<Output>;
+    }
+  | { readonly type: 'error'; readonly error: ProviderError };
 ```
 
-Unless it throws, a stream opens with `response.started` and ends with either
-one `response.finished` or one `error` event. A delta whose text is
-empty is never emitted ([`common.ts`](./src/lib/providers/common.ts)). An
-unreadable event (not a JSON object) ends the stream with an `error` event of
-code `malformed_stream_event` whose message is the event's raw text, not
-bounded by `diagnosticExcerpt`
-([`openai.ts`](./src/lib/providers/openai.ts),
-[`openrouter/core.ts`](./src/lib/providers/openrouter/core.ts),
-[`claude.ts`](./src/lib/providers/claude.ts)). Every other
-failure — invalid input or credentials, a refused request, a dropped
-connection, the caller's abort — is thrown from the iterator, not emitted,
-either before `response.started` or after some events (see
-[Errors](#errors)).
+**Order.** Unless it throws, a stream yields `response.started` first and ends
+with exactly one `response.finished` or one `error` event; nothing follows
+either. Every `usage` and `tool_call.done` event comes before
+`response.finished`. A `text.delta`, `reasoning.delta` or `refusal.delta` whose
+text is empty is never emitted ([`common.ts`](./src/lib/providers/common.ts)).
+`response.started` carries the model as sent: OpenAI and Codex report it
+without a `-fast` suffix, the others report `request.model`.
+
+**`response.started` does not mean the request was accepted.** Except on
+OpenRouter with a schema, the HTTP request is sent after it, so an HTTP
+status, a network error or the caller's abort is thrown after it. What is
+checked before it differs by provider:
+
+- **OpenAI and Codex** ([`openai.ts`](./src/lib/providers/openai.ts)): the
+  input check, the request body (including the structured-output schema) and
+  the credentials. Codex's `ChatGPT-Account-ID` value is read with the
+  request, after it: a blank one is thrown as `auth_missing` ("Codex provider
+  received an empty auth value.", [`codex.ts`](./src/lib/providers/codex.ts)).
+- **OpenRouter** without a schema
+  ([`openrouter/core.ts`](./src/lib/providers/openrouter/core.ts),
+  [`openrouter.ts`](./src/lib/providers/openrouter.ts)): the input check, the
+  catalog-based request preparation, the body, the API key and the
+  context-window lookup. With a schema, the stream runs `complete` first, so
+  every error is thrown before `response.started`; it then yields
+  `response.started`, one `text.delta` with the whole text when there is text,
+  and `response.finished`, with no `usage`, reasoning or tool events (see
+  [Structured output](#structured-output)).
+- **Claude** ([`claude.ts`](./src/lib/providers/claude.ts)): the input check,
+  the body and the context-window lookup (a failed lookup reads as no catalog
+  and never fails the stream). The auth headers are built with the request,
+  so a credential error such as `auth_missing` is thrown after
+  `response.started`.
+
+**Failures emitted as an `error` event.** Only these end the stream with an
+`error` event:
+
+- `malformed_stream_event` (every provider): an event is not a JSON object.
+  The message is the event's raw text, not bounded by
+  [`diagnosticExcerpt`](#errors)
+  ([`openai.ts`](./src/lib/providers/openai.ts),
+  [`openrouter/core.ts`](./src/lib/providers/openrouter/core.ts),
+  [`claude.ts`](./src/lib/providers/claude.ts)).
+- `provider_error` (OpenAI and Codex): a `response.failed` event; the message
+  is "<name> stream failed." with no diagnostic
+  ([`openai.ts`](./src/lib/providers/openai.ts)).
+- `provider_error` (OpenRouter): a chunk with an `error` field; the message is
+  "OpenRouter stream error." and the diagnostic the chunk's excerpt
+  ([`openrouter/core.ts`](./src/lib/providers/openrouter/core.ts)).
+- The Anthropic error type (Claude): an `error` event. The code is its type
+  (`provider_error` when it has none), the message "Claude stream error
+  (<type>): <message>", the diagnostic the event's excerpt, and `retryable`
+  is set from the type ([`claude.ts`](./src/lib/providers/claude.ts); see
+  [Claude](#claude)).
+- `incomplete_stream` (Claude): the stream ends without `message_stop`; the
+  message is "Claude stream ended before the response finished." and
+  `retryable` is `true` ([`claude.ts`](./src/lib/providers/claude.ts)).
+
+Every other failure is thrown from the iterator, not emitted: invalid input,
+credentials, an HTTP status, a dropped connection, a structured-output error
+and the caller's abort (see [Errors](#errors)). Codex's `complete` reads its
+own stream and throws an `error` event as a `ProviderErrorObject`
+([`codex.ts`](./src/lib/providers/codex.ts)).
+
+**How a stream ends.**
+
+- **OpenAI and Codex**: at `response.completed` the stream yields `usage` when
+  the response carries usage, then `response.finished`. A stream that ends
+  without `response.completed` or `response.failed` still yields a
+  `response.finished` built from the deltas, with finish reason `unknown` and
+  no usage ([`openai.ts`](./src/lib/providers/openai.ts)).
+- **OpenRouter**: when the chunks end, a `tool_call.done` for every call, then
+  `response.finished` with the last chunk's finish reason (`unknown` when none
+  gave one) ([`openrouter/core.ts`](./src/lib/providers/openrouter/core.ts)).
+- **Claude**: `response.finished` at `message_stop`
+  ([`claude.ts`](./src/lib/providers/claude.ts)).
+
+**`usage` events.** Each `usage` event carries the whole usage so far, never
+an increment: a consumer keeps the last one, and `finish.usage` equals the
+last `usage` event when there is one.
+
+- **OpenAI and Codex**: once, just before `response.finished`
+  ([`openai.ts`](./src/lib/providers/openai.ts)).
+- **OpenRouter**: for every chunk that carries usage, each replacing the last
+  ([`openrouter/parse.ts`](./src/lib/providers/openrouter/parse.ts)).
+- **Claude**: at `message_start` and at each `message_delta` that carries
+  usage, each with the counts merged so far
+  ([`claude/parse.ts`](./src/lib/providers/claude/parse.ts)).
+
+**Tool-call events.**
+
+- `index` ties the `tool_call.delta` events of one call together within the
+  stream: the output position on OpenAI and Codex, the content block index on
+  Claude, the chunk's tool-call `index` on OpenRouter.
+- `id` and `name` on a delta are what the stream knows so far; the
+  `tool_call.done` call carries the final ones. On OpenAI and Codex a delta's
+  `id` is the output item's `item_id` (else `call_<index>`), while `done`
+  carries its `call_id`
+  ([`openai/parse.ts`](./src/lib/providers/openai/parse.ts)).
+- `argumentsDelta` is the next piece of the arguments JSON; concatenated in
+  order the pieces give the arguments. It may be `''` (OpenAI and Codex) or
+  absent (an OpenRouter chunk without arguments,
+  [`openrouter/parse.ts`](./src/lib/providers/openrouter/parse.ts)).
+- `tool_call.done` carries the complete call: on OpenAI and Codex when the
+  provider reports the function-call item done, on Claude when the `tool_use`
+  block ends ([`claude/parse.ts`](./src/lib/providers/claude/parse.ts)), on
+  OpenRouter all at the end of the stream. An OpenAI or Codex call whose item
+  is never reported done gets no `tool_call.done`.
+- `finish.toolCalls` is the complete list. On OpenAI and Codex it is read
+  from the completed response when that lists function calls, numbered by
+  their position among the function calls, which can differ from the events'
+  `index` (see
+  [OpenAI Responses-compatible endpoints](#openai-responses-compatible-endpoints)).
 
 ### Embeddings and reranking
 
 ```ts
 interface ProviderEmbeddingRequest {
-  model: string;
-  input: string;
-  dimensions?: number;
-  signal?: AbortSignal;
+  readonly model: string;
+  readonly input: string;
+  readonly dimensions?: number;
+  readonly signal?: AbortSignal;
 }
 interface ProviderEmbeddingFinished {
-  embedding: readonly number[];
-  usage?: UsageMetadata;
+  readonly embedding: readonly number[];
+  readonly usage?: UsageMetadata;
 }
 interface ProviderRerankRequest {
-  model: string;
-  query: string;
-  documents: readonly string[];
-  topN?: number;
-  signal?: AbortSignal;
+  readonly model: string;
+  readonly query: string;
+  readonly documents: readonly string[];
+  readonly topN?: number;
+  readonly signal?: AbortSignal;
 }
 interface ProviderRerankResult {
-  index: number;
-  relevanceScore: number;
+  readonly index: number;
+  readonly relevanceScore: number;
 }
 interface ProviderRerankFinished {
-  results: readonly ProviderRerankResult[];
-  usage?: UsageMetadata;
+  readonly results: readonly ProviderRerankResult[];
+  readonly usage?: UsageMetadata;
 }
 ```
 
@@ -325,17 +545,24 @@ Codex reject both with `unsupported_embeddings` or `unsupported_reranking`.
 
 - **Embedding** sends `POST {baseUrl}/embeddings` with
   `{ model, input, dimensions? }`; `dimensions` is forwarded unchanged. A blank
-  model is `missing_model`, a blank input `missing_input`, and a `dimensions`
-  that is not a positive integer `invalid_dimensions`. The result is the
+  model is `missing_model` ("Provider request requires a model."), a blank
+  input `missing_input` ("Provider request requires input."), and a
+  `dimensions` that is not a positive integer `invalid_dimensions` ("Provider
+  embedding dimensions must be a positive integer."). The result is the
   `embedding` of `data[0]`, which must be a non-empty array of finite numbers,
-  else `invalid_embedding`.
+  else `invalid_embedding` ("<provider> returned an invalid embedding.", with
+  the provider id).
 - **Reranking** sends `POST {baseUrl}/rerank` with
-  `{ model, query, documents, top_n? }` (for OpenRouter,
-  `https://openrouter.ai/api/v1/rerank`). A blank query, an empty document list
-  or a blank document is `missing_input`; a `topN` that is not a positive
-  integer is `invalid_top_n`. Each of `results` must carry a non-negative
-  integer `index` (into the original `documents`) and a finite
-  `relevance_score`, and there must be at least one, else `invalid_rerank`.
+  `{ model, query, documents, top_n? }` (for OpenRouter, `baseUrl` is
+  `deps.baseUrl`, by default `https://openrouter.ai/api/v1`). A blank model is
+  `missing_model` ("Provider request requires a model."); a blank query, an
+  empty document list or a blank document is `missing_input` ("Provider rerank
+  request requires a query and documents."); a `topN` that is not a positive
+  integer is `invalid_top_n` ("Provider rerank request topN must be a positive
+  integer."). Each of `results` must carry a non-negative integer `index`
+  (into the original `documents`) and a finite `relevance_score`, and there
+  must be at least one, else `invalid_rerank` ("<provider> returned an invalid
+  rerank response.").
 - Both keep the response's `usage` when present (parsed as above), and omit
   `usage` when the response has none
   ([`common.ts`](./src/lib/providers/common.ts)).
@@ -344,12 +571,12 @@ Codex reject both with `unsupported_embeddings` or `unsupported_reranking`.
 
 ```ts
 interface Model {
-  id: string;
-  name?: string;
-  contextWindow?: number;
-  inputModalities?: readonly string[]; // absent means unknown, not text alone
-  provider?: string;
-  raw?: unknown; // the catalog entry as received
+  readonly id: string;
+  readonly name?: string;
+  readonly contextWindow?: number;
+  readonly inputModalities?: readonly string[]; // absent means unknown, not text alone
+  readonly provider?: string;
+  readonly raw?: unknown; // the catalog entry as received
 }
 ```
 
@@ -378,6 +605,30 @@ Each factory fixes its capabilities
 They are exported as `openAiCapabilities`, `openRouterCapabilities`,
 `claudeCapabilities` and `codexCapabilities`, beside `openAiMetadata`,
 `openRouterMetadata`, `claudeMetadata` and `codexMetadata`.
+
+Each flag is a description the provider gives of itself:
+
+- `streaming`, `embeddings`, `reranking`, `modelListing`: `stream`,
+  `embedding`, `rerank` and `models` serve requests rather than rejecting
+  them.
+- `tools`: the provider sends `tools` and returns tool calls.
+- `reasoning`: the provider takes a reasoning effort and returns reasoning.
+- `oauth`: the provider authenticates with a login token rather than an API
+  key (see [Credentials](#credentials)).
+- `serviceTier`: the provider sends `flags.serviceTier`.
+- `structuredOutputs`: the provider asks its API for schema-constrained output.
+  `false` does not mean a `schema` is rejected: Claude sends no schema to its
+  API (it adds the schema to the system prompt only when
+  `flags.includeStructuredSchemaOnSystemPrompt` asks), and its `complete`
+  validates the result against the schema like the others
+  ([`claude/body.ts`](./src/lib/providers/claude/body.ts),
+  [`claude.ts`](./src/lib/providers/claude.ts); see
+  [Structured output](#structured-output)).
+
+No code in this package reads the flags, and nothing in the repository decides
+on them: a provider is called the same way whatever they say, and what a
+provider lacks shows only in its calls (an `unsupported_*` error, or a field
+it drops; see [Requests](#requests)).
 
 ## Structured output
 

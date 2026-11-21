@@ -13,7 +13,14 @@ its configuration, limits and errors, and how to build and test it. See the
 [main README](../../../README.md) for Doric as a whole,
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work, and
 the feature docs [Projects and Threads](../../../docs/features/projects-and-threads.md),
+[Stop, steering and the queue of inputs](../../../docs/features/prompt-control.md),
+[Delegation](../../../docs/features/delegation.md),
+[Default agent](../../../docs/features/default-agent.md),
 [per-Thread model](../../../docs/features/per-thread-model.md),
+[Context compaction](../../../docs/features/context-compaction.md),
+[Attachments](../../../docs/features/attachments.md),
+[Usage](../../../docs/features/usage.md),
+[Sandboxes](../../../docs/features/sandboxes.md),
 [Thread archive](../../../docs/features/thread-archive.md) and
 [`cwd` tool](../../../docs/features/cwd-tool.md) for the flows that cross
 bundles.
@@ -51,20 +58,34 @@ bundles.
 | `optional`        | none                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `desktopScope`    | `runtime/v2`, `runtime.threads/v1`, `runtime.lease/v1` and `runtime.attachments/v1` each take `projectId`, `threadId` and `promptId` from a window's call scope                                                                                                                                                                                                                                            |
 
+Not every `provides` entry is a callable contract. `runtime.project/v1`,
+`runtime.thread/v1`, `runtime.history/v1`, `runtime.attachment/v1` and
+`runtime.migration/v1` are the storage types the bundle defines on
+`storage/v1` ([Data and storage](#data-and-storage)).
+`runtime.prompt-finished/v1` is an event it registers on `events/v1`
+([`runtime.prompt-finished/v1`](#runtimeprompt-finishedv1)). `runtime.hooks/v1`
+is a hook set it defines through `hooks/v1` (`define`) and fires
+([`runtime.hooks/v1`](#runtimehooksv1), [`ports.ts`](src/host/ports.ts)).
+
 `desktopScope` names the scope keys a window may send for each contract
 ([contexts](../../../docs/architecture/bundles/contexts.md)). No method of
 `runtime.lease/v1` is exposed to the desktop, so its `desktopScope` entry is
 never used ([`services/lease.ts`](src/host/services/lease.ts)).
 
 The package is `runtime` ([`package.json`](package.json)). It exports
-`runtime/contracts` (`src/contracts/index.ts`, browser-safe: zod and types
-only) and `runtime/testing` (`src/testing.ts`).
+`runtime/contracts` ([`src/contracts/index.ts`](src/contracts/index.ts)) and
+`runtime/testing` ([`src/testing.ts`](src/testing.ts)). `runtime/contracts` is
+browser-safe: it holds contract refs, zod schemas, types and pure functions,
+and imports only `zod` and `bundle/contracts` at run time; its imports from
+`sandbox`, `sandpool` and `host-config/contracts` are type-only (the
+configuration value types are re-exported from `host-config/contracts`,
+[`configuration.ts`](src/contracts/configuration.ts)).
 
 ## Parts and entry points
 
 | Part      | Entry                                              | What it does                                                                                                                                                                                                                                                                                                |
 | --------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Host      | [`src/host/index.ts`](src/host/index.ts)           | Defines the storage types, registers the `runtime.prompt-finished/v1` event and the Thread event sink, builds the stores and the service, provides every host contract, folds events other bundles append, and installs the start, stop and generation-handover hooks. Activation reads and writes no data. |
+| Host      | [`src/host/index.ts`](src/host/index.ts)           | Defines the storage types, registers the `runtime.prompt-finished/v1` event and the Thread event sink, builds the stores and the service, provides `runtime/v2`, `runtime.threads/v1`, `runtime.workspace/v1`, `runtime.usage/v1`, `runtime.lease/v1` and `runtime.attachments/v1`, defines `runtime.hooks/v1` through `hooks/v1` (`define`), observes `core.event-hooks/v1` through `hooks/v1` (`whenAvailable`) to fold the events other bundles append, and installs the start, stop and generation-handover hooks. Activation reads and writes no data. |
 | Client    | [`src/client/index.ts`](src/client/index.ts)       | Provides `runtime.records/v1` in each desktop window over `runtime/v2`, `runtime.threads/v1` and `doric.connection/v1`. Activation calls no host method.                                                                                                                                                    |
 | Contracts | [`src/contracts/index.ts`](src/contracts/index.ts) | The contract refs, their zod schemas, the record types, and the pure rules shared with other bundles.                                                                                                                                                                                                       |
 | Testing   | [`src/testing.ts`](src/testing.ts)                 | `createRecordsApi` and `createRecordsFake`, an in-memory `runtime.records/v1` for other bundles' tests.                                                                                                                                                                                                     |
@@ -77,14 +98,26 @@ streams on `storage/v1` ([`src/host/store/`](src/host/store/));
 [`ports.ts`](src/host/ports.ts) is the only file that reads `services` for the
 domain. [`lifecycle.ts`](src/host/lifecycle.ts) and
 [`handover.ts`](src/host/handover.ts) install the start, stop and generation
-hooks; [`appends.ts`](src/host/appends.ts) and [`peers.ts`](src/host/peers.ts)
-observe `core.event-hooks/v1`.
+hooks; [`peers.ts`](src/host/peers.ts) declares the `core.event-hooks/v1` ref
+and [`appends.ts`](src/host/appends.ts) folds each appended event into its
+Thread.
 
 ## Records: Projects and Threads
 
 The public records travel through every contract as loose zod objects, so a
 record with more fields than its schema names validates and travels unchanged
 ([`model.ts`](src/contracts/model.ts)).
+
+The host builds each public record from its stored document
+([`runtime.project/v1`](#runtimeprojectv1),
+[`runtime.thread/v1`](#runtimethreadv1)): a field stored as `null` is absent
+from the record; a Project `color` outside the palette is dropped; a Thread's
+`archive.at` becomes `archivedAt`, its `result` keeps only `status`, `text`,
+`promptId` and `at` (the stored `reason` is dropped), its `agent` keeps only
+`name` and `source`, and `executionStartedAt` and `lastExecutionMs` are
+derived, not stored ([`store/projects.ts`](src/host/store/projects.ts),
+[`store/threads.ts`](src/host/store/threads.ts),
+[`store/records.ts`](src/host/store/records.ts)).
 
 ### Project
 
@@ -103,17 +136,19 @@ interface Project {
 }
 ```
 
-The states and their transitions are written by
+The states are written by
 [`store/projects.ts`](src/host/store/projects.ts) and
-[`service.ts`](src/host/domain/service.ts).
+[`service.ts`](src/host/domain/service.ts); the table gives their meanings, and
+the transitions are described under [Behavior → Projects](#projects) and
+[Recovery, host stop and handover](#recovery-host-stop-and-handover).
 
 | Project state | Meaning                                                                                                           |
 | ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `queued`      | Live, waiting for its sandbox lease. A new Project and every Project a restart reconciles start here.             |
+| `queued`      | Live, waiting for its sandbox lease. A new Project starts here. A restart's reconcile writes every open Project that is not `cancelling` back here and clears its `errorCode` ([`store/projects.ts`](src/host/store/projects.ts)); a `cancelling` one becomes `cancelled`. A host stop writes every live Project back here after releasing its lease, with `errorCode` `sandbox_release_failed` when the release failed ([`service.ts`](src/host/domain/service.ts)). |
 | `ready`       | Its sandbox is leased; its Threads run.                                                                           |
 | `cancelling`  | Its termination is in progress.                                                                                   |
 | `cancelled`   | Terminated. Terminal.                                                                                             |
-| `failed`      | Ended by a failure (`errorCode`, for example `sandbox_acquisition_failed` or `sandbox_release_failed`). Terminal. |
+| `failed`      | Ended by a failure: `errorCode` is `sandbox_acquisition_failed` (acquiring the lease, applying its Git credentials, probing its Threads' directories, or recording the lease failed; recording writes the Project `ready`, resets each missing `cwd` and sets its Threads `ready`) or `sandbox_release_failed` (the lease could not be released when the Project ended, which takes precedence) ([`service.ts`](src/host/domain/service.ts); [Errors](#errors-and-failure-behavior)). Terminal. |
 
 ### Thread
 
@@ -126,12 +161,12 @@ interface Thread {
   name: string;
   state: ThreadState; // ProjectState | 'running'
   lastSequence: number; // the last sequence of its event stream
-  queuePaused?: boolean;
+  queuePaused?: boolean; // always present on host records, see below
   cwd: string; // absolute inside the sandbox
   cwdRepo?: 'git' | 'github'; // repository hint of cwd's own root
   activePromptId?: string;
-  executionStartedAt?: string;
-  lastExecutionMs?: number;
+  executionStartedAt?: string; // derived, see below
+  lastExecutionMs?: number; // derived, see below
   errorCode?: string;
   createdAt: string;
   updatedAt: string;
@@ -139,22 +174,43 @@ interface Thread {
   finishedAt?: string;
   result?: { status: string; text: string; promptId: string; at: string };
   agent?: { name: string; source: 'built-in' | 'workspace' }; // never the instructions
-  providerId?: string;
+  providerId?: string; // the Thread's execution, see Execution
   model?: string;
   effort?: ReasoningEffort; // 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-  archivedAt?: string;
-  pinned?: boolean;
+  archivedAt?: string; // set while archived, see Archive
+  pinned?: boolean; // the reader's pin, see Archive
 }
 ```
 
-The states and their transitions are written by
-[`store/threads.ts`](src/host/store/threads.ts) and
-[`runner.ts`](src/host/domain/runner.ts).
+`providerId`, `model` and `effort` are the Thread's own execution choice
+([Execution: provider, model and effort](#execution-provider-model-and-effort));
+`archivedAt` and `pinned` belong to the [Archive](#archive). `queuePaused` is
+optional in the schema ([`model.ts`](src/contracts/model.ts)), but every
+record the host builds carries it
+([`store/threads.ts`](src/host/store/threads.ts),
+[`service.ts`](src/host/domain/service.ts)).
+
+The two execution times are derived when the record is built
+([`store/threads.ts`](src/host/store/threads.ts)):
+
+- `executionStartedAt` is present only while the Thread is `running` with an
+  `activePromptId`. It is the time of the last `prompt.started` event when that
+  event's prompt is the active one, else the Thread's `updatedAt`.
+- `lastExecutionMs` is present only when `result.promptId` is the prompt of the
+  last `prompt.started` event. It is `max(0, result.at − start)`, in
+  milliseconds, where `start` is the time of that event.
+
+The states are written by
+[`store/threads.ts`](src/host/store/threads.ts),
+[`runner.ts`](src/host/domain/runner.ts) and
+[`service.ts`](src/host/domain/service.ts); the table gives their meanings, and
+the transitions are described under [Behavior → Threads](#threads) and
+[Recovery, host stop and handover](#recovery-host-stop-and-handover).
 
 | Thread state | Meaning                                                                                                                                                             |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `queued`     | Created while its Project has no lease.                                                                                                                             |
-| `ready`      | Idle, or waiting for its next queued prompt.                                                                                                                        |
+| `ready`      | Idle, or waiting for its next queued prompt. A restart's recovery and a host stop also write each non-terminal, non-`cancelling` Thread `ready`, even while its Project has no lease ([`store/threads.ts`](src/host/store/threads.ts), [`runner.ts`](src/host/domain/runner.ts), [`service.ts`](src/host/domain/service.ts)). |
 | `running`    | A prompt runs; `activePromptId` names it.                                                                                                                           |
 | `cancelling` | Its termination is in progress.                                                                                                                                     |
 | `cancelled`  | Terminated. Terminal: nothing reopens it.                                                                                                                           |
@@ -166,14 +222,33 @@ finished prompt wins ([`runner.ts`](src/host/domain/runner.ts)).
 **Thread kinds.** A Thread without `origin`, or with `origin: 'user'`, is the
 reader's: a main Thread at the root of its tree, or a sub-thread the reader
 branched from a main Thread. A Thread with `origin: 'agent'` was spawned by a
-running prompt. The reader may not prompt, steer, rewind, edit or remove the
-queued input of an agent Thread (`forbidden`); the reader may watch it, pause it,
-resume a paused prompt, `retry` its last prompt, archive, restore and pin it, and
-delete it once it is archived ([`service.ts`](src/host/domain/service.ts)).
-`createThread` answers `inactive` when the Project or the parent is closing,
-and `invalid_parent` when the parent is not a live Thread of the Project or,
-for a reader's Thread, is not a main Thread; an agent spawns under any Thread,
-at any depth ([`runner.ts`](src/host/domain/runner.ts)).
+running prompt. On an agent Thread, exactly these calls answer `forbidden`:
+`prompt`, `steer`, `rewind`, `editQueued`, `removeQueued`, and `deleteThread`
+while the Thread is not archived. Every other call works on it as on a
+reader's Thread: among them `watchThread` and `viewThread`, `renameThread`,
+`setThreadCwd`, `setThreadExecution`, `pause`, `resumeQueue`, `resume`,
+`retry`, `compact`, `instruct`, `terminateThread`, `archiveThread`,
+`restoreThread` and `setThreadPinned`
+([`service.ts`](src/host/domain/service.ts)).
+
+`createThread` creates a reader's Thread
+([`service.ts`](src/host/domain/service.ts),
+[`runner.ts`](src/host/domain/runner.ts)). It answers `missing` when the
+Project does not exist; `inactive` when the Project is not live here or is
+closing, or when the parent is closing; and `invalid_parent` when the parent is
+not a Thread the Project holds here, or is not a main Thread. A running
+prompt's `spawn` creates an agent Thread under the calling Thread through the
+same steps, so an agent Thread may nest at any depth; there any answer other
+than `created` makes `spawn` throw `Error('Thread cannot be created.')`
+([`runtime.threads/v1`](#runtimethreadsv1)). After those checks the store reads the
+stored documents and rejects the call, rather than answering a status, in two
+cases ([`store/threads.ts`](src/host/store/threads.ts)):
+`Error('Inactive project.')` when the Project document is neither `queued` nor
+`ready`, and `Error('Invalid parent thread.')` when an ancestor is missing,
+belongs to another Project, or is `cancelling`, `failed` or `cancelled`. The
+ancestor case occurs: a Thread closed by `persistence_failed` or
+`terminal_result_failed` closes only itself, so its children stay live, and a
+spawn from one of them rejects with that error.
 
 Other record types of [`model.ts`](src/contracts/model.ts):
 
@@ -189,7 +264,21 @@ type InputSource =
       requestPromptId: string;
     }
   | { kind: 'bundle'; bundleId: string; reason: string; retain?: true };
+```
 
+`InputSource` says where an accepted input comes from
+([Prompts and the queue](#prompts-and-the-queue)): `user` is the reader's own
+input; `terminal` is a background terminal's result, `terminalId` naming the
+terminal and `promptId` the prompt it belongs to; `parent` is a task a parent
+Thread gives its child through `spawn`, `send` or `restart`, naming the
+parent and its calling prompt; `result` is a child's result delivered to its
+parent, naming the child, the child's prompt and the parent prompt that asked
+for it (`requestPromptId`); `bundle` is an instruction a bundle sends through
+`instruct`, naming the calling bundle and its `reason`, with `retain: true` for
+a standing instruction ([`runtime.threads/v1`](#runtimethreadsv1),
+[`prompts.ts`](src/host/domain/prompts.ts)).
+
+```ts
 interface ThreadEvent {
   projectId: string;
   threadId: string;
@@ -208,11 +297,11 @@ interface Page<V> {
 interface QueueItem {
   promptId: string;
   source: InputSource;
-  label: string; // 'You' | 'Terminal' | '<bundleId> · <reason>' | 'Subthread · <name>' | 'Parent · <name>'; <name> is the first 8 characters of the id for an unknown Thread (store/queue.ts)
+  label: string; // by source kind, see below
   preview: string; // the text (or a terminal's `Command:` line), whitespace collapsed, at most 240 characters
-  acceptedAt: string;
+  acceptedAt: string; // the accept event's time, '' when unknown
   editable: boolean;
-  revision: number;
+  revision: number; // the sequence of its accept or last edit event, 0 when unknown
 }
 interface QueuedPrompt {
   promptId: string;
@@ -229,7 +318,25 @@ interface ThreadQueue {
   resumable?: QueueItem;
   items: readonly QueueItem[];
 }
+```
 
+The queue snapshot is built by [`store/queue.ts`](src/host/store/queue.ts):
+
+- A `QueueItem`'s `label` follows its source kind: `user` gives `You`,
+  `terminal` gives `Terminal`, `bundle` gives `<bundleId> · <reason>`, `result`
+  gives `Subthread · <name>` and `parent` gives `Parent · <name>`, where
+  `<name>` is the other Thread's name, or the first 8 characters of its id
+  when its name is unknown. `acceptedAt` is `''` and `revision` is `0` when the
+  prompt's progress carries none ([`store/progress.ts`](src/host/store/progress.ts)).
+- `paused` is the Thread's `queuePaused` while the Thread is neither terminal
+  nor `cancelling`. `stopping` is `queuePaused` while the Thread is neither
+  terminal nor `cancelling` and has an `activePromptId`: the queue is paused
+  and the aborted running prompt has not ended yet. `error` is present only when such a
+  Thread's `errorCode` is `storage_low`. A terminal or `cancelling` Thread has
+  no `current`, no `resumable` and no `items`
+  ([Prompts and the queue](#prompts-and-the-queue)).
+
+```ts
 interface UsageTotals {
   calls: number;
   unpricedCalls: number;
@@ -259,7 +366,36 @@ interface ThreadUsage {
 type ProjectSsh =
   | { status: 'missing' | 'pending' | 'unavailable' | 'expired' }
   | { status: 'ready'; vmId: string; ssh: SandboxSshAccess };
+interface SandboxSshAccess {
+  // from the `sandbox` package
+  host: string;
+  port: number;
+  username: 'root';
+  privateKey: string;
+  knownHosts: string;
+  hostKeyFingerprint: string;
+}
+```
 
+`ProjectSsh` is what `ssh` on `runtime.lease/v1` answers, with its statuses
+explained there ([`runtime.lease/v1`](#runtimeleasev1),
+[`service.ts`](src/host/domain/service.ts)).
+`SandboxSshAccess` is the leased sandbox's own SSH access, passed through
+unchanged; the `sandbox` package defines it
+([`packages/sandbox`](../../../packages/sandbox/README.md#implementing-a-provider),
+[`model.ts`](src/contracts/model.ts)).
+
+`Terminal`, `TerminalOutput` and `TerminalSnapshot` are exported with their
+schemas, but this bundle produces none of them: `Terminal` and
+`TerminalOutput` appear only as the `terminalUpdated` and `terminalOutput`
+variants of `RuntimeNotice` on [`runtime/v2`](#runtimev2)
+([`runtime.ts`](src/contracts/runtime.ts)),
+which nothing in this bundle publishes
+([`notices.ts`](src/host/domain/notices.ts)), and `TerminalSnapshot` appears in
+no contract. The terminal bundle carries its own types in
+`terminal/contracts`.
+
+```ts
 interface Terminal {
   id: string;
   projectId: string;
@@ -293,10 +429,32 @@ The result unions of the Thread operations are listed with
 ## Contracts it provides
 
 Every host method takes an optional last argument `call` (`CallArg` of
-`bundle/contracts`). Prompt-scoped methods read `call.scope` through
-`readRuntimeScope` ([`scope.ts`](src/contracts/scope.ts)); the others ignore
-it. A method marked _desktop_ is exposed to desktop windows
+`bundle/contracts`). Prompt-scoped, lease and attachment methods read
+`call.scope` through `readRuntimeScope` ([`scope.ts`](src/contracts/scope.ts),
+[`services/lease.ts`](src/host/services/lease.ts),
+[`services/attachments.ts`](src/host/services/attachments.ts)); `instruct`
+reads `call.caller`; the others ignore `call`. A method marked _desktop_ is exposed to desktop windows
 (`expose: 'desktop'`); every other method is callable by bundles only.
+
+Every object input in this section is strict, nested objects such as
+`SpawnOptions.agent` included: an unknown key fails input validation. The records and results the methods answer are loose, so a field
+the schema does not name still travels. These outputs are strict: the item
+envelopes of the watches, of `viewThread` and of `RecordsRead`, the `exec`
+result of `runtime.lease/v1`, the `Attachment` and `AttachmentContent` of
+`runtime.attachments/v1`, and the `archiveThread` answer of
+`runtime.records/v1` ([`src/contracts`](src/contracts)).
+
+A member marked "(local)" or "(local callback)" takes or answers a
+process-local value, marked `x-doric-local` in its schema. A `callback` value
+(the listeners of `drain` and `watch`, the tasks of `withThread` and
+`withLease`) crosses a process boundary as a handle that its own process runs;
+an `object` value (the outcomes of `withThread` and `withLease`) crosses as a
+handle that only the runtime's process unwraps, so a caller in another process
+cannot read it. The rules are in
+[Contracts: services and methods](../../../docs/architecture/bundles/contracts.md#services-and-methods)
+and [Process isolation: the envelope](../../../docs/architecture/bundles/process-isolation.md#the-envelope)
+([`runtime.ts`](src/contracts/runtime.ts), [`workspace.ts`](src/contracts/workspace.ts),
+[`lease.ts`](src/contracts/lease.ts)).
 
 ### `runtime/v2`
 
@@ -306,9 +464,9 @@ Projects, recovery, host stop and the runtime's notices
 
 | Method                       | Input                                                     | Output                                              | Notes                                                                                            |
 | ---------------------------- | --------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `recover`                    | none                                                      | `RecoverySummary`                                   | Once per process; a second call answers the first summary.                                       |
-| `recoverWith`                | `Handover`                                                | `RecoverySummary`                                   | `recover` while other runtime processes are alive.                                               |
-| `adopt`                      | `Handover`                                                | `void`                                              | Takes up standby Projects whose owner is gone.                                                   |
+| `recover`                    | none                                                      | `RecoverySummary`                                   | Once per process; shares one summary with `recoverWith` (see below).                             |
+| `recoverWith`                | `Handover`                                                | `RecoverySummary`                                   | `recover` while other runtime processes are alive (see below).                                   |
+| `adopt`                      | `Handover`                                                | `void`                                              | Takes up standby Projects whose owner is gone; always resolves (see below).                      |
 | `drain`                      | `ReleasedListener` (local callback)                       | `void`                                              | Lets every Project go; calls the listener once per released Project.                             |
 | `dispose`                    | none                                                      | `void`                                              | Host stop; idempotent.                                                                           |
 | `createProject` _desktop_    | `{ name }`                                                | `Project`                                           | Rejects with `Error('Doric is shutting down.')` after `dispose`.                                 |
@@ -319,7 +477,7 @@ Projects, recovery, host stop and the runtime's notices
 | `setProjectColor` _desktop_  | `{ id, color: ProjectColor \| null }`                     | `Project \| undefined`                              | `null` removes the color.                                                                        |
 | `terminateProject` _desktop_ | `id`                                                      | `Project \| undefined`                              |                                                                                                  |
 | `deleteProject` _desktop_    | `id`                                                      | `'deleted' \| 'active' \| 'missing' \| 'forbidden'` | Rejects with the storage backend's `limit_exceeded` when the deletion is larger than one commit. |
-| `vmSsh`                      | `vmId`                                                    | `{ projectId, ssh } \| undefined`                   | The live Project whose lease holds that VM.                                                      |
+| `vmSsh`                      | `vmId`                                                    | `{ projectId, ssh } \| undefined`                   | The live Project whose lease holds that VM (see below).                                          |
 | `watch`                      | `RuntimeListener` (local callback)                        | `Disposable`                                        | Every notice, in publication order, after its commit.                                            |
 | `watchProject` _desktop_     | `[{ projectId: uuid }, StreamListener<ProjectWatchItem>]` | `Disposable`                                        | See [watches](#watches).                                                                         |
 
@@ -332,10 +490,10 @@ interface RecoverySummary {
 interface RuntimeOwner {
   generation: number;
   incarnation: number;
-} // strict, integers
+} // integers
 interface Handover {
   live: readonly RuntimeOwner[];
-} // strict
+}
 type ReleasedListener = (projectId: string) => void;
 interface VmSsh {
   projectId: string;
@@ -365,13 +523,27 @@ type RuntimeNotice =
 
 The runtime publishes the `event`, `thread*` and `project*` notices; it
 publishes none of the `terminal*` kinds
-([`notices.ts`](src/host/domain/notices.ts)). Callback and local values carry
-the schema marker `x-doric-local` (`LOCAL_KEY`).
+([`notices.ts`](src/host/domain/notices.ts)). The `x-doric-local` marker is
+`LOCAL_KEY` in [`runtime.ts`](src/contracts/runtime.ts).
 
 `ProjectActivity` ([`activity.ts`](src/host/domain/activity.ts)):
 `activityAt` is the latest `updatedAt` of the Project and all its Threads;
 `latestActiveThreadId` is the non-terminal Thread with the latest `updatedAt`
-(ties by id). The list is sorted by `activityAt` descending, then Project id.
+(ties by id, ascending). The list covers every stored Project, terminal ones
+included, and is sorted by `activityAt` descending, then Project id ascending
+([`service.ts`](src/host/domain/service.ts)).
+
+`recover` and `recoverWith` share one cached promise: whichever runs first
+decides, and every later call of either answers the same outcome and ignores
+its `Handover`. `adopt` calls run one at a time; each waits for a recovery already
+started, then takes up the standby Projects. `adopt` always resolves: a
+failure is only logged as `Project adoption failed`
+([`lifecycle.ts`](src/host/lifecycle.ts)).
+
+`deleteProject` never answers `forbidden`; the result type is the one
+`deleteThread` shares. `vmSsh` answers `undefined` when no Project that is not
+closing holds a lease on that VM, or when that Project's `ssh` is not `ready`
+([`service.ts`](src/host/domain/service.ts)).
 
 ### `runtime.threads/v1`
 
@@ -384,9 +556,13 @@ bound to the prompt that `call.scope` names (`projectId`, `threadId`,
 `promptId`) and to direct children of that prompt's Thread in its Project. Once
 the prompt's binding ended, or for a scope that names another Thread or Project,
 every method rejects with `Error('Thread control is no longer active.')`
-([`bindings.ts`](src/host/domain/bindings.ts)); a Thread that is not a direct
-child rejects with `Error('Thread is not a direct child.')`
-([`runner.ts`](src/host/domain/runner.ts)).
+([`bindings.ts`](src/host/domain/bindings.ts)). While the binding still exists,
+every method rejects with the same error when the Project or the calling Thread
+is closing, or when the calling prompt has finished or been aborted; the one
+exception is `restart` on a closing Project, which answers
+`{ status: 'inactive' }`. A `threadId` that names no stored Thread, or a Thread
+that is not a direct child, rejects with `Error('Thread is not a direct child.')`;
+no control answers `missing` for it ([`runner.ts`](src/host/domain/runner.ts)).
 
 | Method      | Input                                      | Output                                                              |
 | ----------- | ------------------------------------------ | ------------------------------------------------------------------- |
@@ -401,7 +577,7 @@ child rejects with `Error('Thread is not a direct child.')`
 
 ```ts
 interface ThreadView {
-  // the child as the controls see it
+  // the fields the controls guarantee
   id: string;
   projectId: string;
   parentThreadId?: string;
@@ -432,7 +608,6 @@ interface ThreadResult {
 }
 
 interface SpawnOptions {
-  // strict
   agent?: {
     name: string;
     source: 'built-in' | 'workspace';
@@ -458,20 +633,67 @@ type RestartResult =
 type InterruptResult = 'interrupted' | 'missing' | 'inactive' | 'not_running';
 ```
 
-- `spawn` rejects with a `TypeError` on an empty prompt or an empty `title`,
-  and with `Error('Thread cannot be created.')` or
-  `Error('Thread cannot accept a task.')` when the Project cannot take the
-  child; the child is named by `nameFromPrompt(title ?? prompt)` (see
-  [Other exports](#other-exports-of-runtimecontracts)), gets `origin: 'agent'` and the spawn's `agent`, and its
-  first prompt has the source `{ kind: 'parent', threadId, promptId }` of the
-  calling prompt. Its execution follows the [spawn rules](#execution-provider-model-and-effort).
-  No rejection creates a Thread ([`runner.ts`](src/host/domain/runner.ts)).
+`ThreadView` and `ThreadEventView` name the fields the controls guarantee. The
+schemas are loose: `list`, `get` and `terminate` return the whole stored
+`Thread` record, and `events` the whole `ThreadEvent`, so every other field
+travels too ([`threads.ts`](src/contracts/threads.ts),
+[`runner.ts`](src/host/domain/runner.ts)). All controls below are implemented
+in [`runner.ts`](src/host/domain/runner.ts).
+
+- `spawn` rejects with a `TypeError` on an empty prompt or an empty `title`;
+  with `ContractError('invalid_execution', …)` when the spawn's `model` or
+  `effort` is refused, or with the `models/v1.resolve` rejection passed through,
+  both by the [spawn rules](#execution-provider-model-and-effort); with
+  `Error('Thread cannot be created.')` when the Project cannot take the child;
+  and with `Error('Thread cannot accept a task.')` when the child cannot take
+  its first prompt. The child is named by `nameFromPrompt(title ?? prompt)` (see
+  [Other exports](#other-exports-of-runtimecontracts)), gets `origin: 'agent'`
+  and the spawn's `agent`, and its first prompt has the source
+  `{ kind: 'parent', threadId, promptId }` of the calling prompt. Its execution
+  follows the spawn rules. The empty-prompt and empty-title `TypeError`s, a
+  closed binding, and a configuration or validation refusal reject before
+  anything is stored. `Error('Thread cannot be created.')` stores nothing.
+  `Error('Thread cannot accept a task.')`, a rejection of the child's `ready`
+  state write, or a storage or redaction rejection while its first prompt is
+  accepted, rejects after the child Thread is stored; that child stays, with no
+  prompt queued.
+- `list` answers the direct children, newest first, by the
+  [Lists](#projects) rules: a `limit` that is not a positive safe integer
+  throws `TypeError('Invalid page limit.')`; `nextCursor` is present only when
+  another page exists, and is then the id of the last item; a cursor that names
+  no Thread, or no direct child, answers an empty page
+  ([`store/threads.ts`](src/host/store/threads.ts)).
+- `events` answers the child's events whose sequence is greater than
+  `afterSequence` (exclusive), at most `limit`; a `limit` that is not a positive
+  safe integer throws `TypeError('Invalid page limit.')`. `nextSequence` is
+  present only when more events exist, and is then the sequence of the last
+  event returned ([`store/events.ts`](src/host/store/events.ts),
+  [`store/records.ts`](src/host/store/records.ts)).
+- `send` queues `prompt` on the child with the parent source. It answers
+  `accepted`, or `inactive` when the child has no live runtime, the Project or
+  the child is closing, or the child is terminal; it throws
+  `TypeError('A non-empty prompt is required.')` on an empty prompt. It never
+  answers `missing` or `forbidden`.
 - `restart` reopens a direct child whose state is `failed` and queues `prompt`,
-  or the child's last accepted prompt: `terminated` for a `cancelled` child,
-  `inactive` for a `cancelling` one, `not_failed` for a healthy one,
-  `no_prompt` when there is no text to send.
-- `interrupt` aborts the child's running prompt `promptId`; the prompt finishes
-  `cancelled`. `terminate` closes the child and its descendants.
+  or the child's last accepted prompt. It throws a `TypeError` on an empty
+  `prompt`. Outside the Project lock it first waits for a closing child to
+  finish closing. It then answers `terminated` for a `cancelled` child,
+  `inactive` for a `cancelling` one, `not_failed` for any state other than
+  `failed`, `inactive` when the Project is closing, and `no_prompt` when there
+  is no text to send. It reopens the record: `missing` when the reopen finds no
+  record, `not_failed` when the reopened state is not `ready`, and `inactive`
+  when the child has no live runtime; in that last case the reopen is already
+  written, so the stored child is `ready`, and it is not published. Otherwise
+  it publishes the reopened record, then queues the text as `send` does
+  ([`store/threads.ts`](src/host/store/threads.ts)).
+- `interrupt` aborts the child's running prompt `promptId` and answers
+  `interrupted`. It answers `inactive` when the child is closing or has no live
+  runtime, and `not_running` when the child runs another prompt or `promptId`
+  already finished. The prompt finishes `cancelled` with the text
+  `The prompt was cancelled.`, and the child's queue goes on with its next
+  prompt.
+- `terminate` closes the child and its descendants and answers the child's
+  record.
 
 **Thread operations** (`RuntimeThreads`):
 
@@ -506,7 +728,7 @@ type InterruptResult = 'interrupted' | 'missing' | 'inactive' | 'not_running';
 | `editQueued` _desktop_         | `{ id, promptId, text, revision }`                                                      | `EditQueueResult`                                                                                       |
 | `removeQueued` _desktop_       | `{ id, promptId }`                                                                      | `RemoveQueuedResult`                                                                                    |
 | `usage` _desktop_              | `id`                                                                                    | `ThreadUsage \| undefined` (with the context capacity fill)                                             |
-| `enqueueTerminalResult`        | `{ threadId, promptId, terminalId, text }` (strict)                                     | `void`                                                                                                  |
+| `enqueueTerminalResult`        | `{ threadId, promptId, terminalId, text }`                                              | `void`                                                                                                  |
 | `failTerminalResult`           | `{ threadId }`                                                                          | `void`                                                                                                  |
 | `watchThread` _desktop_        | `[{ threadId: uuid, afterSequence: int ≥ 0 }, StreamListener<ThreadWatchItem>]`         | `Disposable`                                                                                            |
 | `viewThread` _desktop_         | `[{ threadId: uuid }, StreamListener<{ kind: 'viewing'; threadId }>]`                   | `Disposable`                                                                                            |
@@ -586,6 +808,12 @@ type RemoveQueuedResult =
   | 'forbidden';
 ```
 
+`thread` adds the storage-pause overlay of
+[Storage pressure](#storage-pressure); `usage` adds the context capacity fill
+of [Usage](#usage). `threadEvents` answers every event after `afterSequence`,
+with no limit, and `lastSequence` is the larger of the record's `lastSequence`
+and the last event's sequence ([`service.ts`](src/host/domain/service.ts)).
+
 `instruct` gives a Thread an instruction from the calling bundle: a steer whose
 source is `{ kind: 'bundle', bundleId, reason, retain? }`, where `bundleId` is
 the caller's own bundle id (`call.caller.bundleId`), never a value the caller
@@ -597,10 +825,11 @@ reason ([`services/threads.ts`](src/host/services/threads.ts),
 `viewThread` holds a view of the Thread while its stream is open; a viewed
 Thread is never archived on its own. Once the view is held the stream emits one
 `{ kind: 'viewing', threadId }` and nothing else. It ends when disposed, when the
-host link closes, with `ContractError('not_found')` for a missing Thread, with
-`ContractError('unavailable')` when the runtime drains, and with
-`ContractError('internal', 'Thread view failed.')` when reading the Thread
-fails, which logs `Thread view failed` with the `threadId` and the error. Each
+host link closes, with `ContractError('not_found', 'Thread not found.')` for a
+missing Thread, with `ContractError('unavailable')` when the runtime drains,
+and with `ContractError('internal', 'Thread view failed.')` when reading the
+Thread fails, which logs `Thread view failed` at warn level with the
+`threadId` and `error: String(error)`. Each
 stream holds its own view; a stream ended with `not_found`, `unavailable` or
 `internal` holds none ([`service.ts`](src/host/domain/service.ts),
 [`archiver.ts`](src/host/domain/archiver.ts)).
@@ -610,9 +839,14 @@ stream holds its own view; a stream ended with `not_found`, `unavailable` or
 `watchThread` and `watchProject` subscribe to the runtime's notices first, then
 read the durable snapshot; what arrives in between is buffered, and Thread
 events are deduplicated against the replay and delivered without gaps, each
-sequence once. A snapshot that cannot be read ends the stream with
-`ContractError('replay_failed', 'The snapshot could not be loaded.')`. A
-listener's rejection is dropped ([`services/watches.ts`](src/host/services/watches.ts),
+sequence once. An event that arrives after a gap is held until the missing
+sequence arrives; nothing is re-read from storage. A snapshot that cannot be
+read ends the stream with
+`ContractError('replay_failed', 'The snapshot could not be loaded.')`; that,
+and the caller's dispose, are the only ends: `deleted`, `project-deleted` or an
+unknown Thread leave the stream open. A listener's rejection is dropped, and a
+listener that throws is swallowed the same way
+([`services/watches.ts`](src/host/services/watches.ts),
 [`watches.ts`](src/contracts/watches.ts)).
 
 ```ts
@@ -642,7 +876,8 @@ type ProjectWatchItem =
   | { kind: 'thread-deleted'; projectId: string; threadId: string };
 ```
 
-The Thread snapshot reads the stored record, without the storage-pause overlay;
+The Thread snapshot reads the stored record, without the storage-pause overlay
+of [Storage pressure](#storage-pressure);
 after the snapshot the stream sends the buffered events first, then the
 lifecycle notices. The Project snapshot carries every Thread of the Project
 (`projectThreads`) and no terminals.
@@ -668,7 +903,7 @@ interface WithThreadOptions {
   exclusive: boolean;
   resume?: boolean;
   refreshHint?: boolean;
-} // strict
+}
 interface ThreadContext {
   projectId: string;
   threadId: string;
@@ -684,7 +919,13 @@ type ThreadTaskOutcome<T> =
 ```
 
 `cwd`, `setCwd` and `location` are bound to the calling prompt like the
-prompt-scoped controls. `location` probes the repository hint now; when the
+prompt-scoped controls. `cwd` needs only a live binding and answers the stored
+`cwd`. `setCwd` and `location` also reject with
+`Error('Thread control is no longer active.')` when the Project or the Thread
+is closing, or the prompt has finished or been aborted. `setCwd` follows the
+[working directory rules](#working-directory-and-repository-hint); when the
+move answers `inactive` or `missing`, it rejects with the same error.
+`location` probes the repository hint now; when the
 probed hint differs from the stored one, it writes it, publishes a Thread update
 and fires `onThreadCwdChangedHook`; a probe that fails or times out answers the
 hint already stored. `withThread` runs `task` on one live Thread whatever the
@@ -701,15 +942,15 @@ Operations on the sandbox leased to the calling Project
 ([`lease.ts`](src/contracts/lease.ts),
 [`services/lease.ts`](src/host/services/lease.ts)). Bundles only.
 
-| Method              | Input                                                                       | Output                                                         |
-| ------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `describe`          | none                                                                        | `{ id: string; root: string }`                                 |
-| `exec`              | `{ cmd: string[]; cwd?; env?: string[]; user?; timeoutMs?; tty? }` (strict) | `{ exitCode: number \| null; stdout: string; stderr: string }` |
-| `readFile`          | `path`                                                                      | `string`                                                       |
-| `readFileBytes`     | `path`                                                                      | `string` (the file's exact bytes, base64)                      |
-| `writeFile`         | `[path, content]`                                                           | `void`                                                         |
-| `ssh`               | none                                                                        | `ProjectSsh`                                                   |
-| `withLease` (local) | `LeaseTask<T>` (`(sandbox: Sandbox) => Promise<T>`)                         | `LeaseOutcome<T>`                                              |
+| Method              | Input                                                              | Output                                                         |
+| ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `describe`          | none                                                               | `{ id: string; root: string }`                                 |
+| `exec`              | `{ cmd: string[]; cwd?; env?: string[]; user?; timeoutMs?; tty? }` | `{ exitCode: number \| null; stdout: string; stderr: string }` |
+| `readFile`          | `path`                                                             | `string`                                                       |
+| `readFileBytes`     | `path`                                                             | `string` (the file's exact bytes, base64)                      |
+| `writeFile`         | `[path, content]`                                                  | `void`                                                         |
+| `ssh`               | none                                                               | `ProjectSsh`                                                   |
+| `withLease` (local) | `LeaseTask<T>` (`(sandbox: Sandbox) => Promise<T>`)                | `LeaseOutcome<T>`                                              |
 
 ```ts
 type LeaseOutcome<T> =
@@ -723,12 +964,25 @@ type LeaseOutcome<T> =
   a `threadId` that names no Thread, the Project with the latest activity. A Project whose lease is not ready rejects
   with `ContractError('unavailable', 'Project lease is not ready (<status>).')`;
   no Project rejects with `ContractError('invalid_input', 'runtime.lease/v1 needs a Project or Thread scope.')`.
+  With a `promptId` whose binding has ended, or that belongs to another Thread
+  or Project, they reject with `Error('Thread control is no longer active.')`
+  ([`bindings.ts`](src/host/domain/bindings.ts)).
+  `exec`, `readFile`, `readFileBytes` and `writeFile` pass their input to the
+  `Sandbox` methods `exec`, `readFile`, `getFile` and `writeFile` unchanged,
+  and the sandbox's rejections propagate; the meaning of `cwd`, `env`, `user`,
+  `timeoutMs` and `tty` is the `sandbox` package's
+  ([`SandboxSession`](../../../packages/sandbox/README.md#sandboxsession) for
+  what each method does, and
+  [Implementing a provider](../../../packages/sandbox/README.md#implementing-a-provider)
+  for the `SandboxExecInput` shape).
   `exec` passes no abort signal and returns text only.
 - `ssh` and `withLease` need `call.scope.projectId` (else the same
   `invalid_input`) and never acquire a lease. They answer `missing` (no
   Project), `expired` (a terminal Project without a runtime), `unavailable` (no
   runtime, closing, or closing or lease loss during the task) and `pending` (no
-  lease yet) ([`service.ts`](src/host/domain/service.ts)).
+  lease yet). `ssh` also answers `unavailable` when the sandbox gives no SSH
+  access. A `withLease` task's own rejection propagates
+  ([`service.ts`](src/host/domain/service.ts)).
 
 ### `runtime.attachments/v1`
 
@@ -736,10 +990,10 @@ Images a Thread attached ([`attachments.ts`](src/contracts/attachments.ts),
 [`services/attachments.ts`](src/host/services/attachments.ts),
 [`store/attachments.ts`](src/host/store/attachments.ts)).
 
-| Method             | Input                                                   | Output                           |
-| ------------------ | ------------------------------------------------------- | -------------------------------- |
-| `attach` _desktop_ | `{ name: string; bytes: string /* base64 */ }` (strict) | `Attachment`                     |
-| `read` _desktop_   | `{ id }`                                                | `AttachmentContent \| undefined` |
+| Method             | Input                                          | Output                           |
+| ------------------ | ---------------------------------------------- | -------------------------------- |
+| `attach` _desktop_ | `{ name: string; bytes: string /* base64 */ }` | `Attachment`                     |
+| `read` _desktop_   | `{ id }`                                       | `AttachmentContent \| undefined` |
 
 ```ts
 interface Attachment {
@@ -755,14 +1009,23 @@ interface AttachmentContent extends Attachment {
 
 - `attach` needs `call.scope.threadId` (else `ContractError('invalid_input', 'runtime.attachments/v1.attach needs a Thread scope.')`);
   a Thread that does not exist rejects with `ContractError('not_found', 'Thread <id> does not exist.')`.
-  It refuses with `invalid_input` bytes that are empty, larger than 5 MiB, or
-  not a PNG, JPEG, WebP or GIF by their first bytes (`sniffImageMediaType`; the
-  name does not decide). The bytes are kept once as a content-addressed blob;
-  attaching the same bytes again answers the same id.
+  It refuses with `ContractError('invalid_input', message)` bytes that are
+  empty (`The attachment is empty.`), larger than 5 MiB
+  (`The attachment is larger than 5 MiB.`), or not a PNG, JPEG, WebP or GIF by
+  their first bytes (`The attachment is not a PNG, JPEG, WebP or GIF image.`;
+  `sniffImageMediaType`, the name does not decide). The input accepts any
+  `name` string; the stored name is `attachmentLabel(name)` (see
+  [Other exports](#other-exports-of-runtimecontracts)). The bytes are kept once
+  as a content-addressed blob; attaching the same bytes again answers the same
+  id ([`store/attachments.ts`](src/host/store/attachments.ts)).
 - `read` answers for the Project of `call.scope.threadId`, else
-  `call.scope.projectId` (else `ContractError('invalid_input', 'runtime.attachments/v1 needs a Project or Thread scope.')`);
-  every Thread of a Project reads its images, and an id the Project holds no
-  record of answers `undefined`.
+  `call.scope.projectId` (else `ContractError('invalid_input', 'runtime.attachments/v1 needs a Project or Thread scope.')`).
+  A `threadId` that names no Thread rejects with
+  `ContractError('not_found', 'Thread <id> does not exist.')` and does not fall
+  back to `projectId` ([`services/attachments.ts`](src/host/services/attachments.ts)).
+  Every Thread of a Project reads its images. A malformed id, an id the Project
+  holds no record of, or a missing blob answers `undefined`
+  ([`store/attachments.ts`](src/host/store/attachments.ts)).
 
 In text, an attachment is the Markdown line
 `![<name>](doric-attachment:sha256-<64 hex>)`; prompts, queued inputs and tool
@@ -776,15 +1039,16 @@ Hooks the runtime fires ([`hooks.ts`](src/contracts/hooks.ts),
 never fails the runtime's work. See
 [hooks](../../../docs/architecture/bundles/hooks.md) for how hooks work.
 
-| Hook                     | Input (strict)                                                                   | When, and whether awaited                                                                                                                                                                                  |
+| Hook                     | Input                                                                            | When, and whether awaited                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `onProjectReadyHook`     | `{ projectId }`                                                                  | After the Project's `ready` commit; not awaited.                                                                                                                                                           |
 | `onProjectClosingHook`   | `{ projectId }`                                                                  | After the Project's `cancelling` commit; not awaited.                                                                                                                                                      |
-| `onThreadsClosingHook`   | `{ projectId, threadIds: string[] }`                                             | When Threads close (termination, failure, host stop, drain), where the runner closes their terminals and before it awaits their running work; awaited.                                                     |
+| `onThreadsClosingHook`   | `{ projectId, threadIds: string[] }`                                             | When Threads close (termination, failure, host stop, drain); awaited, while the runner waits up to 1 s for aborted runs to end. Handlers close their terminals; the runtime has none.                      |
 | `onPromptStartedHook`    | `{ projectId, threadId, promptId, source: InputSource, cwd, cwdRepo? }`          | After `prompt.started` and before the executor runs, outside the Project lock; awaited, so an instruction a handler gives is read before the first model request.                                          |
 | `onThreadCwdChangedHook` | `{ projectId, threadId, promptId?, cwd, cwdRepo?, previous: { cwd, cwdRepo? } }` | After a Thread's `cwd` or `cwdRepo` changed, outside the Project lock, before the move answers its caller; awaited. A reset of a directory a reacquired sandbox no longer holds fires it without awaiting. |
 
-`PromptStarted` and `CwdChanged` are the input types of the last two hooks.
+`onThreadsClosingHook` is not fired for an empty list of Threads
+([`runner.ts`](src/host/domain/runner.ts)). `PromptStarted` and `CwdChanged` are the input types of the last two hooks.
 
 ### `runtime.usage/v1`
 
@@ -792,8 +1056,8 @@ never fails the runtime's work. See
 | ------ | ---------- | -------------------------- |
 | `read` | `threadId` | `ThreadUsage \| undefined` |
 
-The Thread's stored usage projection, without the context capacity fill that
-`runtime.threads/v1.usage` adds ([`usage.ts`](src/contracts/usage.ts),
+The Thread's stored usage projection, without the context capacity fill (see
+[Usage](#usage)) that `runtime.threads/v1.usage` adds ([`usage.ts`](src/contracts/usage.ts),
 [`services/usage.ts`](src/host/services/usage.ts)).
 
 ### `runtime.records/v1`
@@ -864,7 +1128,7 @@ interface RuntimeRecords {
 `runtimeRecordsService(records)` wraps a `RuntimeRecords` in the service
 definition, reading each member at call time; `threadSubtreeIds(threads, rootId)`
 answers the ids of `rootId` and of every Thread below it through
-`parentThreadId`, always including `rootId`.
+`parentThreadId`, always including `rootId` ([`records.ts`](src/contracts/records.ts)).
 
 ### `runtime.prompt-finished/v1`
 

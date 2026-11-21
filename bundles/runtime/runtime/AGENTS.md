@@ -42,13 +42,40 @@ contracts and hooks.
   as `toThread` of [`src/host/store/threads.ts`](src/host/store/threads.ts)
   does, and raise the minor of that storage type's `provides` entry and of
   the `version` of [`manifest.json`](manifest.json) in the same change.
+- Put a new method in the contract of its subject: `runtime/v2`
+  ([`src/contracts/runtime.ts`](src/contracts/runtime.ts)) for Projects,
+  recovery and notices, `runtime.threads/v1`
+  ([`src/contracts/threads.ts`](src/contracts/threads.ts)) for Threads, their
+  queue and their prompt controls, and `runtime.workspace/v1`
+  ([`src/contracts/workspace.ts`](src/contracts/workspace.ts)) for a Thread's
+  working directory.
 - Declare each contract method in its file of `src/contracts/` with its input
-  and output schemas in that file's `*Methods` object, and provide it in
-  `src/host/services/<contract>.ts` by spreading that entry into `defineMethod`;
-  add `expose: 'desktop'` only to a method a window calls. The one exception
-  is `runtime.records/v1`, which the client part provides through
-  `runtimeRecordsService` of [`src/contracts/records.ts`](src/contracts/records.ts)
-  over [`src/client/records.ts`](src/client/records.ts).
+  and output schemas in that file's `*Methods` object, and provide it in the
+  file of [`src/host/services/`](src/host/services/) named for the contract
+  (`runtime.ts` for `runtime/v2`; `threads.ts`, `workspace.ts`, `lease.ts`,
+  `usage.ts` and `attachments.ts` for `runtime.<name>/v1`) by spreading that
+  entry into `defineMethod`. Pass a new service to `services.provide(...)` in
+  `provideRuntime` of [`src/host/index.ts`](src/host/index.ts).
+- Add `expose: 'desktop'` only to a method a window calls. When a window calls
+  a new contract with a Project, Thread or prompt in scope, add its id with
+  those keys (`projectId`, `threadId`, `promptId`) to `desktopScope` of
+  [`manifest.json`](manifest.json): the platform refuses every scope key a
+  contract has no `desktopScope` entry for
+  ([`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts)).
+- Provide no other contract this bundle declares in `src/host/services/`:
+  - `runtime.records/v1` is provided by the client part, through
+    `runtimeRecordsService` of
+    [`src/contracts/records.ts`](src/contracts/records.ts) over
+    [`src/client/records.ts`](src/client/records.ts); declare a records method
+    in `runtimeRecordsMethods` of that file.
+  - Two further exceptions: `executor/v1` and `sandbox/v1` are declared in
+    [`src/contracts/executor.ts`](src/contracts/executor.ts) and
+    [`src/contracts/sandbox.ts`](src/contracts/sandbox.ts) and provided by
+    other bundles (the executor bundle and the sandbox bundles): change their
+    schemas there, never provide them in `src/host/services/`, call them only
+    through [`src/host/ports.ts`](src/host/ports.ts), and when you add a
+    member, raise the minor of each provider's `provides` entry and raise this
+    bundle's `requires` range to that minor.
 - Answer every expected outcome of a host method as a value of its result
   union, and reject only for a broken call, a closed binding or a failure; when
   you add an outcome that a transport route answers, add its REST error to
@@ -57,69 +84,140 @@ contracts and hooks.
   [`src/host/domain/bindings.ts`](src/host/domain/bindings.ts), so that it acts
   only for the prompt its scope names and only while that prompt runs; never
   widen the scope from a value the model or the caller supplies.
-- Keep `src/host/services/` a mapping of contract methods to the domain, keep
+- Keep `src/host/services/` a mapping of contract methods to the domain, with
+  two files that hold more: put the logic of a remote watch stream (subscribe,
+  buffer, deduplicate, replay) in
+  [`src/host/services/watches.ts`](src/host/services/watches.ts), and the
+  resolution of the Project a lease call's scope names in
+  [`src/host/services/lease.ts`](src/host/services/lease.ts). Keep other
   behavior in `src/host/domain/`, keep every read and write of `storage/v1` in
   `src/host/store/`, and read `services` for the domain only in
   [`src/host/ports.ts`](src/host/ports.ts).
-- Take the Project lock (`exclusive(projectId, …)`) only for queue and state
-  mutations; never hold it across `executor.run`, an awaited hook or a sandbox
-  command, and fire the awaited hooks of `runtime.hooks/v1` outside it. The
-  only two exceptions: `setCwd` of `src/host/domain/runner.ts` runs its path
-  checks and hint probe under the lock, and `withThread` with
-  `exclusive: true` runs the caller's task under it.
+- Observe a hook set of another bundle by rebuilding it in
+  [`src/host/peers.ts`](src/host/peers.ts) from its id with the shape this
+  bundle reads, as `CoreEventHooksV1` rebuilds `core.event-hooks/v1`, and
+  register its handler in `activate` of `src/host/index.ts`; take no package
+  dependency on that bundle.
+- Take the Project lock (`exclusive(projectId, …)`, defined in
+  `createWorkspaceService` of
+  [`src/host/domain/service.ts`](src/host/domain/service.ts) and passed to the
+  runner) only for queue and state mutations; never hold it across
+  `executor.run`, an awaited hook or a sandbox command, and fire the awaited
+  hooks of `runtime.hooks/v1` outside it. The only two exceptions: `setCwd` of
+  [`src/host/domain/runner.ts`](src/host/domain/runner.ts) runs its path checks
+  and hint probe under the lock, and `withThread` with `exclusive: true` runs
+  the caller's task under it.
+- Create or resume a Project's runtime only under `exclusive('creation', …)`,
+  and take it, when needed, inside the Project lock, never the reverse.
 - Commit before you publish: append an event or write a document first, then
-  call the publisher, and route every history and event write of a run through
-  the `PromptSession` of [`src/host/domain/session.ts`](src/host/domain/session.ts).
-- Redact every text the runtime stores or delivers with the redactor's current
-  list, and add to the redaction list every secret the runtime writes into a
-  sandbox.
+  call the publisher. Route every executor event and history write of a run
+  through the `PromptSession` of
+  [`src/host/domain/session.ts`](src/host/domain/session.ts).
+- Add a durable Thread event type in these steps:
+  - Write an event the executor emits through `record` of its `PromptSession`.
+  - Write a prompt-lifecycle, queue or state event through `publish` (or
+    `store.appendEvent` followed by `publisher.event`) of
+    [`src/host/domain/runner.ts`](src/host/domain/runner.ts). Write it under
+    the Project lock when it goes with a queue or state mutation, as
+    `prompt.started` and `queue.updated` do. Write it outside the lock when it
+    follows the executor's settlement, as `prompt.paused` and `agent.cancelled`
+    do.
+  - Add the type to `progressTypes` of
+    [`src/host/store/progress.ts`](src/host/store/progress.ts) only when it
+    changes `pending`, and fold it there.
+  - Never rename a stored type and never rewrite a stored event. Give a type
+    that other bundles read through `events/v1` a qualified alias in
+    [`src/contracts/events.ts`](src/contracts/events.ts), registered in
+    `activate`, as `runtime.prompt-finished/v1` is for `prompt.finished`.
+- Redact every text the runtime stores or delivers with the list of
+  [`src/host/domain/redactor.ts`](src/host/domain/redactor.ts): `current()`,
+  or `latest()` in a synchronous stream. Pass every secret the runtime writes
+  into a sandbox to `register(secret)`.
 - Never put a Thread's agent instructions in the public `Thread`, an event or a
   log line: they live only in the Thread document and reach only the executor.
 - Never let a hook handler, a credential write, a sandbox discard, a notice
-  listener or a repository-hint probe fail the operation that triggered it: log
-  the failure and continue. The only exception: in `setCwd`, a sandbox command
+  listener or a repository-hint probe fail the operation that triggered it:
+  catch its failure and continue. Log the failure of a credential write, a
+  sandbox discard or a notice listener, as
+  [`git-credentials.ts`](src/host/domain/git-credentials.ts),
+  `service.ts` and [`notices.ts`](src/host/domain/notices.ts) do; fire a hook
+  of `runtime.hooks/v1` through `src/host/ports.ts`, which catches its
+  rejection without a log. The only exception: in `setCwd`, a sandbox command
   that throws (the hint probe included) rejects the move, while a probe that
   does not finish stores no hint.
 - Keep the rules other bundles share — `src/contracts/execution.ts`,
-  `fences.ts`, `deltas.ts` and the attachment helpers — pure, browser-safe and
-  free of I/O.
+  `fences.ts`, `deltas.ts` and
+  [`src/contracts/attachments.ts`](src/contracts/attachments.ts) — pure,
+  browser-safe and free of I/O.
 - Keep the client part's reads synchronous and answered from memory, and put
-  the host's answer into the mirror before a write resolves.
+  the host's answer into the mirror before a write resolves. Place a client
+  change by layer: a host call in [`src/client/api/`](src/client/api/)
+  (`workspace-api.ts`, `project-watch.ts` or `thread-views.ts`, over the
+  contract subsets of `host.ts`), a pure mirror update in
+  [`src/client/domain/tree.ts`](src/client/domain/tree.ts), the mirror's state
+  in [`src/client/stores/records.ts`](src/client/stores/records.ts), a Project
+  subscription in [`src/client/follow.ts`](src/client/follow.ts), and their
+  composition into `runtime.records/v1` in
+  [`src/client/records.ts`](src/client/records.ts).
 - Change `createRecordsApi` of [`src/testing.ts`](src/testing.ts) in the same
   change as any change to `runtime.records/v1`.
-- Put a new host feature's contract in `src/contracts/` (exported from
-  `src/contracts/index.ts`), its methods in `src/host/services/`, its Project
-  and Thread guards in `src/host/domain/service.ts`, its queue and run behavior
-  in `src/host/domain/runner.ts` or a new file of `src/host/domain/`, and its
-  storage in `src/host/store/`; put a window feature of the mirror in
-  `src/client/`.
+- Put a new host feature's contract in `src/contracts/`, its methods in
+  `src/host/services/`, its Project and Thread guards in
+  `src/host/domain/service.ts`, its queue and run behavior in
+  `src/host/domain/runner.ts` or a new file of `src/host/domain/`, and its
+  storage in `src/host/store/`. Wire a new storage type and a new store:
+  - add the type to `runtimeStorageTypes` of
+    [`src/host/store/index.ts`](src/host/store/index.ts), which `activate`
+    defines on `storage/v1`;
+  - build the store in `createRuntimeStores` of that file and add it to
+    `RuntimeStores`, which `runtimeStores` of `src/host/index.ts` builds.
 - Let another bundle react to the runtime only through a hook of
   `runtime.hooks/v1` in [`src/contracts/hooks.ts`](src/contracts/hooks.ts) or a
   notice, and let it work on a Project's sandbox or a Thread's directory only
-  through `runtime.lease/v1.withLease` or `runtime.workspace/v1.withThread`;
-  never add another bundle's operation to `runtime.lease/v1` or
-  `runtime.workspace/v1`.
+  through `runtime.lease/v1` ([`src/contracts/lease.ts`](src/contracts/lease.ts):
+  `describe`, `exec`, `readFile`, `readFileBytes`, `writeFile`, `withLease`)
+  or `runtime.workspace/v1.withThread`; never add another bundle's operation
+  to `runtime.lease/v1` or `runtime.workspace/v1`.
 - Add a feature's tests where its layer is tested: domain behavior in
   `tests/domain/` over `tests/domain/support/harness.ts`, storage in
-  `tests/store/`, contract schemas and service mapping in `tests/contracts/`,
-  host hooks in `tests/host/`, the records mirror in `tests/client/`, and
-  tests of the whole bundle — activation, call scope, the exported contracts
-  and `runtime/testing` — at the top of `tests/` (`activation.test.ts`,
-  `scope.test.ts`, `runtime-contracts.test.ts`, `testing.test.ts`).
+  `tests/store/` over `tests/store/support.ts`, contract schemas and service
+  mapping in `tests/contracts/`, host hooks in `tests/host/`, the records
+  mirror in `tests/client/` over `tests/client/support/hosts.ts`, and tests of
+  the whole bundle at the top of `tests/`: activation (`activation.test.ts`),
+  call scope (`scope.test.ts`), the exported contracts
+  (`runtime-contracts.test.ts`), the tool-host types against the contracts
+  (`host-parity.test.ts`), Project activity (`activity.test.ts`), the adapter
+  transcript (`adapter-capture.test.ts`) and `runtime/testing`
+  (`testing.test.ts`). Use the shared fakes of `tests/support/`
+  (`executor.ts`, `sandbox.ts`, `credentials.ts`, `execution.ts`) rather than
+  new ones.
 - Change [`tests/store/progress.property.test.ts`](tests/store/progress.property.test.ts)
   in the same change as any change to the `pending` fold of
   `src/host/store/progress.ts`.
 - Never edit [`tests/fixtures/adapter-parity/transcript.json`](tests/fixtures/adapter-parity/transcript.json)
   by hand: no command regenerates it, because
   `tests/support/capture-adapter.ts` loads `app/backend/doric-host` modules
-  that do not exist; treat a failure of `tests/contracts/adapter-parity.test.ts`
-  or `tests/runtime-contracts.test.ts` against it as a change to the
-  contracts' call surface.
+  that do not exist. When a change adds a field to the `Thread` record, add it
+  to `newerThreadFields` of
+  [`tests/contracts/adapter-parity.test.ts`](tests/contracts/adapter-parity.test.ts).
+  Never narrow an output schema of `runtime.threads/v1`, `runtime.workspace/v1`
+  or `runtime.lease/v1`, and add an output field there only as optional:
+  [`tests/adapter-capture.test.ts`](tests/adapter-capture.test.ts) parses
+  every recorded answer with it.
+- Never edit [`tests/store/fixtures/baseline-logs.json`](tests/store/fixtures/baseline-logs.json)
+  by hand: the source it names, `e2e/snapshots/baseline`, does not exist, so
+  no command regenerates it.
 - Update [`README.md`](README.md) and the feature doc the change belongs to —
   [Projects and Threads](../../../docs/features/projects-and-threads.md),
   [per-Thread model](../../../docs/features/per-thread-model.md),
-  [Thread archive](../../../docs/features/thread-archive.md) or
-  [`cwd` tool](../../../docs/features/cwd-tool.md) — in the same change.
+  [Thread archive](../../../docs/features/thread-archive.md),
+  [`cwd` tool](../../../docs/features/cwd-tool.md),
+  [delegation](../../../docs/features/delegation.md),
+  [attachments](../../../docs/features/attachments.md),
+  [usage](../../../docs/features/usage.md),
+  [prompt control](../../../docs/features/prompt-control.md) or
+  [context compaction](../../../docs/features/context-compaction.md) — in the
+  same change.
 - Declare every contract you use in [`manifest.json`](manifest.json).
 - Before adding an exception for this bundle, open
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
@@ -131,9 +229,13 @@ contracts and hooks.
 - `npx nx run bundle-runtime:test`: run it after any change under `src/` or
   `tests/`, and run the tests only through this target, which builds the bundle
   first.
-- `DORIC_TEST_DATABASE_URL=<url> npx nx run bundle-runtime:test`: run it after
-  a change under `src/host/store/` or to `src/contracts/storage.ts`, so that
-  the store tests also run against PostgreSQL.
+- `DORIC_TEST_DATABASE_URL=<url> npx nx run bundle-runtime:test`, where
+  `<url>` is the connection string of a PostgreSQL test database in which the
+  tests create and drop their own schemas:
+  run it after a change under `src/host/store/` or to
+  `src/contracts/storage.ts`, or to the restart behavior that
+  `tests/domain/workspace-restart.test.ts` covers. Without the variable, the
+  PostgreSQL cases of the store tests and of that test are skipped.
 - `npx nx run bundle-runtime:build`: run it after a change to `manifest.json`,
   `package.json`, a `tsconfig*.json` file or `src/contracts/`.
 
