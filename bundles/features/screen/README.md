@@ -27,10 +27,10 @@ built and loaded.
 | `provides`     | `screen.sessions/v2@2.0.0` (host part), `screen.views/v1@1.0.0` (desktop part)                                                                                               |
 | `requires`     | `log/v1@^1.0.0`, `runtime.lease/v1@^1.1.0`, `ui/v1@^1.0.0`, `workspace.selection/v1@^1.0.0`, `runtime.records/v1@^1.0.0`, `layout.stack/v2@^2.0.0`, `screen.relay/v1@^1.0.0` |
 | `optional`     | none                                                                                                                                                                         |
-| `desktopScope` | `screen.sessions/v2`: `projectId`, `threadId`, `promptId`                                                                                                                    |
+| `desktopScope` | `projectId`, `threadId` and `promptId`: the scope keys a window may send with a call of `screen.sessions/v2`                                                                 |
 
 Every entry of `requires` is required: a composition missing any of them
-quarantines the bundle. The package exports only `screen/contracts`
+quarantines the bundle. The package exports `screen/contracts` and `screen/package.json`
 ([`package.json`](package.json), [`src/contracts/index.ts`](src/contracts/index.ts)).
 
 ## Parts
@@ -87,13 +87,14 @@ Project's session and its in-flight attempt ([`src/host/provider.ts`](src/host/p
 ## Contract `screen.views/v1` (desktop)
 
 Declared in [`src/contracts/index.ts`](src/contracts/index.ts) as
-`ScreenViewsV1`; every method has `expose: 'desktop'`
-([`src/desktop/index.ts`](src/desktop/index.ts)).
+`ScreenViewsV1`; every method has `expose: 'desktop'` in `screenViewsMethods`
+([`src/contracts/index.ts`](src/contracts/index.ts)), and the desktop part
+provides it ([`src/desktop/index.ts`](src/desktop/index.ts)).
 
 ```ts
 type ScreenViewStatus =
   | { kind: 'waiting' }
-  | { kind: 'ready'; path: string; display: string }
+  | { kind: 'ready'; path: string; display: string } // path starts with '/'
   | { kind: 'unavailable'; reason: ScreenUnavailableReason }
   | { kind: 'failed' };
 
@@ -105,13 +106,13 @@ interface ScreenView {
 }
 
 interface ScreenAttachRequest {
-  viewId: string;
-  projectId: string;
-  seq: number;
-} // seq: positive integer
+  viewId: string; // non-empty
+  projectId: string; // non-empty
+  seq: number; // positive integer
+}
 interface ScreenAttachReport {
-  viewId: string;
-  seq: number;
+  viewId: string; // non-empty
+  seq: number; // positive integer
   answer: ScreenAttach | null;
 }
 interface ScreenViewsState {
@@ -122,10 +123,11 @@ interface ScreenViewsState {
 
 interface ScreenViews {
   list(call?): Promise<readonly ScreenView[]>;
+  // projectId non-empty; label, when given, non-empty
   add(input: { projectId: string; label?: string }, call?): Promise<ScreenView>;
-  remove(viewId: string, call?): Promise<void>;
-  open(viewId: string, call?): Promise<void>;
-  retry(viewId: string, call?): Promise<void>;
+  remove(viewId: string, call?): Promise<void>; // viewId non-empty
+  open(viewId: string, call?): Promise<void>; // viewId non-empty
+  retry(viewId: string, call?): Promise<void>; // viewId non-empty
   deliver(report: ScreenAttachReport, call?): Promise<void>;
   watch(
     revision: number,
@@ -139,15 +141,15 @@ Every object schema is strict. `watch` takes the tuple
 `[revision (non-negative integer), streamListener]`; the listener is the last
 item, which makes it a stream across the desktop bridge.
 
-| Method    | Behavior                                                                                                                                                                                                                                                                                      |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list`    | The views in the order they were added.                                                                                                                                                                                                                                                       |
-| `add`     | When a view already watches `projectId`, answers that view and opens or focuses its window (at once when it is ready, otherwise once it is). Otherwise creates a `waiting` view with a random UUID, labelled `label` or else `projectId`, stores the list and answers it; it opens no window. |
-| `remove`  | Drops the view from the list and the file. An unknown id does nothing. The view's window stays open.                                                                                                                                                                                          |
-| `open`    | For a ready view, opens its window or focuses it. For a view that is not ready, remembers the request and makes the view due, so the loop dials on its next pass and the window opens when the view becomes ready.                                                                            |
-| `retry`   | For a ready view, focuses its open window, and opens it again when the focus finds it closed. Otherwise drops any dial in flight and makes the view due.                                                                                                                                      |
-| `deliver` | Applies the answer only when `seq` is the view's current dial; otherwise ignores it. Sets the status, applies the window decision, then announces the change.                                                                                                                                 |
-| `watch`   | Pushes the state once the views are loaded, unless the caller already holds that revision, and after every change. The state starts at revision 1, so `watch(0, …)` always receives a first push.                                                                                             |
+| Method    | Behavior                                                                                                                                                                                                                                                                                                                                                  |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list`    | The views in insertion order.                                                                                                                                                                                                                                                                                                                             |
+| `add`     | When a view already watches `projectId`, answers that view and opens or focuses its window (at once when it is ready, otherwise once it is, never for a view that is `unavailable` with `missing-xpra`). Otherwise creates a `waiting` view with a random UUID, labelled `label` or else `projectId`, stores the list and answers it; it opens no window. |
+| `remove`  | Drops the view from the list and the file. An unknown id does nothing. The view's window stays open.                                                                                                                                                                                                                                                      |
+| `open`    | For a ready view, opens its window or focuses it. For a view that is not ready, remembers the request and makes the view due: the loop dials it on its next pass unless a dial is already in flight, and the window opens when the view becomes ready. A view that is `unavailable` with `missing-xpra` is never dialed, so its window never opens.       |
+| `retry`   | For a ready view, applies the window decision with focus but without asking for a window: it focuses an open window, reopens one the focus finds closed, navigates one on another path, and does nothing when no window was opened. Otherwise drops any dial in flight and makes the view due.                                                            |
+| `deliver` | Applies the answer only when `seq` is the view's current dial; otherwise ignores it. Sets the status, applies the window decision, then announces the change.                                                                                                                                                                                             |
+| `watch`   | Pushes the state once the views are loaded, unless the caller already holds that revision, and after every change. The state starts at revision 1, so `watch(0, …)` always receives a first push.                                                                                                                                                         |
 
 Implemented in [`src/desktop/views.ts`](src/desktop/views.ts) and
 [`src/desktop/status.ts`](src/desktop/status.ts).
@@ -229,8 +231,10 @@ importing their packages; `runtime.records/v1` and `runtime.lease/v1` come from
 [`src/desktop/store.ts`](src/desktop/store.ts).
 
 - **Loading.** Activation builds the owner but reads nothing: the views file is
-  read on the first call of any method (activation is also recorded at build
-  time, where `doric.*` services answer nothing). A loaded view starts `waiting`.
+  read on the first call of any method, because the build also runs
+  `activate` against recording services that answer nothing
+  ([`record.ts`](../../../packages/bundle/src/build/record.ts)). A loaded view
+  starts `waiting`.
 - **Status of an answer.** `ready` → `ready` with `path` and `display`;
   `pending` → `waiting`; `unavailable` → `unavailable` with its reason; `null`
   (no answer) → `failed`.
@@ -277,7 +281,9 @@ importing their packages; `runtime.records/v1` and `runtime.lease/v1` come from
   `{ id: 'screen-sidebar', order: 10, title: 'Screens', tag: 'screen-sidebar', headerTag: 'screen-group-action', collapsible: true, initiallyOpen: false }`.
   The layout draws the group, its header and collapse control, caps the open
   pane at 40% of the column, and shows the header element while the header is
-  hovered or focused.
+  hovered or focused
+  ([`project-sidebar.tsx`](../../desktop/layout/src/client/components/organisms/project-sidebar.tsx),
+  [layout](../../desktop/layout/README.md)).
 - **Binding.** Whenever `screen.views/v1` is served, the client part calls
   `watch(0, …)`; each push replaces the mirrored views, and each request in
   `dials` is dialed. A dial calls `screen.sessions/v2.attach(projectId)` with
@@ -324,7 +330,7 @@ importing their packages; `runtime.records/v1` and `runtime.lease/v1` come from
 | xpra log       | `/tmp/doric-screen.log` in the sandbox                                                                   | xpra's own log                                                    |
 
 The views file is written on every `add` of a new view and every `remove`,
-through a `.tmp` file renamed over it. A missing or unreadable file, a file
+through a `.tmp` file that `rename` puts in its place. A missing or unreadable file, a file
 that is not this shape, or one with a single invalid entry reads as no views;
 a failed write keeps the list in memory. Statuses, dials and window state are
 never stored. Every stored view loads, so a file with two views of one Project
@@ -377,8 +383,9 @@ installs it, and the composition must run `screen-relay` resident
 
 - `attach` reports `ScreenSessionError` as `unavailable` with its reason and
   logs `The screen session is unavailable` with the Project id and reason. Any
-  other error (a failing `sandbox.exec` of `command -v xpra`, `xpra list` or
-  `hostname -I`, a relay that rejects) rejects the call; the window turns it
+  other error (a `sandbox.exec` call that rejects, other than the `cat`, the
+  `xpra stop`, the polling `xpra list` and the marker write, whose failures are
+  ignored, or a relay that rejects) rejects the call; the window turns it
   into `answer: null`, which shows `Backend unavailable`
   ([`src/host/provider.ts`](src/host/provider.ts),
   [`src/client/api.ts`](src/client/api.ts)).
@@ -387,6 +394,9 @@ installs it, and the composition must run `screen-relay` resident
   rejects the method that made it, and the pane swallows it
   ([`src/desktop/views.ts`](src/desktop/views.ts),
   [`src/client/elements.tsx`](src/client/elements.tsx)).
+- A call whose input fails its schema is rejected with `invalid_input` before
+  the method runs
+  ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)).
 - A loop pass that throws does not stop the loop
   ([`src/desktop/views.ts`](src/desktop/views.ts)).
 

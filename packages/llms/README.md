@@ -1,32 +1,48 @@
 # llms
 
-One TypeScript interface for chat, streaming, tool calls, structured output,
-embeddings, and reranking across model providers. Each provider factory takes
-an injected HTTP transport and logger, so tests can swap in a fake transport
-and hosts decide how credentials, networking, and logs are handled. Use it when
-you want to call OpenAI Responses-compatible endpoints or OpenRouter without
-tying the rest of your code to either.
+One TypeScript contract, `LlmProvider`, for chat completion, streaming, tool
+calls, structured output, embeddings, reranking and model listing across model
+providers, with one factory per provider: OpenAI Responses-compatible
+endpoints, OpenRouter, Claude (Anthropic Messages through a Claude Code login)
+and Codex (ChatGPT's Codex backend). Every factory takes an injected HTTP
+transport and a Pino logger, so the host decides how credentials, networking
+and logs are handled, and tests pass a fake transport. The package also
+describes each provider kind's settings fields, reads model catalogs and holds
+the model icon set.
 
-Part of [Doric](../../README.md), whose provider bundles build on it.
+It is a library with no state of its own: it persists nothing, starts no
+process and opens no connection except through the transport it is given.
 
-## Highlights
+Users:
 
-- **One `LlmProvider` contract.** `complete`, `stream`, `embedding`, `rerank`,
-  and `models` behave the same way across providers.
-- **Injectable transport.** `HttpTransport` is a two-method interface;
-  `createFetchTransport()` is the production default and tests pass a fake.
-- **Credentials stay with the host.** Providers accept an API key or an exact
-  `authorization` header, either as a string or as a function read at call
-  time, so a rotated credential reaches an existing provider.
-- **Structured output.** Requests can carry a Zod schema; OpenRouter validates
-  and repairs direct structured output locally.
-- **Multi-turn replay.** Opaque provider output, including encrypted
-  reasoning, is kept for exact replay without being logged.
-- **Settings-ready metadata.** `providerKinds` describes each provider's
-  configuration fields, and the site a settings UI may link to, so a settings
-  UI can render them.
+- **Provider bundles** build their provider from it:
+  [openai](../../bundles/providers/openai/README.md),
+  [openrouter](../../bundles/providers/openrouter/README.md),
+  [claude](../../bundles/providers/claude/README.md) and
+  [codex](../../bundles/providers/codex/README.md).
+- **Foundation and runtime bundles** use its contract, kinds and icons:
+  [core](../../bundles/foundation/core/README.md),
+  [host-config](../../bundles/foundation/host-config/README.md),
+  [transport](../../bundles/foundation/transport/README.md) and
+  [default](../../bundles/runtime/default/README.md).
+- **Packages**: [agent](../agent/README.md),
+  [messages](../messages/README.md) and [okf](../okf/README.md).
+- **Applications**: the [host](../../app/backend/doric-host/README.md).
 
-## Usage
+The feature that configures providers from settings is described in
+[Models and providers](../../docs/features/models-and-providers.md).
+
+## Entry point
+
+[`package.json`](./package.json) exports one entry, `llms`, from
+[`src/index.ts`](./src/index.ts) (built to `dist/index.js` with its types in
+`dist/index.d.ts`; the `@org/source` condition resolves to the TypeScript
+source inside the workspace). Runtime dependencies are `pino` (the logger
+type), `zod` (schemas), `tool` (JSON and tool types, see
+[tool](../tool/README.md)) and `tslib`. Everything below is exported from that
+entry; anything not listed is private.
+
+## Quick start
 
 ```ts
 import pino from 'pino';
@@ -34,7 +50,7 @@ import { createFetchTransport, createOpenAiProvider } from 'llms';
 
 const provider = createOpenAiProvider({
   transport: createFetchTransport(),
-  apiKey: process.env.OPENAI_API_KEY ?? '',
+  apiKey: () => process.env.OPENAI_API_KEY ?? '',
   logger: pino(),
 });
 
@@ -44,199 +60,355 @@ for await (const event of provider.stream({
     { role: 'system', content: 'Be concise.' },
     { role: 'user', content: 'Draft the next step.' },
   ],
-  flags: { reasoning: { effort: 'low' } },
+  effort: 'low',
 })) {
-  // The host decides how to display structured stream events.
-  console.log(event);
+  if (event.type === 'text.delta') process.stdout.write(event.delta);
 }
 ```
 
-## Providers
+## The provider contract
 
-### OpenAI Responses-compatible endpoints
-
-`createOpenAiProvider` talks to any endpoint that answers the OpenAI Responses
-API. Set `baseUrl` for a Responses-compatible endpoint and optionally set
-`identity: { id, name }`; configured providers preserve their own identity in
-events and diagnostics. The protocol is `/responses`; a Chat Completions-only
-endpoint is not supported. `apiKey` is optional: without it the request carries
-no authorization header, which some compatible endpoints accept.
-
-- `*-fast` model aliases are sent without the suffix and with
-  `service_tier: "priority"`.
-- Requests use `store: false`. `ProviderFinished.replay` retains opaque output
-  items for exact multi-turn replay, including encrypted reasoning, without
-  exposing them through provider logs.
-- Requests may set `toolChoice` and `parallelToolCalls`; tool results may be
-  marked `incomplete`.
-- Schemas are sent unchanged and marked strict only when they are already
-  strict-compatible.
-
-### OpenRouter
-
-Use `createOpenRouterProvider` for heterogeneous OpenRouter models. It
-discovers the selected model's live capabilities, applies the curated
-laboratory policy, preserves opaque reasoning replay, normalizes tool controls,
-and validates or repairs direct structured output locally
-(`maxStructuredOutputRepairs`, two by default).
+Defined in [`src/lib/types/provider.ts`](./src/lib/types/provider.ts).
 
 ```ts
-import pino from 'pino';
-import { createFetchTransport, createOpenRouterProvider } from 'llms';
-
-const provider = createOpenRouterProvider({
-  transport: createFetchTransport(),
-  apiKey: process.env.OPENROUTER_API_KEY ?? '',
-  logger: pino(),
-});
+interface LlmProvider {
+  readonly metadata: ProviderMetadata; // { id, name, baseUrl }
+  readonly capabilities: ProviderCapabilities;
+  complete(request): Promise<ProviderFinished<Output>>; // see Structured output
+  stream(request): AsyncIterable<ProviderStreamEvent<Output>>;
+  embedding(
+    request: ProviderEmbeddingRequest,
+  ): Promise<ProviderEmbeddingFinished>;
+  rerank(request: ProviderRerankRequest): Promise<ProviderRerankFinished>;
+  models(signal?: AbortSignal): Promise<readonly Model[]>;
+  validateModel(model: string, signal?: AbortSignal): Promise<Model>;
+}
 ```
 
-Set `modelsUrl` to override OpenRouter's catalog; otherwise it uses
-`${baseUrl}/models`. Configuration and execution use the same endpoint.
+`complete` and `stream` are overloaded: with a `schema`, `complete` resolves to
+`ProviderStructuredFinished<z.output<Schema>>`, whose `structured` field is
+always present; without one it resolves to `ProviderFinished<Output>`
+(`Output` defaults to `JsonValue`).
 
-See [MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md) for the behavioral
-matrix, fallback rules, primary sources, and paid live-conformance command.
-
-### Claude integration
-
-`createClaudeProvider` sends Anthropic Messages requests through a Claude
-Code subscription login: authorize once (for example with the
-`claude:oauth` script), store the resulting authorization value, and pass it
-as the `authorization` dependency. `llms` never reads the credential store;
-the host resolves the value.
+### Requests
 
 ```ts
-import pino from 'pino';
-import { createClaudeProvider, createFetchTransport } from 'llms';
-import { resolveClaudeAuth } from 'oauth';
+interface ProviderRequest<
+  Output = JsonValue,
+  Schema extends z.ZodType = z.ZodType,
+> {
+  model: string; // must not be blank
+  messages: readonly ProviderMessage[]; // at least one
+  tools?: readonly ToolDefinition[]; // from `tool`: name, description, inputSchema, strict
+  toolChoice?: 'auto' | 'required' | 'none' | { name: string };
+  parallelToolCalls?: boolean;
+  schema?: Schema; // a Zod schema; see Structured output
+  effort?: ReasoningEffort;
+  temperature?: number;
+  maxOutputTokens?: number;
+  flags?: ProviderCallFlags;
+  signal?: AbortSignal;
+}
 
-const credential = await resolveClaudeAuth();
-const provider = createClaudeProvider({
-  transport: createFetchTransport(),
-  authorization: credential.authorization,
-  logger: pino(),
-});
+interface ProviderMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | readonly ProviderContentPart[];
+  name?: string;
+  toolCallId?: string; // on a tool message
+  toolResultStatus?: 'completed' | 'incomplete';
+  toolCalls?: readonly ProviderToolCall[]; // { id, name, arguments: string, index? }
+  replay?: readonly ProviderReplayItem[]; // opaque JSON objects, see Replay
+}
+
+type ProviderContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; imageUrl: string }; // a data: URL or an https: URL
+
+interface ProviderCallFlags {
+  reasoning?:
+    | boolean
+    | { effort?: ReasoningEffort; summary?: 'auto' | 'concise' | 'detailed' };
+  serviceTier?: 'auto' | 'default' | 'priority';
+  includeUsage?: boolean;
+  includeStructuredSchemaOnSystemPrompt?: boolean;
+}
 ```
 
-Set `baseUrl` to point the provider at another Anthropic Messages endpoint
-(default: `https://api.anthropic.com`). The provider sends the Claude Code
-OAuth beta headers and the Claude Code CLI user agent; a stored value that is
-a Console API key goes as `x-api-key`, any other bare token under `Bearer`. It
-maps a request `effort` to `output_config.effort` where the model takes one,
-keeps thinking on (with drop-on-mismatch block binding) only on models that
-think by default, replays Claude's own signed thinking blocks, marks the system
-prompt and the conversation for prompt caching, and never sends `temperature`.
-A stream's thinking deltas are `reasoning.delta` events. `embedding` and
-`rerank` are rejected: Claude serves neither in this integration. `models()`
-lists every page of Anthropic's catalog with each model's context window, which
-a stream's `response.started` reports. The `claude` kind keeps `models` and
-`reasonings` lists and sets `modelsFromCatalog`: those lists are the catalog
-itself, never typed by hand, and `claudeCatalogModel` turns a listed model into
-its catalog entry (the efforts its `capabilities.effort` marks supported, or
-the ones its id names when the listing carries no capabilities, and its default
-effort: `medium` on Opus 5.5 and Haiku 5.5, `high` elsewhere). See
-[MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md#the-claude-kind) for the
-wire details.
+`reasoningEfforts` is the ordered list `none`, `minimal`, `low`, `medium`,
+`high`, `xhigh`, `max`; `ReasoningEffort` is its member type and
+`isReasoningEffort(value)` tests membership. A request's effort is its
+top-level `effort`, else `flags.reasoning.effort`
+([`common.ts`](./src/lib/providers/common.ts)); each adapter then maps it to
+its wire field.
 
-### Internal Codex integration
+Every adapter checks its input before any request is sent
+([`common.ts`](./src/lib/providers/common.ts)) and fails with a
+`ProviderErrorObject`: a blank `model` is `missing_model` ("Provider request
+requires a model."); an empty `messages` list is `missing_input`.
 
-`createCodexProvider` sends a rendered authorization header to ChatGPT's Codex
-backend, not the public OpenAI Responses API. It is available to internal
-callers but is not listed by `providerKinds`.
+### Results
 
 ```ts
-import pino from 'pino';
-import { createCodexProvider, createFetchTransport } from 'llms';
-import { createCodexOAuth } from 'oauth';
+interface ProviderFinished<Output = JsonValue> {
+  text: string;
+  finishReason:
+    | 'stop'
+    | 'length'
+    | 'tool_calls'
+    | 'content_filter'
+    | 'error'
+    | 'cancelled'
+    | 'unknown';
+  usage?: UsageMetadata;
+  reasoning?: { text?: string; effort?: ReasoningEffort; summary?: string };
+  refusal?: string;
+  toolCalls: readonly ProviderToolCall[];
+  replay?: readonly ProviderReplayItem[];
+  structured?: Output;
+}
 
-// tokenStore, browserOpener, and localCallbackServer are host-supplied.
-const codex = createCodexOAuth({
-  transport: createFetchTransport(),
-  tokenStore,
-  redirectUri: localCallbackServer.redirectUri,
-  browserOpener,
-  callbackServer: localCallbackServer,
-});
-
-const credential = await codex.credential();
-const provider = createCodexProvider({
-  transport: createFetchTransport(),
-  authorization: credential.authorization,
-  logger: pino(),
-});
+interface UsageMetadata {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  searchUnits?: number;
+  cost?: { amount: number; unit?: string; upstreamAmount?: number };
+}
 ```
 
-OAuth is owned by the `oauth` package. `llms` only accepts an API key rendered
-as `Bearer ${apiKey}` or an exact `authorization` header supplied by the host;
-passing both is an error.
+OpenAI-shaped usage is read by one parser
+([`common.ts`](./src/lib/providers/common.ts)): `input_tokens` or
+`prompt_tokens`; `output_tokens` or `completion_tokens`; `total_tokens`;
+`reasoning_tokens` at the top or in `completion_tokens_details` /
+`output_tokens_details`; `cached_tokens` from `input_tokens_details` or
+`prompt_tokens_details`; `cache_write_tokens` from `prompt_tokens_details`;
+`search_units`; `cost` as `cost.amount`, `cost_details.upstream_inference_cost`
+as `cost.upstreamAmount`. Only finite numbers are kept. OpenRouter sets
+`cost.unit` to `credits`; OpenAI sets no unit. Claude reads its own usage
+shape (see [Claude](#claude)).
 
-### Configuring providers from settings
-
-`providerKinds` lists the advertised kinds (`openai`, `openrouter` and
-`claude`), each with the fields a settings surface should show. `providerKind(id)` looks up a
-kind, and `createProviderForKind(id, values, deps)` builds a provider from
-field values, rejecting missing required fields. The former `unified`,
-`openai-compatible`, LM Studio adapters and raw OpenRouter/Decisions API have
-been removed.
-
-## Embeddings
-
-OpenAI and OpenRouter providers accept an optional positive-integer
-`dimensions` value for models that support a configurable embedding size.
+### Stream events
 
 ```ts
-const { embedding, usage } = await provider.embedding({
-  model: 'voyageai/voyage-4-large',
-  input: 'A document to embed.',
-  dimensions: 1024,
-});
+type ProviderStreamEvent<Output> =
+  | {
+      type: 'response.started';
+      provider: string;
+      model: string;
+      contextWindow?: number;
+    }
+  | { type: 'text.delta'; delta: string }
+  | { type: 'reasoning.delta'; delta: string }
+  | { type: 'refusal.delta'; delta: string }
+  | {
+      type: 'tool_call.delta';
+      index: number;
+      id?: string;
+      name?: string;
+      argumentsDelta?: string;
+    }
+  | { type: 'tool_call.done'; call: ProviderToolCall }
+  | { type: 'usage'; usage: UsageMetadata }
+  | { type: 'response.finished'; finish: ProviderFinished<Output> }
+  | { type: 'error'; error: ProviderError };
 ```
 
-The result also carries provider-reported usage when available. OpenRouter
-usage includes token counts and billed cost in credits.
+Unless it throws, a stream opens with `response.started` and ends with either
+one `response.finished` or one `error` event. A delta whose text is
+empty is never emitted ([`common.ts`](./src/lib/providers/common.ts)). An
+unreadable event (not a JSON object) ends the stream with an `error` event of
+code `malformed_stream_event` whose message is the event's text. Every other
+failure — invalid input or credentials, a refused request, a dropped
+connection, the caller's abort — is thrown from the iterator, not emitted,
+either before `response.started` or after some events (see
+[Errors](#errors)).
 
-## Reranking
-
-OpenAI and OpenRouter providers expose a common text-document reranking API.
-The request is sent to `/rerank` below the provider's configured base URL (for
-example, OpenRouter uses `https://openrouter.ai/api/v1/rerank`).
+### Embeddings and reranking
 
 ```ts
-const { results, usage } = await provider.rerank({
-  model: 'cohere/rerank-v3.5',
-  query: 'What is the capital of France?',
-  documents: [
-    'Berlin is the capital of Germany.',
-    'Paris is the capital of France.',
-  ],
-  topN: 1,
-});
-
-// [{ index: 1, relevanceScore: 0.98 }]
+interface ProviderEmbeddingRequest {
+  model: string;
+  input: string;
+  dimensions?: number;
+  signal?: AbortSignal;
+}
+interface ProviderEmbeddingFinished {
+  embedding: readonly number[];
+  usage?: UsageMetadata;
+}
+interface ProviderRerankRequest {
+  model: string;
+  query: string;
+  documents: readonly string[];
+  topN?: number;
+  signal?: AbortSignal;
+}
+interface ProviderRerankFinished {
+  results: readonly { index: number; relevanceScore: number }[];
+  usage?: UsageMetadata;
+}
 ```
 
-Reranking usage may include total tokens, search units, and provider-reported
-cost. Providers that omit accounting data return no `usage` field.
+The OpenAI and OpenRouter providers serve both
+([`openai.ts`](./src/lib/providers/openai.ts),
+[`openrouter/core.ts`](./src/lib/providers/openrouter/core.ts)); Claude and
+Codex reject both with `unsupported_embeddings` or `unsupported_reranking`.
 
-## Structured schema on the system prompt
+- **Embedding** sends `POST {baseUrl}/embeddings` with
+  `{ model, input, dimensions? }`; `dimensions` is forwarded unchanged. A blank
+  model is `missing_model`, a blank input `missing_input`, and a `dimensions`
+  that is not a positive integer `invalid_dimensions`. The result is the
+  `embedding` of `data[0]`, which must be a non-empty array of finite numbers,
+  else `invalid_embedding`.
+- **Reranking** sends `POST {baseUrl}/rerank` with
+  `{ model, query, documents, top_n? }` (for OpenRouter,
+  `https://openrouter.ai/api/v1/rerank`). A blank query, an empty document list
+  or a blank document is `missing_input`; a `topN` that is not a positive
+  integer is `invalid_top_n`. Each of `results` must carry a non-negative
+  integer `index` (into the original `documents`) and a finite
+  `relevance_score`, and there must be at least one, else `invalid_rerank`.
+- Both keep the response's `usage` when present (parsed as above), and omit
+  `usage` when the response has none
+  ([`common.ts`](./src/lib/providers/common.ts)).
 
-Structured requests may set `flags.includeStructuredSchemaOnSystemPrompt: true`
-to append a deterministic system message containing the converted JSON Schema.
-Authored system messages remain first and in order, followed by the generated
-schema message and then all non-system messages. Omitting the flag, setting it
-to `false`, or using it without `schema` leaves messages unchanged. Native
-structured-output fields remain enabled for providers that support them.
-
-## Testing with a fake transport
+### Models
 
 ```ts
-import pino from 'pino';
-import { createOpenRouterProvider, type HttpTransport } from 'llms';
+interface Model {
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  inputModalities?: readonly string[]; // absent means unknown, not text alone
+  provider?: string;
+  raw?: unknown; // the catalog entry as received
+}
+```
 
-const requests = [];
+`validateModel(model)` resolves to the listed model with that id and rejects
+with `missing_model` ("<name> model is not available: <model>") when the list
+lacks it.
+
+### Capabilities
+
+`ProviderCapabilities` is a set of booleans each factory fixes:
+
+| Provider     | streaming | embeddings | reranking | tools | reasoning | modelListing | oauth | serviceTier | structuredOutputs |
+| ------------ | --------- | ---------- | --------- | ----- | --------- | ------------ | ----- | ----------- | ----------------- |
+| `openai`     | yes       | yes        | yes       | yes   | yes       | yes          | no    | yes         | yes               |
+| `openrouter` | yes       | yes        | yes       | yes   | yes       | yes          | no    | no          | yes               |
+| `claude`     | yes       | no         | no        | yes   | yes       | yes          | yes   | no          | no                |
+| `codex`      | yes       | no         | no        | yes   | yes       | yes          | yes   | yes         | yes               |
+
+They are exported as `openAiCapabilities`, `openRouterCapabilities`,
+`claudeCapabilities` and `codexCapabilities`, beside `openAiMetadata`,
+`openRouterMetadata`, `claudeMetadata` and `codexMetadata`.
+
+## Structured output
+
+Implemented in [`structured.ts`](./src/lib/providers/structured.ts).
+
+- **Schema conversion.** `structuredJsonSchema(provider, schema)` converts a Zod
+  schema to JSON Schema (`z.toJSONSchema` with `io: 'output'` and
+  `unrepresentable: 'throw'`) and returns `undefined` for no schema. It fails
+  with `invalid_structured_schema` when the value is not a Zod schema, cannot
+  be represented, or does not produce an `object` schema. Every adapter calls it
+  before sending, so such a request fails before any network call.
+- **`complete` with a schema resolves only on validated JSON**, on every
+  provider. A refusal or a tool call, text that is not JSON, and JSON that fails
+  `schema.safeParse` all reject with `invalid_structured_output`; on success the
+  finish carries the parsed value as `structured`. The diagnostic of a schema
+  failure lists each issue as `path: message`, joined by `; `; the diagnostic of
+  unparseable text is its excerpt, or, when the text is empty,
+  `response text was empty; finishReason=<reason>` followed by
+  `outputTokens=<n>` and `reasoningTokens=<n>` when usage reports them.
+- **`stream` with a schema** on OpenAI, Codex and Claude streams as usual and
+  does not validate: its `response.finished` carries no `structured` value.
+  OpenRouter buffers and validates instead (see [OpenRouter](#openrouter)).
+- **Strict schemas.** `isStrictCompatible` treats a JSON Schema as strict when
+  every object with `properties` has `additionalProperties: false` and lists
+  every property in `required`, recursively. OpenAI and OpenRouter send the
+  unmodified schema and mark it `strict` only when it already passes; a tool's
+  `inputSchema` is marked strict only when the tool asks for `strict` and the
+  schema passes.
+- **Schema on the system prompt.** With
+  `flags.includeStructuredSchemaOnSystemPrompt: true` and a `schema`, the
+  messages become: the authored system messages in their order, then one
+  generated system message, then every non-system message in its order. The
+  generated message reads "Return exactly one JSON object that matches the JSON
+  Schema below. Output just the JSON object string, DO NOT include any Markdown
+  fences or any text outside the JSON object." followed by the schema as
+  indented JSON in a `json` code fence. The fence is backticks or tildes,
+  whichever runs shorter in the schema, at least three and one longer than the
+  longest run, so the schema cannot close it. Without the flag, with `false`,
+  or without a schema, messages are unchanged. The flag adds to the native
+  structured-output field; it does not replace it.
+
+## Replay
+
+An assistant turn's opaque provider output travels in
+`ProviderMessage.replay`, so a later request can send it back exactly
+(encrypted reasoning, signed thinking, reasoning details). Each provider fills
+`ProviderFinished.replay` with its own items: OpenAI and Codex with every item
+of the Responses `output`, OpenRouter with the message's `reasoning_details`,
+Claude with its own content blocks tagged `{ provider: 'claude', block }`.
+When a request is built, OpenAI and OpenRouter send only the untagged items and
+Claude only its tagged ones, so a history that switched providers replays only
+what the current provider produced
+([`common.ts`](./src/lib/providers/common.ts)). Replay never enters the
+operational logs.
+
+## Transport
+
+Defined in [`src/lib/types/http.ts`](./src/lib/types/http.ts) and
+[`src/lib/http.ts`](./src/lib/http.ts).
+
+```ts
+interface HttpRequest {
+  method: 'GET' | 'POST';
+  url: string;
+  headers?: Record<string, string>;
+  body?: string;
+  signal?: AbortSignal;
+}
+interface HttpResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+type HttpStreamChunk = string | Uint8Array;
+interface HttpTransport {
+  request(request: HttpRequest): Promise<HttpResponse>;
+  stream(request: HttpRequest): AsyncIterable<HttpStreamChunk>;
+}
+```
+
+- `createFetchTransport(fetcher = fetch)` is the production transport. `request`
+  returns status, headers and the body as text whatever the status. `stream`
+  yields the response body's chunks; a status that is not OK throws
+  `HttpStreamError(status, body, headers)` before any chunk, and a response
+  with no body yields nothing.
+- `HttpStreamError` has `status`, `diagnostic` (the body, bounded by
+  `diagnosticExcerpt`), `headers`, and the message
+  "HTTP <status> while opening provider stream."
+  ([`http-error.ts`](./src/lib/classes/http-error.ts)).
+- `requestJson(transport, provider, request)` sends a request, turns a status of
+  400 or more into the HTTP error below, and parses the body as a JSON object,
+  failing with `invalid_json` otherwise
+  ([`providers/http.ts`](./src/lib/providers/http.ts)).
+- `parseSseEvents(chunks)` parses server-sent events across arbitrary chunk
+  boundaries into `{ event?, data, done }`: `data` lines are joined by
+  newlines, comment lines are skipped, an event is emitted at each blank line
+  and at the end of input, and `done` is true when the data is `[DONE]`
+  ([`sse.ts`](./src/lib/utils/sse.ts)).
+
+A test transport implements the two methods. For example, with OpenRouter:
+
+```ts
 const transport: HttpTransport = {
-  async request(request) {
-    requests.push(request);
+  async request() {
     return {
       status: 200,
       headers: {},
@@ -248,7 +420,6 @@ const transport: HttpTransport = {
     yield 'data: [DONE]\n\n';
   },
 };
-
 const provider = createOpenRouterProvider({
   transport,
   apiKey: 'test-key',
@@ -256,48 +427,544 @@ const provider = createOpenRouterProvider({
 });
 ```
 
+## Credentials
+
+`SecretSource` is `string | (() => string | Promise<string>)`; a function is
+read on every call, so a rotated credential reaches a provider built before the
+rotation ([`auth.ts`](./src/lib/providers/auth.ts)). The package never reads a
+credential store; the host resolves the value. Signing in is the
+[oauth](../oauth/README.md) package's.
+
+- **OpenAI** takes `apiKey` (sent as `authorization: Bearer <apiKey>`) or
+  `authorization` (sent exactly as given). A blank value counts as absent;
+  neither leaves the header off, which some compatible endpoints accept; both
+  fail with `auth_ambiguous` ([`auth.ts`](./src/lib/providers/auth.ts)).
+- **OpenRouter** requires `apiKey`; a blank one fails with `auth_missing`
+  ("OpenRouter provider requires an API key.")
+  ([`openrouter/auth.ts`](./src/lib/providers/openrouter/auth.ts)).
+- **Claude** and **Codex** take `authorization` (see their sections).
+
 ## Errors
 
-A transport failure whose cause chain, followed up to 8 levels, carries
-`UND_ERR_CONNECT_TIMEOUT`, `ECONNREFUSED`, `ECONNRESET`, `UND_ERR_SOCKET`, or
-`EAI_AGAIN` becomes a retryable provider error with code `network_error` and
-the message "Could not connect to <provider>.". This covers a connection that
-drops mid-stream as well as one that cannot be made. The original error is kept
-as its cause and carries the transport error details, such as addresses and
-ports; see [Logging and content privacy](#logging-and-content-privacy) before
-logging or displaying it. An unresolvable host (`ENOTFOUND`), an abort, and any
-other error pass through unchanged.
+Every failure is a `ProviderErrorObject`, an `Error` named `ProviderError`
+whose `message` is the data's message and whose `data` is a `ProviderError`
+([`provider-error.ts`](./src/lib/classes/provider-error.ts)):
+
+```ts
+interface ProviderError {
+  provider: string; // the provider's id, including a configured identity
+  code: string;
+  message: string;
+  status?: number; // the HTTP status, when there was one
+  retryable?: boolean;
+  diagnostic?: string; // a bounded excerpt of what the provider returned
+  retryAfterMs?: number; // Claude: the wait `retry-after` asks for
+  requestId?: string; // Claude: Anthropic's request id
+}
+```
+
+| Code                                                                                                         | When                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http_error`                                                                                                 | The provider answered with status 400 or more (other than 401/403). Message "<provider> request failed with HTTP <status>."; retryable for 429 and 5xx. |
+| `auth_failed`                                                                                                | Status 401 or 403.                                                                                                                                      |
+| `auth_missing`, `auth_ambiguous`                                                                             | A required credential is blank; both an API key and an authorization were given.                                                                        |
+| `network_error`                                                                                              | The connection could not be made or dropped (below).                                                                                                    |
+| `missing_model`, `missing_input`, `invalid_dimensions`, `invalid_top_n`                                      | An invalid request; also `missing_model` for a model the catalog does not list.                                                                         |
+| `invalid_json`, `invalid_embedding`, `invalid_rerank`, `missing_stream_finish`                               | An unreadable provider response.                                                                                                                        |
+| `malformed_stream_event`, `provider_error`, `incomplete_stream`                                              | Stream error events (see each provider).                                                                                                                |
+| `invalid_structured_schema`, `invalid_structured_output`, `unsupported_structured_tools`                     | Structured output.                                                                                                                                      |
+| `unsupported_embeddings`, `unsupported_reranking`, `unsupported_model_feature`, `incompatible_model_request` | A feature the provider or model lacks.                                                                                                                  |
+
+Claude also passes Anthropic's error types through as codes on stream errors
+(see [Claude](#claude)).
+
+Each factory wraps its transport so that a transport failure carries the
+provider's identity ([`providers/http.ts`](./src/lib/providers/http.ts)):
+
+- An abort (the request's signal is aborted, or the error is an `AbortError`)
+  and an error that is already a `ProviderErrorObject` pass through unchanged,
+  so cancellation keeps its identity.
+- An `HttpStreamError` becomes the HTTP error of its status (`auth_failed` or
+  `http_error`) with the stream's diagnostic, and keeps the original as its
+  `cause`.
+- A failure whose own `code`, or the `code` of a `cause` followed up to eight
+  levels, is `UND_ERR_CONNECT_TIMEOUT`, `ECONNREFUSED`, `ECONNRESET`,
+  `UND_ERR_SOCKET` or `EAI_AGAIN` becomes a retryable `network_error`, message
+  "Could not connect to <provider>.", with the original error as its `cause`.
+  This covers a connection dropped mid-stream as well as one never made. The
+  cause carries the transport's details, such as addresses and ports.
+- Anything else, an unresolvable host (`ENOTFOUND`) included, passes through
+  unchanged.
+
+`diagnosticExcerpt(value, limit = 2048)` returns the value when it fits and
+otherwise its first `limit` characters followed by `...[truncated]`
+([`diagnostics.ts`](./src/lib/utils/diagnostics.ts)). The bound limits volume;
+it does not hide content.
 
 ## Logging and content privacy
 
-Every provider requires a Pino logger and creates a child bound to
-`{ component: 'llms', provider }`. Operational events contain counts, model
-identifiers, finish reasons, and token usage, not request or response bodies.
-Callers control logging through the injected logger, including disabling it.
+Every factory requires a Pino logger and throws `TypeError` ("LLM provider
+requires a Pino-compatible logger.") at construction when the value lacks a
+`debug` or a `child` function. It logs through a child bound to
+`{ component: 'llms', provider: <provider id> }`, every event at `debug`
+([`logging.ts`](./src/lib/providers/logging.ts)):
 
-Content privacy belongs to the caller, not this package. Error diagnostics
-retain provider content without redaction, with excerpts bounded in size;
-parse errors may retain their original cause. Hosts must decide how to handle
-these errors before displaying, persisting, or logging them. There is no
-per-request sensitive-output flag or content sanitizer.
+- `llm provider initialized` once;
+- `llm <operation> started` and then one of `completed`, `failed` or
+  `cancelled`, where the operation is `completion`, `stream`, `embedding`,
+  `rerank`, `model listing` or `model validation`. A failure is `cancelled`
+  when the request's signal is aborted or the error is an `AbortError`. A
+  stream ends at its first `error` event (`failed`) or `response.finished`
+  (`cancelled` or `failed` when the finish reason says so, `completed`
+  otherwise); a stream the consumer stops reading is `cancelled`.
+- Fields are counts and identifiers only: `model`, `messageCount`,
+  `toolCount`, `hasSchema` when a completion or stream starts; `finishReason`,
+  `toolCount` and the usage counts (`inputTokens` … `searchUnits`, `cost`,
+  `costUnit`, `upstreamCost`) when it ends; `dimensions` of an embedding;
+  `documentCount` and `resultCount` of a rerank; `modelCount` of a listing.
+  No message, response text, replay item or credential is logged.
 
-### Migrating content policies
+The package does not classify, redact or sanitize content, and has no
+per-request flag for it. Error diagnostics keep provider content unredacted,
+bounded in size; parse errors may keep their original `cause`. Displaying,
+storing and logging an error is the caller's decision, and the injected logger
+(which a caller may disable) controls log output.
 
-Remove `flags.sensitiveOutput` from requests. The `redactSecrets` and
-`redactDiagnosticValue` exports have been removed; `diagnosticExcerpt` now only
-truncates text. Apply any application-specific sanitization at the consumer
-boundary, and configure the injected logger to control log output. Embedding
-and rerank requests no longer expose `flags`, which had no other supported
-behavior for those operations.
+## Providers
 
-## Development
+### OpenAI Responses-compatible endpoints
 
-```console
-npx nx build llms
-npx nx typecheck llms
-npx nx test llms
+`createOpenAiProvider(deps: OpenAiProviderDeps): LlmProvider`
+([`openai.ts`](./src/lib/providers/openai.ts)) talks to any endpoint that
+answers the OpenAI Responses API.
+
+```ts
+interface OpenAiProviderDeps {
+  transport: HttpTransport;
+  logger: Logger;
+  apiKey?: SecretSource;
+  authorization?: SecretSource;
+  baseUrl?: string; // default https://api.openai.com/v1
+  identity?: { id: string; name: string }; // default { id: 'openai', name: 'OpenAI' }
+}
 ```
 
-`npx nx run llms:conformance-live -- --yes-paid-conformance` runs the paid live
-conformance suite described in
-[MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md); it is not part of `test`.
+- **Identity.** `metadata` is the identity with the effective `baseUrl`. The
+  identity's id is the `provider` of every stream event, model, log line and
+  error, and its name appears in messages, for every operation (`/responses`,
+  `/models`, `/embeddings`, `/rerank`).
+- **Endpoints.** `complete` and `stream` send `POST {baseUrl}/responses`
+  (a Chat Completions-only endpoint is not supported); `models()` sends
+  `GET {baseUrl}/models` and maps each entry of `data` with an id to
+  `{ id, name: id, provider, raw }`.
+- **Body** (`openAiBody(request, stream, provider?)`,
+  [`openai/body.ts`](./src/lib/providers/openai/body.ts)):
+  - `instructions`: the system messages' text joined by a blank line;
+  - `input`: a user message is `{ role, content }` of `input_text` and
+    `input_image` parts; a tool message is a `function_call_output` with
+    `call_id`, `status` (`toolResultStatus`) and `output` — the plain text, or
+    the parts when the result carries images; an assistant message is its
+    untagged replay items when it has some, otherwise one `function_call` item
+    per tool call (its text is not sent);
+  - `tools`: `{ type: 'function', name, description, parameters, strict }`;
+    `tool_choice` is the string, or `{ type: 'function', name }` for a named
+    tool; `parallel_tool_calls` as given;
+  - `text.format`: `{ type: 'json_schema', name: 'structured_output', strict, schema }`
+    when there is a schema;
+  - `temperature`, `max_output_tokens`;
+  - `service_tier`: `flags.serviceTier`, else `priority` for a model whose id
+    ends in `-fast`, whose suffix is removed from `model`;
+  - `reasoning`: `{ effort }` from the request's effort, plus `summary` from
+    `flags.reasoning`; `flags.reasoning: true` with no effort sends `{}`;
+  - `store: false` always, and `stream`.
+- **Complete.** Text is the `output_text` field or the joined `output_text`
+  parts; refusal from `refusal` parts; tool calls from `function_call` items;
+  reasoning text from the `summary` of `reasoning` items; `replay` is the whole
+  `output` ([`openai/parse.ts`](./src/lib/providers/openai/parse.ts)). The
+  finish reason is `tool_calls` when there are calls, `content_filter` when
+  there is a refusal, `stop` for status `completed`, `error` for `failed`,
+  `cancelled`, and `unknown` otherwise.
+- **Stream.** `response.started` names the model as sent (without `-fast`).
+  `response.output_text.delta` is `text.delta`;
+  `response.reasoning_summary_text.delta` and `response.reasoning_text.delta`
+  are `reasoning.delta`; `response.refusal.delta` is `refusal.delta`;
+  `response.function_call_arguments.delta` is `tool_call.delta` at its
+  `output_index`; a `function_call` item's `response.output_item.done` is
+  `tool_call.done`. `response.completed` yields `usage` (when present) and
+  `response.finished` from the completed response; when no text delta came,
+  the text is taken from the `.done` snapshots. `response.failed` ends with an
+  `error` event of code `provider_error` ("<name> stream failed."). A stream
+  that ends without either yields `response.finished` with finish reason
+  `unknown` and what it gathered.
+
+### OpenRouter
+
+`createOpenRouterProvider(deps: OpenRouterProviderDeps): LlmProvider`
+([`openrouter.ts`](./src/lib/providers/openrouter.ts)) uses OpenRouter's Chat
+Completions API (`POST {baseUrl}/chat/completions`) with per-model policy.
+
+```ts
+interface OpenRouterProviderDeps {
+  transport: HttpTransport;
+  logger: Logger;
+  apiKey: SecretSource; // required
+  baseUrl?: string; // default https://openrouter.ai/api/v1
+  modelsUrl?: string; // default `${baseUrl}/models`
+  maxStructuredOutputRepairs?: number; // default 2 (defaultStructuredOutputRepairs)
+}
+```
+
+`maxStructuredOutputRepairs` must be a non-negative safe integer; any other
+value throws `TypeError` at construction. `metadata` is always
+`openRouterMetadata` (`id: 'openrouter'`, `baseUrl` the default).
+
+**Catalog.** `models()` reads `GET {modelsUrl}` and maps each entry to a
+`Model` with `contextWindow` from `context_length` (else
+`top_provider.context_length`, else `architecture.context_length`),
+`inputModalities` from `architecture.input_modalities`, `provider:
+'openrouter'` and the entry as `raw`
+([`openrouter/models.ts`](./src/lib/providers/openrouter/models.ts)). The
+catalog is shared by the provider instance
+([`openrouter/catalog.ts`](./src/lib/providers/openrouter/catalog.ts)): one
+load at a time, bounded by a 5-second timeout of its own; a success is kept 15
+minutes; a failure is not retried for 30 seconds, during which the last good
+catalog is served, or the failure is thrown when there is none. A caller's
+abort rejects its own wait without cancelling the shared load. A model's
+support is its catalog entry's `supported_parameters`; a model the catalog does
+not list has none; when no catalog can be read, support is unknown.
+
+**Request policy**
+([`openrouter/prepare.ts`](./src/lib/providers/openrouter/prepare.ts),
+[`openrouter/profiles.ts`](./src/lib/providers/openrouter/profiles.ts)). The
+catalog is consulted only when a request has tools or a schema. A profile is
+chosen by the model id's prefix:
+
+| Prefix         | Lab       | Forced tool choice    | Forced choice with reasoning | Replay     | Strict tools |
+| -------------- | --------- | --------------------- | ---------------------------- | ---------- | ------------ |
+| `google/gemma` | gemma     | `auto`/`none` only    | yes                          | tool turns | no           |
+| `google/`      | gemini    | yes                   | yes                          | all        | yes          |
+| `openai/`      | openai    | yes                   | yes                          | all        | yes          |
+| `anthropic/`   | anthropic | yes                   | no                           | all        | yes          |
+| `deepseek/`    | deepseek  | yes                   | yes                          | all        | no           |
+| `moonshotai/`  | kimi      | yes                   | yes                          | all        | no           |
+| `mistralai/`   | mistral   | yes                   | yes                          | all        | yes          |
+| `qwen/`        | qwen      | yes                   | yes                          | tool turns | no           |
+| `meta-llama/`  | llama     | `auto`/`none` only    | yes                          | tool turns | no           |
+| `x-ai/`        | xai       | yes                   | yes                          | all        | yes          |
+| `z-ai/`        | glm       | `auto`/`none` only    | yes                          | all        | no           |
+| `cohere/`      | cohere    | yes                   | yes                          | all        | no           |
+| `minimax/`     | minimax   | `auto`/`none` only    | yes                          | all        | no           |
+| any other      | unknown   | from the catalog only | no                           | tool turns | no           |
+
+`openRouterProfileForModel` reads every lab's tools as supported except
+`unknown`'s. In order, a request is then:
+
+1. rejected with `unsupported_structured_tools` when it has both tools and a
+   schema ("…Use the agent terminal-tool contract for tool-enabled structured
+   runs.");
+2. rejected with `unsupported_model_feature` when it has tools and the model
+   does not support `tools` (by the catalog, or by the profile when support is
+   unknown);
+3. for a forced choice (`required` or a named tool): rejected with
+   `incompatible_model_request` when reasoning is requested (an effort other
+   than `none`, or `flags.reasoning` set) and the profile refuses forced choice
+   with reasoning; rejected with `unsupported_model_feature` when the catalog
+   lacks `tool_choice` (or, with unknown support, the profile is not full) or
+   when a named lab's profile allows only `auto`/`none`;
+4. given a structured mode: `json_schema` when the catalog lists
+   `structured_outputs`, else `json_object` when it lists `response_format`,
+   else `prompt`;
+5. normalized: when the catalog lacks `tool_choice`, `none` drops the tools and
+   the choice and `auto` drops the choice; `parallelToolCalls` is dropped unless
+   the catalog lists `parallel_tool_calls`; and when `parallelToolCalls` is
+   `false` and tools remain, a system message ("# Tool use … Call at most one
+   available tool in each response. …") is placed after the authored system
+   messages.
+
+**Body** (`openRouterBody(request, stream, options?)`,
+[`openrouter/body.ts`](./src/lib/providers/openrouter/body.ts)): `model`;
+`messages` as Chat messages (user images as `image_url` parts; a tool result's
+images sent after its run of tool messages as one user message, each set
+introduced by "The tool call \`<id>\` returned these images:"; assistant
+`reasoning_details` from replay, only on turns with tool calls when the profile
+replays tool turns); `tools` as `{ type: 'function', function: { name,
+description, parameters, strict } }`, `strict` omitted on profiles without
+strict tools; `tool_choice` (`{ type: 'function', function: { name } }` for a
+named tool); `parallel_tool_calls`; `temperature`; `max_tokens`; `reasoning:
+{ effort, summary }` when an effort or `flags.reasoning` is set;
+`response_format` (`json_schema` named `structured_output` with `strict`, or
+`{ type: 'json_object' }`, or none for `prompt`); `provider:
+{ require_parameters: true }` when tools remain or a schema uses a native mode;
+`stream`; and `stream_options: { include_usage: true }` unless
+`flags.includeUsage` is `false`. In `json_object` and `prompt` modes the schema
+is always placed on the system prompt as described in
+[Structured output](#structured-output).
+
+**Complete** ([`openrouter/parse.ts`](./src/lib/providers/openrouter/parse.ts)):
+text, `reasoning` (or `reasoning_content`), `refusal`, `tool_calls` and
+`reasoning_details` (as replay) of the first choice; the finish reason is
+`finish_reason` when it is `stop`, `length`, `tool_calls`, `content_filter`,
+`cancelled`, `error` (also for `failed`), else `unknown`. With a schema, the
+answer is validated; an `invalid_structured_output` failure is retried up to
+`maxStructuredOutputRepairs` times, each attempt appending the rejected answer
+(with its replay) as an assistant message and a user message headed
+"# Structured output correction" asking for one corrected JSON object. Usage
+is summed over the attempts (costs only when their units agree). Any other
+error, or the last failure, rejects.
+
+**Stream.** Without a schema: `response.started` carries the model's catalog
+`contextWindow` when known; each chunk yields `usage`, `text.delta`,
+`reasoning.delta`, `refusal.delta` and `tool_call.delta` events; a chunk with
+an `error` field ends the stream with an `error` event of code
+`provider_error` ("OpenRouter stream error.") whose diagnostic is the chunk;
+at `[DONE]` or the end of input every accumulated call is emitted as
+`tool_call.done`, then `response.finished` with the last finish reason seen.
+With a schema the stream is atomic: it runs `complete` (with its repairs),
+then yields `response.started`, one `text.delta` with the whole text when it is
+not empty, and `response.finished` with the validated `structured` value; a
+failure rejects the iterator.
+
+The behavior of each lab family and the paid live check are described in
+[MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md).
+
+### Claude
+
+`createClaudeProvider(deps: ClaudeProviderDeps): LlmProvider`
+([`claude.ts`](./src/lib/providers/claude.ts)) sends Anthropic Messages
+requests through a Claude Code subscription login.
+
+```ts
+interface ClaudeProviderDeps {
+  transport: HttpTransport;
+  logger: Logger;
+  authorization: SecretSource; // a Claude sign-in, a `claude setup-token` value, or a Console API key
+  baseUrl?: string; // default https://api.anthropic.com
+}
+```
+
+- **Requests** go to `{baseUrl}/v1/messages?beta=true` with
+  `anthropic-version: 2023-06-01`, `anthropic-beta:
+oauth-2025-04-20,claude-code-20250219` (plus
+  `thinking-binding-controls-2026-08-01` when the body sets `thinking`),
+  `x-app: cli` and `user-agent` `claudeUserAgent`
+  (`claude-cli/2.1.309 (external, cli)`). The credential picks its header: a
+  value that starts with `Bearer ` is sent as `authorization` as it is; one that
+  starts with `sk-ant-api` as `x-api-key`; any other under `Bearer`. A blank
+  value fails with `auth_missing`.
+- **Body** ([`claude/body.ts`](./src/lib/providers/claude/body.ts)): `system`
+  opens with the block "You are Claude Code, Anthropic's official CLI for
+  Claude." followed by the caller's system text as a second block, the last
+  block marked `cache_control: ephemeral`, and the request carries a top-level
+  `cache_control: ephemeral`; `temperature` is never sent; `max_tokens` is
+  `maxOutputTokens`, else 64000 for a stream and 16000 otherwise. The effort
+  becomes `output_config.effort` at a level the model takes, and models that
+  think by default (5.x families, Fable, Mythos) get an adaptive `thinking`
+  with `block_binding: { prefix_mismatch_behavior: 'drop_block' }`
+  ([`claude/models.ts`](./src/lib/providers/claude/models.ts)). Tool choice is
+  Anthropic's object form; on models that refuse forced tool use, `required`
+  and a named tool become `auto`; `parallelToolCalls: false` adds
+  `disable_parallel_tool_use: true`. A schema has no native mode here: the
+  answer of `complete` is validated locally, and the flag can put the schema on
+  the system prompt.
+- **Results** ([`claude/parse.ts`](./src/lib/providers/claude/parse.ts)): thinking
+  deltas are `reasoning.delta`; Claude's own content blocks are kept as tagged
+  replay; `stop_reason` maps to `stop` (`end_turn`, `stop_sequence`,
+  `pause_turn`), `length` (`max_tokens`, `model_context_window_exceeded`),
+  `tool_calls` (`tool_use`), `content_filter` (`refusal`) or `unknown`.
+- **Stream errors.** An error event ends the stream with an `error` event whose
+  code is Anthropic's error type (else `provider_error`) and whose message is
+  "Claude stream error (<type>): <message>"; `overloaded_error`, `api_error` and
+  `rate_limit_error` are retryable unless the error code is
+  `enforced_spend_limit_reached`. A stream that ends without `message_stop`
+  ends with a retryable `incomplete_stream` error.
+- **HTTP errors** keep Anthropic's message ("claude request failed with HTTP
+  <status>: <message>", plus " Sign in with Claude again to renew the login."
+  on 401), `retryAfterMs` from `retry-after` (seconds or a date), `requestId`
+  from `request-id`, and are never retryable on a spend cap.
+- **Models.** `models()` reads every page of `GET {baseUrl}/v1/models?beta=true`
+  (`limit=1000`, then `after_id` while `has_more`), each with `name` from
+  `display_name`, `contextWindow` from `max_input_tokens`, and
+  `inputModalities` `['text', 'image']` or `['text']` when
+  `capabilities.image_input.supported` says. `validateModel` accepts an id with
+  or without its date suffix. A stream's `response.started` carries the
+  model's `contextWindow`, read from a catalog listed once per provider
+  instance; a failed listing gives no window and never fails a request.
+- `embedding` and `rerank` reject (`unsupported_embeddings`,
+  `unsupported_reranking`).
+
+The full wire mapping (messages, tool results, images, effort levels per model,
+usage) is in
+[MODEL_COMPATIBILITY.md](./MODEL_COMPATIBILITY.md#the-claude-kind).
+
+### Codex
+
+`createCodexProvider(deps: CodexProviderDeps): LlmProvider`
+([`codex.ts`](./src/lib/providers/codex.ts)) uses ChatGPT's Codex Responses
+backend through the OpenAI adapter. It is not listed by `providerKinds`.
+
+```ts
+interface CodexProviderDeps {
+  transport: HttpTransport;
+  logger: Logger;
+  authorization: SecretSource; // sent exactly as the authorization header
+  chatGptAccountId?: SecretSource; // sent as ChatGPT-Account-ID
+  fedramp?: boolean; // true sends X-OpenAI-Fedramp: true
+  baseUrl?: string; // default https://chatgpt.com/backend-api/codex
+}
+```
+
+The body is the OpenAI body without `temperature`, with `store: false`, and
+with `instructions` "You are Codex, a coding agent." when the request has no
+system text. A blank `chatGptAccountId` fails with `auth_missing`. `complete`
+runs a stream and resolves with its `response.finished` (validated when there
+is a schema), rejects with the stream's `error`, or with
+`missing_stream_finish` when the stream ends without either. `models()` reads
+`GET {baseUrl}/models`. `embedding` and `rerank` reject.
+
+## Provider kinds
+
+[`kinds.ts`](./src/lib/providers/kinds.ts) describes what a settings surface
+shows for each kind and builds a provider from the values it stores.
+
+```ts
+type ProviderKindId = 'openai' | 'openrouter' | 'codex' | 'claude';
+interface ProviderField {
+  key: string;
+  label: string;
+  kind: 'text' | 'url' | 'number' | 'enum' | 'secret';
+  required: boolean;
+  description?: string;
+  placeholder?: string;
+  options?: readonly string[]; // enum fields only
+  advanced?: boolean;
+}
+interface ProviderKind {
+  id: ProviderKindId;
+  label: string;
+  description: string;
+  fields: readonly ProviderField[];
+  lists: readonly ('models' | 'reasonings')[];
+  modelsFromCatalog?: boolean;
+  site?: { url: string; label: string };
+}
+type ProviderValues = Readonly<Record<string, SecretSource>>;
+interface ProviderKindDeps {
+  transport: HttpTransport;
+  logger: Logger;
+  identity: { id: string; name: string };
+}
+type ConfiguredProvider = LlmProvider & {
+  kind: ProviderKindId;
+  configuration: readonly ProviderField[];
+};
+```
+
+| Kind         | Fields                                                                                                                        | Lists                  | Other                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------- |
+| `openai`     | `endpoint` (url, advanced, placeholder the default base URL); `token` (secret, optional)                                      | `models`, `reasonings` |                                                    |
+| `openrouter` | `endpoint`; `token` (required); `maxStructuredOutputRepairs` (number, advanced, placeholder `2`); `modelsUrl` (url, advanced) | `models`, `reasonings` | `site`: `https://openrouter.ai`, "Open OpenRouter" |
+| `codex`      | `endpoint`; `token` (required); `chatGptAccountId` (text); `fedramp` (enum `true`/`false`, placeholder `false`)               | none                   |                                                    |
+| `claude`     | `endpoint`; `token` (required)                                                                                                | `models`, `reasonings` | `modelsFromCatalog: true`                          |
+
+A `token` value names a stored credential; the host resolves it and passes the
+value or a source.
+
+- `providerKinds` lists `openai`, `openrouter` and `claude`; `providerKind(id)`
+  finds any of the four, or `undefined`.
+- `createProviderForKind(id, values, deps)` throws `Error` "Unknown provider
+  kind: <id>" for an unknown id and "Provider kind <id> requires a <key> value."
+  for a required field that is absent or blank, then calls the kind's factory:
+  `token` becomes `apiKey` (OpenAI, OpenRouter) or `authorization` (Codex,
+  Claude); `endpoint` becomes `baseUrl`; `identity` is passed to the OpenAI
+  factory only. Every non-`token` value must be a string (else "Provider value
+  <key> is a literal, not a source."); `maxStructuredOutputRepairs` must parse
+  as a finite number (and then pass the OpenRouter factory's own check) and
+  `fedramp` must be `true` or `false`. An absent value
+  leaves the factory's default. The result carries `kind` and its fields as
+  `configuration`.
+
+## Model catalogs
+
+[`models.ts`](./src/lib/providers/models.ts) and
+[`claude/models.ts`](./src/lib/providers/claude/models.ts):
+
+```ts
+interface CatalogModel {
+  id: string;
+  name?: string;
+  reasonings: readonly ReasoningEffort[];
+  parameters: readonly string[];
+  defaultEffort?: ReasoningEffort;
+  mandatory: boolean;
+}
+```
+
+- `modelCatalog(response)` reads an OpenAI-shaped `/models` answer into a map by
+  id: `name`; `reasonings` from `reasoning.supported_efforts` (known efforts
+  only); `parameters` from `supported_parameters`; `defaultEffort` from
+  `reasoning.default_effort` when it is one of the model's efforts; `mandatory`
+  when `reasoning.mandatory` is `true`.
+- `claudeCatalogModel(model)` turns a Claude `Model` into its entry:
+  `reasonings` are the levels (`low`, `medium`, `high`, `xhigh`, `max`, in that
+  order) its `capabilities.effort` marks supported, none when it marks effort
+  unsupported, or the levels its id implies when the listing carries no
+  capabilities; `defaultEffort` is `medium` on Opus and Haiku 5.5 and later,
+  `high` elsewhere, falling back to the strongest listed level; `parameters` is
+  empty and `mandatory` is `false`.
+
+## Model icons
+
+[`icons/index.ts`](./src/lib/icons/index.ts) holds eight LobeHub mono SVG icons
+(`claude`, `deepseek`, `gemini`, `gemma`, `meta`, `openai`, `openrouter`,
+`qwen`), whose source and hashes are in [PROVENANCE.md](./PROVENANCE.md).
+
+- `ModelIconName` is the icon names; `isModelIconName(value)` tests an own key;
+  `modelIconSvg(name)` returns the SVG text.
+- `modelFamilies` lists, in matching order, `{ icon, lab, word }` for claude
+  (`anthropic`), gemini, gemma, openai (`gpt`), deepseek, qwen and meta
+  (`llama`).
+- `openRouterModelIcon(model)` is the icon of the family whose lab the
+  OpenRouter profile reads from the id, else `null`.
+- `modelNameIcon(model)` is the icon of the first family whose word the
+  lowercased name contains, else `null`.
+
+## Live conformance
+
+[`scripts/conformance-live.mjs`](./scripts/conformance-live.mjs) checks the
+built OpenRouter provider against real models and is paid; it is not part of
+`test`.
+
+```console
+OPENROUTER_API_KEY=… npx nx run llms:conformance-live -- --yes-paid-conformance
+```
+
+- It refuses to run without `--yes-paid-conformance` or without
+  `OPENROUTER_API_KEY`.
+- It reads the catalog and fails before any paid call when one of its 13
+  representative models (one per lab family) is missing or has no price, or
+  when the worst case — 5 calls per model of 4,096 input and 1,024 output
+  tokens at the listed prices — exceeds USD 5.
+- Per model it runs three stages: `structured_output` (a strict Zod schema),
+  `tool_call` (one `add` call with `parallelToolCalls: false`) and
+  `tool_replay` (the answer after the tool result, with the call's replay).
+  Each call permits up to 1,024 output tokens.
+- Progress is written by Pino to stderr (level `LLMS_CONFORMANCE_LOG_LEVEL`,
+  default `debug`; `apiKey`, `authorization` and `token` fields are redacted).
+  Stdout holds only the final JSON report
+  `{ ok, budgetUsd, estimatedWorstCaseUsd, results }`, where a failed result
+  names its `stage` and the provider error's `error`, `provider`, `code`,
+  `status`, `retryable` and `diagnostic`; the runner decides to show them.
+  The exit code is 1 when any model fails.
+
+## Build and test
+
+Run from the repository root ([`project.json`](./project.json)):
+
+```console
+npx nx run llms:build      # tsc -p packages/llms/tsconfig.lib.json into packages/llms/dist
+npx nx run llms:typecheck
+npx nx run llms:test       # compiles tsconfig.spec.json into dist-tests and runs node --test
+```
+
+Tests live in [`tests/`](./tests) and use fake transports
+([`tests/fakes.ts`](./tests/fakes.ts)); none reaches the network.

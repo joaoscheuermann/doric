@@ -4,8 +4,9 @@
 [`sandbox`](../sandbox/README.md) runtime. It runs each sandbox as a container
 on a reachable Docker daemon, Docker Desktop on macOS and Windows included. It
 talks to the Docker Engine API directly over the daemon's Unix socket or
-Windows named pipe, with no Docker CLI or SDK, applies CPU, memory and
-writable-layer disk limits to every container, keeps durable workspaces in
+Windows named pipe, with no Docker CLI or SDK, applies CPU and memory limits to
+every container and a writable-layer disk limit where the daemon's storage
+driver supports one, keeps durable workspaces in
 named volumes, and, when the network policy asks for them, installs a host
 firewall and an SSH server for the sandbox.
 
@@ -173,7 +174,7 @@ Every Engine API call goes through one path
   listener are cleared when the request settles.
 - **Status check.** Each call names the HTTP statuses it accepts (listed
   below). Any other status throws `DockerHttpError` with the decoded response
-  body. A JSON answer that lacks a required string field (`Id`) throws
+  body. A JSON answer that lacks a required non-empty string field (`Id`) throws
   `Error('Docker response is missing string field: <key>')`; an empty body
   reads as `{}`.
 
@@ -347,7 +348,8 @@ volume `doric-workspace-<identity>`, bound at the sandbox root
 - **Sharing in one process.** The client keeps, per `DockerClient` object, the
   container it serves for each identity and a lease count. A second provision
   of an identity already served shares that container and its host side, and
-  the container is torn down when the last lease is disposed.
+  the container is torn down when the last lease is disposed; the second
+  request's settings are not compared with the container's.
 - **Reattachment.** Otherwise the client creates the volume (an existing one
   keeps its files; it is labelled `doric.sandbox.workspace=<identity>`), lists
   every container labelled with the identity, orders them running first, then
@@ -381,8 +383,10 @@ discardWorkspace(client: DockerClient, identity: string): Promise<void>
 Deletes a durable workspace for good: it force-removes every container labelled
 `doric.sandbox.workspace=<identity>`, one after the other, then force-removes
 the volume `doric-workspace-<identity>`. A container or volume that is already
-gone counts as removed, so a repeated call succeeds. An invalid identity throws
-as above ([`src/lib/workspace.ts`](src/lib/workspace.ts)). It does not remove
+gone counts as removed, so a repeated call succeeds. An invalid identity throws,
+after the labelled containers are removed and before the volume. The requests
+use only the client's `timeoutMs`
+([`src/lib/workspace.ts`](src/lib/workspace.ts)). It does not remove
 host-side state and does not coordinate with leases this client still serves.
 
 ### Sharing the Docker socket
@@ -400,7 +404,10 @@ default. A `namedPipe` connection has no socket to share and binds nothing
 
 Mode `disabled` gives the container no network. Mode `egress` puts it on
 Docker's bridge network; the firewall depends on the host platform
-([`src/lib/host.ts`](src/lib/host.ts)):
+([`src/lib/host.ts`](src/lib/host.ts)). After start, every `egress` container
+must have an IPv4 address
+(`'Docker did not assign the sandbox an inspectable IPv4 address'`), on every
+platform.
 
 - **Linux (nftables).** Preflight requires a `unix` connection
   (`'Docker egress requires a local Linux Docker daemon'`), that the process
@@ -409,10 +416,9 @@ Docker's bridge network; the firewall depends on the host platform
   `'Docker egress requires access to the host network namespace'`), and that
   `nft list ruleset` succeed
   (`'Docker egress requires nftables CAP_NET_ADMIN access'`). After start, the
-  client needs the container's IPv4 address
-  (`'Docker did not assign the sandbox an inspectable IPv4 address'`) and
-  installs one table, `inet doric_docker_<first 12 characters of the id>`,
-  deleting any table of that name first. Its rules, for the container's
+  client installs one table, `inet doric_docker_<first 12 characters of the id>`,
+  deleting any table of that name first. Both chains are `type filter`,
+  priority `-10`, policy `accept`. Its rules, for the container's
   address: on the host's `input` hook, accept established and related traffic
   from the sandbox and drop the rest, so the sandbox cannot open connections to
   the host; on the `forward` hook, accept established and related traffic to
@@ -443,12 +449,16 @@ start the client ([`src/lib/host.ts`](src/lib/host.ts)):
 
 1. recreates the key directory `<statePath>/<container id>` (mode `0700`) and
    generates an Ed25519 user key with `ssh-keygen` and an Ed25519 host key with
-   `dropbearkey`;
+   `dropbearkey`, and reads the host's public key back with `dropbearkey -y`
+   (`'Docker Dropbear host key is invalid'` when it holds no `ssh-ed25519`
+   line);
 2. as root in the container, creates `/run/doric-ssh` and `/root/.ssh`, copies
    in the Dropbear binary, the host key and the user's public key as
    `/root/.ssh/authorized_keys`, and sets their modes (a failing step throws
    `'Docker SSH setup command failed'`);
-3. starts `dropbear -F -E -s -g -j -k -p 22` detached, as root: password logins
+3. starts
+   `/run/doric-ssh/dropbearmulti dropbear -F -E -s -g -j -k -p 22 -r /run/doric-ssh/host_key`
+   detached, as root: password logins
    and local and remote port forwarding are off;
 4. reads the published `22/tcp` binding (`'Docker did not publish the SSH port'`)
    and waits up to 5 s for it to accept connections, dialing `127.0.0.1` or
@@ -458,23 +468,29 @@ start the client ([`src/lib/host.ts`](src/lib/host.ts)):
 bind address), `port` (the published host port), `username: 'root'`,
 `privateKey` (the user's private key), `knownHosts` (`<host> <type> <key>`, or
 `[<host>]:<port> …` when the port is not 22) and `hostKeyFingerprint` (the
-SHA-256 fingerprint). Without SSH, `ssh()` answers `undefined`.
+SHA-256 fingerprint from `ssh-keygen -E sha256 -lf`;
+`'Docker SSH host fingerprint is unavailable'` when it prints none). Without SSH, `ssh()` answers `undefined`.
 
 ## The runtime
 
 The `SandboxRuntime` a provision returns
 ([`src/lib/provider.ts`](src/lib/provider.ts)):
 
-| Member             | Behavior                                                                                                                                                                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`               | The container id.                                                                                                                                                                                                                                             |
-| `exec(input)`      | `exec` on the container, with `cwd` as the working directory; see [Exec](#exec).                                                                                                                                                                              |
-| `start(input)`     | A live process; see [Live processes](#live-processes). Throws `'Docker client does not support live processes'` when the client has no `start`.                                                                                                               |
-| `putFile(path, b)` | Splits `path` at its last `/` and extracts a one-file tar (mode `0644`, owner 0:0) into that directory, which must exist ([`src/lib/utils/tar.ts`](src/lib/utils/tar.ts)). File names are written into the 100-byte tar name field.                           |
-| `getFile(path)`    | Reads the tar archive of `path` and answers the bytes of its first regular file; `'Archive did not contain a regular file'` for a directory, `'Tar entry extends past archive end'` for a truncated archive ([`src/lib/utils/tar.ts`](src/lib/utils/tar.ts)). |
-| `stats()`          | `stats` with the sandbox's `cpuCount` and `timeoutMs`, plus `cpuCount` and `at` (the ISO-8601 time of the reading).                                                                                                                                           |
-| `ssh()`            | The SSH access, or `undefined`.                                                                                                                                                                                                                               |
-| `dispose()`        | Releases the lease. Concurrent and repeated calls share one release; a failed release is retried by the next call. The last lease of a container tears it down.                                                                                               |
+| Member             | Behavior                                                                                                                                                                                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | The container id.                                                                                                                                                                                                                                               |
+| `exec(input)`      | `exec` on the container, with `cwd` as the working directory; see [Exec](#exec).                                                                                                                                                                                |
+| `start(input)`     | A live process; see [Live processes](#live-processes). Throws `'Docker client does not support live processes'` when the client has no `start`.                                                                                                                 |
+| `putFile(path, b)` | Splits `path` at its last `/` and extracts a one-file tar (mode `0644`, owner 0:0) into that directory, which must exist ([`src/lib/utils/tar.ts`](src/lib/utils/tar.ts)). File names are written into the 100-byte tar name field; a longer name is truncated. |
+| `getFile(path)`    | Reads the tar archive of `path` and answers the bytes of its first regular file; `'Archive did not contain a regular file'` for a directory, `'Tar entry extends past archive end'` for a truncated archive ([`src/lib/utils/tar.ts`](src/lib/utils/tar.ts)).   |
+| `stats()`          | `stats` with the sandbox's `cpuCount` and `timeoutMs`, plus `cpuCount` and `at` (the ISO-8601 time of the reading).                                                                                                                                             |
+| `ssh()`            | The SSH access, or `undefined`.                                                                                                                                                                                                                                 |
+| `dispose()`        | Releases the lease. Concurrent and repeated calls share one release; a failed release is retried by the next call. The last lease of a container tears it down.                                                                                                 |
+
+Only `stats` applies the provision's `timeoutMs`. `exec` uses the `timeoutMs`
+of its own input, else the client's; `putFile` and `getFile` use the client's.
+`start` sends its requests with the client's `timeoutMs`; its input's `timeoutMs`
+terminates the process (see [Live processes](#live-processes)).
 
 Tearing a container down deletes its firewall table and key directory, then
 force-removes the container with its anonymous volumes (a named workspace
@@ -515,7 +531,8 @@ the output capture belong to [`sandbox`](../sandbox/README.md).
   `result` with the exit code, or `null` when the daemon reports none. A stream
   error, or a close before the end
   (`'Docker process stream closed unexpectedly'`), kills the process and
-  rejects `result`.
+  rejects `result`. A failure of the exit poll rejects `result` with its error,
+  or with `'Docker process inspection failed'` when that is not an `Error`.
 - **`write(data)`** writes to stdin; after exit it rejects with
   `'Sandbox process has exited'`.
 - **`resize(cols, rows)`** does nothing without a TTY or after exit; it throws
@@ -542,8 +559,10 @@ The exported error classes ([`src/lib/classes/errors.ts`](src/lib/classes/errors
 | `DockerProtocolError`       | —                                               | Describes the malformed frame                      | An exec's multiplexed output is malformed                      |
 
 `DockerHttpError` takes a `DockerHttpErrorData` (`status`, `method`, `path`,
-`body`). Every other failure is a plain `Error`, `RangeError` or
-`AggregateError` with the messages given in the sections above. Code that
+`body`). Other failures are a plain `Error`, `RangeError` or `AggregateError`
+with the messages given above, or the underlying Node error passed through
+unchanged: socket errors from the transport and the exec upgrade, `SyntaxError`
+for a non-JSON body, and file-system errors on the host. Code that
 reacts to a failure matches on the classes and on `DockerHttpError.status`;
 reattachment, for example, treats a 404 when inspecting a listed container as a
 container that is gone ([`src/lib/provider.ts`](src/lib/provider.ts)).

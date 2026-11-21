@@ -1,101 +1,102 @@
 # messages
 
-A small in-memory conversation history that is always ready to send to a model
-provider. It stores `ProviderMessage` entries from `llms`, turns completed
-provider results into replayable assistant messages, and hands out snapshots
-that callers cannot mutate by accident. Use it as the message storage an
-`agent` reads and writes, or on its own when you assemble provider requests by
-hand.
+An in-memory conversation history that is always ready to send to a model provider. It stores `ProviderMessage` entries from [`llms`](../llms/README.md), turns a completed provider result (`ProviderFinished`) into a replayable assistant message, and hands out array snapshots that callers cannot change by accident ([`messages.ts`](src/lib/messages.ts)).
 
 Part of [Doric](../../README.md).
 
-## Highlights
+## Who uses it
 
-- **Provider-ready.** `list()` returns messages you can pass straight to a
-  `ProviderRequest`.
-- **Normalizes provider turns.** Push a `ProviderFinished` result and it is
-  stored as an assistant message with its tool calls and opaque replay items.
-- **Snapshot isolation.** The initial array is copied and every `list()` call
-  returns a new array.
-- **History rewrites.** `replaceRange` swaps a span of messages in place, for
-  example to compact history between provider turns.
+- **Packages.** [`agent`](../agent/README.md) takes a `MessageStorage` as `AgentOptions.messages`: it pushes user messages and provider results, and reads `list()` to build each provider request ([`types/agent.ts`](../agent/src/lib/types/agent.ts), [`agent.ts`](../agent/src/lib/agent.ts)).
+- **Bundles.** The [`default` runtime bundle](../../bundles/runtime/default/README.md) creates a storage per run from the stored history ([`executor.ts`](../../bundles/runtime/default/src/host/executor.ts)) and rewrites it with `replaceRange` when it compacts the history ([`compact.ts`](../../bundles/runtime/default/src/host/compact.ts)).
+- **Apps.** None import it directly.
 
-## Usage
+## Entry points
+
+The package is named `messages`, is private and is an ES module ([`package.json`](package.json)). It has one entry point, `.`:
+
+| Condition     | File                                              |
+| ------------- | ------------------------------------------------- |
+| `@org/source` | [`src/index.ts`](src/index.ts) (workspace source) |
+| `types`       | `dist/index.d.ts`                                 |
+| `import`      | `dist/index.js`                                   |
+| `default`     | `dist/index.js`                                   |
+
+`./package.json` is exported as well. [`src/index.ts`](src/index.ts) re-exports everything from [`src/lib/messages.ts`](src/lib/messages.ts). The package depends on `llms` (types only) and `tslib`.
+
+## Public exports
+
+All exports are in [`messages.ts`](src/lib/messages.ts).
 
 ```ts
-import { createMessageStorage } from 'messages';
-import type { ProviderMessage, ProviderRequest } from 'llms';
+import type { ProviderFinished, ProviderMessage } from 'llms';
 
-const initial: readonly ProviderMessage[] = [
-  { role: 'system', content: 'You are concise.' },
-  { role: 'user', content: 'Summarize the current task.' },
-];
+type MessageStorageEntry = ProviderMessage | ProviderFinished;
 
-const messages = createMessageStorage(initial);
+interface MessageStorage {
+  list(): readonly ProviderMessage[];
+  push(entry: MessageStorageEntry): number;
+  replaceRange(
+    start: number,
+    end: number,
+    entries: readonly ProviderMessage[],
+  ): void;
+}
 
-messages.push({
-  role: 'assistant',
-  content: 'We need to update the README examples.',
-});
-
-const request: ProviderRequest = {
-  model: 'example-model',
-  messages: messages.list(),
-};
+function createMessageStorage(
+  initial?: readonly ProviderMessage[], // default: []
+): MessageStorage;
 ```
 
-## API
+| Export                           | Kind      | Purpose                                                                |
+| -------------------------------- | --------- | ---------------------------------------------------------------------- |
+| `MessageStorageEntry`            | type      | What `push` accepts: a provider message or a finished provider result. |
+| `MessageStorage`                 | interface | The storage contract that `agent` and the runtime bundle depend on.    |
+| `createMessageStorage(initial?)` | function  | Creates an in-memory `MessageStorage`.                                 |
 
-| Member                               | Behavior                                                                 |
-| ------------------------------------ | ------------------------------------------------------------------------ |
-| `createMessageStorage(initial?)`     | Creates storage, copying the optional initial messages.                  |
-| `list()`                             | Returns a new array snapshot of the stored messages.                     |
-| `push(entry)`                        | Stores a `ProviderMessage` or `ProviderFinished`; returns the new count. |
-| `replaceRange(start, end, messages)` | Replaces `messages[start..end)` with the given messages in place.        |
+`MessageStorage` is an interface, so a caller may pass any object with these three members wherever a `MessageStorage` is expected; `createMessageStorage` is the implementation this package ships.
 
-`createMessageStorage` copies the initial array, and `list()` returns a new
-array snapshot. Mutating the caller-owned initial array or a previous list
-snapshot does not change stored history.
+## Behavior
 
-## Appending user and tool messages
+The storage keeps one private array of `ProviderMessage` ([`messages.ts`](src/lib/messages.ts)).
 
-```ts
-import { createMessageStorage } from 'messages';
+### `createMessageStorage(initial = [])`
 
-const messages = createMessageStorage();
+Copies `initial` into a new array. Adding to or removing from the caller's array afterwards does not change the storage. The copy is shallow: the message objects themselves are shared.
 
-messages.push({
-  role: 'user',
-  content: 'Look up the project status.',
-});
+### `list()`
 
-messages.push({
-  role: 'tool',
-  toolCallId: 'call_1',
-  content: '{"status":"ready"}',
-});
+Returns a new array holding the stored messages in order. Changing the returned array does not change the storage, and each call returns a different array. The messages are the stored objects, not copies. The result can be passed as `ProviderRequest.messages` unchanged.
 
-const count = messages.push({
-  role: 'assistant',
-  content: 'The project is ready.',
-});
+### `push(entry)`
 
-console.log(count); // 3
-console.log(messages.list());
-```
+Appends one message and returns the new number of stored messages.
 
-`push()` returns the new message count after storing the entry.
+- An entry is treated as a finished provider result when it has a `finishReason` property; otherwise it is stored as given, as a `ProviderMessage`.
+- A finished result is stored as an assistant message:
 
-## Normalizing provider results
+  | Field       | Value                                                                                                     |
+  | ----------- | --------------------------------------------------------------------------------------------------------- |
+  | `role`      | `'assistant'`                                                                                             |
+  | `content`   | `text` when it is non-empty; otherwise `refusal` when present; otherwise `text` (the empty string)        |
+  | `toolCalls` | The result's `toolCalls`, only when the array is non-empty; the field is absent otherwise                 |
+  | `replay`    | The result's opaque `replay` items, whenever the result has a `replay` field (an empty array is kept too) |
 
-Provider completion results can be pushed directly. The storage converts them
-into replayable assistant messages and keeps tool calls when present.
+  Every other field of the result — `finishReason`, `usage`, `reasoning`, `structured`, and `refusal` when `text` is non-empty — is not stored. Keeping `replay` lets the provider replay the turn exactly on the next request.
+
+### `replaceRange(start, end, entries)`
+
+Replaces the messages at indexes `start` up to, but not including, `end` with `entries`, in place. The next `list()` returns the rewritten history, so the next provider request carries the replacement. The runtime bundle uses it to apply a compaction between provider turns, replacing the whole stored history with the compacted one.
+
+The indexes follow `Array.prototype.splice`: a negative index counts from the end, an index past the end is clamped to the length, and an `end` lower than `start` removes nothing and inserts `entries` at `start`.
+
+### Example
 
 ```ts
 import { createMessageStorage } from 'messages';
-import type { ProviderFinished } from 'llms';
+import type { ProviderFinished, ProviderRequest } from 'llms';
 
 const messages = createMessageStorage([
+  { role: 'system', content: 'You are concise.' },
   { role: 'user', content: 'Call the lookup tool.' },
 ]);
 
@@ -103,36 +104,39 @@ const finished: ProviderFinished = {
   text: 'I will call the lookup tool.',
   finishReason: 'tool_calls',
   toolCalls: [
-    {
-      id: 'call_1',
-      name: 'lookup',
-      arguments: '{"query":"doric"}',
-      index: 0,
-    },
+    { id: 'call_1', name: 'lookup', arguments: '{"query":"doric"}', index: 0 },
   ],
 };
 
-messages.push(finished);
+messages.push(finished); // 3
+messages.push({ role: 'tool', toolCallId: 'call_1', content: '{"ok":true}' }); // 4
 
-console.log(messages.list());
-// [
-//   { role: 'user', content: 'Call the lookup tool.' },
-//   {
-//     role: 'assistant',
-//     content: 'I will call the lookup tool.',
-//     toolCalls: finished.toolCalls,
-//   },
-// ]
+// Keep the system prompt, condense the rest into one message.
+messages.replaceRange(1, 4, [
+  { role: 'user', content: 'Summary: lookup ran.' },
+]);
+
+const request: ProviderRequest = {
+  model: 'example-model',
+  messages: messages.list(),
+};
 ```
 
-- Opaque `replay` items on the result are kept on the assistant message, so
-  the provider can replay the turn exactly.
-- Usage and reasoning metadata are intentionally not stored in replayable
-  messages.
-- If a provider returns empty text with a refusal, the refusal text becomes
-  assistant content.
+## Data, side effects and limits
 
-## Development
+- **Persistence.** None: the history lives only in memory, for the lifetime of the storage object. A caller that needs it later stores the result of `list()` itself.
+- **Side effects.** None: no processes, network, files, timers or events.
+- **Validation and errors.** The storage validates nothing and throws no error of its own. It does not check message roles, the pairing of tool calls with tool results, or the indexes given to `replaceRange`.
+- **Limits.** No limit on the number or size of messages.
+- **Concurrency.** Synchronous; every call takes effect before it returns.
+
+## Build and test
+
+| Nx target   | What it runs                                                                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`     | `tsc --build tsconfig.lib.json`, emitting `dist/` ([`tsconfig.lib.json`](tsconfig.lib.json))                                                                                                |
+| `typecheck` | `tsc --build tsconfig.json --emitDeclarationOnly`                                                                                                                                           |
+| `test`      | After building its dependencies, compiles [`tests/`](tests/messages.test.ts) with `tsconfig.spec.json` into `dist-tests/` and runs them with `node --test` ([`project.json`](project.json)) |
 
 ```console
 npx nx build messages

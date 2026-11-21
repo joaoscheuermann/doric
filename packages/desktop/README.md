@@ -243,7 +243,7 @@ function toastError(input: ToastErrorInput): void;
 
 1. The catalog is `catalog` merged over the shared catalog; the caller's entry wins for a code both list.
 2. The headline level is the first of `[info, ...info.causes]` whose code has an entry and is not `internal`. Without one, `fallbackCode`'s entry titles the outermost level; without that, the first `internal` level takes the `internal` entry; without that, the `unknown` entry titles the outermost level.
-3. `explanation` is the entry's explanation with `{provider}` replaced by the headline level's provider, else `info.provider`, else `the provider`. Without one, it is the first line of the headline level's message, else of `info.message`, else `The operation could not be completed.`; a line over 200 characters is cut to 199 and ends with `…`.
+3. `explanation` is the entry's explanation with `{provider}` filled with the headline level's provider, else `info.provider`, else `the provider`. Without one, it is the first line of the headline level's message, else of `info.message`, else `The operation could not be completed.`; a line over 200 characters is cut to 199 and ends with `…`.
 4. `retryable` is the entry's flag unless the headline level says `retryable: false`; under the `unknown` fallback it is the headline level's own flag, default `true`. `tone` is the entry's, default `error`.
 
 The shared catalog holds the codes the platform packages define (`bundle`, `llms`, `agent`, `tool`); every entry has tone `error`. A bundle passes its own codes, and its own wording for a shared code, in its own `catalog` ([`error-copy.ts`](src/error-copy.ts)):
@@ -419,7 +419,7 @@ function FileTree(props: {
 - `indentation(depth)`: a row's left padding, `` `${0.375 + 1.25 × depth}rem` ``.
 - `treeClassName`: `'mx-0 w-full min-w-0 translate-x-0 gap-0 overflow-hidden border-0 px-0 py-0'`, the class of the nested `SidebarMenuSub` that holds a level.
 - `TreeGuides({ depth })`: `null` at depth 0; otherwise an `aria-hidden`, `pointer-events-none` overlay (`absolute inset-0 z-10`) holding one 1 px `bg-sidebar-border` vertical line per level, at `left: ${0.875 + 1.25 × level}rem` for `level` 0 to `depth − 1`.
-- `rowInteraction(selected)`: `'hover:bg-sidebar-accent active:bg-sidebar-accent'` when `selected`, else `'hover:bg-transparent hover:text-sidebar-foreground active:bg-transparent active:text-sidebar-foreground'`. No file in this repository calls it.
+- `rowInteraction(selected)`: `'hover:bg-sidebar-accent active:bg-sidebar-accent'` when `selected`, else `'hover:bg-transparent hover:text-sidebar-foreground active:bg-transparent active:text-sidebar-foreground'`. No product code calls it; `tests/tree-guides.test.ts` pins its values.
 - `TreeSkeleton({ label, root? })`: a `role="status"`, `aria-busy` placeholder named by `label` that mirrors tree rows during the first read; `root` adds one row above, for the node the tree hangs from.
 - `toggleExpanded(expanded, path)`: a new set with `path` added when absent and removed when present.
 
@@ -460,7 +460,7 @@ function useTabStrip(
   selected: string | undefined,
   onMove: (from: string, to: string) => void,
 ): {
-  root: RefObject<HTMLDivElement>; // the scrolling strip
+  root: RefObject<HTMLDivElement | null>; // the scrolling strip
   frozen: ReadonlyMap<string, FrozenTab> | undefined; // set while sorting
   sorting: boolean; // frozen !== undefined
   sensors: SensorDescriptor[]; // pointer (6 px activation) and keyboard (sortable coordinates)
@@ -488,7 +488,7 @@ function useSortableTab(
 
 - `PanelState({ title, description, icon? })`: an `Empty` state with a folder icon by default.
 - `useReadError(error, refreshing, onRetry, toastId?)`: while `error` is a string and the surface is not refreshing, shows one `toast.error('Unable to update', { description: error, duration: 8000, action: 'Try again' })` per distinct message, under `toastId` or an id of its own; "Try again" calls `onRetry` and lets the same message show again; `error === undefined` or unmount dismisses it. `ReadFeedback({ error?, refreshing, onRetry, toastId? })` is the same as a component that renders nothing. Cached content stays on screen.
-- `moveItem(items, from, to)`: a new array with the item at `from` moved to `to`; the same array when either index is out of range or they are equal.
+- `moveItem(items, from, to)`: a new array with the item at `from` placed at `to`; the same array when either index is out of range or they are equal.
 - `ToolbarDivider()`: a vertical `Separator`, 16 px tall (`h-4`), centred in its row. No product surface draws it.
 
 ### Code view and diff editor (`desktop/ui/code`)
@@ -856,7 +856,7 @@ interface DoricDesktopApi {
 }
 ```
 
-The `on*` methods and `subscribe` return the function that unsubscribes. A bridge error is an answer (`{ ok: false, error }`), never a rejection of `call`.
+The `on*` methods and `subscribe` return the function that unsubscribes. `call` is a plain IPC invoke, so it can reject. Main rejects it with a plain `Error`, not a `ContractError`, before handling it: `The request source is not allowed.` when the sender is refused (a frame URL outside the shell, a sub-frame, or a sender that is neither a known window nor the splash), and `Invalid desktop request: …` when the request fails `desktopRequestSchema` (for example a scope carrying `windowKey`). Every failure past those checks is an answer, `{ ok: false, error }` ([`dispatcher.ts`](../../app/desktop/doric/src/platform/bridge/dispatcher.ts)). Through `remoteContractRecord`, such a rejection reaches the caller as that plain `Error`.
 
 ### `doric.shell/v1`
 
@@ -907,8 +907,8 @@ The shell sequence of every window ([`bootstrap.ts`](src/client/bootstrap.ts)):
 3. Wire the close answers, install the keybindings and serve the shell commands.
 4. Decide, with `<core>` the composition's core bundle and `quarantined` its failure when the diagnostics hold it quarantined (`bundleId: <core>`, message: its quarantine reasons joined by `; `, or `Core bundle "<core>" is quarantined.` when there are none):
    - With `mount`: await `mount({ description })`; the failure is `quarantined` in the primary window, else none.
-   - Without `mount`, in this order: in the primary window with `quarantined`, that is the failure and the body is left untouched; else, when the registry has no `<core>-outlet`, the failure is `quarantined` (in any window) or else `Core bundle "<core>" did not define <<core>-outlet>.`, and the body is left untouched; else the body's children are replaced by one `<<core>-outlet>` element and there is no failure.
-5. Report: a failure → `reportFailure({ kind: 'core', bundleId, message })`; none → `ready()`. An exception thrown in steps 1–4 (a rejected call, a failed activation step, a throwing `mount`) → `reportFailure({ kind: 'bootstrap', message })` with the error's message, and neither `ready()` nor a core report follows.
+   - Without `mount`, in this order: in the primary window with `quarantined`, that is the failure and the body is left untouched; else, when the registry has no `<core>-outlet`, the failure is `quarantined` (in any window) or else `Core bundle "<core>" did not define <<core>-outlet>.`, and the body is left untouched; else the body's children become one `<<core>-outlet>` element and there is no failure.
+5. Report: a failure → `reportFailure({ kind: 'core', bundleId, message })`; none → `ready()`. An exception thrown in steps 1–4 (a rejected call, a failed activation step, a throwing `mount`) → `reportFailure({ kind: 'bootstrap', message })` with the error's message, and neither `ready()` nor a core report follows. None of these reports is guarded: when `ready()` or either `reportFailure` rejects, `bootstrapWindow` rejects with that error.
 
 ```ts
 interface ElementRegistry {

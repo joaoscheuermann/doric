@@ -40,6 +40,7 @@ its host part runs in the host's own process and not in a generation
 It must run there: `doric.network/v1` hands the host's native listeners only
 to code in that process
 ([`packages/bundle/src/contracts/network.ts`](../../../packages/bundle/src/contracts/network.ts),
+[`packages/bundle/src/process/network.ts`](../../../packages/bundle/src/process/network.ts),
 [process isolation](../../../docs/architecture/bundles/process-isolation.md)).
 
 ## Contract provided: `screen.relay/v1`

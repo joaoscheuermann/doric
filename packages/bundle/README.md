@@ -82,7 +82,8 @@ export const activate = ({ services }: HostContext) => {
 };
 ```
 
-`manifest.json` declares the bundle's identity, the platform range and the
+This is `src/host/index.ts`, the bundle's host part. `manifest.json`, at the
+bundle's root, declares the bundle's identity, the platform range and the
 contracts it provides and requires:
 
 ```json
@@ -573,7 +574,7 @@ interface SkillSchemaInput {
   readonly allowedTools: readonly string[]; readonly indexText?: string;
 }
 interface SkillRecord { /* the same, with indexText: string */ }
-const skillRecordSchema: z.ZodType<SkillRecord>; // strict; non-empty trimmed strings
+const skillRecordSchema: z.ZodType<SkillRecord>; // strict; name, description, body and allowedTools items non-empty trimmed; indexText any string
 const SkillSchema: z.ZodCodec<…>;                 // SkillSchemaInput → SkillRecord
 ```
 
@@ -646,11 +647,12 @@ function isDisposable(value: unknown): value is Disposable;
 function isDisposableSchema(schema: z.ZodType): boolean; // also true for another copy of zod's registry entry
 function functionSchema<T>(): z.ZodType<T>; // any function; process-local
 const callSchema: z.ZodType; // a runtime Call inside a payload
-const hooksContractSchema,
-  eventDefinitionSchema,
-  settingsDefinitionSchema,
-  storageTypeDefinitionSchema,
-  commandDefinitionSchema; // accept only values made by the matching define*
+// each accepts only values made by the matching define*
+const hooksContractSchema: z.ZodType<HooksContract>;
+const eventDefinitionSchema: z.ZodType<EventDefinition>;
+const settingsDefinitionSchema: z.ZodType<SettingsDefinition>;
+const storageTypeDefinitionSchema: z.ZodType<StorageTypeDefinition>;
+const commandDefinitionSchema: z.ZodType<CommandDefinition>;
 const noInput: z.ZodTuple<[]>; // a method without input
 interface StreamObserver<T> {
   next(item: T): void;
@@ -896,26 +898,26 @@ contract, its types and its schemas
 bundle uses them without listing them. Their full shapes are in [Contexts and
 capabilities](../../docs/architecture/bundles/contexts.md#shapes-of-the-platform-contracts).
 
-| Contract                 | Ref                    | Environments            |
-| ------------------------ | ---------------------- | ----------------------- |
-| `doric.catalog/v1`       | `DoricCatalogV1`       | all                     |
-| `doric.diagnostics/v1`   | `DoricDiagnosticsV1`   | all                     |
-| `doric.bundle/v1`        | `DoricBundleV1`        | all                     |
-| `doric.log/v1`           | `DoricLogV1`           | all                     |
-| `doric.network/v1`       | `DoricNetworkV1`       | `host`                  |
-| `doric.generation/v1`    | `DoricGenerationV1`    | `host`                  |
-| `doric.startup/v1`       | `DoricStartupV1`       | `host`                  |
-| `doric.windows/v1`       | `DoricWindowsV1`       | `desktopMain`           |
-| `doric.menus/v1`         | `DoricMenusV1`         | `desktopMain`           |
-| `doric.cache/v1`         | `DoricCacheV1`         | `desktopMain`           |
-| `doric.migrations/v1`    | `DoricMigrationsV1`    | `desktopMain`           |
-| `doric.notifications/v1` | `DoricNotificationsV1` | `desktopMain`           |
-| `doric.tokens/v1`        | `DoricTokensV1`        | `client`, `desktopMain` |
-| `doric.about/v1`         | `DoricAboutV1`         | `client`                |
-| `doric.elements/v1`      | `DoricElementsV1`      | `client`                |
-| `doric.connection/v1`    | `DoricConnectionV1`    | `client`                |
-| `doric.browser/v1`       | `DoricBrowserV1`       | `client`                |
-| `doric.appearance/v1`    | `DoricAppearanceV1`    | `client`                |
+| Contract                 | Ref                    | Interface            | Environments            |
+| ------------------------ | ---------------------- | -------------------- | ----------------------- |
+| `doric.catalog/v1`       | `DoricCatalogV1`       | `DoricCatalog`       | all                     |
+| `doric.diagnostics/v1`   | `DoricDiagnosticsV1`   | `DoricDiagnostics`   | all                     |
+| `doric.bundle/v1`        | `DoricBundleV1`        | `DoricBundle`        | all                     |
+| `doric.log/v1`           | `DoricLogV1`           | `DoricLog`           | all                     |
+| `doric.network/v1`       | `DoricNetworkV1`       | `DoricNetwork`       | `host`                  |
+| `doric.generation/v1`    | `DoricGenerationV1`    | `DoricGeneration`    | `host`                  |
+| `doric.startup/v1`       | `DoricStartupV1`       | `DoricStartup`       | `host`                  |
+| `doric.windows/v1`       | `DoricWindowsV1`       | `DoricWindows`       | `desktopMain`           |
+| `doric.menus/v1`         | `DoricMenusV1`         | `DoricMenus`         | `desktopMain`           |
+| `doric.cache/v1`         | `DoricCacheV1`         | `DoricCache`         | `desktopMain`           |
+| `doric.migrations/v1`    | `DoricMigrationsV1`    | `DoricMigrations`    | `desktopMain`           |
+| `doric.notifications/v1` | `DoricNotificationsV1` | `DoricNotifications` | `desktopMain`           |
+| `doric.tokens/v1`        | `DoricTokensV1`        | `DoricTokens`        | `client`, `desktopMain` |
+| `doric.about/v1`         | `DoricAboutV1`         | `DoricAbout`         | `client`                |
+| `doric.elements/v1`      | `DoricElementsV1`      | `DoricElements`      | `client`                |
+| `doric.connection/v1`    | `DoricConnectionV1`    | `DoricConnection`    | `client`                |
+| `doric.browser/v1`       | `DoricBrowserV1`       | `DoricBrowser`       | `client`                |
+| `doric.appearance/v1`    | `DoricAppearanceV1`    | `DoricAppearance`    | `client`                |
 
 It also exports two platform hooks contracts, which the platform defines
 with `definePlatformHooks` ([`platform.ts`](src/contracts/platform.ts)):
@@ -1364,55 +1366,57 @@ and the `define*` family](../../docs/architecture/bundles/contracts.md).
 ### Catalog resolution and activation
 
 ```ts
-type CatalogSource = { kind: 'installed'; dir: string } | { kind: 'embedded' };
+type CatalogSource =
+  | { readonly kind: 'installed'; readonly dir: string }
+  | { readonly kind: 'embedded' };
 interface CatalogCandidate {
-  id;
-  source;
-  manifest?;
-  descriptor?;
-  errors: readonly QuarantineReason[];
+  readonly id: string; // manifest id, or the directory name when the manifest could not be read
+  readonly source: CatalogSource;
+  readonly manifest?: ManifestV1;
+  readonly descriptor?: Descriptor;
+  readonly errors: readonly QuarantineReason[]; // problems found while reading
 }
 type EntryState = 'scheduled' | 'quarantined' | 'disabled';
 interface CatalogEntry {
-  id;
-  version;
-  description?;
-  source;
-  manifest?;
-  descriptor?;
-  phase?: Phase;
-  state: EntryState;
-  reasons;
-  dependencies: readonly string[];
+  readonly id: string;
+  readonly version: string;
+  readonly description?: string;
+  readonly source: CatalogSource;
+  readonly manifest?: ManifestV1;
+  readonly descriptor?: Descriptor;
+  readonly phase?: Phase;
+  readonly state: EntryState;
+  readonly reasons: readonly QuarantineReason[];
+  readonly dependencies: readonly string[]; // bundles of this environment it waits for
 }
 interface ResolvedProvider {
-  bundleId;
-  version;
-  bundleVersion;
+  readonly bundleId: string;
+  readonly version: string; // the contract version in provides
+  readonly bundleVersion: string;
 }
 interface ResolvedContract {
-  id;
-  environment;
-  cardinality;
-  providers: readonly ResolvedProvider[];
+  readonly id: string;
+  readonly environment: Environment;
+  readonly cardinality: Cardinality;
+  readonly providers: readonly ResolvedProvider[]; // active providers; at most one for 'one'
 }
 interface ResolvedEnvironment {
-  environment;
-  generation;
-  composition;
-  issues;
-  entries;
-  order;
-  contracts;
-  recovery?: { reason };
+  readonly environment: Environment;
+  readonly generation: number;
+  readonly composition: Composition;
+  readonly issues: readonly string[];
+  readonly entries: readonly CatalogEntry[];
+  readonly order: readonly string[]; // activation order: foundation, core, others
+  readonly contracts: readonly ResolvedContract[];
+  readonly recovery?: { readonly reason: string };
 }
 interface ResolveInput {
-  candidates;
-  composition;
-  platformVersion;
-  generation;
-  issues?;
-  recovery?;
+  readonly candidates: readonly CatalogCandidate[];
+  readonly composition: Composition;
+  readonly platformVersion: string;
+  readonly generation: number;
+  readonly issues?: readonly string[]; // problems found before resolution
+  readonly recovery?: { readonly reason: string }; // forces recovery mode
 }
 function resolveEnvironment(
   input: ResolveInput,
@@ -1439,7 +1443,7 @@ interface PlatformLog {
 }
 class ActivationFailure extends Error {
   readonly code: QuarantineCode;
-  constructor(code, message, options?);
+  constructor(code: QuarantineCode, message: string, options?: ErrorOptions);
 }
 function catalogView(resolved: ResolvedEnvironment): ContractCatalogView;
 function principalOptionsFor(
@@ -1452,13 +1456,22 @@ interface ActivationOptions {
   readonly platform: Principal; // 'doric': defines AppHooksV1, fires lifecycle hooks
   readonly diagnostics: DiagnosticsStore;
   readonly loadPart: (entry: CatalogEntry) => Promise<Activate | undefined>;
-  readonly afterActivate?: (entry, principal) => Promise<void>;
-  readonly afterPhase?: (entry, principal) => Promise<void>; // once the phase is active
+  readonly afterActivate?: (
+    entry: CatalogEntry,
+    principal: Principal,
+  ) => Promise<void>;
+  readonly afterPhase?: (
+    entry: CatalogEntry,
+    principal: Principal,
+  ) => Promise<void>; // once the phase is active
   readonly onHooksProviderReady?: (platform: Principal) => void | Promise<void>;
   readonly preActive?: readonly string[]; // active in another process; default []
   readonly hooksProvider?: 'local' | 'remote'; // default 'local'
-  readonly settle?: (entry, principal) => Promise<void>;
-  readonly onPrincipal?: (entry, principal) => void;
+  readonly settle?: (
+    entry: CatalogEntry,
+    principal: Principal,
+  ) => Promise<void>;
+  readonly onPrincipal?: (entry: CatalogEntry, principal: Principal) => void;
   readonly log?: PlatformLog;
   readonly now?: () => number;
 }
@@ -1550,11 +1563,18 @@ function providePlatformServices(
     readonly distribution?: CatalogDistributionProvider;
     readonly composition?: CatalogCompositionProvider;
     readonly generation?: {
-      describe(call): GenerationDescription;
+      describe(call: Call): GenerationDescription;
       hold(work: WorkHold, call): Disposable;
       signal(signal: PeerSignal, call): void | Promise<void>;
     };
-    readonly startup?: { stage(name: string): void; log(record): void };
+    readonly startup?: {
+      stage(name: string): void;
+      log(record: {
+        readonly level: 'debug' | 'info' | 'warn' | 'error';
+        readonly fields: Readonly<Record<string, unknown>>;
+        readonly message: string;
+      }): void;
+    };
   },
 ): void;
 ```
@@ -1583,9 +1603,10 @@ function candidatesFromDistribution(
   catalog: DistributionCatalog,
 ): CatalogCandidate[];
 function compositionFromDistribution(catalog: DistributionCatalog): Composition;
-const distributionArtifactSchema,
-  distributionCatalogSchema,
-  distributionFileSchema;
+// re-exported from the contracts (see Platform contracts)
+const distributionArtifactSchema: z.ZodType<DistributionArtifact>;
+const distributionCatalogSchema: z.ZodType<DistributionCatalog>;
+const distributionFileSchema: z.ZodType<DistributionFile>;
 ```
 
 The desktop resolves its `desktopMain` and `client` environments from the
@@ -1599,27 +1620,68 @@ bundle the host disabled leaves `enabled`
 
 ```ts
 type SchemaDirection = 'input' | 'output';
-interface MemberSchema { readonly schema: JsonObject; readonly local: boolean }
+interface MemberSchema {
+  readonly schema: JsonObject;
+  readonly local: boolean;
+}
 function memberSchema(schema: z.ZodType, io: SchemaDirection): MemberSchema;
 const LOCAL_KEY = 'x-doric-local';
 const localCodecKinds: readonly ['callback', 'disposable', 'object'];
-const localMarker: JsonObject;          // { 'x-doric-local': true }
+type LocalCodecKind = (typeof localCodecKinds)[number];
+const localMarker: JsonObject; // { 'x-doric-local': true }
 const STREAM_KEY = 'x-doric-stream';
 function streamItemSchema(input: unknown): JsonObject | undefined;
-type RecordedContract;                  // { id, environment, cardinality } & one of the six kinds' members
-interface ContractDocument { readonly document: JsonObject; readonly local: boolean }
+type RecordedContract = {
+  readonly id: string;
+  readonly environment: Environment;
+  readonly cardinality: Cardinality;
+} & (
+  | {
+      readonly kind: 'service';
+      readonly methods: Readonly<Record<string, MethodSpec>>;
+    }
+  | {
+      readonly kind: 'hooks';
+      readonly hooks: Readonly<Record<string, HookDefinition>>;
+    }
+  | { readonly kind: 'event'; readonly payload: z.ZodType }
+  | { readonly kind: 'command'; readonly input: z.ZodType }
+  | { readonly kind: 'settings'; readonly value: z.ZodType }
+  | {
+      readonly kind: 'storage-type';
+      readonly value: z.ZodType;
+      readonly indexes: readonly StorageIndex[];
+    }
+);
+interface ContractDocument {
+  readonly document: JsonObject;
+  readonly local: boolean;
+}
 function contractDocument(contract: RecordedContract): ContractDocument;
 const JSON_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
-function schemaPath(contractId: string): string;   // `schemas/${contractId}.json`
-function canonicalJson(value: unknown): string;    // JSON with sorted keys
+function schemaPath(contractId: string): string; // `schemas/${contractId}.json`
+function canonicalJson(value: unknown): string; // JSON with sorted keys
 function jsonEqual(left: unknown, right: unknown): boolean;
 function compilableSchema(schema: JsonValue): JsonValue; // drops an empty prefixItems so ajv compiles it
 
 const documentExposureKey = 'x-doric-expose';
-function exposureOf(contractId: string, method: string, declared?: { expose?: MethodExposure }): MethodExposure | undefined;
-function isDesktopExposed(contractId: string, method: string, spec: { expose?: MethodExposure } | undefined): boolean;
-function misdeclaredExposure(contractId: string, methods: Record<string, { expose?: MethodExposure }>): string | undefined;
-function documentExposure(document: JsonObject): Readonly<Record<string, MethodExposure>>;
+function exposureOf(
+  contractId: string,
+  method: string,
+  declared?: { expose?: MethodExposure },
+): MethodExposure | undefined;
+function isDesktopExposed(
+  contractId: string,
+  method: string,
+  spec: { expose?: MethodExposure } | undefined,
+): boolean;
+function misdeclaredExposure(
+  contractId: string,
+  methods: Record<string, { expose?: MethodExposure }>,
+): string | undefined;
+function documentExposure(
+  document: JsonObject,
+): Readonly<Record<string, MethodExposure>>;
 ```
 
 `memberSchema` writes the JSON Schema 2020-12 of one member (zod's `input` or
@@ -1640,10 +1702,10 @@ exposure the table does not give ([`exposure.ts`](src/runtime/exposure.ts)).
 
 ```ts
 interface SemVer {
-  major;
-  minor;
-  patch;
-  prerelease: readonly (string | number)[];
+  readonly major: number;
+  readonly minor: number;
+  readonly patch: number;
+  readonly prerelease: readonly (string | number)[];
 }
 function parseVersion(value: string): SemVer | undefined;
 function isVersion(value: string): boolean;
@@ -1690,7 +1752,7 @@ interface GenerationInit {
   readonly hooksProvider: 'remote' | 'local';
   readonly catalog: CatalogSnapshot;
 }
-const generationInitSchema;
+const generationInitSchema: z.ZodType<GenerationInit>; // generation and incarnation positive integers
 interface RunnerOptions {
   readonly transport: Transport;
   readonly validators: SchemaValidators;
@@ -1698,8 +1760,14 @@ interface RunnerOptions {
   readonly loadPart: (
     entry: SerializedCatalogEntry,
   ) => Promise<Activate | undefined>;
-  readonly afterActivate?: (entry, principal) => Promise<void>;
-  readonly afterPhase?: (entry, principal) => Promise<void>;
+  readonly afterActivate?: (
+    entry: SerializedCatalogEntry,
+    principal: Principal,
+  ) => Promise<void>;
+  readonly afterPhase?: (
+    entry: SerializedCatalogEntry,
+    principal: Principal,
+  ) => Promise<void>; // once the whole phase activated
   readonly now?: () => number;
 }
 function runGeneration(options: RunnerOptions): Promise<void>;
@@ -2176,8 +2244,10 @@ The Node entry for the host, the build, embedded foundation host parts
 parts may not import it ([Build tooling](#build-tooling)). It re-exports, from `bundle/runtime`,
 the manifest, composition and descriptor schemas and types, `convertV0`,
 `resolveEnvironment`, the alternatives helpers, `PLATFORM_VERSION`,
-`PLATFORM_ASSETS_VERSION`, `runGeneration` and its types; and, from
-`bundle/testing`, `createTestServices`.
+`PLATFORM_ASSETS_VERSION`, `runGeneration` and its types; from the contracts'
+[`skill.ts`](src/contracts/skill.ts), `SkillRecord` (also as `Skill`),
+`SkillSchemaInput` and `SkillSchema`; and, from `bundle/testing`,
+`createTestServices`.
 
 ### `startKernel`
 
@@ -2332,26 +2402,26 @@ interface GenerationLease {
   release(): void; // idempotent
 }
 interface LostGeneration {
-  generation;
-  incarnation;
-  holds: readonly WorkHoldRef[];
+  readonly generation: number;
+  readonly incarnation: number;
+  readonly holds: readonly WorkHoldRef[]; // the work holds it kept, by owner bundle
 }
 interface GenerationChange {
-  event: 'activated' | 'draining' | 'lost' | 'stopped';
-  generation;
-  incarnation;
-  holds?;
+  readonly event: 'activated' | 'draining' | 'lost' | 'stopped';
+  readonly generation: number;
+  readonly incarnation: number;
+  readonly holds?: readonly WorkHoldRef[]; // set for 'lost' only
 }
 type PublishResult =
-  | { status: 'published'; generation: number }
-  | { status: 'kernel_restart_required'; reason: string }
-  | { status: 'failed'; reason: string };
+  | { readonly status: 'published'; readonly generation: number }
+  | { readonly status: 'kernel_restart_required'; readonly reason: string }
+  | { readonly status: 'failed'; readonly reason: string };
 interface GenerationSummary {
-  generation;
-  incarnation;
-  state: GenerationState;
-  pid?: number;
-  work: number;
+  readonly generation: number;
+  readonly incarnation: number;
+  readonly state: GenerationState;
+  readonly pid?: number;
+  readonly work: number; // work holds keeping it alive
 }
 interface SpawnedGeneration {
   readonly transport: Transport;
@@ -2395,10 +2465,10 @@ function childTransport(child: ChildProcess): Transport;
 function parentTransport(): Transport; // throws without an IPC channel
 function ajvValidators(): SchemaValidators;
 interface HostPartition {
-  published;
-  kernelOrder;
-  generationOrder;
-  generationEntries;
+  readonly published: ResolvedEnvironment; // published order: kernel, then generation
+  readonly kernelOrder: readonly string[];
+  readonly generationOrder: readonly string[];
+  readonly generationEntries: readonly CatalogEntry[]; // scheduled generation-resident entries
 }
 function partitionCatalog(resolved: ResolvedEnvironment): HostPartition;
 function isKernelResident(
@@ -2461,13 +2531,13 @@ interface EmbeddedBundle {
   readonly host?: { readonly activate: Activate<HostContext> };
 }
 interface BuildCatalogInput {
-  installed;
-  embedded;
-  composition;
-  platformVersion;
-  generation;
-  issues?;
-  recovery?;
+  readonly installed: readonly InstalledBundle[];
+  readonly embedded: readonly EmbeddedBundle[];
+  readonly composition: Composition;
+  readonly platformVersion: string;
+  readonly generation: number;
+  readonly issues?: readonly string[];
+  readonly recovery?: { readonly reason: string };
 }
 function buildCatalog(input: BuildCatalogInput): ResolvedEnvironment; // the host environment
 ```
@@ -2485,13 +2555,21 @@ bundle is passed in code; an invalid manifest or descriptor quarantines it
 ([`catalog.ts`](src/loader/catalog.ts)).
 
 ```ts
-const compositionOverridesSchema;      // { disabled: string[] }, strict
-type CompositionOverrides;
+const compositionOverridesSchema: z.ZodType<CompositionOverrides>; // strict
+type CompositionOverrides = { disabled: string[] }; // non-empty ids
 function compositionOverridesPath(compositionPath: string): string; // composition.overrides.json beside it
-function readCompositionOverrides(path: string): Promise<CompositionOverrides | undefined>; // undefined when missing
-function writeCompositionOverrides(path: string, overrides: CompositionOverrides): Promise<void>;
+function readCompositionOverrides(
+  path: string,
+): Promise<CompositionOverrides | undefined>; // undefined when missing
+function writeCompositionOverrides(
+  path: string,
+  overrides: CompositionOverrides,
+): Promise<void>;
 function clearCompositionOverrides(path: string): Promise<void>;
-function applyCompositionOverrides(composition: Composition, overrides: CompositionOverrides | undefined): Composition;
+function applyCompositionOverrides(
+  composition: Composition,
+  overrides: CompositionOverrides | undefined,
+): Composition;
 ```
 
 The overrides file persists the recovery actions: `applyCompositionOverrides`
@@ -2571,7 +2649,7 @@ interface TestServicesOptions {
   }[];
 }
 interface TestServices {
-  readonly services: Services; // the bundle under test; requires not enforced
+  readonly services: Services; // the bundle under test; neither requires nor provides enforced
   call(scope?: CallScope, signal?: AbortSignal): Call; // caller 'test', version 0.0.0, generation 1
   readonly reports: readonly DiagnosticReport[]; // failures the runtime reported
   dispose(): Promise<void>;
@@ -2580,7 +2658,14 @@ function createTestServices(options: TestServicesOptions): TestServices;
 ```
 
 `createTestServices` runs a bundle's services in process, with no catalog and
-no loader, in the `host` environment of generation 1. Each `providers` entry
+no loader, in the `host` environment of generation 1. Every principal is
+created with `provides: 'any'` and `requires: 'any'`, which skips only the
+manifest declaration checks (`undeclared_provide`, `undeclared_requirement`);
+`use` of a `many` contract still throws `many_contract_use`, and `provide`
+of a basic contract off the platform's method table or exposure still throws
+`contract_mismatch`. The catalog view is empty (`emptyCatalogView`): `provide` checks
+cardinality only against a basic contract's own table and never yields to a
+chosen provider. Each `providers` entry
 is a fake bundle of its own, so several providers of a `many` contract reach
 `whenAvailable` with their own ids, in the order given. `dispose` disposes the
 bundle under test, then the providers, and aborts the generation signal
@@ -2766,12 +2851,12 @@ recorded.
 rebuilt into a cleared output folder with esbuild, bundled as ESM; inline
 source maps in development mode, none in production.
 
-| Part           | Platform       | External                                                      | Refused imports                                                                                                  |
-| -------------- | -------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| desktop        | Node 22        | `bundle/contracts`, `zod`, `zod/*`, `*/contracts`, `electron` | `bundle`, `react`, `react-dom`, `@base-ui/react`, `lexical`, `@lexical/*`, `desktop`                             |
-| client, chunks | browser ES2022 | `clientExternals`                                             | `bundle`, `bundle/runtime`, `desktop`, `desktop/client`, `desktop/client/*`                                      |
-| workers        | browser ES2022 | none                                                          | as the client                                                                                                    |
-| frames         | browser ES2022 | `frameExternals`                                              | as the client, plus `bundle/*`, `desktop/*` and every client external that is not a frame external, except `zod` |
+| Part           | Platform       | External                                                      | Refused imports                                                                                                                                       |
+| -------------- | -------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| desktop        | Node 22        | `bundle/contracts`, `zod`, `zod/*`, `*/contracts`, `electron` | `bundle`; `react`, `react-dom`, `@base-ui/react`, `lexical`, `@lexical/*`, `desktop` and every subpath of them (`react/jsx-runtime`, `desktop/ui`, …) |
+| client, chunks | browser ES2022 | `clientExternals`                                             | `bundle`, `bundle/runtime`, `desktop`, `desktop/client`, `desktop/client/*`                                                                           |
+| workers        | browser ES2022 | none                                                          | as the client                                                                                                                                         |
+| frames         | browser ES2022 | `frameExternals`                                              | as the client, plus `bundle/*`, `desktop/*` and every client external that is not a frame external, except `zod` and `zod/*`                          |
 
 - A relative import that resolves into the bundle's own `src/contracts/`
   becomes the external `<id>/contracts`, except in a frame, which bundles the
@@ -2811,11 +2896,11 @@ manifest](../../docs/architecture/bundles/manifest.md) and
 
 ## Build and test this package
 
-| Target             | Runs                                                                                                                                                             |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bundle:build`     | `tsc --build packages/bundle/tsconfig.lib.json` into `dist/`, then `node packages/bundle/dist/build/platform-schemas.js`, which writes `dist/schemas/`           |
-| `bundle:typecheck` | After `build`: `tsc --build packages/bundle/tsconfig.json --emitDeclarationOnly`, then `tsc -p packages/bundle/tsconfig.browser.json` (the browser-safe entries) |
-| `bundle:test`      | `tsc -p` of `tsconfig.browser.json` and `tsconfig.spec.json` into `dist-tests/`, then `node --test packages/bundle/dist-tests/tests/*.test.js`                   |
+| Target             | Runs                                                                                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bundle:build`     | `tsc --build packages/bundle/tsconfig.lib.json` into `dist/`, then `node packages/bundle/dist/build/platform-schemas.js`, which writes `dist/schemas/`                                        |
+| `bundle:typecheck` | After `build`: `tsc --build packages/bundle/tsconfig.json --emitDeclarationOnly`, then `tsc -p packages/bundle/tsconfig.browser.json` (the browser-safe entries)                              |
+| `bundle:test`      | After `^build`: `tsc -p tsconfig.browser.json` (type check only, `noEmit`), `tsc -p tsconfig.spec.json` (writes `dist-tests/`), then `node --test packages/bundle/dist-tests/tests/*.test.js` |
 
 ```console
 npx nx run bundle:build
@@ -2839,3 +2924,4 @@ The targets are declared in [`project.json`](project.json); the tests are in
 - [Platform packages](../../docs/architecture/bundles/platform-packages.md)
 - [Boundaries](../../docs/architecture/bundles/boundaries.md)
 - [core README](../../bundles/foundation/core/README.md): the basic contracts' methods, data and errors
+- Feature docs: [Skills](../../docs/features/skills.md), [Credentials](../../docs/features/credentials.md), [Models and providers](../../docs/features/models-and-providers.md), [Error messages](../../docs/features/error-messages.md)

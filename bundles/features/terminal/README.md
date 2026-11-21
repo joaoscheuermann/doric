@@ -316,8 +316,8 @@ working_directory resolves against the current directory."
 
 - The tool reads the Thread's working directory through
   `runtime.workspace/v1.cwd(call)`. A missing or blank `working_directory` is
-  that directory; a relative one is joined to it; the result is normalized as
-  a POSIX path.
+  that directory; a relative one is joined to it, an absolute one is used as
+  given; the result is normalized as a POSIX path.
 - `timeout_ms` defaults to 120,000 and is capped at 600,000; 0 runs with no
   limit.
 - The tool calls `run` of `terminal/v1` in the call's scope, with the command,
@@ -367,8 +367,9 @@ interface Diagnostic {
 }
 ```
 
-- **Compaction.** A stream is split into lines (trailing line breaks dropped).
-  A line longer than 1,000 characters keeps its first 1,000 and the suffix
+- **Compaction.** A stream is split into lines (when it ends with a line
+  break, its trailing white space is dropped). A line longer than 1,000
+  characters keeps its first 1,000 and the suffix
   ` [line truncated; <n> chars omitted]`. A stream of at most 12,000 bytes is
   returned whole in `head`. A longer one returns its first 24 lines in `head`
   and its last 48 in `tail`, with the count and the UTF-8 bytes of the lines
@@ -386,8 +387,11 @@ compile`, `test failed`), `panic` (`panicked at`, ` panicked`), `exception`
   (`Traceback`, `Exception`, `Caused by:`), `typescript_error` (`error TS`, or
   `TS` and four digits), `eslint_error` (`parsing error`, `no-unused-vars`,
   `problems`), `error` (`error:` at the start, ` error:`, `ERROR`, `Error:`),
-  `warning` (`warning:` at the start, ` warning:`, `WARN`, `Warning:`);
-  matching ignores case where the rule is written in lower case. Each
+  `warning` (`warning:` at the start, ` warning:`, `WARN`, `Warning:`).
+  These texts are matched ignoring case: `test result: failed`, `failures:`,
+  ` failures`, `could not compile`, `test failed`, `panicked at`,
+  ` panicked`, `parsing error`, `no-unused-vars`, `problems`, `error:`,
+  ` error:`, `warning:` and ` warning:`; the others match their case. Each
   carries two lines of context on each side. A line of the same kind, stream
   and text as an earlier one adds to the earlier one's `repeat_count`
   instead. The diagnostics are sorted with every kind but `error`,
@@ -519,8 +523,9 @@ longer available.`), then follows that Project's stream. On each stream
 - **Reconnecting.** A stream that ends with `disconnected`, `unavailable` or
   `generation_lost` reports nothing and subscribes again when
   `doric.connection/v1` reports `connected`, or after 1,000 ms when it is
-  connected already. Any other end reports `The terminal connection failed.`
-  and stays ended.
+  connected already. An end with any other error reports `The terminal
+connection failed.` and stays ended; an end without an error reports
+  nothing and stays ended.
 
 ### Store
 
@@ -632,7 +637,11 @@ The element `terminal-view` draws the session the store holds for
 
 [`src/client/styles.css`](src/client/styles.css) holds the bundle's Tailwind
 utilities and the rule that draws xterm's scrollbar slider, scoped to
-`[data-slot='terminal-view']`, like the shared ScrollArea's.
+`[data-slot='terminal-view']`, like the shared ScrollArea's. The sheet also
+scans `packages/desktop/src` and the client sources of `layout`, `chat`,
+`settings`, `account` and `workspace` (`@source`), so it emits every utility
+class the window uses, in one sorted set, and never emits a shared class after
+those bundles' responsive variants.
 
 ### In the chat
 
@@ -709,7 +718,10 @@ result delivery failed` with `{ threadId }`, never a command or output
   [`src/host/provider.ts`](src/host/provider.ts)).
 - In the window: opens, retitles and closes workspace tabs, navigates to a
   Thread, asks `files.refresh/v1` for a refresh, writes to the clipboard, and
-  shows toasts.
+  shows toasts. When `ui/v1` cannot create `chat-readonly-markdown`, a
+  `terminal-result` block logs `Doric: <chat-readonly-markdown> could not be
+created:` with the error to the console and stays empty
+  ([`src/client/chat/terminal-result.tsx`](src/client/chat/terminal-result.tsx)).
 
 ## Configuration
 
@@ -756,6 +768,7 @@ window's writes to one terminal reach it in the order they were made.
 | Closing hook                                    | Stopping a session fails                                                                      | The log line `Terminal cleanup failed`; the close goes on.                                                             |
 | Stream listener                                 | Throws or rejects                                                                             | Ignored.                                                                                                               |
 | Window calls                                    | Lost connection or host; other failures; bad arguments or answers                             | The messages of [Terminal API](#terminal-api), shown as toasts by the store and the rows, or in the view's alert line. |
+| Chat result block                               | `ui/v1` cannot create `chat-readonly-markdown`                                                | The console line `Doric: <chat-readonly-markdown> could not be created:` with the error; the block stays empty.        |
 | Window streams                                  | Lost connection; other end; unreadable record; terminal gone                                  | Resubscribe silently; or the messages of [Watches](#watches), as toasts or in the view.                                |
 
 ## Build and test

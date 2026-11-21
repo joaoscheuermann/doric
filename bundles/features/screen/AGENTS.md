@@ -31,14 +31,19 @@ collapse control: that belongs to the bundle that provides `layout.stack/v2`.
 - Keep the marker's token when a session restarts, and `forget` a Project's
   previous token before `expose` of a new one.
 - Report a screen the reader cannot be served as a `ScreenSessionError` with a
-  `ScreenUnavailableReason` in `src/host/session.ts`; let only a failure the
-  reader cannot act on reject `attach`.
+  `ScreenUnavailableReason` in `src/host/session.ts`; let only a failure of a
+  sandbox call or of the relay reject `attach`.
+- Add a `screen.views/v1` method to `screenViewsMethods` in
+  `src/contracts/index.ts` with `expose: 'desktop'`, and make a stream's
+  listener the last item of its input tuple: a window reaches only exposed
+  methods, and the desktop bridge treats only a last-item listener as a
+  stream. Wire it in `screenViewsService` of `src/desktop/index.ts` through
+  `envOf`, and implement it in `src/desktop/views.ts`. Give a
+  `screen.sessions/v2` method `expose: 'desktop'` in `screenSessionsService` of
+  `src/host/provider.ts`.
 - Keep the mapping of an answer to a status, the retry delays, `canRetry` and
   the window decision as pure functions in `src/desktop/status.ts`, and make
   every window call through `src/desktop/windows.ts`.
-- Never read `doric.cache/v1` or any `doric.*` service during `activate` of
-  the desktop part: its activation is also recorded at build time, where those
-  services answer nothing. Read them on the first method call.
 - Never store a status, a dial or window state in `views.json`. Add a stored
   field of a view as optional in `viewsFrom` of `src/desktop/store.ts`: one
   invalid entry makes the whole file read as no views.
@@ -51,15 +56,17 @@ collapse control: that belongs to the bundle that provides `layout.stack/v2`.
   primitive or a snapshot that keeps its identity while nothing changed: the
   selection answers a new object on every `current()`.
 - Keep the elements free of state of their own: draw from the activation's
-  store in `src/client/store.ts`, and wrap each element's root in
-  `SidebarScope`.
+  store in `src/client/store.ts`. Wrap the root of an element that draws a
+  `desktop/ui/sidebar` component reading the sidebar context, such as
+  `SidebarMenuButton`, in `SidebarScope`: the layout's context does not reach
+  the element.
 - Put a control of the pane's header in the `<screen-group-action>` element,
   and register the pane only through `screenPane` in `src/client/index.ts`.
 - When you add a utility class in `src/client/`, add it to the
   `@source inline(…)` list of `src/client/styles.css` and to `TOKENS` of
   [`tests/styles-cascade.test.ts`](tests/styles-cascade.test.ts), in the same
-  order: an app whose own sheet was built without the class receives it only
-  from this sheet. Keep the sheet at `source(none)`, under 8 KiB built, and
+  order: an app whose own sheet lacks the class receives it only from this
+  sheet. Keep the sheet at `source(none)`, under 8 KiB built, and
   free of the conflicting classes the test names.
 - When you add a `ScreenUnavailableReason`, give it a row text and a retry
   choice in `presentationOf` of `src/client/elements.tsx`, and a retry delay
@@ -71,7 +78,7 @@ collapse control: that belongs to the bundle that provides `layout.stack/v2`.
   relay handling to `src/host/provider.ts`; add view state and commands to
   `src/desktop/views.ts`; add what the pane draws to `src/client/elements.tsx`;
   add a new window-to-host call next to `src/client/api.ts`, answering `null`
-  instead of throwing.
+  for every failure except an invalid identifier, as `createScreenApi` does.
 - Add the test of each change in the same change: session behavior in
   [`tests/session.test.ts`](tests/session.test.ts) over the fake sandbox of
   [`tests/support/sandbox.ts`](tests/support/sandbox.ts); lease and relay
@@ -84,14 +91,13 @@ collapse control: that belongs to the bundle that provides `layout.stack/v2`.
   [`tests/client/sidebar.test.ts`](tests/client/sidebar.test.ts), and a new
   pane state also as a story in `stories/`, which
   [`tests/client/story-pane.test.ts`](tests/client/story-pane.test.ts) renders.
-- Change what the relay serves only in
-  [`screen-relay`](../screen-relay/README.md), never in this bundle.
 - Update the feature doc [Screen](../../../docs/features/screen.md) with any
   change to the flow, the statuses, the pane or the windows.
 
 ## Verify
 
-- `npx nx run bundle-screen:typecheck`: run it after any change under `src/`.
+- `npx nx run bundle-screen:typecheck`: run it after any change under `src/`,
+  `stories/` or `.storybook/`.
 - `npx nx run bundle-screen:test`: run it after any change under `src/`,
   `tests/` or `stories/`, and run the tests only through this target, which
   builds the bundle first because the sheet test reads `dist/`.
