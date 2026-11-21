@@ -89,9 +89,11 @@ provides `secrets/v1`.
 - Update [`README.md`](README.md) in the same change as any change to what it
   states: the manifest, the package's exports, the kind's fields, the record's
   answers, `catalog`, `create`, the logger, the errors or the Nx targets;
-  update the feature doc [usage](../../../docs/features/usage.md) when
-  the change alters the context capacity or the cost an `openrouter` provider
-  reports, and the feature doc
+  update the feature doc
+  [models and providers](../../../docs/features/models-and-providers.md) when
+  the change alters the kind, `catalog` or `create`, the feature doc
+  [usage](../../../docs/features/usage.md) when it alters the context capacity
+  or the cost an `openrouter` provider reports, and the feature doc
   [credentials](../../../docs/features/credentials.md) when it alters how an
   `openrouter` provider names or reads its credential.
 

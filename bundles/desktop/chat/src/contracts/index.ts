@@ -490,7 +490,7 @@ export interface ChatIntentDetail {
 
 // The composer's state lives in the main process, so every window reads the same
 // draft and the same comment stack (`docs/architecture/bundles/comments.md`,
-// "O rascunho e a pilha do compositor"). The stack's items are generic on
+// "The draft and the composer stack"). The stack's items are generic on
 // purpose: the bundle that owns a comment `kind` declares what its item carries
 // and how its flush turns the draft into a durable write; the chat only draws
 // the line and hands the item back to the flush the owner registered. The

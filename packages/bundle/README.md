@@ -28,7 +28,7 @@ tooling.
 | Bundles  | The embedded foundation host parts [`host-config`](../../bundles/foundation/host-config/README.md), [`postgres`](../../bundles/foundation/postgres/README.md) and [`transport`](../../bundles/foundation/transport/README.md) (`EmbeddedBundle`; `host-config` also `contractDocument`) | `bundle` (types), `bundle/runtime`                  |
 | Apps     | [`doric-host`](../../app/backend/doric-host/README.md) boots the kernel with `startKernel` and serves the bridge (`PLATFORM_VERSION`, exposure)                                                                                                                                         | `bundle`, `bundle/runtime`, `bundle/contracts`      |
 | Apps     | The desktop app [`doric`](../../app/desktop/doric/README.md) runs `desktopMain` generations and the window bridge                                                                                                                                                                       | `bundle/runtime`, `bundle/contracts`                |
-| Packages | [`tool`](../tool/README.md) (`defineTool` over `tools/v1`), [`storage`](../storage/README.md) (in-memory foundation), `desktop` (window bootstrap, elements)                                                                                                                            | `bundle/contracts`, `bundle/runtime`, `bundle`      |
+| Packages | [`tool`](../tool/README.md) (`defineTool` over `tools/v1`), [`storage`](../storage/README.md) (in-memory foundation), [`desktop`](../desktop/README.md) (window bootstrap, elements)                                                                                                    | `bundle/contracts`, `bundle/runtime`, `bundle`      |
 | Packages | The package's own build ([`parts.ts`](src/build/parts.ts))                                                                                                                                                                                                                              | `bundle/externals`                                  |
 
 ## Entry points
@@ -591,10 +591,12 @@ method table (`<name>Methods`). A provider must implement exactly that table
 [`services.ts`](src/runtime/services.ts)). The methods, data and errors of
 each contract are described with its provider: the contracts `core` provides
 in the [core README](../../bundles/foundation/core/README.md); the backends
-with [`postgres`](../../bundles/foundation/postgres/README.md);
-`models.provider/v1`, which `core` consumes, with each model provider (for
-example [`claude`](../../bundles/providers/claude/README.md#provided-contract-modelsproviderv1-130))
-and in [Models and providers](../../docs/features/models-and-providers.md).
+with [`postgres`](../../bundles/foundation/postgres/README.md).
+`models.provider/v1` has several providers and `core` consumes it, so its
+full shape is here, in [The `models.provider/v1`
+contract](#the-modelsproviderv1-contract); each model provider's README states
+what it answers, and [Models and
+providers](../../docs/features/models-and-providers.md) describes the feature.
 
 ```ts
 interface BasicContractSpec {
@@ -703,6 +705,103 @@ recognizes the method and validates each item
 `x-doric-local` holds a value local to its process; it crosses the envelope
 only as a handle ([Process isolation](../../docs/architecture/bundles/process-isolation.md#the-envelope)).
 
+#### The `models.provider/v1` contract
+
+`models.provider/v1` is how a model provider bundle offers one provider kind
+to `models/v1`. It runs in `host` only, has cardinality `many` and no optional
+methods, so a record implements all six methods below
+([`basic/index.ts`](src/contracts/basic/index.ts),
+[`models.ts`](src/contracts/basic/models.ts)). Each provider bundle registers
+its record with `{ cardinality: 'many' }`; the providers are
+[`claude`](../../bundles/providers/claude/README.md),
+[`codex`](../../bundles/providers/codex/README.md),
+[`openai`](../../bundles/providers/openai/README.md) and
+[`openrouter`](../../bundles/providers/openrouter/README.md), and each declares
+`models.provider/v1@1.3.0` in its manifest. `core` watches every record and
+builds `models/v1` over them
+([core README](../../bundles/foundation/core/README.md#modelsv1)).
+
+```ts
+interface ModelsProvider {
+  kind(call?: CallArg): Promise<ModelKindDescriptor>;
+  advertised(call?: CallArg): Promise<boolean>;
+  catalog(
+    input: {
+      readonly configuration: Readonly<Record<string, string>>;
+      readonly secret?: string;
+    },
+    call?: CallArg,
+  ): Promise<CatalogResult>;
+  create(
+    input: ModelsProviderCreateInput,
+    call?: CallArg,
+  ): LanguageModel | Promise<LanguageModel>;
+  catalogCapacity(call?: CallArg): Promise<boolean>; // minor 1.1.0
+  icons(
+    input: {
+      readonly configuration: Readonly<Record<string, string>>;
+      readonly models: readonly string[];
+    },
+    call?: CallArg,
+  ): Promise<ModelIconChoice>; // minor 1.2.0
+}
+interface ModelsProviderCreateInput {
+  readonly providerId: string;
+  readonly values: Readonly<Record<string, string>>;
+  readonly secret?: () => Promise<string>; // x-doric-local: 'callback'
+}
+const ModelsProviderV1 = ref<ModelsProvider>('models.provider/v1');
+const modelsProviderMethods: MethodSpecs;
+```
+
+| Method              | Input (`modelsProviderMethods`)                                                                                     | Output                | Meaning                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `kind()`            | none                                                                                                                | `ModelKindDescriptor` | The kind this record offers                                                                                         |
+| `advertised()`      | none                                                                                                                | `boolean`             | Whether `models/v1.kinds()` lists the kind; `models/v1.kind(id)` finds it either way                                |
+| `catalog(input)`    | `{ configuration: Record<string, string>, secret?: string }`, strict                                                | `CatalogResult`       | The kind's live model catalog for these values; `secret` is the resolved secret, not a credential id                |
+| `create(input)`     | `{ providerId: string, values: Record<string, string>, secret?: callback }`, strict                                 | `LanguageModel`       | Builds the provider; the answer is a handle made with `toLanguageModel`                                             |
+| `catalogCapacity()` | none                                                                                                                | `boolean`             | Whether the built provider's `models()` reports context capacity, which `models/v1.contextWindow` reads             |
+| `icons(input)`      | `{ configuration: Record<string, string>, models: string[] }`, strict; at most 1000 names of at most 512 characters | `ModelIconChoice`     | The icons this kind chooses for these values, by name: its own and, per listed model, that model's own; no fallback |
+
+Data shapes ([`models.ts`](src/contracts/basic/models.ts)):
+
+- `ModelKindDescriptor` (strict): `id`, `label`, `description` (strings);
+  `fields: ModelField[]`, the values a provider of the kind carries; `lists`,
+  an array of `'models'` and `'reasonings'`, the lists a provider keeps;
+  optional `modelsFromCatalog` (boolean), set when the kind's model list is its
+  live catalog, so the configuration fill writes every model the catalog
+  lists; optional `site: { url, label }` (strict, minor 1.3.0), the site a
+  provider page links to: `url` must parse with the `https:` scheme, `label`
+  is non-empty.
+- `ModelField` (strict): `key`, `label` (strings), `kind` (`text`, `url`,
+  `number`, `enum` or `secret`), `required` (boolean), optional
+  `description`, `placeholder`, `options` (strings) and `advanced` (boolean).
+- `CatalogResult`: `{ status: 'read', models: CatalogModel[] }` or
+  `{ status: 'absent' | 'failed' }` (both strict): the models, or why there are
+  none (no URL, or a failed read). `CatalogModel` (loose) has `id`,
+  `reasonings` and `parameters` (string arrays), `mandatory` (boolean),
+  optional `name` and `defaultEffort`, and may carry more keys.
+- `LanguageModel`: an opaque object, marked `x-doric-local: 'object'`. It
+  crosses the envelope as a handle: back in the process that built it, it is
+  the object `create` answered; anywhere else any use is refused as
+  `local_only`. `toLanguageModel` gives a plain object a prototype of its own,
+  keeping its own properties (getters stay getters), so it crosses as a handle
+  and not by copy; an object whose prototype is not `Object.prototype` or
+  `null` is returned unchanged.
+- `ModelsProviderCreateInput.secret` reads the provider's secret as stored
+  now; a provider awaits it before each request, so a rotated credential
+  reaches the next request. It is a local callback and crosses only as a
+  handle.
+- `ModelIconChoice` (strict): optional `provider` and `models`, an array with
+  one entry per requested model, in order: an icon name (1 to 64 characters)
+  or `null` for a model without an icon of its own.
+
+The contract declares no error codes. An error a record throws reaches its
+caller with its class rebuilt ([Values, errors and
+calls](#values-errors-and-calls)); how `models/v1` treats a record whose
+method fails or is late is described in the [core
+README](../../bundles/foundation/core/README.md#modelsv1).
+
 #### Exports per source file
 
 Every file exports the contract's interface, its ref (see the table above)
@@ -760,7 +859,7 @@ semantics are in the provider's README (see above).
 
 | Export                                             | Meaning                                                                                                                                                                       |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Models`, `ModelsProvider`                         | The `models/v1` and `models.provider/v1` interfaces                                                                                                                           |
+| `Models`, `ModelsProvider`                         | The `models/v1` and `models.provider/v1` interfaces; see [The `models.provider/v1` contract](#the-modelsproviderv1-contract)                                                  |
 | `ModelField`, `modelFieldSchema`                   | One configuration field of a model kind: `{ key, label, kind: 'text' \| 'url' \| 'number' \| 'enum' \| 'secret', required, description?, placeholder?, options?, advanced? }` |
 | `ModelKindDescriptor`, `modelKindDescriptorSchema` | `{ id, label, description, fields: ModelField[], lists: ('models' \| 'reasonings')[], modelsFromCatalog?, site?: { url (https:), label } }`                                   |
 | `CatalogModel`, `catalogModelSchema`               | One model of a kind's catalog (loose object)                                                                                                                                  |
@@ -1744,12 +1843,12 @@ interface GenerationInit {
   readonly incarnation: number;
   readonly platformVersion: string;
   readonly composition: Composition;
-  readonly entries: readonly SerializedCatalogEntry[];
-  readonly order: readonly string[];
+  readonly entries: readonly SerializedCatalogEntry[]; // this process's entries, already resolved
+  readonly order: readonly string[]; // this process's activation order
   readonly contracts: readonly ResolvedContract[];
-  readonly preActive: readonly string[];
-  readonly kernelProviders: readonly RemoteProviderDescriptor[];
-  readonly hooksProvider: 'remote' | 'local';
+  readonly preActive: readonly string[]; // bundles already active elsewhere in the environment
+  readonly kernelProviders: readonly RemoteProviderDescriptor[]; // the kernel's providers at start
+  readonly hooksProvider: 'remote' | 'local'; // 'remote': hooks/v1 lives in the kernel
   readonly catalog: CatalogSnapshot;
 }
 const generationInitSchema: z.ZodType<GenerationInit>; // generation and incarnation positive integers
@@ -1986,6 +2085,28 @@ function isControlMessage(message: WireMessage): message is ControlMessage;
 `lifecycle` and `lifecycle-result` are declared and accepted by
 `wireMessageSchema`, but no code sends them; `appLifecycleHooks` is read by
 no code outside the module.
+
+The control plane runs between a generation process's runner and its parent:
+the kernel's generation manager for a `host` generation
+([`manager.ts`](src/process/manager.ts)), the desktop main process for a
+`desktopMain` generation
+([`process.ts`](../../app/desktop/doric/src/platform/generation/process.ts)).
+The runner's side is [`runner.ts`](src/runtime/runner.ts).
+
+| Kind           | Sent by                                                                                                                                                                          | The receiver                                                                                                                                                                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `init`         | The parent, once, after it spawns the process; the kernel sets `hooksProvider: 'remote'`, the desktop main process `'local'`                                                     | The runner ignores every other message until `init`, validates it with `generationInitSchema` and fails with `Invalid generation init: …`; a channel closed before it fails with `The kernel closed the channel before init.`                          |
+| `ready`        | The runner, once its bundles are activated, with the activation order                                                                                                            | The parent counts the generation as started; the kernel then sends it `provide` for each kernel provider it does not know or that changed, and `unprovide` for each one gone                                                                           |
+| `provide`      | The runner, for each local, non-`doric.*` provider a bundle registers (`AnnouncingDirectory`); the kernel, for each kernel provider the generation does not know or that changed | Registers a remote record for the descriptor, replacing one with the same key; a refused one is reported as `registration_failed` by the runner and by the kernel, and logged as a warning (`Generation provider refused`) by the desktop main process |
+| `unprovide`    | The same sides, when such a provider goes away                                                                                                                                   | Withdraws the remote record                                                                                                                                                                                                                            |
+| `diagnostics`  | The runner, after each bundle's principal is created, after each reported failure (once per microtask), after activation and after it stops                                      | The parent keeps the snapshot as the generation's diagnostics                                                                                                                                                                                          |
+| `catalog`      | The kernel, to every live generation, when a generation becomes the active one                                                                                                   | The runner replaces its catalog snapshot                                                                                                                                                                                                               |
+| `platform-log` | The runner, for each line its platform log writes                                                                                                                                | The parent logs the line at its level                                                                                                                                                                                                                  |
+| `stop`         | The parent, to stop the generation                                                                                                                                               | The runner deactivates its bundles in reverse order, disposes the platform scope, pushes `diagnostics` and answers `stopped`                                                                                                                           |
+| `stopped`      | The runner, after it stops                                                                                                                                                       | Neither parent reads it: each waits for the process to exit and kills it after its stop timeout                                                                                                                                                        |
+
+The desktop main process sends only `init` and `stop`: a `desktopMain`
+generation keeps the kernel providers and the catalog of its `init`.
 
 #### `ProcessLink` and `Transport`
 

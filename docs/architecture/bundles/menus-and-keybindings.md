@@ -231,4 +231,5 @@ No shipped bundle adds a menu item. The commands of `chat` are described in its 
 - [Hooks](hooks.md): `onAppReadyHook`, at which the core sets the skeleton.
 - [Windows](windows.md): window keys, focus and generations of windows.
 - [Navigation](navigation.md): the routes whose patterns become the context `path`.
-- [Core README](../../../bundles/foundation/core/README.md): `core.commands/v1` and `core.open-settings/v1`.
+- [Core README](../../../bundles/foundation/core/README.md#corecommandsv1): `core.commands/v1` and `core.open-settings/v1`.
+- [Core README](../../../bundles/foundation/core/README.md#menusv1): the methods of `menus/v1` and the behavior of the core's provider.

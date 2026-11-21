@@ -1,5 +1,5 @@
 // A preview's snapshot and stand-in, at the surface (isolamento.md,
-// "Virtualização"): a live frame is captured through the window's capture
+// "Virtualization"): a live frame is captured through the window's capture
 // only once it is stable on screen, a dead preview draws the picture only in
 // the theme and at the width it was taken in, a capture that fails leaves the
 // placeholder, and a frame that never says it mounted shows its stand-in with

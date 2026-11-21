@@ -475,41 +475,41 @@ type InterruptResult = 'interrupted' | 'missing' | 'inactive' | 'not_running';
 
 **Thread operations** (`RuntimeThreads`):
 
-| Method                         | Input                                                                           | Output                                                                                                  |
-| ------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `createThread` _desktop_       | `{ projectId, name, parentThreadId? }`                                          | `ThreadCreateResult`                                                                                    |
-| `thread` _desktop_             | `id`                                                                            | `Thread \| undefined` (with the storage-pause overlay)                                                  |
-| `storedThread`                 | `id`                                                                            | `Thread \| undefined` (the stored record)                                                               |
-| `threads` _desktop_            | `{ projectId, limit, cursor?, parentThreadId? }`                                | `Page<Thread> \| undefined` (newest first; `undefined` for a missing Project)                           |
-| `projectThreads`               | `projectId`                                                                     | `Thread[]` (`createdAt`, then id, ascending)                                                            |
-| `renameThread` _desktop_       | `{ id, name }`                                                                  | `Thread \| undefined`                                                                                   |
-| `setThreadCwd` _desktop_       | `{ id, cwd }`                                                                   | `CwdResult`; rejects when a sandbox command of the move throws                                          |
-| `setThreadExecution` _desktop_ | `{ id, providerId (trimmed, 1–128), model (trimmed, 1–512), effort? }`          | `ThreadExecutionResult`                                                                                 |
-| `archiveThread` _desktop_      | `{ id: uuid }`                                                                  | `ArchiveThreadResult`; rejects with `limit_exceeded` over the batch limit                               |
-| `restoreThread` _desktop_      | `{ id: uuid, batch?: uuid }`                                                    | `RestoreThreadResult`; rejects with `limit_exceeded` over the batch limit                               |
-| `setThreadPinned` _desktop_    | `{ id: uuid, pinned }`                                                          | `Thread \| undefined`                                                                                   |
-| `prompt` _desktop_             | `{ id, prompt }`                                                                | `PromptResult`                                                                                          |
-| `retry` _desktop_              | `{ id }`                                                                        | `PromptResult`                                                                                          |
-| `steer` _desktop_              | `{ id, prompt, promptId, interrupt? }`                                          | `SteerResult`                                                                                           |
-| `instruct`                     | `{ id, prompt (≥ 1), reason (1–64), promptId?, interrupt?, retain? }`           | `SteerResult`                                                                                           |
-| `resume` _desktop_             | `{ id, promptId }`                                                              | `ResumeResult`                                                                                          |
-| `rewind` _desktop_             | `{ id, promptId, prompt }`                                                      | `RewindResult`                                                                                          |
-| `compact` _desktop_            | `{ id }`                                                                        | `CompactResult`                                                                                         |
-| `threadEvents`                 | `{ id, afterSequence }`                                                         | `{ events: ThreadEvent[]; lastSequence } \| undefined`                                                  |
-| `storedEventsAfter`            | `{ id, afterSequence }`                                                         | `ThreadEvent[]` (no record check)                                                                       |
-| `pause` _desktop_              | `{ id, promptId }` (`promptId` is ignored)                                      | `InterruptResult`                                                                                       |
-| `terminateThread` _desktop_    | `id`                                                                            | `Thread \| undefined`                                                                                   |
-| `deleteThread` _desktop_       | `id`                                                                            | `'deleted' \| 'active' \| 'missing' \| 'forbidden'`; rejects with `limit_exceeded` over the batch limit |
-| `queue` _desktop_              | `id`                                                                            | `ThreadQueue \| undefined`                                                                              |
-| `resumeQueue` _desktop_        | `id`                                                                            | `ResumeResult`                                                                                          |
-| `queuedPrompt` _desktop_       | `{ id, promptId }`                                                              | `QueuedPrompt \| undefined`                                                                             |
-| `editQueued` _desktop_         | `{ id, promptId, text, revision }`                                              | `EditQueueResult`                                                                                       |
-| `removeQueued` _desktop_       | `{ id, promptId }`                                                              | `RemoveQueuedResult`                                                                                    |
-| `usage` _desktop_              | `id`                                                                            | `ThreadUsage \| undefined` (with the context capacity fill)                                             |
-| `enqueueTerminalResult`        | `{ threadId, promptId, terminalId, text }` (strict)                             | `void`                                                                                                  |
-| `failTerminalResult`           | `{ threadId }`                                                                  | `void`                                                                                                  |
-| `watchThread` _desktop_        | `[{ threadId: uuid, afterSequence: int ≥ 0 }, StreamListener<ThreadWatchItem>]` | `Disposable`                                                                                            |
-| `viewThread` _desktop_         | `[{ threadId: uuid }, StreamListener<{ kind: 'viewing'; threadId }>]`           | `Disposable`                                                                                            |
+| Method                         | Input                                                                                   | Output                                                                                                  |
+| ------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `createThread` _desktop_       | `{ projectId, name, parentThreadId? }`                                                  | `ThreadCreateResult`                                                                                    |
+| `thread` _desktop_             | `id`                                                                                    | `Thread \| undefined` (with the storage-pause overlay)                                                  |
+| `storedThread`                 | `id`                                                                                    | `Thread \| undefined` (the stored record)                                                               |
+| `threads` _desktop_            | `{ projectId, limit, cursor?, parentThreadId? }`                                        | `Page<Thread> \| undefined` (newest first; `undefined` for a missing Project)                           |
+| `projectThreads`               | `projectId`                                                                             | `Thread[]` (`createdAt`, then id, ascending)                                                            |
+| `renameThread` _desktop_       | `{ id, name }`                                                                          | `Thread \| undefined`                                                                                   |
+| `setThreadCwd` _desktop_       | `{ id, cwd }`                                                                           | `CwdResult`; rejects when a sandbox command of the move throws                                          |
+| `setThreadExecution` _desktop_ | `{ id, providerId (trimmed, 1–128), model (trimmed, 1–512), effort?: ReasoningEffort }` | `ThreadExecutionResult`                                                                                 |
+| `archiveThread` _desktop_      | `{ id: uuid }`                                                                          | `ArchiveThreadResult`; rejects with `limit_exceeded` over the batch limit                               |
+| `restoreThread` _desktop_      | `{ id: uuid, batch?: uuid }`                                                            | `RestoreThreadResult`; rejects with `limit_exceeded` over the batch limit                               |
+| `setThreadPinned` _desktop_    | `{ id: uuid, pinned }`                                                                  | `Thread \| undefined`                                                                                   |
+| `prompt` _desktop_             | `{ id, prompt }`                                                                        | `PromptResult`                                                                                          |
+| `retry` _desktop_              | `{ id }`                                                                                | `PromptResult`                                                                                          |
+| `steer` _desktop_              | `{ id, prompt, promptId, interrupt? }`                                                  | `SteerResult`                                                                                           |
+| `instruct`                     | `{ id, prompt (≥ 1), reason (1–64), promptId?, interrupt?, retain? }`                   | `SteerResult`                                                                                           |
+| `resume` _desktop_             | `{ id, promptId }`                                                                      | `ResumeResult`                                                                                          |
+| `rewind` _desktop_             | `{ id, promptId, prompt }`                                                              | `RewindResult`                                                                                          |
+| `compact` _desktop_            | `{ id }`                                                                                | `CompactResult`                                                                                         |
+| `threadEvents`                 | `{ id, afterSequence }`                                                                 | `{ events: ThreadEvent[]; lastSequence } \| undefined`                                                  |
+| `storedEventsAfter`            | `{ id, afterSequence }`                                                                 | `ThreadEvent[]` (no record check)                                                                       |
+| `pause` _desktop_              | `{ id, promptId }` (`promptId` is ignored)                                              | `InterruptResult`                                                                                       |
+| `terminateThread` _desktop_    | `id`                                                                                    | `Thread \| undefined`                                                                                   |
+| `deleteThread` _desktop_       | `id`                                                                                    | `'deleted' \| 'active' \| 'missing' \| 'forbidden'`; rejects with `limit_exceeded` over the batch limit |
+| `queue` _desktop_              | `id`                                                                                    | `ThreadQueue \| undefined`                                                                              |
+| `resumeQueue` _desktop_        | `id`                                                                                    | `ResumeResult`                                                                                          |
+| `queuedPrompt` _desktop_       | `{ id, promptId }`                                                                      | `QueuedPrompt \| undefined`                                                                             |
+| `editQueued` _desktop_         | `{ id, promptId, text, revision }`                                                      | `EditQueueResult`                                                                                       |
+| `removeQueued` _desktop_       | `{ id, promptId }`                                                                      | `RemoveQueuedResult`                                                                                    |
+| `usage` _desktop_              | `id`                                                                                    | `ThreadUsage \| undefined` (with the context capacity fill)                                             |
+| `enqueueTerminalResult`        | `{ threadId, promptId, terminalId, text }` (strict)                                     | `void`                                                                                                  |
+| `failTerminalResult`           | `{ threadId }`                                                                          | `void`                                                                                                  |
+| `watchThread` _desktop_        | `[{ threadId: uuid, afterSequence: int ≥ 0 }, StreamListener<ThreadWatchItem>]`         | `Disposable`                                                                                            |
+| `viewThread` _desktop_         | `[{ threadId: uuid }, StreamListener<{ kind: 'viewing'; threadId }>]`                   | `Disposable`                                                                                            |
 
 ```ts
 type ThreadCreateResult =
@@ -599,8 +599,11 @@ Thread is never archived on its own. Once the view is held the stream emits one
 `{ kind: 'viewing', threadId }` and nothing else. It ends when disposed, when the
 host link closes, with `ContractError('not_found')` for a missing Thread, with
 `ContractError('unavailable')` when the runtime drains, and with
-`ContractError('internal')` when reading the Thread fails; each stream holds its
-own view ([`archiver.ts`](src/host/domain/archiver.ts)).
+`ContractError('internal', 'Thread view failed.')` when reading the Thread
+fails, which logs `Thread view failed` with the `threadId` and the error. Each
+stream holds its own view; a stream ended with `not_found`, `unavailable` or
+`internal` holds none ([`service.ts`](src/host/domain/service.ts),
+[`archiver.ts`](src/host/domain/archiver.ts)).
 
 #### Watches
 
@@ -999,9 +1002,15 @@ interface SandboxProviderApi {
 }
 ```
 
-The runtime acquires with the Project id as `identity`, so a resumed Project
-gets its own durable workspace back, and discards that identity when the
-Project is deleted ([`service.ts`](src/host/domain/service.ts)).
+The runtime acquires with the Project id as `identity`, and discards that
+identity when the Project is deleted
+([`service.ts`](src/host/domain/service.ts)). A resumed Project gets its own
+workspace back only from a provider whose `describe()` answers
+`durableWorkspace: true`: Docker keeps the workspace of each identity
+([`docker/src/host/sandbox.ts`](../../sandboxes/docker/src/host/sandbox.ts)),
+while Firecracker answers `false` and provisions a fresh microVM from its image
+for every acquisition
+([`firecracker/src/host/sandbox.ts`](../../sandboxes/firecracker/src/host/sandbox.ts)).
 
 ## Other exports of `runtime/contracts`
 
@@ -1408,16 +1417,20 @@ default.model` and `thread.effort ?? default.effort` (`source: 'default'`); a
   `model` or `effort`, the validator checks it: `provider` always counts,
   `model` and `effort` only when the spawn named them; then `models/v1.resolve`
   must accept the provider and model. A refusal rejects with
-  `ContractError('invalid_execution', message, { issue })`, whose message names
-  the provider, or the model and the available models, or the effort and the
-  supported efforts; a `resolve` rejection is passed through unchanged. The
+  `ContractError('invalid_execution', message, { issue })`, whose message is,
+  by issue, `Provider "<providerId>" is not configured.`,
+  `Model "<model>" is not available on provider "<providerId>". Available models: <names, comma-separated>.`
+  or
+  `Effort "<effort>" is not supported by model "<model>". Supported efforts: <reasonings, comma-separated>.`;
+  a `resolve` rejection is passed through unchanged. The
   `agent` is never inherited.
 - `setThreadExecution` validates the same way with `model` and `effort` both
   counted, answers `invalid` or `unresolvable` without writing, and otherwise
   writes provider, model and effort in one write (an absent `effort` removes
-  the stored one) and publishes the Thread. It rejects only when the
-  configuration cannot be read. A running prompt keeps the execution it started
-  with.
+  the stored one) and publishes the Thread. For a well-formed input, it rejects
+  only when the configuration cannot be read or the storage read or write of
+  the Thread fails ([`service.ts`](src/host/domain/service.ts)). A running
+  prompt keeps the execution it started with.
 
 #### Prompts and the queue
 
@@ -1512,6 +1525,11 @@ default.model` and `thread.effort ?? default.effort` (`source: 'default'`); a
   boundary), drops the later entries, appends `history.truncated`, keeps the
   usage already charged, and enqueues `prompt` as a reader's input
   ([`store/threads.ts`](src/host/store/threads.ts), [`store/usage.ts`](src/host/store/usage.ts)).
+  The contract does not check that `prompt` is non-empty: an empty one still
+  truncates the history and appends `history.truncated`, then rejects with
+  `TypeError('A non-empty prompt is required.')` and enqueues nothing. Only the
+  REST route refuses an empty rewind prompt before the call
+  ([`routes/threads.ts`](../../foundation/transport/src/host/routes/threads.ts)).
 - **Compact.** `compact` runs on an idle Thread only (`busy` otherwise) with a
   `promptId` of its own and no sandbox binding; it answers `not_supported` when
   the executor does not read the Thread's history format, and otherwise the

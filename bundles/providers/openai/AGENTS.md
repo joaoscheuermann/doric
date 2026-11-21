@@ -95,7 +95,9 @@ settings, and storing a credential belongs to the bundle that provides
 - Update [`README.md`](README.md) in the same change as any change to the
   kind's fields, the record's answers, `create`, `icons`, the logger or the
   errors. In the same change, update the feature doc
-  [credentials](../../../docs/features/credentials.md) when the change alters
+  [models and providers](../../../docs/features/models-and-providers.md) when
+  the change alters the kind, the record's answers or `create`,
+  [credentials](../../../docs/features/credentials.md) when it alters
   how an `openai` provider names or reads its credential,
   [settings](../../../docs/features/settings.md) when it alters the provider
   form or the icons a provider page shows, and

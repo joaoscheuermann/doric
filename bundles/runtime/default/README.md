@@ -11,7 +11,11 @@ agents a Thread can be spawned as, and its client part draws each
 The feature this bundle implements, across bundles, is described in
 [docs/features/default-agent.md](../../../docs/features/default-agent.md);
 the coding workflow it ships is described in
-[docs/features/coding-workflow.md](../../../docs/features/coding-workflow.md).
+[docs/features/coding-workflow.md](../../../docs/features/coding-workflow.md),
+the skills it offers in
+[docs/features/skills.md](../../../docs/features/skills.md), and how it
+compacts a history in
+[docs/features/context-compaction.md](../../../docs/features/context-compaction.md).
 How bundles are built and loaded is in
 [`packages/bundle`](../../../packages/bundle/README.md).
 
@@ -422,9 +426,13 @@ agent to complete the request in the Project's sandbox from the persisted
 history; that other Threads share the sandbox, so it checks a file before
 editing it and never reverts changes it did not make; to use tools rather
 than guess; that each Thread has a working directory, starting at
-`/workspace`, which the `cwd` tool reports and changes; to work from a
-repository's root, since a repository's skills and agents are listed only
-from the working directory, and to load the matching skills there; to
+`/workspace`, which the `cwd` tool reports and changes and against which
+every tool resolves a relative path; to move with `cwd`
+to the directory the task concerns before the commands that depend on it,
+and to a repository's root before any other tool touches its code, rather
+than reach into it with `working_directory` or absolute paths, since a
+repository's skills and agents are listed only from the working directory;
+to load the matching skills once `cwd` reports a repository root; to
 initialize a repository for a deliverable meant to be kept and to ask first
 for an experiment; how inputs arrive (the five envelopes, `<message>` and
 `<ui-action>` inside a `<user-request>`); how review comments arrive
@@ -846,9 +854,14 @@ followed by the span's retained messages verbatim, in order, then the
 `thinking` and `redacted_thinking` replay items. Checkpoints inside the span
 are dropped, later ones and retained indexes re-based. The history and
 `{ type: 'compaction.finished', summaryId, summary, condensedMessages,
-retainedMessages, tokensFreed, summaryChars }` are recorded together;
-`summaryId` is `compaction-<uuid>` and `tokensFreed` an estimate (characters
-/ 4 freed minus added). A run replaces its live messages and boundaries with
+retainedMessages, tokensFreed, summaryChars }` go in one `session.record`,
+which makes two writes: it saves the history first and appends the event
+after it, so a crash between them leaves the saved rewrite with
+`compaction.started` and no `compaction.finished`
+([`bundles/runtime/runtime/src/host/domain/session.ts`](../../runtime/runtime/src/host/domain/session.ts)).
+`summaryId` is `compaction-<uuid>`, `retainedMessages` the number of messages
+in the rewritten history, and `tokensFreed` an estimate (characters / 4 freed
+minus added). A run replaces its live messages and boundaries with
 the rewrite and rechecks agents and skills against its system prompt.
 
 **Failure.** A failure after `compaction.started` records

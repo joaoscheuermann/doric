@@ -14,6 +14,9 @@ It is a provider bundle with one host part, which provides the kind as one
 [`core`](../../foundation/core/README.md) bundle registers, lists and builds.
 See the [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
+The feature doc [Models and providers](../../../docs/features/models-and-providers.md)
+describes how provider kinds, configured providers and model catalogs work
+across bundles.
 
 ## Manifest
 
@@ -70,9 +73,8 @@ full shape — the input and output of each method, `ModelKindDescriptor`,
 `ModelField`, `CatalogResult`, `CatalogModel`, `ModelIconChoice`, the limits
 of `icons` and how `create`'s `secret` callback and `LanguageModel` handle
 work — is stated in the
-[`codex` README](../codex/README.md#provided-contract-modelsproviderv1130)
-and its [Data shapes](../codex/README.md#data-shapes). This bundle registers
-exactly one record, with `{ cardinality: 'many' }`
+[`packages/bundle` README](../../../packages/bundle/README.md#the-modelsproviderv1-contract).
+This bundle registers exactly one record, with `{ cardinality: 'many' }`
 ([`src/host/provider.ts`](src/host/provider.ts)), and answers:
 
 | Method              | `openrouter` answer                                                                                                |

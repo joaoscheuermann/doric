@@ -26,7 +26,7 @@ A contract id is lowercase segments separated by `.`, then `/v` and a positive m
 
 ## The `define*` family
 
-Every `define*` function checks what the third column names when it runs, and returns a frozen object branded with its kind, which the runtime and the build recognize ([`define.ts`](../../../packages/bundle/src/contracts/define.ts)).
+Every `define*` function checks what the third column names when it runs, and returns a frozen object branded with its kind, which the runtime and the build recognize ([`define.ts`](../../../packages/bundle/src/contracts/define.ts)). The full signature of each function, its options and its error messages are in [The `define*` functions](../../../packages/bundle/README.md#the-define-functions) of the package README.
 
 | Function            | What it declares                                                                            | What it checks when it runs                                                                                        | Where it goes                                                                                       |
 | ------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
@@ -224,6 +224,7 @@ The catalog reads `contracts.json` with the manifest, and quarantines a bundle w
 
 ## Related documents
 
+- [`packages/bundle` README, The `define*` functions](../../../packages/bundle/README.md#the-define-functions): the full signatures of the `define*` functions and `ref`.
 - [Hooks and the app's lifecycle](hooks.md): `defineHook`, `defineHooks`, `execute` and the hooks that ship.
 - [Boundaries](boundaries.md): the boundary checks and the rules they enforce.
 - [Manifest](manifest.md): `provides`, `requires` and `optional`.

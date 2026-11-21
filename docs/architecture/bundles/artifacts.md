@@ -167,9 +167,9 @@ The policy belongs to the Project because a production repository may want the g
 
 ## The agent's tool
 
-**The kind owns its tool.** The `preview` already has `papercraft_preview` ([papercraft](./papercraft/README.md#tool-do-agente)), and a future kind brings its own: the input's shape, the validation and the materializing belong to the kind, and a generic artifact tool would be a union schema or a passthrough — worse in both cases. The `artifacts` bundle owns the registry, not the production of each kind; it is the same division as "the owner of an operation defines its hooks".
+**The kind owns its tool.** The `preview` already has `papercraft_preview` ([papercraft](./papercraft/README.md#agent-tool)), and a future kind brings its own: the input's shape, the validation and the materializing belong to the kind, and a generic artifact tool would be a union schema or a passthrough — worse in both cases. The `artifacts` bundle owns the registry, not the production of each kind; it is the same division as "the owner of an operation defines its hooks".
 
-The tool **does not block** under the default policy: it publishes the artifact, returns the resolved state and the agent goes on. What teaches **when** to propose an artifact is the kind's skill, not the tool's body — the division [papercraft](./papercraft/README.md#skill-do-agente) already makes.
+The tool **does not block** under the default policy: it publishes the artifact, returns the resolved state and the agent goes on. What teaches **when** to propose an artifact is the kind's skill, not the tool's body — the division [papercraft](./papercraft/README.md#agent-skill) already makes.
 
 ## Antigravity as a reference
 
@@ -206,7 +206,7 @@ The bundle goes into `enabled` in the composition (`app/backend/doric-host/compo
 
 ## Open decisions
 
-1. **Decided: the directory is `/workspace/.doric/artifacts/<artifactId>/`** — at the root of the Project's workspace, which the Threads share, reached through the lease, ignored by Git by default. It closes decision 4 of [papercraft](./papercraft/README.md#decisões-em-aberto).
+1. **Decided: the directory is `/workspace/.doric/artifacts/<artifactId>/`** — at the root of the Project's workspace, which the Threads share, reached through the lease, ignored by Git by default. It closes decision 4 of [papercraft](./papercraft/README.md#open-decisions).
 2. **Decided: the events are `artifacts.*`, with `kind` in the payload**, and the comment is **not** one of them: it belongs to the [comments](./comments.md) registry, with the artifact as its target.
 3. **Decided: `proceed` is the default** (YOLO) and `request` is the Project's choice. What remains is what `proceed` means in detail.
 4. **What `proceed` means.** Whether the agent publishes the artifact and goes on without writing any approval, whether a comment arriving later produces an automatic revision, and whether `applied` is emitted at the end of the turn or when the agent decides.

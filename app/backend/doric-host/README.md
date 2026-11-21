@@ -563,7 +563,7 @@ under its `kind` and carries the whole envelope message, whose shapes are
 defined in
 [`envelope/messages.ts`](../../../packages/bundle/src/runtime/envelope/messages.ts)
 and described in
-[Envelope RPC](../../../docs/architecture/bundles/process-isolation.md#envelope-rpc);
+[The envelope](../../../docs/architecture/bundles/process-isolation.md#the-envelope);
 the bridge's place in distribution is described in
 [composition-and-distribution.md](../../../docs/architecture/bundles/composition-and-distribution.md#the-contract-doriccatalogv1).
 Every request carries `caller`, `trace`, `deadline` (epoch milliseconds, `0`
@@ -582,11 +582,31 @@ for none), `generation` and an optional `scope`.
 
 The rules of every request:
 
-- Only the methods the active provider's contract exposes to the desktop are
-  served; any other answers `unavailable` with the message
-  `<contract> <method> is not available to the desktop.` The methods and scope
-  keys a window may use are listed in
-  [`tests/bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json).
+- Only a method whose declaration carries `expose: 'desktop'` is served, and
+  only while the contract has an active provider. For a contract the platform
+  publishes, the platform's declaration decides: a provider that declares an
+  exposure the platform does not give is refused when its bundle is built and
+  when it registers
+  ([`exposure.ts`](../../../packages/bundle/src/runtime/exposure.ts),
+  [`services.ts`](../../../packages/bundle/src/runtime/services.ts),
+  [`build/record.ts`](../../../packages/bundle/src/build/record.ts),
+  [`bridge/socket.ts`](src/lib/bridge/socket.ts)). Any other method answers
+  `unavailable` with the message
+  `<contract> <method> is not available to the desktop.` See
+  [Exposure to a desktop window](../../../docs/architecture/bundles/services-and-channels.md#exposure-to-a-desktop-window).
+  [`tests/bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json)
+  is a frozen copy of the exposed methods and scope keys of the built
+  composition; [`tests/bridge-exposure.test.ts`](tests/bridge-exposure.test.ts)
+  fails when the declarations depart from it.
+- The host does not check `scope`: it passes it to the method
+  ([`bridge/socket.ts`](src/lib/bridge/socket.ts)). The desktop's main process
+  is what refuses a scope key the provider's manifest does not list under
+  `desktopScope`, answering `invalid_input` with
+  `Scope key "<key>" is not declared for <contract>.`
+  ([`dispatcher.ts`](../../desktop/doric/src/platform/bridge/dispatcher.ts),
+  [`client-routing.ts`](../../desktop/doric/src/platform/bridge/client-routing.ts));
+  the field is declared in
+  [`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts).
 - An input whose schema is a tuple must be an array, which is spread as the
   method's arguments; otherwise the call answers, or the stream ends with,
   `invalid_input` and the message
@@ -948,7 +968,14 @@ lastExecutionMs?, errorCode?, createdAt, updatedAt, startedAt?,
 finishedAt?, result?, agent?, model?, effort?, providerId?, archivedAt?,
 pinned? }`, where `origin` is `user` or `agent`, `result` is
   `{ status, text, promptId, at }` of its latest finished prompt, and `agent`
-  is `{ name, source }`. Neither carries message history, prompt text, a
+  is `{ name, source }`. `result.text` is the agent's final answer when the
+  prompt completes. Otherwise it is a fixed message: `The prompt failed.`,
+  `The prompt was cancelled.`, `The prompt was interrupted.`,
+  `Thread persistence failed.`, or `The project is unavailable.` for a queued
+  prompt when its Project fails; it is empty for a prompt removed from the
+  queue
+  ([`runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)).
+  Apart from `result.text`, neither record carries message history, prompt text, a
   credential or an SSH key
   ([`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
   The states are listed under

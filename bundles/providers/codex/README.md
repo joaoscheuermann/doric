@@ -13,6 +13,10 @@ It is a provider bundle with one host part, which provides the kind as one
 [`core`](../../foundation/core/README.md) bundle registers, lists and builds.
 See the [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
+The feature doc [Models and providers](../../../docs/features/models-and-providers.md)
+describes how provider kinds, configured providers and model catalogs work
+across bundles, and [Provider sign-in](../../../docs/features/provider-sign-in.md)
+how the Codex authorization value is obtained.
 
 ## Manifest
 
@@ -64,6 +68,10 @@ The contract is declared in
 and imported from `bundle/contracts`. It runs in the `host` environment only
 and has cardinality `many`: every provider bundle registers its own record
 ([`packages/bundle/src/contracts/basic/index.ts`](../../../packages/bundle/src/contracts/basic/index.ts)).
+The full shape of the contract — the inputs and outputs of its six methods,
+`ModelKindDescriptor`, `ModelField`, `CatalogResult`, `ModelIconChoice`, the
+`icons` limits and the `LanguageModel` handle that `create` answers — is in
+the [`packages/bundle` README](../../../packages/bundle/README.md#the-modelsproviderv1-contract).
 This bundle registers exactly one record, with `{ cardinality: 'many' }`
 ([`src/host/provider.ts`](src/host/provider.ts)). The contract has no
 optional methods, so a record implements all six methods below, and it

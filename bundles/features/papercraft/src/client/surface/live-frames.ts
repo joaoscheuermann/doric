@@ -1,5 +1,5 @@
 // `live-frames.ts` — which previews of a window keep a live frame
-// (isolamento.md, "Virtualização"; decision 2).
+// (isolamento.md, "Virtualization"; decision 2).
 //
 // Each live frame is a sandboxed iframe evaluating its own React, so a window
 // keeps at most `LIVE_FRAME_LIMIT` of them: the previews used most recently.

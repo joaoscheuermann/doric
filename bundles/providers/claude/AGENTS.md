@@ -61,7 +61,11 @@ to its own provider bundle.
   descriptor or its errors, and update the feature docs
   [settings](../../../docs/features/settings.md) and
   [credentials](../../../docs/features/credentials.md) when the change alters
-  what the provider page shows or which credential the kind reads, and
+  what the provider page shows or which credential the kind reads,
+  [models and providers](../../../docs/features/models-and-providers.md) when
+  it alters the kind, its catalog or `create`,
+  [provider sign-in](../../../docs/features/provider-sign-in.md) when it alters
+  the `token` field or how the catalog reads the login, and
   [usage](../../../docs/features/usage.md) when it alters the context window
   the catalog reports.
 

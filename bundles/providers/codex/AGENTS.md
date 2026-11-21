@@ -80,9 +80,13 @@ provides `secrets/v1`.
   and search it for `"bundle": "codex"`.
 - Update [`README.md`](README.md) in the same change as any change to the
   kind's fields, the record's answers, `create`, the logger or the errors, and
-  update the feature doc [credentials](../../../docs/features/credentials.md)
-  when the change alters how a `codex` provider names or reads its
-  credential.
+  update the feature doc
+  [models and providers](../../../docs/features/models-and-providers.md) when
+  the change alters the kind, its catalog or `create`, the feature doc
+  [provider sign-in](../../../docs/features/provider-sign-in.md) when it alters
+  how the authorization value is obtained, and the feature doc
+  [credentials](../../../docs/features/credentials.md) when it alters how a
+  `codex` provider names or reads its credential.
 
 ## Verify
 

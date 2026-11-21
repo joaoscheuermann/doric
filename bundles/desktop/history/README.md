@@ -209,8 +209,8 @@ A file is well formed when it is an object with a string `threadId`, a numeric
 A write runs 250 ms after the first update that scheduled it; updates absorbed
 meanwhile join it. A write, the before-quit handler and deactivation all flush:
 the pending timer is cancelled and every dirty entry is written. A file is
-written to `<file>.tmp` and renamed over `<file>`. An entry whose write throws
-stays dirty and is written again on the next flush.
+written to `<file>.tmp`, which then replaces `<file>` with a rename. An entry
+whose write throws stays dirty and is written again on the next flush.
 
 ## Data and persistence
 
@@ -219,7 +219,7 @@ stays dirty and is written again on the next flush.
 | Location  | `<doric.cache/v1 directory>/<encodeURIComponent(hostId)>/<storageGeneration>/<encodeURIComponent(threadId)>.json` |
 | One file  | one Thread                                                                                                        |
 | Encoding  | UTF-8 JSON, written by `JSON.stringify`                                                                           |
-| Temporary | `<file>.tmp`, renamed into place                                                                                  |
+| Temporary | `<file>.tmp`, written first, which then replaces the file with a rename                                           |
 
 The shape of one file:
 
@@ -259,8 +259,13 @@ None: the bundle reads no setting. Its fixed values are in
 - At most 20 Threads are held. When an update brings a 21st, the least recently
   updated Thread is forgotten and its file deleted; files a previous run left
   count, in modification order, and the bound is enforced on the next update.
-- A snapshot keeps the whole event log of its Thread, with no bound on the
-  number of events.
+- A snapshot keeps the events absorbed since the Thread last entered the
+  cache, with no bound on the number of events. Eviction deletes the file (when
+  the delete succeeds), so the next update for an evicted Thread starts from an
+  empty log and a `null` record. When that update carries only later events, as
+  when a window still watches the Thread, the snapshot holds only the part of
+  the durable log absorbed since then, and `read` answers that part with its
+  `lastSequence` ([`src/desktop/store.ts`](src/desktop/store.ts)).
 - The storage identity is read once, at activation: when the catalog has none
   then, the store stays disabled until the bundle activates again.
 

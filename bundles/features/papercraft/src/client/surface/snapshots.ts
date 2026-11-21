@@ -1,5 +1,5 @@
 // `snapshots.ts` — the pictures a dead preview draws instead of its frame
-// (isolamento.md, "Virtualização" and "O snapshot").
+// (isolamento.md, "Virtualization" and "The snapshot").
 //
 // When a live frame is stable on screen — it said it mounted, its scene has
 // not changed for `SNAPSHOT_SETTLE_MS`, its iframe has not moved between two

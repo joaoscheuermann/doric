@@ -1,7 +1,7 @@
 # OpenRouter model compatibility
 
-Research checked on 2026-08-08. This is a transport and behavioral contract,
-not a claim that every model from a laboratory supports every feature.
+This is a transport and behavioral contract, not a claim that every model from
+a laboratory supports every feature.
 OpenRouter's live `supported_parameters` for the selected model is authoritative
 for routing; the laboratory profile supplies only known behavioral constraints
 and a conservative fallback when discovery is unavailable.
@@ -91,7 +91,7 @@ reference:
 - No empty text block is sent, a turn left with no content is dropped,
   consecutive turns of one role become one, and a history that ends on an
   assistant answer (no `tool_use`) gets a continuation user turn, because a
-  final assistant message is a prefill every current model refuses.
+  final assistant message is a prefill, which every model refuses.
 - Tool definitions map to `{ name, description, input_schema }`. Tool choice is
   always Anthropic's object form: `{ type: 'auto' | 'none' | 'any' }`
   (`required` is `any`) or `{ type: 'tool', name }`, and

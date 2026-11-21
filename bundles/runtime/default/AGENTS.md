@@ -103,10 +103,14 @@ registers it through `tools/v1`, a skill source to the bundle that provides
   and search it for `"bundle": "default"`.
 - Update [`README.md`](README.md) and
   [docs/features/default-agent.md](../../../docs/features/default-agent.md)
-  with every change to the run, its contracts, its history or its limits, and
+  with every change to the run, its contracts, its history or its limits,
   [docs/features/coding-workflow.md](../../../docs/features/coding-workflow.md)
-  with every change to the `coding-workflow` skill or a built-in agent, in the
-  same change.
+  with every change to the `coding-workflow` skill or a built-in agent,
+  [docs/features/skills.md](../../../docs/features/skills.md) with every change
+  to how the run reads, lists or loads skills, and
+  [docs/features/context-compaction.md](../../../docs/features/context-compaction.md)
+  with every change to how the executor condenses the history, in the same
+  change.
 
 ## Verify
 

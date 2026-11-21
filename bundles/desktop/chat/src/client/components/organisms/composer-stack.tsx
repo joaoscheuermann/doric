@@ -20,7 +20,7 @@
 // here, and a bundle that owns a comment kind may name its own element —
 // created for the item with this line's callbacks as its properties — while a
 // tag no bundle defines falls back to the same card
-// (`docs/architecture/bundles/comments.md`, "Onde o comentário aparece").
+// (`docs/architecture/bundles/comments.md`, "Where the comment appears").
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import type { LexicalEditor } from 'lexical';

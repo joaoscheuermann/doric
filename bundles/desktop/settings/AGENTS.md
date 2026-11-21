@@ -118,7 +118,11 @@ a field a kind draws its own way belongs to the bundle that owns the kind.
   [thread archive](../../../docs/features/thread-archive.md) for the Threads
   section, [error messages](../../../docs/features/error-messages.md) for the
   error catalog, notices and toasts, [git](../../../docs/features/git.md) for
-  `settings.config/v1`, and [UI redesign](../../../docs/features/ui-redesign.md)
+  `settings.config/v1`,
+  [models and providers](../../../docs/features/models-and-providers.md) for
+  the provider pages and the default execution,
+  [provider sign-in](../../../docs/features/provider-sign-in.md) for the
+  `settings.provider.field` slot, and [UI redesign](../../../docs/features/ui-redesign.md)
   for the items in `account.menu` and `workspace.dashboard.footer`.
 
 ## Verify

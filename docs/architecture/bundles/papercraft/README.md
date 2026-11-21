@@ -4,7 +4,7 @@
 
 ## Summary
 
-Papercraft lets the agent **show** a visual change instead of describing it. The agent delivers **real code** — HTML, a component of the Project or the path of a file — and the preview appears as a node of the conversation, in a canvas the user drags, zooms and uses normally. Each preview is a **proposal** and a **window**: Doric is YOLO by default, so the agent publishes the preview and **goes straight on**, implementing the change — waiting for authorization only exists when the Project asks for review ([artifacts](../artifacts.md#a-política-de-revisão)).
+Papercraft lets the agent **show** a visual change instead of describing it. The agent delivers **real code** — HTML, a component of the Project or the path of a file — and the preview appears as a node of the conversation, in a canvas the user drags, zooms and uses normally. Each preview is a **proposal** and a **window**: Doric is YOLO by default, so the agent publishes the preview and **goes straight on**, implementing the change — waiting for authorization only exists when the Project asks for review ([artifacts](../artifacts.md#the-review-policy)).
 
 The preview is an **artifact** ([artifacts](../artifacts.md)): the registry that gives identity, revisions, anchors and comments to the agent's deliverables. Papercraft is the first **kind** (`kind`) of that registry — the `preview` —, and what this document calls the preview artifact is its instance.
 
@@ -44,7 +44,7 @@ The three sources of the preview (the `source` field of the payload):
 | `component` | The path of a component of the Project, or a new file      | The host compiles the component; the node mounts the module |
 | `site`      | A server path of the Project (dev server, build)           | The canvas window points to the host; see path C            |
 
-The artifact's directory, in the central registry ([artifacts](../artifacts.md#onde-vive)), at the root of the Project's workspace:
+The artifact's directory, in the central registry ([artifacts](../artifacts.md#where-it-lives)), at the root of the Project's workspace:
 
 ```
 /workspace/.doric/artifacts/<artifactId>/
@@ -173,7 +173,7 @@ In the node's footer, centered and floating over the canvas, are the view contro
 5. Each confirmed draft is a pin: the raised teardrop with the **author's avatar** inside — the same identicon of the name that the conversation draws (`ReaderAvatar`) — and the number in the accessible label. Clicking the pin reopens the same field, filled in, to edit the note or remove the draft — and it is the same draft as the stack's: editing in the stack changes the canvas, and vice versa. A comment already sent is also a pin, and the pin that already holds the first comment opens the **thread popover** ([below](#threads-on-the-canvas)).
 6. On an element, the pin keeps where the click fell inside its box (fractions, the anchor's extra key `offset`), so it follows the layout and the zoom, and it also keeps the clicked point of the content (`x`, `y`, keys that every form accepts); a free position keeps the content's coordinates. It also keeps the element's identity beyond the selector: an excerpt of the text (`text`, whitespace collapsed) and `index`, its order among the elements of the same selector (the stamped ones of the same file, when stamped). In a later revision the agent may have edited the file and changed every line, so the pin returns only to an element of the **same selector**: the exact `path:line` when it is the only one there; otherwise, among the selector's elements stamped from the file (or all of the selector's), the one with the same text, then the one with the recorded `index`, the only one, the one under the recorded `x`/`y` point (or the nearest to it) and, last, the one with the nearest line; with none, the recorded point. Never an element of another selector. A comment on a `::before` / `::after` keeps the anchor's `pseudo` key (and the `label` `tag::after`), and the `offset` is measured inside the pseudo-element's box; the element is still resolved by the host, and, when the pseudo-element draws no box in the revision on screen, the pin returns to the host's box. The anchor the agent reads does not change meaning: the forms `source`, `selector` and `point` and the stamp `data-papercraft-source` are the same.
 
-**Draft until the send.** Confirmed comments remain drafts in the stack until a prompt is sent — the usual flush writes them as `comments.added/v1` and wakes the agent. `Cmd/Ctrl+Enter` **sends now**, with the focus anywhere in the window — in the conversation it is `chat`'s own send (`chat.send-prompt/v1`), which first asks (`doric:prompt-send`) and waits for the note open on the canvas to enter the stack; in the canvas window it is `papercraft.send/v1`, which confirms the open note and sends through `chat.send/v1`; neither the canvas nor the field answers the shortcut on its own: the prompt goes out with the stack (it can go out with the stack alone), by the same path as the chat's send button — the stack's comments in the prompt's `<comments>` envelope ([comments](../comments.md#o-prompt-o-envelope-xml)), the draft text the host keeps, the flush after the acceptance and the items whose write failed back in the stack. The window, which has no prompt, gets in its header the `Enviar ao agente (n)` button while there are drafts. The send is the client service `chat.send/v1` (`send({ projectId, threadId })`) that `chat` provides in each window — it includes the draft text the host keeps and clears it after the acceptance: `chat.composer/v1` runs in the main process, which does not call the host's contracts.
+**Draft until the send.** Confirmed comments remain drafts in the stack until a prompt is sent — the usual flush writes them as `comments.added/v1` and wakes the agent. `Cmd/Ctrl+Enter` **sends now**, with the focus anywhere in the window — in the conversation it is `chat`'s own send (`chat.send-prompt/v1`), which first asks (`doric:prompt-send`) and waits for the note open on the canvas to enter the stack; in the canvas window it is `papercraft.send/v1`, which confirms the open note and sends through `chat.send/v1`; neither the canvas nor the field answers the shortcut on its own: the prompt goes out with the stack (it can go out with the stack alone), by the same path as the chat's send button — the stack's comments in the prompt's `<comments>` envelope ([comments](../comments.md#the-prompt-the-xml-envelope)), the draft text the host keeps, the flush after the acceptance and the items whose write failed back in the stack. The window, which has no prompt, gets in its header the `Enviar ao agente (n)` button while there are drafts. The send is the client service `chat.send/v1` (`send({ projectId, threadId })`) that `chat` provides in each window — it includes the draft text the host keeps and clears it after the acceptance: `chat.composer/v1` runs in the main process, which does not call the host's contracts.
 
 ```text
 ╭──────────────────────────────────────────────────────────╮
@@ -260,7 +260,7 @@ The flush runs **after** the host accepts the prompt (`send(text)` returns the a
 
 ### Threads on the canvas
 
-The log's comments are grouped into **threads** (the root and its replies, [comments](../comments.md#threads-estados-e-respostas-do-agente)), and the pin shows the thread's state by its **color** (the pin's drawing is a component shared with the conversation, `desktop/ui/comment-pin`, in three sizes — the canvas uses the medium one):
+The log's comments are grouped into **threads** (the root and its replies, [comments](../comments.md#threads-states-and-the-agents-replies)), and the pin shows the thread's state by its **color** (the pin's drawing is a component shared with the conversation, `desktop/ui/comment-pin`, in three sizes — the canvas uses the medium one):
 
 | State   | Pin                              |
 | ------- | -------------------------------- |
@@ -429,7 +429,7 @@ A loose comment ("esse botão está errado") forces the agent to guess which ele
 </comments>
 ```
 
-When the preview is new `html`, the stamp points to the payload's own file; when it is `component`, it points to the Project's real code — which makes the comment count as an editing instruction, and not as a description. It is this block that `chat` assembles from the stack's lines ([comments](../comments.md#o-prompt-o-envelope-xml)): the note of each line becomes a `<comment>` with its anchor, grouped by the `<target>` (the revision the user saw).
+When the preview is new `html`, the stamp points to the payload's own file; when it is `component`, it points to the Project's real code — which makes the comment count as an editing instruction, and not as a description. It is this block that `chat` assembles from the stack's lines ([comments](../comments.md#the-prompt-the-xml-envelope)): the note of each line becomes a `<comment>` with its anchor, grouped by the `<target>` (the revision the user saw).
 
 ## Comments: two records, one owner
 
@@ -444,7 +444,7 @@ The `Comentar` control of the header and that of the window's bar are, therefore
 
 ## Implementation and write-back
 
-Doric is **YOLO by default**: the preview is **not** a gate. The agent publishes the preview and implements the change in the Project's code with the normal tools, in the same turn or in the next — the preview is the window the user looks at, and the comment is what corrects the course ([artifacts](../artifacts.md#a-política-de-revisão)).
+Doric is **YOLO by default**: the preview is **not** a gate. The agent publishes the preview and implements the change in the Project's code with the normal tools, in the same turn or in the next — the preview is the window the user looks at, and the comment is what corrects the course ([artifacts](../artifacts.md#the-review-policy)).
 
 What the preview guarantees is **not writing blind**: the tool writes only inside the artifact's directory, and the path guard is the sandbox's own, which refuses any path that resolves outside the workspace root (`docs/features/cwd-tool.md`). The real implementation is another action, on other files, which the preview shows.
 
@@ -458,7 +458,7 @@ Write-back by the host — Glide's codemod — remains an **optional** step, and
 
 ### Durable events
 
-Declared in `contracts/` with `defineEvent` and registered with `events/v1` on activation; the `runtime`'s sink already uses `scopeKeys` `['projectId', 'threadId', 'promptId']` in the stream `runtime.thread.events/{threadId}` (`bundles/runtime/runtime/src/contracts/events.ts:28-32`). The events are those of the [artifact registry](../artifacts.md#ciclo-de-vida-e-eventos), with `kind: 'preview'`; the `source` says where the payload came from.
+Declared in `contracts/` with `defineEvent` and registered with `events/v1` on activation; the `runtime`'s sink already uses `scopeKeys` `['projectId', 'threadId', 'promptId']` in the stream `runtime.thread.events/{threadId}` (`bundles/runtime/runtime/src/contracts/events.ts:28-32`). The events are those of the [artifact registry](../artifacts.md#lifecycle-and-events), with `kind: 'preview'`; the `source` says where the payload came from.
 
 | Event                   | Payload (summary)                                                                |
 | ----------------------- | -------------------------------------------------------------------------------- |
@@ -471,7 +471,7 @@ The comment is not an event of the artifact: it is `comments.added/v1` ([comment
 
 ### Agent tool
 
-A host tool registered in `ToolsV1` with an explicit global position, like the others (`bundles/features/files/src/host/index.ts`). The kind owns its tool ([artifacts](../artifacts.md#a-tool-do-agente)). It accepts **code and paths**, never a structural description of the interface:
+A host tool registered in `ToolsV1` with an explicit global position, like the others (`bundles/features/files/src/host/index.ts`). The kind owns its tool ([artifacts](../artifacts.md#the-agents-tool)). It accepts **code and paths**, never a structural description of the interface:
 
 ```ts
 // papercraft, host/tools/preview.ts — pseudocódigo da API proposta
@@ -532,11 +532,11 @@ The procedure fixes the decisions the agent would get wrong on its own: choosing
 
 ### Host service
 
-The registry, the revisions and the authorization belong to the `artifacts/v1` service ([artifacts](../artifacts.md#o-contrato-artifactsv1)); the comments belong to `comments/v1` ([comments](../comments.md)); and what belongs to the `preview` kind is in `papercraft.previews/v1`: `build({ path })` compiles and stamps the payload and returns `{ path, sha256 }` of each entry (what the durable event references) — it is the materialization the registry calls —; `read({ artifactId, revision })` returns A's fallback markup+CSS and what the canvas needs from the preview. Services called by a window declare `desktopScope` with `['projectId', 'threadId', 'promptId']` and methods with `expose: 'desktop'`, like `resources/v1` and `screen.views/v1`. The registry reads and writes `.doric/` through the lease, as `files` does; without a lease it answers with state, like `files/v1`.
+The registry, the revisions and the authorization belong to the `artifacts/v1` service ([artifacts](../artifacts.md#the-artifactsv1-contract)); the comments belong to `comments/v1` ([comments](../comments.md)); and what belongs to the `preview` kind is in `papercraft.previews/v1`: `build({ path })` compiles and stamps the payload and returns `{ path, sha256 }` of each entry (what the durable event references) — it is the materialization the registry calls —; `read({ artifactId, revision })` returns A's fallback markup+CSS and what the canvas needs from the preview. Services called by a window declare `desktopScope` with `['projectId', 'threadId', 'promptId']` and methods with `expose: 'desktop'`, like `resources/v1` and `screen.views/v1`. The registry reads and writes `.doric/` through the lease, as `files` does; without a lease it answers with state, like `files/v1`.
 
 ### Conversation node
 
-The `client` part registers, with `whenAvailable(ChatViewsV1, …)` as `threads` does (`bundles/features/threads/src/client/index.ts:23-27`): a projector that produces one block per revision (`papercraft.preview/v1`, the kind's `blockType` — [artifacts](../artifacts.md#o-node)) and a `papercraft-preview` renderer. The element receives the block through the `block` property and the chat hands it each newer version (`chat-block-node.tsx:83-87`); it mounts the revision's module in the preview's isolated frame (above, [The UI in the node and in the window](#the-ui-in-the-node-and-in-the-window)) and draws the canvas chrome.
+The `client` part registers, with `whenAvailable(ChatViewsV1, …)` as `threads` does (`bundles/features/threads/src/client/index.ts:23-27`): a projector that produces one block per revision (`papercraft.preview/v1`, the kind's `blockType` — [artifacts](../artifacts.md#the-node)) and a `papercraft-preview` renderer. The element receives the block through the `block` property and the chat hands it each newer version (`chat-block-node.tsx:83-87`); it mounts the revision's module in the preview's isolated frame (above, [The UI in the node and in the window](#the-ui-in-the-node-and-in-the-window)) and draws the canvas chrome.
 
 ### Canvas window
 
@@ -570,11 +570,11 @@ The projectors of `chat.views/v1` are pure and run from the initial state over t
 1. **Decided: B in the node.** The artifact compiles to an ESM module, is served by the app's origin (`/artifacts/…`) and the runtime of the preview's frame imports and mounts it, in a sandboxed iframe of opaque origin ([isolation](isolamento.md)); A remains as the static fallback. The Project's code does not receive the app's trust: it does not reach the app's bridge, DOM, globals or storage.
 2. **Decided: bundling runs in the sandbox, Tailwind in the host.** esbuild comes from the sandbox image (`.sandbox.Dockerfile`, at the host's version) and the runner comes from the host, so the resolution is the same on both sides; reading each file through `files/v1` cost round trips to the sandbox for each file and imposed a budget of 1,500 reads and the limit of 256 KB per file. Without esbuild in the image, the host bundles as before.
 3. **`site` preview with a dev server.** Depends on `ports` existing (`docs/architecture/bundles/port-forwarding.md`).
-4. **Decided: the directory is `/workspace/.doric/artifacts/<artifactId>/` and it starts ignored by Git** ([artifacts](../artifacts.md#decisões-em-aberto)). The preview is an artifact of the `preview` kind, and visibility became the registry's: versioning an artifact is the user's choice.
+4. **Decided: the directory is `/workspace/.doric/artifacts/<artifactId>/` and it starts ignored by Git** ([artifacts](../artifacts.md#open-decisions)). The preview is an artifact of the `preview` kind, and visibility became the registry's: versioning an artifact is the user's choice.
 5. **Relation to write-back.** The codemod in the host (Glide's model) or the agent itself editing the files. The second option already works today.
 6. **Source stamp in third-party components.** What to do when the stamped line changes between revisions.
 7. **Comment with a prompt in progress.** The queue of `runtime.threads/v1` accepts it; it remains to decide whether the stack enqueues or waits.
-8. **Under `request`, the semantics of approval.** What counts as approval and whether an authorized revision can be replaced later. Doric's default is not to need this (decision 3 of [artifacts](../artifacts.md#decisões-em-aberto)).
+8. **Under `request`, the semantics of approval.** What counts as approval and whether an authorized revision can be replaced later. Doric's default is not to need this (decision 3 of [artifacts](../artifacts.md#open-decisions)).
 9. **Position of the tool** in the model's global catalog, which today goes from 100 to 900 (`D10-5`); the `papercraft-preview` skill is already at `3400`, the next free band after the skills of `threads`.
 10. **Cache key and fallback of the preview.** Including `PLATFORM_VERSION` in the key, and deciding whether A's markup remains the mandatory fallback of every revision with a script.
 11. **Decided: the window is an app route.** `windows/v1` opens `/papercraft/:artifactId` (path window, without `partition`), instead of the `view` window with a host page; that one is reserved for `site` and third-party content (path C). Inside the window, the preview runs in the same isolated frame as in the node.
@@ -583,8 +583,8 @@ The projectors of `chat.views/v1` are pure and run from the initial state over t
 14. **Where the draft lives.** The draft (the prompt's text and the stack of comments) stays in the host, in `chat.composer/v1`, to survive navigation and hold for every window; it remains to decide whether it outlives the process — a record in the cache, as `history` does, to survive the app being closed — and whether the editor's text syncs on every keystroke or in short batches.
 15. **One channel for every window.** Today the draft lives in the `threadChatsStore` of the window that wrote it; the host service becomes the owner, and it remains to decide what a window does when the prompt is sent in another (the stack empties for all of them, and the editor of the others is cleared).
 16. **The artifact registry.** The preview becomes a kind of the registry ([artifacts](../artifacts.md)); left open there are the shape of `artifactId`, the review policy and what happens when the stamp's target changes between revisions.
-17. **Decided: the preview is not a gate.** Doric is YOLO by default: the agent publishes and goes straight on, the comment corrects the course and authorization is the exception, by the Project's policy ([artifacts](../artifacts.md#a-política-de-revisão)). Decision 8 then becomes a question about the `request` case.
-18. **Decided: the resolution.** A comment is resolved per thread: by the user, in the pin's popover, or by the agent, with `resolve` in `comment_reply`; the pin shows the state (`done`, `await`, `open`) and resolved threads can be hidden. This closes item 5 of the open decisions of [comments](../comments.md#decisões-em-aberto).
+17. **Decided: the preview is not a gate.** Doric is YOLO by default: the agent publishes and goes straight on, the comment corrects the course and authorization is the exception, by the Project's policy ([artifacts](../artifacts.md#the-review-policy)). Decision 8 then becomes a question about the `request` case.
+18. **Decided: the resolution.** A comment is resolved per thread: by the user, in the pin's popover, or by the agent, with `resolve` in `comment_reply`; the pin shows the state (`done`, `await`, `open`) and resolved threads can be hidden. This closes item 5 of the open decisions of [comments](../comments.md#open-decisions).
 19. **Known limitation: the canvas window and the open event.** `doric:comment-thread-open` is a DOM event of `chat`; the canvas window is another document and does not receive it, so only the node opens the thread from the conversation.
 20. **States side by side.** The proposal is designed ([above](#states-side-by-side-proposal)). It remains to decide which stories go in when the tool lists none, the limit of frames per preview and what happens to a frame that disappears in a revision.
 
@@ -598,7 +598,7 @@ The projectors of `chat.views/v1` are pure and run from the initial state over t
 
 ## Delivery stages
 
-The artifact registry ([artifacts](../artifacts.md#etapas-de-entrega)) is a prerequisite of stage 1; the stages below are papercraft's.
+The artifact registry ([artifacts](../artifacts.md#delivery-stages)) is a prerequisite of stage 1; the stages below are papercraft's.
 
 1. **Live preview with events.** The tool and the `papercraft-preview` skill that teaches when to use it, the `preview` kind in the registry, build/render in the host, the `/artifacts/` route in the handler, the projector, the renderer and the node mounting the module (path B, with A's markup as the fallback; today in the isolated frame, see [isolation](isolamento.md)).
 2. **Canvas.** Pan, zoom, selection, derived tree and layers, all local.

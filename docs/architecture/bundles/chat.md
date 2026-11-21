@@ -1,3 +1,5 @@
+> Record (2026-11-20). This document is kept as a record and does not describe current behavior; the living description is [docs/features/conversation.md](../../features/conversation.md).
+
 # The chat bundle
 
 **Status:** proposed. Part of the [bundle architecture](../bundles.md); nothing here describes behavior already implemented, and the documentation remains the contract of the current implementation.

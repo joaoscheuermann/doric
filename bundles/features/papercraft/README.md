@@ -483,8 +483,16 @@ library's shims read; a library whose `papercraftAbi` differs from
 program draws with the built-ins. A library's `Harness` export wraps the whole
 program. `Export(path, name?, props?)` draws a placeholder until its module is
 built, then calls the module's `mount(element, { theme, args })`, where `args`
-is `props`. The frame's `localStorage` and `sessionStorage` are in-memory
-stores installed before any module loads; nothing persists
+is `props`. The build of `packages/bundle` leaves only the frame's
+`frameExternals` external (React, ReactDOM and Base UI,
+[`externals.ts`](../../../packages/bundle/src/build/externals.ts)) and bundles
+every other import it allows into the frame
+([`parts.ts`](../../../packages/bundle/src/build/parts.ts)), so the frame
+carries its own copy of react-ui's `zustand` peer: 4.5.7, nested in the
+bundle's `node_modules`
+([`package-lock.json`](../../../package-lock.json)). The frame's
+`localStorage` and `sessionStorage` are in-memory stores installed before any
+module loads; nothing persists
 ([`src/client/frames/preview/storage.ts`](src/client/frames/preview/storage.ts)).
 The frame's three sheets are Doric's tokens, react-ui's layered sheet and
 Doric's `--openui-*` tokens ([`src/client/frames/openui/sheets.ts`](src/client/frames/openui/sheets.ts)),
@@ -689,8 +697,23 @@ The runner's library job ([`src/sandbox/library.ts`](src/sandbox/library.ts)):
 
 - The bundle runs in the sandbox through the runner when it can; when the
   sandbox answers `unavailable`, the host bundles through `files/v1`, within
-  1,500 reads and 8 MiB of source per compile. A source that does not bundle
+  1,500 reads (hits and misses) and 8 MiB of source per compile; a compile
+  past either answers `failed` ("The preview reads more than 1500 files from
+  the sandbox …; stub large dependencies in the preview wrapper." or "The
+  preview bundles more than 8388608 bytes of source …; stub large dependencies
+  in the preview wrapper."). The
+  runner's bundle in the sandbox has no budget
+  ([`src/host/bundle.ts`](src/host/bundle.ts),
+  [`src/sandbox/run.ts`](src/sandbox/run.ts)). A source that does not bundle
   makes `export` answer `failed` with esbuild's errors in its message.
+- The budget limits stories that reach `monaco-editor`, as one that imports
+  `desktop/ui/code` does: [`code-view-theme.ts`](../../../packages/desktop/src/code/code-view-theme.ts)
+  imports it, and the one-file bundle inlines the dynamic import of
+  [`monaco-runtime.ts`](../../../packages/desktop/src/code/monaco-runtime.ts).
+  That brings some 720 `monaco-editor` files and 6.7 MiB of source, and each
+  `./x.js` import also tries `x.ts` and `x.tsx`, so such a story exceeds the
+  1,500 reads and previews only when the sandbox runs the bundle, or with the
+  editor stubbed in the preview wrapper.
 - The mounted export is `name` when given; else `default`; else the one
   PascalCase export. A CSF file (`*.stories.(tsx|ts|jsx|js|mjs|mts)`) mounts
   the story `name`, else its first story in source order, with

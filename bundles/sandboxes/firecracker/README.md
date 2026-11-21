@@ -14,7 +14,9 @@ acquires sandboxes. See the [main README](../../../README.md) for Doric as a
 whole, [`packages/bundle`](../../../packages/bundle/README.md) for how bundles
 work, and the feature doc
 [Projects and Threads](../../../docs/features/projects-and-threads.md) for how
-a Project holds its sandbox lease.
+a Project holds its sandbox lease. The feature doc
+[Sandboxes](../../../docs/features/sandboxes.md) describes both sandbox
+providers and how one is chosen.
 
 ## Manifest
 

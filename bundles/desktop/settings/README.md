@@ -18,6 +18,8 @@ Feature docs that describe this bundle's behavior across bundles:
 [settings](../../../docs/features/settings.md),
 [per-thread model](../../../docs/features/per-thread-model.md),
 [credentials](../../../docs/features/credentials.md),
+[models and providers](../../../docs/features/models-and-providers.md),
+[provider sign-in](../../../docs/features/provider-sign-in.md),
 [git](../../../docs/features/git.md),
 [thread archive](../../../docs/features/thread-archive.md),
 [UI redesign](../../../docs/features/ui-redesign.md) and

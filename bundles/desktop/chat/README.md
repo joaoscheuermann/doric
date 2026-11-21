@@ -278,9 +278,13 @@ interface InputRendererSpec {
   detail `{ chosen: boolean }`); the chat keeps it, sets `view` again and stops
   the event at the element's frame. An element may define `toggle(): void`,
   which the conversation's toggle key calls and which must answer with the same
-  event; without it the toggle key applies the generic rule (the opposite of what
-  the block shows by default)
-  ([`src/client/components/molecules/view-element.tsx`](src/client/components/molecules/view-element.tsx)).
+  event; without it the toggle key gives the opposite of what the block shows,
+  where a tool block shows open while its call runs and, once settled, open only
+  with `openByDefault`, and an input block shows folded once settled
+  ([`src/client/components/molecules/view-element.tsx`](src/client/components/molecules/view-element.tsx),
+  [`src/client/domain/collapsible.ts`](src/client/domain/collapsible.ts),
+  [`src/client/components/organisms/conversation/nodes/tool-turn-node.tsx`](src/client/components/organisms/conversation/nodes/tool-turn-node.tsx),
+  [`src/client/components/organisms/conversation/nodes/input-turn-node.tsx`](src/client/components/organisms/conversation/nodes/input-turn-node.tsx)).
 - A second tool or input registration of a name or source fails with
   `registration_conflict` (`details` name the owner; the first wins). A spec that
   fails its schema, or an element `ui/v1` has not defined, fails with
@@ -364,6 +368,14 @@ interface ComposerItemData {
   pin?: number; // the number the owner's surface shows
   inReplyTo?: string; // the root a reply continues
   refs?: { title?: string; source?: string }; // what the prompt names the target by
+  // the `message` kind only; the chat reads it, the exported type does not declare it:
+  seat?: {
+    turn: string; // the answer turn's key
+    block: number; // the 0-based block the selection starts in
+    at?: number; // where in that block the quoted words start
+    after?: number; // the block the comment stands after, when not `block`
+    item?: number; // the list item of `after` it stands after
+  };
 }
 interface ComposerSnapshot {
   threadId: string;
@@ -528,10 +540,13 @@ All exported from `chat/contracts` ([`src/contracts/index.ts`](src/contracts/ind
   ([`src/client/components/organisms/intent-dispatcher.tsx`](src/client/components/organisms/intent-dispatcher.tsx)).
 - `COMMENT_THREAD_OPEN_EVENT = 'doric:comment-thread-open'`, detail
   `{ commentId, target }` (the target without `revision`, so the latest
-  drawing of the target answers): bubbles from a sent comment's line or a reply
-  row's state glyph when the reader asks to open the comment's thread; the
-  bundle that draws the target opens it
-  ([`src/client/utility/comment-thread.ts`](src/client/utility/comment-thread.ts)).
+  drawing of the target answers): bubbles, composed, from the header button of
+  a reply row's pin popover, and from a comment card's "go to" when the target
+  is not a `message` or the transcript no longer draws its passage; the bundle
+  that draws the target opens it
+  ([`src/client/utility/comment-thread.ts`](src/client/utility/comment-thread.ts),
+  [`src/client/components/molecules/comment-thread-pin.tsx`](src/client/components/molecules/comment-thread-pin.tsx),
+  [`src/client/hooks/use-go-to-comment.ts`](src/client/hooks/use-go-to-comment.ts)).
 
 ### Exports of `chat/contracts`
 
@@ -782,12 +797,18 @@ the reader's words
   missing from its described Project closes its tab in every owner; a changed
   name retitles it in every owner. A failed open, retitle or close is logged with
   `console.error('Doric: …')`.
-- The chat holds one `runtime.records/v1` `view` per Thread on screen: the
-  route's Thread, and the Thread of the selected tab when its id is
-  `thread:<threadId>` ([`src/client/domain/thread-views.ts`](src/client/domain/thread-views.ts),
+- The chat holds one `runtime.records/v1` `view` per Thread on screen, at most
+  two: the route's Thread, and the Thread of `layout.tabs/v2.current()` (the
+  selected tab of the active owner) when its `props.threadId` is a string and
+  its id is `thread:<threadId>`
+  ([`src/client/domain/thread-views.ts`](src/client/domain/thread-views.ts),
   [`src/client/services/thread-views.ts`](src/client/services/thread-views.ts)).
-  On each change of the route, the tabs or the records it takes the new views
-  before disposing the old ones. Without a records provider it holds none.
+  It takes them at activation and again on each change of `navigation/v1`,
+  `layout.tabs/v2` or the records, taking the new views before disposing the
+  old ones, so a Thread on screen before and after keeps its stream and a view
+  whose stream ended is taken again. It reaches the records only through
+  `whenAvailable`: without a provider it holds none. Deactivation unsubscribes
+  from the three sources and disposes every view.
 
 ## The execution picker
 

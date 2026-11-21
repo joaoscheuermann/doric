@@ -6,10 +6,14 @@ provides one `models.provider/v1` record, which the core's `models/v1` lists,
 reads catalogs from and builds providers with
 ([core README](../../foundation/core/README.md#modelsv1)). The requests
 themselves are made by the `llms` package's Claude provider
-([llms README](../../../packages/llms/README.md#claude-integration)). See the
+([llms README](../../../packages/llms/README.md#claude)). See the
 [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles are
-built and loaded.
+built and loaded. The feature doc
+[Models and providers](../../../docs/features/models-and-providers.md)
+describes how provider kinds, configured providers and model catalogs work
+across bundles, and [Provider sign-in](../../../docs/features/provider-sign-in.md)
+how a Claude provider is signed in.
 
 ## Manifest
 
@@ -47,7 +51,8 @@ on `bundle`, `llms`, `pino` and `tslib`.
 ([`src/host/index.ts`](src/host/index.ts),
 [`src/host/provider.ts`](src/host/provider.ts)). The record is built from
 the kind definition in [`src/host/kind.ts`](src/host/kind.ts). All methods
-run in the host.
+run in the host. The full shape of the contract is in the
+[`packages/bundle` README](../../../packages/bundle/README.md#the-modelsproviderv1-contract).
 
 | Method                                    | Since | Input                                                                                                   | Output                                                                                           |
 | ----------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |

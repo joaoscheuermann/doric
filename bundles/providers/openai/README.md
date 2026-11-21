@@ -10,6 +10,9 @@ as one `models.provider/v1` record that the `models/v1` of the
 [`core`](../../foundation/core/README.md) bundle registers, lists and builds.
 See the [main README](../../../README.md) for Doric as a whole and
 [`packages/bundle`](../../../packages/bundle/README.md) for how bundles work.
+The feature doc [Models and providers](../../../docs/features/models-and-providers.md)
+describes how provider kinds, configured providers and model catalogs work
+across bundles.
 
 ## Manifest
 
@@ -64,7 +67,7 @@ has cardinality `many`; this bundle registers exactly one record, with
 The full shape of the contract — the inputs and outputs of its six methods,
 `ModelKindDescriptor`, `ModelField`, `CatalogResult`, `ModelIconChoice`, the
 `icons` limits and the `LanguageModel` handle that `create` answers — is in
-the [`codex` README](../codex/README.md#provided-contract-modelsproviderv1130).
+the [`packages/bundle` README](../../../packages/bundle/README.md#the-modelsproviderv1-contract).
 This bundle implements all six methods and emits no events.
 
 | Method              | `openai` answer                                                                        |

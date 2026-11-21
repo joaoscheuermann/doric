@@ -71,8 +71,8 @@ harness.
 - API: 20 identical normalized snapshots. The rest differ only by the port of
   the fake model, `3310` versus `3313`, inside a fragment of streaming
   arguments.
-- Interface: the 16 scenarios passed in the full run had identical structural
-  snapshots; the notifications one was also identical after the fix.
+- Interface: the 16 scenarios that passed in the full run had identical
+  structural snapshots; the notifications one was also identical after the fix.
 - The persistence scenario passed after the fix. Its snapshot contains an
   additional prompt because the notifications scenario was repeated over the
   same state. The difference is in the conversation and in the corresponding
@@ -86,8 +86,8 @@ harness.
   the baseline. This is the duplication fix approved by the user.
 
 A full run was made at the end of the integration. After it, only the affected
-scenarios and targeted checks were repeated; the assertions were not weakened
-nor the baseline replaced.
+scenarios and targeted checks were repeated; neither were the assertions
+weakened nor was the baseline replaced.
 
 ## Local evidence
 

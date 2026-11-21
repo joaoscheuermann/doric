@@ -1,5 +1,5 @@
 // `stand-in.tsx` — what a preview draws where no live frame shows it
-// (isolamento.md, "Virtualização"): its snapshot, at the content size the
+// (isolamento.md, "Virtualization"): its snapshot, at the content size the
 // picture covers, else a placeholder with the preview's size and title. The
 // canvas keeps drawing the pins, outlines and comments over it from the last
 // scene the frame reported (`frame-memory.ts`).

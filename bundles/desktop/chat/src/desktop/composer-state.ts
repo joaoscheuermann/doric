@@ -9,7 +9,7 @@
 // collects those writes, takes the flushed items off the stack and hands each
 // item back with its writes to the sender window, which puts an item back when
 // its write fails (the main process cannot reach the host's contracts; see
-// `docs/architecture/bundles/comments.md`, "Dois registros, um dono").
+// `docs/architecture/bundles/comments.md`, "Two records, one owner").
 
 import { randomUUID } from 'node:crypto';
 

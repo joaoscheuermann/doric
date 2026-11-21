@@ -355,10 +355,46 @@ and [`item-context-menu.tsx`](src/client/components/molecules/item-context-menu.
   ([`domain/thread-filter.ts`](src/client/domain/thread-filter.ts)).
 - Two icon-only tabs, Chat and Archived
   ([`sidebar-tabs.tsx`](src/client/components/molecules/sidebar-tabs.tsx)).
-  Chat draws every Thread not archived and, as context, every archived
-  ancestor of one; Archived groups archived Threads by their `archivedAt` in
-  local time into Today, Last 7 days and Older, with their ancestors as
-  context ([`domain/thread-archive.ts`](src/client/domain/thread-archive.ts)).
+  Which Threads each tab draws, and which of them are context rows (drawn
+  only to place another row in the tree), comes from
+  [`domain/thread-archive.ts`](src/client/domain/thread-archive.ts); both
+  answers keep the input order, and each Thread appears at most once in the
+  `chatThreads` answer and at most once per section. Ancestors are found
+  along `parentThreadId`, stopping at a parent the list lacks or at a cycle,
+  so an orphan is a root.
+  - `chatThreads(threads, draftParentId?)` answers
+    `{ threads, context }`: every Thread not archived and every archived
+    ancestor of one. When the draft row names an archived parent
+    (`draftParentId`), that parent and its ancestors are kept too. Every
+    archived Thread kept is a context row, and so is every Thread on the
+    draft parent's ancestor chain, archived or not.
+  - `archivedSections(threads, now)` answers the non-empty sections, newest
+    first: `today` ("Today", from today's local midnight on, a time after
+    `now` included), `week` ("Last 7 days", from the local midnight seven days
+    before that) and `older` ("Older", earlier, and every `archivedAt` that
+    does not parse). Each section is `{ id, label, threads, context }`: the
+    Threads archived in it and every ancestor of one; an ancestor not archived
+    in that section (not archived, or archived in another) is a context row
+    there, so it may appear in several sections. The sections are computed at
+    each render
+    ([`archived-threads.tsx`](src/client/components/organisms/archived-threads.tsx)).
+- Context rows draw their icon and name at half opacity
+  ([`thread-branches.tsx`](src/client/components/molecules/thread-branches.tsx)).
+  On Chat a context row shows an archived mark (the pinned mark when it is
+  pinned), stays selectable, and its
+  context menu offers "Restore thread", "Copy thread ID" and "Open in new
+  tab" or "Open in viewer", with no hover action. On Archived a context row
+  is inert: out of the Tab order (`tabIndex` −1), `aria-disabled`, a click
+  selects nothing, and it has no context menu and no hover action. An
+  archived row offers Restore and Delete, on hover and in its context menu;
+  the rows other bundles add (`workspace.sidebar/v1`) are not drawn on
+  Archived.
+- Empty states: on Chat, "No threads match" when a search matches nothing and
+  the list is not loading
+  ([`project-sidebar.tsx`](src/client/components/organisms/project-sidebar.tsx));
+  on Archived, "No archived threads" with no archived Thread and no search,
+  and "No threads match" when a search matches nothing
+  ([`archived-threads.tsx`](src/client/components/organisms/archived-threads.tsx)).
 - The tree nests Threads by `parentThreadId`
   ([`domain/thread-tree.ts`](src/client/domain/thread-tree.ts)); the rows
   other bundles add (`workspace.sidebar/v1`) sit before a Thread's child
@@ -381,9 +417,19 @@ and [`item-context-menu.tsx`](src/client/components/molecules/item-context-menu.
   that calls `restoreThread({ threadId, batch })`
   ([`use-workspace.ts`](src/client/hooks/use-workspace.ts)). Restore from a
   row calls `restoreThread({ threadId })` and shows no toast.
-- Deleting asks in [`delete-dialog.tsx`](src/client/components/molecules/delete-dialog.tsx);
-  for an archived Thread the dialog names how many descendants are still in
-  Chat. Confirming terminates, then deletes the Project or the Thread.
+- Deleting asks in [`delete-dialog.tsx`](src/client/components/molecules/delete-dialog.tsx):
+  "Delete project?" / "This permanently deletes the project and all of its
+  threads.", or "Delete thread?" / "This permanently deletes the thread and
+  its child threads.", with Cancel and Delete ("Deleting…" while it runs).
+  `descendantsInChat`
+  ([`domain/thread-archive.ts`](src/client/domain/thread-archive.ts)) counts
+  a Thread's descendants in the Project that are not archived;
+  [`navigation-elements.tsx`](src/client/elements/navigation-elements.tsx)
+  asks for the count only when the Thread being deleted is archived. A count
+  of 1 adds "1 child thread is still in Chat and will be deleted too.", a
+  count `n` above 1 adds "`n` child threads are still in Chat and will be
+  deleted too.", and 0 adds nothing. Confirming terminates, then
+  deletes the Project or the Thread.
 
 ### Thread kinds
 

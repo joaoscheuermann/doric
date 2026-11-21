@@ -174,7 +174,7 @@ The host part reads these variables at activation
   ([`docker.ts`](../../../packages/docker-sandbox/src/lib/docker.ts)).
 
 The Docker client is created with only `exposeDockerSocket` set, so it uses
-the defaults of [`docker-sandbox`](../../../packages/docker-sandbox/README.md#api):
+the defaults of [`docker-sandbox`](../../../packages/docker-sandbox/README.md#options):
 the daemon at `/var/run/docker.sock` (or `DOCKER_HOST=unix://…`) on Unix and
 Docker's named pipe on Windows, the Dropbear binary for SSH at
 `/opt/doric/firecracker/dropbearmulti`, and the state directory
@@ -223,11 +223,11 @@ passing `signal` only when one is given
 keeps no warmed sandboxes: every acquisition carries an identity, and the pool
 provisions a new sandbox for each identified acquisition, in arrival order,
 with at most 10 sandboxes at once
-([`sandpool`](../../../packages/sandpool/README.md#identified-and-unnamed-acquisitions)).
+([`sandpool`](../../../packages/sandpool/README.md#acquisition-and-ordering)).
 Provisioning pulls the image when it is not present
 ([`docker-sandbox`](../../../packages/docker-sandbox/README.md#usage)).
 Releasing the lease destroys that pool sandbox, and a released one is never
-reused ([`sandpool`](../../../packages/sandpool/README.md#leases)); the
+reused ([`sandpool`](../../../packages/sandpool/README.md#leases-and-disposal)); the
 workspace's container goes only with its last lease, as
 [Durable workspaces](#durable-workspaces) describes.
 
@@ -263,7 +263,7 @@ already gone succeeds, so a repeated discard is safe
 
 The pool logs through a pino logger at level `debug` whose records go to
 `log/v1` ([`src/host/logger.ts`](src/host/logger.ts)). The records are those
-of [`sandpool`](../../../packages/sandpool/README.md#logging-and-ownership).
+of [`sandpool`](../../../packages/sandpool/README.md#logging).
 Each record maps to `log/v1` as follows:
 
 - the pino level picks the `log/v1` method: 50 and above `error`, 40 and above
@@ -318,7 +318,7 @@ Deactivation keeps every workspace volume.
 
 - At most 10 sandboxes at once; a further acquisition waits for capacity
   ([`src/host/sandbox.ts`](src/host/sandbox.ts),
-  [`sandpool`](../../../packages/sandpool/README.md#ordering)).
+  [`sandpool`](../../../packages/sandpool/README.md#creation-and-capacity)).
 - Each sandbox has the configured CPUs and memory and a 4096 MiB writable
   layer. The disk limit applies only where the daemon supports per-container
   quotas; elsewhere the container is created without it. It never bounds the
@@ -348,7 +348,7 @@ Deactivation keeps every workspace volume.
   acquisition with an `AbortError`, and an acquisition after deactivation
   rejects with `Sandpool is not active`
   ([`sandpool.ts`](../../../packages/sandpool/src/lib/sandpool.ts),
-  [`sandpool`](../../../packages/sandpool/README.md#failures-and-cancellation)).
+  [`sandpool`](../../../packages/sandpool/README.md#errors)).
 - **Discard.** An invalid identity rejects `discard` with
   `Sandbox workspace identity must match /^[A-Za-z0-9][A-Za-z0-9_.-]*$/u: <identity>`
   after the containers labelled with it are listed and removed; a daemon error

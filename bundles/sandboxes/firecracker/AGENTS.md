@@ -66,7 +66,9 @@ holds the lease.
   and never start a real Firecracker microVM from it.
 - Update [`README.md`](README.md) in the same change as any change to the
   contract's answers, the settings, the limits, the start log lines or the
-  failure behavior, and update the feature doc
+  failure behavior, the feature doc
+  [Sandboxes](../../../docs/features/sandboxes.md) with any change to the
+  settings, the pool, workspaces, networking or SSH, and the feature doc
   [Projects and Threads](../../../docs/features/projects-and-threads.md) with
   any change to how a Project's sandbox is acquired, kept or discarded.
 

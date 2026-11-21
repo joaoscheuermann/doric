@@ -2,7 +2,7 @@
 
 # Papercraft: the preview in an isolated iframe
 
-**Status:** approved by the user on 2026-10-27 and implemented; the frame's decisions (opaque origin, CSP, CORS by path prefix, a cap of 3 live frames per window, in-memory storage) still hold after the switch to OpenUI ([docs/features/papercraft.md](../../../features/papercraft.md)). Since 2026-11-06 the frame loads `client/frames/openui.js`, which draws an OpenUI Lang program, and imports the verified modules from `doric://app/papercraft-modules/<dir>/<file>` instead of `/artifacts/*`. It replaces the decision "No iframe" of the first version of the [papercraft design](README.md#resumo).
+**Status:** approved by the user on 2026-10-27 and implemented; the frame's decisions (opaque origin, CSP, CORS by path prefix, a cap of 3 live frames per window, in-memory storage) still hold after the switch to OpenUI ([docs/features/papercraft.md](../../../features/papercraft.md)). Since 2026-11-06 the frame loads `client/frames/openui.js`, which draws an OpenUI Lang program, and imports the verified modules from `doric://app/papercraft-modules/<dir>/<file>` instead of `/artifacts/*`. It replaces the decision "No iframe" of the first version of the [papercraft design](README.md#summary).
 
 ## Why
 
