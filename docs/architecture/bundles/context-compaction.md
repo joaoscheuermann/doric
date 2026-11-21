@@ -2,107 +2,107 @@
 
 # Context compaction
 
-**Estado:** implementado em `feat/context-compaction`. Este documento descreve o comportamento implementado e o plano que o guiou; o `AGENTS.md` da raiz segue sendo o contrato de validade, e a seção "Critérios de feature completa" lista o que "completa" significa nesta landing.
+**Status:** implemented in `feat/context-compaction`. This document describes the implemented behavior and the plan that guided it; the root `AGENTS.md` remains the validity contract, and the section "Feature-complete criteria" lists what "complete" means in this landing.
 
-## Resumo
+## Summary
 
-Context compaction é a condensação do histórico antigo de uma Thread em uma única mensagem-resumo: o histórico provider-ready (`direct.history/v1`) é reescrito para manter o resumo no lugar do trecho antigo, a cauda recente fica intacta, e a conversa continua como se o resumo sempre estivesse lá. O conteúdo condensado não se perde: os eventos da Thread permanecem no log e a conversa na UI continua renderizando o feed completo, agora com uma marcação do ponto de compactação.
+Context compaction is the condensation of a Thread's old history into a single summary message: the provider-ready history (`direct.history/v1`) is rewritten to keep the summary in place of the old span, the recent tail stays intact, and the conversation continues as if the summary had always been there. The condensed content is not lost: the Thread's events remain in the log and the conversation in the UI keeps rendering the full feed, now with a mark at the compaction point.
 
-O plano usa o contrato `dsh-compaction` do DeepSeek (`deepseek-ai/deepseek-harness`, `packages/compaction`) como referência de vocabulário e garantias — bracket log-only, superfície mutada uma única vez, bordas seguras de tool-pairing, marker estável — traduzido para as peças que o doric já tem.
+The plan uses DeepSeek's `dsh-compaction` contract (`deepseek-ai/deepseek-harness`, `packages/compaction`) as a reference for vocabulary and guarantees — log-only bracket, surface mutated only once, safe tool-pairing boundaries, stable marker — translated into the pieces doric already has.
 
-## Tradução do modelo DeepSeek para o doric
+## Translating the DeepSeek model to doric
 
-O DeepSeek descreve um _seam_ (`ctx.compaction`) sobre uma sessão cuja superfície visível ao modelo é derivada por replay de um log de eventos. No doric a relação é invertida e mais simples:
+DeepSeek describes a _seam_ (`ctx.compaction`) over a session whose model-visible surface is derived by replaying an event log. In doric the relation is inverted and simpler:
 
-- o **log de eventos** da Thread (stream `runtime.thread.events/<threadId>`) é o registro completo — é o que a UI renderiza;
-- a **superfície do modelo** é o histórico provider-ready armazenado, `direct.history/v1` (partes `messages` + `meta`), opaco ao `runtime` e propriedade do executor `direct`.
+- the Thread's **event log** (stream `runtime.thread.events/<threadId>`) is the complete record — it is what the UI renders;
+- the **model surface** is the stored provider-ready history, `direct.history/v1` (parts `messages` + `meta`), opaque to the `runtime` and owned by the `direct` executor.
 
-Logo, o equivalente doric do `surfaceOp: replace` é a **reescrita da parte `messages`** (mais o re-base da parte `meta`), gravada através da mesma `PromptSession` que todo o resto do executor usa — que já garante commit-antes-de-publicar, redação, e o retry de storage-pause.
+So the doric equivalent of `surfaceOp: replace` is the **rewrite of the `messages` part** (plus the re-base of the `meta` part), written through the same `PromptSession` that the rest of the executor uses — which already guarantees commit-before-publish, redaction, and the storage-pause retry.
 
-| DeepSeek `dsh-compaction`                                               | doric                                                                                                                                                                                                     |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CompactionEngine` (seam abstrato em `ctx.compaction`)                  | método `compact` do seam `executor/v1`; a política vive no executor `direct`                                                                                                                              |
-| Log de sessão + `deriveMessages()`                                      | log de eventos da Thread (UI) + parte `messages` de `direct.history/v1` (modelo)                                                                                                                          |
-| `compaction/start` log-only (o bracket é a trava)                       | evento `compaction.started` gravado **antes** de qualquer reescrita; o par `started`/`finished` é o bracket                                                                                               |
-| `compaction/summary` log-only + um `user/message` com `surfaceOp`       | evento `compaction.finished` (com resultado) no mesmo `record()` que grava o patch de histórico                                                                                                           |
-| `compaction/end` libera a trava                                         | incluído no `compaction.finished` (um evento, um commit)                                                                                                                                                  |
-| `compaction/summary-error` + `ManualCompactionError` com `code` fechado | falha pós-bracket grava `compaction.failed` com `code` de conjunto fechado e, desde `executor/v1` 1.5.0, `error` opcional; recusas pré-bracket (`busy`, `disabled`, `nothing_to_compact`) não gravam nada |
-| `toolPairingBalancedBefore/After(session, seq)`                         | `safeBoundary(messages, index)`: nenhuma chamada de tool do assistente sem resposta cruzando o corte                                                                                                      |
-| Marker de checkpoint exportado de subpath Cordis-free                   | `isCompactionCheckpoint(message)` + constante `checkpointMarker`, sem dependências além de tipos                                                                                                          |
-| `compactIfNeeded` (pressure/overflow), `compactNow`, `compactRegion`    | `maybeCompact` (automático), `compactThread` (on-demand, condensa tudo condensável), sem `compactRegion` explícito (deferido)                                                                             |
-| `tokenMeter` serviço separado                                           | `UsageMetadata` dos eventos de provider + `contextWindow` de `response.started`/catálogo; projeção estimada, sem serviço novo                                                                             |
-| `/compact` (comando humano)                                             | `POST /threads/:id/compact` (transport) → `runtime` service → executor; recusa `busy`                                                                                                                     |
-| backend `compaction-basic` (sumário escrito pelo modelo)                | summarizer do `direct`: mesmo `models/v1` da execução, signal propagado, saída em Markdown legível                                                                                                        |
-| tool-result pruner, image offload                                       | **não** nesta landing (limitações conhecidas)                                                                                                                                                             |
+| DeepSeek `dsh-compaction`                                               | doric                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CompactionEngine` (abstract seam on `ctx.compaction`)                  | `compact` method of the `executor/v1` seam; the policy lives in the `direct` executor                                                                                                                                  |
+| Session log + `deriveMessages()`                                        | Thread event log (UI) + `messages` part of `direct.history/v1` (model)                                                                                                                                                 |
+| `compaction/start` log-only (the bracket is the lock)                   | `compaction.started` event recorded **before** any rewrite; the `started`/`finished` pair is the bracket                                                                                                               |
+| `compaction/summary` log-only + one `user/message` with `surfaceOp`     | `compaction.finished` event (with result) in the same `record()` that writes the history patch                                                                                                                         |
+| `compaction/end` releases the lock                                      | included in `compaction.finished` (one event, one commit)                                                                                                                                                              |
+| `compaction/summary-error` + `ManualCompactionError` with closed `code` | a post-bracket failure records `compaction.failed` with a `code` from a closed set and, since `executor/v1` 1.5.0, an optional `error`; pre-bracket refusals (`busy`, `disabled`, `nothing_to_compact`) record nothing |
+| `toolPairingBalancedBefore/After(session, seq)`                         | `safeBoundary(messages, index)`: no assistant tool call without a response crossing the cut                                                                                                                            |
+| Checkpoint marker exported from a Cordis-free subpath                   | `isCompactionCheckpoint(message)` + constant `checkpointMarker`, with no dependencies beyond types                                                                                                                     |
+| `compactIfNeeded` (pressure/overflow), `compactNow`, `compactRegion`    | `maybeCompact` (automatic), `compactThread` (on-demand, condenses everything condensable), no explicit `compactRegion` (deferred)                                                                                      |
+| `tokenMeter` separate service                                           | `UsageMetadata` from provider events + `contextWindow` from `response.started`/catalog; estimated projection, no new service                                                                                           |
+| `/compact` (human command)                                              | `POST /threads/:id/compact` (transport) → `runtime` service → executor; refuses `busy`                                                                                                                                 |
+| `compaction-basic` backend (summary written by the model)               | `direct` summarizer: same `models/v1` as the run, signal propagated, output in readable Markdown                                                                                                                       |
+| tool-result pruner, image offload                                       | **not** in this landing (known limitations)                                                                                                                                                                            |
 
-Diferenças deliberadas:
+Deliberate differences:
 
-- **Trava por estado do runner, não por inspeção do log.** O DeepSeek detecta bracket órfão reescaneando o log; no doric, um prompt run por Thread já é serializado pelo runner (queue + `thread.active`), e o compact on-demand exige Thread ociosa sob o lock de mutação do projeto. O bracket no log continua existindo, como evidência e marca de UI, e uma `compaction.started` sem `finished` no log é sinal legível de execução interrompida.
-- **Ordem de gravação.** DeepSeek grava `start` → resumo → superfície → `end`. O doric grava `compaction.started` (evento), depois **um único** `record()` com o patch de histórico + `compaction.finished`. Um crash entre os dois deixa o bracket aberto no log e o histórico **intacto** — mesma garantia do DeepSeek, com o histórico como documento único e não replay.
-- **Rewind.** O DeepSeek não tem rewind; o doric tem. Checkpoints de prompts cuja fronteira caiu dentro do trecho condensado são descartados: rewind para esses prompts passa a responder `unknown_prompt` (o resumo não se des-faz). Checkpoints sobreviventes são re-baseados pelo delta de mensagens removidas.
+- **Lock by runner state, not by log inspection.** DeepSeek detects an orphaned bracket by rescanning the log; in doric, one prompt run per Thread is already serialized by the runner (queue + `thread.active`), and on-demand compact requires an idle Thread under the project's mutation lock. The bracket in the log still exists, as evidence and as a UI mark, and a `compaction.started` without `finished` in the log is a readable sign of an interrupted execution.
+- **Write order.** DeepSeek writes `start` → summary → surface → `end`. doric writes `compaction.started` (event), then **a single** `record()` with the history patch + `compaction.finished`. A crash between the two leaves the bracket open in the log and the history **intact** — the same guarantee as DeepSeek, with the history as a single document and not a replay.
+- **Rewind.** DeepSeek has no rewind; doric does. Checkpoints of prompts whose boundary fell inside the condensed span are discarded: a rewind to those prompts now answers `unknown_prompt` (the summary is not undone). Surviving checkpoints are re-based by the delta of removed messages.
 
-## Contrato implementado
+## Implemented contract
 
-### Marker de checkpoint
+### Checkpoint marker
 
-A mensagem-resumo é uma mensagem de papel `user` cujo conteúdo começa com a linha estável `checkpointMarker` (constante exportada, `isCompactionCheckpoint` reconhece). O marker é texto, sobrevive a persistência, serialização e providers, e segue as regras de prompt humano-legível (HC-010).
+The summary message is a message with role `user` whose content starts with the stable line `checkpointMarker` (exported constant, recognized by `isCompactionCheckpoint`). The marker is text, survives persistence, serialization and providers, and follows the human-readable prompt rules (HC-010).
 
-### Eventos (log-only para a superfície)
+### Events (log-only for the surface)
 
 - `compaction.started` — payload `{ trigger: 'automatic' | 'manual' }`.
 - `compaction.finished` — payload `{ summaryId, condensedMessages, retainedMessages, tokensFreed, summaryChars }`.
-- `compaction.failed` — payload `{ code, error? }`, apenas para falha **após** o bracket abrir; `error` (desde `executor/v1` 1.5.0, opcional) guarda a falha por trás do código, que a linha de compactação do chat mostra num aviso de erro com o código e a causa.
+- `compaction.failed` — payload `{ code, error? }`, only for a failure **after** the bracket opens; `error` (since `executor/v1` 1.5.0, optional) holds the failure behind the code, which the chat's compaction row shows in an error notice with the code and the cause.
 
-Códigos fechados: `summarizer_failed`, `unsafe_boundary` (falha inesperada pós-seleção). Recusas pré-bracket não gravam evento: `busy`, `disabled`, `nothing_to_compact`, `missing_history`.
+Closed codes: `summarizer_failed`, `unsafe_boundary` (unexpected post-selection failure). Pre-bracket refusals record no event: `busy`, `disabled`, `nothing_to_compact`, `missing_history`.
 
-### Bordas seguras
+### Safe boundaries
 
-Um corte entre mensagens `i` e `i+1` é seguro quando nenhuma chamada de tool do assistente fica com o pedido de um lado e a resposta do outro. O fim do trecho condensado é a maior borda segura que respeita a cauda mínima (`tailMinMessages`); se a cauda exigida não encontra borda segura, não se condensa (limitação herdada do DeepSeek: unidade indivisível não se divide).
+A cut between messages `i` and `i+1` is safe when no assistant tool call is left with its request on one side and its response on the other. The end of the condensed span is the largest safe boundary that respects the minimum tail (`tailMinMessages`); if the required tail finds no safe boundary, nothing is condensed (limitation inherited from DeepSeek: an indivisible unit is not split).
 
-### Gatilho automático
+### Automatic trigger
 
-Depois de cada `response.finished`/`usage` de um run, o executor projeta a próxima chamada:
+After each `response.finished`/`usage` of a run, the executor projects the next call:
 
-- `contextWindow` conhecido (evento `response.started` ou catálogo): `projected = últimoInputTokens + últimoOutputTokens + promptPendenteEstimado`; pressão quando `projected / contextWindow ≥ pressurePercent` (default 80).
-- `contextWindow` desconhecido: projeção por caracteres (`≈ tokens = chars/4`) contra `pressurePercent` do teto configurável `charBudget` (default 200_000).
+- `contextWindow` known (`response.started` event or catalog): `projected = últimoInputTokens + últimoOutputTokens + promptPendenteEstimado`; pressure when `projected / contextWindow ≥ pressurePercent` (default 80).
+- `contextWindow` unknown: projection by characters (`≈ tokens = chars/4`) against `pressurePercent` of the configurable ceiling `charBudget` (default 200_000).
 
-Em ambos os casos `tokensFreed` é estimativa e o resultado o diz. Quando a projeção indica pressão mas não há trecho condensável que libere o suficiente, a compactação não roda (limitação conhecida: overflow de unidade única fora de contrato, como no DeepSeek).
+In both cases `tokensFreed` is an estimate and the result says so. When the projection indicates pressure but there is no condensable span that frees enough, the compaction does not run (known limitation: single-unit overflow out of contract, as in DeepSeek).
 
-### Gatilho manual
+### Manual trigger
 
-`POST /threads/:id/compact`: Thread ociosa → `executor.compact` condensa todo o trecho condensável até a maior borda segura acima da cauda mínima. Thread com run ativo ou jobs na fila → recusa `busy` sem gravar nada (espelha o `rewind`). Delegated threads usam o mesmo caminho, porque compartilham o executor.
+`POST /threads/:id/compact`: idle Thread → `executor.compact` condenses the whole condensable span up to the largest safe boundary above the minimum tail. Thread with an active run or queued jobs → refuses `busy` without writing anything (mirrors `rewind`). Delegated threads use the same path, because they share the executor.
 
-### Overflow do provider
+### Provider overflow
 
-Quando o provider falha com erro classificado como estouro de contexto (heurística textual documentada em `isContextOverflow`, via evento `error` do stream ou a exceção da run), o executor roda a compactação de emergência do histórico — `force: true`, sem depender da projeção — para que a próxima retomada comece condensada, e deixa o erro do run se propagar como hoje. O retry do turno dentro da mesma run ainda não existe (limitação declarada).
+When the provider fails with an error classified as a context overflow (textual heuristic documented in `isContextOverflow`, via the stream's `error` event or the run's exception), the executor runs the emergency compaction of the history — `force: true`, without depending on the projection — so that the next resumption starts condensed, and lets the run's error propagate as today. Retrying the turn within the same run does not exist yet (declared limitation).
 
-## Fases implementadas
+## Implemented phases
 
-1. **Núcleo puro** (`bundles/runtime/default/src/host/compaction/`): `markers`, `boundaries`, `rewrite` (seleção de span, re-base de checkpoints, meta), `project` (projeção de pressão), `summarize` (backend), `compact` (orquestração com bracket e códigos). Testes unitários para cada uma.
-2. **Contrato** (`bundles/runtime/runtime/src/contracts/executor.ts`): método `compact` do `Executor` (entrada: `thread`, `session`, `policy`; saída fechada) — o `runtime` continua sem conhecer `llms`.
-3. **Executor automático** (`bundles/runtime/default/src/host/executor.ts`): captura de `usage`/`contextWindow` no stream, verificação de pressão após gravar o estado do turno, compactação entre turnos, e interceptação de overflow.
-4. **On-demand** (`runtime` services/runner/domain + `transport`): rota `POST /threads/:id/compact`, recusa `busy`, sessão sintética com `promptId` próprio, publicação dos eventos.
-5. **Configuração** (`bundles/foundation/host-config`): seção opcional `contextCompaction` com defaults; leitura pelo executor.
-6. **UI** (`bundles/desktop/chat`): projeção do bracket como um turno `compaction` próprio (linha discreta, estilo lifecycle), read-only e indeletável.
-7. **Documentação e validade**: este documento, a documentação (seções de eventos e persistência de sessão), e testes.
+1. **Pure core** (`bundles/runtime/default/src/host/compaction/`): `markers`, `boundaries`, `rewrite` (span selection, checkpoint re-base, meta), `project` (pressure projection), `summarize` (backend), `compact` (orchestration with bracket and codes). Unit tests for each one.
+2. **Contract** (`bundles/runtime/runtime/src/contracts/executor.ts`): `compact` method of the `Executor` (input: `thread`, `session`, `policy`; closed output) — the `runtime` still does not know `llms`.
+3. **Automatic executor** (`bundles/runtime/default/src/host/executor.ts`): capture of `usage`/`contextWindow` in the stream, pressure check after writing the turn's state, compaction between turns, and overflow interception.
+4. **On-demand** (`runtime` services/runner/domain + `transport`): route `POST /threads/:id/compact`, `busy` refusal, synthetic session with its own `promptId`, publication of the events.
+5. **Configuration** (`bundles/foundation/host-config`): optional `contextCompaction` section with defaults; read by the executor.
+6. **UI** (`bundles/desktop/chat`): projection of the bracket as its own `compaction` turn (discreet row, lifecycle style), read-only and undeletable.
+7. **Documentation and validity**: this document, the documentation (sections on events and session persistence), and tests.
 
-## Critérios de feature completa nesta landing
+## Feature-complete criteria for this landing
 
-A feature está completa quando **todos** estes itens são verificáveis no repositório:
+The feature is complete when **all** of these items are verifiable in the repository:
 
-1. Compactação automática condensa o histórico entre turnos de um run quando a pressão projetada cruza o limiar, gravando bracket + patch em dois `session.record()` no padrão do executor.
-2. `POST /threads/:id/compact` condensa on-demand em Thread ociosa e recusa `busy`/`missing`/`inactive` sem gravar eventos.
-3. O resumo é reconhecível por marker estável e nunca divide um par tool-call/result.
-4. Checkpoints são re-baseados; rewind para prompt cuja fronteira foi condensada responde `unknown_prompt`.
-5. Os três tipos de evento existem no log com payloads fechados e a UI renderiza o bracket como turno próprio.
-6. Config `contextCompaction` (enabled, pressurePercent, tailMinMessages, summaryMaxChars, charBudget) com defaults seguros; desabilitada, nada compacta.
-7. Testes: núcleo puro, re-base/rewind, marker, bordas, projeção, summarizer (fake provider), executor automático (stream fake), service/runner (recusas), UI projector.
-8. A documentação e este documento coerentes com o código; lint e testes dos pacotes afetados passando.
+1. Automatic compaction condenses the history between turns of a run when the projected pressure crosses the threshold, writing bracket + patch in two `session.record()` calls following the executor's pattern.
+2. `POST /threads/:id/compact` condenses on demand on an idle Thread and refuses `busy`/`missing`/`inactive` without writing events.
+3. The summary is recognizable by a stable marker and never splits a tool-call/result pair.
+4. Checkpoints are re-based; a rewind to a prompt whose boundary was condensed answers `unknown_prompt`.
+5. The three event types exist in the log with closed payloads and the UI renders the bracket as its own turn.
+6. `contextCompaction` config (enabled, pressurePercent, tailMinMessages, summaryMaxChars, charBudget) with safe defaults; when disabled, nothing compacts.
+7. Tests: pure core, re-base/rewind, marker, boundaries, projection, summarizer (fake provider), automatic executor (fake stream), service/runner (refusals), UI projector.
+8. The documentation and this document consistent with the code; lint and tests of the affected packages passing.
 
-## Limitações conhecidas (herdadas e declaradas)
+## Known limitations (inherited and declared)
 
-- Comando humano via surface de settings/slash não existe; o gatilho manual é a rota HTTP do workspace (a arquitetura de slash-commands está fora do escopo atual do repositório).
-- Sem `compactRegion` com faixa explícita (DeepSeek também o mantém fora do comando humano).
-- Sem tool-result pruner nem image offload; unidade indivisível maior que a janela não é condensável.
-- Sem retry in-run do turno após overflow; a compactação de emergência prepara a próxima retomada.
-- O envelope que sozinho se aproxima da janela (system prompt, tools) não é trabalho de compactação de superfície — igual ao DeepSeek.
+- A human command via the settings/slash surface does not exist; the manual trigger is the workspace's HTTP route (the slash-commands architecture is outside the repository's current scope).
+- No `compactRegion` with an explicit range (DeepSeek also keeps it out of the human command).
+- No tool-result pruner or image offload; an indivisible unit larger than the window is not condensable.
+- No in-run retry of the turn after overflow; the emergency compaction prepares the next resumption.
+- The envelope that on its own approaches the window (system prompt, tools) is not surface-compaction work — the same as DeepSeek.

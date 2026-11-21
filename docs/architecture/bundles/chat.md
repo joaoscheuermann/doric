@@ -1,55 +1,55 @@
-# O bundle chat
+# The chat bundle
 
-**Estado:** proposta. Parte da [arquitetura de bundles](../bundles.md); nada aqui descreve comportamento já implementado, e a documentação continua sendo o contrato da implementação atual.
+**Status:** proposed. Part of the [bundle architecture](../bundles.md); nothing here describes behavior already implemented, and the documentation remains the contract of the current implementation.
 
-## Resumo
+## Summary
 
-Na composição padrão, o bundle `chat` é dono da superfície de conversa do desktop: o elemento `<chat-view>`, a store de leitura, a projeção, o compositor, o trail e o comportamento da conversa. Ele não produz eventos duráveis; ele interpreta e apresenta no client os eventos que outros bundles registram e gravam no host, e envia prompts e lê Threads por `runtime.threads/v1` (`RuntimeThreadsV1`), do `runtime`. Ele registra a rota `/projects/:projectId/threads/:threadId`, filha de `/`, que aparece no `<core-outlet>` do [layout](./layout.md). Para estender a conversa, oferece um serviço independente de editor, `chat.views/v1`, onde outros bundles registram projetores de stream e renderizadores de bloco, e um serviço específico da implementação padrão, `chat.lexical/v1`, para extensões e nodes Lexical. O log durável continua sendo a fonte dos dados da conversa.
+In the default composition, the `chat` bundle owns the desktop's conversation surface: the `<chat-view>` element, the read store, the projection, the composer, the trail and the conversation's behavior. It produces no durable events; in the client it interprets and presents the events that other bundles register and write in the host, and it sends prompts and reads Threads through `runtime.threads/v1` (`RuntimeThreadsV1`), from `runtime`. It registers the route `/projects/:projectId/threads/:threadId`, a child of `/`, which appears in the `<core-outlet>` of the [layout](./layout.md). To extend the conversation, it offers an editor-independent service, `chat.views/v1`, where other bundles register stream projectors and block renderers, and a service specific to the default implementation, `chat.lexical/v1`, for Lexical extensions and nodes. The durable log remains the source of the conversation's data.
 
-## O que o bundle possui, requer e fornece
+## What the bundle owns, requires and provides
 
-### Possui
+### Owns
 
-Na composição padrão, `chat` é dono de:
+In the default composition, `chat` owns:
 
 - `<chat-view>`;
-- store de leitura;
-- projeção;
-- compositor;
-- trail;
-- comportamento da conversa;
-- a rota de Thread `/projects/:projectId/threads/:threadId` (antes `threads.detail/v1`, do bundle `threads`).
+- the read store;
+- the projection;
+- the composer;
+- the trail;
+- the conversation's behavior;
+- the Thread route `/projects/:projectId/threads/:threadId` (formerly `threads.detail/v1`, of the `threads` bundle).
 
-O bundle `threads` continua dono das tools de delegação e dos cards de Thread filha; ele não fornece mais um serviço de comandos de Thread.
+The `threads` bundle remains the owner of the delegation tools and of the child Thread cards; it no longer provides a Thread commands service.
 
-### Requer
+### Requires
 
-- `runtime.threads/v1` (`RuntimeThreadsV1`), fornecido pelo `runtime` no host, para enviar prompts, ler Threads e assinar o stream durável; ele também cobre os controles de Threads filhas do `Host` atual. O contrato `threads.commands/v1` (`ThreadsCommandsV1`) deixa de existir. Como é fornecido no host, a parte client do `chat` o alcança pela ponte client→host ao declará-lo em `requires` (ver [serviços e canais](./services-and-channels.md)).
-- `ui/v1`, fornecido pelo core no client, para definir `<chat-view>` e criá-lo com `ui.create` (ver [UI no client](./core.md#ui-no-client)). O `chat` não adiciona item de região: a conversa aparece na área principal do workspace porque a rota tem `parent: '/'` e é mostrada no `<core-outlet>` que o [layout](./layout.md) põe no seu template.
-- `commands/v1`, fornecido pelo core no client, para despachar comandos a partir de intenções DOM dos blocos da conversa, como `git.open-comparison/v1`.
-- `hooks/v1`, fornecido pelo core por padrão, no qual a parte client do `chat` define e executa os próprios hooks, `chat.hooks/v2` (`ChatHooksV2`), como `onBeforeRenderBlockHook` (ver [hooks](./hooks.md)).
-- `navigation/v1`, fornecido pelo core no client, para registrar a rota `/projects/:projectId/threads/:threadId` (ver [navegação e rotas](./navigation.md)).
-- `history` é uma otimização opcional, não um requisito (ver [armazenamento](./storage.md)).
+- `runtime.threads/v1` (`RuntimeThreadsV1`), provided by `runtime` in the host, to send prompts, read Threads and subscribe to the durable stream; it also covers the child Thread controls of the current `Host`. The `threads.commands/v1` contract (`ThreadsCommandsV1`) ceases to exist. Because it is provided in the host, the client part of `chat` reaches it through the client→host bridge by declaring it in `requires` (see [services and channels](./services-and-channels.md)).
+- `ui/v1`, provided by the core in the client, to define `<chat-view>` and create it with `ui.create` (see [UI in the client](./core.md#window-client)). `chat` adds no region item: the conversation appears in the workspace's main area because the route has `parent: '/'` and is shown in the `<core-outlet>` that the [layout](./layout.md) puts in its template.
+- `commands/v1`, provided by the core in the client, to dispatch commands from DOM intents of the conversation's blocks, such as `git.open-comparison/v1`.
+- `hooks/v1`, provided by the core by default, in which the client part of `chat` defines and executes its own hooks, `chat.hooks/v2` (`ChatHooksV2`), such as `onBeforeRenderBlockHook` (see [hooks](./hooks.md)).
+- `navigation/v1`, provided by the core in the client, to register the route `/projects/:projectId/threads/:threadId` (see [navigation and routes](./navigation.md)).
+- `history` is an optional optimization, not a requirement (see [storage](./storage.md)).
 
-Pela regra de `requires`, a parte client do `chat` declara todo contrato que usa com `use`, inclusive os básicos do core; contratos `doric.*` e os opcionais usados com `whenAvailable` ficam fora (ver [manifesto](./manifest.md)).
+By the rule of `requires`, the client part of `chat` declares every contract it uses with `use`, the core's basic ones included; `doric.*` contracts and the optional ones used with `whenAvailable` stay out (see [manifest](./manifest.md)).
 
-### Fornece
+### Provides
 
-- O elemento `<chat-view>`, definido com `ui.define('chat-view', ChatView)`. Quem quer a conversa navega para o path da Thread ou cria o elemento com `ui.create('chat-view', { projectId, threadId })`, que entrega ao elemento os serviços do `chat` (ver [`ui.create` passo a passo](./core.md#uicreate-passo-a-passo)).
-- A rota `/projects/:projectId/threads/:threadId`, com `parent: '/'`, registrada em `navigation/v1`, que cria `<chat-view>` com os parâmetros do path. Trocar de Thread só atribui os novos parâmetros ao mesmo elemento (ver [o outlet](./navigation.md#o-outlet-core-outlet)).
-- Dois serviços client:
-  - `chat.views/v1` (`ChatViewsV1`), independente de editor;
-  - `chat.lexical/v1`, específico da implementação padrão.
-- O serviço client `chat.send/v1`, em toda janela: `send({ projectId, threadId })` envia a pilha de comentários do compositor, com o texto de rascunho que o host guarda, como um prompt pelo mesmo caminho de envio, e limpa o rascunho depois do aceite. O prompt de todo envio usa o envelope XML `<comments>`/`<message>` ([comentários](./comments.md#o-prompt-o-envelope-xml)), e o `chat` lê o corpo de `<message>` onde mostra um prompt guardado. A projeção embutida dele reivindica `comments.added/v1` e `comments.resolved/v1` e as dobra em threads com estado ([comentários](./comments.md#threads-estados-e-respostas-do-agente)).
-- Os hooks `chat.hooks/v2` (`ChatHooksV2`), definidos e executados pela parte client no `hooks/v1` do client; outros bundles registram handlers neles, por exemplo com `whenAvailable` (ver [hooks](./hooks.md)). Desde o `chat` 2.0.0 (passo 5(c) do [isolamento de bundles](../../designs/bundle-isolation-concept.md)) o `chat` fornece só `chat.hooks/v2`, que substitui `chat.hooks/v1`: `onSandboxActivityHook` dispara quando o `chat` passa a manter uma Thread, quando o diretório de trabalho dela muda ou quando o estado dela muda para qualquer um exceto `running`, e nunca depois de uma tool terminada. O bundle dono de uma tool que escreve no sandbox observa `onThreadUpdateHook` e pede o próprio refresh, como o `files` faz para `edit` e `write` e o `git` para `git`.
+- The `<chat-view>` element, defined with `ui.define('chat-view', ChatView)`. Whoever wants the conversation navigates to the Thread's path or creates the element with `ui.create('chat-view', { projectId, threadId })`, which hands the element the services of `chat` (see [`ui.create` step by step](./ui-composition.md#elements-are-the-boundary)).
+- The route `/projects/:projectId/threads/:threadId`, with `parent: '/'`, registered in `navigation/v1`, which creates `<chat-view>` with the path's parameters. Switching Thread only assigns the new parameters to the same element (see [the outlet](./navigation.md#the-outlet-core-outlet)).
+- Two client services:
+  - `chat.views/v1` (`ChatViewsV1`), editor-independent;
+  - `chat.lexical/v1`, specific to the default implementation.
+- The client service `chat.send/v1`, in every window: `send({ projectId, threadId })` sends the composer's comment stack, with the draft text the host keeps, as a prompt through the same send path, and clears the draft after it is accepted. The prompt of every send uses the XML envelope `<comments>`/`<message>` ([comments](./comments.md#the-prompt-the-xml-envelope)), and `chat` reads the body of `<message>` where it shows a stored prompt. Its built-in projection claims `comments.added/v1` and `comments.resolved/v1` and folds them into threads with state ([comments](./comments.md#threads-states-and-the-agents-replies)).
+- The hooks `chat.hooks/v2` (`ChatHooksV2`), defined and executed by the client part in the client's `hooks/v1`; other bundles register handlers on them, for example with `whenAvailable` (see [hooks](./hooks.md)). Since `chat` 2.0.0 (step 5(c) of [bundle isolation](../../designs/bundle-isolation-concept.md)) `chat` provides only `chat.hooks/v2`, which replaces `chat.hooks/v1`: `onSandboxActivityHook` fires when `chat` starts keeping a Thread, when the Thread's working directory changes or when its state changes to any state except `running`, and never after a finished tool. The bundle that owns a tool that writes in the sandbox observes `onThreadUpdateHook` and requests its own refresh, as `files` does for `edit` and `write` and `git` for `git`.
 
-Uma conversa alternativa substitui o bundle `chat` na composição: registra o mesmo path com o próprio elemento e pode fornecer `chat.views/v1` sem Lexical. Dois bundles que registram o mesmo path produzem um conflito de rota, e o segundo vai para quarentena com motivo. `chat.views/v1` tem cardinalidade `one`, a padrão de `defineService`; se dois bundles habilitados o fornecem, a composição escolhe o provedor em `providers`, e a escolha vale no ambiente client. Sem escolha, o segundo provedor vai para quarentena com motivo (ver [composição e distribuição](./composition-and-distribution.md)).
+An alternative conversation replaces the `chat` bundle in the composition: it registers the same path with its own element and may provide `chat.views/v1` without Lexical. Two bundles that register the same path produce a route conflict, and the second is quarantined with a reason. `chat.views/v1` has cardinality `one`, the default of `defineService`; if two enabled bundles provide it, the composition chooses the provider in `providers`, and the choice applies in the client environment. Without a choice, the second provider is quarantined with a reason (see [composition and distribution](./composition-and-distribution.md)).
 
-Os dois serviços só funcionam no client: recebem funções, classes ou elementos, descritos por `z.custom` nos schemas, e o dispatcher recusa uma chamada que atravessaria processos (ver [contratos](./contracts.md)). Cada um é uma definição com `defineService` em que cada método traz seu `execute(input, call, services)`; o bundle os fornece na ativação client com `services.provide(chatViews)` e `services.provide(chatLexical)`, e o loader os descarta em ordem inversa na desativação.
+The two services only work in the client: they receive functions, classes or elements, described by `z.custom` in the schemas, and the dispatcher refuses a call that would cross processes (see [contracts](./contracts.md)). Each is a definition with `defineService` in which each method carries its `execute(input, call, services)`; the bundle provides them in the client activation with `services.provide(chatViews)` and `services.provide(chatLexical)`, and the loader disposes of them in reverse order on deactivation.
 
-### Ativação client do `chat`
+### Client activation of `chat`
 
-Em **pseudocódigo da API proposta**, a parte client do `chat` define `<chat-view>`, fornece os serviços e registra a rota:
+In **pseudocode of the proposed API**, the client part of `chat` defines `<chat-view>`, provides the services and registers the route:
 
 ```ts
 // chat, client/index.ts
@@ -91,11 +91,11 @@ export const ChatLexicalV1 = ref<typeof chatLexical>('chat.lexical/v1');
 export { ChatHooksV2 } from './hooks.js'; // chat, contracts/hooks.ts (ver hooks)
 ```
 
-`chat/contracts` exporta essas referências, com `ref` de `bundle/contracts`, e as definições sem lógica, como `ChatHooksV2`; o `import type` some no build. Quem estende a conversa usa `services.whenAvailable(ChatViewsV1, ...)`.
+`chat/contracts` exports these references, with `ref` from `bundle/contracts`, and the definitions without logic, such as `ChatHooksV2`; the `import type` disappears in the build. Whoever extends the conversation uses `services.whenAvailable(ChatViewsV1, ...)`.
 
-Dentro de `<chat-view>`, o envio de prompt usa o stub remoto no escopo da janela, por exemplo `await services.use(RuntimeThreadsV1, { projectId }).sendPrompt({ threadId, text }, { signal })`; o dispatcher preenche `call.caller` com o `chat` e `call.scope.windowKey` com a janela de origem.
+Inside `<chat-view>`, sending a prompt uses the remote stub in the window's scope, for example `await services.use(RuntimeThreadsV1, { projectId }).sendPrompt({ threadId, text }, { signal })`; the dispatcher fills `call.caller` with `chat` and `call.scope.windowKey` with the window of origin.
 
-O manifesto, no formato de [manifesto v1](./manifest.md), lista em `provides` os contratos que o `chat` define e em `requires` os que esse código usa com `use`. `hooks/v1`, `ui/v1` e `navigation/v1` entram pelo uso na ativação; `runtime.threads/v1`, pelo envio de prompts dentro de `<chat-view>`; e `commands/v1`, pelo despacho de comandos que `<chat-view>` faz a partir de intenções DOM; `history` fica fora porque é opcional. A parte client é encontrada por convenção em `client/index.js`:
+The manifest, in the [manifest v1](./manifest.md) format, lists in `provides` the contracts that `chat` defines and in `requires` the ones this code uses with `use`. `hooks/v1`, `ui/v1` and `navigation/v1` come in through their use in the activation; `runtime.threads/v1`, through sending prompts inside `<chat-view>`; and `commands/v1`, through the dispatch of commands that `<chat-view>` does from DOM intents; `history` stays out because it is optional. The client part is found by convention at `client/index.js`:
 
 ```json
 {
@@ -118,51 +118,51 @@ O manifesto, no formato de [manifesto v1](./manifest.md), lista em `provides` os
 }
 ```
 
-## Projetores e renderizadores: `chat.views/v1`
+## Projectors and renderers: `chat.views/v1`
 
-O serviço `chat.views/v1` registra **projetores de stream** e **renderizadores de bloco** separadamente.
+The `chat.views/v1` service registers **stream projectors** and **block renderers** separately.
 
-- **Projetor.** Consome eventos ordenados de tipos e versões declarados e reduz deltas, início e fim de tools e agrupamentos em blocos com IDs estáveis, tipo e versão próprios.
-- **Renderizador.** Associa esse tipo de bloco a uma tag Web Component e a metadados de edição, seleção, trail e ações. A tag é definida pelo bundle que registra o renderizador, por `ui/v1`, e começa com o ID desse bundle.
+- **Projector.** Consumes ordered events of declared types and versions and reduces deltas, tool starts and ends, and groupings into blocks with stable IDs and their own type and version.
+- **Renderer.** Associates that block type with a Web Component tag and with metadata for editing, selection, trail and actions. The tag is defined by the bundle that registers the renderer, through `ui/v1`, and starts with that bundle's ID.
 
-Regras:
+Rules:
 
-- A mesma redução é aplicada no replay. Rewind recompõe a partir do log sobrevivente, sem executar efeitos.
-- Conflitos de dono primário para um tipo/versão são rejeitados.
-- Evento sem projetor conhecido produz um bloco genérico com tipo, ID, horário e o payload, sem descartar o registro (ver [eventos e nodes](./events-and-nodes.md)).
+- The same reduction is applied on replay. Rewind recomposes from the surviving log, without executing effects.
+- Primary-owner conflicts for a type/version are rejected.
+- An event without a known projector produces a generic block with type, ID, time and the payload, without discarding the record (see [events and nodes](./events-and-nodes.md)).
 
-### Quem registra o quê
+### Who registers what
 
-Os schemas e o append dos **eventos duráveis** são registrados pela parte host do bundle que os produz, no catálogo de eventos do host, com `defineEvent` e `services.use(EventsV1).register(...)`. O bundle `chat` só oferece a interpretação e a apresentação client desses eventos.
+The schemas and the append of the **durable events** are registered by the host part of the bundle that produces them, in the host's event catalog, with `defineEvent` and `services.use(EventsV1).register(...)`. The `chat` bundle only offers the client interpretation and presentation of those events.
 
-Assim, um bundle `git` pode registrar `git.branch-switched/v1` no host e, no client, usar `chat.views/v1` como dependência opcional, por `services.whenAvailable(ChatViewsV1, ...)`, para projetá-lo em um bloco `git.branch-change/v1` renderizado por `<git-branch-event>`. Git continua funcional numa UI sem conversa, e não há dependência inversa de `chat` para `git`.
+Thus a `git` bundle can register `git.branch-switched/v1` in the host and, in the client, use `chat.views/v1` as an optional dependency, through `services.whenAvailable(ChatViewsV1, ...)`, to project it into a `git.branch-change/v1` block rendered by `<git-branch-event>`. Git remains functional in a UI without a conversation, and there is no reverse dependency from `chat` to `git`.
 
-## O serviço Lexical: `chat.lexical/v1`
+## The Lexical service: `chat.lexical/v1`
 
-- O serviço aceita extensões e classes de node apenas durante a ativação client, **antes** da criação do editor. A lista de nodes da geração é então congelada.
-- Cards de evento comuns usam um único `DecoratorNode` estável que guarda o ID do bloco projetado e hospeda a tag do bundle. Isso evita criar uma classe Lexical para cada card.
-- Nodes Lexical específicos ficam para semântica de edição real.
-- A plataforma fornece o singleton de `lexical` e `@lexical/*` pelo import map, externalizado dos artefatos client, e `engines.doric` garante a versão compatível antes de aceitar classes (ver [pacotes compartilhados](./platform-packages.md) e [manifesto](./manifest.md)).
-- Alterar a lista exige reconstruir o editor, preservando rascunho, foco e seleção quando possível.
-- Uma UI que não usa Lexical consome `chat.views/v1` e ignora esse serviço opcional.
-- O log durável continua sendo a fonte dos dados da conversa, não um estado Lexical serializado.
+- The service accepts extensions and node classes only during the client activation, **before** the editor is created. The generation's node list is then frozen.
+- Common event cards use a single stable `DecoratorNode` that keeps the ID of the projected block and hosts the bundle's tag. This avoids creating a Lexical class for each card.
+- Specific Lexical nodes are kept for real editing semantics.
+- The platform provides the singleton of `lexical` and `@lexical/*` through the import map, externalized from the client artifacts, and `engines.doric` guarantees the compatible version before classes are accepted (see [shared packages](./platform-packages.md) and [manifest](./manifest.md)).
+- Changing the list requires rebuilding the editor, preserving draft, focus and selection when possible.
+- A UI that does not use Lexical consumes `chat.views/v1` and ignores this optional service.
+- The durable log remains the source of the conversation's data, not a serialized Lexical state.
 
-As duas famílias de node estão em [eventos e nodes](./events-and-nodes.md).
+The two node families are in [events and nodes](./events-and-nodes.md).
 
-## Exemplo: a troca de branch do Git na conversa
+## Example: the Git branch switch in the conversation
 
-O fluxo completo:
+The complete flow:
 
-1. O bundle `git` registra o schema de `git.branch-switched/v1` na parte host.
-2. O comando client `switchBranchCommand` chama `switchBranch` de `git.commands/v1` no host pela ponte client→host; o `execute` de `switchBranch` grava o evento repassando o `call` recebido.
-3. O stream o entrega à conversa.
-4. O projetor produz um bloco que `<git-branch-event>` apresenta.
-5. Um clique nesse elemento emite uma intenção DOM.
-6. A conversa despacha o comando `git.open-comparison/v1` para abrir a comparação.
+1. The `git` bundle registers the schema of `git.branch-switched/v1` in the host part.
+2. The client command `switchBranchCommand` calls `switchBranch` of `git.commands/v1` in the host through the client→host bridge; the `execute` of `switchBranch` writes the event, passing on the `call` it received.
+3. The stream delivers it to the conversation.
+4. The projector produces a block that `<git-branch-event>` presents.
+5. A click on that element emits a DOM intent.
+6. The conversation dispatches the command `git.open-comparison/v1` to open the comparison.
 
-Replay percorre o mesmo projetor sem repetir a mudança de branch.
+Replay goes through the same projector without repeating the branch change.
 
-Os passos 1 e 2, na parte host de `git`, em **pseudocódigo da API proposta**:
+Steps 1 and 2, in the host part of `git`, in **pseudocode of the proposed API**:
 
 ```ts
 // git, contracts/events.ts (exportado por git/contracts)
@@ -221,9 +221,9 @@ export function activate({ services }: HostContext) {
 }
 ```
 
-O manifesto do `git` declara `events/v1` em `requires`, porque a parte host usa `EventsV1` com `use` (o manifesto completo está mais abaixo). O payload de `git.branch-switched/v1` é `.strict()` e exige `repository`, que não vem no input (`{ projectId, to }`) nem no output (`{ from, to }`) de `switchBranch`; por isso o `execute` resolve o repositório do Project antes de gravar. A versão completa do evento vem de `provides` no manifesto. `EventsV1` é uma referência básica exportada por `bundle/contracts`, e o core fornece a definição com `execute`; `services` no `execute` são os serviços do `git`, ligados em `services.provide(gitCommands)`. O `git` importa os próprios contratos por caminho relativo.
+The manifest of `git` declares `events/v1` in `requires`, because the host part uses `EventsV1` with `use` (the complete manifest is further below). The payload of `git.branch-switched/v1` is `.strict()` and requires `repository`, which comes neither in the input (`{ projectId, to }`) nor in the output (`{ from, to }`) of `switchBranch`; that is why the `execute` resolves the Project's repository before writing. The full version of the event comes from `provides` in the manifest. `EventsV1` is a basic reference exported by `bundle/contracts`, and the core provides the definition with `execute`; `services` in the `execute` are the services of `git`, bound in `services.provide(gitCommands)`. `git` imports its own contracts by relative path.
 
-No client, `git` define a tag do bloco, registra os comandos e registra o projetor e o renderizador por `chat.views/v1`, como dependência opcional:
+In the client, `git` defines the block's tag, registers the commands and registers the projector and the renderer through `chat.views/v1`, as an optional dependency:
 
 ```ts
 // git, client/index.ts
@@ -248,7 +248,7 @@ export function activate({ services }: ClientContext) {
 }
 ```
 
-O manifesto completo do `git`, no formato de [manifesto v1](./manifest.md), cobre as partes host e client deste exemplo e as dos exemplos de [hooks](./hooks.md) e do [documento principal](../bundles.md):
+The complete manifest of `git`, in the [manifest v1](./manifest.md) format, covers the host and client parts of this example and those of the examples of [hooks](./hooks.md) and of the [main document](../bundles.md):
 
 ```json
 {
@@ -282,32 +282,32 @@ O manifesto completo do `git`, no formato de [manifesto v1](./manifest.md), cobr
 }
 ```
 
-O manifesto acima é ilustrativo. O do `git` 1.2.13 (`bundles/features/git/manifest.json`) traz as mesmas duas linhas para o hook do `chat`: `hooks/v1@^1.0.0` em `requires`, porque o observador usa `services.use(HooksV1).whenAvailable`, e `chat.hooks/v2` em `optional`, porque o `chat` pode faltar na composição.
+The manifest above is illustrative. That of `git` 1.2.13 (`bundles/features/git/manifest.json`) carries the same two lines for the hook of `chat`: `hooks/v1@^1.0.0` in `requires`, because the observer uses `services.use(HooksV1).whenAvailable`, and `chat.hooks/v2` in `optional`, because `chat` may be missing from the composition.
 
-> **Desatualizado.** A região `layout.panel` do parágrafo abaixo se chama
-> `shell.panel` desde o passo 4(a) do isolamento de bundles. O comportamento
-> atual está em
+> **Out of date.** The `layout.panel` region of the paragraph below has been called
+> `shell.panel` since step 4(a) of bundle isolation. The current behavior
+> is in
 > [docs/designs/bundle-isolation-concept.md](../../designs/bundle-isolation-concept.md#current-behavior-and-contracts);
-> a fase de documentação desse trabalho (fase 12) reescreve este documento.
+> the documentation phase of that work (phase 12) rewrites this document.
 
-No client, `ui/v1` e `commands/v1` entram pelo código acima; `navigation/v1`, porque a parte client registra as rotas `/git/diff/:threadId/:repository` e `/settings/git` com `services.use(NavigationV1)` (ver [navegação e rotas](./navigation.md)); `regions/v1`, pelo item `<git-changes>` que ela põe na região `layout.panel` do [layout](./layout.md) e pelo link `{ id: 'git', tag: 'settings-link', props: { label: 'Git', path: '/settings/git' } }` na região `settings.sections`; `windows/v1`, porque `openComparisonCommand` abre a comparação com `services.use(WindowsV1)` (ver [abrir um path numa janela](./navigation.md#abrir-um-path-numa-janela)); `menus/v1`, pelo item de menu que a parte client pede; e `hooks/v1`, também usado pela parte client para consumir `chat.hooks/v2` com `whenAvailable`. `git.commands/v1` entra em `requires` embora o próprio `git` o forneça no host, porque `switchBranchCommand` usa o stub com `use` no client, como no [documento principal](../bundles.md). `chat.views/v1` e `chat.hooks/v2` ficam fora por serem usados com `whenAvailable`. `commands/v1` existe no `desktopMain` e no client, não no host, por isso os comandos ficam na parte client.
+In the client, `ui/v1` and `commands/v1` come in through the code above; `navigation/v1`, because the client part registers the routes `/git/diff/:threadId/:repository` and `/settings/git` with `services.use(NavigationV1)` (see [navigation and routes](./navigation.md)); `regions/v1`, through the `<git-changes>` item it puts in the `layout.panel` region of the [layout](./layout.md) and through the link `{ id: 'git', tag: 'settings-link', props: { label: 'Git', path: '/settings/git' } }` in the `settings.sections` region; `windows/v1`, because `openComparisonCommand` opens the comparison with `services.use(WindowsV1)` (see [opening a path in a window](./navigation.md#opening-a-path-in-a-window)); `menus/v1`, through the menu item the client part requests; and `hooks/v1`, also used by the client part to consume `chat.hooks/v2` with `whenAvailable`. `git.commands/v1` goes into `requires` although `git` itself provides it in the host, because `switchBranchCommand` uses the stub with `use` in the client, as in the [main document](../bundles.md). `chat.views/v1` and `chat.hooks/v2` stay out because they are used with `whenAvailable`. `commands/v1` exists in `desktopMain` and in the client, not in the host, so the commands are in the client part.
 
-Um clique em `<git-branch-event>` emite uma intenção DOM, e a conversa despacha o comando `git.open-comparison/v1`, definido pelo `git` com `defineCommand` e registrado em `commands/v1`, para abrir a comparação. A ação é um comando, não um serviço.
+A click on `<git-branch-event>` emits a DOM intent, and the conversation dispatches the command `git.open-comparison/v1`, defined by `git` with `defineCommand` and registered in `commands/v1`, to open the comparison. The action is a command, not a service.
 
-## Relações
+## Relations
 
-- [Hooks](./hooks.md): define `chat.hooks/v2`, executado pelo `chat`, e o consumo opcional pelo `git`.
-- [Contratos e a família define\*](./contracts.md): define `defineService`, `defineMethod`, `ref`, `defineEvent` e os schemas com `z.custom` usados por `chat` e por quem o estende.
-- [Contextos de ativação](./contexts.md): define `ClientContext` e `HostContext` só com `services`, o `call` recebido pelos handlers, sua propagação entre saltos e a função de limpeza devolvida por `activate`.
-- [Manifesto](./manifest.md): define `requires` e `provides` por ambiente, como nos manifestos de exemplo.
-- [O core](./core.md): fornece `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`, `commands/v1`, `windows/v1`, `menus/v1` e `events/v1`, usados por `chat` e por quem o estende; `bundle/contracts` exporta as referências e os tipos desses contratos, e o core fornece as definições com `execute`.
-- [Navegação e rotas](./navigation.md): o serviço `navigation/v1` em que o `chat` registra `/projects/:projectId/threads/:threadId` e o `<core-outlet>` que a mostra.
-- [O bundle layout](./layout.md): o workspace da rota `/`, em cujo outlet a conversa aparece.
-- [Serviços entre bundles e canais de mensagens](./services-and-channels.md): descreve a ponte client→host, pela qual `chat` consome `runtime.threads/v1` e o stream durável.
-- [Eventos e nodes](./events-and-nodes.md): define os eventos duráveis, o bloco genérico de evento sem projetor e as duas famílias de node.
-- [UI composta por bundles](./ui-composition.md): explica as intenções DOM e o Light DOM da primeira extração da conversa.
-- [React dentro de Web Components](./react-web-components.md): como `<chat-view>` monta React dentro do elemento e reage às propriedades que o outlet atribui.
-- [Pacotes compartilhados e tokens do tema](./platform-packages.md): fornece `lexical` e `@lexical/*` pelo import map.
-- [Armazenamento genérico e histórico](./storage.md): define o histórico durável e o `history` opcional.
-- [Divisão das funcionalidades atuais](./feature-split.md): situa `chat`, `runtime`, `threads` e `git` entre os bundles de destino.
-- [Versionamento semântico](./versioning.md): rege as majors de `chat.views/v1`, `chat.lexical/v1` e dos tipos de bloco.
+- [Hooks](./hooks.md): defines `chat.hooks/v2`, executed by `chat`, and its optional consumption by `git`.
+- [Contracts and the define\* family](./contracts.md): defines `defineService`, `defineMethod`, `ref`, `defineEvent` and the schemas with `z.custom` used by `chat` and by whoever extends it.
+- [Activation contexts](./contexts.md): defines `ClientContext` and `HostContext` with only `services`, the `call` received by the handlers, its propagation across hops and the cleanup function returned by `activate`.
+- [Manifest](./manifest.md): defines `requires` and `provides` per environment, as in the example manifests.
+- [The core](./core.md): provides `hooks/v1`, `ui/v1`, `navigation/v1`, `regions/v1`, `commands/v1`, `windows/v1`, `menus/v1` and `events/v1`, used by `chat` and by whoever extends it; `bundle/contracts` exports the references and the types of these contracts, and the core provides the definitions with `execute`.
+- [Navigation and routes](./navigation.md): the `navigation/v1` service in which `chat` registers `/projects/:projectId/threads/:threadId` and the `<core-outlet>` that shows it.
+- [The layout bundle](./layout.md): the workspace of the route `/`, in whose outlet the conversation appears.
+- [Services between bundles and message channels](./services-and-channels.md): describes the client→host bridge, through which `chat` consumes `runtime.threads/v1` and the durable stream.
+- [Events and nodes](./events-and-nodes.md): defines the durable events, the generic event block without a projector and the two node families.
+- [UI composed by bundles](./ui-composition.md): explains the DOM intents and the Light DOM of the first extraction of the conversation.
+- [React inside Web Components](./react-web-components.md): how `<chat-view>` mounts React inside the element and reacts to the properties that the outlet assigns.
+- [Shared packages and theme tokens](./platform-packages.md): provides `lexical` and `@lexical/*` through the import map.
+- [Generic storage and history](./storage.md): defines the durable history and the optional `history`.
+- [Split of the current features](./feature-split.md): places `chat`, `runtime`, `threads` and `git` among the target bundles.
+- [Semantic versioning](./versioning.md): governs the majors of `chat.views/v1`, `chat.lexical/v1` and of the block types.

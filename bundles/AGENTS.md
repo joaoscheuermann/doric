@@ -81,7 +81,10 @@ an entry of the exceptions file.
 - Declare there every contract id the bundle does not provide that `src/`
   writes as a whole string literal, or imports as a value symbol from
   `<other>/contracts` or `bundle/contracts`; an `import type` needs no
-  declaration.
+  declaration, and the `core` bundle declares only the ids it writes as
+  literals, not those of the symbols it imports from `bundle/contracts`
+  (`findDeclared` in
+  [`tests/support/boundaries.mjs`](../tests/support/boundaries.mjs)).
 - Never list a `doric.*` contract under `provides` or `requires`: the platform
   always provides it, and a use of it needs no declaration.
 - Never list an id twice in one of `provides` and `requires`, and never list
@@ -144,6 +147,22 @@ an entry of the exceptions file.
   `bundle`, `desktop` or any of their subpaths, any other package of the
   window's import map (another subpath of `react` or `react-dom`, `lexical`,
   `@lexical/*`), or any `<id>/contracts`: the build fails on them.
+- Keep a bundle's story harness at `.storybook/preview.tsx` and import
+  `desktop/ui/theme.css` there, as
+  [`account/.storybook/preview.tsx`](desktop/account/.storybook/preview.tsx)
+  does, and wire no portal container there.
+- Put the bundle's stories under `stories/`, never in `src/`, as CSF files
+  named `<name>.stories.tsx`; a story need not sit at the path of a source
+  file. Put the fixtures that stories share under `stories/support/`; a test
+  may import them from there.
+- Import no `@storybook/*` package in a story or a harness, take shared
+  components from `desktop/ui/*`, and seed stores and providers with
+  fixtures, never with a live host, as the
+  [Stories](../packages/AGENTS.md#stories) rules of `packages/AGENTS.md`
+  require.
+- Keep every story inside the `include` of `tsconfig.client.json`, which the
+  `typecheck` target compiles
+  ([`account/project.json`](desktop/account/project.json)).
 - Take a shadcn primitive from `desktop/ui/<name>`, and take `toast` only from
   `desktop/ui/sonner`, so that a window has one toast store.
 - Bind persistent work to the services the part's `activate` receives, never

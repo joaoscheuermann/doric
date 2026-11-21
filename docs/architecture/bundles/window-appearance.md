@@ -10,13 +10,13 @@ The app's theme is one preference for every window: `dark` by default, `light`, 
 
 ## Intent: `appearance`
 
-Every window request carries an optional `appearance`, validated by `windowAppearanceSchema` ([`windows.ts`](../../../packages/bundle/src/contracts/basic/windows.ts)):
+Every window request carries an optional `appearance` of type `WindowAppearance`, validated by `windowAppearanceSchema`, which fills the defaults ([`windows.ts`](../../../packages/bundle/src/contracts/basic/windows.ts)):
 
 ```ts
 {
   size?: { width: number; height: number; minWidth?: number; minHeight?: number };
-  titleBar: 'native' | 'integrated' | 'none'; // default 'integrated'
-  background: string; // a token name, not a color; default 'window'
+  titleBar?: 'native' | 'integrated' | 'none'; // default 'integrated'
+  background?: string; // a token name, not a color; default 'window'
 }
 ```
 
@@ -28,7 +28,7 @@ Main applies the mode when it creates the window ([`appearance.ts`](../../../app
 
 `doric.windows/v1` opens two kinds of window ([Windows](windows.md)). An **app window** loads an app route in the window's shell, with the app's preload and bundle contracts. A **view window** shows one page of the host in a `WebContentsView` filling the window, with no preload, no shell and no bundle contracts. Both take their native options from the same `appearance`, and an `integrated` view window on macOS keeps its window buttons visible; but a view window gets no chrome description, no `chrome` event and no safe-area variables, so on macOS an `integrated` view window has a hidden title bar over a page that draws none ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)).
 
-A bundle opens a window through `windows/v1`, which the `core` bundle provides and which applies the core's policies before it calls the platform contract `doric.windows/v1` ([`core` README](../../../bundles/foundation/core/README.md)); `doric.windows/v1`, window keys and the window description are in [Windows](windows.md). Both take the same `appearance`. The core opens the workspace window at 1280×800 (minimum 960×640) and the settings window at 960×720 (minimum 720×520), both `integrated` ([`appearance.ts`](../../../bundles/foundation/core/src/desktop/appearance.ts), [`index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts)).
+A bundle opens a window through the core's service `windows/v1`, which runs `core.hooks/v1.onBeforeOpenWindowHook` and prefixes the key with the caller's bundle id (`<bundle>:<key>`) before it calls `doric.windows/v1`, or through `doric.windows/v1` itself, as the core and `screen` do ([`core/src/desktop/windows.ts`](../../../bundles/foundation/core/src/desktop/windows.ts), [`core/src/desktop/index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`core/src/desktop/commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts), [`screen/src/desktop/index.ts`](../../../bundles/features/screen/src/desktop/index.ts), [`core` README](../../../bundles/foundation/core/README.md#windowsv1), [Windows](windows.md#windowsv1-windows-other-bundles-ask-for), [Who opens windows](windows.md#who-opens-windows)). Both take the same `appearance`; the requests, keys and methods are in [Windows](windows.md). The core opens the workspace window at 1280×800 (minimum 960×640) and the settings window at 960×720 (minimum 720×520), both `integrated` ([`appearance.ts`](../../../bundles/foundation/core/src/desktop/appearance.ts), [`index.ts`](../../../bundles/foundation/core/src/desktop/index.ts), [`commands.ts`](../../../bundles/foundation/core/src/desktop/commands.ts)).
 
 ## Measures and colors: the tokens
 
@@ -117,7 +117,7 @@ The window answers it through main ([`appearance.ts`](../../../packages/desktop/
 
 ## Related documents
 
-- [Windows](windows.md): `doric.windows/v1`, window keys and the window description that carries the chrome.
+- [Windows](windows.md): `doric.windows/v1`, `windows/v1`, window keys and the window description that carries the chrome ([What an app window loads](windows.md#what-an-app-window-loads)).
 - [Platform packages and theme tokens](platform-packages.md): `desktop/ui`, its tokens and `tokens.json`.
 - [Splash and recovery](splash-and-recovery.md): the splash window.
 - [Layout](layout.md): the workspace window's regions and slots.
