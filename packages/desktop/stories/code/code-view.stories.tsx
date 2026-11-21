@@ -39,7 +39,7 @@ export const TypeScript = {
 
 const markdown = `# Agent Instructions
 
-\`GROUNDING.md\` is the repository validity contract. Read it before
+\`AGENTS.md\` holds the repository rules. Read it before
 non-trivial planning, reviewing, artifact generation, architecture discussion,
 code editing, or workflow execution.
 
