@@ -276,12 +276,15 @@ server answers `mcp_server_missing` for it
 - `mcp_signin_not_started`: `finishSignIn` with no sign-in of that server
   waiting, or one started for another URL;
   `No sign-in of this MCP server is waiting; start one first.`
+  ([src/host/oauth.ts](src/host/oauth.ts)).
 - `mcp_signin_busy`: another `finishSignIn` already waits on that sign-in;
   `The sign-in of this MCP server is already being finished.`
+  ([src/host/oauth.ts](src/host/oauth.ts)).
 - `mcp_signin_aborted`: the caller cancelled, a newer `signIn` of the same
   server replaced it, the server changed transport kind or URL or was
   removed, the sign-in timed out, or the bundle deactivated;
   `The MCP sign-in was cancelled.`
+  ([src/host/oauth.ts](src/host/oauth.ts)).
 - `mcp_signin_failed`: `The MCP sign-in failed: <reason>.`, or
   `The MCP sign-in failed: <reason> (<cause>).` when an error caused it,
   where `<reason>` is one of `the local callback could not start`,

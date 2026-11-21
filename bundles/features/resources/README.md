@@ -39,9 +39,9 @@ across bundles is described in the feature docs listed under
 
 [`package.json`](package.json) exports `./contracts`
 (`dist/contracts/index.js`, with `src/contracts/index.ts` as the source
-condition) and `./package.json`. It depends on `bundle`, `runtime`, `sandbox`, `tslib` and `zod`;
-`@tanstack/react-query`, `account`, `desktop`, `happy-dom`, `lucide-react` and
-`react` are dev dependencies.
+condition) and `./package.json`. It depends on `bundle`, `runtime`, `sandbox`,
+`tslib` and `zod`; `@tanstack/react-query`, `account`, `desktop`, `happy-dom`,
+`lucide-react` and `react` are dev dependencies.
 
 ## Parts
 
@@ -133,7 +133,8 @@ Both methods are exposed to desktop windows (`expose: 'desktop'`)
   no record; `expired` when its record is in a terminal state; `unavailable`
   when it has no runtime in this process, when it is closing, or when closing
   starts or the lease drops while the read runs; `pending` while its runtime
-  has no lease yet. A Project in standby is read once this process adopts it
+  has no lease yet. A call for a Project in standby waits until this process
+  adopts it
   ([`src/host/index.ts`](src/host/index.ts),
   [`lease.ts`](../../runtime/runtime/src/host/services/lease.ts),
   [`service.ts`](../../runtime/runtime/src/host/domain/service.ts)).
@@ -361,8 +362,9 @@ sandbox section has no notice and shows `"—"` for both values.
 - A "Sandbox" section and a "Machine" section, both at half opacity while not
   connected. A section with a `notice` shows the sentence in place of its
   gauges; otherwise it shows a Memory gauge and a CPU gauge, each with its
-  `lucide-react` icon (`MemoryStick`, `Cpu`), its label, its value, and a bar of `ratio × 100` percent when the ratio is set.
-  A value with a warning, and its bar, wear the warning tone.
+  `lucide-react` icon (`MemoryStick`, `Cpu`), its label, its value, and a bar
+  of `ratio × 100` percent when the ratio is set. A value with a warning, and
+  its bar, wear the warning tone.
 
 ### Styles
 
@@ -410,8 +412,8 @@ and the identifier limit are constants in
 
 - `host()` has no error of its own.
 - `project()` rejects only with what `runtime.lease/v1.withLease` rejects
-  with, such as a scope without `projectId`; a lease state is an outcome and a provider without a
-  reading is an `unavailable` container.
+  with, such as a scope without `projectId`; a lease state is an outcome and a
+  provider without a reading is an `unavailable` container.
 - In the window, every failure of a read is absorbed by the query, which keeps
   its last data; the badge never throws.
 

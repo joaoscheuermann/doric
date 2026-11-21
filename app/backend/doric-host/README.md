@@ -2091,8 +2091,9 @@ column, and every other column is `NOT NULL`. Every `timestamptz(3)` column
 defaults to the current time except `credential.updated_at`, which the client
 sets at each write; `credential.id` has no default, so the writer gives the
 UUID. Every foreign key is `ON UPDATE CASCADE` and `ON DELETE CASCADE`, except
-`storage_truncation.position`, which is `ON DELETE RESTRICT`. No other table,
-function, trigger or enum type remains.
+`storage_truncation.position`, which is `ON DELETE RESTRICT`. No other table
+(besides Prisma's `_prisma_migrations`), function, trigger or enum type
+remains.
 
 **Who reads and writes them.** The storage backend reads and writes the
 `storage_*` tables with raw SQL
@@ -2100,8 +2101,8 @@ function, trigger or enum type remains.
 secrets backend reads and writes `credential` through the generated Prisma
 client
 ([`secrets/table.ts`](../../../bundles/foundation/postgres/src/host/secrets/table.ts)).
-No other code touches the database. The host stores these records through
-`storage/v1`:
+No other code touches the database, apart from the startup check below. The
+host stores these records through `storage/v1`:
 
 | Record                                 | Document id or stream                                   | Indexes                           | Defined in                                                                                      |
 | -------------------------------------- | ------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -2115,16 +2116,23 @@ No other code touches the database. The host stores these records through
 | `mcp.server/v1` document               | the server id                                           | `byProject`                       | [`mcp/src/host/store.ts`](../../../bundles/features/mcp/src/host/store.ts)                      |
 | Thread event stream                    | `runtime.thread.events/<threadId>`                      | none                              | [`runtime/src/host/store/events.ts`](../../../bundles/runtime/runtime/src/host/store/events.ts) |
 
-`storage_meta` holds two reserved records. `identity` is
-`{ hostId, storageGeneration }`, written by the first `identity` call
-([`identity.ts`](../../../bundles/foundation/postgres/src/host/storage/identity.ts));
-a desktop discards its local history snapshots when `storageGeneration`
-changes
-([`history/src/desktop/index.ts`](../../../bundles/desktop/history/src/desktop/index.ts)).
-`coalesced-thread-deltas` records that the stored Thread event streams keep
-one entry per run of consecutive deltas, with its counts; the migration that
-writes it does nothing when the record exists
-([`20261021000000_coalesce_thread_deltas`](../../../bundles/foundation/postgres/prisma/migrations/20261021000000_coalesce_thread_deltas/migration.sql)).
+`storage_meta` holds two reserved records:
+
+- `identity` is `{ hostId, storageGeneration }`. The first `identity` call
+  writes it with a random UUID as `hostId` and `storageGeneration` 1, and
+  every later call reads it unchanged
+  ([`identity.ts`](../../../bundles/foundation/postgres/src/host/storage/identity.ts)).
+  A desktop keeps its local history snapshots under
+  `<hostId>/<storageGeneration>/`, so after either value changes it stops
+  using the old snapshots and replays from the host
+  ([`history/src/desktop/index.ts`](../../../bundles/desktop/history/src/desktop/index.ts),
+  [local history](../../../docs/features/local-history.md)).
+- `coalesced-thread-deltas` holds the counts of the delta-coalescing
+  migration, which keeps one entry per run of consecutive delta events in
+  each Thread event stream and adds 1 to `storageGeneration` of `identity`
+  when it changes an entry. When the record exists, that migration does
+  nothing
+  ([`20261021000000_coalesce_thread_deltas`](../../../bundles/foundation/postgres/prisma/migrations/20261021000000_coalesce_thread_deltas/migration.sql)).
 
 **A new database.** `migrate` over an empty database leaves the
 `OPENROUTER_API_KEY` credential (kind `API_TOKEN`, id
@@ -2151,19 +2159,32 @@ removes it.
   stream's counter never decreases, so a sequence is never reused, and the
   truncation leaves a mark under its commit position
   ([`commit.ts`](../../../bundles/foundation/postgres/src/host/storage/commit.ts)).
-- A blob is deleted once no `runtime.attachment/v1` record names it
+- After the commit that deletes an attachment record, its blob is deleted
+  when no `runtime.attachment/v1` record names it any more; a blob whose
+  delete fails stays, and nothing reads it
   ([`store/attachments.ts`](../../../bundles/runtime/runtime/src/host/store/attachments.ts)).
-- `storage_commit`, the commit feed, and `storage_type` are never pruned; a
-  credential stays until `DELETE /credentials/:id`.
+- Deleting an MCP server, or its Project, deletes its `mcp.server/v1`
+  document and its `MCP_TOKEN` credentials
+  ([`mcp/src/host/index.ts`](../../../bundles/features/mcp/src/host/index.ts)).
+- `storage_commit` (the commit feed) and `storage_type` are never pruned;
+  every other credential stays until `DELETE /credentials/:id`.
 
 **The startup check.** The `database_client` start step connects and then
 looks for the tables `project`, `thread` and `thread_event`: when all three
-exist and one of them holds a row, startup fails at `database_client` with
-`Legacy Project and Thread data has not been migrated; run prisma migrate deploy.`
-When the database cannot answer that check, startup goes on, and the first
-query that needs the database fails instead
+exist and one of them holds a row, startup fails at `database_client`. The
+reason (`Legacy Project and Thread data has not been migrated; run prisma migrate deploy.`)
+is not logged: the log shows `Initializing PostgreSQL client` with no
+`PostgreSQL client initialized`, then `Doric failed to start` with
+`stage: database_client`
 ([`database.ts`](../../../bundles/foundation/postgres/src/host/database.ts),
-[`start.ts`](../../../bundles/foundation/postgres/src/host/start.ts)).
+[`start.ts`](../../../bundles/foundation/postgres/src/host/start.ts),
+[`src/index.ts`](src/index.ts)). Such a database needs
+`npx nx run doric-host:migrate`, whose
+`20261010000000_runtime_documents` migration moves those rows into the storage
+tables; when that migration has already run, the drop migration raises
+instead ([Legacy rows at the drop migration](#legacy-rows-at-the-drop-migration)).
+When the database cannot answer the check, startup goes on, and the first
+query that needs the database fails instead.
 
 **When `migrate` stops.** A migration that finds data it cannot carry raises
 an exception and rolls its own transaction back; Prisma records the migration
@@ -2180,25 +2201,34 @@ as failed and applies nothing after it. The exceptions are:
 - `The Thread delta coalescing could not be verified: …`
   ([`20261021000000_coalesce_thread_deltas`](../../../bundles/foundation/postgres/prisma/migrations/20261021000000_coalesce_thread_deltas/migration.sql));
 - `Legacy table "<name>" holds <n> rows; …`, while `project`, `thread` or
-  `thread_event` holds a row
+  `thread_event` holds a row; see
+  [Legacy rows at the drop migration](#legacy-rows-at-the-drop-migration)
   ([`20261117000000_drop_legacy_runtime_tables`](../../../bundles/foundation/postgres/prisma/migrations/20261117000000_drop_legacy_runtime_tables/migration.sql)).
 
-No migration can be reversed: back up a database whose data matters
-(`pg_dump`) before `migrate`. While a migration is recorded as failed,
-`migrate` refuses to run; after correcting the data,
+No migration can be reversed. Before `migrate` applies pending migrations to
+a database whose data matters, quit the Doric desktop app on every machine
+that connects to the host, stop the host, and back the database up with
+`pg_dump`; `20261021000000_coalesce_thread_deltas` and
+`20261117000000_drop_legacy_runtime_tables` require the host stopped and the
+desktop closed. With Compose, running `up` with a new image applies pending
+migrations through its `migrate` service, so take the backup first. While a
+migration is recorded as failed, `migrate` refuses to run; after correcting
+the data,
 `npx prisma migrate resolve --rolled-back <migration> --config app/backend/doric-host/prisma.config.ts`
-clears the record and `npx nx run doric-host:migrate` applies it again.
+clears the record and `npx nx run doric-host:migrate` applies it again
+([Legacy rows at the drop migration](#legacy-rows-at-the-drop-migration)
+gives the steps for the drop migration).
 
-**Recreating an incompatible database.** A database these migrations cannot
-bring to the schema above is incompatible: `migrate` stops on it, or the
-startup check refuses it. Neither the host nor `migrate` ever resets or
-deletes a database; an existing incompatible development database is
-recreated explicitly by its operator, which deletes all its data. With the
-host stopped, either:
+**Recreating an incompatible database.** A database is incompatible when
+`migrate` stops on it and its data cannot be corrected. A database the
+startup check refuses needs `npx nx run doric-host:migrate` first, not
+recreation. Neither the host nor `migrate` ever resets or deletes a database;
+an existing incompatible development database is recreated explicitly by its
+operator, which deletes all its data. With the host stopped, either:
 
-- reset it in place with the Prisma CLI, which deletes everything in the
-  database of `DORIC_DATABASE_URL` and applies every migration (it asks for
-  confirmation; `--force` skips it):
+- from the repository root, reset it in place with the Prisma CLI, which
+  deletes everything in the database of `DORIC_DATABASE_URL` and applies
+  every migration (it asks for confirmation; `--force` skips it):
 
   ```sh
   export DORIC_DATABASE_URL=postgresql://USER:PASSWORD@127.0.0.1:5432/DB
@@ -2207,24 +2237,90 @@ host stopped, either:
 
 - or, with Compose, delete the PostgreSQL volume and start again, so
   `postgres` creates an empty database and `migrate` applies every migration
-  ([`compose.yaml`](compose.yaml)). From `app/backend/doric-host`:
+  ([`compose.yaml`](compose.yaml)). From `app/backend/doric-host`, with
+  `<project>` `doric-sandbox` (the `name` of `compose.yaml`, the default) or
+  `doric` (the project of `npm run doric:docker:build`,
+  [With Docker Compose](#with-docker-compose)):
 
   ```sh
-  docker compose --profile docker down
-  docker volume rm doric-sandbox_postgres-data
-  docker compose --profile docker up -d
+  docker compose -p <project> --profile docker down
+  docker volume rm <project>_postgres-data
+  docker compose -p <project> --profile docker up -d
   ```
 
-  The volume is `<project>_postgres-data`: `doric_postgres-data` for the
-  project `doric` of `npm run doric:docker:build`
-  ([With Docker Compose](#with-docker-compose)).
+  `npm run doric:docker:build` passes `--env-file app/backend/doric-host/.env`
+  from the repository root; run from `app/backend/doric-host`, Compose reads
+  `.env` on its own.
+
+### Legacy rows at the drop migration
+
+`20261117000000_drop_legacy_runtime_tables` drops the tables `project`,
+`thread` and `thread_event`, the function `guard_thread_tree()` and the enum
+types `ProjectState` and `ThreadState`. In one transaction it locks the three
+tables and counts their rows; when one holds a row it raises
+
+```text
+Legacy table "<name>" holds <n> rows; they were written after the stage-7 migration. See the host README, "Legacy rows at the drop migration".
+```
+
+and drops nothing. A table that does not exist is skipped
+([`migration.sql`](../../../bundles/foundation/postgres/prisma/migrations/20261117000000_drop_legacy_runtime_tables/migration.sql)).
+The examples use the Compose container `doric-sandbox-postgres-1` and the role
+and database `doric`; use `<project>-postgres-1`, your `DORIC_POSTGRES_USER`
+and your `DORIC_POSTGRES_DB`.
+
+1. Quit the Doric desktop app on every machine that connects to this host.
+2. Stop the host (`Ctrl+C` on `nx serve doric-host`, or, from
+   `app/backend/doric-host`, `docker compose -p <project> stop docker` /
+   `firecracker`). Keep PostgreSQL running.
+3. Back up the database:
+
+   ```sh
+   docker exec doric-sandbox-postgres-1 pg_dump -U doric -d doric -Fc > doric-before-drop.dump
+   ```
+
+4. Apply the migrations: `npx nx run doric-host:migrate` with
+   `DORIC_DATABASE_URL` pointing at the database, or, from
+   `app/backend/doric-host`,
+   `docker compose -p <project> run --rm --build migrate`.
+5. When it raises, either restore the backup
+   (`docker exec -i doric-sandbox-postgres-1 pg_restore -U doric -d doric --clean --if-exists --single-transaction < doric-before-drop.dump`),
+   or export the rows and delete them, in this order:
+
+   ```sh
+   docker exec doric-sandbox-postgres-1 pg_dump -U doric -d doric --data-only \
+     -t thread_event -t thread -t project > doric-legacy-rows.sql
+   docker exec doric-sandbox-postgres-1 psql -U doric -d doric -c \
+     'DELETE FROM thread_event; DELETE FROM thread; DELETE FROM project;'
+   ```
+
+   Then mark the failed migration as rolled back and apply it again, from the
+   repository root:
+
+   ```sh
+   npx prisma migrate resolve --rolled-back 20261117000000_drop_legacy_runtime_tables --config app/backend/doric-host/prisma.config.ts
+   npx nx run doric-host:migrate
+   ```
+
+6. Start the host, then the desktop.
 
 ### Network exposure
 
-The API is unauthenticated. Keep it on an isolated trusted network, especially
-because SSH responses and execution replay contain sensitive material. Provider
-credential values belong in the credential store, never configuration JSON or
-client requests.
+The API has no authentication. It listens on `DORIC_HOST` (default `0.0.0.0`)
+([`src/index.ts`](src/index.ts)), and the Compose host services use the host
+network ([`compose.yaml`](compose.yaml)), so every client that reaches the port
+has full access, including `GET /projects/:id/ssh`, `GET /vms/:id/ssh` and the
+Thread event [replay](#replay)
+([`routes/projects.ts`](../../../bundles/foundation/transport/src/host/routes/projects.ts),
+[`routes/vms.ts`](../../../bundles/foundation/transport/src/host/routes/vms.ts),
+[`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts)).
+Keep it on an isolated, trusted network. Secrets are kept only in the
+credential store: the [Credentials](#credentials) routes write them, and so do
+the Claude sign-in of `claude-login` (the `API_TOKEN` credential `Claude`,
+[`claude-login/src/host/login.ts`](../../../bundles/features/claude-login/src/host/login.ts))
+and an MCP server's OAuth sign-in (`MCP_TOKEN`). The configuration names
+credentials by id and never holds a secret
+([`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts)).
 
 ### Credentials
 
@@ -2233,12 +2329,18 @@ The host keeps every secret it holds in one credential store, one
 ([`basic/secrets.ts`](../../../packages/bundle/src/contracts/basic/secrets.ts),
 [`git/src/host/credentials.ts`](../../../bundles/features/git/src/host/credentials.ts)):
 
-| Kind                | Fields                          | Registered by    | Use                                                |
-| ------------------- | ------------------------------- | ---------------- | -------------------------------------------------- |
-| `API_TOKEN`         | `secret`                        | the platform     | Authentication: a provider key, the GitHub token.  |
-| `USERNAME_PASSWORD` | `username`, `secret`            | the platform     | Authentication with a name.                        |
-| `GIT`               | `username`, `email` (no secret) | the `git` bundle | The identity the agent's git commands commit with. |
+| Kind                | Fields                          | Registered by    | Use                                                                   |
+| ------------------- | ------------------------------- | ---------------- | --------------------------------------------------------------------- |
+| `API_TOKEN`         | `secret`                        | the platform     | Authentication: a provider key, the GitHub token, the Claude sign-in. |
+| `USERNAME_PASSWORD` | `username`, `secret`            | the platform     | Authentication with a name.                                           |
+| `GIT`               | `username`, `email` (no secret) | the `git` bundle | The identity the agent's git commands commit with.                    |
+| `MCP_TOKEN`         | `secret`                        | the `mcp` bundle | An MCP server's OAuth tokens and client secret.                       |
 
+An `MCP_TOKEN` credential holds one OAuth access token, refresh token or
+client secret and is named `mcp:<serverId>:<part>`; the kind is registered by
+[`mcp/src/host/index.ts`](../../../bundles/features/mcp/src/host/index.ts) and
+defined in
+[`mcp/src/host/credentials.ts`](../../../bundles/features/mcp/src/host/credentials.ts).
 The REST API's [Credentials](#credentials) routes manage them, and
 [the credentials feature](../../../docs/features/credentials.md) describes how
 the product uses them.
@@ -2255,23 +2357,33 @@ postgres bundle; no route answers a secret.
 `openssl rand -base64 32` and keep it: a stored secret opens only under the
 key that sealed it. The postgres bundle reads the key at the first credential
 read or write and keeps the cipher it builds
-([`secrets/backend.ts`](../../../bundles/foundation/postgres/src/host/secrets/backend.ts)):
+([`secrets/backend.ts`](../../../bundles/foundation/postgres/src/host/secrets/backend.ts)).
+At startup, the `credential_activation` step lists every stored credential
+once ([`secrets/activation.ts`](../../../bundles/foundation/core/src/host/secrets/activation.ts)),
+so a failure below that a read hits fails startup there. As with every start
+step, the reason is not logged: the log shows `Activating stored credentials`,
+then `Doric failed to start` with `stage: credential_activation`
+([`src/index.ts`](src/index.ts)). By key state:
 
-- **Malformed** (not exactly 32 bytes of base64): every credential read and
-  write fails with `DORIC_CREDENTIAL_KEY must be 32 base64-encoded bytes.`,
-  so startup fails at `credential_activation`
-  ([Configuration](#configuration)).
+- **Malformed**: a valid key is exactly 44 standard-base64 characters ending
+  in `=`, surrounding whitespace ignored
+  ([`envelope.ts`](../../../bundles/foundation/postgres/src/host/secrets/envelope.ts)).
+  Any other value fails every credential read and write with
+  `DORIC_CREDENTIAL_KEY must be 32 base64-encoded bytes.`, so startup fails
+  at `credential_activation` ([Configuration](#configuration)). Deleting a
+  credential never builds the cipher, so it still works.
 - **Unset or blank**: reads succeed while no stored credential holds a
-  non-empty secret; once one does, reading it fails with
+  non-empty secret; as soon as one does, `list`, and so startup, fails with
   `credential_key_required`
-  (`DORIC_CREDENTIAL_KEY is required while a stored credential holds a secret.`),
-  so startup fails at `credential_activation`. Storing any secret, `''`
-  included, fails with `credential_storage_unavailable`
+  (`DORIC_CREDENTIAL_KEY is required while a stored credential holds a secret.`).
+  Storing any secret, `''` included, fails with
+  `credential_storage_unavailable`
   (`DORIC_CREDENTIAL_KEY is required to store a credential secret.`), which
   the API answers with `503`.
 - **Another key** than the one that sealed a secret, or a stored value that
   is not a `v1` envelope: reading it fails with `credential_unreadable`; an
-  unreadable row is an error, never an empty secret.
+  unreadable row is an error, never an empty secret. At startup this fails
+  `credential_activation`.
 
 **Redaction.** The core replaces every occurrence of each non-empty stored
 secret with `[REDACTED]` in an event before it is written
@@ -2279,7 +2391,10 @@ secret with `[REDACTED]` in an event before it is written
 [`secrets/cache.ts`](../../../bundles/foundation/core/src/host/secrets/cache.ts))
 and in every log line
 ([`shared/log.ts`](../../../bundles/foundation/core/src/shared/log.ts),
-[`shared/redact.ts`](../../../bundles/foundation/core/src/shared/redact.ts)).
+[`shared/redact.ts`](../../../bundles/foundation/core/src/shared/redact.ts)),
+together with every secret a bundle adds through `addRedaction` of
+`secrets/v1`
+([`secrets/cache.ts`](../../../bundles/foundation/core/src/host/secrets/cache.ts)).
 The runtime also redacts a token it has written into a sandbox, whether or not
 the store still holds it
 ([`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
@@ -2288,7 +2403,8 @@ the store still holds it
 ### Git and GitHub inside the sandbox
 
 The host applies the Git identity and the GitHub token to a Project's sandbox
-([`git-credentials.ts`](../../../bundles/runtime/runtime/src/host/domain/git-credentials.ts)):
+([`git-credentials.ts`](../../../bundles/runtime/runtime/src/host/domain/git-credentials.ts);
+[the Git feature](../../../docs/features/git.md)):
 
 - `git config --global` `user.name` and `user.email` for the identity;
 - when a token is configured, `credential.helper store` plus a
@@ -2327,13 +2443,18 @@ unset, and makes no database round trip
   execution pauses: the run is aborted, and the Thread becomes `ready` with
   `queuePaused` and the error code `storage_low`, whose message is
   `Execution paused: storage is low or unavailable. Free disk space above 10% and resume the queue.`
-  ([`storage-pause.ts`](../../../bundles/runtime/runtime/src/host/domain/storage-pause.ts)).
+  ([`storage-pause.ts`](../../../bundles/runtime/runtime/src/host/domain/storage-pause.ts),
+  [`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
   Queued inputs stay accepted.
-- A disk-full error from PostgreSQL (`53100`) or the operating system
-  (`ENOSPC`) pauses the same way, independently of the measurement.
+- A disk-full error pauses the same way, independently of the measurement:
+  the PostgreSQL code `53100`, the operating system's `ENOSPC`, or a message
+  containing either or `no space left on device`
+  ([`storage-pressure.ts`](../../../bundles/runtime/runtime/src/host/domain/storage-pressure.ts)).
 - Recovery never starts on its own. Free space above 10%, then resume the
   queue (`POST /threads/:id/queue/resume`); while storage is still low, the
-  resume answers `409 thread_storage_low`.
+  resume answers `409 thread_storage_low` with that message
+  ([`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts);
+  [prompt control](../../../docs/features/prompt-control.md)).
 
 Compose sets `DORIC_STORAGE_PATH=/var/lib/doric/postgresql` and mounts its
 PostgreSQL volume there read-only ([`compose.yaml`](compose.yaml)). A native
@@ -2352,12 +2473,14 @@ what it holds in memory.
 
 ## Validation
 
-Run each command from the repository root; the host's targets are in
-[`project.json`](project.json).
+Run each command from the repository root. The host's targets are in
+[`project.json`](project.json), plus `typecheck` from the `@nx/js/typescript`
+plugin of [`nx.json`](../../../nx.json).
 
 | Command                                          | What it does and checks                                                                                                                                          |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npx nx run doric-host:build`                    | Builds every project the host depends on, runs `build-bundles`, then compiles `src/` with `tsc` into `dist/`; a type error fails it.                             |
+| `npx nx run doric-host:typecheck`                | Runs `tsc --build tsconfig.json --emitDeclarationOnly` after `build` and every dependency's `typecheck`; checks `src/` only.                                     |
 | `npx nx run doric-host:build-bundles`            | Builds every Nx project tagged `type:bundle` and stages every bundle into `dist/bundles`; never cached.                                                          |
 | `npx nx run doric-host:test`                     | Builds the host, compiles `src/` and `tests/` into `dist-tests/` (`tsconfig.spec.json`), and runs `dist-tests/tests/*.test.js` with `node --test`; never cached. |
 | `npx nx run doric-host:migrate`                  | Applies the pending migrations to `DORIC_DATABASE_URL` ([Database](#database)); it checks nothing else.                                                          |
@@ -2365,7 +2488,8 @@ Run each command from the repository root; the host's targets are in
 | `npx nx run agent:test`                          | The reusable agent loop the host depends on.                                                                                                                     |
 | `node --test scripts/tests/spawn-agent.test.mjs` | The [command-line client](#command-line-client).                                                                                                                 |
 
-`doric-host:test` covers ([`tests/`](tests)): the boot and stop of the
+`tests/` is type-checked only by `doric-host:test`. It covers
+([`tests/`](tests)): the boot and stop of the
 compiled host and its startup stages, the bundle composition and its order,
 what a desktop window may call (against
 [`bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json)), the

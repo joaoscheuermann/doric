@@ -1,4 +1,4 @@
-> Record, kept for history as of 2026-11-20. The living description of this feature is [docs/features/comments.md](../../features/comments.md).
+> Record (2026-11-20). This document is kept as a record and does not describe current behavior; the living description is [docs/features/comments.md](../../features/comments.md).
 
 # Comentários
 

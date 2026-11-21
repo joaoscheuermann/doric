@@ -1,3 +1,5 @@
+> Record (2026-11-20). This document is kept as a record and does not describe current behavior; the living description is [docs/features/context-compaction.md](../../features/context-compaction.md).
+
 # Context compaction
 
 **Estado:** implementado em `feat/context-compaction`. Este documento descreve o comportamento implementado e o plano que o guiou; o `AGENTS.md` da raiz segue sendo o contrato de validade, e a seção "Critérios de feature completa" lista o que "completa" significa nesta landing.

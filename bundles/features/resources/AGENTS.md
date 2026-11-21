@@ -27,22 +27,30 @@ slot.
   `Resources` interface and its schema in `resourcesMethods` in
   `src/contracts/index.ts`, and its method in `resourcesService` in
   `src/host/index.ts`, with `expose: 'desktop'` only when a window calls it.
-- Add every new field of `HostResources` to `hostResourcesSchema` in the same
-  change: the schema is strict, and a field it does not list fails `host()`
-  with `invalid_output`.
+- Add a field of `HostResources` or `ContainerResources` in one change to the
+  contract and its schema in `src/contracts/index.ts`, to the copy of the type
+  in `src/client/domain/resources.ts`, and, for `ContainerResources`, to
+  `containerFrom` in `src/host/container.ts` and to the check in
+  `containerResourcesFrom` in `src/client/api/resources.ts`: nothing checks
+  that a copy gains a field the contract gains, and `hostResourcesSchema` is
+  strict, so a field it does not list fails `host()` with `invalid_output`.
 - Add a scope key to `desktopScope` in [`manifest.json`](manifest.json) only
-  when a method of `resources/v1` reads it.
+  when a method of `resources/v1` reads it; keep `projectId`, `threadId` and
+  `promptId` in it unless the snapshot below gains a `resources/v1` entry
+  under `scopeKeysByContract`, because the test expects the snapshot's
+  `scopeKeys` for a contract without one.
 - When a change adds or removes a method of `resources/v1` exposed to the
   desktop, or a key of its `desktopScope`, update
   [`bridge-exposure.snapshot.json`](../../../app/backend/doric-host/tests/bridge-exposure.snapshot.json)
-  in the same change.
+  in the same change, and run `npx nx run doric-host:test`.
 - Keep the client part in four layers, each importing only the ones before
   it: `src/client/domain/` for the reading types, formatting and thresholds as
   pure functions of their arguments, with no React, DOM or clock;
   `src/client/api/` for the calls to contracts, their checks and their error
-  messages; `src/client/hooks/`
-  for the React Query polling and service hooks; `src/client/monitor/` for the
-  components.
+  messages; `src/client/hooks/` for the React Query polling and service hooks;
+  `src/client/monitor/` for the components. Keep `src/client/index.ts`
+  (activation, region item) and `src/client/elements.tsx` (element
+  definition) above the four layers.
 - Call `resources/v1` from the window only through `createResourcesReads` in
   `src/client/api/resources.ts`, and turn every failure into one of
   `resourcesMessages` there.
@@ -57,11 +65,10 @@ slot.
   `src/client/api/resources.ts`.
 - Advance the sustained-CPU count only through `useCpuSustain`, once per
   reading with a new `at`, and warn on CPU only from that sustained verdict.
-- Draw the bundle's UI only inside `<resources-monitor>`, and register it only
-  through `registerResourcesRegion` into `account.status`. Import
-  `account/contracts` only with `import type`, keep the region name the literal
-  `'account.status' satisfies typeof ACCOUNT_STATUS`, and list `account` under
-  neither `requires` nor `optional`.
+- Draw the bundle's UI only inside `<resources-monitor>`, register it only
+  through `registerResourcesRegion` into `account.status`, and list `account`
+  under neither `requires` nor `optional`, so that the bundle loads without
+  it.
 - Never import `workspace/contracts`: reach `workspace.selection/v1` only
   through the structural copy `WorkspaceSelectionV1` in
   `src/client/api/peers.ts`, and change that copy when `workspace` changes
@@ -105,13 +112,15 @@ slot.
 ## Verify
 
 - `npx nx run bundle-resources:typecheck`: run it after any change under
-  `src/`.
+  `src/`, `stories/` or `.storybook/`.
 - `npx nx run bundle-resources:test`: run it after any change under `src/`,
   `tests/` or `stories/`, or to `manifest.json`; it compiles the tests from the
   sources and needs no build of this bundle.
 - `npx nx run bundle-resources:build`: run it after a change to
   `manifest.json`, `package.json`, a `tsconfig*.json` file or `src/contracts/`,
-  and before running a host or a window that loads this bundle.
+  after a new import under `src/client/` (only the build rejects a forbidden
+  client import), and before running a host or a window that loads this
+  bundle.
 
 ## Generated files
 

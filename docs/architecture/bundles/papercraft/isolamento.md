@@ -1,3 +1,5 @@
+> Record (2026-11-20). This document is kept as a record and does not describe current behavior; the living description is [docs/features/papercraft.md](../../../features/papercraft.md).
+
 # Papercraft: o preview num iframe isolado
 
 **Estado:** aprovado pelo usuário em 2026-10-27 e implementado; as decisões do frame (origem opaca, CSP, CORS por prefixo de caminho, teto de 3 frames vivos por janela, storage em memória) continuam valendo depois da troca para o OpenUI ([docs/features/papercraft.md](../../../features/papercraft.md)). Desde 2026-11-06 o frame carrega `client/frames/openui.js`, que desenha um programa OpenUI Lang, e importa os módulos verificados de `doric://app/papercraft-modules/<dir>/<file>` em vez de `/artifacts/*`. Substitui a decisão "Nada de iframe" da primeira versão do [desenho do papercraft](README.md#resumo).

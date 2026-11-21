@@ -4,7 +4,7 @@
 
 - **`desktop/ui`** — the shared UI: the shadcn components, the theme stylesheet, fonts and tokens, and the generic widgets several bundles draw (error notice, panels, code view, custom-element helpers). Client parts of bundles import it; the platform serves one copy of it per window.
 - **`desktop/reads`** — browser-safe read helpers: path strings, the refresh queue, the retry policy of a pending read, and the error value every surface renders. Client parts of bundles import it; each part bundles its own copy.
-- **`desktop/protocol`** — the window–main protocol: types and zod schemas of what the preload exposes, the IPC payloads and `doric.shell/v1`. The Electron main process and the preload import it to validate what a window sends.
+- **`desktop/protocol`** — the window–main protocol: the types and zod schemas of what the preload exposes, the IPC payloads and `doric.shell/v1`, the channel names, and one function, `remoteMethodSpecFromSchema`. The Electron main process imports it and validates with its schemas what a window sends; the preload imports its types only and states the two channel names itself ([`desktop.ts`](../../app/desktop/doric/src/app/api/desktop.ts), [`dispatcher.ts`](../../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
 - **`desktop/client`** — the window's loader runtime: bootstrap, client activation, the bridge to the main process and the window's platform providers. The renderer's bootstrap imports it ([`bootstrap.ts`](../../app/desktop/doric-renderer/src/bootstrap.ts)); bundles never import it in production code.
 
 Nothing here names a bundle's concept (files, Git, changes): a bundle passes its own rows, labels, colours and error codes to these primitives. How the app serves `desktop/ui` to every window through the import map, which imports a bundle leaves external and how bundle stylesheets combine with the theme is in [Platform packages and theme tokens](../../docs/architecture/bundles/platform-packages.md).
@@ -45,7 +45,9 @@ The export map points the `@org/source` condition at the TypeScript source (used
 
 An explicit subpath wins over the `./ui/*` pattern, so `desktop/ui/<name>` resolves to a component file only when no entry above names it.
 
-Runtime dependencies: React 19 and ReactDOM, Base UI (`@base-ui/react`), `cmdk`, `cn`, `class-variance-authority`, `lucide-react`, `sonner`, `@dnd-kit/*`, `react-resizable-panels`, `monaco-editor`, Tailwind CSS 4, `tw-animate-css`, `shadcn`, `zod` and the workspace package `bundle`. `@tanstack/query-core` is a peer dependency, used by `refreshQueries` ([`package.json`](package.json)).
+The top-level `main` and `module` fields name `./dist/index.js` and `types` names `./dist/index.d.ts`, for tools that do not read `exports`.
+
+Runtime dependencies: React 19 and ReactDOM, Base UI (`@base-ui/react`), `cmdk`, `cn`, `class-variance-authority`, `lucide-react`, `sonner`, `@dnd-kit/*`, `react-resizable-panels`, `monaco-editor`, Tailwind CSS 4, `tw-animate-css`, `shadcn`, `tslib`, `zod` and the workspace package `bundle`. `@tanstack/query-core` is a peer dependency, used by `refreshQueries` ([`package.json`](package.json)).
 
 ## Shared UI (`desktop/ui`)
 
@@ -101,8 +103,9 @@ Behavior that differs from the stock shadcn files:
 
 - **Portal container.** The overlays — `AlertDialog`, `Combobox`, `ContextMenu`, `Dialog`, `DropdownMenu`, `Popover`, `Select`, `Sheet`, `Tooltip` and the components built on them — portal their content into the container the nearest `PortalContainerProvider` names, or into `document.body` outside one; a `container` passed directly to an overlay's `*Portal` wins (for example [`dialog.tsx`](src/components/dialog.tsx)).
 - **`SidebarScope`** provides the sidebar context alone, with no wrapper element and no keyboard shortcut: inside it, a component reads the outer `SidebarProvider`'s context when there is one, and otherwise an expanded, non-mobile state whose setters do nothing. An element that draws sidebar rows from its own React root uses it ([`sidebar.tsx`](src/components/sidebar.tsx)).
-- **`SidebarProvider`** keeps the open state in the cookie `sidebar_state` (path `/`, max-age seven days), toggles on ⌘B / Ctrl+B, and lays the sidebar out at `16rem` (`18rem` on mobile, `3rem` collapsed to icons); below 768 px wide the window counts as mobile ([`sidebar.tsx`](src/components/sidebar.tsx), [`use-mobile.ts`](src/hooks/use-mobile.ts)).
 - **`Toaster`** follows the system theme by default (`theme="system"`), uses lucide icons for each toast type and paints toasts with `--popover`, `--popover-foreground`, `--border` and `--radius`. `toast` is re-exported from `sonner`, so every caller in a window reaches the store the window's `Toaster` reads ([`sonner.tsx`](src/components/sonner.tsx)).
+
+Stock shadcn behavior callers rely on: `SidebarProvider` writes the open state to the cookie `sidebar_state` (path `/`, max-age seven days) on every change and never reads it back, so the initial state comes from its `defaultOpen` or `open` prop; it toggles on ⌘B / Ctrl+B and lays the sidebar out at `16rem` (`18rem` on mobile, `3rem` collapsed to icons); below 768 px wide the window counts as mobile ([`sidebar.tsx`](src/components/sidebar.tsx), [`use-mobile.ts`](src/hooks/use-mobile.ts)).
 
 #### Provenance check
 

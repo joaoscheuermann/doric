@@ -108,8 +108,8 @@ that reads the skill source.
 
 - `npx nx run bundle-mcp:typecheck`: run it after any change under `src/`,
   `stories/` or `.storybook/`.
-- `npx nx run bundle-mcp:test`: run it after any change under `src/` or
-  `tests/`, and run the tests only through this target, which builds the
+- `npx nx run bundle-mcp:test`: run it after any change under `src/`,
+  `stories/` or `tests/`, and run the tests only through this target, which builds the
   bundle first, because `tests/styles-cascade.test.ts` reads the built
   `dist/client/styles.css`.
 - `npx nx run bundle-mcp:build`: run it after a change to `manifest.json`,
