@@ -137,7 +137,11 @@ jobs:
 
       - run: npm install --global npm@11.13.0
 
+      # Node 26's headers require C++20; tree-sitter 0.21.1 (packages/okf) has
+      # no arm64 prebuild and compiles with gyp's older default otherwise.
       - run: npm ci
+        env:
+          CXXFLAGS: -std=c++20
 
       - name: Run the protocol conformance suite
         run: npx nx run bundle:conformance
@@ -184,7 +188,10 @@ jobs:
 
       - run: npm install --global npm@11.13.0
 
+      # Node 26's headers require C++20; see the conformance job.
       - run: npm ci
+        env:
+          CXXFLAGS: -std=c++20
 
       - name: Install the Rust toolchain
         run: rustup show active-toolchain || rustup toolchain install
